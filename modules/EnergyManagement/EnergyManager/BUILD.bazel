@@ -13,4 +13,7 @@ cc_everest_module(
             "*.hpp",
         ],
     ),
+    deps = [
+        "//lib/everest/util",
+    ],
 )

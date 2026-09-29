@@ -40,17 +40,13 @@ static BrokerStrategy to_broker_strategy(const std::string& s) {
     if (s == "PowerRedistribution") {
         return BrokerStrategy::PowerRedistribution;
     }
-    // Default of the manifest option. An unknown value must not break energy distribution,
-    // but it must not pass unnoticed either: the manifest enum rejects a typo, a config
-    // built any other way does not.
+    // The manifest enum rejects typos; configs built otherwise are not validated.
     if (s != "FastCharging") {
         EVLOG_warning << "Unknown broker_strategy '" << s << "', falling back to FastCharging";
     }
     return BrokerStrategy::FastCharging;
 }
 
-// Creates the broker that trades on behalf of one EVSE. This is the single place that maps
-// the configured strategy to a broker class.
 static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& market, BrokerContext& context,
                                            const Broker::EnergyManagerConfig& broker_config) {
     switch (strategy) {
@@ -62,8 +58,8 @@ static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& mark
     }
 }
 
-static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(const EnergyManagerConfig& config) {
-    BrokerFastCharging::EnergyManagerConfig broker_conf;
+static Broker::EnergyManagerConfig to_broker_config(const EnergyManagerConfig& config) {
+    Broker::EnergyManagerConfig broker_conf;
 
     broker_conf.max_nr_of_switches_per_session = config.switch_3ph1ph_max_nr_of_switches_per_session;
     broker_conf.power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
@@ -135,52 +131,41 @@ EnergyManagerImpl::~EnergyManagerImpl() {
 
 void EnergyManagerImpl::start() {
     {
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (running) {
+        auto loop = m_loop_state.handle();
+        if (loop->running) {
             return;
         }
-        running = true;
+        loop->running = true;
     }
 
-    // start thread to update energy optimization
-    mainloop = std::thread([this] {
-        while (running) {
+    m_mainloop = std::thread([this] {
+        while (true) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
-            enforced_limits_callback(optimized_values);
-            {
-                std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                // Both reasons to wake early, under the lock that guards them. stop() and
-                // on_energy_flow_request() set their flag while holding this same mutex, so
-                // neither change can land between this predicate and the wait; without both
-                // halves the notification is lost in that window.
-                //
-                // Both have to be named here: a predicated wait_for re-sleeps on every
-                // notification its predicate does not cover, so a predicate that mentions
-                // only the stop flag swallows the priority request wake-up and delays the
-                // optimizer run it asks for by a full update_interval.
-                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval),
-                                                [this] { return not running or wakeup; });
-                wakeup = false;
+            if (not m_loop_state.handle()->running) {
+                return;
             }
+            try {
+                enforced_limits_callback(optimized_values);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Failed to enforce limits: " << e.what();
+            }
+
+            auto loop = m_loop_state.handle();
+            loop.wait_for([&loop] { return not loop->running or loop->wakeup; },
+                          std::chrono::seconds(config.update_interval));
+            if (not loop->running) {
+                return;
+            }
+            loop->wakeup = false;
         }
     });
 }
 
 void EnergyManagerImpl::stop() {
-    {
-        // Under the same mutex the worker waits on: clearing the flag outside it leaves a
-        // window where the worker has already tested the predicate but is not yet
-        // registered on the condition variable, and the notification below is lost.
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (not running) {
-            return;
-        }
-        running = false;
-    }
-
-    mainloop_sleep_condvar.notify_all();
-    if (mainloop.joinable()) {
-        mainloop.join();
+    m_loop_state.handle()->running = false;
+    m_loop_state.notify_all();
+    if (m_mainloop.joinable()) {
+        m_mainloop.join();
     }
 }
 
@@ -190,15 +175,8 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     energy_flow_request = e;
 
     if (is_priority_request(e)) {
-        // Trigger optimization now. The flag is set under the mutex the worker waits on,
-        // for the same reason stop() clears running under it: notifying without it leaves a
-        // window in which the worker has tested the predicate but is not yet registered on
-        // the condition variable, and the request waits out the whole update_interval.
-        {
-            std::lock_guard<std::mutex> sleep_lock(mainloop_sleep_mutex);
-            wakeup = true;
-        }
-        mainloop_sleep_condvar.notify_all();
+        m_loop_state.handle()->wakeup = true;
+        m_loop_state.notify_all();
     }
 }
 
@@ -264,12 +242,8 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
         }
 
-        brokers.push_back(make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid],
-                                      to_broker_fast_charging_config(config)));
-        // Read the connector state this run trades against, before the first trading round.
-        // Explicit rather than a constructor side effect: a broker is built once per EVSE per
-        // run in this loop, and a reader should not have to know that constructing one
-        // mutates the session context.
+        brokers.push_back(
+            make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid], to_broker_config(config)));
         brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
@@ -317,7 +291,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     for (auto& broker : brokers) {
         auto& local_market = broker->get_local_market();
-        const auto sold_energy = local_market.get_sold_energy();
+        const auto& sold_energy = local_market.get_sold_energy();
 
         if (sold_energy.size() > 0) {
             types::energy::EnforcedLimits l;

@@ -40,6 +40,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     everest::log
     everest::framework
+    everest::util
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})

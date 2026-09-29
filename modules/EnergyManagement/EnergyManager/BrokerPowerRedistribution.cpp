@@ -11,16 +11,6 @@ namespace module {
 
 namespace {
 
-// Selects the single power meter reading an observation is taken from. One selection for
-// power, current and timestamp: resolving them through independent lookups is how a value
-// ends up carrying another meter's age, or how a per-phase current ends up next to a total
-// that came from a different meter.
-//
-// Power decides the choice, and only when no side reports power does current decide it.
-// Within each of those two passes the leaves side (what EvseManager reports for an EVSE)
-// wins over the root side. Selecting on "carries anything usable" instead would let a
-// leaves reading with current but no power hide a root reading that does have power - the
-// measurement every consumer of this actually compares an allocation against.
 const types::powermeter::Powermeter* find_reading(const types::energy::EnergyFlowRequest& node) {
     const auto pick =
         [&node](bool (*carries)(const types::powermeter::Powermeter&)) -> const types::powermeter::Powermeter* {
@@ -40,12 +30,7 @@ const types::powermeter::Powermeter* find_reading(const types::energy::EnergyFlo
     return pick([](const types::powermeter::Powermeter& p) { return p.current_A.has_value(); });
 }
 
-// True while the connector's measured consumption can be taken for the demand of its EV.
-// A session that has not started drawing (WaitForAuth, PrepareCharging) or has stopped
-// (PausedEV, PausedEVSE) measures zero for a reason that says nothing about what the EV
-// asks for once it draws, so its measurement must not become its limit. A node that
-// declares no state at all is not excluded, for the same reason in_session() does not
-// exclude it.
+// Outside Charging a connector measures zero for reasons unrelated to what the EV will draw.
 bool consumption_is_demand(const types::energy::EnergyFlowRequest& node) {
     return not node.evse_state.has_value() or node.evse_state.value() == types::energy::EvseState::Charging;
 }
@@ -98,9 +83,7 @@ PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, fl
         return {phase_power_to_current(power.L1), phase_power_to_current(power.L2), phase_power_to_current(power.L3)};
     }
 
-    // Only the total is known: spread it over the active phases. Which physical phases
-    // those are is unknowable from a total, but the collapse to a single limit makes the
-    // assignment irrelevant - only the per-phase magnitude matters.
+    // Which phases carry a total is unknown; only the magnitude matters for a scalar cap.
     const int phases = std::max(active_phases, 1);
     const float per_phase = power.total / nominal_ac_voltage / static_cast<float>(phases);
     PhaseCurrents currents;
@@ -142,9 +125,6 @@ BrokerPowerRedistribution::BrokerPowerRedistribution(Market& market, BrokerConte
 void BrokerPowerRedistribution::observe() {
     const auto& request = local_market.energy_flow_request;
 
-    // Only sessions have a consumption worth observing. The optimizer runs continuously
-    // and constructs a broker for every EVSE on every run; without this guard an idle
-    // meterless connector would trip the missing-measurement warning.
     if (not in_session(request)) {
         return;
     }
@@ -156,11 +136,9 @@ void BrokerPowerRedistribution::observe() {
                              measurement.current_A.L2.has_value() or measurement.current_A.L3.has_value();
     if (measurement.power_W.has_value()) {
         EVLOG_debug << request.uuid << ": measured power " << measurement.power_W.value().total << " W";
-    } else if (not has_reading and not context.tracking_warned_no_measurement) {
-        // Warn once per session, not once per optimizer run. A current-only reading is not
-        // warned about: it is a usable measurement for the current cap.
-        context.tracking_warned_no_measurement = true;
-        EVLOG_warning << request.uuid << ": power meter tracking enabled but no measurement available";
+    } else if (not has_reading and not context.redistribution_warned_no_measurement) {
+        context.redistribution_warned_no_measurement = true;
+        EVLOG_warning << request.uuid << ": power redistribution has no measurement, capping at minimum current";
     }
 
     decide_cap(request);
@@ -168,29 +146,18 @@ void BrokerPowerRedistribution::observe() {
 
 void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowRequest& request) {
     if (not consumption_is_demand(request)) {
-        // WaitForAuth, PrepareCharging or a pause: the connector measures zero for a
-        // reason that says nothing about its demand. Dropping the whole state (not just
-        // the cap) makes a resume start over like a new session, start value included.
+        // A resume starts over like a new session, start value included.
         context.redistribution_cap_A = std::nullopt;
         context.redistribution_reduction_pending_since = std::nullopt;
         return;
     }
 
-    // The limits the cap is expressed against, from the slot covering now. observe() runs
-    // before any trading round, so the available energy still equals the full offer.
+    // observe() runs before any trading round, so the available energy is the full offer.
     const auto available = local_market.get_available_energy_import();
-    int slot = 0;
-    for (int i = 0; i < static_cast<int>(available.size()); i++) {
-        if (time_slot_active(i, available)) {
-            slot = i;
-            break;
-        }
-    }
-    const auto& limits = available[slot].limits_to_root;
+    const auto& limits = available[globals.active_slot].limits_to_root;
 
     if (not limits.ac_max_current_A.has_value()) {
-        // Watt-only node (DC): redistribution trades ampere. Left to the FastCharging
-        // algorithm, see the manifest's broker_strategy description.
+        // Watt-only node (DC): traded like FastCharging.
         context.redistribution_cap_A = std::nullopt;
         context.redistribution_reduction_pending_since = std::nullopt;
         return;
@@ -200,12 +167,11 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
     const float min_current_A = limits.ac_min_current_A.has_value() ? limits.ac_min_current_A.value().value : 0.0f;
     const float lower_limit_A = min_current_A + redistribution.margin_A;
 
-    // First drawing run of the session: set the start value the tracking departs from.
     if (not context.redistribution_cap_A.has_value()) {
         const float start_A =
             redistribution.start_with_lower_limit ? lower_limit_A : limits.ac_max_current_A.value().value;
         context.redistribution_cap_A = uniform_phases(start_A);
-        run_cap_source = "BrokerPowerRedistribution_SessionStart";
+        m_run_cap_source = "BrokerPowerRedistribution_SessionStart";
     }
 
     PhaseCurrents candidate;
@@ -220,15 +186,11 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
         source = "BrokerPowerRedistribution_MeasuredPlusMargin";
     }
     if (not to_scalar_cap(candidate).has_value()) {
-        // No usable, fresh reading (or one no current can be derived from): the connector
-        // is limited to its minimum plus the margin rather than left uncapped - a dead
-        // meter must not hold an allocation open.
+        // A dead meter must not hold an allocation open.
         candidate = uniform_phases(lower_limit_A);
         source = "BrokerPowerRedistribution_NoMeasurement";
     }
 
-    // Reductions wait out the hold; increases are applied immediately - the immediacy is
-    // the per-interval headroom the margin exists for.
     const auto applied_scalar = to_scalar_cap(context.redistribution_cap_A.value());
     const auto candidate_scalar = to_scalar_cap(candidate);
     if (applied_scalar.has_value() and candidate_scalar.value() < applied_scalar.value()) {
@@ -237,9 +199,9 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
         }
         if (globals.start_time - context.redistribution_reduction_pending_since.value() <
             redistribution.reduction_hold) {
-            run_cap_A = context.redistribution_cap_A;
-            if (run_cap_source.empty()) {
-                run_cap_source = "BrokerPowerRedistribution_ReductionHold";
+            m_run_cap_A = context.redistribution_cap_A;
+            if (m_run_cap_source.empty()) {
+                m_run_cap_source = "BrokerPowerRedistribution_ReductionHold";
             }
             return;
         }
@@ -247,8 +209,8 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
 
     context.redistribution_reduction_pending_since = std::nullopt;
     context.redistribution_cap_A = candidate;
-    run_cap_A = candidate;
-    run_cap_source = source;
+    m_run_cap_A = candidate;
+    m_run_cap_source = source;
 }
 
 void BrokerPowerRedistribution::tradeImpl() {
@@ -257,43 +219,33 @@ void BrokerPowerRedistribution::tradeImpl() {
 }
 
 void BrokerPowerRedistribution::limit_offer_to_cap() {
-    if (not run_cap_A.has_value()) {
+    if (not m_run_cap_A.has_value()) {
         return;
     }
-    const auto cap = to_scalar_cap(run_cap_A.value());
+    const auto cap = to_scalar_cap(m_run_cap_A.value());
     if (not cap.has_value()) {
         return;
     }
 
-    // Only the slot covering now: the measurement describes now, and the future slots are
-    // forecast the market still plans with the full request.
-    for (int i = 0; i < static_cast<int>(offer->import_offer.size()); i++) {
-        if (not time_slot_active(i, offer->import_offer)) {
-            continue;
-        }
-        auto& limits = offer->import_offer[i].limits_to_root;
-        if (not limits.ac_max_current_A.has_value()) {
-            return;
-        }
-
-        // Never below the minimum the all-or-nothing first trade must be able to buy, and
-        // never 0: FastCharging reads a max current of 0 as "cannot import" and would flip
-        // the slot to export.
-        const float min_current_A = limits.ac_min_current_A.has_value() ? limits.ac_min_current_A.value().value : 0.0f;
-        const float floor_A = std::max(min_current_A, globals.slice_ampere);
-
-        // The offer is what is left of the path to the root, so the cap has to be
-        // expressed as what is left of it too: tradeImpl() runs once per trading round and
-        // every round buys on top of the rounds before it.
-        const float allowance_A = std::max(cap.value(), floor_A) - sold_current_A(i);
-
-        apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), run_cap_source);
+    const int slot = globals.active_slot;
+    auto& limits = offer->import_offer[slot].limits_to_root;
+    if (not limits.ac_max_current_A.has_value()) {
         return;
     }
+
+    // Never below what the all-or-nothing first trade must buy, and never 0: FastCharging
+    // reads a max current of 0 as "cannot import" and flips the slot to export.
+    const float min_current_A = limits.ac_min_current_A.has_value() ? limits.ac_min_current_A.value().value : 0.0f;
+    const float floor_A = std::max(min_current_A, globals.slice_ampere);
+
+    // The offer is what is left after earlier trading rounds, so the cap is too.
+    const float allowance_A = std::max(cap.value(), floor_A) - sold_current_A(slot);
+
+    apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), m_run_cap_source);
 }
 
-float BrokerPowerRedistribution::sold_current_A(int slot) {
-    const auto sold = local_market.get_sold_energy();
+float BrokerPowerRedistribution::sold_current_A(int slot) const {
+    const auto& sold = local_market.get_sold_energy();
     if (slot >= static_cast<int>(sold.size()) or not sold[slot].limits_to_root.ac_max_current_A.has_value()) {
         return 0.0f;
     }
