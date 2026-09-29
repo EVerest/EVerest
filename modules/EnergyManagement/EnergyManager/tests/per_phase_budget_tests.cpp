@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <everest/helpers/phase_rotation.hpp>
 #include <utils/date.hpp>
 
 #include "BrokerPowerRedistribution.hpp"
@@ -328,6 +329,36 @@ TEST(PerPhaseLimitLoop, ASinglePhaseEvIsHeldByItsGridPhase) {
     const auto results = impl.run_optimizer(tree, AT);
 
     EXPECT_LE(enforced_current(results, "cp1") + enforced_current(results, "cp2"), 10.0f + 1e-3f);
+}
+
+namespace {
+
+// A single phase EV at 16 A as a charger's car side meter reports it, in connector order:
+// on the charger's L1. EvseManager's phase_rotation_car_side maps it onto grid phases.
+types::energy::EnergyFlowRequest rotated_charger_tree(everest::helpers::PhaseRotation rotation) {
+    auto cp1 = test::make_evse_node("cp1", 16.0f, 6.0f);
+    test::set_measurement_current(cp1, 16.0f, 0.0f, 0.0f, at_plus(0));
+    cp1.energy_usage_leaves = everest::helpers::apply_phase_rotation(cp1.energy_usage_leaves.value(), rotation);
+    auto tree = test::make_root_node("grid", 32.0f, std::nullopt, {cp1});
+    set_per_phase_limit(tree, per_phase(32.0f, 10.0f, 32.0f));
+    return tree;
+}
+
+} // namespace
+
+TEST(PerPhaseLimitLoop, ARotatedChargersEvIsBookedOnItsGridPhase) {
+    // Connector L1 is grid L2 (STR): the EV is held by L2's 10 A.
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+    const auto results = impl.run_optimizer(rotated_charger_tree(everest::helpers::PhaseRotation::STR), AT);
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 10.0f);
+}
+
+TEST(PerPhaseLimitLoop, WithoutTheRotationTheEvIsBookedOnTheWrongPhase) {
+    // The same charger configured without rotation: booked on L1, the EV gets 16 A while it
+    // physically draws on grid L2, which allows 10 A.
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+    const auto results = impl.run_optimizer(rotated_charger_tree(everest::helpers::PhaseRotation::RST), AT);
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 16.0f);
 }
 
 TEST(PerPhaseLimitLoop, EachSinglePhaseEvGetsWhatItsPhaseAllows) {
