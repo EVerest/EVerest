@@ -120,9 +120,12 @@ public:
     /// @return Comma-separated list of key usage names, or empty if not present
     std::string get_key_usage() const;
 
-        /// @brief Get the Basic Constraints extension from the certificate
+    /// @brief Get the Basic Constraints extension from the certificate
     /// @return String representation (e.g. "CA:TRUE" or "CA:FALSE"), or empty if not present
     std::string get_basic_constraints() const;
+
+    bool has_extension(const std::string& name) const;
+    bool is_extension_critical(const std::string& name) const;
 
     /// @brief Get the Subject Key Identifier extension from the certificate
     /// @return Subject Key Identifier string, or empty if not present
@@ -135,6 +138,27 @@ public:
     /// @brief Get the CRL Distribution Points extension from the certificate
     /// @return Comma-separated list of CRL distribution point URIs, or empty if not present
     std::string get_crl_distribution_points() const;
+
+    /// @brief Get the notBefore validity field as ISO 8601 UTC (e.g. "2026-09-29T08:20:03Z"), or empty if not present
+    std::string get_not_before() const;
+
+    /// @brief Get the notAfter validity field as ISO 8601 UTC, or empty if not present
+    std::string get_not_after() const;
+
+    /// @brief Get the Subject Public Key algorithm short name (e.g. "rsaEncryption", "id-ecPublicKey"), or empty
+    std::string get_public_key_algorithm() const;
+
+    /// @brief Get the Subject Public Key size in bits as a decimal string, or empty
+    std::string get_public_key_bits() const;
+
+    /// @brief Get the Extended Key Usage extension as a comma-separated OID list, or empty if not present
+    std::string get_extended_key_usage() const;
+
+    /// @brief Get the Certificate Policies extension as a comma-separated OID list, or empty if not present
+    std::string get_certificate_policies() const;
+
+    /// @brief Get the Authority Information Access extension as a comma-separated URI list, or empty if not present
+    std::string get_authority_info_access() const;
 
     /// @brief Gets key hash of this certificate
     /// @result

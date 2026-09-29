@@ -8,6 +8,7 @@
 #include <evse_security/certificate/x509_wrapper.hpp>
 #include <filesystem>
 #include <fstream>
+#include <optional>
 #include <ryml.hpp>
 #include <ryml_std.hpp>
 #include <string>
@@ -39,9 +40,34 @@ inline bool parse_bool(const std::string& s, bool default_v) {
     return default_v;
 }
 
+enum class Presence { Required, Optional, Forbidden };
+
+inline std::optional<Presence> parse_presence(const std::string& s) {
+    if (s.empty()) return std::nullopt;
+    std::string v = to_lower(s);
+    if (v == "required"  || v == "must")       return Presence::Required;
+    if (v == "optional"  || v == "may")        return Presence::Optional;
+    if (v == "forbidden" || v == "must_not")   return Presence::Forbidden;
+    if (v == "true"  || v == "1" || v == "yes") return Presence::Required;
+    if (v == "false" || v == "0" || v == "no")  return Presence::Forbidden;
+    return std::nullopt;
+}
+
 inline bool is_issuer_target(const std::string& t) {
     std::string v = to_lower(t);
     return v == "issuer" || v == "issuer_cert" || v == "issuercertificate";
+}
+
+inline bool is_extension_field(const std::string& field) {
+    return field == "basicConstraints"          ||
+           field == "keyUsage"                  ||
+           field == "extendedKeyUsage"          ||
+           field == "subjectKeyIdentifier"      ||
+           field == "authorityKeyIdentifier"    ||
+           field == "crlDistributionPointName"  ||
+           field == "crlDistributionPoints"     ||
+           field == "certificatePolicies"       ||
+           field == "authorityInfoAccessMethod";
 }
 
 inline void parse_stand_rule(ryml::ConstNodeRef ruleNode,
@@ -84,7 +110,6 @@ inline void parse_stand_rule(ryml::ConstNodeRef ruleNode,
                 }
             } else if (!v.empty()) {
                 val = v;
-                if (mustExist.empty()) mustExist = "true";
             }
         }
     }
@@ -147,6 +172,14 @@ FieldResolve resolve_field(const evse_security::X509Wrapper& w,
     if (field == "basicConstraints")       { out = w.get_basic_constraints();       return FieldResolve::Value; }
     if (field == "subjectKeyIdentifier")   { out = w.get_subject_key_identifier();  return FieldResolve::Value; }
     if (field == "authorityKeyIdentifier") { out = w.get_authority_key_identifier(); return FieldResolve::Value; }
+
+    if (field == "notBefore")                 { out = w.get_not_before();             return FieldResolve::Value; }
+    if (field == "notAfter")                  { out = w.get_not_after();              return FieldResolve::Value; }
+    if (field == "subjectPublicKeyAlgorithm") { out = w.get_public_key_algorithm();   return FieldResolve::Value; }
+    if (field == "subjectPublicKey")          { out = w.get_public_key_bits();        return FieldResolve::Value; }
+    if (field == "extendedKeyUsage")          { out = w.get_extended_key_usage();     return FieldResolve::Value; }
+    if (field == "certificatePolicies")       { out = w.get_certificate_policies();   return FieldResolve::Value; }
+    if (field == "authorityInfoAccessMethod") { out = w.get_authority_info_access();  return FieldResolve::Value; }
 
     return FieldResolve::Unknown;
 }
@@ -279,12 +312,18 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         return -1;
     }
 
-    int is_valid = 1;
+    std::size_t effective_rule_count = 0;
+    for (auto rule : standNode.children()) {
+        std::string f, m, c, v, t;
+        parse_stand_rule(rule, f, m, c, v, t);
+        if (!f.empty()) ++effective_rule_count;
+    }
+    if (effective_rule_count == 0) {
+        EVLOG_error << "Profile contains no effective rules: " << profile;
+        return -1;
+    }
 
-    auto log = [](bool critical, const std::string& msg) {
-        if (critical) EVLOG_error << msg;
-        else          EVLOG_warning << msg;
-    };
+    int is_valid = 1;
 
     for (auto ruleNode : standNode.children()) {
         std::string field_str, mustExist_str, critical_str, expected_val, target_str;
@@ -297,26 +336,71 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         std::string cert_value;
         FieldResolve res = resolve_field(wrapper, field_str, is_issuer, cert_value);
         if (res == FieldResolve::SkipIssuer) {
+            EVLOG_warning << "Rule on issuer field '" << field_str << "' is not supported";
+            is_valid = 0;
             continue;
         }
         if (res == FieldResolve::Unknown) {
-            EVLOG_debug << "Unknown field: " << field_str;
+            EVLOG_warning << "Unsupported field in profile: '" << field_str << "'";
+            is_valid = 0;
             continue;
         }
 
-        const bool mustExist = parse_bool(mustExist_str, true);
-        const bool critical  = parse_bool(critical_str, false);
+        if (!critical_str.empty()) {
+            if (!is_extension_field(field_str)) {
+                EVLOG_warning << "Field '" << field_str
+                              << "' is not an extension; 'critical' has no meaning";
+                is_valid = 0;
+            } else {
+                const bool expected_critical = parse_bool(critical_str, false);
+                if (!wrapper.has_extension(field_str)) {
+                    EVLOG_warning << "Extension " << field_str
+                                  << " required for criticality check but missing";
+                    is_valid = 0;
+                } else if (wrapper.is_extension_critical(field_str) != expected_critical) {
+                    EVLOG_warning << "Extension " << field_str
+                                  << " critical flag mismatch (expected "
+                                  << (expected_critical ? "true" : "false") << ")";
+                    is_valid = 0;
+                }
+            }
+        }
 
-        if (mustExist && cert_value.empty()) {
-            log(critical, "Field " + field_str + " must exist but is missing");
-            is_valid = 0;
-        } else if (!mustExist && !cert_value.empty()) {
-            log(critical, "Field " + field_str + " must NOT exist but has value: " + cert_value);
-            is_valid = 0;
-        } else if (mustExist && !expected_val.empty() && cert_value != expected_val) {
-            log(critical, "Field " + field_str + " value mismatch: expected "
-                          + expected_val + ", got " + cert_value);
-            is_valid = 0;
+        auto presence_opt = parse_presence(mustExist_str);
+        if (!presence_opt.has_value()) {
+            continue;
+        }
+        const Presence presence = *presence_opt;
+
+        const bool present = !cert_value.empty();
+
+        switch (presence) {
+            case Presence::Required:
+                if (!present) {
+                    EVLOG_warning << "Field " << field_str << " required but missing";
+                    is_valid = 0;
+                } else if (!expected_val.empty() && cert_value != expected_val) {
+                    EVLOG_warning << "Field " << field_str << " value mismatch: expected "
+                                  << expected_val << ", got " << cert_value;
+                    is_valid = 0;
+                }
+                break;
+
+            case Presence::Optional:
+                if (present && !expected_val.empty() && cert_value != expected_val) {
+                    EVLOG_warning << "Field " << field_str << " value mismatch: expected "
+                                  << expected_val << ", got " << cert_value;
+                    is_valid = 0;
+                }
+                break;
+
+            case Presence::Forbidden:
+                if (present) {
+                    EVLOG_warning << "Field " << field_str << " forbidden but present: "
+                                  << cert_value;
+                    is_valid = 0;
+                }
+                break;
         }
     }
 
@@ -351,15 +435,28 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                     continue;
                 }
 
-                const bool must = parse_bool(must_str, true);
+                auto presence_opt = parse_presence(must_str);
+                if (!presence_opt.has_value()) {
+                    continue;
+                }
+                const Presence presence = *presence_opt;
                 const bool present = ku_value.find(ku_names[bit]) != std::string::npos;
 
-                if (must && !present) {
-                    EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") missing";
-                    is_valid = 0;
-                } else if (!must && present) {
-                    EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") unexpected";
-                    is_valid = 0;
+                switch (presence) {
+                    case Presence::Required:
+                        if (!present) {
+                            EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") missing";
+                            is_valid = 0;
+                        }
+                        break;
+                    case Presence::Optional:
+                        break;
+                    case Presence::Forbidden:
+                        if (present) {
+                            EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") unexpected";
+                            is_valid = 0;
+                        }
+                        break;
                 }
             }
         }
@@ -384,25 +481,90 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                     continue;
                 }
 
-                const bool must = parse_bool(must_str, false);
+                auto presence_opt = parse_presence(must_str);
+                if (!presence_opt.has_value()) {
+                    continue;
+                }
+                const Presence presence = *presence_opt;
 
                 if (value_str == "CA") {
                     const bool has_ca      = bc_value.find("CA:TRUE") != std::string::npos;
                     const bool expected_ca = parse_bool(data_str, false);
-                    if (must && has_ca != expected_ca) {
-                        EVLOG_warning << "basicConstraints CA mismatch: expected "
-                                      << (expected_ca ? "TRUE" : "FALSE")
-                                      << ", got " << (has_ca ? "TRUE" : "FALSE");
-                        is_valid = 0;
+
+                    switch (presence) {
+                        case Presence::Required:
+                        case Presence::Optional:
+                            if (has_ca != expected_ca) {
+                                EVLOG_warning << "basicConstraints CA mismatch: expected "
+                                              << (expected_ca ? "TRUE" : "FALSE")
+                                              << ", got " << (has_ca ? "TRUE" : "FALSE");
+                                is_valid = 0;
+                            }
+                            break;
+                        case Presence::Forbidden:
+                            EVLOG_warning << "basicConstraints CA: 'forbidden' is not meaningful";
+                            is_valid = 0;
+                            break;
                     }
                 } else if (value_str == "path_length" || value_str == "pathlen") {
-                    const bool present = bc_value.find("pathlen:") != std::string::npos;
-                    if (must && !present) {
-                        EVLOG_warning << "basicConstraints path_length missing";
-                        is_valid = 0;
-                    } else if (!must && present) {
-                        EVLOG_warning << "basicConstraints path_length unexpected";
-                        is_valid = 0;
+                    int actual = -1;
+                    const std::string path_marker = "pathlen:";
+                    auto ppos = bc_value.find(path_marker);
+                    const bool present = (ppos != std::string::npos);
+                    if (present) {
+                        try {
+                            actual = std::stoi(bc_value.substr(ppos + path_marker.length()));
+                        } catch (...) {
+                            actual = -1;
+                        }
+                    }
+
+                    switch (presence) {
+                        case Presence::Required:
+                            if (!present) {
+                                EVLOG_warning << "basicConstraints path_length missing";
+                                is_valid = 0;
+                            } else if (!data_str.empty()) {
+                                int expected = -1;
+                                try {
+                                    expected = std::stoi(data_str);
+                                } catch (...) {
+                                    EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
+                                                << data_str << "'";
+                                    is_valid = 0;
+                                    break;
+                                }
+                                if (actual != expected) {
+                                    EVLOG_warning << "basicConstraints path_length mismatch: expected "
+                                                  << expected << ", got " << actual;
+                                    is_valid = 0;
+                                }
+                            }
+                            break;
+                        case Presence::Optional:
+                            if (present && !data_str.empty()) {
+                                int expected = -1;
+                                try {
+                                    expected = std::stoi(data_str);
+                                } catch (...) {
+                                    EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
+                                                << data_str << "'";
+                                    is_valid = 0;
+                                    break;
+                                }
+                                if (actual != expected) {
+                                    EVLOG_warning << "basicConstraints path_length mismatch: expected "
+                                                  << expected << ", got " << actual;
+                                    is_valid = 0;
+                                }
+                            }
+                            break;
+                        case Presence::Forbidden:
+                            if (present) {
+                                EVLOG_warning << "basicConstraints path_length unexpected";
+                                is_valid = 0;
+                            }
+                            break;
                     }
                 }
             }

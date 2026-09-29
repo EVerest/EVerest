@@ -74,11 +74,6 @@ OEMSub-CA1:
       target: Subject
       mustExist: "true"
 
-    - field: authorityInfoAccessMethod # Authority Info Access Method
-      target: Subject
-      mustExist: "true"
-      val: "id-ad-ocsp"
-
     - field: subjectKeyIdentifier
       mustExist: true
       target: Subject

@@ -169,6 +169,7 @@ std::string X509Wrapper::get_locality() const {
 std::string X509Wrapper::get_domain_component() const {
     return CryptoSupplier::x509_get_domain_component(get());
 }
+
 std::string X509Wrapper::get_issuer_common_name() const {
     return CryptoSupplier::x509_get_issuer_common_name(get());
 }
@@ -209,6 +210,14 @@ std::string X509Wrapper::get_basic_constraints() const {
     return CryptoSupplier::x509_get_basic_constraints(get());
 }
 
+bool X509Wrapper::has_extension(const std::string& name) const {
+    return CryptoSupplier::x509_has_extension(get(), name);
+}
+
+bool X509Wrapper::is_extension_critical(const std::string& name) const {
+    return CryptoSupplier::x509_is_extension_critical(get(), name);
+}
+
 std::string X509Wrapper::get_subject_key_identifier() const {
     return CryptoSupplier::x509_get_subject_key_identifier(get());
 }
@@ -219,6 +228,34 @@ std::string X509Wrapper::get_authority_key_identifier() const {
 
 std::string X509Wrapper::get_crl_distribution_points() const {
     return CryptoSupplier::x509_get_crl_distribution_points(get());
+}
+
+std::string X509Wrapper::get_not_before() const {
+    return CryptoSupplier::x509_get_not_before(get());
+}
+
+std::string X509Wrapper::get_not_after() const {
+    return CryptoSupplier::x509_get_not_after(get());
+}
+
+std::string X509Wrapper::get_public_key_algorithm() const {
+    return CryptoSupplier::x509_get_public_key_algorithm(get());
+}
+
+std::string X509Wrapper::get_public_key_bits() const {
+    return CryptoSupplier::x509_get_public_key_bits(get());
+}
+
+std::string X509Wrapper::get_extended_key_usage() const {
+    return CryptoSupplier::x509_get_extended_key_usage(get());
+}
+
+std::string X509Wrapper::get_certificate_policies() const {
+    return CryptoSupplier::x509_get_certificate_policies(get());
+}
+
+std::string X509Wrapper::get_authority_info_access() const {
+    return CryptoSupplier::x509_get_authority_info_access(get());
 }
 
 std::string X509Wrapper::get_serial_number() const {

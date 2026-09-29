@@ -78,12 +78,6 @@ OEMSub-CA2:
       target: Subject
       mustExist: "true"
 
-    - field: authorityInfoAccessMethod # Authority Info Access Method
-      target: Subject
-      mustExist: "true"
-      val: "id-ad-ocsp"
-
-
   key_usage:
     - keyUsageBit: 0 # Digital Signature
       mustExist: "false"

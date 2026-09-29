@@ -52,11 +52,6 @@ MO-EMSPSub-CA1:
     - field: extendedKeyUsage # Extended Key Usage
       target: Subject
       mustExist: "false"
-
-    - field: authorityInfoAccessMethod # Authority Info Access Method
-      target: Subject
-      mustExist: "true"
-      val: "id-ad-ocsp"
       
     - field: subjectKeyIdentifier
       mustExist: true

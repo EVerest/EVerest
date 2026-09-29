@@ -74,6 +74,27 @@ public:
     /// @return Comma-separated list of CRL distribution point URIs, or empty if not present
     static std::string x509_get_crl_distribution_points(X509Handle* handle);
 
+    /// @brief Get the notBefore validity field as ISO 8601 UTC (e.g. "2026-09-29T08:20:03Z"), or empty if not present
+    static std::string x509_get_not_before(X509Handle* handle);
+
+    /// @brief Get the notAfter validity field as ISO 8601 UTC, or empty if not present
+    static std::string x509_get_not_after(X509Handle* handle);
+
+    /// @brief Get the Subject Public Key algorithm short name (e.g. "rsaEncryption", "id-ecPublicKey"), or empty
+    static std::string x509_get_public_key_algorithm(X509Handle* handle);
+
+    /// @brief Get the Subject Public Key size in bits as a decimal string, or empty
+    static std::string x509_get_public_key_bits(X509Handle* handle);
+
+    /// @brief Get the Extended Key Usage extension as a comma-separated OID list, or empty if not present
+    static std::string x509_get_extended_key_usage(X509Handle* handle);
+
+    /// @brief Get the Certificate Policies extension as a comma-separated OID list, or empty if not present
+    static std::string x509_get_certificate_policies(X509Handle* handle);
+
+    /// @brief Get the Authority Information Access extension as a comma-separated URI list, or empty if not present
+    static std::string x509_get_authority_info_access(X509Handle* handle);
+
     /// @brief If any TPM operations are supported
     static bool supports_tpm();
     static bool supports_tpm_key_creation();
@@ -100,6 +121,8 @@ public:
     static std::string x509_get_issuer_state(X509Handle* handle);
     static std::string x509_get_issuer_locality(X509Handle* handle);
     static std::string x509_get_issuer_domain_component(X509Handle* handle);
+    static bool x509_has_extension(X509Handle* handle, const std::string& name);
+    static bool x509_is_extension_critical(X509Handle* handle, const std::string& name);
 
     /// @brief Returns the time validity for a certificate
     /// @param out_valid_in Valid in amount of seconds. A negative value is in the past, a positive one is in the future

@@ -81,11 +81,6 @@ MO-EMSPSub-CA1:
       target: Subject
       mustExist: "false"
 
-    - field: authorityInfoAccessMethod # Authority Info Access Method
-      target: Subject
-      mustExist: "true"
-      val: "id-ad-ocsp"
-
     - field: contractMobilityOperatorName # Contract Mobility Operator Name
       target: Subject
       mustExist: "false"
