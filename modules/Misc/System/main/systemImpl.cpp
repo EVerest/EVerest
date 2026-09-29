@@ -29,6 +29,9 @@ const std::string SIGNED_FIRMWARE_DOWNLOADER = "signed_firmware_downloader.sh";
 const std::string SIGNED_FIRMWARE_METADATA_PARSER = "signed_firmware_metadata_parser.sh";
 const std::string SIGNED_FIRMWARE_INSTALLER = "signed_firmware_installer.sh";
 
+// A published status cannot be observed reaching its consumers, so it gets this long before the reset stops the stack.
+constexpr auto INSTALL_REBOOTING_NOTIFICATION_GRACE = std::chrono::seconds(2);
+
 namespace fs = std::filesystem;
 
 // FIXME (aw): this function needs to be refactored into some kind of utility library
@@ -384,6 +387,7 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
             if (this->mod->config.ResetAfterUpdate) {
                 firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
                 this->publish_firmware_update_status(firmware_status);
+                std::this_thread::sleep_for(INSTALL_REBOOTING_NOTIFICATION_GRACE);
 
                 if (!this->mod->r_store.empty()) {
                     this->mod->r_store.at(0)->call_store(
