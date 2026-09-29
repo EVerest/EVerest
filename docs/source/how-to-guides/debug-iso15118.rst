@@ -126,7 +126,7 @@ the file using:
 
 .. code-block:: bash
 
-   wireshark -k -i <(ssh <user>@<target ip> cat <logging path on target>/<device to listen on>-traffic.pcap)
+   wireshark -k -i <(ssh <user>@<target ip> cat <logging path on target>/<timestamp>_<session id>_<device>.pcap)
 
 You can now view the decoded messages, e.g.
 
