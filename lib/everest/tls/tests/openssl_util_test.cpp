@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "gtest/gtest.h"
 #include <algorithm>
@@ -114,7 +114,27 @@ const char test_cert_pem[] = "-----BEGIN CERTIFICATE-----\n"
                              "-----END CERTIFICATE-----\n";
 
 const char test_cert_hash[] = "082f891b26de97c8bdedb159f8d59113cfb55dc0";
-const char test_cert_key_hash[] = "3b094e5f2594a3ae4511a9ff4285acd91fcd11c0";
+// RFC 6066 key_sha1_hash: SHA-1 of the subjectPublicKey BIT STRING, which for
+// this certificate is also its Subject Key Identifier
+const char test_cert_key_hash[] = "1e98b5f8bdb9217b3526065e6c9911c2ac587c09";
+
+// Hubject V2G Root CA G2, a production EC P-256 root, and its RFC 6066 key_sha1_hash
+const char hubject_v2g_root_ca_g2_pem[] = "-----BEGIN CERTIFICATE-----\n"
+                                          "MIICTTCCAfOgAwIBAgIQALu7vBrEWtLf5bHYc8NchDAKBggqhkjOPQQDAjBSMQsw\n"
+                                          "CQYDVQQGEwJERTEVMBMGA1UEChMMSHViamVjdCBHbWJIMRMwEQYKCZImiZPyLGQB\n"
+                                          "GRYDVjJHMRcwFQYDVQQDEw5WMkcgUm9vdCBDQSBHMjAgFw0xOTAxMTAxMjU0MjZa\n"
+                                          "GA8yMDU5MDEwOTE5MDAwMFowUjELMAkGA1UEBhMCREUxFTATBgNVBAoTDEh1Ympl\n"
+                                          "Y3QgR21iSDETMBEGCgmSJomT8ixkARkWA1YyRzEXMBUGA1UEAxMOVjJHIFJvb3Qg\n"
+                                          "Q0EgRzIwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQI+uelZzJzESGTP2ZkDfA+\n"
+                                          "W0+7O9y0a8gVl0nZnS0Ko5H71VG2aacoUc+GHRWmXhXiutfDwauh4MtMp32zj5/R\n"
+                                          "o4GoMIGlMBMGA1UdJQQMMAoGCCsGAQUFBwMJMA8GA1UdEwEB/wQFMAMBAf8wEQYD\n"
+                                          "VR0OBAoECEW4QJ7hOPi/MEUGA1UdIAQ+MDwwOgYMKwYBBAGCxDUBAgEAMCowKAYI\n"
+                                          "KwYBBQUHAgEWHGh0dHBzOi8vd3d3Lmh1YmplY3QuY29tL3BraS8wEwYDVR0jBAww\n"
+                                          "CoAIRbhAnuE4+L8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIAQl\n"
+                                          "k+aOKUGJk7KoZs2ASAYv1D0w/BqN9Dpg82X0bFb8AiEAi1dL21fLl/wbYs7LYYzp\n"
+                                          "i4ELaXBzZxy4tAVwBy9pia4=\n"
+                                          "-----END CERTIFICATE-----\n";
+const char hubject_v2g_root_ca_g2_key_hash[] = "00fae3900795c888a4d4d7bd9fdffa60418ac19f";
 
 inline const auto to_hex_string(const openssl::sha_1_digest_t& b) {
     std::stringstream string_stream;
@@ -155,6 +175,15 @@ TEST(certificate_subject_public_key_sha_1, hash) {
     auto res = openssl::certificate_subject_public_key_sha_1(digest, cert.get());
     EXPECT_TRUE(res);
     EXPECT_EQ(to_hex_string(digest), test_cert_key_hash);
+}
+
+TEST(certificate_subject_public_key_sha_1, productionEcRoot) {
+    auto cert = openssl::pem_to_certificate(hubject_v2g_root_ca_g2_pem);
+    EXPECT_TRUE(cert);
+    openssl::sha_1_digest_t digest;
+    auto res = openssl::certificate_subject_public_key_sha_1(digest, cert.get());
+    EXPECT_TRUE(res);
+    EXPECT_EQ(to_hex_string(digest), hubject_v2g_root_ca_g2_key_hash);
 }
 
 TEST(DER, equal) {

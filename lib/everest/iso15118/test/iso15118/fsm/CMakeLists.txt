@@ -23,6 +23,8 @@ create_fsm_test_target(der_iec_charge_loop)
 create_fsm_test_target(der_sae_charge_parameter_discovery)
 create_fsm_test_target(der_sae_charge_loop)
 create_fsm_test_target(schedule_exchange)
+create_fsm_test_target(pnc_authorization)
+target_link_libraries(test_fsm_pnc_authorization PRIVATE OpenSSL::Crypto)
 
 add_executable(test_d20_transitions d20_transitions.cpp)
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <iso15118/io/stream_view.hpp>
@@ -16,6 +16,8 @@ enum class Type {
     AuthorizationSetupRes,
     AuthorizationReq,
     AuthorizationRes,
+    CertificateInstallationReq,
+    CertificateInstallationRes,
     ServiceDiscoveryReq,
     ServiceDiscoveryRes,
     ServiceDetailReq,
@@ -77,6 +79,8 @@ CREATE_TYPE_TRAIT(AuthorizationSetupRequest, AuthorizationSetupReq);
 CREATE_TYPE_TRAIT(AuthorizationSetupResponse, AuthorizationSetupRes);
 CREATE_TYPE_TRAIT(AuthorizationRequest, AuthorizationReq);
 CREATE_TYPE_TRAIT(AuthorizationResponse, AuthorizationRes);
+CREATE_TYPE_TRAIT(CertificateInstallationRequest, CertificateInstallationReq);
+CREATE_TYPE_TRAIT(CertificateInstallationResponse, CertificateInstallationRes);
 CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
 CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
 CREATE_TYPE_TRAIT(ServiceDetailRequest, ServiceDetailReq);

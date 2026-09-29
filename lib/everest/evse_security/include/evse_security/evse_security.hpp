@@ -174,7 +174,7 @@ public:
 
     /// @brief Updates the OCSP cache for the given \p certificate_hash_data with the given \p ocsp_response
     /// @param certificate_hash_data identifies the certificate for which the \p ocsp_response is specified
-    /// @param ocsp_response the actual OCSP data
+    /// @param ocsp_response OCSPResponse (RFC 6960), DER and then base64 encoded; stored decoded as DER
     void update_ocsp_cache(const CertificateHashData& certificate_hash_data, const std::string& ocsp_response);
 
     // TODO: Switch to path

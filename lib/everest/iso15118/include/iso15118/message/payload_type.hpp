@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 // FIXME (aw): how to streamline this with type.hpp?
@@ -41,6 +41,8 @@ CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, Part20AC);
 CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, Part20AC);
 CREATE_TYPE_TRAIT(AuthorizationSetupResponse, Part20Main);
 CREATE_TYPE_TRAIT(AuthorizationResponse, Part20Main);
+CREATE_TYPE_TRAIT(CertificateInstallationRequest, Part20Main);
+CREATE_TYPE_TRAIT(CertificateInstallationResponse, Part20Main);
 CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, Part20Main);
 CREATE_TYPE_TRAIT(ServiceDetailResponse, Part20Main);
 CREATE_TYPE_TRAIT(ServiceSelectionResponse, Part20Main);

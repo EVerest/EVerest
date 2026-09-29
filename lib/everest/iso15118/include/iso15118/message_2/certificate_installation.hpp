@@ -47,4 +47,28 @@ struct CertificateInstallationResponse {
     std::string emaid;
 };
 
+// CertificateUpdateReq/Res (8.4.3.10). The SECC relays a successful exchange verbatim; these types
+// exist so the SECC can build the FAILED_* responses it owes itself ([V2G2-538], [V2G2-460],
+// [V2G2-558]) and so tests / an EV side can drive the request. The signature over the request
+// element (contract leaf key) is attached at serialization time like for the installation request.
+struct CertificateUpdateRequest {
+    Header header;
+    std::string id{"id1"};
+    CertificateChain contract_chain;
+    std::string emaid;
+    std::vector<RootCertificateId> root_certificate_ids;
+};
+
+struct CertificateUpdateResponse {
+    Header header;
+    datatypes::ResponseCode response_code{datatypes::ResponseCode::FAILED};
+    CertificateChain sa_provisioning_chain;
+    CertificateChain contract_chain;
+    std::vector<uint8_t> encrypted_private_key;
+    std::vector<uint8_t> dh_public_key;
+    std::string emaid;
+    // RetryCounter: hint for the EVCC when to retry a FAILED_NoCertificateAvailable ([V2G2-696]).
+    std::optional<int16_t> retry_counter;
+};
+
 } // namespace iso15118::message_2

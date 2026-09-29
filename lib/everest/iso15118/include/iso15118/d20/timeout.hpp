@@ -35,7 +35,6 @@ static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::EMERGENCY_SH
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
 constexpr auto TIMEOUT_SEQUENCE = 1000 * 60;
-constexpr auto TIMEOUT_EIM_ONGOING = 1000 * 60 * 3;
 // EvseV2G handle_stop_charging grants the same 10 s graceful-shutdown window.
 constexpr auto TIMEOUT_STOP_CHARGING_GUARD = 1000 * 10;
 // Short on purpose: the physical shutdown is enforced over the control pilot (IEC 61851-1/-23), not

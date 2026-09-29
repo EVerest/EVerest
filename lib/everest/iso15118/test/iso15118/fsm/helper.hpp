@@ -2,9 +2,12 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <catch2/catch_test_macros.hpp>
+
 #include <array>
 #include <iostream>
 #include <optional>
+#include <vector>
 
 #include <everest/util/fsm/fsm.hpp>
 #include <iso15118/d20/config.hpp>
@@ -67,12 +70,23 @@ public:
         msg_exch.set_request(std::make_unique<message_20::Variant>(request));
     }
 
+    // For requests whose raw EXI matters to the state, e.g. a signed PnC AuthorizationReq.
+    void handle_raw_request(io::v2gtp::PayloadType payload_type, const std::vector<uint8_t>& exi) {
+        REQUIRE_FALSE(exi.empty());
+        const io::StreamInputView view{exi.data(), exi.size()};
+        msg_exch.set_request(std::make_unique<message_20::Variant>(payload_type, view));
+    }
+
+    d20::MessageExchange& get_message_exchange() {
+        return msg_exch;
+    }
+
     void set_active_control_event(const std::optional<d20::ControlEvent>& event) {
         active_control_event = event;
     }
 
 private:
-    std::array<uint8_t, 1024> output_buffer{};
+    std::array<uint8_t, 16384> output_buffer{};
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};
 
     d20::MessageExchange msg_exch{output_stream_view};

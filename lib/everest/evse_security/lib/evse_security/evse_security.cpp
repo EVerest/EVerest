@@ -249,6 +249,16 @@ std::set<fs::path> get_certificate_path_of_key(const fs::path& key, const fs::pa
     throw NoCertificateValidException(error);
 }
 
+/// @brief Writes a DER encoded OCSP response, replacing any previous content
+/// @return True if the file was written
+bool write_ocsp_response(const fs::path& path, const std::vector<std::uint8_t>& ocsp_response_der) {
+    std::ofstream fs(path.c_str(), std::ios::binary | std::ios::trunc);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): binary stream API
+    fs.write(reinterpret_cast<const char*>(ocsp_response_der.data()),
+             static_cast<std::streamsize>(ocsp_response_der.size()));
+    return fs.good();
+}
+
 /// @brief Searches for the ocsp data and hash related to the specified certificate and hash
 /// @return True if the files were found, false otherwise
 bool get_oscp_data_of_certificate(const X509Wrapper& certificate, const CertificateHashData& hash,
@@ -1130,6 +1140,14 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
 
     EVLOG_info << "Updating OCSP cache";
 
+    // The cache holds DER: the TLS server staples the file content as-is
+    std::vector<std::uint8_t> ocsp_response_der;
+    if (false == CryptoSupplier::base64_decode_to_bytes(ocsp_response, ocsp_response_der) ||
+        ocsp_response_der.empty()) {
+        EVLOG_error << "Could not update ocsp cache, OCSP response is not base64 encoded DER";
+        return;
+    }
+
     // TODO(ioan): shouldn't we also do this for the MO?
     const auto ca_bundle_path = this->ca_bundle_path_map.at(CaCertificateType::V2G);
     auto leaf_cert_dir = this->directories.secc_leaf_cert_directory; // V2G leafs
@@ -1168,10 +1186,9 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
                 if (get_oscp_data_of_certificate(cert, certificate_hash_data, out_path_hash, out_path_data)) {
                     EVLOG_debug << "OCSP certificate hash already found, over-writing!";
 
-                    // Discard previous content
-                    std::ofstream fs(out_path_data.c_str(), std::ios::trunc);
-                    fs << ocsp_response;
-                    fs.close();
+                    if (false == write_ocsp_response(out_path_data, ocsp_response_der)) {
+                        EVLOG_error << "Could not write OCSP certificate data!";
+                    }
 
                     updated_hash = true;
                 }
@@ -1183,12 +1200,7 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
                     const auto ocsp_file_path = (ocsp_path / name) += DER_EXTENSION;
                     const auto hash_file_path = (ocsp_path / name) += CERT_HASH_EXTENSION;
 
-                    // Write out OCSP data
-                    try {
-                        std::ofstream fs(ocsp_file_path.c_str());
-                        fs << ocsp_response;
-                        fs.close();
-                    } catch (const std::exception& e) {
+                    if (false == write_ocsp_response(ocsp_file_path, ocsp_response_der)) {
                         EVLOG_error << "Could not write OCSP certificate data!";
                     }
 
