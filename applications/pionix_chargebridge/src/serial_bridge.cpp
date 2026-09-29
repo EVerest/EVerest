@@ -23,6 +23,11 @@ const std::size_t pty_pause_watermark = 64;
 // The MCU advertises a 512 B window and takes one packet per UART transfer: coalesce to the
 // window and disable Nagle, otherwise ~200 ms delayed ACK per mini segment (~1-3 kB/s).
 const std::size_t serial_tcp_payload_max = 512;
+// Delay before a lost connection is re-established. The MCU drops its management link after 2 s
+// without a heartbeat and closes the UART TCP connection right after every accept while it is down;
+// the host declares the connection lost only after heartbeat.connection_to_s. In between, an
+// immediate reconnect would be reset again at once, in a loop.
+constexpr auto tcp_reconnect_delay = std::chrono::seconds(1);
 } // namespace
 
 namespace charge_bridge {
@@ -38,8 +43,26 @@ serial_bridge::serial_bridge(serial_bridge_config const& config, everest::lib::i
 
     m_identifier = config.cb + "/" + config.item;
 
-    create_tcp_client(m_tcp_remote, m_tcp_port);
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
+    m_reconnect_timer.set_single_shot(true);
+
+    // The MCU accepts a UART TCP connection only while its management link is up, i.e. while it
+    // receives heartbeats; otherwise it closes the connection right after the accept. Connecting is
+    // therefore gated on the heartbeat-verified connection state, and a lost connection is only
+    // re-established once that state is back.
+    m_cb_is_connected.setCallback([this](bool last, bool current) {
+        if (not last and current) {
+            if (m_tcp) {
+                if (not m_tcp_ready) {
+                    m_reconnect_timer.disarm();
+                    m_tcp->reset();
+                }
+            } else {
+                ensure_tcp_client();
+            }
+        }
+        handle_ready();
+    });
 
     m_pty.set_error_handler([this](auto id, auto const& msg) {
         utilities::print_error(m_identifier, "SERIAL/PTY", id) << msg << std::endl;
@@ -49,24 +72,10 @@ serial_bridge::serial_bridge(serial_bridge_config const& config, everest::lib::i
         }
         handle_ready();
     });
-}
 
-void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote_port) {
-    // Dedup latch is per client instance.
-    m_tcp_tx_rejected = false;
-    m_tcp = std::make_unique<everest::lib::io::tcp::tcp_client>(remote, remote_port, default_udp_timeout_ms);
-    m_tcp->set_on_ready_action([this]() {
-        m_tcp->get_raw_handler()->set_keep_alive(tcp_keepalive_count, tcp_keepalive_idle_s, tcp_keepalive_interval_s);
-        m_tcp->get_raw_handler()->set_user_timeout(tcp_user_timeout_ms);
-        try {
-            everest::lib::io::socket::enable_tcp_no_delay(m_tcp->get_raw_handler()->get_fd());
-        } catch (std::exception const& e) {
-            utilities::print_error(m_identifier, "SERIAL/TCP", -1) << e.what() << std::endl;
-        }
-        // Up edge: resume a pty paused against the previous connection; reset() does not drain.
-        resume_pty();
-    });
-
+    // No backpressure towards the TCP peer, RS-485 semantics: a slave that does not read loses
+    // bytes. They queue in the pty and then in the client's tx buffer (max_buffered_tx_payloads);
+    // beyond that tx() rejects and the data is dropped without a log line.
     m_pty.set_data_handler([this](auto const& data, auto&) {
         if (not m_tcp) {
             return;
@@ -82,10 +91,25 @@ void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote
             m_pty_paused = m_pty.pause_rx();
         }
     });
+}
+
+void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote_port) {
+    // Dedup latch is per client instance.
+    m_tcp_tx_rejected = false;
+    m_tcp_last_error_id = -1;
+    m_tcp = std::make_unique<everest::lib::io::tcp::tcp_client>(remote, remote_port, default_udp_timeout_ms);
+    m_tcp->set_on_ready_action([this]() {
+        m_tcp->get_raw_handler()->set_keep_alive(tcp_keepalive_count, tcp_keepalive_idle_s, tcp_keepalive_interval_s);
+        m_tcp->get_raw_handler()->set_user_timeout(tcp_user_timeout_ms);
+        try {
+            everest::lib::io::socket::enable_tcp_no_delay(m_tcp->get_raw_handler()->get_fd());
+        } catch (std::exception const& e) {
+            utilities::print_error(m_identifier, "SERIAL/TCP", -1) << e.what() << std::endl;
+        }
+        // Up edge: resume a pty paused against the previous connection; reset() does not drain.
+        resume_pty();
+    });
     m_tcp->set_tx_drained_action([this]() { resume_pty(); });
-    // No backpressure towards the TCP peer, RS-485 semantics: a slave that does not read loses
-    // bytes. They queue in the pty and then in the client's tx buffer (max_buffered_tx_payloads);
-    // beyond that tx() rejects and the data is dropped without a log line.
     m_tcp->set_rx_handler([this](auto const& data, auto&) { m_pty.tx(data); });
     m_tcp->set_error_handler([this](auto id, auto const& msg) {
         if (m_tcp_last_error_id not_eq id) {
@@ -94,14 +118,49 @@ void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote
         }
         m_tcp_ready = id == 0;
         if (not m_tcp_ready) {
-            if (m_tcp) {
-                m_tcp->reset();
+            // Without the management link the MCU closes every accepted connection again, so the
+            // reconnect waits for the up edge of m_cb_is_connected.
+            if (m_tcp and m_cb_is_connected) {
+                m_reconnect_timer.set_timeout(tcp_reconnect_delay);
             }
             // Stay paused across the outage: nothing is lost while the slave writer blocks; on_ready
             // resumes.
         }
         handle_ready();
     });
+}
+
+void serial_bridge::ensure_tcp_client() {
+    if (m_tcp or not m_endpoint_requested or not m_cb_is_connected) {
+        return;
+    }
+    create_tcp_client(m_tcp_remote, m_tcp_port);
+    if (m_handler and not m_handler->register_event_handler(m_tcp.get())) {
+        utilities::print_error(m_identifier, "SERIAL/TCP", -1) << "Failed to register TCP client" << std::endl;
+        m_handler->unregister_event_handler(m_tcp.get());
+        drop_tcp_client();
+    }
+}
+
+void serial_bridge::handle_reconnect_timer() {
+    if (m_tcp and not m_tcp_ready and m_cb_is_connected) {
+        m_tcp->reset();
+    }
+}
+
+void serial_bridge::drop_tcp_client() {
+    m_reconnect_timer.disarm();
+    m_tcp_ready = false;
+    m_tcp_last_error_id = -1;
+    if (m_tcp) {
+        if (m_handler) {
+            m_handler->unregister_event_handler(m_tcp.get());
+        }
+        m_tcp->reset();
+    }
+    m_tcp.reset();
+    // No TCP client left to drain the buffer that caused a pause.
+    resume_pty();
 }
 
 void serial_bridge::resume_pty() {
@@ -112,22 +171,21 @@ void serial_bridge::resume_pty() {
 }
 
 void serial_bridge::disconnect_cb_endpoint() {
-    m_tcp_ready = false;
-    m_tcp_last_error_id = -1;
-    if (m_tcp) {
-        m_tcp->reset();
-    }
-    m_tcp.reset();
-    // No TCP client left to drain the buffer that caused a pause.
-    resume_pty();
+    m_endpoint_requested = false;
+    drop_tcp_client();
     handle_ready();
 }
 
 void serial_bridge::connect_cb_endpoint(std::string const& remote) {
     m_tcp_remote = remote;
-    disconnect_cb_endpoint();
-    create_tcp_client(m_tcp_remote, m_tcp_port);
+    drop_tcp_client();
+    m_endpoint_requested = true;
+    ensure_tcp_client();
     handle_ready();
+}
+
+void serial_bridge::set_cb_connection_status(bool connected) {
+    m_cb_is_connected.set(connected);
 }
 
 std::string serial_bridge::get_slave_path() {
@@ -135,21 +193,27 @@ std::string serial_bridge::get_slave_path() {
 }
 
 bool serial_bridge::register_events(everest::lib::io::event::fd_event_handler& handler) {
-    auto result = true;
-    result = handler.register_event_handler(&m_pty) && result;
-    result = handler.register_event_handler(m_tcp.get()) && result;
+    m_handler = &handler;
+    auto result = handler.register_event_handler(&m_pty);
+    result = handler.register_event_handler(&m_reconnect_timer, [this](auto&) { handle_reconnect_timer(); }) && result;
+    if (m_tcp) {
+        result = handler.register_event_handler(m_tcp.get()) && result;
+    }
     return result;
 }
 
 bool serial_bridge::unregister_events(everest::lib::io::event::fd_event_handler& handler) {
-    auto result = true;
-    result = handler.unregister_event_handler(&m_pty) && result;
-    result = handler.unregister_event_handler(m_tcp.get()) && result;
+    auto result = handler.unregister_event_handler(&m_pty);
+    result = handler.unregister_event_handler(&m_reconnect_timer) && result;
+    if (m_tcp) {
+        result = handler.unregister_event_handler(m_tcp.get()) && result;
+    }
+    m_handler = nullptr;
     return result;
 }
 
 void serial_bridge::handle_ready() {
-    m_ready.set(m_tcp_ready and m_pty_ready);
+    m_ready.set(m_tcp_ready and m_pty_ready and m_cb_is_connected);
 }
 
 bool serial_bridge::available() const {

@@ -29,11 +29,17 @@ public:
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
     void disconnect_cb_endpoint();
     void connect_cb_endpoint(std::string const& remote);
+    // Heartbeat-verified connection state. The TCP client connects on the up edge and does not
+    // reconnect while it is down.
+    void set_cb_connection_status(bool connected);
     std::string get_slave_path();
     bool available() const;
 
 private:
     void create_tcp_client(std::string const& remote, uint16_t remote_port);
+    void ensure_tcp_client();
+    void drop_tcp_client();
+    void handle_reconnect_timer();
     void handle_ready();
     void resume_pty();
 
@@ -48,8 +54,15 @@ private:
     std::string m_tcp_remote;
     bool m_tcp_ready{false};
     bool m_pty_ready{false};
+    // connect_cb_endpoint() has been called and disconnect_cb_endpoint() has not: the client may
+    // be created as soon as the connection state allows it.
+    bool m_endpoint_requested{false};
+    everest::lib::util::observable<bool> m_cb_is_connected{false};
+    everest::lib::io::event::timer_fd m_reconnect_timer;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::io::event::event_fd& m_ready_notify;
+    // Set while registered; a client created later registers itself here.
+    everest::lib::io::event::fd_event_handler* m_handler{nullptr};
 };
 
 } // namespace charge_bridge
