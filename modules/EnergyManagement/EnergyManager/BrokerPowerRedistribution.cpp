@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "BrokerPowerRedistribution.hpp"
+#include "PhaseImbalance.hpp"
 
 #include <algorithm>
 
@@ -107,14 +108,23 @@ const types::energy::LimitsReq* active_limits(const Market& market) {
 // Templated because LimitsReq (schedules) and LimitsRes (enforced limits) name these three
 // fields identically - which is also why they are read off the limit here rather than
 // passed alongside it, where a caller could pair one limit's watts with another's amperes.
-template <typename Limits> std::optional<float> limits_to_W(const Limits& limits, float nominal_ac_voltage) {
+//
+// \p phases_drawn, when given, is the number of phases the connector draws on: fewer than
+// the limit declares scales both readings down, since a single phase EV on a three phase
+// connector uses only that share of what the limit is worth.
+template <typename Limits>
+std::optional<float> limits_to_W(const Limits& limits, float nominal_ac_voltage,
+                                 std::optional<int> phases_drawn = std::nullopt) {
+    const auto declared =
+        limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    const float share = (phases_drawn.has_value() and declared > 0 and phases_drawn.value() < declared)
+                            ? static_cast<float>(phases_drawn.value()) / static_cast<float>(declared)
+                            : 1.f;
     if (limits.total_power_W.has_value()) {
-        return limits.total_power_W.value().value;
+        return limits.total_power_W.value().value * share;
     }
     if (limits.ac_max_current_A.has_value()) {
-        const auto phases =
-            limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
-        return limits.ac_max_current_A.value().value * static_cast<float>(phases) * nominal_ac_voltage;
+        return limits.ac_max_current_A.value().value * static_cast<float>(declared) * nominal_ac_voltage * share;
     }
     return std::nullopt;
 }
@@ -126,31 +136,49 @@ std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_volta
     if (limits == nullptr) {
         return std::nullopt;
     }
-    return limits_to_W(*limits, nominal_ac_voltage);
+    const auto declared =
+        limits->ac_max_phase_count.has_value() ? limits->ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    if (limits->total_power_W.has_value() or not limits->ac_max_current_per_phase_A.has_value() or declared < 3) {
+        return limits_to_W(*limits, nominal_ac_voltage);
+    }
+    // A limit that differs per phase is worth what its phases add up to.
+    float total_A = 0.f;
+    for (const auto phase : ALL_GRID_PHASES) {
+        const auto on_phase = phase_limit_A(*limits, phase);
+        if (not on_phase.has_value()) {
+            return limits_to_W(*limits, nominal_ac_voltage);
+        }
+        total_A += on_phase.value().value;
+    }
+    return total_A * nominal_ac_voltage;
 }
 
-std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage) {
-    return limits_to_W(limit.limits_root_side, nominal_ac_voltage);
+std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage,
+                                           std::optional<int> phases_drawn) {
+    return limits_to_W(limit.limits_root_side, nominal_ac_voltage, phases_drawn);
 }
 
-float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage) {
+float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage,
+                         std::optional<int> phases_drawn) {
     const auto& limits = limit.limits_root_side;
     if (not limits.ac_max_current_A.has_value() or margin_A <= 0.f) {
         return 0.f;
     }
-    const auto phases =
-        limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    auto phases = limits.ac_max_phase_count.has_value() ? limits.ac_max_phase_count.value().value : ASSUMED_PHASE_COUNT;
+    if (phases_drawn.has_value()) {
+        phases = std::min(phases, phases_drawn.value());
+    }
     return margin_A * static_cast<float>(phases) * nominal_ac_voltage;
 }
 
-StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage) {
+StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage, std::optional<int> phases_drawn) {
     StaticBoundsW bounds;
     const auto* limits = active_limits(connector);
     if (limits == nullptr) {
         return bounds;
     }
 
-    bounds.max_W = limits_to_W(*limits, nominal_ac_voltage);
+    bounds.max_W = limits_to_W(*limits, nominal_ac_voltage, phases_drawn);
 
     if (limits->ac_min_current_A.has_value()) {
         // The minimum purchase uses the smallest phase count the connector accepts; a
@@ -372,7 +400,39 @@ void BrokerPowerRedistribution::observe() {
         EVLOG_warning << request.uuid << ": power meter tracking enabled but no measurement available";
     }
 
+    track_phases_in_use();
     decide_cap(request);
+}
+
+void BrokerPowerRedistribution::track_phases_in_use() {
+    const auto now = globals.start_time;
+    const auto& measurement = context.last_observed_measurement;
+    PhaseSet drawn;
+    if (measurement_can_limit(measurement, now, config.redistribution.measurement_max_age)) {
+        drawn = phases_drawn_on(measurement, local_market.nominal_ac_voltage());
+    }
+    if (drawn.empty()) {
+        drawn = ALL_GRID_PHASES;
+    }
+
+    auto& in_use = context.phases_in_use;
+    const bool wider = std::any_of(drawn.begin(), drawn.end(), [&in_use](Phase p) { return in_use.count(p) == 0; });
+    if (wider) {
+        in_use.insert(drawn.begin(), drawn.end());
+        context.phases_narrower_since.reset();
+        return;
+    }
+    if (drawn == in_use) {
+        context.phases_narrower_since.reset();
+        return;
+    }
+    if (not context.phases_narrower_since.has_value()) {
+        context.phases_narrower_since = now;
+    }
+    if (now - context.phases_narrower_since.value() >= config.redistribution.reduction_hold) {
+        in_use = drawn;
+        context.phases_narrower_since.reset();
+    }
 }
 
 void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowRequest& request) {
@@ -417,7 +477,9 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
         run_cap_source = "BrokerPowerRedistribution_SessionStart";
     }
 
-    const int active_phases = limits.ac_number_of_active_phases.value_or(ASSUMED_PHASE_COUNT);
+    // A watt grant turns into current on the phases the EV draws on, not the ones offered.
+    const int active_phases = std::min(limits.ac_number_of_active_phases.value_or(ASSUMED_PHASE_COUNT),
+                                       static_cast<int>(context.phases_in_use.size()));
 
     PhaseCurrents candidate;
     std::string source;
@@ -479,15 +541,28 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
 }
 
 void BrokerPowerRedistribution::tradeImpl() {
+    // Paused by the phase imbalance limiting: nothing is bought, so the zero trade stands.
+    // Capping the offer cannot express this, it never goes below the connector's minimum.
+    const auto& imbalance_cap = context.phase_imbalance_cap_A;
+    if (imbalance_cap.has_value() and imbalance_cap.value() <= 0.f) {
+        return;
+    }
     limit_offer_to_cap();
     BrokerFastCharging::tradeImpl();
 }
 
 void BrokerPowerRedistribution::limit_offer_to_cap() {
-    if (not run_cap_A.has_value()) {
-        return;
+    std::optional<float> cap;
+    std::string cap_source = run_cap_source;
+    if (run_cap_A.has_value()) {
+        cap = to_scalar_cap(run_cap_A.value());
     }
-    const auto cap = to_scalar_cap(run_cap_A.value());
+    // The phase imbalance correction's cap is one more upper bound, whichever is lower.
+    const auto& imbalance_cap = context.phase_imbalance_cap_A;
+    if (imbalance_cap.has_value() and (not cap.has_value() or imbalance_cap.value() < cap.value())) {
+        cap = imbalance_cap;
+        cap_source = "PhaseImbalance";
+    }
     if (not cap.has_value()) {
         return;
     }
@@ -514,7 +589,7 @@ void BrokerPowerRedistribution::limit_offer_to_cap() {
         // every round buys on top of the rounds before it.
         const float allowance_A = std::max(cap.value(), floor_A) - sold_current_A(i);
 
-        apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), run_cap_source);
+        apply_limit_if_smaller(limits.ac_max_current_A, std::max(0.0f, allowance_A), cap_source);
         return;
     }
 }

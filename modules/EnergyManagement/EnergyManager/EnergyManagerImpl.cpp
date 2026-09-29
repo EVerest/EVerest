@@ -141,6 +141,11 @@ RedistributionInference EnergyManagerImpl::get_redistribution_inference() const 
     std::scoped_lock lock(energy_mutex);
     return redistribution_inference;
 }
+
+ImbalanceResult EnergyManagerImpl::get_phase_imbalance() const {
+    std::scoped_lock lock(energy_mutex);
+    return phase_imbalance;
+}
 #endif
 
 namespace {
@@ -172,7 +177,8 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         // operator[] so a future reordering fails loudly instead of quietly inferring on a
         // default constructed context.
         auto& ctx = contexts.at(node.uuid);
-        const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage);
+        const auto phases_drawn = static_cast<int>(ctx.phases_in_use.size());
+        const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage, phases_drawn);
 
         // The measurement observed this run is the EV's response to what the previous run
         // allotted, so those two are the pair to compare - but only while it is a live
@@ -220,8 +226,8 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
             const auto limit =
                 std::find_if(limits.begin(), limits.end(), [&node](const auto& l) { return l.uuid == node.uuid; });
             if (limit != limits.end()) {
-                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage);
-                ctx.last_margin_W = get_margin_power_W(*limit, margin_A, nominal_ac_voltage);
+                ctx.last_allocated_W = get_allocated_power_W(*limit, nominal_ac_voltage, phases_drawn);
+                ctx.last_margin_W = get_margin_power_W(*limit, margin_A, nominal_ac_voltage, phases_drawn);
             }
         }
 
@@ -264,6 +270,114 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
 
     inference.site = site;
     redistribution_inference = inference;
+}
+
+namespace {
+
+// Minimum current the connector's own schedule asks for at the slot in force [A]; 0 when
+// it declares none.
+float min_current_A(const Market& connector) {
+    const auto& offer = connector.get_import_max_available();
+    const auto slot = active_slot_index(offer);
+    if (not slot.has_value()) {
+        return 0.f;
+    }
+    const auto& min_current = offer[slot.value()].limits_to_root.ac_min_current_A;
+    return min_current.has_value() ? min_current.value().value : 0.f;
+}
+
+std::string format_phase_report(Phase phase, const PhaseReport& report) {
+    return fmt::format("{} +{:.1f} A (overshoot {:.1f}, corrected {:.1f}, residual {:.1f})", to_string(phase),
+                       report.imbalance_A, report.overshoot_A, report.corrected_A, report.residual_A);
+}
+
+} // namespace
+
+void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers) {
+    const auto nominal_ac_voltage = static_cast<float>(config.nominal_ac_voltage);
+    const auto max_imbalance_A = static_cast<float>(config.max_phase_imbalance_A);
+    const auto hold_time = std::chrono::seconds(config.phase_imbalance_hold_s);
+    const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
+    const auto now = globals.start_time;
+
+    // A connector whose cap changed within the hold is settling: its measurement may not
+    // reflect the cap yet, so its cap is not raised again until it does.
+    std::vector<ImbalanceConnector> connectors;
+    bool any_settling = false;
+    for (const auto& broker : brokers) {
+        const auto& connector_market = broker->get_local_market();
+        const auto& node = connector_market.energy_flow_request;
+        auto& ctx = contexts.at(node.uuid);
+        if (not in_session(node)) {
+            continue;
+        }
+        if (not ctx.phase_imbalance_arrived_at.has_value()) {
+            ctx.phase_imbalance_arrived_at = now;
+        }
+        const auto& measurement = ctx.last_observed_measurement;
+        if (not is_fresh(measurement.measured_at, now, aggregation_window)) {
+            continue;
+        }
+
+        ImbalanceConnector connector;
+        connector.uuid = node.uuid;
+        connector.draws_on = phases_drawn_on(measurement, nominal_ac_voltage);
+        connector.measured_A = measured_current_on(measurement, connector.draws_on, nominal_ac_voltage);
+        connector.min_A = min_current_A(connector_market);
+        connector.cap_A = ctx.phase_imbalance_cap_A;
+        connector.settling =
+            ctx.phase_imbalance_cap_since.has_value() and now - ctx.phase_imbalance_cap_since.value() < hold_time;
+        connector.arrived_at = ctx.phase_imbalance_arrived_at.value();
+        any_settling = any_settling or connector.settling;
+        connectors.push_back(connector);
+    }
+
+    const PhaseCurrents site_A{site_aggregate.current_A.L1, site_aggregate.current_A.L2, site_aggregate.current_A.L3};
+    const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A);
+
+    for (const auto& cap : result.caps) {
+        auto& ctx = contexts.at(cap.uuid);
+        ctx.phase_imbalance_cap_A = cap.new_cap_A;
+        ctx.phase_imbalance_cap_since = now;
+        if (cap.new_cap_A <= 0.f) {
+            EVLOG_info << fmt::format("{}: phase imbalance, paused until its phase has room for it", cap.uuid);
+        } else {
+            EVLOG_info << fmt::format("{}: phase imbalance, {} to {:.1f} A", cap.uuid,
+                                      cap.cut_A >= 0.f ? "limiting" : "raising the limit", cap.new_cap_A);
+        }
+    }
+    for (const auto& uuid : result.released) {
+        auto& ctx = contexts.at(uuid);
+        EVLOG_info << fmt::format("{}: draws on all phases, releasing the {:.1f} A phase imbalance limit", uuid,
+                                  ctx.phase_imbalance_cap_A.value_or(0.f));
+        ctx.phase_imbalance_cap_A = std::nullopt;
+        ctx.phase_imbalance_cap_since = std::nullopt;
+    }
+
+    // A residual is only conclusive once no cap is still settling.
+    if (not any_settling) {
+        for (const auto phase : {Phase::L1, Phase::L2, Phase::L3}) {
+            const auto& report = result.report(phase);
+            const auto edge = phase_residual_reported[static_cast<int>(phase)].update(report.residual_A > 0.f, now,
+                                                                                      std::chrono::seconds(0));
+            if (edge == HoldLatch::Edge::Held) {
+                EVLOG_warning << fmt::format(
+                    "phase {}: {:.1f} A above the imbalance limit that limiting connectors cannot correct",
+                    to_string(phase), report.residual_A);
+            } else if (edge == HoldLatch::Edge::Released) {
+                EVLOG_info << fmt::format("phase {}: imbalance is within reach of the connectors again",
+                                          to_string(phase));
+            }
+        }
+    }
+
+    if (globals.debug and result.reference.has_value()) {
+        EVLOG_info << fmt::format("Phase imbalance (reference {}): {}; {}; {}", to_string(result.reference.value()),
+                                  format_phase_report(Phase::L1, result.L1), format_phase_report(Phase::L2, result.L2),
+                                  format_phase_report(Phase::L3, result.L3));
+    }
+
+    phase_imbalance = result;
 }
 
 int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
@@ -429,6 +543,10 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
 
+    if (config.phase_symmetry_enabled and broker_strategy == BrokerStrategy::PowerRedistribution) {
+        apply_phase_imbalance_correction(brokers);
+    }
+
     // for each evse: create a custom offer at their local market place and ask the broker to buy a slice.
     // continue until no one wants to buy/sell anything anymore.
 
@@ -443,7 +561,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
             //     create local offer at evse's marketplace
 
             offer_tp.start();
-            Offer local_offer(broker->get_local_market());
+            Offer local_offer(broker->get_local_market(), broker->trading_phases());
             offer_tp.pause();
 
             // ask broker to trade

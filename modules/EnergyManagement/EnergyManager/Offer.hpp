@@ -13,13 +13,14 @@ namespace module {
 
 class Offer {
 public:
-    Offer(Market& market);
+    /// \brief The offer to a connector at \p market that draws on \p phases.
+    Offer(Market& market, const PhaseSet& phases = ALL_GRID_PHASES);
 
     std::optional<types::energy::OptimizerTarget> optimizer_target;
     ScheduleReq import_offer, export_offer;
 
 private:
-    void create_offer_for_local_market(Market& market);
+    void create_offer_for_local_market(Market& market, const PhaseSet& phases);
 };
 
 std::ostream& operator<<(std::ostream& out, const Offer& self);

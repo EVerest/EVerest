@@ -86,7 +86,9 @@ config:
           interval. Only connectors in state Charging are limited, never below their
           minimum current, and only on AC current limits (nodes offering only a watt
           limit, e.g. DC, are traded like FastCharging). A connector without a usable,
-          fresh measurement is limited to its minimum current plus the margin.
+          fresh measurement is limited to its minimum current plus the margin. The
+          budget is kept per grid phase: a connector's purchase counts only on the
+          phases its meter shows it drawing on, amperes and watts alike.
     type: string
     enum:
       - FastCharging
@@ -173,6 +175,34 @@ config:
     default: 0.5
     minimum: 0
     maximum: 1
+  phase_symmetry_enabled:
+    description: >-
+      Keeps the difference between any two grid phases of the site within
+      max_phase_imbalance_A for the load the manager controls. Each optimizer run splits
+      the per phase site measurement (the grid connection's meter, else the sum of the
+      EVSE meters) into controlled and uncontrolled load, and caps every connector that
+      draws on one or two phases, or on none yet, in advance and in equal shares, so the
+      phases stay within the limit even when each draws its full cap. Where a share falls
+      below a connector's minimum current, the most recently arrived connector is paused.
+      Requires broker_strategy PowerRedistribution, which observes the per phase
+      measurements; with FastCharging this option has no effect.
+    type: boolean
+    default: false
+  max_phase_imbalance_A:
+    description: >-
+      Largest difference in ampere allowed between any two grid phases while
+      phase_symmetry_enabled is set.
+    type: number
+    default: 20.0
+    minimum: 0
+  phase_imbalance_hold_s:
+    description: >-
+      Seconds a limit the phase imbalance limiting changed is not raised again, so the
+      next raise is based on a measurement that reflects the change. Should exceed the
+      update interval of the slowest meter on the site.
+    type: integer
+    default: 10
+    minimum: 0
 provides:
   main:
     description: Main interface of the energy manager

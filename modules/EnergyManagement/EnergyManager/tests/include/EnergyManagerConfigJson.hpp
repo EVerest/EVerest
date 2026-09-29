@@ -32,6 +32,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"power_redistribution_connector_margin", config.power_redistribution_connector_margin},
             {"power_redistribution_site_margin", config.power_redistribution_site_margin},
             {"power_redistribution_gain", config.power_redistribution_gain},
+            {"phase_symmetry_enabled", config.phase_symmetry_enabled},
+            {"max_phase_imbalance_A", config.max_phase_imbalance_A},
+            {"phase_imbalance_hold_s", config.phase_imbalance_hold_s},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -56,6 +59,9 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.value("power_redistribution_connector_margin", 0.1),
             j.value("power_redistribution_site_margin", 0.1),
             j.value("power_redistribution_gain", 0.5),
+            j.value("phase_symmetry_enabled", false),
+            j.value("max_phase_imbalance_A", 20.0),
+            j.value("phase_imbalance_hold_s", 10),
         };
     }
 };

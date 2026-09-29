@@ -44,6 +44,9 @@ inline EnergyManagerConfig make_default_config() {
     c.power_redistribution_connector_margin = 0.1;
     c.power_redistribution_site_margin = 0.1;
     c.power_redistribution_gain = 0.5;
+    c.phase_symmetry_enabled = false;
+    c.max_phase_imbalance_A = 20.0;
+    c.phase_imbalance_hold_s = 10;
     return c;
 }
 

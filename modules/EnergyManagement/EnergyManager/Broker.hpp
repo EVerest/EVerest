@@ -139,6 +139,11 @@ struct BrokerContext {
         last_allocated_W.reset();
         last_margin_W = 0.f;
         under_consuming.reset();
+        phase_imbalance_cap_A = std::nullopt;
+        phase_imbalance_cap_since = std::nullopt;
+        phase_imbalance_arrived_at = std::nullopt;
+        phases_in_use = ALL_GRID_PHASES;
+        phases_narrower_since = std::nullopt;
     };
 
     int number_1ph3ph_cycles;
@@ -184,6 +189,23 @@ struct BrokerContext {
     // How long this connector has continuously consumed less than allotted, and whether
     // that has already been reported for the current stretch.
     HoldLatch under_consuming;
+
+    // Cap the phase imbalance limiting holds this connector at [A], 0 while it is paused,
+    // the run that last changed it (the hold counts from there), and the run its session
+    // was first seen in (the newest is paused first). Empty while the connector is not
+    // being limited. Written by EnergyManagerImpl, applied by BrokerPowerRedistribution as
+    // one more upper bound. Reset by clear() on unplug.
+    std::optional<float> phase_imbalance_cap_A;
+    std::optional<date::utc_clock::time_point> phase_imbalance_cap_since;
+    std::optional<date::utc_clock::time_point> phase_imbalance_arrived_at;
+
+    // Grid phases the connector's trades count on, from its own per phase measurement.
+    // All three while it draws nothing or has no usable reading, since it may then start on
+    // any. A phase is added the run it is drawn on, and dropped only once the narrower set
+    // has held for the reduction hold (the run it first did is phases_narrower_since): an EV
+    // ramping up may not yet draw on every phase it will use. Reset by clear() on unplug.
+    PhaseSet phases_in_use{ALL_GRID_PHASES};
+    std::optional<date::utc_clock::time_point> phases_narrower_since;
 };
 
 // base class for different Brokers
@@ -242,6 +264,12 @@ public:
     // loop that creates the brokers. Trading must not depend on it: the default does
     // nothing, and a strategy that only trades never overrides it.
     virtual void observe() {
+    }
+
+    // Grid phases this broker's trades count on in the market. All three unless the
+    // strategy knows better.
+    virtual PhaseSet trading_phases() const {
+        return ALL_GRID_PHASES;
     }
 
     Market& get_local_market();

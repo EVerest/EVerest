@@ -8,12 +8,14 @@
 // headers for required interface implementations
 #include <generated/interfaces/energy/Interface.hpp>
 
+#include <array>
 #include <atomic>
 #include <mutex>
 #include <thread>
 
 #include <Broker.hpp>
 #include <BrokerPowerRedistribution.hpp>
+#include <PhaseImbalance.hpp>
 #include <PowerMeterAggregator.hpp>
 
 #include <memory>
@@ -49,6 +51,9 @@ struct EnergyManagerConfig {
     double power_redistribution_connector_margin{0.1};
     double power_redistribution_site_margin{0.1};
     double power_redistribution_gain{0.5};
+    bool phase_symmetry_enabled{false};
+    double max_phase_imbalance_A{20.0};
+    int phase_imbalance_hold_s{10};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
@@ -122,6 +127,10 @@ public:
     /// \brief The power redistribution inference of the most recent run_optimizer() call.
     /// Test observation only, returned by value under the optimizer lock.
     RedistributionInference get_redistribution_inference() const;
+
+    /// \brief The phase imbalance correction of the most recent run_optimizer() call.
+    /// Test observation only, returned by value under the optimizer lock.
+    ImbalanceResult get_phase_imbalance() const;
 #endif
 
 private:
@@ -151,6 +160,13 @@ private:
     /// \returns the number of connectors that were granted an increase, 0 while the site
     /// has nothing to hand out
     int grant_site_headroom(const SiteInference& site);
+
+    /// \brief Runs the phase imbalance correction for one optimizer run: after every
+    /// broker's observe(), before the first trading round, so a cap binds in the run that
+    /// computed it. Writes each cap into its BrokerContext, drops the caps the correction
+    /// releases, and keeps a connector's cap as it is for the hold time after it changed.
+    /// Called under energy_mutex.
+    void apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -196,6 +212,11 @@ private:
     // already been reported. The same latch BrokerContext uses per connector, so the two
     // cannot drift apart the way two hand-written copies did.
     HoldLatch site_headroom;
+
+    ImbalanceResult phase_imbalance;
+    // One per phase: whether an uncorrectable overshoot on it has been reported for the
+    // current stretch, so it is said once rather than every run it persists.
+    std::array<HoldLatch, 3> phase_residual_reported;
 };
 
 } // namespace module

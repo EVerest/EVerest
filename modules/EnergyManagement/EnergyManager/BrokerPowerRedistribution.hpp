@@ -38,14 +38,18 @@ namespace module {
 std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
 /// \brief Import power [W] an enforced limit hands to a connector, with the same precedence
-/// as get_grid_limit_W(). \returns std::nullopt when the limit carries neither watt nor ampere.
-std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage);
+/// as get_grid_limit_W(). \p phases_drawn, the number of phases the connector draws on,
+/// scales it down where that is fewer than the limit declares. \returns std::nullopt when
+/// the limit carries neither watt nor ampere.
+std::optional<float> get_allocated_power_W(const types::energy::EnforcedLimits& limit, float nominal_ac_voltage,
+                                           std::optional<int> phases_drawn = std::nullopt);
 
 /// \brief The margin [W] the measurement based cap put on top of the connector's own
 /// measurement to arrive at \p limit, i.e. redistribution_margin_A on the phases that
-/// limit declares. 0 for a limit the cap is not expressed against (a watt-only DC node),
-/// where no such gap exists.
-float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage);
+/// limit declares, or \p phases_drawn where fewer. 0 for a limit the cap is not expressed
+/// against (a watt-only DC node), where no such gap exists.
+float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margin_A, float nominal_ac_voltage,
+                         std::optional<int> phases_drawn = std::nullopt);
 
 /// \brief Import bounds of a connector [W] at the slot in force, from its own Market offer
 /// for the same reasons as get_grid_limit_W().
@@ -56,7 +60,9 @@ struct StaticBoundsW {
     std::optional<float> max_W;
 };
 
-StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage);
+/// \p phases_drawn scales max_W as in get_allocated_power_W().
+StaticBoundsW get_static_bounds_W(const Market& connector, float nominal_ac_voltage,
+                                  std::optional<int> phases_drawn = std::nullopt);
 
 enum class ConnectorClass {
     Unknown,        ///< no previous allocation or no measurement to compare against
@@ -264,11 +270,16 @@ public:
     /// before any trading round.
     void observe() override;
 
+    PhaseSet trading_phases() const override {
+        return context.phases_in_use;
+    }
+
     /// \brief Narrows the offer to the cap decided by observe(), then trades with the
     /// unchanged BrokerFastCharging algorithm.
     void tradeImpl() override;
 
 private:
+    void track_phases_in_use();
     void decide_cap(const types::energy::EnergyFlowRequest& request);
     void limit_offer_to_cap();
     float sold_current_A(int slot);
