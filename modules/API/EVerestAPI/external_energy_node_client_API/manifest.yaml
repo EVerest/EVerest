@@ -1,0 +1,59 @@
+description: >-
+  Energy node API client. Subscribes to an external_energy_node_API
+  server's aggregated energy_flow_request over external MQTT and presents it as a
+  local energy_consumer to a client EnergyNode (grid connection point). Routes
+  enforce_limits from the local EnergyManager back to the remote server via
+  external MQTT.
+
+  Run one instance in the external EVerest process. The
+  server_id config must match the module ID of the corresponding
+  external_energy_node_API instance in the EVerest process.
+config:
+  server_id:
+    description: >-
+      Module ID of the external_energy_node_API server to connect to. Must match
+      the module ID of the corresponding server instance in the remote EVerest
+      process (e.g., "server_m0_api"). Required — there is deliberately no
+      default: an empty value would silently subscribe to a non-existent topic
+      namespace and the module would never receive anything.
+    type: string
+  stale_timeout_s:
+    description: >-
+      Seconds without an energy_flow_request from the remote server before the
+      cached remote subtree is considered stale. When that happens, the client
+      publishes a childless zero-limit aggregate under the same root uuid, so
+      the site-level EnergyManager stops reserving budget for EVSEs it can no
+      longer reach (those are governed by the remote process's internal
+      fallback in the meantime). Publishing resumes automatically with the next
+      message from the server. Set to 0 to disable (the last aggregate is then
+      republished-as-is forever, even if the server is gone). Size it well above
+      the server's publish cadence; note the server only publishes when one of
+      its children updates. This is independent of the CommunicationFault raised
+      by cfg_communication_check_to_s, which is signalling only.
+    type: integer
+    minimum: 0
+    default: 30
+  cfg_heartbeat_interval_ms:
+    description: "Interval between two heartbeat messages sent by the API. Values <= 0 disable heartbeat."
+    type: integer
+    default: 1000
+  cfg_communication_check_to_s:
+    description: "Maximum time between two communication check events. Values <= 0 disables communication checks."
+    type: integer
+    default: 5
+provides:
+  main:
+    interface: generic_error
+    description: "Provides error types for module communication status."
+  energy_grid:
+    description: >-
+      Energy interface that bridges to the remote server. Connect this to
+      the EnergyNode's (grid connection point) energy_consumer requirement.
+      The external_energy_node_API server aggregated energy_flow_request is published here;
+      enforce_limits received here are forwarded to the external_energy_node_API.
+    interface: energy
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Marc Nulens

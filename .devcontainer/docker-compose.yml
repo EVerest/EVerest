@@ -5,8 +5,12 @@ volumes:
     external: false
 
 services:
+  # Uncomment L1_HOST/SERVER_ID in mosquitto-server.conf to bridge this L0
+  # instance's external_energy_node_API server up to a shared L1 broker.
   mqtt-server:
     build: ../applications/containers/mosquitto
+    volumes:
+      - ./mosquitto-server.conf:/mosquitto/config/mosquitto.conf:ro
     ports:
       - 1883:1883
       - 9001:9001
@@ -14,6 +18,24 @@ services:
       - all
       - mqtt
       - ocpp
+      - sil
+
+  # Secondary broker for a second EVerest process (external EnergyManager) —
+  # see mosquitto-external.conf. Never share one broker between two EVerest
+  # instances: both use the everest/ internal prefix, so instance A's
+  # everest/ready would fire ready() on instance B's modules. Point the second
+  # process at localhost:1884; the bridge in mosquitto-external.conf forwards
+  # the external_energy_node API topics to/from mqtt-server.
+  mqtt-external:
+    build: ../applications/containers/mosquitto
+    volumes:
+      - ./mosquitto-external.conf:/mosquitto/config/mosquitto.conf:ro
+    depends_on:
+      - mqtt-server
+    ports:
+      - 1884:1883
+    profiles:
+      - all
       - sil
 
   ocpp-db:

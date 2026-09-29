@@ -1,0 +1,17 @@
+active_modules:
+  external_energy_node_api:
+    module: external_energy_node_API
+    config_module:
+      timeout_s: 2
+      cfg_heartbeat_interval_ms: 0
+      cfg_communication_check_to_s: 0
+    connections:
+      energy_consumer:
+        - module_id: probe
+          implementation_id: energy_consumer
+  probe:
+    module: ProbeModule
+    connections:
+      energy_grid:
+        - module_id: external_energy_node_api
+          implementation_id: energy_grid

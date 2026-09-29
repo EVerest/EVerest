@@ -93,9 +93,22 @@ class StructHelper(Helper):
         if signature_only:
             return code + ");\n"
         token = "generated_object"
-        code += ") { \n(void)seed;  // May be unused depending on field types; silences the compiler warning when so;\n " + self.get_type() + " " + token + ";\n"
-        code += self.generate_set_fields(self.get_fields_mandatory(), token, use_runtime_seed=True) + "if (set_optional_fields) {"
-        code += self.generate_set_fields(self.get_fields_optional(), token, use_runtime_seed=True) + "}\n" + "return " + token + ";\n" + "}\n"
+        code += ") {\n"
+        code += "    (void)seed;  // May be unused depending on field types; silences the compiler warning when so;\n"
+        code += "    thread_local static int depth = 0;\n"
+        code += "    depth++;\n"
+        code += "    " + self.get_type() + " " + token + "{};\n"
+        code += "    if (depth > 2) {\n"
+        code += "        depth--;\n"
+        code += "        return " + token + ";\n"
+        code += "    }\n"
+        code += self.generate_set_fields(self.get_fields_mandatory(), token, use_runtime_seed=True)
+        code += "    if (set_optional_fields) {\n"
+        code += self.generate_set_fields(self.get_fields_optional(), token, use_runtime_seed=True)
+        code += "    }\n"
+        code += "    depth--;\n"
+        code += "    return " + token + ";\n"
+        code += "}\n"
         return code
 
     def get_code_verify_function(self, signature_only=False):
