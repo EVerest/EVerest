@@ -55,13 +55,9 @@ public:
     /// energy flow request is updated. Calling it twice is a no-op.
     void start();
 
-    /// \brief Asks the worker thread to end after its current run, without waiting for it.
-    /// Called from the module's shutdown hook: the run may be blocked in an enforce_limits
-    /// command, which only fails once that hook has returned.
-    void request_stop();
-
-    /// \brief request_stop(), then waits for the worker thread to finish. Idempotent, and
-    /// safe to call when start() never ran.
+    /// \brief Stops the worker thread and waits for it to finish. A run that has not yet
+    /// called enforced_limits_callback skips it; one already inside it is waited for.
+    /// Idempotent, and safe to call when start() never ran.
     void stop();
 
     /// \brief Updates the energy_flow_request and notifies the worker thread

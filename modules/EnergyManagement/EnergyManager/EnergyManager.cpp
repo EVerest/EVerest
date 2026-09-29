@@ -59,9 +59,9 @@ void EnergyManager::ready() {
 }
 
 void EnergyManager::shutdown() {
-    // Not stop(): joining here would wait for a pending enforce_limits command, which only
-    // fails once this hook has returned. ~EnergyManagerImpl() joins.
-    this->impl->request_stop();
+    // Joined here, not at static destruction: the framework's Everest object that
+    // call_enforce_limits uses is gone by then.
+    this->impl->stop();
 
     invoke_shutdown(*p_main);
 }

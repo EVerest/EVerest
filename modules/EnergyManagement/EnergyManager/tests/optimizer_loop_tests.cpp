@@ -3,6 +3,7 @@
 
 #include <gtest/gtest.h>
 
+#include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <future>
@@ -151,14 +152,13 @@ TEST(OptimizerLoop, DestructorJoinsTheWorker) {
     SUCCEED();
 }
 
-TEST(OptimizerLoop, RequestStopDoesNotWaitForAnEnforceLimitsCall) {
+TEST(OptimizerLoop, StopWaitsForARunningEnforceLimitsCall) {
     std::promise<void> release;
     std::shared_future<void> released = release.get_future().share();
     std::promise<void> entered;
-    auto blocking_callback = [&entered, released,
-                              first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
-        if (first) {
-            first = false;
+    std::atomic<int> calls{0};
+    auto blocking_callback = [&entered, &calls, released](const std::vector<types::energy::EnforcedLimits>&) {
+        if (calls++ == 0) {
             entered.set_value();
         }
         released.wait();
@@ -169,39 +169,12 @@ TEST(OptimizerLoop, RequestStopDoesNotWaitForAnEnforceLimitsCall) {
     impl.start();
     ASSERT_EQ(entered.get_future().wait_for(REACTION_BUDGET), std::future_status::ready);
 
-    const auto before = std::chrono::steady_clock::now();
-    impl.request_stop();
-    EXPECT_LT(std::chrono::steady_clock::now() - before, REACTION_BUDGET);
+    auto stopped = std::async(std::launch::async, [&impl] { impl.stop(); });
+    EXPECT_EQ(stopped.wait_for(std::chrono::milliseconds(200)), std::future_status::timeout);
 
     release.set_value();
-    impl.stop();
-}
-
-TEST(OptimizerLoop, FailingEnforceLimitsEndsTheLoopAfterRequestStop) {
-    std::promise<void> release;
-    std::shared_future<void> released = release.get_future().share();
-    std::promise<void> entered;
-    auto throwing_callback = [&entered, released,
-                              first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
-        if (first) {
-            first = false;
-            entered.set_value();
-        }
-        released.wait();
-        throw std::runtime_error("module is shutting down");
-    };
-
-    EnergyManagerImpl impl(make_loop_config(), throwing_callback);
-    impl.on_energy_flow_request(make_tree(false));
-    impl.start();
-    ASSERT_EQ(entered.get_future().wait_for(REACTION_BUDGET), std::future_status::ready);
-
-    impl.request_stop();
-    release.set_value();
-
-    const auto before = std::chrono::steady_clock::now();
-    impl.stop();
-    EXPECT_LT(std::chrono::steady_clock::now() - before, REACTION_BUDGET);
+    EXPECT_EQ(stopped.wait_for(REACTION_BUDGET), std::future_status::ready);
+    EXPECT_EQ(calls, 1);
 }
 
 TEST(OptimizerLoop, FailingEnforceLimitsKeepsTheLoopRunning) {

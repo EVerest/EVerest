@@ -115,13 +115,12 @@ void EnergyManagerImpl::start() {
     m_mainloop = std::thread([this] {
         while (true) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
+            if (not m_loop_state.handle()->running) {
+                return;
+            }
             try {
                 enforced_limits_callback(optimized_values);
             } catch (const std::exception& e) {
-                // After shutdown a pending enforce_limits command fails with Everest::Shutdown.
-                if (not m_loop_state.handle()->running) {
-                    return;
-                }
                 EVLOG_error << "Failed to enforce limits: " << e.what();
             }
 
@@ -136,13 +135,9 @@ void EnergyManagerImpl::start() {
     });
 }
 
-void EnergyManagerImpl::request_stop() {
+void EnergyManagerImpl::stop() {
     m_loop_state.handle()->running = false;
     m_loop_state.notify_all();
-}
-
-void EnergyManagerImpl::stop() {
-    request_stop();
     if (m_mainloop.joinable()) {
         m_mainloop.join();
     }
