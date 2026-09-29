@@ -1,0 +1,646 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <gtest/gtest.h>
+
+#include <chrono>
+#include <thread>
+
+#include <utils/date.hpp>
+
+#include "BrokerPowerRedistribution.hpp"
+#include "EnergyManagerTestHelpers.hpp"
+
+namespace module {
+
+// ---------------------------------------------------------------- measurement extraction
+
+TEST(MeasurementTrackingHelpers, NoMeasurementReturnsNullopt) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    EXPECT_FALSE(read_measurement(evse).power_W.has_value());
+}
+
+TEST(MeasurementTrackingHelpers, ReadsLeavesMeasurement) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f);
+
+    const auto measured = read_measurement(evse).power_W;
+    ASSERT_TRUE(measured.has_value());
+    EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
+}
+
+TEST(MeasurementTrackingHelpers, PrefersLeavesOverRoot) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    test::set_measurement(evse, 4200.0f);
+
+    const auto measured = read_measurement(evse).power_W;
+    ASSERT_TRUE(measured.has_value());
+    EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
+}
+
+TEST(MeasurementTrackingHelpers, FallsBackToRootMeasurement) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    const auto measured = read_measurement(evse).power_W;
+    ASSERT_TRUE(measured.has_value());
+    EXPECT_FLOAT_EQ(measured.value().total, 9000.0f);
+}
+
+TEST(MeasurementTrackingHelpers, PreservesPerPhasePower) {
+    // A meter reporting per-phase power must not be collapsed to the total.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f);
+    evse.energy_usage_leaves.value().power_W.value().L1 = 1400.0f;
+    evse.energy_usage_leaves.value().power_W.value().L2 = 1300.0f;
+    evse.energy_usage_leaves.value().power_W.value().L3 = 1500.0f;
+
+    const auto measured = read_measurement(evse).power_W;
+    ASSERT_TRUE(measured.has_value());
+    EXPECT_FLOAT_EQ(measured.value().total, 4200.0f);
+    ASSERT_TRUE(measured.value().L1.has_value());
+    EXPECT_FLOAT_EQ(measured.value().L1.value(), 1400.0f);
+    ASSERT_TRUE(measured.value().L2.has_value());
+    EXPECT_FLOAT_EQ(measured.value().L2.value(), 1300.0f);
+    ASSERT_TRUE(measured.value().L3.has_value());
+    EXPECT_FLOAT_EQ(measured.value().L3.value(), 1500.0f);
+}
+
+// ---------------------------------------------------------------- measurement provenance
+
+// A reading has to carry its own age. EnergyNode and EvseManager republish the last
+// Powermeter they received on every energy flow request, so a meter that stopped updating
+// is byte-for-byte identical to one holding steady - the timestamp is the only thing that
+// tells them apart, and every consumer of the value needs it.
+
+TEST(MeasurementTrackingHelpers, NoMeasurementHasNoMeasurementTime) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
+}
+
+TEST(MeasurementTrackingHelpers, ReadsMeasurementTime) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured_at = read_measurement(evse).measured_at;
+    ASSERT_TRUE(measured_at.has_value());
+    EXPECT_EQ(measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, MeasurementTimeComesFromTheMeterThatSuppliedThePower) {
+    // Both sides carry a reading with different timestamps. The power is taken from the
+    // leaves side, so the age must be the leaves side's - pairing a value with another
+    // meter's timestamp is worse than having no timestamp at all.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    EXPECT_FLOAT_EQ(read_measurement(evse).power_W.value().total, 4200.0f);
+    EXPECT_EQ(read_measurement(evse).measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, MeasurementTimeFallsBackToRootWithThePower) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:29:57.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    EXPECT_FLOAT_EQ(read_measurement(evse).power_W.value().total, 9000.0f);
+    EXPECT_EQ(read_measurement(evse).measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, UnparsableMeasurementTimeIsAbsentNotNow) {
+    // from_rfc3339 signals failure with a default constructed time point rather than
+    // throwing. Reporting that as an age of 55 years is harmless; reporting it as "now"
+    // would not be, so it is reported as absent.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "not a timestamp");
+
+    ASSERT_TRUE(read_measurement(evse).power_W.has_value());
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
+}
+
+TEST(MeasurementTrackingHelpers, EpochMeasurementTimeIsAbsent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement(evse, 4200.0f, "1970-01-01T00:00:00.000Z");
+
+    EXPECT_FALSE(read_measurement(evse).measured_at.has_value());
+}
+
+// ---------------------------------------------------------------- per-phase current extraction
+
+// Phase imbalance handling needs the measurement per phase (in ampere,
+// matching the asymmetry threshold), not just the total power.
+
+TEST(MeasurementTrackingHelpers, NoCurrentMeasurementReturnsAllNullopt) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    const auto measured = read_measurement(evse).current_A;
+    EXPECT_FALSE(measured.L1.has_value());
+    EXPECT_FALSE(measured.L2.has_value());
+    EXPECT_FALSE(measured.L3.has_value());
+}
+
+TEST(MeasurementTrackingHelpers, ReadsLeavesPerPhaseCurrent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f);
+
+    const auto measured = read_measurement(evse).current_A;
+    ASSERT_TRUE(measured.L1.has_value());
+    ASSERT_TRUE(measured.L2.has_value());
+    ASSERT_TRUE(measured.L3.has_value());
+    EXPECT_FLOAT_EQ(measured.L1.value(), 10.0f);
+    EXPECT_FLOAT_EQ(measured.L2.value(), 11.0f);
+    EXPECT_FLOAT_EQ(measured.L3.value(), 12.0f);
+}
+
+TEST(MeasurementTrackingHelpers, PartialPhaseCurrentIsPreserved) {
+    // A single-phase meter reports only L1; the other phases must stay unknown, not zero.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    test::set_measurement_current(evse, 16.0f, std::nullopt, std::nullopt);
+
+    const auto measured = read_measurement(evse).current_A;
+    ASSERT_TRUE(measured.L1.has_value());
+    EXPECT_FLOAT_EQ(measured.L1.value(), 16.0f);
+    EXPECT_FALSE(measured.L2.has_value());
+    EXPECT_FALSE(measured.L3.has_value());
+}
+
+TEST(MeasurementTrackingHelpers, PrefersLeavesCurrentOverRoot) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root_current.L2 = 2.0f;
+    root_current.L3 = 3.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f);
+
+    const auto measured = read_measurement(evse).current_A;
+    ASSERT_TRUE(measured.L1.has_value());
+    EXPECT_FLOAT_EQ(measured.L1.value(), 10.0f);
+}
+
+TEST(MeasurementTrackingHelpers, FallsBackToRootCurrent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T12:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root_current.L2 = 2.0f;
+    root_current.L3 = 3.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    const auto measured = read_measurement(evse).current_A;
+    ASSERT_TRUE(measured.L1.has_value());
+    ASSERT_TRUE(measured.L2.has_value());
+    ASSERT_TRUE(measured.L3.has_value());
+    EXPECT_FLOAT_EQ(measured.L1.value(), 1.0f);
+    EXPECT_FLOAT_EQ(measured.L2.value(), 2.0f);
+    EXPECT_FLOAT_EQ(measured.L3.value(), 3.0f);
+}
+
+// One reading supplies every field. A node whose two sides carry different halves of a
+// measurement is the case that used to mix them: power and timestamp from one meter, the
+// per-phase current from the other.
+
+TEST(MeasurementTrackingHelpers, PowerDecidesWhichReadingIsUsed) {
+    // The leaves side reports current but no power. Power is the value an allocation is
+    // compared against, so the root side wins the selection - and then supplies every
+    // field, including the timestamp.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Power root_power;
+    root_power.total = 9000.0f;
+    root.power_W = root_power;
+    evse.energy_usage_root = root;
+
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    ASSERT_TRUE(measured.power_W.has_value());
+    EXPECT_FLOAT_EQ(measured.power_W.value().total, 9000.0f);
+    // The leaves side's 10 A belongs to the meter that was not selected.
+    EXPECT_FALSE(measured.current_A.L1.has_value());
+    ASSERT_TRUE(measured.measured_at.has_value());
+    EXPECT_EQ(measured.measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T11:00:00.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, CurrentDecidesOnlyWhenNoSideReportsPower) {
+    // Neither side reports power, so current picks the reading - leaves before root, and
+    // again every field comes from the one that won.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    test::set_measurement_current(evse, 10.0f, 11.0f, 12.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    EXPECT_FALSE(measured.power_W.has_value());
+    ASSERT_TRUE(measured.current_A.L1.has_value());
+    EXPECT_FLOAT_EQ(measured.current_A.L1.value(), 10.0f);
+    ASSERT_TRUE(measured.measured_at.has_value());
+    EXPECT_EQ(measured.measured_at.value(), Everest::Date::from_rfc3339("2026-08-04T12:29:57.000Z"));
+}
+
+TEST(MeasurementTrackingHelpers, PowerOnlyReadingLeavesCurrentUnknown) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+
+    types::powermeter::Powermeter root;
+    root.timestamp = "2026-08-04T11:00:00.000Z";
+    root.energy_Wh_import.total = 0.0f;
+    types::units::Current root_current;
+    root_current.L1 = 1.0f;
+    root.current_A = root_current;
+    evse.energy_usage_root = root;
+
+    test::set_measurement(evse, 4200.0f, "2026-08-04T12:29:57.000Z");
+
+    const auto measured = read_measurement(evse);
+    ASSERT_TRUE(measured.power_W.has_value());
+    EXPECT_FLOAT_EQ(measured.power_W.value().total, 4200.0f);
+    // The root side's 1 A belongs to another meter; unknown is the honest answer.
+    EXPECT_FALSE(measured.current_A.L1.has_value());
+}
+
+// ---------------------------------------------------------------- per session context
+
+TEST(MeasurementTrackingContext, ClearResetsWarnedFlag) {
+    BrokerContext context;
+    EXPECT_FALSE(context.tracking_warned_no_measurement);
+
+    context.tracking_warned_no_measurement = true;
+    context.clear();
+
+    EXPECT_FALSE(context.tracking_warned_no_measurement);
+}
+
+TEST(MeasurementTrackingContext, ClearResetsObservedMeasurement) {
+    BrokerContext context;
+    types::units::Power power;
+    power.total = 4200.0f;
+    context.last_observed_measurement.power_W = power;
+    context.last_observed_measurement.current_A.L1 = 16.0f;
+    context.last_observed_measurement.current_A.L2 = 15.0f;
+    context.last_observed_measurement.current_A.L3 = 14.0f;
+    context.last_observed_measurement.measured_at = Everest::Date::from_rfc3339("2026-08-04T12:00:00.000Z");
+
+    context.clear();
+
+    EXPECT_FALSE(context.last_observed_measurement.measured_at.has_value());
+    EXPECT_FALSE(context.last_observed_measurement.power_W.has_value());
+    EXPECT_FALSE(context.last_observed_measurement.current_A.L1.has_value());
+    EXPECT_FALSE(context.last_observed_measurement.current_A.L2.has_value());
+    EXPECT_FALSE(context.last_observed_measurement.current_A.L3.has_value());
+}
+
+// ---------------------------------------------------------------- broker behaviour
+
+namespace {
+
+// Runs the optimizer over the tree and returns the enforced ampere limit for one connector.
+float run_and_get_current(EnergyManagerImpl& impl, const types::energy::EnergyFlowRequest& request,
+                          const std::string& uuid, date::utc_clock::time_point at) {
+    const auto results = impl.run_optimizer(request, at);
+    const auto limit = test::find_limit(results, uuid);
+    if (not limit.has_value() or not limit.value().limits_root_side.ac_max_current_A.has_value()) {
+        return -1.0f;
+    }
+    return limit.value().limits_root_side.ac_max_current_A.value().value;
+}
+
+EnergyManagerConfig make_tracking_config() {
+    auto config = test::make_default_config();
+    config.broker_strategy = "PowerRedistribution";
+    return config;
+}
+
+const auto AT = Everest::Date::from_rfc3339("2026-08-04T12:30:00.000Z");
+
+} // namespace
+
+// Allocation behaviour of the redistribution broker - the limiting itself, its session
+// lifecycle and the fairness under a shared fuse - is pinned in
+// power_redistribution_tests.cpp. This file pins the observation that feeds it.
+
+// ---------------------------------------------------------------- observation
+
+// The observation itself: the broker must actually read the power meter during a run.
+
+TEST(MeasurementTrackingBroker, ObservesMeasuredPowerDuringRun) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4200.0f);
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FLOAT_EQ(observed.power_W.value().total, 4200.0f);
+}
+
+TEST(MeasurementTrackingBroker, ObservationFollowsTheMeter) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    test::set_measurement(request.children[0], 4200.0f);
+    impl.run_optimizer(request, AT);
+    test::set_measurement(request.children[0], 6900.0f);
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FLOAT_EQ(observed.power_W.value().total, 6900.0f);
+}
+
+TEST(MeasurementTrackingBroker, NoObservationWithoutMeasurement) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
+}
+
+TEST(MeasurementTrackingBroker, ObservationClearedOnUnplug) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4200.0f);
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+    ASSERT_TRUE(impl.get_observed_measurement("evse1").power_W.has_value());
+
+    request.children[0].evse_state = types::energy::EvseState::Unplugged;
+    impl.run_optimizer(request, AT);
+
+    EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
+}
+
+TEST(MeasurementTrackingBroker, ObservesPerPhaseCurrentDuringRun) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement_current(request.children[0], 10.0f, 11.0f, 12.0f);
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1").current_A;
+    ASSERT_TRUE(observed.L1.has_value());
+    ASSERT_TRUE(observed.L2.has_value());
+    ASSERT_TRUE(observed.L3.has_value());
+    EXPECT_FLOAT_EQ(observed.L1.value(), 10.0f);
+    EXPECT_FLOAT_EQ(observed.L2.value(), 11.0f);
+    EXPECT_FLOAT_EQ(observed.L3.value(), 12.0f);
+}
+
+TEST(MeasurementTrackingBroker, PerPhaseObservationFollowsTheMeter) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    test::set_measurement_current(request.children[0], 10.0f, 11.0f, 12.0f);
+    impl.run_optimizer(request, AT);
+    test::set_measurement_current(request.children[0], 6.0f, std::nullopt, std::nullopt);
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1").current_A;
+    ASSERT_TRUE(observed.L1.has_value());
+    EXPECT_FLOAT_EQ(observed.L1.value(), 6.0f);
+    // Stale phases must not survive from the previous run.
+    EXPECT_FALSE(observed.L2.has_value());
+    EXPECT_FALSE(observed.L3.has_value());
+}
+
+TEST(MeasurementTrackingBroker, PerPhaseObservationClearedOnUnplug) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement_current(request.children[0], 10.0f, 11.0f, 12.0f);
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+    ASSERT_TRUE(impl.get_observed_measurement("evse1").current_A.L1.has_value());
+
+    request.children[0].evse_state = types::energy::EvseState::Unplugged;
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1").current_A;
+    EXPECT_FALSE(observed.L1.has_value());
+    EXPECT_FALSE(observed.L2.has_value());
+    EXPECT_FALSE(observed.L3.has_value());
+}
+
+TEST(MeasurementTrackingBroker, NoPerPhaseObservationWhenTrackingDisabled) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement_current(request.children[0], 10.0f, 11.0f, 12.0f);
+
+    EnergyManagerImpl impl(test::make_default_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1").current_A;
+    EXPECT_FALSE(observed.L1.has_value());
+    EXPECT_FALSE(observed.L2.has_value());
+    EXPECT_FALSE(observed.L3.has_value());
+}
+
+TEST(MeasurementTrackingBroker, NoObservationWhenTrackingDisabled) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4200.0f);
+
+    EnergyManagerImpl impl(test::make_default_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
+}
+
+TEST(MeasurementTrackingBroker, FastChargingStrategyLeavesStaticBehaviourUnchanged) {
+    auto config = test::make_default_config();
+    config.broker_strategy = "FastCharging";
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 3000.0f);
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
+}
+
+// A frozen meter is the realistic failure, not a missing one: absence already fails safe
+// (power_W goes back to nullopt on the next run), while a meter that stops publishing keeps
+// its last reading in every request forever. These two pin the observation that makes that
+// case detectable at all; the consumer that acts on it arrives with the redistribution
+// inference.
+
+TEST(MeasurementTrackingBroker, ObservationCarriesTheReadingsOwnAge) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "2026-08-04T12:30:00.000Z");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    ASSERT_TRUE(observed.measured_at.has_value());
+    EXPECT_EQ(observed.measured_at.value(), AT);
+}
+
+TEST(MeasurementTrackingBroker, FrozenMeterKeepsItsOriginalMeasurementTime) {
+    // Same tree twice, five minutes apart, with the meter never refreshing its timestamp.
+    // The observed value is unchanged - that is the whole problem - so the age must move.
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "2026-08-04T12:30:00.000Z");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+    impl.run_optimizer(request, AT + std::chrono::seconds(300));
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FLOAT_EQ(observed.power_W.value().total, 4000.0f);
+    ASSERT_TRUE(observed.measured_at.has_value());
+    EXPECT_EQ(observed.measured_at.value(), AT);
+    EXPECT_EQ(AT + std::chrono::seconds(300) - observed.measured_at.value(), std::chrono::seconds(300));
+}
+
+TEST(MeasurementTrackingBroker, MeasurementWithoutUsableTimeIsObservedWithoutAnAge) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4000.0f, "garbage");
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.run_optimizer(request, AT);
+
+    const auto observed = impl.get_observed_measurement("evse1");
+    ASSERT_TRUE(observed.power_W.has_value());
+    EXPECT_FALSE(observed.measured_at.has_value());
+}
+
+// ---------------------------------------------------------------- strategy selection
+
+TEST(MeasurementTrackingBroker, UnknownStrategyFallsBackToFastCharging) {
+    // A misspelled or future strategy value must not break energy distribution: it behaves
+    // like the default FastCharging broker and observes nothing.
+    auto config = test::make_default_config();
+    config.broker_strategy = "NoSuchStrategy";
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+    test::set_measurement(request.children[0], 4200.0f);
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+
+    EXPECT_NEAR(run_and_get_current(impl, request, "evse1", AT), 32.0f, 0.01f);
+    EXPECT_FALSE(impl.get_observed_measurement("evse1").power_W.has_value());
+}
+
+// ---------------------------------------------------------------- worker thread lifecycle
+
+TEST(EnergyManagerLifecycle, StopDoesNotWaitOutTheUpdateInterval) {
+    // stop() clears the flag under the mutex the worker waits on. Clearing it outside that
+    // mutex loses the notification whenever it lands after the wait predicate and before
+    // the worker registers on the condition variable, and stop() then blocks for a full
+    // update_interval.
+    auto config = make_tracking_config();
+    config.update_interval = 30;
+
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(config, [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.on_energy_flow_request(request);
+    impl.start();
+    // Let the worker get through its first run and into the wait.
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+
+    const auto before = std::chrono::steady_clock::now();
+    impl.stop();
+    const auto elapsed = std::chrono::steady_clock::now() - before;
+
+    EXPECT_LT(elapsed, std::chrono::seconds(5));
+}
+
+TEST(EnergyManagerLifecycle, StartAndStopAreIdempotent) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+    impl.on_energy_flow_request(request);
+
+    impl.stop(); // never started
+    impl.start();
+    impl.start(); // second start must not spawn a second thread
+    impl.stop();
+    impl.stop();
+}
+
+TEST(EnergyManagerLifecycle, DestructorJoinsTheWorker) {
+    auto evse = test::make_evse_node("evse1", 32.0f, 6.0f);
+    const auto request = test::make_root_node("grid", 32.0f, std::nullopt, {evse});
+
+    {
+        EnergyManagerImpl impl(make_tracking_config(), [](const std::vector<types::energy::EnforcedLimits>&) {});
+        impl.on_energy_flow_request(request);
+        impl.start();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    }
+    // Leaving the scope must not terminate or leave a thread reading a destroyed object.
+    SUCCEED();
+}
+
+} // namespace module
