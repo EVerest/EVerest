@@ -101,6 +101,9 @@ EnergyManagerImpl::EnergyManagerImpl(
     broker_strategy(to_broker_strategy(config.broker_strategy)),
     enforced_limits_callback(enforced_limits_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
+    if (config.phase_symmetry_enabled and broker_strategy != BrokerStrategy::PowerRedistribution) {
+        EVLOG_warning << "phase_symmetry_enabled has no effect without broker_strategy PowerRedistribution";
+    }
 }
 
 namespace {
@@ -153,7 +156,7 @@ RedistributionInference EnergyManagerImpl::get_redistribution_inference() const 
 
 ImbalanceResult EnergyManagerImpl::get_phase_imbalance() const {
     std::scoped_lock lock(energy_mutex);
-    return phase_imbalance;
+    return m_phase_imbalance;
 }
 #endif
 
@@ -307,7 +310,7 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     // reflect the cap yet, so its cap is not raised again until it does.
     // A stale meter's load is missing from a leaf sum, so its phases cannot be judged.
     if (m_site_meter_source == SiteMeterSource::LeafSum and m_site_aggregate.stale_meters > 0) {
-        phase_imbalance = {};
+        m_phase_imbalance = {};
         return;
     }
 
@@ -376,8 +379,8 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     if (not any_settling) {
         for (const auto phase : {Phase::L1, Phase::L2, Phase::L3}) {
             const auto& report = result.report(phase);
-            const auto edge = phase_residual_reported[static_cast<int>(phase)].update(report.residual_A > 0.f, now,
-                                                                                      std::chrono::seconds(0));
+            const auto edge = m_phase_residual_reported[static_cast<int>(phase)].update(report.residual_A > 0.f, now,
+                                                                                        std::chrono::seconds(0));
             if (edge == HoldLatch::Edge::Held) {
                 EVLOG_warning << fmt::format(
                     "phase {}: {:.1f} A above the imbalance limit that limiting connectors cannot correct",
@@ -395,7 +398,7 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
                                   format_phase_report(Phase::L3, result.L3));
     }
 
-    phase_imbalance = result;
+    m_phase_imbalance = result;
 }
 
 int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {

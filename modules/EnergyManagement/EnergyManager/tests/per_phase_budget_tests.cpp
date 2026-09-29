@@ -314,6 +314,22 @@ TEST(PerPhaseLimit, GridLimitAddsUpThePhases) {
     EXPECT_FLOAT_EQ(limit.value(), (32.0f + 20.0f + 10.0f) * U);
 }
 
+TEST(PerPhaseLimitLoop, ASinglePhaseEvIsHeldByItsGridPhase) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // L1 32 A, L2 10 A, L3 32 A. cp1 is single phase on grid L2, as a rotated charger reports
+    // it with its rotation applied; cp2 is three phase. Both load L2, which carries 10 A.
+    auto cp1 = test::make_evse_node("cp1", 32.0f, 6.0f);
+    auto cp2 = test::make_evse_node("cp2", 32.0f, 6.0f);
+    test::set_measurement_current(cp1, 0.0f, 16.0f, 0.0f, at_plus(0));
+    test::set_measurement_current(cp2, 16.0f, 16.0f, 16.0f, at_plus(0));
+    auto tree = test::make_root_node("grid", 32.0f, std::nullopt, {cp1, cp2});
+    set_per_phase_limit(tree, per_phase(32.0f, 10.0f, 32.0f));
+    const auto results = impl.run_optimizer(tree, AT);
+
+    EXPECT_LE(enforced_current(results, "cp1") + enforced_current(results, "cp2"), 10.0f + 1e-3f);
+}
+
 TEST(PerPhaseLimitLoop, EachSinglePhaseEvGetsWhatItsPhaseAllows) {
     EnergyManagerImpl impl(make_config(), [](const auto&) {});
 

@@ -128,16 +128,20 @@ the future than the maximum age.
 
 The limit is computed per phase - from the measured per-phase current, falling back to
 per-phase power over the nominal voltage, then to the total power spread over the active
-phases - and collapsed to the single ``ac_max_current_A`` the energy interface expresses
-today by taking the highest of the known phases (the value applies to every phase, so
-the lowest would starve the phase that legitimately draws most).
+phases - and collapsed to a single ``ac_max_current_A`` by taking the highest of the known
+phases (the value applies to every phase, so the lowest would starve the phase that
+legitimately draws most).
 
 Per phase budget
 ----------------
 
 With ``PowerRedistribution`` the budget of every node is kept per grid phase: a node's
 ``ac_max_current_A`` applies to L1, L2 and L3 separately, and what a connector buys only
-counts on the phases its own meter shows it drawing on (current above 1 A). A single
+counts on the phases its own meter shows it drawing on (current above 1 A). Those phases are
+taken as grid phases: the connector's meter reading must be in grid phase order, with the
+charger's ``phase_rotation_grid_side`` already applied. On a rotated charger whose reading
+is in connector order, a single phase EV is booked on the wrong grid phase, which a limit
+that differs per phase or the phase imbalance limiting then applies to the wrong phase. A single
 phase EV at 16 A on L1 therefore leaves the full limit on L2 and L3 for the others, and a
 connector is offered what is left on the most loaded of its phases. ``FastCharging``
 keeps counting every purchase on all three phases.

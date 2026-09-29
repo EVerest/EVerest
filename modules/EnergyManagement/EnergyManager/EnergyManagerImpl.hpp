@@ -171,9 +171,9 @@ private:
     // How long the site has continuously had headroom to hand out.
     HoldLatch m_site_headroom;
 
-    ImbalanceResult phase_imbalance;
+    ImbalanceResult m_phase_imbalance;
     // Per phase: whether an uncorrectable overshoot has been reported for this stretch.
-    std::array<HoldLatch, 3> phase_residual_reported;
+    std::array<HoldLatch, 3> m_phase_residual_reported;
 };
 
 } // namespace module
