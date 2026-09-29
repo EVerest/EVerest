@@ -24,15 +24,16 @@ get_evse_sink_by_evse_id(const std::vector<std::unique_ptr<external_energy_limit
                          const int32_t evse_id);
 
 /// \brief Sets the current limit [A] of an OCPP 2.x charging schedule period on \p limits. Where
-/// \p limit_L2 or \p limit_L3 is given, \p limit is the one for L1 (OCPP 2.1), the limits go
-/// into ac_max_current_per_phase_A, a phase without its own taking \p limit, and
-/// ac_max_current_A is the highest of them so that it does not cut the others down.
+/// both \p limit_L2 and \p limit_L3 are given, \p limit is the one for L1 (OCPP 2.1), the limits
+/// go into ac_max_current_per_phase_A, and ac_max_current_A is the highest of them so that it
+/// does not cut the others down.
 void set_current_limit(types::energy::LimitsReq& limits, float limit, const std::optional<float>& limit_L2,
                        const std::optional<float>& limit_L3, const std::string& source);
 
-/// \brief Total power limit [W] of an OCPP 2.x charging schedule period: \p limit, or, where
-/// \p limit_L2 or \p limit_L3 is given, the sum over the phases with \p limit the one for L1
-/// and for a phase without its own (OCPP 2.1).
+/// \brief Total power limit [W] of an OCPP 2.x charging schedule period: \p limit, the sum over
+/// all phases, or, where both \p limit_L2 and \p limit_L3 are given and \p limit is the one for
+/// L1 (OCPP 2.1), three times the lowest of the three, which a symmetric load can draw
+/// without exceeding any phase.
 float total_power_limit(float limit, const std::optional<float>& limit_L2, const std::optional<float>& limit_L3);
 
 } // namespace external_energy_limits
