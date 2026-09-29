@@ -142,11 +142,19 @@ private:
     /// be outstanding, and a fixed order would let a leaf the CSMS never issues starve the other
     bool check_v2g20_leaf_first{false};
 
+    /// \brief The SECC leaf to request once the CSMS has answered the SignCertificate.req the expiry check sent
+    /// for the other one. Requested only when it is still due by then.
+    std::optional<ocpp::CertificateSigningUseEnum> queued_secc_renewal;
+
+    /// \brief Requests the queued SECC leaf, if any. Called once the CSMS has answered the outstanding
+    /// SignCertificate.req, with a CertificateSigned.req or a rejecting SignCertificate.conf.
+    void request_queued_secc_renewal();
+
 public:
     bool v2g20_certificate_installation_enabled() const override;
 
-    /// \brief Requests a new SECC leaf for each one that is missing or expires within 30 days, at most one per
-    /// call. Run by the v2g_certificate_expiration_check_timer.
+    /// \brief Requests a new SECC leaf for each one that is missing or expires within 30 days, one at a time: the
+    /// second is queued until the CSMS has answered the first. Run by the v2g_certificate_expiration_check_timer.
     void check_secc_certificates_expiration();
 };
 } // namespace v2

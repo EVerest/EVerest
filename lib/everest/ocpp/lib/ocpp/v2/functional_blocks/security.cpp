@@ -411,6 +411,8 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
         this->security_event_notification_req(CiString<50>(security_event), CiString<255>(tech_info), true,
                                               utils::is_critical(security_event));
     }
+
+    this->request_queued_secc_renewal();
 }
 
 void Security::handle_sign_certificate_response(CallResult<SignCertificateResponse> call_result) {
@@ -461,6 +463,7 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
     } else {
         this->reset_certificate_signing_state();
         EVLOG_warning << "SignCertificate.req has not been accepted by CSMS";
+        this->request_queued_secc_renewal();
     }
 }
 
@@ -714,17 +717,29 @@ void Security::check_secc_certificates_expiration() {
     }
 
     // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req can be
-    // outstanding at a time, so when both are due the second one waits for the next check
-    // (V2GCertificateExpireCheckIntervalSeconds). The leaf that goes first alternates, so that a leaf the CSMS
-    // never issues cannot starve the other.
+    // outstanding at a time, so the second one is queued until the CSMS has answered the first. When the CSMS may
+    // still answer the first (no retries configured or retries exhausted), the second waits for the next check
+    // instead; the leaf that goes first alternates, so that a leaf the CSMS never issues cannot starve the other.
     const auto first = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2G20Certificate
                                                     : ocpp::CertificateSigningUseEnum::V2GCertificate;
     const auto second = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2GCertificate
                                                      : ocpp::CertificateSigningUseEnum::V2G20Certificate;
     this->check_v2g20_leaf_first = !this->check_v2g20_leaf_first;
-    if (!this->renew_secc_certificate_if_due(first)) {
-        this->renew_secc_certificate_if_due(second);
+    this->queued_secc_renewal.reset();
+    if (this->renew_secc_certificate_if_due(first)) {
+        this->queued_secc_renewal = second;
+        return;
     }
+    this->renew_secc_certificate_if_due(second);
+}
+
+void Security::request_queued_secc_renewal() {
+    if (!this->queued_secc_renewal.has_value()) {
+        return;
+    }
+    const auto certificate_signing_use = this->queued_secc_renewal.value();
+    this->queued_secc_renewal.reset();
+    this->renew_secc_certificate_if_due(certificate_signing_use);
 }
 
 void Security::scheduled_check_v2g_certificate_expiration() {
