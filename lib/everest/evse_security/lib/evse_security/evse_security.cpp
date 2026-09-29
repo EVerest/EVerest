@@ -297,8 +297,9 @@ void install_ctl_trust_list_internal(const ctl::TrustList& tl,
     }
 
     for (auto& [ca_type, certs] : to_install) {
-        const auto& bundle_path = ca_bundle_path_map.at(ca_type);
+        fs::path bundle_path;
         try {
+            bundle_path = ca_bundle_path_map.at(ca_type);
             X509CertificateBundle bundle(bundle_path, EncodingFormat::PEM);
 
             bool changed = false;
@@ -316,10 +317,12 @@ void install_ctl_trust_list_internal(const ctl::TrustList& tl,
                            << conversions::ca_certificate_type_to_string(ca_type)
                            << " (" << bundle_path << ")";
             }
+        } catch (const std::out_of_range&) {
+        EVLOG_error << "CTL: unsupported CA type in TrustList: " << static_cast<int>(ca_type);
         } catch (const CertificateLoadException& e) {
             EVLOG_error << "CTL: could not load bundle " << bundle_path
                         << ": " << e.what();
-        }
+        } 
     }
 }
 
@@ -496,6 +499,11 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
 
 void EvseSecurity::install_ctl(const ctl::TrustList& tl) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
+
+    if (auto err = ctl::validate(tl); err != ctl::ValidationError::None) {
+        EVLOG_warning << "CTL: rejecting invalid TrustList: " << ctl::to_string(err);
+        return;
+    }
     install_ctl_trust_list_internal(tl, this->ca_bundle_path_map);
 }
 
