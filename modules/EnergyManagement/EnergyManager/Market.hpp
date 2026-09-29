@@ -45,6 +45,7 @@ public:
     float slice_ampere;                     // ampere_slices for trades
     float slice_watt;                       // ampere_slices for trades
     bool debug{false};
+    int active_slot{0}; // slot of every schedule that covers start_time
     ScheduleReq zero_schedule_req, empty_schedule_req;
     ScheduleRes zero_schedule_res, empty_schedule_res;
     ScheduleSetpoints empty_schedule_setpoints;
@@ -96,19 +97,11 @@ public:
         return setpoints;
     };
 
-    ScheduleRes get_sold_energy();
+    const ScheduleRes& get_sold_energy() const;
 
-    /// \brief The import offer this node actually trades against: the request schedule
-    /// after get_max_available_energy() has resampled it onto the optimizer's timestamp
-    /// grid, merged the leaves side and root side limits, and applied the conversion
-    /// efficiency.
-    ///
-    /// Anything that wants to know "what is this node allowed to import right now" must
-    /// read it here rather than re-deriving it from energy_flow_request.schedule_import.
-    /// The raw request is not the same thing: its slot 0 is not necessarily the slot in
-    /// force, and a limit expressed on the leaves side does not appear on the root side at
-    /// all. Both differences overstate the limit, and they show up exactly on the sites
-    /// with external limits that a redistribution feature exists for.
+    /// \brief The import offer this node trades against: the request schedule resampled onto
+    /// the optimizer's timestamps, with both sides' limits merged and efficiency applied.
+    /// Read limits here, not from energy_flow_request.schedule_import.
     const ScheduleReq& get_import_max_available() const {
         return import_max_available;
     };
@@ -139,10 +132,11 @@ private:
     ScheduleSetpoints resample(const ScheduleSetpoints& request);
 };
 
-/// \brief Index of the schedule slot in force at globals.start_time.
+/// \brief Index of the schedule slot in force at globals.start_time: the last slot that has
+/// started, including one starting exactly then.
 ///
-/// Clamps: a schedule that starts in the future reports its first slot, one that ended in
-/// the past its last. An empty schedule has no slot and reports std::nullopt.
+/// A schedule that starts in the future reports its first slot. An empty schedule has no
+/// slot and reports std::nullopt.
 std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& schedule);
 
 float get_watt_from_freq_table(const std::vector<types::energy::FrequencyWattPoint>& table, float freq);

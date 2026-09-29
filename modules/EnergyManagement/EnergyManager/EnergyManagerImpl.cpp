@@ -41,17 +41,13 @@ static BrokerStrategy to_broker_strategy(const std::string& s) {
     if (s == "PowerRedistribution") {
         return BrokerStrategy::PowerRedistribution;
     }
-    // Default of the manifest option. An unknown value must not break energy distribution,
-    // but it must not pass unnoticed either: the manifest enum rejects a typo, a config
-    // built any other way does not.
+    // The manifest enum rejects typos; configs built otherwise are not validated.
     if (s != "FastCharging") {
         EVLOG_warning << "Unknown broker_strategy '" << s << "', falling back to FastCharging";
     }
     return BrokerStrategy::FastCharging;
 }
 
-// Creates the broker that trades on behalf of one EVSE. This is the single place that maps
-// the configured strategy to a broker class.
 static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& market, BrokerContext& context,
                                            const Broker::EnergyManagerConfig& broker_config) {
     switch (strategy) {
@@ -63,8 +59,8 @@ static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& mark
     }
 }
 
-static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(const EnergyManagerConfig& config) {
-    BrokerFastCharging::EnergyManagerConfig broker_conf;
+static Broker::EnergyManagerConfig to_broker_config(const EnergyManagerConfig& config) {
+    Broker::EnergyManagerConfig broker_conf;
 
     broker_conf.max_nr_of_switches_per_session = config.switch_3ph1ph_max_nr_of_switches_per_session;
     broker_conf.power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
@@ -107,28 +103,41 @@ EnergyManagerImpl::EnergyManagerImpl(
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
 }
 
-void EnergyManagerImpl::warn_about_unparsable_meters(const std::vector<std::string>& unparsable) {
-    // Warn once per meter, not once per optimizer cycle: a permanently broken meter would
-    // otherwise produce a warning every second, around the clock. A meter that starts
-    // delivering usable timestamps again is allowed to warn a second time later.
-    const std::set<std::string> current(unparsable.begin(), unparsable.end());
+namespace {
 
-    for (const auto& uuid : current) {
-        if (warned_unparsable_meters.insert(uuid).second) {
-            EVLOG_warning << "cannot parse the power meter timestamp of meter " << uuid
-                          << ", treating its readings as stale until it recovers";
+// Calls \p warn for every meter in \p current not yet in \p warned, and forgets meters that
+// have recovered so they may warn again.
+template <typename Warn>
+void warn_once_per_meter(std::set<std::string>& warned, const std::vector<std::string>& current, Warn warn) {
+    const std::set<std::string> now_faulty(current.begin(), current.end());
+    for (const auto& uuid : now_faulty) {
+        if (warned.insert(uuid).second) {
+            warn(uuid);
         }
     }
-
-    for (auto it = warned_unparsable_meters.begin(); it != warned_unparsable_meters.end();) {
-        it = current.count(*it) == 0 ? warned_unparsable_meters.erase(it) : std::next(it);
+    for (auto it = warned.begin(); it != warned.end();) {
+        it = now_faulty.count(*it) == 0 ? warned.erase(it) : std::next(it);
     }
+}
+
+} // namespace
+
+void EnergyManagerImpl::warn_about_meter_timestamps(const PowerMeterAggregator::AggregateResult& aggregate) {
+    warn_once_per_meter(m_warned_unparsable_meters, aggregate.unparsable_meters, [](const std::string& uuid) {
+        EVLOG_warning << "cannot parse the power meter timestamp of meter " << uuid
+                      << ", treating its readings as stale until it recovers";
+    });
+    warn_once_per_meter(m_warned_future_meters, aggregate.future_meters, [](const std::string& uuid) {
+        EVLOG_warning << "power meter timestamp of meter " << uuid
+                      << " lies in the future beyond the aggregation window (clock or time zone error), "
+                         "treating its readings as stale until it recovers";
+    });
 }
 
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
 PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_site_aggregate() const {
     std::scoped_lock lock(energy_mutex);
-    return site_aggregate;
+    return m_site_aggregate;
 }
 #endif
 
@@ -139,7 +148,7 @@ EnergyManagerImpl::~EnergyManagerImpl() {
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
 RedistributionInference EnergyManagerImpl::get_redistribution_inference() const {
     std::scoped_lock lock(energy_mutex);
-    return redistribution_inference;
+    return m_redistribution_inference;
 }
 
 ImbalanceResult EnergyManagerImpl::get_phase_imbalance() const {
@@ -173,20 +182,13 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     for (const auto& broker : brokers) {
         const auto& connector_market = broker->get_local_market();
         const auto& node = connector_market.energy_flow_request;
-        // The broker loop above created an entry for every connector; at() rather than
-        // operator[] so a future reordering fails loudly instead of quietly inferring on a
-        // default constructed context.
+        // The broker loop created an entry for every connector.
         auto& ctx = contexts.at(node.uuid);
         const auto phases_drawn = static_cast<int>(ctx.phases_in_use.size());
         const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage, phases_drawn);
 
-        // The measurement observed this run is the EV's response to what the previous run
-        // allotted, so those two are the pair to compare - but only while it is a live
-        // reading. The same freshness rule the site aggregate applies holds here: a meter
-        // that stopped publishing keeps reporting its last value in every request, and
-        // without this check a five minute old reading reads as a connector that could give
-        // power back. No measurement at all yields Unknown, which is what an unusable one
-        // deserves too.
+        // This run's measurement is the EV's response to the previous run's allocation; a
+        // stale one yields Unknown, like a missing one.
         std::optional<float> measured_W;
         const auto& observed = ctx.last_observed_measurement;
         if (observed.power_W.has_value() and is_fresh(observed.measured_at, now, aggregation_window)) {
@@ -234,11 +236,12 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
         inference.connectors[node.uuid] = connector;
     }
 
-    auto site = infer_site(get_grid_limit_W(market, nominal_ac_voltage), site_aggregate, saturated, site_margin, gain);
-    site.meter_source = site_meter_source;
+    auto site =
+        infer_site(get_grid_limit_W(market, nominal_ac_voltage), m_site_aggregate, saturated, site_margin, gain);
+    site.meter_source = m_site_meter_source;
 
-    const auto site_edge = site_headroom.update(site.increase_W > 0.f, now, hold_time);
-    site.held = site_headroom.held();
+    const auto site_edge = m_site_headroom.update(site.increase_W > 0.f, now, hold_time);
+    site.held = m_site_headroom.held();
 
     const int granted = grant_site_headroom(site);
 
@@ -269,7 +272,7 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     }
 
     inference.site = site;
-    redistribution_inference = inference;
+    m_redistribution_inference = inference;
 }
 
 namespace {
@@ -332,7 +335,8 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
         connectors.push_back(connector);
     }
 
-    const PhaseCurrents site_A{site_aggregate.current_A.L1, site_aggregate.current_A.L2, site_aggregate.current_A.L3};
+    const PhaseCurrents site_A{m_site_aggregate.current_A.L1, m_site_aggregate.current_A.L2,
+                               m_site_aggregate.current_A.L3};
     const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A);
 
     for (const auto& cap : result.caps) {
@@ -404,52 +408,41 @@ int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {
 
 void EnergyManagerImpl::start() {
     {
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (running) {
+        auto loop = m_loop_state.handle();
+        if (loop->running) {
             return;
         }
-        running = true;
+        loop->running = true;
     }
 
-    // start thread to update energy optimization
-    mainloop = std::thread([this] {
-        while (running) {
+    m_mainloop = std::thread([this] {
+        while (true) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
-            enforced_limits_callback(optimized_values);
-            {
-                std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                // Both reasons to wake early, under the lock that guards them. stop() and
-                // on_energy_flow_request() set their flag while holding this same mutex, so
-                // neither change can land between this predicate and the wait; without both
-                // halves the notification is lost in that window.
-                //
-                // Both have to be named here: a predicated wait_for re-sleeps on every
-                // notification its predicate does not cover, so a predicate that mentions
-                // only the stop flag swallows the priority request wake-up and delays the
-                // optimizer run it asks for by a full update_interval.
-                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval),
-                                                [this] { return not running or wakeup; });
-                wakeup = false;
+            if (not m_loop_state.handle()->running) {
+                return;
             }
+            try {
+                enforced_limits_callback(optimized_values);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Failed to enforce limits: " << e.what();
+            }
+
+            auto loop = m_loop_state.handle();
+            loop.wait_for([&loop] { return not loop->running or loop->wakeup; },
+                          std::chrono::seconds(config.update_interval));
+            if (not loop->running) {
+                return;
+            }
+            loop->wakeup = false;
         }
     });
 }
 
 void EnergyManagerImpl::stop() {
-    {
-        // Under the same mutex the worker waits on: clearing the flag outside it leaves a
-        // window where the worker has already tested the predicate but is not yet
-        // registered on the condition variable, and the notification below is lost.
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (not running) {
-            return;
-        }
-        running = false;
-    }
-
-    mainloop_sleep_condvar.notify_all();
-    if (mainloop.joinable()) {
-        mainloop.join();
+    m_loop_state.handle()->running = false;
+    m_loop_state.notify_all();
+    if (m_mainloop.joinable()) {
+        m_mainloop.join();
     }
 }
 
@@ -459,15 +452,8 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     energy_flow_request = e;
 
     if (is_priority_request(e)) {
-        // Trigger optimization now. The flag is set under the mutex the worker waits on,
-        // for the same reason stop() clears running under it: notifying without it leaves a
-        // window in which the worker has tested the predicate but is not yet registered on
-        // the condition variable, and the request waits out the whole update_interval.
-        {
-            std::lock_guard<std::mutex> sleep_lock(mainloop_sleep_mutex);
-            wakeup = true;
-        }
-        mainloop_sleep_condvar.notify_all();
+        m_loop_state.handle()->wakeup = true;
+        m_loop_state.notify_all();
     }
 }
 
@@ -491,13 +477,11 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
 
-    // Refresh the site measurement for this run. The aggregator is built from the tree each
-    // time, so a meter that disappeared from it stops contributing without anything having
-    // to remember to drop it.
+    // Rebuilt every run, so a meter that left the tree stops contributing.
     PowerMeterAggregator site_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
-    site_meter_source = collect_site_measurement(request, site_aggregator);
-    site_aggregate = site_aggregator.aggregate(globals.start_time);
-    warn_about_unparsable_meters(site_aggregate.unparsable_meters);
+    m_site_meter_source = collect_site_measurement(request, site_aggregator);
+    m_site_aggregate = site_aggregator.aggregate(globals.start_time);
+    warn_about_meter_timestamps(m_site_aggregate);
 
     time_probe optimizer_start;
     optimizer_start.start();
@@ -505,11 +489,12 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         EVLOG_info << "\033[1;44m---------------- Run energy optimizer ---------------- \033[1;0m";
 
     if (globals.debug) {
-        // Spell out the absence of a total rather than printing a zero that no meter reported.
-        const auto power = site_aggregate.power_W.has_value() ? fmt::format("{}W", site_aggregate.power_W.value().total)
-                                                              : std::string("no reading");
-        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power, to_string(site_meter_source),
-                                  site_aggregate.fresh_meters, site_aggregate.stale_meters);
+        const auto power = m_site_aggregate.power_W.has_value()
+                               ? fmt::format("{}W", m_site_aggregate.power_W.value().total)
+                               : std::string("no reading");
+        EVLOG_info << fmt::format("Site power: {} from {} ({} meter(s), {} stale)", power,
+                                  to_string(m_site_meter_source), m_site_aggregate.fresh_meters,
+                                  m_site_aggregate.stale_meters);
     }
 
     time_probe market_tp;
@@ -533,12 +518,8 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
         }
 
-        brokers.push_back(make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid],
-                                      to_broker_fast_charging_config(config)));
-        // Read the connector state this run trades against, before the first trading round.
-        // Explicit rather than a constructor side effect: a broker is built once per EVSE per
-        // run in this loop, and a reader should not have to know that constructing one
-        // mutates the session context.
+        brokers.push_back(
+            make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid], to_broker_config(config)));
         brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
@@ -590,7 +571,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     for (auto& broker : brokers) {
         auto& local_market = broker->get_local_market();
-        const auto sold_energy = local_market.get_sold_energy();
+        const auto& sold_energy = local_market.get_sold_energy();
 
         if (sold_energy.size() > 0) {
             types::energy::EnforcedLimits l;
@@ -599,19 +580,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
             l.schedule = sold_energy;
 
-            // select root limit from schedule based on globals.start_time
-            l.limits_root_side = sold_energy[0].limits_to_root;
-
-            for (const auto& s : sold_energy) {
-                const auto schedule_time = Everest::Date::from_rfc3339(s.timestamp);
-                if (globals.start_time < schedule_time) {
-                    // all further schedules will be further into the future
-                    break;
-                } else {
-                    // use this schedule as the starting point
-                    l.limits_root_side = s.limits_to_root;
-                }
-            }
+            l.limits_root_side = sold_energy[globals.active_slot].limits_to_root;
 
             optimized_values.push_back(l);
 

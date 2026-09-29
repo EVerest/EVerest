@@ -16,7 +16,7 @@ void BrokerFastCharging::tradeImpl() {
     // if we have not bought anything, we first need to buy the minimal limits for ac_amp if any.
     for (int i = 0; i < globals.schedule_length; i++) {
 
-        bool time_slot_is_active = time_slot_active(i, offer->import_offer);
+        bool time_slot_is_active = time_slot_active(i);
 
         // make this more readable
         auto& max_current_import = offer->import_offer[i].limits_to_root.ac_max_current_A;

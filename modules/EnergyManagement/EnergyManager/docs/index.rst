@@ -24,7 +24,10 @@ that never actually existed on the installation.
 
 The EnergyManager therefore sums only those readings whose own measurement timestamp lies
 within ``power_meter_aggregation_window_s`` of the optimizer's start time; older readings
-are excluded as stale rather than contributing a wrong value. The grid connection's own
+are excluded as stale rather than contributing a wrong value. The window applies in both
+directions: clock skew smaller than the window is tolerated, but a reading timestamped
+further in the future is excluded too and logged once per meter as a clock or time zone
+error, so a frozen meter with a skewed clock cannot stay "fresh". The grid connection's own
 meter is used wherever there is one; otherwise the EVSE meters are summed, and then only
 the EVSE nodes contribute, so no meter is ever counted together with meters it already
 measures. Power and per phase current are aggregated together.
@@ -38,8 +41,10 @@ updating and a limit computed from its last reading, so the smallest window is `
 **When a value is unknown it is reported as absent, never as zero.** If no meter has a
 fresh reading, the aggregate carries no total at all -- a consumer must read that as
 "unknown" and keep distributing on the static limits, never as "no power is flowing". The
-same holds per phase: a phase is summed only when every contributing meter reports it, so
-one single phase meter leaves the site L2 and L3 sums absent instead of understating them.
+same holds per phase: a phase is summed only when every stored meter is fresh and reports
+it, so one single phase meter leaves the site L2 and L3 sums absent instead of
+understating them, and one stale meter leaves all per phase sums absent. The total then
+covers the fresh meters only; ``stale_meters`` tells a consumer it is incomplete.
 
 .. list-table::
    :header-rows: 1
@@ -118,7 +123,8 @@ broker tell a live reading from a frozen one: ``EnergyNode`` and ``EvseManager``
 republish the last power meter reading they received in every energy flow request, so a
 meter that stopped updating is indistinguishable from one holding steady unless the
 reading's own timestamp is checked. A reading whose timestamp cannot be parsed is
-treated like a missing one rather than a current one.
+treated like a missing one rather than a current one, and so is one timestamped further in
+the future than the maximum age.
 
 The limit is computed per phase - from the measured per-phase current, falling back to
 per-phase power over the nominal voltage, then to the total power spread over the active
@@ -261,7 +267,10 @@ Both are read from what the module already computed for the run, not re-derived:
   Reading ``schedule_import[0].limits_to_root`` instead would skip all three. On the sites
   this feature exists for that is not a detail: an external limit (an OCPP charging profile,
   any DLM input) is exactly what produces a multi-slot schedule and a one-sided limit, and
-  each difference overstates the limit.
+  each difference overstates the limit. A limit that carries both a watt and an ampere value
+  counts as the lower of the two, with the ampere value converted over the declared phases
+  and the nominal voltage. The slot in force is the last one that has started, including
+  one starting exactly at the optimizer's start time.
 
 - **The site measurement** is the grid connection's own power meter
   (``energy_usage_root`` on the root node) wherever there is one, falling back to the sum of
