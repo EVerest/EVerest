@@ -1,0 +1,329 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:powermeter_consumer_API'
+info:
+  title: 'EVerest API definition for powermeter consumer'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients reading the measured values, OCMF public key
+    and capabilities of a powermeter.
+    Experimental: this API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: powermeter
+servers:
+  default:
+    pathname: 'everest_api/1/powermeter_consumer/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+channels:
+  receive_powermeter:
+    address: 'e2m/powermeter'
+    messages:
+      receive_powermeter:
+        $ref: '#/components/messages/receive_powermeter'
+  send_request_get_powermeter:
+    address: 'm2e/powermeter/get'
+    messages:
+      send_request_get_powermeter:
+        $ref: '#/components/messages/send_request_get_powermeter'
+  receive_reply_get_powermeter:
+    address: null
+    messages:
+      receive_reply_get_powermeter:
+        $ref: '#/components/messages/receive_reply_get_powermeter'
+
+  receive_public_key_ocmf:
+    address: 'e2m/public_key_ocmf'
+    messages:
+      receive_public_key_ocmf:
+        $ref: '#/components/messages/receive_public_key_ocmf'
+  send_request_get_public_key_ocmf:
+    address: 'm2e/public_key_ocmf/get'
+    messages:
+      send_request_get_public_key_ocmf:
+        $ref: '#/components/messages/send_request_get_public_key_ocmf'
+  receive_reply_get_public_key_ocmf:
+    address: null
+    messages:
+      receive_reply_get_public_key_ocmf:
+        $ref: '#/components/messages/receive_reply_get_public_key_ocmf'
+
+  receive_capabilities:
+    address: 'e2m/capabilities'
+    messages:
+      receive_capabilities:
+        $ref: '#/components/messages/receive_capabilities'
+  send_request_get_capabilities:
+    address: 'm2e/capabilities/get'
+    messages:
+      send_request_get_capabilities:
+        $ref: '#/components/messages/send_request_get_capabilities'
+  receive_reply_get_capabilities:
+    address: null
+    messages:
+      receive_reply_get_capabilities:
+        $ref: '#/components/messages/receive_reply_get_capabilities'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+operations:
+  receive_powermeter:
+    title: 'Receive powermeter measured dataset'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_powermeter'
+  send_request_get_powermeter:
+    title: 'Request current powermeter'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_powermeter'
+    description: >-
+      Request the most recently published (latched) powermeter.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_powermeter'
+  receive_reply_get_powermeter:
+    title: 'Reply to get powermeter request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_powermeter'
+
+  receive_public_key_ocmf:
+    title: 'Receive powermeter public key OCMF'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_public_key_ocmf'
+  send_request_get_public_key_ocmf:
+    title: 'Request current powermeter public key OCMF'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_public_key_ocmf'
+    description: >-
+      Request the most recently published (latched) public key OCMF.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_public_key_ocmf'
+  receive_reply_get_public_key_ocmf:
+    title: 'Reply to get public key OCMF request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_public_key_ocmf'
+
+  receive_capabilities:
+    title: 'Receive powermeter capabilities'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_capabilities'
+  send_request_get_capabilities:
+    title: 'Request current powermeter capabilities'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_capabilities'
+    description: >-
+      Request the most recently published (latched) capabilities.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_capabilities'
+  receive_reply_get_capabilities:
+    title: 'Reply to get capabilities request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_capabilities'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+
+components:
+  messages:
+    receive_powermeter:
+      name: receive_powermeter
+      title: 'Receive powermeter'
+      summary: 'Powermeter measured dataset'
+      contentType: application/json
+      payload:
+        $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+    send_request_get_powermeter:
+      name: send_request_get_powermeter
+      title: 'Request current powermeter'
+      summary: 'Request the most recently published (latched) powermeter.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_powermeter:
+      name: receive_reply_get_powermeter
+      title: 'Reply to get powermeter request'
+      summary: 'The most recently published powermeter.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'powermeter_API.yaml#/components/schemas/Powermeter'
+          - type: 'null'
+
+    receive_public_key_ocmf:
+      name: receive_public_key_ocmf
+      title: 'Receive powermeter public key OCMF'
+      summary: 'Powermeter public key OCMF'
+      contentType: application/json
+      payload:
+        $ref: 'powermeter_API.yaml#/components/schemas/SendPublicKeyOCMF'
+    send_request_get_public_key_ocmf:
+      name: send_request_get_public_key_ocmf
+      title: 'Request current powermeter public key OCMF'
+      summary: 'Request the most recently published (latched) public key OCMF.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_public_key_ocmf:
+      name: receive_reply_get_public_key_ocmf
+      title: 'Reply to get public key OCMF request'
+      summary: 'The most recently published public key OCMF.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'powermeter_API.yaml#/components/schemas/SendPublicKeyOCMF'
+          - type: 'null'
+
+    receive_capabilities:
+      name: receive_capabilities
+      title: 'Receive powermeter capabilities'
+      summary: 'Powermeter capabilities'
+      contentType: application/json
+      payload:
+        $ref: 'powermeter_API.yaml#/components/schemas/Capabilities'
+    send_request_get_capabilities:
+      name: send_request_get_capabilities
+      title: 'Request current powermeter capabilities'
+      summary: 'Request the most recently published (latched) capabilities.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_capabilities:
+      name: receive_reply_get_capabilities
+      title: 'Reply to get capabilities request'
+      summary: 'The most recently published capabilities.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: 'powermeter_API.yaml#/components/schemas/Capabilities'
+          - type: 'null'
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "CommunicationCheck"
+          payload:
+            true
+
+  schemas:
+    CommunicationCheck:
+      type: boolean
+      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
