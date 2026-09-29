@@ -237,9 +237,8 @@ TEST(MeasurementTrackingHelpers, FallsBackToRootCurrent) {
     EXPECT_FLOAT_EQ(measured.L3.value(), 3.0f);
 }
 
-// One reading supplies every field. A node whose two sides carry different halves of a
-// measurement is the case that used to mix them: power and timestamp from one meter, the
-// per-phase current from the other.
+// One reading supplies every field, also when the two sides of a node carry different
+// halves of a measurement.
 
 TEST(MeasurementTrackingHelpers, PowerDecidesWhichReadingIsUsed) {
     // The leaves side reports current but no power. Power is the value an allocation is
@@ -313,12 +312,12 @@ TEST(MeasurementTrackingHelpers, PowerOnlyReadingLeavesCurrentUnknown) {
 
 TEST(MeasurementTrackingContext, ClearResetsWarnedFlag) {
     BrokerContext context;
-    EXPECT_FALSE(context.tracking_warned_no_measurement);
+    EXPECT_FALSE(context.redistribution_warned_no_measurement);
 
-    context.tracking_warned_no_measurement = true;
+    context.redistribution_warned_no_measurement = true;
     context.clear();
 
-    EXPECT_FALSE(context.tracking_warned_no_measurement);
+    EXPECT_FALSE(context.redistribution_warned_no_measurement);
 }
 
 TEST(MeasurementTrackingContext, ClearResetsObservedMeasurement) {

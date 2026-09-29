@@ -155,7 +155,8 @@ TEST(OptimizerLoop, RequestStopDoesNotWaitForAnEnforceLimitsCall) {
     std::promise<void> release;
     std::shared_future<void> released = release.get_future().share();
     std::promise<void> entered;
-    auto blocking_callback = [&entered, released, first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
+    auto blocking_callback = [&entered, released,
+                              first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
         if (first) {
             first = false;
             entered.set_value();
@@ -180,7 +181,8 @@ TEST(OptimizerLoop, FailingEnforceLimitsEndsTheLoopAfterRequestStop) {
     std::promise<void> release;
     std::shared_future<void> released = release.get_future().share();
     std::promise<void> entered;
-    auto throwing_callback = [&entered, released, first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
+    auto throwing_callback = [&entered, released,
+                              first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
         if (first) {
             first = false;
             entered.set_value();

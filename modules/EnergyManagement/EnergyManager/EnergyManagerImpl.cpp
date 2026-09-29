@@ -37,17 +37,13 @@ static BrokerStrategy to_broker_strategy(const std::string& s) {
     if (s == "PowerRedistribution") {
         return BrokerStrategy::PowerRedistribution;
     }
-    // Default of the manifest option. An unknown value must not break energy distribution,
-    // but it must not pass unnoticed either: the manifest enum rejects a typo, a config
-    // built any other way does not.
+    // The manifest enum rejects typos; configs built otherwise are not validated.
     if (s != "FastCharging") {
         EVLOG_warning << "Unknown broker_strategy '" << s << "', falling back to FastCharging";
     }
     return BrokerStrategy::FastCharging;
 }
 
-// Creates the broker that trades on behalf of one EVSE. This is the single place that maps
-// the configured strategy to a broker class.
 static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& market, BrokerContext& context,
                                            const Broker::EnergyManagerConfig& broker_config) {
     switch (strategy) {
@@ -59,8 +55,8 @@ static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& mark
     }
 }
 
-static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(const EnergyManagerConfig& config) {
-    BrokerFastCharging::EnergyManagerConfig broker_conf;
+static Broker::EnergyManagerConfig to_broker_config(const EnergyManagerConfig& config) {
+    Broker::EnergyManagerConfig broker_conf;
 
     broker_conf.max_nr_of_switches_per_session = config.switch_3ph1ph_max_nr_of_switches_per_session;
     broker_conf.power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
@@ -209,12 +205,8 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
         }
 
-        brokers.push_back(make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid],
-                                      to_broker_fast_charging_config(config)));
-        // Read the connector state this run trades against, before the first trading round.
-        // Explicit rather than a constructor side effect: a broker is built once per EVSE per
-        // run in this loop, and a reader should not have to know that constructing one
-        // mutates the session context.
+        brokers.push_back(
+            make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid], to_broker_config(config)));
         brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
@@ -262,7 +254,7 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
 
     for (auto& broker : brokers) {
         auto& local_market = broker->get_local_market();
-        const auto sold_energy = local_market.get_sold_energy();
+        const auto& sold_energy = local_market.get_sold_energy();
 
         if (sold_energy.size() > 0) {
             types::energy::EnforcedLimits l;
