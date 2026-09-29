@@ -124,11 +124,15 @@ private:
     ScheduleRes sold_root;
     // Current sold through this node per slot and grid phase [A], signed like sold_root.
     std::vector<std::array<float, 3>> sold_phase_A;
+    // Power sold through this node per slot on the phases actually drawn [W], signed like
+    // sold_root. sold_root keeps the connector's declared phases, which is what its enforced
+    // limit converts back with; availability is judged on this.
+    std::vector<float> m_sold_drawn_W;
     std::vector<ScheduleRes> sold_leaves;
 
     ScheduleReq get_max_available_energy(const ScheduleReq& request);
     ScheduleReq get_available_energy(const ScheduleReq& available, bool add_sold, const PhaseSet& phases);
-    void book(const ScheduleRes& traded, const PhaseSet& phases);
+    void book(const ScheduleRes& traded, const ScheduleRes& drawn, const PhaseSet& phases);
     ScheduleSetpoints resample(const ScheduleSetpoints& request);
 };
 

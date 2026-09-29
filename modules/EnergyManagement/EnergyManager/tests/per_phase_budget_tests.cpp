@@ -120,6 +120,28 @@ TEST(PerPhaseBudget, WattsCountOnTheDrawnPhasesAboveTheConnector) {
     EXPECT_FLOAT_EQ(f.evse("cp1").get_sold_energy()[0].limits_to_root.total_power_W.value().value, 16.0f * 3.0f * U);
 }
 
+TEST(PerPhaseBudget, WattsCountOnTheDrawnPhasesAtTheConnectorToo) {
+    auto tree = test::make_root_node(
+        "grid", 100.0f, std::nullopt,
+        {test::make_evse_node("cp1", 32.0f, 6.0f, 11040.0f), test::make_evse_node("cp2", 32.0f, 6.0f)});
+    MarketFixture f(tree);
+
+    f.evse("cp1").trade(trade_of(16.0f, 16.0f * 3.0f * U), {Phase::L1});
+
+    EXPECT_FLOAT_EQ(available_W(f.evse("cp1"), {Phase::L1}), 11040.0f - 16.0f * U);
+    EXPECT_FLOAT_EQ(f.evse("cp1").get_sold_energy()[0].limits_to_root.total_power_W.value().value, 16.0f * 3.0f * U);
+}
+
+TEST(PerPhaseBudget, UnknownPhasesCountAsAllPhases) {
+    MarketFixture f(two_evse_tree(32.0f, 22080.0f));
+
+    f.evse("cp1").trade(trade_of(16.0f, 16.0f * 3.0f * U), {});
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 16.0f);
+    EXPECT_FLOAT_EQ(available_W(f.root()), 22080.0f - 16.0f * 3.0f * U);
+    EXPECT_FLOAT_EQ(available_A(f.evse("cp1"), {}), 16.0f);
+}
+
 // ---------------------------------------------------------------- through the optimizer
 
 namespace {
@@ -206,6 +228,18 @@ TEST(PerPhaseBudgetLoop, AWattLimitCountsASinglePhaseEvOnce) {
 
     EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 16.0f);
     EXPECT_FLOAT_EQ(enforced_current(results, "cp2"), 16.0f);
+}
+
+TEST(PerPhaseBudgetLoop, AConnectorsOwnWattLimitCountsASinglePhaseEvOnce) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // 4600 W is 20 A on one phase. Booked on the three declared phases the connector would
+    // stop near 6.7 A.
+    auto cp1 = test::make_evse_node("cp1", 32.0f, 6.0f, 4600.0f);
+    test::set_measurement_current(cp1, 20.0f, 0.0f, 0.0f, at_plus(0));
+    const auto results = impl.run_optimizer(test::make_root_node("grid", 100.0f, std::nullopt, {cp1}), AT);
+
+    EXPECT_NEAR(enforced_current(results, "cp1"), 20.0f, 0.5f);
 }
 
 // ---------------------------------------------------------------- limits that differ per phase
