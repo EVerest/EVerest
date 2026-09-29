@@ -64,6 +64,10 @@ public:
 
     d20::Context& get_context();
 
+    d20::Timeouts& get_timeouts() {
+        return timeouts;
+    }
+
     template <typename RequestType> void handle_request(const RequestType& request) {
         msg_exch.set_request(std::make_unique<message_20::Variant>(request));
     }
