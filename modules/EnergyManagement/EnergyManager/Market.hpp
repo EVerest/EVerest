@@ -73,17 +73,9 @@ public:
 
     const ScheduleRes& get_sold_energy() const;
 
-    /// \brief The import offer this node actually trades against: the request schedule
-    /// after get_max_available_energy() has resampled it onto the optimizer's timestamp
-    /// grid, merged the leaves side and root side limits, and applied the conversion
-    /// efficiency.
-    ///
-    /// Anything that wants to know "what is this node allowed to import right now" must
-    /// read it here rather than re-deriving it from energy_flow_request.schedule_import.
-    /// The raw request is not the same thing: its slot 0 is not necessarily the slot in
-    /// force, and a limit expressed on the leaves side does not appear on the root side at
-    /// all. Both differences overstate the limit, and they show up exactly on the sites
-    /// with external limits that a redistribution feature exists for.
+    /// \brief The import offer this node trades against: the request schedule resampled onto
+    /// the optimizer's timestamps, with both sides' limits merged and efficiency applied.
+    /// Read limits here, not from energy_flow_request.schedule_import.
     const ScheduleReq& get_import_max_available() const {
         return import_max_available;
     };

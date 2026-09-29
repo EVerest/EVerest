@@ -177,19 +177,12 @@ void EnergyManagerImpl::infer_redistribution(const Market& market, const std::ve
     for (const auto& broker : brokers) {
         const auto& connector_market = broker->get_local_market();
         const auto& node = connector_market.energy_flow_request;
-        // The broker loop above created an entry for every connector; at() rather than
-        // operator[] so a future reordering fails loudly instead of quietly inferring on a
-        // default constructed context.
+        // The broker loop created an entry for every connector.
         auto& ctx = contexts.at(node.uuid);
         const auto bounds = get_static_bounds_W(connector_market, nominal_ac_voltage);
 
-        // The measurement observed this run is the EV's response to what the previous run
-        // allotted, so those two are the pair to compare - but only while it is a live
-        // reading. The same freshness rule the site aggregate applies holds here: a meter
-        // that stopped publishing keeps reporting its last value in every request, and
-        // without this check a five minute old reading reads as a connector that could give
-        // power back. No measurement at all yields Unknown, which is what an unusable one
-        // deserves too.
+        // This run's measurement is the EV's response to the previous run's allocation; a
+        // stale one yields Unknown, like a missing one.
         std::optional<float> measured_W;
         const auto& observed = ctx.last_observed_measurement;
         if (observed.power_W.has_value() and is_fresh(observed.measured_at, now, aggregation_window)) {

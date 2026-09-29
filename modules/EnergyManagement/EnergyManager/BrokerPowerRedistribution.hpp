@@ -73,30 +73,17 @@ struct ConnectorInference {
 
 /// \brief Compares what a connector was allotted with what it draws.
 ///
-/// The deadband is relative: a gap of more than \p margin times the allocation counts as
-/// under-consumption. It is floored at \p broker_margin_W, the margin the cap itself added
-/// on top of this connector's measurement: a connector that follows its cap exactly is
-/// allotted its measurement plus that margin, so a gap of no more than the margin is the
-/// cap's own doing and says nothing about the EV. Without the floor no connector drawing
-/// less than redistribution_margin_A / power_redistribution_connector_margin could ever be
-/// saturated, and the site could never hand it anything.
-/// Everything closer is treated as consuming the allocation, which is
-/// either Saturated (could take more) or AtMaximum (its static limit is reached, within 1 W).
-/// Without both an allocation and a measurement the class is Unknown: no claim is made on
-/// missing data. A negative measurement is Unknown too: negative is export, the inference
-/// looks only at schedule_import, and a discharging connector consuming none of its import
-/// allocation is not the same thing as one that could give the whole allocation back.
+/// A gap of more than \p margin times the allocation is under-consumption. The deadband is
+/// floored at \p broker_margin_W, the margin the cap itself added, since a gap that size is
+/// the cap's doing, not the EV's. A smaller gap is Saturated, or AtMaximum at the static
+/// limit (within 1 W). Without an allocation or a measurement, or with a negative (export)
+/// measurement, the class is Unknown.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
                                       const StaticBoundsW& bounds, float margin, float broker_margin_W);
 
 /// \brief A connector that could take more power: its current allocation and static maximum.
-///
-/// Both are plain floats. A connector whose maximum is unknown cannot be given power
-/// safely - there is nothing to clamp the increase against - so it is not a candidate at
-/// all rather than a candidate with a missing bound that every consumer has to decide what
-/// to do about.
+/// A connector with an unknown maximum is not a candidate.
 struct SaturatedConnector {
-    /// The connector the share computed for it has to be handed back to.
     std::string uuid;
     float allocated_W;
     float max_W;
@@ -104,11 +91,7 @@ struct SaturatedConnector {
 
 /// \brief Pairs a Saturated classification with its bounds, when both are known.
 ///
-/// \returns std::nullopt when the allocation or the static maximum is missing. The caller
-/// then leaves the connector out of infer_site()'s candidates entirely: giving it a share
-/// would be handing out power with nothing to clamp it against, and counting it among the
-/// candidates would shrink everyone else's share on behalf of a connector that cannot use
-/// it.
+/// \returns std::nullopt when the allocation or the static maximum is missing
 std::optional<SaturatedConnector> to_saturated_connector(const std::string& uuid, const ConnectorInference& connector,
                                                          const StaticBoundsW& bounds);
 
@@ -121,15 +104,12 @@ struct SiteInference {
     /// grid_limit_W - measured_W, when both are known
     std::optional<float> headroom_W;
     int saturated_connectors{0};
-    /// Which meter measured_W came from. A leaf sum sees only the EVSEs, so a consumer (and
-    /// the log line) can tell how much of the site the figure actually covers.
+    /// Which meter measured_W came from; a leaf sum sees only the EVSEs.
     SiteMeterSource meter_source{SiteMeterSource::None};
     /// Proposed increase [W] summed over the saturated connectors. 0 when the headroom is
     /// within the deadband, no connector can take more, or the gain is 0.
     float increase_W{0.f};
-    /// The same increase per connector, which is the form a broker can act on: increase_W
-    /// is a site total and says nothing about who may draw it. Only connectors granted more
-    /// than 0 W appear.
+    /// The same increase per connector; only connectors granted more than 0 W appear.
     std::map<std::string, float> increase_W_by_connector;
     /// True once the condition has held for the configured hold time (set by the caller
     /// from its HoldLatch).
@@ -140,9 +120,7 @@ struct SiteInference {
 ///
 /// Headroom h = G - S must exceed the deadband margin x G. The increase is then
 /// gain x (h - deadband), split equally over the saturated connectors and clamped per
-/// connector to its static maximum. Being proportional to the remaining headroom the step
-/// is large far from the grid limit and vanishes close to it, rather than being a fixed
-/// ampere step that would approach the limit just as fast however close it already is.
+/// connector to its static maximum, so the step shrinks as the grid limit comes closer.
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
                          const std::vector<SaturatedConnector>& saturated, float margin, float gain);
 

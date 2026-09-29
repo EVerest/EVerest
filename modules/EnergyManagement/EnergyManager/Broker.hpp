@@ -126,11 +126,8 @@ struct BrokerContext {
     // When the candidate cap first fell below the applied one.
     std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
 
-    // Extra import power [W] the site inference granted this connector, on top of what its
-    // own measurement plus the margin allows. Written once per optimizer run by
-    // EnergyManagerImpl and consumed by the broker of the following run, which is the
-    // earliest a figure derived from this run's allocations can be acted on. nullopt while
-    // the site has no headroom to hand this connector.
+    // Extra import power [W] the site inference granted this connector above measured plus
+    // margin, for the broker of the next run. nullopt while there is nothing to grant.
     std::optional<float> distributed_power_W;
 
     // Import power [W] the previous optimizer run handed to this connector: the "allotted"

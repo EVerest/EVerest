@@ -46,11 +46,8 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
     return phase.value() + margin_A;
 }
 
-// The per-phase ampere the site inference's watt grant is worth to this connector. Spread
-// over the phases it actually uses, because that is the shape a cap is expressed in: a
-// grant of 3 x 230 V x 1 A is one ampere on a three phase connector and three on a single
-// phase one. Returns 0 for anything unusable, so the caller adds nothing rather than having
-// to check.
+// The per-phase ampere a watt grant is worth, spread over the phases the connector uses.
+// 0 for anything unusable.
 float distributed_current_A(const std::optional<float>& distributed_W, float nominal_ac_voltage, int active_phases) {
     if (not distributed_W.has_value() or distributed_W.value() <= 0.f or nominal_ac_voltage <= 0.f) {
         return 0.f;
@@ -390,12 +387,8 @@ void BrokerPowerRedistribution::decide_cap(const types::energy::EnergyFlowReques
                               redistribution.measurement_max_age)) {
         const auto measured = measured_phase_currents(context.last_observed_measurement,
                                                       local_market.nominal_ac_voltage(), active_phases);
-        // The margin is what lets the connector rise at all; the distributed share is the
-        // part of the site headroom the previous run granted it, and rides on top of the
-        // margin rather than replacing it. Without a fresh measurement there is no share
-        // either: a share is an allowance to draw more than measured, and with nothing
-        // measured that is exactly the open-ended limit the fallback below exists to
-        // prevent.
+        // The site's grant rides on top of the margin. Without a fresh measurement there is
+        // no grant either, since it is an allowance above what was measured.
         const float distributed_A =
             distributed_current_A(context.distributed_power_W, local_market.nominal_ac_voltage(), active_phases);
         const float step_A = redistribution.margin_A + distributed_A;

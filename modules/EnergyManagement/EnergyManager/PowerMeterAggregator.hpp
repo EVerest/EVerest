@@ -93,21 +93,9 @@ const char* to_string(SiteMeterSource source);
 
 /// \brief Feeds the aggregator with the measurement that describes the whole site.
 ///
-/// Prefers the root node's own power meter (energy_usage_root), which is what EnergyNode
-/// publishes for a grid connection point. That single meter is the one thing that sees the
-/// whole connection, including the building load that no EVSE meter can account for, so on
-/// any site with other consumers behind the same fuse it is the only correct answer.
-///
-/// Only when the root has no meter of its own does this fall back to summing the EVSE
-/// meters. That sum is not a site measurement: it is a site measurement minus every load
-/// the energy tree does not know about, and it errs by exactly the amount of non-EVSE
-/// consumption - always in the direction of claiming headroom that is already spent.
-///
-/// The "do not double count" rule that keeps intermediate nodes out of the leaf sum is
-/// about summing children. It does not apply here, where a single meter replaces the sum
-/// rather than joining it.
-///
-/// Either way exactly one freshness rule applies, because both go through the aggregator.
+/// Prefers the root node's own power meter (energy_usage_root), the only one that sees
+/// non-EVSE load behind the same fuse. Without it the EVSE meters are summed, which misses
+/// that load and so overstates the headroom.
 /// \returns which source was used
 SiteMeterSource collect_site_measurement(const types::energy::EnergyFlowRequest& root,
                                          PowerMeterAggregator& aggregator);

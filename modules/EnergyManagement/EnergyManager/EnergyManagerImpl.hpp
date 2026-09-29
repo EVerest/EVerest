@@ -97,17 +97,12 @@ public:
 #endif
 
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
-    /// \brief The site power meter reading computed during the most recent run_optimizer()
-    /// call: the grid connection's own meter where there is one, otherwise the sum of the
-    /// EVSE meters. Readings older than power_meter_aggregation_window_s are excluded.
-    ///
-    /// Test observation only, like get_observed_measurement(); nothing in production reads
-    /// it. Returned by value under the optimizer lock, since run_optimizer() runs on the
-    /// worker thread once start() has been called.
+    /// \brief Test observation only: the site power meter reading of the most recent
+    /// run_optimizer() call.
     PowerMeterAggregator::AggregateResult get_site_aggregate() const;
 
-    /// \brief The power redistribution inference of the most recent run_optimizer() call.
-    /// Test observation only, returned by value under the optimizer lock.
+    /// \brief Test observation only: the power redistribution inference of the most recent
+    /// run_optimizer() call.
     RedistributionInference get_redistribution_inference() const;
 #endif
 
@@ -121,20 +116,12 @@ private:
     void infer_redistribution(const Market& market, const std::vector<std::shared_ptr<Broker>>& brokers,
                               const std::vector<types::energy::EnforcedLimits>& limits);
 
-    /// \brief Writes each connector's share of the site headroom into its BrokerContext, or
-    /// clears it, so the brokers of the next run hand it to the EVs.
+    /// \brief Writes each connector's share of the site headroom into its BrokerContext for
+    /// the brokers of the next run, clearing every other entry.
     ///
-    /// It has to be the next run: the inference needs this run's enforced limits to know
-    /// what each connector was allotted, and by the time those exist the trading is over.
-    /// One optimizer interval of delay is also what makes the loop settle - a grant acts on
-    /// a measurement taken before it was handed out, so applying it twice within one
-    /// interval would count the same headroom twice.
-    ///
-    /// Clearing every run rather than only on change is what keeps a grant from outliving
-    /// the condition it was granted under: a connector that stops being saturated, a meter
-    /// that goes stale, or a headroom that closes all simply stop writing an entry.
-    /// \returns the number of connectors that were granted an increase, 0 while the site
-    /// has nothing to hand out
+    /// The next run, because the inference needs this run's enforced limits; the one
+    /// interval of delay also keeps a grant from being counted twice.
+    /// \returns the number of connectors that were granted an increase
     int grant_site_headroom(const SiteInference& site);
 
     EnergyManagerConfig config;
