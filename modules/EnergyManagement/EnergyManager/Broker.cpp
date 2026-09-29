@@ -83,13 +83,9 @@ bool Broker::trade(Offer& _offer) {
     }
 }
 
-date::utc_clock::time_point Broker::to_timestamp(const types::energy::ScheduleReqEntry& entry) {
-    return Everest::Date::from_rfc3339(entry.timestamp);
-}
-
-bool Broker::time_slot_active(const int i, const ScheduleReq& offer) {
-    const auto active_slot = active_slot_index(offer);
-    return active_slot.has_value() and active_slot.value() == static_cast<ScheduleReq::size_type>(i);
+bool Broker::time_slot_active(const int i) {
+    // Every schedule is resampled onto the timestamps of globals.
+    return i == globals.active_slot;
 }
 
 bool Broker::buy_ampere_import(int index, float ampere, bool allow_less,

@@ -15,82 +15,53 @@ namespace module {
 
 /// \brief Parses a power meter reading's own measurement timestamp.
 ///
-/// Everest::Date::from_rfc3339 does not throw: a default constructed time point is its only
-/// failure signal, which is why the epoch is checked instead of catching an exception. A
-/// meter genuinely reporting 1970 is equally unusable, so the two cases collapse.
+/// Everest::Date::from_rfc3339 signals failure with the epoch, so a meter reporting 1970 is
+/// equally unusable.
 /// \returns the measurement time, or std::nullopt when the timestamp is unusable
 std::optional<date::utc_clock::time_point> parse_meter_timestamp(const std::string& timestamp);
 
-/// \brief The module's one staleness rule for power meter readings.
+/// \brief The module's one staleness rule for power meter readings, shared by the site
+/// aggregate and the per connector limit.
 ///
-/// A reading is fresh while its own measurement timestamp is younger than \p window. Two
-/// cases are deliberately not stale: a timestamp slightly in the future, since minor clock
-/// skew between a meter and the controller must not discard data, and any reading at all
-/// once the window is zero or negative - though the manifest no longer allows that to be
-/// configured, a caller passing a window from elsewhere still gets a defined answer.
+/// A reading is fresh while its own timestamp is less than \p window away from \p now, in
+/// either direction: clock skew within the window is tolerated. A reading without a usable
+/// timestamp is never fresh; a \p window of zero or less accepts every other reading.
 ///
-/// A reading with no usable timestamp has no age to judge and is never fresh.
-///
-/// This lives here, next to the aggregator that first needed it, because every consumer of
-/// a measurement has to apply the same rule: the site aggregate and the per connector
-/// snapshot are two views of the same meters, and they must not disagree about which of
-/// them are alive.
-///
-/// \p now must be a real wall clock time; an epoch value would make every reading look
-/// like the future and disable the filter.
+/// \p now must be a real wall clock time.
 bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, date::utc_clock::time_point now,
               std::chrono::seconds window);
 
-/// \brief Sums the readings of several power meters that report at different times.
+/// \brief Sums the readings of several power meters that report at different times,
+/// including only readings that are fresh by is_fresh().
 ///
-/// Built, filled and summed within a single optimizer run: it holds no state that outlives
-/// one aggregation, so a stale entry cannot survive into the next run.
-///
-/// Power meters in the energy tree publish independently, so at any instant the stored
-/// readings have different ages. Summing them all would mix a fresh value with values
-/// from several seconds ago and produce a total that never existed. This class keeps the
-/// last reading per node and, when asked for a sum, includes only readings whose own
-/// measurement timestamp lies within the configured window.
-///
-/// The reference time is always supplied by the caller (normally the optimizer's
-/// start_time) rather than read from the clock, so an aggregate always matches the
-/// optimizer run it belongs to and tests are deterministic.
+/// Built, filled and summed within a single optimizer run, with the run's start_time as
+/// reference, so nothing stale survives into the next run.
 class PowerMeterAggregator {
 public:
-    /// \brief The site wide equivalent of BrokerContext::last_observed_measurement.
-    ///
-    /// Deliberately shaped like ObservedMeasurement (see Broker.hpp) so a consumer handles
-    /// one measurement type whether it reads a single connector or the whole site. The rule
-    /// stated there holds here too: a value the meters do not cover is nullopt, never zero.
+    /// \brief The site wide equivalent of BrokerContext::last_observed_measurement. A value
+    /// the meters do not cover is nullopt, never zero.
     struct AggregateResult {
-        /// Summed power [W] over all fresh meters. Empty when no meter contributed, so
-        /// "no data" never reads as a total of zero (nothing connected vs. nothing
-        /// flowing). Its per phase members are nullopt unless *every* contributing meter
-        /// reported that phase, so a phase sum never silently omits a meter.
+        /// Summed power [W] over all fresh meters; empty when no meter contributed. The per
+        /// phase members are set only while every stored meter is fresh and reports that
+        /// phase.
         std::optional<types::units::Power> power_W;
-        /// Summed current [A] over the same meters, under the same per field rule. A
-        /// single phase meter reports only L1, so L2 and L3 stay nullopt as soon as one
-        /// contributing meter does not measure them.
-        ///
-        /// Only the AC phases are summed. N is left out because neutral currents do not add
-        /// up scalar-wise, and DC for the same reason one step further removed: an ampere
-        /// on a DC link is only meaningful together with that link's voltage, so 100 A at
-        /// 400 V and 100 A at 800 V are not 200 A of anything. A site-wide DC ampere has no
-        /// consumer and no defensible meaning, so it is not produced.
+        /// Summed AC phase current [A], under the same rule as the per phase power. N and DC
+        /// currents do not add up across meters and are not summed.
         types::units::Current current_A;
         /// Number of meters that contributed to the sums
         int fresh_meters{0};
-        /// Number of stored meters excluded because their reading was too old or unusable
+        /// Number of stored meters excluded, for any reason
         int stale_meters{0};
-        /// Meters excluded because their timestamp could not be parsed at all, as opposed
-        /// to merely being old. Reported rather than logged here: warning once per meter
-        /// instead of once per optimizer cycle is a decision about a meter's history, and
-        /// this class only ever sees one instant.
+        /// Meters excluded because their timestamp could not be parsed, for the caller to
+        /// warn about once
         std::vector<std::string> unparsable_meters;
+        /// Meters excluded because their timestamp lies more than the window in the future:
+        /// a clock or time zone error, for the caller to warn about once
+        std::vector<std::string> future_meters;
     };
 
     /// \param window validity window for a reading, see is_fresh().
-    explicit PowerMeterAggregator(std::chrono::seconds window) : aggregation_window(window){};
+    explicit PowerMeterAggregator(std::chrono::seconds window) : m_aggregation_window(window){};
 
     /// \brief Stores (or replaces) the last reading of one node.
     void update(const std::string& node_uuid, const types::powermeter::Powermeter& reading);
@@ -98,27 +69,17 @@ public:
     /// \brief Number of stored readings, fresh and stale alike.
     std::size_t size() const;
 
-    /// \brief Sums the readings that are fresh relative to \p now, by the is_fresh() rule.
-    ///
-    /// A timestamp that cannot be parsed counts as stale, and the meter is named in
-    /// AggregateResult::unparsable_meters so the caller can warn about it once rather than
-    /// on every optimizer cycle.
-    ///
-    /// Pure: no state of this object and nothing outside it changes, which is what lets an
-    /// instance be built, summed and dropped within one optimizer run.
+    /// \brief Sums the readings that are fresh relative to \p now.
     AggregateResult aggregate(date::utc_clock::time_point now) const;
 
 private:
-    std::map<std::string, types::powermeter::Powermeter> readings;
-    std::chrono::seconds aggregation_window;
+    std::map<std::string, types::powermeter::Powermeter> m_readings;
+    std::chrono::seconds m_aggregation_window;
 };
 
-/// \brief Feeds the aggregator with the power meter reading of every EVSE node in the tree.
-///
-/// Only NodeType::Evse nodes contribute: an intermediate node's own meter measures the sum
-/// of its children, so including it would double count. For each EVSE the leaves side
-/// measurement is preferred (that is what EvseManager reports) with the root side
-/// measurement as fallback. EVSE nodes without any measurement are simply not added.
+/// \brief Feeds the aggregator with the power meter reading of every EVSE node in the tree,
+/// leaves side before root side. Intermediate nodes are skipped: their meters measure the
+/// sum of their children.
 void collect_leaf_measurements(const types::energy::EnergyFlowRequest& node, PowerMeterAggregator& aggregator);
 
 /// \brief Where a site measurement came from.

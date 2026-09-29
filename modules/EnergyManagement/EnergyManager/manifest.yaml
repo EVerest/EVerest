@@ -125,10 +125,11 @@ config:
     description: >-
       Validity window for power meter readings when aggregating multiple meters [s].
       Power meters in the energy tree report at different times; a reading whose own
-      measurement timestamp is older than this window is excluded from the aggregated
-      sum instead of contributing a stale value. A meter that publishes slowly needs a
-      larger window, not none: this is the only guard between a meter that has stopped
-      updating and a limit computed from its last reading, so it cannot be switched off.
+      measurement timestamp is older than this window, or further than this window in the
+      future, is excluded from the aggregated sum instead of contributing a stale value. A
+      meter that publishes slowly needs a larger window, not none: this is the only guard
+      between a meter that has stopped updating and a limit computed from its last reading,
+      so it cannot be switched off.
       The same window judges the per connector reading the PowerRedistribution broker
       limits against, so one meter is never alive for one path and stale for the other.
     type: integer
