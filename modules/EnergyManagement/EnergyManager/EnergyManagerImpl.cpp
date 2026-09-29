@@ -102,27 +102,40 @@ EnergyManagerImpl::EnergyManagerImpl(
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
 }
 
-void EnergyManagerImpl::warn_about_unparsable_meters(const std::vector<std::string>& unparsable) {
-    // Warn once per meter, not once per optimizer cycle: a permanently broken meter would
-    // otherwise produce a warning every second, around the clock. A meter that starts
-    // delivering usable timestamps again is allowed to warn a second time later.
-    const std::set<std::string> current(unparsable.begin(), unparsable.end());
+namespace {
 
-    for (const auto& uuid : current) {
-        if (warned_unparsable_meters.insert(uuid).second) {
-            EVLOG_warning << "cannot parse the power meter timestamp of meter " << uuid
-                          << ", treating its readings as stale until it recovers";
+// Calls \p warn for every meter in \p current not yet in \p warned, and forgets meters that
+// have recovered so they may warn again.
+template <typename Warn>
+void warn_once_per_meter(std::set<std::string>& warned, const std::vector<std::string>& current, Warn warn) {
+    const std::set<std::string> now_faulty(current.begin(), current.end());
+    for (const auto& uuid : now_faulty) {
+        if (warned.insert(uuid).second) {
+            warn(uuid);
         }
     }
-
-    for (auto it = warned_unparsable_meters.begin(); it != warned_unparsable_meters.end();) {
-        it = current.count(*it) == 0 ? warned_unparsable_meters.erase(it) : std::next(it);
+    for (auto it = warned.begin(); it != warned.end();) {
+        it = now_faulty.count(*it) == 0 ? warned.erase(it) : std::next(it);
     }
+}
+
+} // namespace
+
+void EnergyManagerImpl::warn_about_meter_timestamps(const PowerMeterAggregator::AggregateResult& aggregate) {
+    warn_once_per_meter(m_warned_unparsable_meters, aggregate.unparsable_meters, [](const std::string& uuid) {
+        EVLOG_warning << "cannot parse the power meter timestamp of meter " << uuid
+                      << ", treating its readings as stale until it recovers";
+    });
+    warn_once_per_meter(m_warned_future_meters, aggregate.future_meters, [](const std::string& uuid) {
+        EVLOG_warning << "power meter timestamp of meter " << uuid
+                      << " lies in the future beyond the aggregation window (clock or time zone error), "
+                         "treating its readings as stale until it recovers";
+    });
 }
 
 PowerMeterAggregator::AggregateResult EnergyManagerImpl::get_leaf_aggregate() const {
     std::scoped_lock lock(energy_mutex);
-    return leaf_aggregate;
+    return m_leaf_aggregate;
 }
 
 EnergyManagerImpl::~EnergyManagerImpl() {
@@ -200,13 +213,11 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     globals.init(start_time, config.schedule_interval_duration, config.schedule_total_duration, config.slice_ampere,
                  config.slice_watt, config.debug, request);
 
-    // Refresh the aggregated leaf measurements for this run. The aggregator is built from
-    // the tree each time, so a connector that disappeared from it stops contributing
-    // without anything having to remember to drop it.
+    // Rebuilt every run, so a connector that left the tree stops contributing.
     PowerMeterAggregator leaf_aggregator(std::chrono::seconds(config.power_meter_aggregation_window_s));
     collect_leaf_measurements(request, leaf_aggregator);
-    leaf_aggregate = leaf_aggregator.aggregate(globals.start_time);
-    warn_about_unparsable_meters(leaf_aggregate.unparsable_meters);
+    m_leaf_aggregate = leaf_aggregator.aggregate(globals.start_time);
+    warn_about_meter_timestamps(m_leaf_aggregate);
 
     time_probe optimizer_start;
     optimizer_start.start();
@@ -214,11 +225,11 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
         EVLOG_info << "\033[1;44m---------------- Run energy optimizer ---------------- \033[1;0m";
 
     if (globals.debug) {
-        // Spell out the absence of a total rather than printing a zero that no meter reported.
-        const auto power = leaf_aggregate.power_W.has_value() ? fmt::format("{}W", leaf_aggregate.power_W.value().total)
-                                                              : std::string("no reading");
+        const auto power = m_leaf_aggregate.power_W.has_value()
+                               ? fmt::format("{}W", m_leaf_aggregate.power_W.value().total)
+                               : std::string("no reading");
         EVLOG_info << fmt::format("Aggregated leaf power: {} from {} meter(s), {} stale", power,
-                                  leaf_aggregate.fresh_meters, leaf_aggregate.stale_meters);
+                                  m_leaf_aggregate.fresh_meters, m_leaf_aggregate.stale_meters);
     }
 
     time_probe market_tp;

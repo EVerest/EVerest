@@ -254,8 +254,10 @@ TEST(PowerMeterAggregatorCurrent, StaleMeterIsExcludedFromCurrentSums) {
 
     const auto result = aggregator.aggregate(NOW);
 
-    // Only the fresh meter contributes, exactly as for power.
-    EXPECT_FLOAT_EQ(result.current_A.L1.value(), 16.0f);
+    // A phase sum that silently misses a meter's load is not reported at all.
+    EXPECT_FALSE(result.current_A.L1.has_value());
+    EXPECT_FALSE(result.current_A.L2.has_value());
+    EXPECT_FALSE(result.current_A.L3.has_value());
     EXPECT_EQ(result.stale_meters, 1);
 }
 
@@ -338,9 +340,7 @@ TEST(PowerMeterAggregatorWindow, SubSecondAgesResolveAtMillisecondPrecision) {
 }
 
 TEST(PowerMeterAggregatorWindow, ZeroWindowStillDisablesTheFilter) {
-    // The manifest no longer allows this to be configured (minimum: 1) - a slow meter needs
-    // a larger window, not no window. The behaviour is kept defined rather than left to
-    // chance for any caller that constructs the aggregator directly.
+    // The manifest's minimum is 1; the behaviour stays defined for direct callers.
     PowerMeterAggregator aggregator(std::chrono::seconds(0));
 
     aggregator.update("cp01", make_reading(1000.0f, NOW, std::chrono::hours(3)));
@@ -386,6 +386,20 @@ TEST(MeterFreshness, ClockSkewIntoTheFutureIsFresh) {
     EXPECT_TRUE(is_fresh(NOW + std::chrono::seconds(1), NOW, std::chrono::seconds(5)));
 }
 
+TEST(MeterFreshness, TimestampFurtherInTheFutureThanTheWindowIsNotFresh) {
+    EXPECT_TRUE(is_fresh(NOW + std::chrono::milliseconds(4999), NOW, std::chrono::seconds(5)));
+    EXPECT_FALSE(is_fresh(NOW + std::chrono::seconds(5), NOW, std::chrono::seconds(5)));
+    EXPECT_FALSE(is_fresh(NOW + std::chrono::hours(2), NOW, std::chrono::seconds(5)));
+}
+
+TEST(MeterFreshness, LocalTimeWithOffsetIsNotFreshForHours) {
+    // Half an hour after a meter froze. Parsed correctly the reading is 30 min old; parsed
+    // with the offset ignored it is 90 min in the future. Neither may count as fresh.
+    const auto measured_at = parse_meter_timestamp("2026-08-04T14:00:00.000+02:00");
+    ASSERT_TRUE(measured_at.has_value());
+    EXPECT_FALSE(is_fresh(measured_at, NOW + std::chrono::minutes(30), std::chrono::seconds(5)));
+}
+
 TEST(PowerMeterAggregatorWindow, FutureTimestampCountsAsFresh) {
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
 
@@ -396,6 +410,20 @@ TEST(PowerMeterAggregatorWindow, FutureTimestampCountsAsFresh) {
 
     EXPECT_FLOAT_EQ(result.power_W.value().total, 1000.0f);
     EXPECT_EQ(result.fresh_meters, 1);
+}
+
+TEST(PowerMeterAggregatorWindow, TimestampFarInTheFutureIsStaleAndReported) {
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    aggregator.update("cp01", make_reading(1000.0f, NOW, -std::chrono::hours(2)));
+    aggregator.update("cp02", make_reading(700.0f, NOW, std::chrono::seconds(60)));
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_FALSE(result.power_W.has_value());
+    EXPECT_EQ(result.stale_meters, 2);
+    EXPECT_EQ(result.future_meters, std::vector<std::string>{"cp01"});
+    EXPECT_TRUE(result.unparsable_meters.empty());
 }
 
 TEST(PowerMeterAggregatorWindow, UnparsableTimestampIsStale) {
@@ -411,7 +439,6 @@ TEST(PowerMeterAggregatorWindow, UnparsableTimestampIsStale) {
     EXPECT_FLOAT_EQ(result.power_W.value().total, 700.0f);
     EXPECT_EQ(result.fresh_meters, 1);
     EXPECT_EQ(result.stale_meters, 1);
-    // Named, so the caller can warn about it once rather than on every optimizer cycle.
     EXPECT_EQ(result.unparsable_meters, std::vector<std::string>{"cp01"});
 }
 
@@ -428,7 +455,7 @@ TEST(PowerMeterAggregatorWindow, MerelyOldTimestampIsNotReportedAsUnparsable) {
     EXPECT_TRUE(result.unparsable_meters.empty());
 }
 
-TEST(PowerMeterAggregatorWindow, StaleMeterIsExcludedFromPerPhaseSums) {
+TEST(PowerMeterAggregatorWindow, StaleMeterInvalidatesPerPhaseSums) {
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
 
     aggregator.update("cp01", make_per_phase_reading(1000.0f, 900.0f, 800.0f, NOW, std::chrono::seconds(0)));
@@ -437,9 +464,10 @@ TEST(PowerMeterAggregatorWindow, StaleMeterIsExcludedFromPerPhaseSums) {
     const auto result = aggregator.aggregate(NOW);
 
     ASSERT_TRUE(result.power_W.has_value());
-    EXPECT_FLOAT_EQ(result.power_W.value().L1.value(), 1000.0f);
-    EXPECT_FLOAT_EQ(result.power_W.value().L2.value(), 900.0f);
-    EXPECT_FLOAT_EQ(result.power_W.value().L3.value(), 800.0f);
+    EXPECT_FLOAT_EQ(result.power_W.value().total, 2700.0f);
+    EXPECT_FALSE(result.power_W.value().L1.has_value());
+    EXPECT_FALSE(result.power_W.value().L2.has_value());
+    EXPECT_FALSE(result.power_W.value().L3.has_value());
     EXPECT_EQ(result.stale_meters, 1);
 }
 

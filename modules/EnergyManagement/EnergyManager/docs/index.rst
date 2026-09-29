@@ -24,7 +24,10 @@ that never actually existed on the installation.
 
 The EnergyManager therefore sums only those readings whose own measurement timestamp lies
 within ``power_meter_aggregation_window_s`` of the optimizer's start time; older readings
-are excluded as stale rather than contributing a wrong value. Only EVSE nodes contribute,
+are excluded as stale rather than contributing a wrong value. The window applies in both
+directions: clock skew smaller than the window is tolerated, but a reading timestamped
+further in the future is excluded too and logged once per meter as a clock or time zone
+error, so a frozen meter with a skewed clock cannot stay "fresh". Only EVSE nodes contribute,
 so no meter is ever counted together with meters it already measures. Power and per phase
 current are aggregated together.
 
@@ -37,8 +40,10 @@ updating and a limit computed from its last reading, so the smallest window is `
 **When a value is unknown it is reported as absent, never as zero.** If no meter has a
 fresh reading, the aggregate carries no total at all -- a consumer must read that as
 "unknown" and keep distributing on the static limits, never as "no power is flowing". The
-same holds per phase: a phase is summed only when every contributing meter reports it, so
-one single phase meter leaves the site L2 and L3 sums absent instead of understating them.
+same holds per phase: a phase is summed only when every stored meter is fresh and reports
+it, so one single phase meter leaves the site L2 and L3 sums absent instead of
+understating them, and one stale meter leaves all per phase sums absent. The total then
+covers the fresh meters only; ``stale_meters`` tells a consumer it is incomplete.
 
 .. list-table::
    :header-rows: 1
@@ -115,7 +120,8 @@ broker tell a live reading from a frozen one: ``EnergyNode`` and ``EvseManager``
 republish the last power meter reading they received in every energy flow request, so a
 meter that stopped updating is indistinguishable from one holding steady unless the
 reading's own timestamp is checked. A reading whose timestamp cannot be parsed is
-treated like a missing one rather than a current one.
+treated like a missing one rather than a current one, and so is one timestamped further in
+the future than the maximum age.
 
 The limit is computed per phase - from the measured per-phase current, falling back to
 per-phase power over the nominal voltage, then to the total power spread over the active

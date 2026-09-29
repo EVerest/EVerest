@@ -20,13 +20,8 @@
 
 namespace module {
 
-/// \brief The module's manifest options.
-///
-/// Every member carries its manifest default, so an option a caller forgets to set reads as
-/// that default instead of an indeterminate value. Production always assigns all of them
-/// from the generated config; the defaults exist for tests, where a missed option used to
-/// reach EnergyManagerImpl as garbage (a negative aggregation window silently switched the
-/// staleness filter off).
+/// \brief The module's manifest options, each defaulted to its manifest default so a test
+/// that does not set an option gets a defined value.
 struct EnergyManagerConfig {
     double nominal_ac_voltage{230.0};
     int update_interval{1};
@@ -90,18 +85,12 @@ public:
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 #endif
 
-    /// \brief The aggregated leaf power meter reading computed during the most recent
-    /// run_optimizer() call. Readings older than power_meter_aggregation_window_s are
-    /// excluded from the sums.
-    /// Returned by value under the optimizer lock: run_optimizer() runs on a detached
-    /// thread once start() has been called, so a reference into the live state would be a
-    /// data race for any external caller.
+    /// \brief The aggregated leaf power meter reading of the most recent run_optimizer()
+    /// call, by value: the worker thread may be running the next one.
     PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
 
 private:
-    /// \brief Logs the meters aggregate() reported as having an unparsable timestamp, once
-    /// per meter rather than once per optimizer run.
-    void warn_about_unparsable_meters(const std::vector<std::string>& unparsable);
+    void warn_about_meter_timestamps(const PowerMeterAggregator::AggregateResult& aggregate);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -123,15 +112,11 @@ private:
 
     std::map<std::string, BrokerContext> contexts;
 
-    // Aggregated leaf power meter reading of the most recent optimizer run. The aggregator
-    // that produces it is a local of that run: it holds nothing worth keeping between runs,
-    // and a member would have to be cleared by hand to stop a departed meter contributing.
-    PowerMeterAggregator::AggregateResult leaf_aggregate;
+    PowerMeterAggregator::AggregateResult m_leaf_aggregate;
 
-    // Meters already warned about for an unparsable timestamp. The warn-once decision needs
-    // the history that a single aggregation does not have, so it lives here rather than in
-    // the aggregator. An entry is dropped once the meter delivers a usable timestamp again.
-    std::set<std::string> warned_unparsable_meters;
+    // Meters already warned about, so each fault is logged once until the meter recovers.
+    std::set<std::string> m_warned_unparsable_meters;
+    std::set<std::string> m_warned_future_meters;
 };
 
 } // namespace module
