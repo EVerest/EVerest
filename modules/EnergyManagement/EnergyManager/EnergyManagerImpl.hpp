@@ -8,11 +8,11 @@
 // headers for required interface implementations
 #include <generated/interfaces/energy/Interface.hpp>
 
-#include <atomic>
 #include <mutex>
 #include <thread>
 
 #include <Broker.hpp>
+#include <everest/util/async/monitor.hpp>
 
 namespace module {
 
@@ -55,10 +55,13 @@ public:
     /// energy flow request is updated. Calling it twice is a no-op.
     void start();
 
-    /// \brief Stops the worker thread started by start() and waits for it to finish.
-    /// Idempotent, and safe to call when start() never ran. Called from the module's
-    /// shutdown hook and from the destructor, so the thread cannot outlive the object whose
-    /// state it reads on every cycle.
+    /// \brief Asks the worker thread to end after its current run, without waiting for it.
+    /// Called from the module's shutdown hook: the run may be blocked in an enforce_limits
+    /// command, which only fails once that hook has returned.
+    void request_stop();
+
+    /// \brief request_stop(), then waits for the worker thread to finish. Idempotent, and
+    /// safe to call when start() never ran.
     void stop();
 
     /// \brief Updates the energy_flow_request and notifies the worker thread
@@ -74,15 +77,8 @@ public:
                                                              const std::string& test_name = "");
 
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
-    /// \brief Returns the reading the power redistribution broker last observed for
-    /// connector \p uuid: total power [W], per-phase current [A] (L1/L2/L3) and the
-    /// reading's own measurement time. Values without a measurement are std::nullopt (all
-    /// of them if tracking is disabled, no measurement is available, or no active session).
-    ///
-    /// Test observation only. Nothing in production reads it, and the class it hangs off
-    /// decides the current limit of every connector on the site, so it is not part of that
-    /// class's API. The tests define BUILD_TESTING_MODULE_ENERGY_MANAGER (see
-    /// tests/CMakeLists.txt).
+    /// \brief Test observation only: the reading the power redistribution broker last
+    /// observed for connector \p uuid, all fields std::nullopt if there is none.
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 #endif
 
@@ -92,23 +88,15 @@ private:
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
     std::mutex energy_mutex;
-    std::condition_variable mainloop_sleep_condvar;
-    std::mutex mainloop_sleep_mutex;
 
-    // Worker thread running the optimizer loop, and the flag that ends it. The thread is
-    // joined rather than detached: it reads config, contexts and the energy flow request of
-    // this object on every cycle, so it must not outlive it.
-    // running is written only under mainloop_sleep_mutex, the mutex the worker waits on, so
-    // a stop() cannot slip past the wait predicate; it is atomic so the loop condition can
-    // read it without taking the lock every cycle.
-    std::thread mainloop;
-    std::atomic<bool> running{false};
-
-    // Set by on_energy_flow_request() for a priority request, to run the optimizer before
-    // the update interval is up; cleared by the worker once it has woken. Guarded by
-    // mainloop_sleep_mutex, not atomic: unlike running it is only ever touched while
-    // holding that mutex, and the wait predicate must see it and the notification together.
-    bool wakeup{false};
+    struct LoopState {
+        bool running{false};
+        // A priority request asks for a run before the update interval is up.
+        bool wakeup{false};
+    };
+    everest::lib::util::monitor<LoopState> m_loop_state;
+    // Joined, not detached: it reads this object's state on every run.
+    std::thread m_mainloop;
 
     // complete energy tree request
     types::energy::EnergyFlowRequest energy_flow_request;

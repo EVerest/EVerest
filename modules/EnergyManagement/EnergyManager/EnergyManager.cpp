@@ -59,10 +59,9 @@ void EnergyManager::ready() {
 }
 
 void EnergyManager::shutdown() {
-    // Stop the optimizer loop before the implementation goes away. ev-cli added this hook;
-    // leaving it empty would let a thread that reads this module's state keep running past
-    // shutdown, which is exactly what the hook exists to prevent.
-    this->impl->stop();
+    // Not stop(): joining here would wait for a pending enforce_limits command, which only
+    // fails once this hook has returned. ~EnergyManagerImpl() joins.
+    this->impl->request_stop();
 
     invoke_shutdown(*p_main);
 }

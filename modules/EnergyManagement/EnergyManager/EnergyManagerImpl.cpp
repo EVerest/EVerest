@@ -109,52 +109,46 @@ EnergyManagerImpl::~EnergyManagerImpl() {
 
 void EnergyManagerImpl::start() {
     {
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (running) {
+        auto loop = m_loop_state.handle();
+        if (loop->running) {
             return;
         }
-        running = true;
+        loop->running = true;
     }
 
-    // start thread to update energy optimization
-    mainloop = std::thread([this] {
-        while (running) {
+    m_mainloop = std::thread([this] {
+        while (true) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
-            enforced_limits_callback(optimized_values);
-            {
-                std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                // Both reasons to wake early, under the lock that guards them. stop() and
-                // on_energy_flow_request() set their flag while holding this same mutex, so
-                // neither change can land between this predicate and the wait; without both
-                // halves the notification is lost in that window.
-                //
-                // Both have to be named here: a predicated wait_for re-sleeps on every
-                // notification its predicate does not cover, so a predicate that mentions
-                // only the stop flag swallows the priority request wake-up and delays the
-                // optimizer run it asks for by a full update_interval.
-                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval),
-                                                [this] { return not running or wakeup; });
-                wakeup = false;
+            try {
+                enforced_limits_callback(optimized_values);
+            } catch (const std::exception& e) {
+                // After shutdown a pending enforce_limits command fails with Everest::Shutdown.
+                if (not m_loop_state.handle()->running) {
+                    return;
+                }
+                EVLOG_error << "Failed to enforce limits: " << e.what();
             }
+
+            auto loop = m_loop_state.handle();
+            loop.wait_for([&loop] { return not loop->running or loop->wakeup; },
+                          std::chrono::seconds(config.update_interval));
+            if (not loop->running) {
+                return;
+            }
+            loop->wakeup = false;
         }
     });
 }
 
-void EnergyManagerImpl::stop() {
-    {
-        // Under the same mutex the worker waits on: clearing the flag outside it leaves a
-        // window where the worker has already tested the predicate but is not yet
-        // registered on the condition variable, and the notification below is lost.
-        std::lock_guard<std::mutex> lock(mainloop_sleep_mutex);
-        if (not running) {
-            return;
-        }
-        running = false;
-    }
+void EnergyManagerImpl::request_stop() {
+    m_loop_state.handle()->running = false;
+    m_loop_state.notify_all();
+}
 
-    mainloop_sleep_condvar.notify_all();
-    if (mainloop.joinable()) {
-        mainloop.join();
+void EnergyManagerImpl::stop() {
+    request_stop();
+    if (m_mainloop.joinable()) {
+        m_mainloop.join();
     }
 }
 
@@ -164,15 +158,8 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     energy_flow_request = e;
 
     if (is_priority_request(e)) {
-        // Trigger optimization now. The flag is set under the mutex the worker waits on,
-        // for the same reason stop() clears running under it: notifying without it leaves a
-        // window in which the worker has tested the predicate but is not yet registered on
-        // the condition variable, and the request waits out the whole update_interval.
-        {
-            std::lock_guard<std::mutex> sleep_lock(mainloop_sleep_mutex);
-            wakeup = true;
-        }
-        mainloop_sleep_condvar.notify_all();
+        m_loop_state.handle()->wakeup = true;
+        m_loop_state.notify_all();
     }
 }
 

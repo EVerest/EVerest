@@ -5,7 +5,9 @@
 
 #include <chrono>
 #include <condition_variable>
+#include <future>
 #include <mutex>
+#include <stdexcept>
 
 #include "EnergyManagerTestHelpers.hpp"
 
@@ -75,11 +77,7 @@ TEST(OptimizerLoop, RunsOnceOnStart) {
 }
 
 TEST(OptimizerLoop, PriorityRequestTriggersARunBeforeTheInterval) {
-    // The regression this exists for: the worker sleeps with a predicated wait_for, which
-    // re-sleeps on any notification its predicate does not cover. A predicate naming only
-    // the stop flag swallows this wake-up, and the request waits out update_interval -
-    // a minute here, and on a real site the delay between plugging in and being allotted
-    // any current at all.
+    // A predicated wait re-sleeps on any notification its predicate does not cover.
     RunCounter counter;
     EnergyManagerImpl impl(make_loop_config(), std::ref(counter));
 
@@ -94,8 +92,6 @@ TEST(OptimizerLoop, PriorityRequestTriggersARunBeforeTheInterval) {
 }
 
 TEST(OptimizerLoop, NonPriorityRequestDoesNotTriggerARun) {
-    // The other half of the contract: an ordinary update is picked up by the next periodic
-    // run, so the wake-up flag must not fire for it.
     RunCounter counter;
     EnergyManagerImpl impl(make_loop_config(), std::ref(counter));
 
@@ -145,9 +141,6 @@ TEST(OptimizerLoop, StopWithoutStartIsSafe) {
 }
 
 TEST(OptimizerLoop, DestructorJoinsTheWorker) {
-    // The worker reads config, contexts and the energy flow request of the impl on every
-    // cycle, so it must not outlive it - with the thread detached this was a use after
-    // free rather than a test.
     RunCounter counter;
     {
         EnergyManagerImpl impl(make_loop_config(), std::ref(counter));
@@ -156,6 +149,75 @@ TEST(OptimizerLoop, DestructorJoinsTheWorker) {
         ASSERT_TRUE(counter.wait_for_runs(1, REACTION_BUDGET));
     }
     SUCCEED();
+}
+
+TEST(OptimizerLoop, RequestStopDoesNotWaitForAnEnforceLimitsCall) {
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    std::promise<void> entered;
+    auto blocking_callback = [&entered, released, first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
+        if (first) {
+            first = false;
+            entered.set_value();
+        }
+        released.wait();
+    };
+
+    EnergyManagerImpl impl(make_loop_config(), blocking_callback);
+    impl.on_energy_flow_request(make_tree(false));
+    impl.start();
+    ASSERT_EQ(entered.get_future().wait_for(REACTION_BUDGET), std::future_status::ready);
+
+    const auto before = std::chrono::steady_clock::now();
+    impl.request_stop();
+    EXPECT_LT(std::chrono::steady_clock::now() - before, REACTION_BUDGET);
+
+    release.set_value();
+    impl.stop();
+}
+
+TEST(OptimizerLoop, FailingEnforceLimitsEndsTheLoopAfterRequestStop) {
+    std::promise<void> release;
+    std::shared_future<void> released = release.get_future().share();
+    std::promise<void> entered;
+    auto throwing_callback = [&entered, released, first = true](const std::vector<types::energy::EnforcedLimits>&) mutable {
+        if (first) {
+            first = false;
+            entered.set_value();
+        }
+        released.wait();
+        throw std::runtime_error("module is shutting down");
+    };
+
+    EnergyManagerImpl impl(make_loop_config(), throwing_callback);
+    impl.on_energy_flow_request(make_tree(false));
+    impl.start();
+    ASSERT_EQ(entered.get_future().wait_for(REACTION_BUDGET), std::future_status::ready);
+
+    impl.request_stop();
+    release.set_value();
+
+    const auto before = std::chrono::steady_clock::now();
+    impl.stop();
+    EXPECT_LT(std::chrono::steady_clock::now() - before, REACTION_BUDGET);
+}
+
+TEST(OptimizerLoop, FailingEnforceLimitsKeepsTheLoopRunning) {
+    RunCounter counter;
+    auto throwing_callback = [&counter](const std::vector<types::energy::EnforcedLimits>& limits) {
+        counter(limits);
+        throw std::runtime_error("command timeout");
+    };
+
+    EnergyManagerImpl impl(make_loop_config(), throwing_callback);
+    impl.on_energy_flow_request(make_tree(false));
+    impl.start();
+    ASSERT_TRUE(counter.wait_for_runs(1, REACTION_BUDGET));
+
+    impl.on_energy_flow_request(make_tree(true));
+
+    EXPECT_TRUE(counter.wait_for_runs(2, REACTION_BUDGET));
+    impl.stop();
 }
 
 } // namespace module
