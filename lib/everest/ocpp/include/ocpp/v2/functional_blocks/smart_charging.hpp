@@ -7,8 +7,12 @@
 #include <functional>
 #include <map>
 #include <optional>
+#include <set>
 #include <utility>
 #include <vector>
+
+#include <everest/timer.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <ocpp/v2/dynamic_schedule_manager.hpp>
 #include <ocpp/v2/message_handler.hpp>
@@ -125,6 +129,16 @@ class SmartChargingInterface : public MessageHandlerInterface {
 public:
     ~SmartChargingInterface() override = default;
 
+    /// \brief Schedules asynchronous processing of stored profiles' offline-validity deadlines.
+    /// Returns without database work; consumers are notified when profile validity changes.
+    virtual void on_connection_lost() = 0;
+
+    /// \brief Schedules cleanup of profiles invalidated by the completed \p offline_duration.
+    /// Must be called while the connectivity manager still reports this outage's disconnect time.
+    /// Returns without database work and notifies consumers once, asynchronously, when profiles
+    /// were deleted or became valid again.
+    virtual void on_connection_restored(std::chrono::steady_clock::duration offline_duration) = 0;
+
     /// \brief Gets composite schedules for all evse_ids (including 0) for the given \p duration and \p unit . If no
     /// valid profiles are given for an evse for the specified period, the composite schedule will be empty for this
     /// evse.
@@ -187,9 +201,24 @@ private: // Members
 protected: // Members
     /// \brief K28 dynamic-profile state: pull/expire deadlines, async pull-response handlers, and
     /// the adaptive timer. Engaged only when the device model advertises SupportsDynamicProfiles, so
-    /// stations without Dynamic support pay no thread/timer cost. Declared last so it destructs first:
-    /// its timer joins the io_context thread before the rest of SmartCharging tears down.
+    /// stations without Dynamic support pay no dynamic-profile thread/timer cost. Its timer joins
+    /// before the callbacks and context it uses are destroyed.
     std::optional<DynamicScheduleManager> dynamic_schedule_manager;
+
+private:
+    struct OfflineState {
+        std::optional<std::chrono::steady_clock::time_point> disconnected;
+        std::chrono::steady_clock::time_point restored{};
+        std::optional<std::chrono::steady_clock::duration> pending_reconnect;
+        std::set<std::int32_t> processed_profiles;
+        bool notify_pending = false;
+        std::chrono::seconds retry_delay{1};
+    };
+    everest::lib::util::monitor<OfflineState> m_offline_state;
+    // Destroy and join the timer before the state, dynamic tracking, callbacks and context it uses.
+    Everest::Timer<std::chrono::steady_clock> m_offline_timer;
+
+    void on_offline_deadline();
 
 public:
     /// \brief Construct the SmartCharging functional block.
@@ -197,7 +226,7 @@ public:
     /// \param set_charging_profiles_callback  Invoked whenever the set of valid charging profiles
     ///                                         changes and consumers must recompute composite
     ///                                         schedules. Also fired from the timer thread on
-    ///                                         K28.FR.13 expiry and K28.FR.06 push apply.
+    ///                                         offline-validity deadlines, K28.FR.13 expiry and K28.FR.06 push apply.
     /// \param stop_transaction_callback       Invoked from the NotifyEVChargingNeeds response path
     ///                                         when the schedule mandates transaction termination
     ///                                         (K18.FR.23 / K19.FR.16).
@@ -208,6 +237,9 @@ public:
                   StopTransactionCallback stop_transaction_callback);
 
     ~SmartCharging() override = default;
+
+    void on_connection_lost() override;
+    void on_connection_restored(std::chrono::steady_clock::duration offline_duration) override;
 
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
