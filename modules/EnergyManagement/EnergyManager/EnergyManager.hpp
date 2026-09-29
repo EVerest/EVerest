@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -36,6 +36,17 @@ struct Conf {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
+    std::string broker_strategy;
+    double redistribution_margin_A;
+    bool redistribution_start_with_lower_limit;
+    int redistribution_reduction_hold_s;
+    int power_meter_aggregation_window_s;
+    double power_redistribution_connector_margin;
+    double power_redistribution_site_margin;
+    double power_redistribution_gain;
+    bool phase_symmetry_enabled;
+    double max_phase_imbalance_A;
+    int phase_imbalance_hold_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {
@@ -62,6 +73,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

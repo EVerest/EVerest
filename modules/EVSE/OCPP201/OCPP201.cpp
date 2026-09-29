@@ -1857,12 +1857,15 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeS
 
         types::energy::LimitsReq limits_req;
         if (unit == ocpp::v2::ChargingRateUnitEnum::A) {
-            limits_req.ac_max_current_A = {period.limit.value(), source_ext_limit};
+            external_energy_limits::set_current_limit(limits_req, period.limit.value(), period.limit_L2,
+                                                      period.limit_L3, source_ext_limit);
             if (period.numberPhases.has_value()) {
                 limits_req.ac_max_phase_count = {period.numberPhases.value(), source_ext_limit};
             }
         } else {
-            limits_req.total_power_W = {period.limit.value(), source_ext_limit};
+            limits_req.total_power_W = {
+                external_energy_limits::total_power_limit(period.limit.value(), period.limit_L2, period.limit_L3),
+                source_ext_limit};
         }
 
         entry.limits_to_leaves = limits_req;

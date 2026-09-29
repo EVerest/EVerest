@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "Broker.hpp"
+#include <algorithm>
 #include <everest/logging.hpp>
 #include <fmt/core.h>
 
@@ -66,7 +67,7 @@ bool Broker::trade(Offer& _offer) {
                                            : " [NOT_SET] "));
         }
         //   execute the trade on the market
-        local_market.trade(trading);
+        local_market.trade(trading, trading_phases());
 
         return true;
     } else {
@@ -75,7 +76,7 @@ bool Broker::trade(Offer& _offer) {
         }
 
         //   execute the zero trade on the market
-        local_market.trade(trading);
+        local_market.trade(trading, trading_phases());
 
         // If no trade happens for the first time after successful tradings, set the source. If trading happens again,
         // clear the source again. If this is a second call to no trade, do not update source.
@@ -88,28 +89,8 @@ date::utc_clock::time_point Broker::to_timestamp(const types::energy::ScheduleRe
 }
 
 bool Broker::time_slot_active(const int i, const ScheduleReq& offer) {
-    const auto& now = globals.start_time;
-    const auto t_i = to_timestamp(offer[i]);
-
-    int active_slot = 0;
-    // Get active slot:
-    if (now < to_timestamp(offer[0])) {
-        // First element already in the future
-        active_slot = 0;
-    } else if (now > to_timestamp(offer[offer.size() - 1])) {
-        // Last element in the past
-        active_slot = offer.size() - 1;
-    } else {
-        // Somewhere in between
-        for (int n = 0; n < offer.size() - 1; n++) {
-            if (now > to_timestamp(offer[n]) and now < to_timestamp(offer[n + 1])) {
-                active_slot = n;
-                break;
-            }
-        }
-    }
-
-    return active_slot == i;
+    const auto active_slot = active_slot_index(offer);
+    return active_slot.has_value() and active_slot.value() == static_cast<ScheduleReq::size_type>(i);
 }
 
 bool Broker::buy_ampere_import(int index, float ampere, bool allow_less,
@@ -142,13 +123,18 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
         return false;
     }
 
+    // The watt limit of the path is spent on the phases the connector draws on; the watt
+    // figure it is sent stays on the phase count it declares, as it converts back with that.
+    const float power_phases =
+        static_cast<float>(std::max(1, std::min(number_of_phases.value, static_cast<int>(trading_phases().size()))));
+
     // enough ampere available?
     if (max_current.value().value >= ampere) {
 
         // do we have an additional watt limit?
         if (total_power.has_value()) {
             // is the watt limit high enough?
-            if (total_power.value().value >= ampere * number_of_phases.value * local_market.nominal_ac_voltage()) {
+            if (total_power.value().value >= ampere * power_phases * local_market.nominal_ac_voltage()) {
                 // yes, buy both ampere and watt
                 // EVLOG_info << "[OK] buy amps and total power is big enough for trade of " << a << "A /"
                 //           << a * number_of_phases * local_market.nominal_ac_voltage();
@@ -178,7 +164,7 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
             if (total_power.value().value > 0) {
                 // is the watt limit high enough?
                 if (total_power.value().value >=
-                    max_current.value().value * number_of_phases.value * local_market.nominal_ac_voltage()) {
+                    max_current.value().value * power_phases * local_market.nominal_ac_voltage()) {
                     // yes, buy both ampere and watt
                     // EVLOG_info << "[OK leftovers] total power is big enough for trade of "
                     //           << a * number_of_phases * local_market.nominal_ac_voltage();
@@ -192,8 +178,7 @@ bool Broker::buy_ampere(const types::energy::ScheduleReqEntry& _offer, int index
                     return true;
                 } else {
                     // watt limit is lower, try to reduce ampere
-                    float reduced_ampere =
-                        total_power.value().value / number_of_phases.value / local_market.nominal_ac_voltage();
+                    float reduced_ampere = total_power.value().value / power_phases / local_market.nominal_ac_voltage();
                     // EVLOG_info << "[OK leftovers] total power is not big enough, buy reduced current " <<
                     // reduced_ampere
                     //            << reduced_ampere * number_of_phases * local_market.nominal_ac_voltage();

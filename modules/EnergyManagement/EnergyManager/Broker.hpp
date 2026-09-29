@@ -3,6 +3,9 @@
 #ifndef BROKER_HPP
 #define BROKER_HPP
 
+#include <chrono>
+#include <optional>
+
 #include "Market.hpp"
 #include "Offer.hpp"
 
@@ -12,6 +15,110 @@ enum class SlotType {
     Import,
     Export,
     Undecided
+};
+
+// True while a connector has a session worth observing. Unplugged and Finished are the
+// two states with no consumption to compare an allocation against; a node that declares no
+// state at all (the non-EVSE nodes of the tree) is not excluded. Shared by every site that
+// needs this test so the three of them cannot drift apart - one of them used to spell the
+// negation by hand.
+inline bool in_session(const types::energy::EnergyFlowRequest& node) {
+    return not node.evse_state.has_value() or (node.evse_state.value() != types::energy::EvseState::Unplugged and
+                                               node.evse_state.value() != types::energy::EvseState::Finished);
+}
+
+// Snapshot of the power meter reading last observed by the power redistribution broker
+// for one connector, refreshed on every optimizer run during an active session.
+// Values the meter does not report are nullopt, never zero (a single-phase meter reports
+// only current_A.L1). Per-phase current is what per-phase trading and asymmetry limits
+// are expressed in, so it is kept per phase rather than collapsed to a total.
+struct ObservedMeasurement {
+    // Imported power [W] (types::units::Power): total plus optional per-phase L1/L2/L3.
+    // nullopt while the meter reports no power at all.
+    std::optional<types::units::Power> power_W;
+
+    // Per-phase current [A] with named L1/L2/L3 properties (types::units::Current).
+    types::units::Current current_A;
+
+    // The reading's own measurement timestamp, carried so a consumer can tell a live
+    // reading from one the meter stopped refreshing. This matters because absence and
+    // staleness fail differently: a meter that stops publishing clears power_W on the
+    // next run, but EnergyNode and EvseManager keep re-publishing the last Powermeter
+    // they received, so a dead meter looks exactly like a live one holding steady.
+    // Without this field that is indistinguishable, and every consumer of power_W would
+    // have to trust an age it cannot see. nullopt when the meter reports no usable
+    // timestamp, which must be treated like a missing measurement, not like a fresh one.
+    std::optional<date::utc_clock::time_point> measured_at;
+};
+
+// Current [A] per phase. A phase that is nullopt is unknown, never zero: a single-phase
+// meter reports L1 only, and an unknown phase must not constrain anything.
+struct PhaseCurrents {
+    std::optional<float> L1;
+    std::optional<float> L2;
+    std::optional<float> L3;
+};
+
+/// \brief Tracks how long a condition has held, and reports each edge exactly once.
+///
+/// The power redistribution inference needs the same three things for a connector that is
+/// under-consuming and for a site with headroom: start timing when the condition appears,
+/// call it held once it has lasted the configured time, and say so once per stretch rather
+/// than on every optimizer run. Written out twice they drifted - one copy was reset when a
+/// session ended and the other was reset by nothing at all.
+///
+/// Time is always passed in (the optimizer's start_time) rather than read from the clock,
+/// so a latch matches the run it belongs to.
+class HoldLatch {
+public:
+    /// What update() wants said about this run, at most once per stretch.
+    enum class Edge {
+        None,     ///< nothing to report
+        Held,     ///< the condition has now held long enough; report it
+        Released, ///< a condition that was reported has stopped holding; report that
+    };
+
+    Edge update(bool condition, date::utc_clock::time_point now, std::chrono::seconds hold_time) {
+        if (not condition) {
+            since.reset();
+            condition_held = false;
+            if (not reported) {
+                return Edge::None;
+            }
+            reported = false;
+            return Edge::Released;
+        }
+
+        if (not since.has_value()) {
+            since = now;
+        }
+        condition_held = now - since.value() >= hold_time;
+
+        if (not condition_held or reported) {
+            return Edge::None;
+        }
+        reported = true;
+        return Edge::Held;
+    }
+
+    /// \brief Whether the condition has held for the full hold time, as of the last update().
+    bool held() const {
+        return condition_held;
+    }
+
+    /// \brief Forgets the stretch in progress without reporting a release. For the end of a
+    /// session, where there is no longer a condition to have stopped holding.
+    void reset() {
+        since.reset();
+        reported = false;
+        condition_held = false;
+    }
+
+private:
+    // start_time of the run since which the condition has held continuously.
+    std::optional<date::utc_clock::time_point> since;
+    bool reported{false};
+    bool condition_held{false};
 };
 
 // All context data that is stored in between optimization runs
@@ -24,11 +131,81 @@ struct BrokerContext {
         number_1ph3ph_cycles = 0;
         last_ac_number_of_active_phases_import = 0;
         ts_1ph_optimal = date::utc_clock::now();
+        tracking_warned_no_measurement = false;
+        last_observed_measurement = {};
+        redistribution_cap_A = std::nullopt;
+        redistribution_reduction_pending_since = std::nullopt;
+        distributed_power_W = std::nullopt;
+        last_allocated_W.reset();
+        last_margin_W = 0.f;
+        under_consuming.reset();
+        phase_imbalance_cap_A = std::nullopt;
+        phase_imbalance_cap_since = std::nullopt;
+        phase_imbalance_arrived_at = std::nullopt;
+        phases_in_use = ALL_GRID_PHASES;
+        phases_narrower_since = std::nullopt;
     };
 
     int number_1ph3ph_cycles;
     int last_ac_number_of_active_phases_import;
     std::chrono::time_point<date::utc_clock> ts_1ph_optimal;
+
+    // True once the missing-measurement warning has been logged for this session, so a
+    // meterless connector warns once instead of once per optimizer run.
+    bool tracking_warned_no_measurement;
+
+    // Reading last observed by the power redistribution broker for this connector.
+    // Empty (all nullopt) while no measurement is available. Reset by clear() on unplug.
+    ObservedMeasurement last_observed_measurement;
+
+    // Current cap the power redistribution broker last applied to this connector, per
+    // phase. nullopt while the connector is not being limited (FastCharging strategy, or
+    // the session is not drawing). Reset by clear() on unplug.
+    std::optional<PhaseCurrents> redistribution_cap_A;
+
+    // Set while a reduction of redistribution_cap_A is pending: the moment the candidate
+    // cap first fell below the applied one. The reduction is applied once it has been
+    // pending for the configured hold time; a recovering candidate clears it.
+    std::optional<date::utc_clock::time_point> redistribution_reduction_pending_since;
+
+    // Extra import power [W] the site inference granted this connector, on top of what its
+    // own measurement plus the margin allows. Written once per optimizer run by
+    // EnergyManagerImpl and consumed by the broker of the following run, which is the
+    // earliest a figure derived from this run's allocations can be acted on. nullopt while
+    // the site has no headroom to hand this connector.
+    std::optional<float> distributed_power_W;
+
+    // Import power [W] the previous optimizer run handed to this connector: the "allotted"
+    // side of the power redistribution inference, compared against the measurement of the
+    // following run. nullopt before the first run of a session and while not in a session.
+    std::optional<float> last_allocated_W;
+
+    // The part of last_allocated_W that is the cap's own margin above the measurement it
+    // was computed from, on the phases that allocation was expressed in. Paired with
+    // last_allocated_W because the classification has to know how much of the gap it is
+    // looking at the broker put there itself.
+    float last_margin_W{0.f};
+
+    // How long this connector has continuously consumed less than allotted, and whether
+    // that has already been reported for the current stretch.
+    HoldLatch under_consuming;
+
+    // Cap the phase imbalance limiting holds this connector at [A], 0 while it is paused,
+    // the run that last changed it (the hold counts from there), and the run its session
+    // was first seen in (the newest is paused first). Empty while the connector is not
+    // being limited. Written by EnergyManagerImpl, applied by BrokerPowerRedistribution as
+    // one more upper bound. Reset by clear() on unplug.
+    std::optional<float> phase_imbalance_cap_A;
+    std::optional<date::utc_clock::time_point> phase_imbalance_cap_since;
+    std::optional<date::utc_clock::time_point> phase_imbalance_arrived_at;
+
+    // Grid phases the connector's trades count on, from its own per phase measurement.
+    // All three while it draws nothing or has no usable reading, since it may then start on
+    // any. A phase is added the run it is drawn on, and dropped only once the narrower set
+    // has held for the reduction hold (the run it first did is phases_narrower_since): an EV
+    // ramping up may not yet draw on every phase it will use. Reset by clear() on unplug.
+    PhaseSet phases_in_use{ALL_GRID_PHASES};
+    std::optional<date::utc_clock::time_point> phases_narrower_since;
 };
 
 // base class for different Brokers
@@ -48,12 +225,24 @@ public:
         DontChange,
     };
 
+    // Configuration of the PowerRedistribution strategy, unused by FastCharging.
+    // Check manifest.yaml of this module for description (redistribution_* options).
+    struct RedistributionConfig {
+        float margin_A{2.0f};
+        bool start_with_lower_limit{true};
+        std::chrono::seconds reduction_hold{10};
+        // power_meter_aggregation_window_s: the module has one staleness rule, and a meter
+        // that is stale for the site aggregate is stale for this connector's limit too.
+        std::chrono::seconds measurement_max_age{5};
+    };
+
     struct EnergyManagerConfig {
         Switch1ph3phMode switch_1ph_3ph_mode{Switch1ph3phMode::Never};
         StickyNess stickyness{StickyNess::DontChange};
         int max_nr_of_switches_per_session{0};
         int power_hysteresis_W{200};
         int time_hysteresis_s{600};
+        RedistributionConfig redistribution;
     };
 
     Broker(Market& market, BrokerContext& context, EnergyManagerConfig config);
@@ -69,6 +258,19 @@ public:
     // Actual implementation of the trading algorithm. This function must be overriden by the
     // specific implementation class. It will be called from the trade() function of the base class.
     virtual void tradeImpl() = 0;
+
+    // Reads whatever this broker wants to know about the current state of its connector,
+    // before any trading round runs. Called exactly once per optimizer run, from the same
+    // loop that creates the brokers. Trading must not depend on it: the default does
+    // nothing, and a strategy that only trades never overrides it.
+    virtual void observe() {
+    }
+
+    // Grid phases this broker's trades count on in the market. All three unless the
+    // strategy knows better.
+    virtual PhaseSet trading_phases() const {
+        return ALL_GRID_PHASES;
+    }
 
     Market& get_local_market();
 

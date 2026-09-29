@@ -76,6 +76,133 @@ config:
       Set to 0 to disable time based hysteresis.
     type: integer
     default: 600
+  broker_strategy:
+    description: >-
+      Selects the broker that trades energy on behalf of each EVSE:
+        - FastCharging: allocate as much as the limits allow (default)
+        - PowerRedistribution: limit each connector to its measured current plus
+          redistribution_margin_A, so unused allocation is freed for the other connectors
+          on the same fuse while the margin still lets the current rise each update
+          interval. Only connectors in state Charging are limited, never below their
+          minimum current, and only on AC current limits (nodes offering only a watt
+          limit, e.g. DC, are traded like FastCharging). A connector without a usable,
+          fresh measurement is limited to its minimum current plus the margin. The
+          budget is kept per grid phase: a connector's purchase counts only on the
+          phases its meter shows it drawing on, amperes and watts alike.
+    type: string
+    enum:
+      - FastCharging
+      - PowerRedistribution
+    default: FastCharging
+  redistribution_margin_A:
+    description: >-
+      Margin in ampere added on top of the measured current when the PowerRedistribution
+      broker limits a connector. This is the headroom the current can rise by per update
+      interval. Only used with broker_strategy PowerRedistribution.
+    type: number
+    default: 2.0
+  redistribution_start_with_lower_limit:
+    description: >-
+      Start value of the PowerRedistribution limit for a new charging session: true starts
+      at the connector's minimum current plus redistribution_margin_A and lets the limit
+      ramp up with the measurement; false starts at the full allocation and tracks down to
+      the measured current plus margin, gated by redistribution_reduction_hold_s. Only used
+      with broker_strategy PowerRedistribution.
+    type: boolean
+    default: true
+  redistribution_reduction_hold_s:
+    description: >-
+      Hold time in seconds for every PowerRedistribution condition that has to survive an
+      EV that is still ramping. The broker lowers a connector's limit only after the
+      measured current has stayed below the current limit for this long, and the site
+      inference acts on a reduce or an increase condition only after it has held this
+      long. Increases of the measurement based limit are always applied immediately. Set
+      to 0 to follow the measurement down immediately and to act on the inference on the
+      first run that sees the condition. IEC 61851-1 allows the EV up to 5 s to follow a
+      duty cycle change and real vehicles ramp over longer, so a value below that reads
+      every ramp as under-consumption. Only used with broker_strategy PowerRedistribution.
+    type: integer
+    default: 10
+  power_meter_aggregation_window_s:
+    description: >-
+      Validity window for power meter readings when aggregating multiple meters [s].
+      Power meters in the energy tree report at different times; a reading whose own
+      measurement timestamp is older than this window is excluded from the aggregated
+      sum instead of contributing a stale value. A meter that publishes slowly needs a
+      larger window, not none: this is the only guard between a meter that has stopped
+      updating and a limit computed from its last reading, so it cannot be switched off.
+      The same window judges the per connector reading the PowerRedistribution broker
+      limits against, so one meter is never alive for one path and stale for the other.
+    type: integer
+    default: 5
+    minimum: 1
+  power_redistribution_connector_margin:
+    description: >-
+      Relative deadband per connector (PowerRedistribution strategy only). A connector counts
+      as under-consuming when its measured power is more than this fraction of its allocation
+      below the allocation. Under-consumption is only logged: the measurement based limit
+      already frees what a connector does not draw, without needing this classification.
+
+      The deadband is never smaller than redistribution_margin_A on the connector's phases,
+      because the limit hands out exactly that much above the measurement: a connector that
+      follows its limit is allotted its own measurement plus the margin, and that gap is the
+      limit's doing, not the EV's. Without that floor no connector drawing less than
+      redistribution_margin_A / this fraction (18 A at the defaults) could ever count as
+      consuming its allocation, and the site could never hand it any headroom.
+    type: number
+    default: 0.1
+    minimum: 0
+    maximum: 1
+  power_redistribution_site_margin:
+    description: >-
+      Relative reserve kept at the grid connection (PowerRedistribution strategy only). The
+      site counts as having headroom only when the measured site power is more than this
+      fraction of the grid limit below the grid limit. Separate from the connector margin
+      because the two are different engineering decisions: at 0.1 on a 100 kW site this is a
+      permanent 10 kW reserve, while the connector margin is a 10 % tolerance per session.
+    type: number
+    default: 0.1
+    minimum: 0
+    maximum: 1
+  power_redistribution_gain:
+    description: >-
+      Proportional gain of the increase law: a saturated connector is handed this fraction
+      of the headroom beyond the deadband, so steps are large far from the grid limit and
+      vanish close to it. 0 hands out nothing and reduces the site inference to a report,
+      which is how measurement based redistribution is switched off without switching off
+      the strategy.
+    type: number
+    default: 0.5
+    minimum: 0
+    maximum: 1
+  phase_symmetry_enabled:
+    description: >-
+      Keeps the difference between any two grid phases of the site within
+      max_phase_imbalance_A for the load the manager controls. Each optimizer run splits
+      the per phase site measurement (the grid connection's meter, else the sum of the
+      EVSE meters) into controlled and uncontrolled load, and caps every connector that
+      draws on one or two phases, or on none yet, in advance and in equal shares, so the
+      phases stay within the limit even when each draws its full cap. Where a share falls
+      below a connector's minimum current, the most recently arrived connector is paused.
+      Requires broker_strategy PowerRedistribution, which observes the per phase
+      measurements; with FastCharging this option has no effect.
+    type: boolean
+    default: false
+  max_phase_imbalance_A:
+    description: >-
+      Largest difference in ampere allowed between any two grid phases while
+      phase_symmetry_enabled is set.
+    type: number
+    default: 20.0
+    minimum: 0
+  phase_imbalance_hold_s:
+    description: >-
+      Seconds a limit the phase imbalance limiting changed is not raised again, so the
+      next raise is based on a measurement that reflects the change. Should exceed the
+      update interval of the slowest meter on the site.
+    type: integer
+    default: 10
+    minimum: 0
 provides:
   main:
     description: Main interface of the energy manager

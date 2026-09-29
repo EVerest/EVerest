@@ -409,6 +409,14 @@ components:
           description: Max current limit (per phase) in Ampere. AC only.
           type: object
           $ref: '#/components/schemas/NumberWithSource'
+        ac_max_current_per_phase_A:
+          description: >-
+            Max current limit in Ampere for individual phases, for limits that differ per
+            phase such as a per phase fuse. On every phase the lower of this and
+            ac_max_current_A applies; a phase omitted here is limited by ac_max_current_A
+            only. AC only.
+          type: object
+          $ref: '#/components/schemas/PhaseCurrentsWithSource'
         ac_min_current_A:
           description: >-
             Min AC current limit per phase in Ampere. Values below that value indicate the
@@ -453,6 +461,27 @@ components:
           description: Limit to number of phases. Omit if number of phases are not limited.
           type: object
           $ref: '#/components/schemas/IntegerWithSource'
+    PhaseCurrentsWithSource:
+      description: >-
+        Current per AC phase in Ampere with source information. A phase that is omitted
+        is not limited by this object.
+      type: object
+      additionalProperties: true
+      required:
+        - source
+      properties:
+        L1:
+          description: Current on phase L1 in Ampere
+          type: number
+        L2:
+          description: Current on phase L2 in Ampere
+          type: number
+        L3:
+          description: Current on phase L3 in Ampere
+          type: number
+        source:
+          description: Source of the values
+          type: string
     NumberWithSource:
       description: Simple number type with source information
       type: object

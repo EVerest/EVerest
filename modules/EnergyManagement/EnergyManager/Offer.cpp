@@ -78,17 +78,17 @@ static void apply_limits(ScheduleReq& a, const ScheduleReq& b) {
     }
 }
 
-Offer::Offer(Market& market) {
+Offer::Offer(Market& market, const PhaseSet& phases) {
     // create maximum offer for this market place
-    create_offer_for_local_market(market);
+    create_offer_for_local_market(market, phases);
 }
 
 // Recursive: start at leaf, walk to root and create empty root offer. On the way back, apply all limits of local
 // marketplaces until we are at the leaf again.
-void Offer::create_offer_for_local_market(Market& market) {
+void Offer::create_offer_for_local_market(Market& market, const PhaseSet& phases) {
 
     if (!market.is_root()) {
-        create_offer_for_local_market(*market.parent());
+        create_offer_for_local_market(*market.parent(), phases);
     } else {
         // initialize time slots
         import_offer = globals.empty_schedule_req;
@@ -96,10 +96,10 @@ void Offer::create_offer_for_local_market(Market& market) {
     }
 
     // limit offer with limits at this market place
-    apply_limits(import_offer, market.get_available_energy_import());
+    apply_limits(import_offer, market.get_available_energy_import(phases));
 
     // limit offer with limits at this market place
-    apply_limits(export_offer, market.get_available_energy_export());
+    apply_limits(export_offer, market.get_available_energy_export(phases));
 
     optimizer_target = market.energy_flow_request.optimizer_target;
 }
