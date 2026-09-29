@@ -15,25 +15,16 @@ namespace module {
 
 // ---------------------------------------------------------------- power redistribution inference
 //
-// From what each connector was allotted, what it actually draws and what the grid
-// connection has to spare, infer where power could be reduced or increased.
-//
-// These are pure functions over one optimizer run. EnergyManagerImpl calls them, logs the
-// result, and hands each connector its share of SiteInference::increase_W_by_connector,
-// which its broker applies on the next run. The reduce side is reported only: lowering a
-// connector already happens continuously through the measurement based cap, which needs no
-// inference to do it.
+// Pure functions over one optimizer run that infer, from allocation, measurement and grid
+// headroom, where power could be reduced or increased. Only the increase side acts: each
+// connector's share of SiteInference::increase_W_by_connector is applied by its broker on
+// the next run. Reductions already happen through the measurement based cap.
 
-/// \brief Import limit of the grid connection [W], read from the root Market's offer at the
-/// slot in force. total_power_W wins; otherwise ac_max_current_A times the declared phase
-/// count times the nominal voltage.
+/// \brief Import limit of the grid connection [W] at the slot in force: the lower of
+/// total_power_W and ac_max_current_A x declared phase count x nominal voltage.
 ///
-/// The offer, not the raw request: Market::get_max_available_energy() has already resampled
-/// the schedule onto the optimizer's timestamp grid, taken the minimum of the leaves side
-/// and root side limits and divided by the conversion efficiency. Reading
-/// schedule_import[0].limits_to_root instead skips all three, and each one skipped
-/// overstates the limit - on a multi-slot external schedule, or a limit expressed only on
-/// the leaves side, by whatever the two happen to differ by.
+/// Read from the root Market's offer, which is already resampled, the minimum of both sides
+/// and corrected for efficiency, not from the raw request.
 /// \returns std::nullopt when the root has no import schedule at all
 std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
@@ -56,7 +47,7 @@ float get_margin_power_W(const types::energy::EnforcedLimits& limit, float margi
 struct StaticBoundsW {
     /// Smallest purchase that still charges: ac_min_current_A x min phase count x U.
     std::optional<float> min_W;
-    /// total_power_W, else ac_max_current_A x max phase count x U.
+    /// The lower of total_power_W and ac_max_current_A x max phase count x U.
     std::optional<float> max_W;
 };
 
@@ -88,30 +79,17 @@ struct ConnectorInference {
 
 /// \brief Compares what a connector was allotted with what it draws.
 ///
-/// The deadband is relative: a gap of more than \p margin times the allocation counts as
-/// under-consumption. It is floored at \p broker_margin_W, the margin the cap itself added
-/// on top of this connector's measurement: a connector that follows its cap exactly is
-/// allotted its measurement plus that margin, so a gap of no more than the margin is the
-/// cap's own doing and says nothing about the EV. Without the floor no connector drawing
-/// less than redistribution_margin_A / power_redistribution_connector_margin could ever be
-/// saturated, and the site could never hand it anything.
-/// Everything closer is treated as consuming the allocation, which is
-/// either Saturated (could take more) or AtMaximum (its static limit is reached, within 1 W).
-/// Without both an allocation and a measurement the class is Unknown: no claim is made on
-/// missing data. A negative measurement is Unknown too: negative is export, the inference
-/// looks only at schedule_import, and a discharging connector consuming none of its import
-/// allocation is not the same thing as one that could give the whole allocation back.
+/// A gap of more than \p margin times the allocation is under-consumption. The deadband is
+/// floored at \p broker_margin_W, the margin the cap itself added, since a gap that size is
+/// the cap's doing, not the EV's. A smaller gap is Saturated, or AtMaximum at the static
+/// limit (within 1 W). Without an allocation or a measurement, or with a negative (export)
+/// measurement, the class is Unknown.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
                                       const StaticBoundsW& bounds, float margin, float broker_margin_W);
 
 /// \brief A connector that could take more power: its current allocation and static maximum.
-///
-/// Both are plain floats. A connector whose maximum is unknown cannot be given power
-/// safely - there is nothing to clamp the increase against - so it is not a candidate at
-/// all rather than a candidate with a missing bound that every consumer has to decide what
-/// to do about.
+/// A connector with an unknown maximum is not a candidate.
 struct SaturatedConnector {
-    /// The connector the share computed for it has to be handed back to.
     std::string uuid;
     float allocated_W;
     float max_W;
@@ -119,11 +97,7 @@ struct SaturatedConnector {
 
 /// \brief Pairs a Saturated classification with its bounds, when both are known.
 ///
-/// \returns std::nullopt when the allocation or the static maximum is missing. The caller
-/// then leaves the connector out of infer_site()'s candidates entirely: giving it a share
-/// would be handing out power with nothing to clamp it against, and counting it among the
-/// candidates would shrink everyone else's share on behalf of a connector that cannot use
-/// it.
+/// \returns std::nullopt when the allocation or the static maximum is missing
 std::optional<SaturatedConnector> to_saturated_connector(const std::string& uuid, const ConnectorInference& connector,
                                                          const StaticBoundsW& bounds);
 
@@ -136,15 +110,12 @@ struct SiteInference {
     /// grid_limit_W - measured_W, when both are known
     std::optional<float> headroom_W;
     int saturated_connectors{0};
-    /// Which meter measured_W came from. A leaf sum sees only the EVSEs, so a consumer (and
-    /// the log line) can tell how much of the site the figure actually covers.
+    /// Which meter measured_W came from; a leaf sum sees only the EVSEs.
     SiteMeterSource meter_source{SiteMeterSource::None};
     /// Proposed increase [W] summed over the saturated connectors. 0 when the headroom is
     /// within the deadband, no connector can take more, or the gain is 0.
     float increase_W{0.f};
-    /// The same increase per connector, which is the form a broker can act on: increase_W
-    /// is a site total and says nothing about who may draw it. Only connectors granted more
-    /// than 0 W appear.
+    /// The same increase per connector; only connectors granted more than 0 W appear.
     std::map<std::string, float> increase_W_by_connector;
     /// True once the condition has held for the configured hold time (set by the caller
     /// from its HoldLatch).
@@ -155,9 +126,7 @@ struct SiteInference {
 ///
 /// Headroom h = G - S must exceed the deadband margin x G. The increase is then
 /// gain x (h - deadband), split equally over the saturated connectors and clamped per
-/// connector to its static maximum. Being proportional to the remaining headroom the step
-/// is large far from the grid limit and vanishes close to it, rather than being a fixed
-/// ampere step that would approach the limit just as fast however close it already is.
+/// connector to its static maximum, so the step shrinks as the grid limit comes closer.
 SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggregator::AggregateResult& aggregate,
                          const std::vector<SaturatedConnector>& saturated, float margin, float gain);
 
@@ -165,130 +134,75 @@ SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggr
 
 /// \brief Reads the power meter measurement of one node of the energy tree.
 ///
-/// Exactly one reading is selected and every field of the result comes from it. Selecting
-/// per field instead would let the per-phase current of one meter sit next to the total
-/// power and timestamp of another, and the timestamp is only worth carrying while it
-/// belongs to the values beside it.
+/// All fields come from a single reading, so a value never carries another meter's
+/// timestamp. The reading that reports power wins, leaves side before root side; current
+/// decides only when neither reports power. Phases a meter does not report stay
+/// std::nullopt.
 ///
-/// Power decides which reading that is - the leaves side (what EvseManager reports for an
-/// EVSE) before the root side - and current decides only when neither side reports power.
-/// A leaves reading that carries current alone must not hide a root reading that carries
-/// the power, which is the value an allocation is actually compared against.
+/// A reading without a parsable timestamp gets no measured_at: EnergyNode and EvseManager
+/// republish the last reading on every request, so only its own timestamp tells a frozen
+/// meter from a steady one. Parsed by parse_meter_timestamp(), like the aggregator.
 ///
-/// The measured power is in Watt (total, plus per-phase L1/L2/L3 when the meter reports
-/// them) and std::nullopt when the selected reading has no power value. Per-phase current
-/// is in Ampere; phases the meter does not report stay std::nullopt (a single-phase meter
-/// reports only L1) and must not be read as zero. Per-phase values are what per-phase
-/// trading and asymmetric load limits are expressed in, the latter as a threshold in
-/// ampere per phase.
-///
-/// The measurement time is the reading's own, not the time of the run. A reading without a
-/// usable timestamp has no age a consumer could check, so it is reported as absent rather
-/// than as "now": EnergyNode and EvseManager republish the last reading they received on
-/// every request, which makes a meter that stopped updating indistinguishable from one
-/// holding steady unless its own timestamp is carried along. Parsing follows
-/// parse_meter_timestamp(), the same rule the aggregator applies, so the two measurement
-/// paths cannot disagree about which readings have a usable age.
-///
-/// \returns the observed measurement, all fields std::nullopt if the node carries no
-/// measurement at all
+/// \returns the observed measurement, all fields std::nullopt if the node carries none
 ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node);
 
-/// \brief Current the connector actually draws, per phase. Precedence: measured per-phase
-/// current, then per-phase power divided by \p nominal_ac_voltage, then total power spread
-/// over \p active_phases.
+/// \brief Current the connector draws, per phase. Precedence: measured per-phase current,
+/// then per-phase power divided by \p nominal_ac_voltage, then total power spread over
+/// \p active_phases.
 ///
-/// \param active_phases number of phases the connector currently uses, only consulted for
-/// the total-power fallback. Pass 1 when the EVSE does not report it: unlike
-/// BrokerFastCharging, which assumes 3 when the count is unknown, the safe assumption for
-/// a limit derived from a total is 1 - it puts all the power on one phase, which yields
-/// the highest per-phase current and therefore the least restrictive limit. Assuming 3
-/// would cut a single-phase EV to a third of what it draws.
+/// \param active_phases only used for the total-power fallback. Pass 1 when unknown: all
+/// power on one phase gives the highest per-phase current, so the least restrictive limit.
 ///
-/// \returns the per-phase current, all phases std::nullopt when the measurement carries
-/// nothing a current could be derived from (or \p nominal_ac_voltage is not positive)
+/// \returns all phases std::nullopt when no current can be derived
 PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, float nominal_ac_voltage,
                                       int active_phases);
 
-/// \brief True while \p measurement can carry a limit: it has a value, and it is fresh.
-///
-/// The age is judged by is_fresh(), the module's one staleness rule, so the per connector
-/// limit and the site aggregate cannot disagree about which meters are alive - including at
-/// the boundary, where a reading exactly \p max_age old is stale for both. EnergyNode and
-/// EvseManager republish the last reading they received on every request, so without that
-/// check a meter that stopped publishing would pin the allocation at whatever it last
-/// reported.
-///
-/// What this adds on top of freshness is the value check: a reading that is fresh but
-/// carries neither power nor current has nothing a limit could be derived from.
+/// \brief True while \p measurement has a value and is_fresh() accepts its timestamp.
 ///
 /// \param max_age zero accepts any age
 bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clock::time_point now,
                            std::chrono::seconds max_age);
 
-/// \brief The single ac_max_current_A the energy interface can express today: the highest
-/// of the known phases, std::nullopt when no phase is known. Highest, not lowest - the
-/// value is applied to every phase, so the lowest would starve the phase that legitimately
-/// draws most.
-///
-/// This is the seam a per-phase split of the broker removes: everything upstream of it
-/// (measurement, margin, cap state) is already per phase, but
-/// types::energy::LimitsReq::ac_max_current_A is one number applied to all three phases,
-/// so trading per phase first needs a per-phase limit in types/energy.yaml.
+/// \brief The single ac_max_current_A applied to every phase: the highest known phase, so
+/// the phase that draws most is not starved. std::nullopt when no phase is known.
 std::optional<float> to_scalar_cap(const PhaseCurrents& cap);
 
-/// \brief Broker of the PowerRedistribution strategy: trades with the BrokerFastCharging
-/// algorithm, but limits the connector to its measured current plus a configured margin,
-/// so an under-consuming connector frees its unused allocation for the other connectors
-/// on the same fuse while the margin still lets its current rise every optimizer run.
+/// \brief Broker of the PowerRedistribution strategy: trades like BrokerFastCharging, but
+/// caps a charging connector at its measured current plus a margin, freeing the unused
+/// allocation for the other connectors on the same fuse.
 ///
-/// The cap only ever lowers what FastCharging would allocate, never raises it: fuse
-/// limits and the equal split between connectors remain entirely with the market. It
-/// applies only while the connector is actually drawing (state Charging), only to the
-/// schedule slot covering now (future slots are forecast, and the measurement describes
-/// now), and never below the connector's minimum current. Reductions of the cap are
-/// applied only after they have been pending for the configured hold time; increases are
-/// applied immediately.
-///
-/// On top of that measured value the cap carries BrokerContext::distributed_power_W,
-/// the share of the site headroom the previous run's inference granted this connector.
-/// That is what lets a saturated connector climb faster than one margin per run while the
-/// grid connection has room to spare, and it is the path by which the aggregated site
-/// measurement reaches an allocation. power_redistribution_gain 0 grants nothing, which
-/// leaves the cap at measured plus margin. A connector without a usable, fresh measurement
-/// is limited to its minimum current plus the margin. Nodes offering no AC current limit (DC) are traded
-/// like FastCharging.
-///
-/// Operates on a single connector: the measurement is read from this broker's own market
-/// node, and the cap state survives between runs in the connector's BrokerContext.
+/// The cap only lowers what FastCharging would allocate, applies only to the slot covering
+/// now, and never goes below the connector's minimum current. Reductions wait out the
+/// configured hold; increases apply immediately. On top of measured plus margin the cap
+/// carries BrokerContext::distributed_power_W, this connector's share of the site headroom
+/// granted by the previous run's inference. Without a fresh measurement the connector is
+/// capped at its minimum current plus the margin. Nodes without an AC current limit (DC)
+/// trade like FastCharging.
 class BrokerPowerRedistribution : public BrokerFastCharging {
 public:
     BrokerPowerRedistribution(Market& market, BrokerContext& context, EnergyManagerConfig config);
 
-    /// \brief Reads the connector's measurement into the broker context and decides the
-    /// current cap for this run. Called once per optimizer run from the broker loop,
-    /// before any trading round.
+    /// \brief Reads the connector's measurement into the broker context and decides the cap
+    /// for this run.
     void observe() override;
 
     PhaseSet trading_phases() const override {
         return context.phases_in_use;
     }
 
-    /// \brief Narrows the offer to the cap decided by observe(), then trades with the
-    /// unchanged BrokerFastCharging algorithm.
+    /// \brief Narrows the offer to the cap decided by observe(), then trades like
+    /// BrokerFastCharging.
     void tradeImpl() override;
 
 private:
     void track_phases_in_use();
     void decide_cap(const types::energy::EnergyFlowRequest& request);
     void limit_offer_to_cap();
-    float sold_current_A(int slot);
+    float sold_current_A(int slot) const;
 
-    // Cap decided by observe() for this run, applied to every trading round of the run by
-    // tradeImpl(). Per run by construction: a broker is built once per EVSE per run, so
-    // nothing here survives a run - the state that has to lives in BrokerContext.
-    std::optional<PhaseCurrents> run_cap_A;
-    std::string run_cap_source;
+    // A broker lives for one run; state that must outlive it is in BrokerContext.
+    std::optional<PhaseCurrents> m_run_cap_A;
+    std::string m_run_cap_source;
 };
 
 } // namespace module

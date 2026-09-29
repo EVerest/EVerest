@@ -43,7 +43,11 @@ void energyImpl::init() {
         mod->r_powermeter_car_side[0]->subscribe_powermeter([this](types::powermeter::Powermeter p) {
             // Received new power meter values, update our energy object.
             std::lock_guard<std::mutex> lock(this->energy_mutex);
-            energy_flow_request.energy_usage_leaves = p;
+
+            const auto phase_rotation =
+                everest::helpers::phase_rotation_from_string(mod->config.phase_rotation_car_side);
+
+            energy_flow_request.energy_usage_leaves = everest::helpers::apply_phase_rotation(p, phase_rotation);
         });
     }
 

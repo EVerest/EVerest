@@ -24,7 +24,10 @@ that never actually existed on the installation.
 
 The EnergyManager therefore sums only those readings whose own measurement timestamp lies
 within ``power_meter_aggregation_window_s`` of the optimizer's start time; older readings
-are excluded as stale rather than contributing a wrong value. The grid connection's own
+are excluded as stale rather than contributing a wrong value. The window applies in both
+directions: clock skew smaller than the window is tolerated, but a reading timestamped
+further in the future is excluded too and logged once per meter as a clock or time zone
+error, so a frozen meter with a skewed clock cannot stay "fresh". The grid connection's own
 meter is used wherever there is one; otherwise the EVSE meters are summed, and then only
 the EVSE nodes contribute, so no meter is ever counted together with meters it already
 measures. Power and per phase current are aggregated together.
@@ -38,8 +41,10 @@ updating and a limit computed from its last reading, so the smallest window is `
 **When a value is unknown it is reported as absent, never as zero.** If no meter has a
 fresh reading, the aggregate carries no total at all -- a consumer must read that as
 "unknown" and keep distributing on the static limits, never as "no power is flowing". The
-same holds per phase: a phase is summed only when every contributing meter reports it, so
-one single phase meter leaves the site L2 and L3 sums absent instead of understating them.
+same holds per phase: a phase is summed only when every stored meter is fresh and reports
+it, so one single phase meter leaves the site L2 and L3 sums absent instead of
+understating them, and one stale meter leaves all per phase sums absent. The total then
+covers the fresh meters only; ``stale_meters`` tells a consumer it is incomplete.
 
 .. list-table::
    :header-rows: 1
@@ -118,20 +123,26 @@ broker tell a live reading from a frozen one: ``EnergyNode`` and ``EvseManager``
 republish the last power meter reading they received in every energy flow request, so a
 meter that stopped updating is indistinguishable from one holding steady unless the
 reading's own timestamp is checked. A reading whose timestamp cannot be parsed is
-treated like a missing one rather than a current one.
+treated like a missing one rather than a current one, and so is one timestamped further in
+the future than the maximum age.
 
 The limit is computed per phase - from the measured per-phase current, falling back to
 per-phase power over the nominal voltage, then to the total power spread over the active
-phases - and collapsed to the single ``ac_max_current_A`` the energy interface expresses
-today by taking the highest of the known phases (the value applies to every phase, so
-the lowest would starve the phase that legitimately draws most).
+phases - and collapsed to a single ``ac_max_current_A`` by taking the highest of the known
+phases (the value applies to every phase, so the lowest would starve the phase that
+legitimately draws most).
 
 Per phase budget
 ----------------
 
 With ``PowerRedistribution`` the budget of every node is kept per grid phase: a node's
 ``ac_max_current_A`` applies to L1, L2 and L3 separately, and what a connector buys only
-counts on the phases its own meter shows it drawing on (current above 1 A). A single
+counts on the phases its own meter shows it drawing on (current above 1 A). Those phases are
+taken as grid phases: the connector's meter reading must be in grid phase order, which
+EvseManager's ``phase_rotation_car_side`` provides for a charger connected with rotated
+phases. On a rotated charger whose reading
+is in connector order, a single phase EV is booked on the wrong grid phase, which a limit
+that differs per phase or the phase imbalance limiting then applies to the wrong phase. A single
 phase EV at 16 A on L1 therefore leaves the full limit on L2 and L3 for the others, and a
 connector is offered what is left on the most loaded of its phases. ``FastCharging``
 keeps counting every purchase on all three phases.
@@ -261,7 +272,10 @@ Both are read from what the module already computed for the run, not re-derived:
   Reading ``schedule_import[0].limits_to_root`` instead would skip all three. On the sites
   this feature exists for that is not a detail: an external limit (an OCPP charging profile,
   any DLM input) is exactly what produces a multi-slot schedule and a one-sided limit, and
-  each difference overstates the limit.
+  each difference overstates the limit. A limit that carries both a watt and an ampere value
+  counts as the lower of the two, with the ampere value converted over the declared phases
+  and the nominal voltage. The slot in force is the last one that has started, including
+  one starting exactly at the optimizer's start time.
 
 - **The site measurement** is the grid connection's own power meter
   (``energy_usage_root`` on the root node) wherever there is one, falling back to the sum of
@@ -315,15 +329,20 @@ connector draws the current, rather than reacting once a meter shows the oversho
 2. **Budget every pair of phases.** For phases p and q, the connectors that can load p but
    not q may add at most ``max_phase_imbalance_A`` less a 1 A margin, less the difference
    the uncontrolled load already puts between p and q, plus what the connectors on q alone
-   draw now. Which phases a connector draws on is read from its own per phase measurement
-   (current above 1 A), never guessed from a total. A connector that draws nothing yet, a
-   newly plugged in EV, may start on any single phase, so it counts on every phase.
+   draw now, but no more than the limits this run gives them. Which phases a connector draws
+   on is read from its own per phase measurement (current above 1 A), never guessed from a
+   total. A connector that draws nothing yet, a newly plugged in EV, may start on any single
+   phase, so it counts on every phase. A connector whose meter has no fresh reading keeps
+   its limit; what it may draw, its minimum current plus ``redistribution_margin_A`` or its
+   imbalance limit if lower, is kept free in every budget, as its phase is unknown.
 
 3. **Share each budget equally.** Every connector gets the same share. One drawing clearly
    below its limit (1 A or more) counts as wanting a little more than it draws and leaves
    the rest to the others. Where a share falls below a connector's minimum current, the
    most recently arrived such connector is **paused** (0 A) and the budget is shared among
-   the others; it resumes once its share reaches its minimum again.
+   the others; it resumes once its share reaches its minimum again. A limit is therefore
+   either 0 A or at least the connector's minimum: one within 0.2 A of the minimum keeps the
+   minimum, which the margin in the budgets absorbs.
 
 A connector on all three phases loads every phase alike and cannot change a difference, so
 it is never limited: once a new EV is seen drawing on all three phases its limit is
@@ -350,7 +369,9 @@ The invariant covers rising load: every connector may draw up to its limit and t
 stay within ``max_phase_imbalance_A``. An EV that draws less or stops cannot be prevented
 from doing so, and the next run shares the difference anew. A difference in the load the
 manager does not control, such as a building behind the grid meter, cannot be limited
-either: what of it exceeds the limit is logged once as a *residual*. The limiting requires
+either: what of it exceeds the limit is logged once as a *residual*. When the site
+measurement is the sum of the EVSE meters and one of them is stale, the per phase load is
+unknown and nothing is decided that run. The limiting requires
 ``broker_strategy`` ``PowerRedistribution``: it is the strategy that observes the per phase
 measurements and applies the limit as one more upper bound on the connector's current,
 next to the measurement based cap. With ``FastCharging`` the option has no effect. As

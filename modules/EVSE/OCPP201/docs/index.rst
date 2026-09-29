@@ -400,9 +400,11 @@ the composite schedule also in case no charging profiles have been changed. The 
 the duration in seconds of the requested composite schedules starting now. The value configured for `RequestCompositeScheduleDurationS` shall be greater
 than the value configured for `CompositeScheduleIntervalS` because otherwise time periods could be missed by the application.
 
-A composite schedule period with ``limit_L2`` or ``limit_L3`` (OCPP 2.1) takes ``limit`` as the limit for L1. In ampere the three
-limits are passed on as ``ac_max_current_per_phase_A``, a phase without its own taking ``limit``, with ``ac_max_current_A`` set to
-the highest of them; in watt their sum is passed on as ``total_power_W``.
+A composite schedule period with both ``limit_L2`` and ``limit_L3`` (OCPP 2.1) takes ``limit`` as the limit for L1; with only one
+of them ``limit`` keeps its meaning for all phases. In ampere the three limits are passed on as ``ac_max_current_per_phase_A``,
+with ``ac_max_current_A`` set to the highest of them; a consumer that does not read the per phase limits therefore applies the
+highest phase limit to every phase. In watt three times the lowest of them is passed on as ``total_power_W``, which a
+symmetric load can draw without exceeding any phase.
 
 Device model implementation details
 ===================================

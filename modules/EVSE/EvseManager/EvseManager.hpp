@@ -130,6 +130,7 @@ struct Conf {
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;
+    std::string phase_rotation_car_side;
 };
 
 class EvseManager : public Everest::ModuleBase {

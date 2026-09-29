@@ -321,6 +321,13 @@ If both are specified also both limits will be applied, whichever is lower.
 With DC charging, ampere limits apply
 to the AC side and watt limits apply to both AC and DC side.
 
+The power meter readings passed to the energy tree carry grid phases.
+``phase_rotation_grid_side`` and ``phase_rotation_car_side`` map each meter's L1/L2/L3
+onto grid L1/L2/L3 (``RST`` no rotation, ``STR``, ``TRS``). The EnergyManager reads the
+phases a vehicle draws on from the car side meter, so on a charger connected to the grid
+with rotated phases ``phase_rotation_car_side`` must be set to that rotation for per phase
+limits and phase imbalance limiting to act on the right grid phase.
+
 Energy Management: 1ph/3ph switching
 ====================================
 

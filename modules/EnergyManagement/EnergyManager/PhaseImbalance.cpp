@@ -64,6 +64,9 @@ constexpr float UNBOUNDED_A = std::numeric_limits<float>::infinity();
 // Cap changes smaller than this are not worth a new limit.
 constexpr float CAP_RESOLUTION_A = 0.05f;
 
+// Support only ever falls between rounds, so this is a guard, not a tuning value.
+constexpr int MAX_SUPPORT_ROUNDS = 16;
+
 // One ordered pair of phases (p, q): the connectors that can load p but not q may add at
 // most capacity_A to the difference between them.
 struct Budget {
@@ -211,7 +214,7 @@ float measured_current_on(const ObservedMeasurement& measurement, const std::set
 }
 
 ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::vector<ImbalanceConnector>& connectors,
-                                        float max_phase_imbalance_A) {
+                                        float max_phase_imbalance_A, float unmeasured_A) {
     ImbalanceResult result;
 
     std::optional<float> reference_A;
@@ -260,22 +263,23 @@ ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::
         uncontrolled_A[phase] = phase_value(site_A, phase).value() - controlled;
     }
 
-    const auto make_budgets = [&](float limit_A) {
+    // support[i]: what a connector on q alone holds q up by, which is what it draws now but
+    // no more than the cap it ends up with.
+    const auto make_budgets = [&](float limit_A, const std::vector<float>& support) {
         std::vector<Budget> budgets;
         for (const auto p : known) {
             for (const auto q : known) {
                 if (p == q) {
                     continue;
                 }
-                // What the connectors on q alone draw now holds q up; they are not counted at
-                // their caps, which they may not use.
-                Budget budget{p, q, limit_A - (uncontrolled_A[p] - uncontrolled_A[q]), {}};
+                // Connectors without a measurement may load p, on whichever phase they are.
+                Budget budget{p, q, limit_A - (uncontrolled_A[p] - uncontrolled_A[q]) - unmeasured_A, {}};
                 for (std::size_t i = 0; i < n; i++) {
                     const bool unknown = participants[i]->draws_on.empty();
                     if (unknown or (on(i, p) and not on(i, q))) {
                         budget.members.push_back(i);
                     } else if (on(i, q) and not on(i, p)) {
-                        budget.capacity_A += participants[i]->measured_A;
+                        budget.capacity_A += support[i];
                     }
                 }
                 if (not budget.members.empty()) {
@@ -285,101 +289,132 @@ ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::
         }
         return budgets;
     };
-    const auto budgets = make_budgets(max_phase_imbalance_A - PHASE_IMBALANCE_HYSTERESIS_A);
-    const auto hard_budgets = make_budgets(max_phase_imbalance_A);
 
-    std::vector<float> demand(n);
-    std::vector<bool> was_paused(n);
-    for (std::size_t i = 0; i < n; i++) {
-        const auto& connector = *participants[i];
-        // Below its cap is only a choice of the EV once it had the hold to ramp up to it.
-        const bool held = not connector.cap_A.has_value() or connector.draws_on.empty() or connector.settling or
-                          connector.measured_A >= connector.cap_A.value() - PHASE_IMBALANCE_HYSTERESIS_A;
-        demand[i] =
-            held ? UNBOUNDED_A : std::max(connector.min_A, connector.measured_A + 2.f * PHASE_IMBALANCE_HYSTERESIS_A);
-        was_paused[i] = connector.cap_A.has_value() and connector.cap_A.value() <= 0.f;
-    }
+    const auto decide = [&](const std::vector<float>& support) {
+        const auto budgets = make_budgets(max_phase_imbalance_A - PHASE_IMBALANCE_HYSTERESIS_A, support);
+        const auto hard_budgets = make_budgets(max_phase_imbalance_A, support);
 
-    // Equal shares, pausing the newest connector whose share falls below its minimum.
-    std::vector<bool> active(n, true);
-    const std::vector<float> zero(n, 0.f);
-    std::vector<float> share;
-    while (true) {
-        share = fill(budgets, active, zero, demand, zero);
-        std::optional<std::size_t> newest;
+        std::vector<float> demand(n);
+        std::vector<bool> was_paused(n);
         for (std::size_t i = 0; i < n; i++) {
             const auto& connector = *participants[i];
-            const float needed_A = connector.min_A - (was_paused[i] ? 0.f : PHASE_IMBALANCE_PAUSE_TOLERANCE_A);
-            if (not active[i] or share[i] >= demand[i] or share[i] >= needed_A) {
-                continue;
+            // Below its cap is only a choice of the EV once it had the hold to ramp up to it.
+            const bool held = not connector.cap_A.has_value() or connector.draws_on.empty() or connector.settling or
+                              connector.measured_A >= connector.cap_A.value() - PHASE_IMBALANCE_HYSTERESIS_A;
+            demand[i] = held ? UNBOUNDED_A
+                             : std::max(connector.min_A, connector.measured_A + 2.f * PHASE_IMBALANCE_HYSTERESIS_A);
+            was_paused[i] = connector.cap_A.has_value() and connector.cap_A.value() <= 0.f;
+        }
+
+        // Equal shares, pausing the newest connector whose share falls below its minimum.
+        std::vector<bool> active(n, true);
+        const std::vector<float> zero(n, 0.f);
+        std::vector<float> share;
+        while (true) {
+            share = fill(budgets, active, zero, demand, zero);
+            std::optional<std::size_t> newest;
+            for (std::size_t i = 0; i < n; i++) {
+                const auto& connector = *participants[i];
+                const float needed_A = connector.min_A - (was_paused[i] ? 0.f : PHASE_IMBALANCE_PAUSE_TOLERANCE_A);
+                if (not active[i] or share[i] >= demand[i] or share[i] >= needed_A) {
+                    continue;
+                }
+                if (not newest.has_value() or connector.arrived_at > participants[newest.value()]->arrived_at or
+                    (connector.arrived_at == participants[newest.value()]->arrived_at and
+                     connector.uuid > participants[newest.value()]->uuid)) {
+                    newest = i;
+                }
             }
-            if (not newest.has_value() or connector.arrived_at > participants[newest.value()]->arrived_at or
-                (connector.arrived_at == participants[newest.value()]->arrived_at and
-                 connector.uuid > participants[newest.value()]->uuid)) {
-                newest = i;
+            if (not newest.has_value()) {
+                break;
+            }
+            active[newest.value()] = false;
+        }
+        for (std::size_t i = 0; i < n; i++) {
+            if (not active[i]) {
+                share[i] = 0.f;
             }
         }
-        if (not newest.has_value()) {
+
+        // What each connector holds now, and whether the caps as they stand break a budget.
+        std::vector<float> holds(n);
+        for (std::size_t i = 0; i < n; i++) {
+            const auto& connector = *participants[i];
+            holds[i] = connector.cap_A.value_or(connector.draws_on.empty() ? 0.f : connector.measured_A);
+        }
+        std::vector<bool> broken(n, false);
+        for (const auto& budget : hard_budgets) {
+            float total = 0.f;
+            for (const auto i : budget.members) {
+                total += holds[i];
+            }
+            if (total > budget.capacity_A + CAP_RESOLUTION_A) {
+                for (const auto i : budget.members) {
+                    broken[i] = true;
+                }
+            }
+        }
+
+        // Lowered and kept caps count at what the connector still draws above them; the rising
+        // ones share what that leaves, starting from what they hold.
+        std::vector<bool> rising(n, false);
+        std::vector<float> load(n), lo(n), grant(n);
+        for (std::size_t i = 0; i < n; i++) {
+            const auto& connector = *participants[i];
+            const bool capped = connector.cap_A.has_value();
+            float decided = holds[i];
+            if (not active[i]) {
+                decided = 0.f;
+            } else if (share[i] < holds[i]) {
+                if (not capped or broken[i] or holds[i] - share[i] >= PHASE_IMBALANCE_DEADBAND_A) {
+                    decided = share[i];
+                }
+            } else if (share[i] > holds[i]) {
+                const bool worth_it = not capped or was_paused[i] or share[i] - holds[i] >= PHASE_IMBALANCE_DEADBAND_A;
+                rising[i] = worth_it and not connector.settling;
+            }
+            grant[i] = decided;
+            lo[i] = holds[i];
+            load[i] = std::max(decided, connector.measured_A);
+        }
+        const auto risen = fill(hard_budgets, rising, lo, share, load);
+        for (std::size_t i = 0; i < n; i++) {
+            if (rising[i]) {
+                grant[i] = risen[i];
+                // A connector starting from nothing waits until it can have its minimum.
+                if (holds[i] <= 0.f and grant[i] < participants[i]->min_A) {
+                    grant[i] = 0.f;
+                }
+            }
+            // Below its minimum a connector cannot charge: within the pause tolerance it keeps
+            // its minimum, further below it pauses.
+            const float min_A = participants[i]->min_A;
+            if (grant[i] > 0.f and grant[i] < min_A) {
+                grant[i] = grant[i] >= min_A - PHASE_IMBALANCE_PAUSE_TOLERANCE_A ? min_A : 0.f;
+            }
+        }
+        return grant;
+    };
+
+    // A lower cap on q lowers the support q's budgets counted on; repeat until it holds.
+    std::vector<float> support(n);
+    for (std::size_t i = 0; i < n; i++) {
+        support[i] = participants[i]->measured_A;
+    }
+    auto grant = decide(support);
+    for (int round = 0; round < MAX_SUPPORT_ROUNDS; round++) {
+        bool lowered = false;
+        for (std::size_t i = 0; i < n; i++) {
+            const float held_up = std::min(participants[i]->measured_A, grant[i]);
+            if (held_up < support[i] - CAP_RESOLUTION_A) {
+                support[i] = held_up;
+                lowered = true;
+            }
+        }
+        if (not lowered) {
             break;
         }
-        active[newest.value()] = false;
-    }
-    for (std::size_t i = 0; i < n; i++) {
-        if (not active[i]) {
-            share[i] = 0.f;
-        }
-    }
-
-    // What each connector holds now, and whether the caps as they stand break a budget.
-    std::vector<float> holds(n);
-    for (std::size_t i = 0; i < n; i++) {
-        const auto& connector = *participants[i];
-        holds[i] = connector.cap_A.value_or(connector.draws_on.empty() ? 0.f : connector.measured_A);
-    }
-    std::vector<bool> broken(n, false);
-    for (const auto& budget : hard_budgets) {
-        float total = 0.f;
-        for (const auto i : budget.members) {
-            total += holds[i];
-        }
-        if (total > budget.capacity_A + CAP_RESOLUTION_A) {
-            for (const auto i : budget.members) {
-                broken[i] = true;
-            }
-        }
-    }
-
-    // Lowered and kept caps count at what the connector still draws above them; the rising
-    // ones share what that leaves, starting from what they hold.
-    std::vector<bool> rising(n, false);
-    std::vector<float> load(n), lo(n), grant(n);
-    for (std::size_t i = 0; i < n; i++) {
-        const auto& connector = *participants[i];
-        const bool capped = connector.cap_A.has_value();
-        float decided = holds[i];
-        if (not active[i]) {
-            decided = 0.f;
-        } else if (share[i] < holds[i]) {
-            if (not capped or broken[i] or holds[i] - share[i] >= PHASE_IMBALANCE_DEADBAND_A) {
-                decided = share[i];
-            }
-        } else if (share[i] > holds[i]) {
-            const bool worth_it = not capped or was_paused[i] or share[i] - holds[i] >= PHASE_IMBALANCE_DEADBAND_A;
-            rising[i] = worth_it and not connector.settling;
-        }
-        grant[i] = decided;
-        lo[i] = holds[i];
-        load[i] = std::max(decided, connector.measured_A);
-    }
-    const auto risen = fill(hard_budgets, rising, lo, share, load);
-    for (std::size_t i = 0; i < n; i++) {
-        if (rising[i]) {
-            grant[i] = risen[i];
-            // A connector starting from nothing waits until it can have its minimum.
-            if (holds[i] <= 0.f and grant[i] < participants[i]->min_A) {
-                grant[i] = 0.f;
-            }
-        }
+        grant = decide(support);
     }
 
     for (std::size_t i = 0; i < n; i++) {

@@ -31,6 +31,7 @@ void globals_t::init(date::utc_clock::time_point _start_time, int _interval_dura
     }
 
     create_empty_schedule(empty_schedule_req);
+    active_slot = static_cast<int>(active_slot_index(empty_schedule_req).value_or(0));
 
     create_empty_schedule(zero_schedule_res);
 
@@ -234,28 +235,14 @@ std::optional<ScheduleReq::size_type> active_slot_index(const ScheduleReq& sched
         return std::nullopt;
     }
 
-    const auto& now = globals.start_time;
-    const auto at = [&schedule](ScheduleReq::size_type n) {
-        return Everest::Date::from_rfc3339(schedule[n].timestamp);
-    };
-
-    if (now < at(0)) {
-        // The whole schedule is still in the future; the first slot is the one to come.
-        return 0;
-    }
-
-    if (now > at(schedule.size() - 1)) {
-        // The whole schedule is in the past; the last slot is the one still standing.
-        return schedule.size() - 1;
-    }
-
-    for (ScheduleReq::size_type n = 0; n + 1 < schedule.size(); n++) {
-        if (now > at(n) and now < at(n + 1)) {
-            return n;
+    ScheduleReq::size_type active = 0;
+    for (ScheduleReq::size_type n = 0; n < schedule.size(); n++) {
+        if (Everest::Date::from_rfc3339(schedule[n].timestamp) > globals.start_time) {
+            break;
         }
+        active = n;
     }
-
-    return 0;
+    return active;
 }
 
 ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
@@ -318,7 +305,16 @@ ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
     return available;
 }
 
-ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool add_sold, const PhaseSet& phases) {
+namespace {
+// A connector whose phases are unknown may draw on any of them.
+const PhaseSet& or_all_phases(const PhaseSet& phases) {
+    return phases.empty() ? ALL_GRID_PHASES : phases;
+}
+} // namespace
+
+ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool add_sold,
+                                         const PhaseSet& requested_phases) {
+    const auto& phases = or_all_phases(requested_phases);
     ScheduleReq available = max_available;
     for (ScheduleReq::size_type i = 0; i < available.size(); i++) {
         // FIXME: sold_root is the sum of all energy sold, but we need to limit indivdual paths as well
@@ -344,12 +340,7 @@ ScheduleReq Market::get_available_energy(const ScheduleReq& max_available, bool 
         }
         limits.ac_max_current_per_phase_A.reset();
 
-        float sold_watt = 0;
-
-        if (sold_root[i].limits_to_root.total_power_W.has_value()) {
-            sold_watt = (add_sold ? 1 : -1) * sold_root[i].limits_to_root.total_power_W.value().value;
-        }
-
+        float sold_watt = (add_sold ? 1 : -1) * m_sold_drawn_W[i];
         if (sold_watt > 0)
             sold_watt = 0;
 
@@ -467,6 +458,7 @@ Market::Market(const types::energy::EnergyFlowRequest& _energy_flow_request, con
 
     sold_root = globals.empty_schedule_res;
     sold_phase_A.assign(sold_root.size(), {0.f, 0.f, 0.f});
+    m_sold_drawn_W.assign(sold_root.size(), 0.f);
 
     if (not energy_flow_request.schedule_import.empty()) {
         import_max_available = get_max_available_energy(energy_flow_request.schedule_import);
@@ -592,8 +584,13 @@ static void schedule_add(ScheduleRes& a, const ScheduleRes& b) {
     }
 }
 
-void Market::book(const ScheduleRes& traded, const PhaseSet& phases) {
+void Market::book(const ScheduleRes& traded, const ScheduleRes& drawn, const PhaseSet& phases) {
     schedule_add(sold_root, traded);
+    for (ScheduleRes::size_type i = 0; i < drawn.size() and i < m_sold_drawn_W.size(); i++) {
+        if (drawn[i].limits_to_root.total_power_W.has_value()) {
+            m_sold_drawn_W[i] += drawn[i].limits_to_root.total_power_W.value().value;
+        }
+    }
     for (ScheduleRes::size_type i = 0; i < traded.size() and i < sold_phase_A.size(); i++) {
         if (not traded[i].limits_to_root.ac_max_current_A.has_value()) {
             continue;
@@ -604,12 +601,10 @@ void Market::book(const ScheduleRes& traded, const PhaseSet& phases) {
     }
 }
 
-void Market::trade(const ScheduleRes& traded, const PhaseSet& phases) {
-    book(traded, phases);
-    if (is_root()) {
-        return;
-    }
+void Market::trade(const ScheduleRes& traded, const PhaseSet& requested_phases) {
+    const auto& phases = or_all_phases(requested_phases);
 
+    // The watt figure on the phases drawn, which is what every node's watt limit is spent on.
     ScheduleRes upstream = traded;
     for (auto& entry : upstream) {
         auto& limits = entry.limits_to_root;
@@ -622,8 +617,9 @@ void Market::trade(const ScheduleRes& traded, const PhaseSet& phases) {
             limits.total_power_W.value().value *= static_cast<float>(drawn) / static_cast<float>(declared);
         }
     }
+    book(traded, upstream, phases);
     for (Market* node = parent(); node != nullptr; node = node->parent()) {
-        node->book(upstream, phases);
+        node->book(upstream, upstream, phases);
     }
 }
 

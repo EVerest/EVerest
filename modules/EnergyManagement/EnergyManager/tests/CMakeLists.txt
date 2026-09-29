@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     powermeter_aggregator_tests.cpp
     power_redistribution_inference_tests.cpp
     phase_imbalance_tests.cpp
+    phase_imbalance_property_tests.cpp
     per_phase_budget_tests.cpp
     JsonDefinedEnergyManagerTest.cpp
     ../Broker.cpp
@@ -44,6 +45,8 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     everest::log
     everest::framework
+    everest::helpers
+    everest::util
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})

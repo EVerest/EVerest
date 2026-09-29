@@ -87,7 +87,8 @@ types:
           Max current limit in Ampere for individual phases, for limits that differ per
           phase such as a per phase fuse. On every phase the lower of this and
           ac_max_current_A applies; a phase omitted here is limited by ac_max_current_A
-          only. AC only. Positive numbers.
+          only. Where this is set, ac_max_current_A may carry the highest phase limit, so a
+          consumer that limits all phases must read this too. AC only. Positive numbers.
         type: object
         $ref: /energy#/PhaseCurrentsWithSource
       ac_min_current_A:

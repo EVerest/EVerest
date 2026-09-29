@@ -5,6 +5,7 @@
 
 #include <gtest/gtest.h>
 
+#include <everest/helpers/phase_rotation.hpp>
 #include <utils/date.hpp>
 
 #include "BrokerPowerRedistribution.hpp"
@@ -120,6 +121,28 @@ TEST(PerPhaseBudget, WattsCountOnTheDrawnPhasesAboveTheConnector) {
     EXPECT_FLOAT_EQ(f.evse("cp1").get_sold_energy()[0].limits_to_root.total_power_W.value().value, 16.0f * 3.0f * U);
 }
 
+TEST(PerPhaseBudget, WattsCountOnTheDrawnPhasesAtTheConnectorToo) {
+    auto tree = test::make_root_node(
+        "grid", 100.0f, std::nullopt,
+        {test::make_evse_node("cp1", 32.0f, 6.0f, 11040.0f), test::make_evse_node("cp2", 32.0f, 6.0f)});
+    MarketFixture f(tree);
+
+    f.evse("cp1").trade(trade_of(16.0f, 16.0f * 3.0f * U), {Phase::L1});
+
+    EXPECT_FLOAT_EQ(available_W(f.evse("cp1"), {Phase::L1}), 11040.0f - 16.0f * U);
+    EXPECT_FLOAT_EQ(f.evse("cp1").get_sold_energy()[0].limits_to_root.total_power_W.value().value, 16.0f * 3.0f * U);
+}
+
+TEST(PerPhaseBudget, UnknownPhasesCountAsAllPhases) {
+    MarketFixture f(two_evse_tree(32.0f, 22080.0f));
+
+    f.evse("cp1").trade(trade_of(16.0f, 16.0f * 3.0f * U), {});
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 16.0f);
+    EXPECT_FLOAT_EQ(available_W(f.root()), 22080.0f - 16.0f * 3.0f * U);
+    EXPECT_FLOAT_EQ(available_A(f.evse("cp1"), {}), 16.0f);
+}
+
 // ---------------------------------------------------------------- through the optimizer
 
 namespace {
@@ -208,6 +231,18 @@ TEST(PerPhaseBudgetLoop, AWattLimitCountsASinglePhaseEvOnce) {
     EXPECT_FLOAT_EQ(enforced_current(results, "cp2"), 16.0f);
 }
 
+TEST(PerPhaseBudgetLoop, AConnectorsOwnWattLimitCountsASinglePhaseEvOnce) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // 4600 W is 20 A on one phase. Booked on the three declared phases the connector would
+    // stop near 6.7 A.
+    auto cp1 = test::make_evse_node("cp1", 32.0f, 6.0f, 4600.0f);
+    test::set_measurement_current(cp1, 20.0f, 0.0f, 0.0f, at_plus(0));
+    const auto results = impl.run_optimizer(test::make_root_node("grid", 100.0f, std::nullopt, {cp1}), AT);
+
+    EXPECT_NEAR(enforced_current(results, "cp1"), 20.0f, 0.5f);
+}
+
 // ---------------------------------------------------------------- limits that differ per phase
 
 namespace {
@@ -278,6 +313,52 @@ TEST(PerPhaseLimit, GridLimitAddsUpThePhases) {
     const auto limit = get_grid_limit_W(f.root(), U);
     ASSERT_TRUE(limit.has_value());
     EXPECT_FLOAT_EQ(limit.value(), (32.0f + 20.0f + 10.0f) * U);
+}
+
+TEST(PerPhaseLimitLoop, ASinglePhaseEvIsHeldByItsGridPhase) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // L1 32 A, L2 10 A, L3 32 A. cp1 is single phase on grid L2, as a rotated charger reports
+    // it with its rotation applied; cp2 is three phase. Both load L2, which carries 10 A.
+    auto cp1 = test::make_evse_node("cp1", 32.0f, 6.0f);
+    auto cp2 = test::make_evse_node("cp2", 32.0f, 6.0f);
+    test::set_measurement_current(cp1, 0.0f, 16.0f, 0.0f, at_plus(0));
+    test::set_measurement_current(cp2, 16.0f, 16.0f, 16.0f, at_plus(0));
+    auto tree = test::make_root_node("grid", 32.0f, std::nullopt, {cp1, cp2});
+    set_per_phase_limit(tree, per_phase(32.0f, 10.0f, 32.0f));
+    const auto results = impl.run_optimizer(tree, AT);
+
+    EXPECT_LE(enforced_current(results, "cp1") + enforced_current(results, "cp2"), 10.0f + 1e-3f);
+}
+
+namespace {
+
+// A single phase EV at 16 A as a charger's car side meter reports it, in connector order:
+// on the charger's L1. EvseManager's phase_rotation_car_side maps it onto grid phases.
+types::energy::EnergyFlowRequest rotated_charger_tree(everest::helpers::PhaseRotation rotation) {
+    auto cp1 = test::make_evse_node("cp1", 16.0f, 6.0f);
+    test::set_measurement_current(cp1, 16.0f, 0.0f, 0.0f, at_plus(0));
+    cp1.energy_usage_leaves = everest::helpers::apply_phase_rotation(cp1.energy_usage_leaves.value(), rotation);
+    auto tree = test::make_root_node("grid", 32.0f, std::nullopt, {cp1});
+    set_per_phase_limit(tree, per_phase(32.0f, 10.0f, 32.0f));
+    return tree;
+}
+
+} // namespace
+
+TEST(PerPhaseLimitLoop, ARotatedChargersEvIsBookedOnItsGridPhase) {
+    // Connector L1 is grid L2 (STR): the EV is held by L2's 10 A.
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+    const auto results = impl.run_optimizer(rotated_charger_tree(everest::helpers::PhaseRotation::STR), AT);
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 10.0f);
+}
+
+TEST(PerPhaseLimitLoop, WithoutTheRotationTheEvIsBookedOnTheWrongPhase) {
+    // The same charger configured without rotation: booked on L1, the EV gets 16 A while it
+    // physically draws on grid L2, which allows 10 A.
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+    const auto results = impl.run_optimizer(rotated_charger_tree(everest::helpers::PhaseRotation::RST), AT);
+    EXPECT_FLOAT_EQ(enforced_current(results, "cp1"), 16.0f);
 }
 
 TEST(PerPhaseLimitLoop, EachSinglePhaseEvGetsWhatItsPhaseAllows) {
