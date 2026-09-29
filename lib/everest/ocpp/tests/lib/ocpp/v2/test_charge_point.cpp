@@ -680,6 +680,46 @@ TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint) {
                                           create_message_queue(database_handler), "/tmp", evse_security, callbacks));
 }
 
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesFalse_DoesNotLogMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_false");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "false",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_TRUE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesTrue_LogsMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_true");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "true",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_FALSE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
+}
+
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_InitializeInCorrectOrder) {
     database_handler->open_connection();
     configure_callbacks_with_mocks();
