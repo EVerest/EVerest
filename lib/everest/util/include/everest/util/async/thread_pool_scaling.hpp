@@ -56,25 +56,6 @@ struct TrackedAction {
 //     while the supervisor sleeps towards a deadline never falls due earlier.
 
 /**
- * @brief Greedy scaling policy: grows whenever there is any backlog.
- */
-struct GreedyScaling {
-    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::nullopt;
-    /**
-     * @brief Decides to grow if there is any backlog.
-     * @param current_workers Number of threads currently in the registry.
-     * @param queue_size Number of tasks waiting in the queue.
-     * @return true if we should spawn a new thread.
-     */
-    static bool should_grow([[maybe_unused]] std::size_t current_workers, std::size_t queue_size,
-                            std::optional<std::chrono::steady_clock::time_point> oldest_task) {
-        // If queue_size > 1, it means even if a worker is currently
-        // popping, there is at least one other task that will be stuck waiting.
-        return queue_size > 1;
-    }
-};
-
-/**
  * @brief Conservative scaling policy: grows only when backlog is significant.
  */
 struct ConservativeScaling {
@@ -94,6 +75,20 @@ template <std::size_t Limit> struct FixedSizeScaling {
     static bool should_grow([[maybe_unused]] std::size_t current_workers, std::size_t queue_size,
                             [[maybe_unused]] std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
         return queue_size >= Limit;
+    }
+};
+
+/**
+ * @brief Greedy scaling policy: grows whenever a submitted task would have to wait for a worker.
+ * @details Needs no supervisor. The pool asks should_grow() only when the submitted task has no worker waiting
+ * or starting for it, so the queue never holds a task that nobody will take unless the pool is at its maximum;
+ * the pool size follows the number of simultaneously outstanding tasks.
+ */
+struct GreedyScaling {
+    static constexpr std::optional<std::chrono::milliseconds> supervisor_tick = std::nullopt;
+    static bool should_grow([[maybe_unused]] std::size_t current_workers, std::size_t queue_size,
+                            [[maybe_unused]] std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
+        return queue_size > 0;
     }
 };
 
@@ -137,8 +132,9 @@ struct has_next_check<Policy,
 // +--------------+--------------------------+----------------------------------------+
 // |    POLICY    |   GROWTH TRIGGER LOGIC   |           CHARACTER / INTENT           |
 // +--------------+--------------------------+----------------------------------------+
-// |  Greedy      | queue_size > 1           | Minimizes latency at all costs. Scales |
-// |              |                          | the moment a backlog is detected.      |
+// |  Greedy      | task has no free worker  | Never lets a task wait for a busy      |
+// |              |                          | worker. Pool follows the number of     |
+// |              |                          | outstanding tasks, up to the limit.    |
 // +--------------+--------------------------+----------------------------------------+
 // |  Latency     | wait > ThresholdMs       | Balances resources with SLA.  Scales   |
 // |              |                          | only if tasks sit too long in queue.   |
@@ -177,14 +173,17 @@ struct RethrowExceptions {
  * is necessary. Idle surplus threads are automatically retired after a specified timeout.
  *
  * Failure behaviour:
+ * - should_grow() is asked on a submission only if the submitted task may wait, that is, if the queue is now
+ *   longer than the number of workers waiting at it or about to; a task an idle worker takes at once never grows
+ *   the pool, whatever the policy.
  * - A task is accepted once submit returns. Destruction runs every accepted task on pool workers within the
  *   concurrency limit, retrying failed worker starts without a deadline (see the destructor). A task submitted
  *   from within a task after destruction began is rejected, which a future observes as broken_promise.
  * - Failure to start a worker (std::system_error or std::bad_alloc from std::thread or the registry) never loses a
  *   task and never escapes to a task or a submitter. A policy with a supervisor retries after its tick. A policy
- *   without one grows only on submission, so after such a failure a queued task that no existing worker can reach
- *   waits until the next submission or until destruction, which starts workers whatever the policy; such
- *   policies are only suitable where that is acceptable.
+ *   without one grows only on submission, so the submission itself retries a failed start with a delay growing
+ *   from 1 ms to 64 ms until the start succeeds or a worker has become free for the task; the submitter blocks
+ *   for that time. Destruction starts workers whatever the policy.
  * - The pool's own bookkeeping after a task and during destruction does not allocate, except for starting a
  *   worker, where a failure is handled as above; a std::bad_alloc from a task is handled by the ExceptionPolicy
  *   like any other exception.
@@ -216,9 +215,6 @@ public:
                         std::chrono::duration<Rep, Period> timeout = std::chrono::seconds(60),
                         std::size_t queue_limit = 0) :
         m_min_threads(min),
-        // never below the minimum: the minimum workers exist anyway, and a maximum below it would only stop
-        // every growth decision without anyone noticing (e.g. a caller passing hardware_concurrency(), which may
-        // be 0)
         m_max_threads(std::max(min, max)),
         m_idle_timeout(std::chrono::duration_cast<std::chrono::milliseconds>(timeout)),
         m_action_queue(queue_limit) {
@@ -234,8 +230,6 @@ public:
                 m_supervisor = std::thread([this] { run_supervisor(*ScalingPolicy::supervisor_tick); });
             }
         } catch (...) {
-            // a thread could not be started: the workers started so far are joinable and would terminate the
-            // process when the registry is destroyed during unwinding
             stop_and_join();
             throw;
         }
@@ -305,12 +299,6 @@ private:
      * @brief Shutdown sequence shared by the destructor and a failing constructor.
      */
     void stop_and_join() {
-        // 1. Close the queue and signal shutdown, then wake the supervisor + producers/consumers. The queue
-        // rejects new tasks from now on and hands out the accepted ones until it is empty; workers exit once they
-        // find it empty. The queue is closed under the registry lock and before shutdown is set: no task may be
-        // accepted once shutdown is visible (a running task submitting a child it then waits for would be
-        // stranded), and a worker returning from the closed queue sees shutdown at once instead of looping until
-        // it is set.
         {
             auto reg_h = m_reg.handle();
             m_action_queue.stop();
@@ -318,42 +306,30 @@ private:
         }
         m_reg.notify_all();
 
-        // 2. Join the supervisor before touching the worker list: it exits on shutdown, and this thread takes
-        // over the supervision of the drain below for every policy.
         if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
             if (m_supervisor.joinable()) {
                 m_supervisor.join();
             }
         }
 
-        // 3. Drain. Only pool workers run the accepted tasks, so the concurrency limit holds during destruction.
-        // Whenever a task is queued, no worker waits for one and the limit allows, this thread starts a worker,
-        // whatever the policy, and retries a failed start until it succeeds, also when the pool has no worker at
-        // all; a queued task that a running task waits for thus still gets a worker of its own. Nothing is pushed
-        // any more, so the drain ends when the queue is empty. There is no deadline: if no worker can be started
-        // for good, or a dependency needs more workers than the limit, destruction waits.
         while (m_action_queue.size() > 0) {
             bool spawned = false;
             {
                 auto reg_h = m_reg.handle();
-                if (m_action_queue.waiting_consumers() == 0 and reg_h->workers.size() < m_max_threads) {
+                const auto queue = m_action_queue.snapshot();
+                if (queue.size > 0 and queue.waiting_consumers + m_starting_workers.load() == 0 and
+                    reg_h->workers.size() < m_max_threads) {
                     try {
                         spawn_worker_internal(reg_h);
                         spawned = true;
                     } catch (const std::system_error&) {
-                        // the task stays queued; try again after the delay
                     } catch (const std::bad_alloc&) {
-                        // same
                     }
                 }
             }
-            // give a started worker time to take a task before judging again whether another one is needed
             std::this_thread::sleep_for(spawned ? std::chrono::milliseconds(5) : std::chrono::milliseconds(1));
         }
 
-        // 4. Steal the active workers list. Explicitly clear the source so that any
-        // worker that acquires the lock afterwards sees size()==0 and cannot
-        // voluntarily retire into the zombies vector after step 6's final reap.
         std::list<std::thread> workers_to_join;
         {
             auto reg_h = m_reg.handle();
@@ -362,15 +338,12 @@ private:
             m_worker_count = 0;
         }
 
-        // 5. Join everything in our stolen list
         for (auto& t : workers_to_join) {
             if (t.joinable()) {
                 t.join();
             }
         }
 
-        // 6. Join any zombies that retired before the steal. Steal the vector first
-        // so the join happens outside the lock (same pattern as the worker loop).
         std::vector<std::thread> zombies_to_join;
         {
             auto reg_h = m_reg.handle();
@@ -385,39 +358,39 @@ private:
 
     /**
      * @brief Internal helper to push tasks and trigger the scaling heuristic.
+     * @details The push reports whether a consumer blocked at that moment takes the task; if so nothing else is
+     * needed. Otherwise the growth and wakeup decisions are taken under the registry lock on one consistent
+     * snapshot of the queue together with the starting workers, which only change under that lock or by a
+     * worker about to register at the queue, so that a task popped in the meantime does not grow the pool and
+     * a worker started for another task is not mistaken for one coming for this task. For a policy without a
+     * supervisor a failed worker start is retried here with a growing delay, since nothing else would, until
+     * the start succeeds or the task no longer needs a worker; each retry decides on a fresh snapshot.
      * @param[in] func The functional object to enqueue.
      */
     void submit_to_queue(action&& func) {
         const auto pushed = m_action_queue.emplace_tracked(TrackedAction(std::move(func)));
-        const std::size_t size_after_push = pushed.size;
-        auto oldest_arrival = m_action_queue.oldest_arrival();
-        // A worker blocked in pop takes a task at once; only a task that queues behind busy workers can need the
-        // supervisor. The queue counts its blocked consumers under its own lock at the push, so a worker that has
-        // popped a task but not yet returned to the loop is not mistaken for an idle one.
-        const bool task_may_wait = size_after_push > pushed.waiting_consumers;
+        if (pushed.size == 0 or pushed.size <= pushed.waiting_consumers) {
+            return;
+        }
 
-        if (size_after_push > 0) {
+        std::chrono::milliseconds retry_delay{1};
+        while (true) {
+            bool start_failed = false;
             bool wake_supervisor = false;
             {
                 auto reg_h = m_reg.handle();
-                // No growth once shutdown is visible: the destroying thread owns growth during the drain, and a
-                // worker started here after it has collected the worker list would never be joined. The task
-                // itself was accepted before the queue closed and is drained as usual.
-                if (not reg_h->shutdown and reg_h->workers.size() < m_max_threads &&
-                    ScalingPolicy::should_grow(reg_h->workers.size(), size_after_push, oldest_arrival)) {
+                const auto queue = m_action_queue.snapshot();
+                const bool task_may_wait = queue.size > queue.waiting_consumers + m_starting_workers.load();
+                if (task_may_wait and not reg_h->shutdown and reg_h->workers.size() < m_max_threads and
+                    ScalingPolicy::should_grow(reg_h->workers.size(), queue.size, queue.oldest_arrival)) {
                     try {
                         spawn_worker_internal(reg_h);
                     } catch (const std::system_error&) {
-                        // no thread available: the task is accepted and queued regardless; it runs once a worker
-                        // is free, a supervisor retries growing for it, and a policy without supervisor retries
-                        // at the next submission (see the failure notes on the class)
+                        start_failed = true;
                     } catch (const std::bad_alloc&) {
-                        // same as above
+                        start_failed = true;
                     }
                 }
-                // Read under the registry lock: the supervisor re-checks the queue under the same lock before it
-                // blocks, so a notification sent after this point cannot be missed. While it waits for a deadline,
-                // newer tasks cannot move that deadline, so it is not woken then.
                 wake_supervisor = task_may_wait and reg_h->supervisor_idle;
             }
             if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
@@ -425,6 +398,14 @@ private:
                     m_reg.notify_all();
                 }
             }
+            if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
+                return;
+            }
+            if (not start_failed) {
+                return;
+            }
+            std::this_thread::sleep_for(retry_delay);
+            retry_delay = std::min(retry_delay * 2, std::chrono::milliseconds(64));
         }
     }
 
@@ -437,10 +418,11 @@ private:
         m_worker_count = reg_h->workers.size();
         auto it = std::prev(reg_h->workers.end());
 
+        m_starting_workers++;
         try {
             *it = start_worker(it);
         } catch (...) {
-            // no thread was started: remove the placeholder so that it does not count as a worker
+            m_starting_workers--;
             reg_h->workers.erase(it);
             m_worker_count = reg_h->workers.size();
             throw;
@@ -453,11 +435,8 @@ private:
      */
     std::thread start_worker(std::list<std::thread>::iterator it) {
         return std::thread([this, it]() {
+            m_starting_workers--;
             while (true) {
-                // workers at the minimum count never retire, so they block without a timeout instead of waking up
-                // every idle period
-                // read without the registry lock, which submitters take on every task; the count only changes under
-                // that lock, and a worker that misses a concurrent spawn merely stays the one that never retires
                 const bool retirable = m_worker_count.load() > m_min_threads;
                 auto task_opt = retirable ? m_action_queue.try_pop(m_idle_timeout) : m_action_queue.wait_and_pop();
                 if (task_opt) {
@@ -466,13 +445,6 @@ private:
                     } catch (...) {
                         ExceptionPolicy::handle_exception(std::current_exception());
                     }
-                    // Steal the zombie vector under the lock, then join outside it.
-                    // Joining while holding the lock is safe in practice (the zombie has already
-                    // released the lock before it can appear in the vector), but it blocks the
-                    // registry mutex for the duration of the join — delaying scaling decisions
-                    // and the destructor. Stealing first bounds the critical section to a cheap
-                    // swap. Nothing here allocates: this runs after every task, and an allocation
-                    // failure would escape the worker thread and terminate the process.
                     std::vector<std::thread> zombies_to_join;
                     {
                         auto reg_h = m_reg.handle();
@@ -488,38 +460,21 @@ private:
                 } else {
                     auto reg_h = m_reg.handle();
 
-                    // 1. THE CRITICAL CHECK:
-                    // If shutdown is true, the destructor has already moved (or is moving)
-                    // the 'workers' list. We must NOT touch 'it' or the 'workers' list.
                     if (reg_h->shutdown) {
-                        // An empty pop only says the queue was empty then: a task accepted between the timeout
-                        // of this pop and the shutdown may still be queued, and this worker still occupies a
-                        // slot below the thread limit, so it must take that task rather than leave it to the
-                        // drain, which cannot add a worker for it while this one counts. Exit only once the
-                        // closed queue is empty.
                         if (m_action_queue.size() > 0) {
                             continue;
                         }
                         return;
                     }
 
-                    // 2. VOLUNTARY RETIREMENT:
-                    // This only executes if we are NOT shutting down.
-                    // Since we are holding the monitor lock and shutdown is false,
-                    // we know 'it' is still valid in reg_h->workers.
-                    // A task pushed after this worker's wait timed out has already been reported to the supervisor
-                    // if nobody else waits for it; still, do not retire while work is queued, take it instead.
                     if (reg_h->workers.size() > m_min_threads and m_action_queue.size() == 0) {
                         try {
                             reg_h->zombies.push_back(std::move(*it));
                         } catch (const std::bad_alloc&) {
-                            // std::thread moves without throwing, so nothing changed: stay a worker and try to
-                            // retire again after the next idle period
                             continue;
                         }
                         reg_h->workers.erase(it);
                         m_worker_count = reg_h->workers.size();
-                        // a supervisor waiting at the thread limit can grow again
                         if constexpr (ScalingPolicy::supervisor_tick.has_value()) {
                             m_reg.notify_all();
                         }
@@ -541,7 +496,6 @@ private:
         auto not_before = std::chrono::steady_clock::time_point::min();
         while (true) {
             auto reg_h = m_reg.handle();
-            // an idle pool causes no wakeups: sleep until a task is queued
             reg_h->supervisor_idle = true;
             reg_h.wait([&]() { return reg_h->shutdown or m_action_queue.size() > 0; });
             reg_h->supervisor_idle = false;
@@ -550,11 +504,9 @@ private:
             }
             const auto first_arrival = m_action_queue.oldest_arrival();
             if (not first_arrival.has_value()) {
-                // a worker took the task in the meantime
                 continue;
             }
 
-            // sleep until the oldest queued task could need another worker; newer tasks can only fall due later
             auto deadline = std::chrono::steady_clock::now() + tick;
             if constexpr (has_next_check<ScalingPolicy>::value) {
                 deadline = ScalingPolicy::next_check(first_arrival.value());
@@ -571,7 +523,6 @@ private:
             }
             const auto oldest_arrival = m_action_queue.oldest_arrival();
             if (reg_h->workers.size() >= m_max_threads) {
-                // no growth is possible until a worker retires, which notifies
                 reg_h.wait([&]() { return reg_h->shutdown or reg_h->workers.size() < m_max_threads; });
                 if (reg_h->shutdown) {
                     return;
@@ -580,16 +531,10 @@ private:
                 try {
                     spawn_worker_internal(reg_h);
                 } catch (const std::system_error&) {
-                    // out of threads for now: the task stays queued, try again after one tick
                 } catch (const std::bad_alloc&) {
-                    // out of memory for the registry node or the thread state: same
                 }
-                // the new worker needs a moment to pop the task; until then the same task is still overdue, so
-                // re-evaluate after one tick instead of spawning again for it
                 not_before = std::chrono::steady_clock::now() + tick;
             } else {
-                // tasks keep waiting although the policy does not grow: re-evaluate after one tick instead of
-                // spinning on a deadline in the past
                 not_before = std::chrono::steady_clock::now() + tick;
             }
         }
@@ -600,8 +545,9 @@ private:
     const std::chrono::milliseconds m_idle_timeout; ///< Surplus thread idle timeout.
 
     thread_safe_bounded_queue<TrackedAction> m_action_queue; ///< Task queue.
-    std::atomic<std::size_t> m_worker_count{0}; ///< Size of the worker registry, readable without its lock.
-    monitor<RegistryData> m_reg;                ///< Worker registry.
+    std::atomic<std::size_t> m_worker_count{0};     ///< Size of the worker registry, readable without its lock.
+    std::atomic<std::size_t> m_starting_workers{0}; ///< Workers started but not yet waiting at the queue.
+    monitor<RegistryData> m_reg;                    ///< Worker registry.
     /// Background scaling supervisor. Only materialized as a real `std::thread`
     /// for policies whose `supervisor_tick` has a value; otherwise collapses to
     /// a `std::monostate` so non-supervisor pools don't carry a dead thread handle.

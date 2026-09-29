@@ -99,13 +99,6 @@ cd build && ctest -N                  # list registered names before filtering
 cd build && ctest -R <regex>
 ```
 
-The scaling thread-pool reliability suite has a short normal GTest target and, on Linux, a subprocess fault-probe
-driver. Run the normal cases with `ctest -R ThreadPoolScalingReliability --output-on-failure` and the serialized
-fault cases with `ctest -L fault-injection --output-on-failure`. Its extended, disabled GTest cases are documented
-in `lib/everest/util/tests/reliability/README.md` and accept deterministic repeat and seed settings. The focused
-standalone CMake setup in that directory can use a local GoogleTest source cache, so it does not need EDM or network
-access.
-
 `ctest -R` matches **registered test names, not build targets**, and the two often differ
 in case and spelling. List with `ctest -N` first. Coverage needs
 `-DEVEREST_ENABLE_COVERAGE=ON`; the `everest-core_create_coverage` target writes

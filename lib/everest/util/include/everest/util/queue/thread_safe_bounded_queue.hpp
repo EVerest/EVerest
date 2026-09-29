@@ -44,6 +44,15 @@ public:
     };
 
     /**
+     * @brief What \ref snapshot reports, all read under one lock hold.
+     */
+    struct state {
+        size_type size;                                                      ///< Current number of elements.
+        size_type waiting_consumers;                                         ///< Consumers blocked inside a pop.
+        std::optional<std::chrono::steady_clock::time_point> oldest_arrival; ///< Arrival of the front element.
+    };
+
+    /**
      * @brief Constructor for the bounded queue.
      * @param[in] max_size The maximum number of elements allowed in the queue.
      * A value of 0 indicates an unbounded queue.
@@ -103,8 +112,6 @@ public:
         try {
             m_queue.emplace(std::forward<Args>(args)...);
         } catch (...) {
-            // this producer may have consumed the notification a pop sent for the space it did not use; pass it
-            // on, otherwise another producer blocked above stays asleep although there is room
             m_cv_producer.notify_one();
             throw;
         }
@@ -196,6 +203,18 @@ public:
         return m_waiting_consumers;
     }
 
+    /**
+     * @brief Safely returns size, waiting consumers and the oldest arrival as one consistent snapshot.
+     */
+    state snapshot() const {
+        std::lock_guard lock(m_mtx);
+        state result{m_queue.size(), m_waiting_consumers, std::nullopt};
+        if (not m_queue.empty()) {
+            result.oldest_arrival = m_queue.front().arrival;
+        }
+        return result;
+    }
+
 private:
     /**
      * @brief Internal implementation of the pop logic.
@@ -206,8 +225,6 @@ private:
         std::unique_lock lock(m_mtx);
         auto wait_predicate = [this]() { return not m_queue.empty() or m_stop; };
 
-        // counted under the lock while inside the wait, so a producer sees exactly the consumers that will take an
-        // element before they return (see emplace_tracked)
         if (timeout_ms < 0) {
             ++m_waiting_consumers;
             m_cv_consumer.wait(lock, wait_predicate);
@@ -218,8 +235,6 @@ private:
             --m_waiting_consumers;
         }
 
-        // if the queue is still empty, we return a nullopt. Note that this would be implicitly
-        // handled by simple_queue::pop, but it is added here to be more explcit
         if (m_queue.empty()) {
             return std::nullopt;
         }

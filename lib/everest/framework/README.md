@@ -6,7 +6,7 @@ Additional documentation can be found in [docs](docs).
 
 The framework message handler thread pool scaling policy is selected at CMake
 configure time with `EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY`. Supported
-values are `latency` (default), `greedy`, `conservative`, `fixed_size` and
+values are `greedy` (default), `latency`, `conservative`, `fixed_size` and
 `custom`. The latency and fixed-size policies have additional CMake options for
 their thresholds. See the main EVerest documentation under
 `docs/source/explanation/dev-tools/edm.rst` for full build examples and the

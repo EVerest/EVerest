@@ -105,7 +105,7 @@ using everest::lib::util::bind_obj;
 
 MessageHandler::MessageHandler() {
     operation_thread_pool = std::make_unique<ThreadPool>(
-        THREAD_POOL_SCALING_MIN_THREAD_COUNT, thread_pool_scaling_max_thread_count(), THREAD_POOL_SCALING_IDLE_TIMEOUT);
+        THREAD_POOL_SCALING_MIN_THREAD_COUNT, THREAD_POOL_SCALING_MAX_THREAD_COUNT, THREAD_POOL_SCALING_IDLE_TIMEOUT);
     operation_dispatcher_thread = std::thread([this] { run_operation_dispatcher(); });
     result_worker_thread = std::thread([this] { run_result_message_worker(); });
     external_mqtt_worker_thread = std::thread([this] { run_external_mqtt_worker(); });

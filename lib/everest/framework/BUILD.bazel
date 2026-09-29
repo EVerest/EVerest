@@ -1,6 +1,6 @@
-load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library", "cc_shared_library", "cc_test")
+load("@rules_cc//cc:defs.bzl", "cc_binary", "cc_import", "cc_library", "cc_shared_library")
 load("@rules_python//python:py_binary.bzl", "py_binary")
-load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE", "CROSS_TEST_INCOMPATIBLE")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
 
 py_binary(
     name = "collect_migration_files",
@@ -23,11 +23,12 @@ genrule(
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CONSERVATIVE 3" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_FIXED_SIZE 4" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM 5" >> $@
-    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_LATENCY" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_GREEDY" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS 50" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS 5" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD 3" >> $@
-    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR 4" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT 1" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT 6" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE void" >> $@
     $(location :collect_migration_files) --migration-files $(locations //lib/everest/framework/schemas/migrations) --output $@
   """,
@@ -51,16 +52,6 @@ config_setting(
     values = {"dynamic_mode": "fully"},
     visibility = ["//visibility:public"],
 )
-
-config_setting(
-    name = "_linux",
-    constraint_values = ["@platforms//os:linux"],
-)
-
-LINUX_TEST_INCOMPATIBLE = select({
-    ":_linux": [],
-    "//conditions:default": ["@platforms//:incompatible"],
-}) + CROSS_TEST_INCOMPATIBLE
 
 cc_library(
     name = "framework_lib",
@@ -151,14 +142,6 @@ cc_binary(
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
         "@libcap",
     ],
-)
-
-cc_test(
-    name = "thread_pool_floor_probe",
-    srcs = ["tests/reliability/thread_pool_floor_probe.cpp"],
-    cxxopts = ["-std=c++17"],
-    target_compatible_with = LINUX_TEST_INCOMPATIBLE,
-    deps = [":framework_lib"],
 )
 
 cc_library(

@@ -755,7 +755,7 @@ TEST(ThreadPoolScalingShutdownTest, DestructorRunsQueuedTaskOfWorkerlessPool) {
     }
     EXPECT_EQ(done, 1);
     {
-        thread_pool_scaling<GreedyScaling> pool(0, 4, 60s);
+        thread_pool_scaling<FixedSizeScaling<2>> pool(0, 4, 60s);
         pool.run([&done] { ++done; });
     }
     EXPECT_EQ(done, 2);
@@ -845,9 +845,9 @@ TEST(ThreadPoolScalingShutdownTest, DestructorNeverStrandsChildSubmittedDuringSh
 
 /**
  * @test DestructorDrainsDependencyWithoutSupervisor
- * @brief A policy without supervisor cannot grow for a queued task on its own; destruction starts a worker for it.
- * Greedy scaling does not grow for a single queued task, so the first task only starts once the second is queued
- * behind it, and the second is left to the drain.
+ * @brief A policy without supervisor that does not grow for a single queued task leaves that task to destruction,
+ * which starts a worker for it. FixedSizeScaling<2> grows only at two queued tasks, so the first task only starts
+ * once the second is queued behind it, and the second is left to the drain.
  */
 TEST(ThreadPoolScalingShutdownTest, DestructorDrainsDependencyWithoutSupervisor) {
     std::promise<void> release;
@@ -857,7 +857,7 @@ TEST(ThreadPoolScalingShutdownTest, DestructorDrainsDependencyWithoutSupervisor)
     std::atomic<bool> timed_out{false};
     const auto start = std::chrono::steady_clock::now();
     {
-        thread_pool_scaling<GreedyScaling> pool(0, 2, 60s);
+        thread_pool_scaling<FixedSizeScaling<2>> pool(0, 2, 60s);
         pool.run([&] {
             entered.set_value();
             timed_out = released.wait_for(2s) != std::future_status::ready;
@@ -983,4 +983,85 @@ TEST(ThreadPoolScalingTest, MaximumBelowMinimumIsRaisedToMinimum) {
     }
     EXPECT_EQ(entered, 2);
     release.set_value();
+}
+
+// =================================================================
+// 10. Greedy Scaling Tests
+// =================================================================
+
+/**
+ * @test GreedyGrowsForSingleTaskBehindBlockedWorker
+ * @brief A single task queued behind a blocked worker gets a worker at submission, with no supervisor and no
+ * further submission.
+ */
+TEST(ThreadPoolScalingTest, GreedyGrowsForSingleTaskBehindBlockedWorker) {
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::promise<void> entered;
+    auto entered_future = entered.get_future();
+    std::promise<void> second_ran;
+    auto second_ran_future = second_ran.get_future();
+    thread_pool_scaling<GreedyScaling> pool(1, 2, 60s);
+    pool.run([released, &entered] {
+        entered.set_value();
+        released.wait();
+    });
+    entered_future.wait();
+    pool.run([&second_ran] { second_ran.set_value(); });
+    EXPECT_EQ(second_ran_future.wait_for(200ms), std::future_status::ready);
+    release.set_value();
+}
+
+namespace {
+struct RecordingGreedyScaling : GreedyScaling {
+    static inline std::atomic<int> asked{0};
+    static bool should_grow(std::size_t current_workers, std::size_t queue_size,
+                            std::optional<std::chrono::steady_clock::time_point> oldest_arrival) {
+        asked++;
+        return GreedyScaling::should_grow(current_workers, queue_size, oldest_arrival);
+    }
+};
+} // namespace
+
+/**
+ * @test NoGrowthWhenIdleWorkerTakesTask
+ * @brief A task that an idle worker takes at once does not even reach the policy; the pool asks should_grow()
+ * only for a task that may wait.
+ */
+TEST(ThreadPoolScalingTest, NoGrowthWhenIdleWorkerTakesTask) {
+    RecordingGreedyScaling::asked = 0;
+    std::promise<void> ran;
+    auto ran_future = ran.get_future();
+    thread_pool_scaling<RecordingGreedyScaling> pool(2, 4, 60s);
+    std::this_thread::sleep_for(20ms);
+    pool.run([&ran] { ran.set_value(); });
+    EXPECT_EQ(ran_future.wait_for(1s), std::future_status::ready);
+    EXPECT_EQ(RecordingGreedyScaling::asked, 0);
+}
+
+/**
+ * @test GreedyBurstStaysWithinLimit
+ * @brief A burst of short tasks may start workers up to the limit but never beyond it, and every task runs once.
+ */
+TEST(ThreadPoolScalingTest, GreedyBurstStaysWithinLimit) {
+    std::atomic<int> active{0};
+    std::atomic<int> peak{0};
+    std::atomic<int> completed{0};
+    {
+        thread_pool_scaling<GreedyScaling> pool(1, 6, 60s);
+        for (int i = 0; i < 40; ++i) {
+            pool.run([&] {
+                const int now_active = ++active;
+                int seen = peak.load();
+                while (seen < now_active and not peak.compare_exchange_weak(seen, now_active)) {
+                }
+                std::this_thread::sleep_for(1ms);
+                --active;
+                ++completed;
+            });
+        }
+    }
+    EXPECT_EQ(completed, 40);
+    EXPECT_LE(peak, 6);
+    EXPECT_GE(peak, 2);
 }

@@ -328,9 +328,19 @@ time.
      - Default
      - Description
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY``
-     - ``latency``
-     - Selects the policy. Supported values are ``latency``, ``greedy``,
+     - ``greedy``
+     - Selects the policy. Supported values are ``greedy``, ``latency``,
        ``conservative``, ``fixed_size`` and ``custom``.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT``
+     - ``1``
+     - Minimum worker count of the pool. These workers are always running.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT``
+     - ``6``
+     - Maximum worker count of the pool, independent of the CPU core count.
+       The pool grows so that a handler blocked waiting for another message
+       still lets that message be handled; such threads do not run in
+       parallel, so the core count is not the right bound. Must not be below
+       the minimum.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS``
      - ``50``
      - Maximum queued task wait time, in milliseconds, before the ``latency``
@@ -345,14 +355,6 @@ time.
      - ``3``
      - Queue size threshold at which the ``fixed_size`` policy adds another
        worker.
-   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT_FLOOR``
-     - ``4``
-     - Lower bound for the pool's maximum worker count. The maximum is this
-       value or the number of CPU cores, whichever is larger. The pool grows so
-       that a handler blocked waiting for another message still lets that
-       message be handled; such threads do not run in parallel, so a bound
-       from the core count alone would leave a single-core target unable to
-       grow.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER``
      - (empty)
      - Header to include when the policy is ``custom``.
@@ -370,11 +372,16 @@ The built-in policies are:
 
    * - Policy
      - Behavior
-   * - ``latency``
-     - Default. Adds workers when queued work has waited longer than the
-       framework latency threshold.
    * - ``greedy``
-     - Adds workers as soon as backlog is detected.
+     - Default. Adds a worker whenever a submitted task would otherwise wait
+       for a busy worker, so below the maximum no task is ever left queued
+       behind blocked workers. No supervisor thread; the pool size follows the
+       number of outstanding handlers and surplus workers retire after the
+       idle timeout.
+   * - ``latency``
+     - Adds workers when queued work has waited longer than the framework
+       latency threshold, checked by a supervisor thread that sleeps while the
+       pool is idle.
    * - ``conservative``
      - Adds workers only when the queue depth significantly exceeds the current
        worker count.
@@ -382,7 +389,7 @@ The built-in policies are:
      - Adds workers once the queue size reaches the configured
        ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``.
 
-**Example: selecting a built-in policy for a full EVerest build**
+**Example: selecting the latency policy for a full EVerest build**
 
 .. code-block:: bash
 
