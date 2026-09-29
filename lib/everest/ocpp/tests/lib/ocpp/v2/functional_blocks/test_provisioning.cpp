@@ -14,6 +14,7 @@
 #include <device_model_test_helper.hpp>
 #include <evse_manager_fake.hpp>
 #include <evse_security_mock.hpp>
+#include <firmware_update_mock.hpp>
 #include <message_dispatcher_mock.hpp>
 #include <mocks/database_handler_mock.hpp>
 #include <ocsp_updater_mock.hpp>
@@ -29,6 +30,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 #include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
 #include <ocpp/v2/functional_blocks/transaction.hpp>
+#include <ocpp/v2/messages/BootNotification.hpp>
 #include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/messages/Reset.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
@@ -133,6 +135,7 @@ protected:
     ::testing::NiceMock<SecurityMock> security;
     ::testing::NiceMock<DiagnosticsMock> diagnostics;
     ::testing::NiceMock<TransactionMock> transaction;
+    ::testing::NiceMock<FirmwareUpdateMock> firmware_update;
     std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Accepted};
 
     boost::asio::io_context io_context;
@@ -172,7 +175,7 @@ protected:
             [this](std::optional<std::int32_t> evse_id, auto) { this->reset_callback_evse_id = evse_id; },
             [](auto, auto) { return RequestStartStopStatusEnum::Accepted; }, // stop_transaction
             std::nullopt,                                                    // variable_changed_callback
-            *tariff_and_cost, registration_status);
+            *tariff_and_cost, registration_status, firmware_update);
     }
 
     ocpp::EnhancedMessage<MessageType> make_reset_message(ResetEnum type,
@@ -187,6 +190,27 @@ protected:
         return enhanced_message;
     }
 };
+
+class ProvisioningRegistrationTest : public ProvisioningResetTest,
+                                     public ::testing::WithParamInterface<RegistrationStatusEnum> {};
+
+TEST_P(ProvisioningRegistrationTest, FirmwareNotifiedOnlyWhenRegistrationAccepted) {
+    const auto status = GetParam();
+    EXPECT_CALL(firmware_update, on_registration_accepted()).Times(status == RegistrationStatusEnum::Accepted ? 1 : 0);
+    BootNotificationResponse response;
+    response.status = status;
+    response.currentTime = DateTime();
+    response.interval = 86400;
+    ocpp::EnhancedMessage<MessageType> message;
+    message.messageType = MessageType::BootNotificationResponse;
+    message.message = ocpp::CallResult<BootNotificationResponse>(response, MessageId("boot"));
+    provisioning->handle_message(message);
+    EXPECT_EQ(registration_status, status);
+}
+
+INSTANTIATE_TEST_SUITE_P(BootResponses, ProvisioningRegistrationTest,
+                         ::testing::Values(RegistrationStatusEnum::Accepted, RegistrationStatusEnum::Pending,
+                                           RegistrationStatusEnum::Rejected));
 
 // TC_A_10_CS: Reset(Immediate) whole-station accepted with no active transaction. Auto-reconnect must be suppressed
 // (via suppress_reconnect()) so the CSMS-side close after ResetResponse is not redialed before the reboot. The live

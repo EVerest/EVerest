@@ -6889,9 +6889,12 @@ async def test_get_security_log(
 
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="FTP")
+@pytest.mark.everest_config_adaptions(SystemStoreConfigurationStrategy())
 async def test_signed_update_firmware(
     test_config: OcppTestConfiguration,
+    central_system_v16: CentralSystem,
     charge_point_v16: ChargePoint16,
+    test_controller: TestController,
     test_utility: TestUtility,
     ftp_server,
 ):
@@ -6972,14 +6975,26 @@ async def test_signed_update_firmware(
         test_utility,
         charge_point_v16,
         "SignedFirmwareStatusNotification",
-        call.SignedFirmwareStatusNotification(FirmwareStatus.installed, 1),
+        call.SignedFirmwareStatusNotification(FirmwareStatus.install_rebooting, 1),
     )
+
+    await asyncio.to_thread(test_controller._everest_core.process.wait, timeout=15)
+    firmware_statuses = [message.payload["status"] for message in
+                         received_calls(charge_point_v16, "SignedFirmwareStatusNotification")]
+    assert firmware_statuses[-2:] == ["Installing", "InstallRebooting"]
+    assert "Installed" not in firmware_statuses
+
+    test_utility.messages.clear()
+    test_controller.stop()
+    test_controller.start()
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=False)
 
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "SignedFirmwareStatusNotification",
-        call.SignedFirmwareStatusNotification(FirmwareStatus.install_rebooting, 1),
+        call.SignedFirmwareStatusNotification(FirmwareStatus.installed, 1),
     )
 
 @pytest.mark.asyncio
