@@ -63,14 +63,4 @@ void handle_certificate_store_update(const types::evse_security::CertificateStor
                                      const std::function<iso15118::config::SSLConfig()>& rebuild,
                                      const std::function<void(iso15118::config::SSLConfig)>& apply);
 
-/// \brief What ready() must do when the initial SSL config carries no usable chains.
-enum class StartupChainPolicy {
-    Throw,           //!< refuse to start: TLS is mandatory but cannot be served
-    WarnAndContinue, //!< start anyway; TLS connection attempts fail until certificates arrive
-};
-
-/// \brief Startup policy for an empty chain list: ENFORCE_TLS demands a usable chain (Throw);
-/// every other negotiation strategy can operate without TLS (WarnAndContinue).
-StartupChainPolicy decide_startup_empty_chains(iso15118::config::TlsNegotiationStrategy strategy);
-
 } // namespace module::charger
