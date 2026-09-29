@@ -443,11 +443,85 @@ TEST(PowerMeterAggregatorWindow, StaleMeterIsExcludedFromPerPhaseSums) {
     EXPECT_EQ(result.stale_meters, 1);
 }
 
+// ---------------------------------------------------------------- measuring the site
+
+// The leaf sum is not a site measurement: it is a site measurement minus every load the
+// energy tree does not know about. Where the connection point has its own meter, that one
+// meter is what sees the whole site.
+
+TEST(CollectSiteMeasurement, PrefersTheRootsOwnMeter) {
+    auto grid = make_node("grid", types::energy::NodeType::Generic);
+    // 34 kW through the connection, of which the EVSEs account for 3 kW.
+    grid.energy_usage_root = make_reading(34000.0f, NOW, std::chrono::seconds(0));
+
+    auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
+    cp01.energy_usage_leaves = make_reading(1000.0f, NOW, std::chrono::seconds(0));
+    auto cp02 = make_node("cp02", types::energy::NodeType::Evse);
+    cp02.energy_usage_leaves = make_reading(2000.0f, NOW, std::chrono::seconds(0));
+    grid.children = {cp01, cp02};
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    EXPECT_EQ(collect_site_measurement(grid, aggregator), SiteMeterSource::RootMeter);
+
+    EXPECT_EQ(aggregator.size(), 1U);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value().total, 34000.0f);
+}
+
+TEST(CollectSiteMeasurement, FallsBackToTheEvseSumWithoutARootMeter) {
+    auto grid = make_node("grid", types::energy::NodeType::Generic);
+
+    auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
+    cp01.energy_usage_leaves = make_reading(1000.0f, NOW, std::chrono::seconds(0));
+    auto cp02 = make_node("cp02", types::energy::NodeType::Evse);
+    cp02.energy_usage_leaves = make_reading(2000.0f, NOW, std::chrono::seconds(0));
+    grid.children = {cp01, cp02};
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    EXPECT_EQ(collect_site_measurement(grid, aggregator), SiteMeterSource::LeafSum);
+
+    EXPECT_EQ(aggregator.size(), 2U);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value().total, 3000.0f);
+}
+
+TEST(CollectSiteMeasurement, NothingMeasuresTheSite) {
+    auto grid = make_node("grid", types::energy::NodeType::Generic);
+    grid.children = {make_node("cp01", types::energy::NodeType::Evse)};
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    EXPECT_EQ(collect_site_measurement(grid, aggregator), SiteMeterSource::None);
+    EXPECT_EQ(aggregator.size(), 0U);
+}
+
+TEST(CollectSiteMeasurement, AnEvseRootUsesItsOwnLeafReading) {
+    // A tree whose root is the EVSE itself: there is no connection point above it, so the
+    // leaf path is the only one and must not be skipped by the root-meter preference.
+    auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
+    cp01.energy_usage_leaves = make_reading(1000.0f, NOW, std::chrono::seconds(0));
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    EXPECT_EQ(collect_site_measurement(cp01, aggregator), SiteMeterSource::LeafSum);
+    EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value().total, 1000.0f);
+}
+
+TEST(CollectSiteMeasurement, TheRootMeterIsSubjectToTheSameFreshnessRule) {
+    auto grid = make_node("grid", types::energy::NodeType::Generic);
+    grid.energy_usage_root = make_reading(34000.0f, NOW, std::chrono::hours(1));
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    EXPECT_EQ(collect_site_measurement(grid, aggregator), SiteMeterSource::RootMeter);
+
+    const auto result = aggregator.aggregate(NOW);
+    EXPECT_FALSE(result.power_W.has_value());
+    EXPECT_EQ(result.stale_meters, 1);
+}
+
 // ---------------------------------------------------------------- tree collection
 
 TEST(CollectLeafMeasurements, CollectsFromEvseNodesOnly) {
+    // Within the leaf sum an intermediate node's own meter would double count, so it is
+    // skipped. Measuring the site is a different question - see CollectSiteMeasurement,
+    // where that same meter is the only correct answer.
     auto grid = make_node("grid", types::energy::NodeType::Generic);
-    // The grid meter measures the sum of the two EVSE meters; counting it would double.
     grid.energy_usage_root = make_reading(9999.0f, NOW, std::chrono::seconds(0));
 
     auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
@@ -587,7 +661,7 @@ TEST(AggregatorWiring, RunOptimizerRefreshesTheLeafAggregate) {
 
     impl.run_optimizer(grid, at);
 
-    const auto& aggregate = impl.get_leaf_aggregate();
+    const auto& aggregate = impl.get_site_aggregate();
     EXPECT_FLOAT_EQ(aggregate.power_W.value().total, 1000.0f);
     EXPECT_EQ(aggregate.fresh_meters, 1);
     EXPECT_EQ(aggregate.stale_meters, 1);
@@ -614,8 +688,8 @@ TEST(AggregatorWiring, AggregateDoesNotAccumulateAcrossRuns) {
     impl.run_optimizer(grid, at);
 
     // Two runs over one meter must still report one meter, not two.
-    EXPECT_FLOAT_EQ(impl.get_leaf_aggregate().power_W.value().total, 1000.0f);
-    EXPECT_EQ(impl.get_leaf_aggregate().fresh_meters, 1);
+    EXPECT_FLOAT_EQ(impl.get_site_aggregate().power_W.value().total, 1000.0f);
+    EXPECT_EQ(impl.get_site_aggregate().fresh_meters, 1);
 }
 
 } // namespace module

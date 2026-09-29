@@ -28,8 +28,10 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             {"redistribution_margin_A", config.redistribution_margin_A},
             {"redistribution_start_with_lower_limit", config.redistribution_start_with_lower_limit},
             {"redistribution_reduction_hold_s", config.redistribution_reduction_hold_s},
-            {"redistribution_measurement_max_age_s", config.redistribution_measurement_max_age_s},
             {"power_meter_aggregation_window_s", config.power_meter_aggregation_window_s},
+            {"power_redistribution_connector_margin", config.power_redistribution_connector_margin},
+            {"power_redistribution_site_margin", config.power_redistribution_site_margin},
+            {"power_redistribution_gain", config.power_redistribution_gain},
         };
     }
     static module::EnergyManagerConfig from_json(const json& j) {
@@ -49,9 +51,11 @@ template <> struct adl_serializer<module::EnergyManagerConfig> {
             j.value("broker_strategy", std::string("FastCharging")),
             j.value("redistribution_margin_A", 2.0),
             j.value("redistribution_start_with_lower_limit", true),
-            j.value("redistribution_reduction_hold_s", 30),
-            j.value("redistribution_measurement_max_age_s", 10),
+            j.value("redistribution_reduction_hold_s", 10),
             j.value("power_meter_aggregation_window_s", 5),
+            j.value("power_redistribution_connector_margin", 0.1),
+            j.value("power_redistribution_site_margin", 0.1),
+            j.value("power_redistribution_gain", 0.5),
         };
     }
 };

@@ -88,28 +88,8 @@ date::utc_clock::time_point Broker::to_timestamp(const types::energy::ScheduleRe
 }
 
 bool Broker::time_slot_active(const int i, const ScheduleReq& offer) {
-    const auto& now = globals.start_time;
-    const auto t_i = to_timestamp(offer[i]);
-
-    int active_slot = 0;
-    // Get active slot:
-    if (now < to_timestamp(offer[0])) {
-        // First element already in the future
-        active_slot = 0;
-    } else if (now > to_timestamp(offer[offer.size() - 1])) {
-        // Last element in the past
-        active_slot = offer.size() - 1;
-    } else {
-        // Somewhere in between
-        for (int n = 0; n < offer.size() - 1; n++) {
-            if (now > to_timestamp(offer[n]) and now < to_timestamp(offer[n + 1])) {
-                active_slot = n;
-                break;
-            }
-        }
-    }
-
-    return active_slot == i;
+    const auto active_slot = active_slot_index(offer);
+    return active_slot.has_value() and active_slot.value() == static_cast<ScheduleReq::size_type>(i);
 }
 
 bool Broker::buy_ampere_import(int index, float ampere, bool allow_less,
