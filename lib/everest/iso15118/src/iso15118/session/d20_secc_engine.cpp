@@ -45,7 +45,7 @@ void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {
         // They feed the DC_ChargeParameterDiscoveryRes offer, which a renegotiation re-sends mid-session.
         ctx.session_config.powersupply_limits = control_data->limits;
     } else if (const auto control_data = ctx.get_control_event<d20::EnergyServices>()) {
-        ctx.session_config.supported_energy_transfer_services = *control_data;
+        ctx.session_config.set_supported_energy_transfer_services(*control_data);
     } else if (const auto control_data = ctx.get_control_event<d20::SupportedVASs>()) {
         ctx.session_config.supported_vas_services = *control_data;
     } else if (const auto control_data = ctx.get_control_event<d20::AcTransferLimits>()) {
