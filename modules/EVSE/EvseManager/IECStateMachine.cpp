@@ -117,6 +117,14 @@ void IECStateMachine::process_bsp_event(types::board_support_common::BspEvent co
 void IECStateMachine::feed_state_machine(std::optional<RawCPState> const& cp_state_opt) {
     auto events = state_machine(cp_state_opt);
 
+    // Publish the raw measured CP state change BEFORE the derived CPEvents: the HLC stack must
+    // e.g. learn state A (and close its TCP connection over the still-intact AVLN, [V2G-DC-962])
+    // before a signal_event handler triggers the SLAC teardown.
+    if (cp_state_opt.has_value() and cp_state_opt.value() != signalled_raw_cp_state) {
+        signalled_raw_cp_state = cp_state_opt.value();
+        signal_raw_cp_state_changed(signalled_raw_cp_state);
+    }
+
     // Process all events
     while (not events.empty()) {
         EVLOG_debug << "CPEvent " << static_cast<int>(events.front());
