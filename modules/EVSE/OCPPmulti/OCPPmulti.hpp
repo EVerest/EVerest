@@ -59,6 +59,8 @@ public:
     [[nodiscard]] std::string getDeviceModelDatabaseMigrationPath() const override;
     [[nodiscard]] bool getEnableExternalWebsocketControl() const override;
     [[nodiscard]] bool getEnableLegacyConfigMigration() const override;
+    [[nodiscard]] std::string getErrorMappingPath() const override;
+    [[nodiscard]] bool getErrorMappingStrictValidation() const override;
     [[nodiscard]] int getOcpp16NetworkConfigSlot() const override;
     [[nodiscard]] std::string getEverestDeviceModelDatabasePath() const override;
     [[nodiscard]] int getGridSupportHeartbeatS() const override;
@@ -89,6 +91,8 @@ struct Conf {
     bool EnableLegacyConfigMigration;
     std::string DeviceModelConfigMappings;
     bool EnableExternalWebsocketControl;
+    std::string ErrorMappingPath;
+    bool ErrorMappingStrictValidation;
     std::string EverestDeviceModelDatabasePath;
     int GridSupportHeartbeatS;
     std::string MessageLogPath;

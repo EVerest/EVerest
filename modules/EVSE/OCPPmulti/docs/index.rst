@@ -592,6 +592,67 @@ The remaining **eventData** properties are filled as follows:
 * ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
   property is set accordingly.
 
+.. _handwritten_ocppmulti_error-mapping-file:
+
+Error mapping file
+^^^^^^^^^^^^^^^^^^
+
+``ErrorMappingPath`` points to a JSON file that defines, per EVerest error, how it is reported in OCPP 1.6 and 2.x.
+Relative paths are resolved against the module share directory (``share/everest/modules/OCPPmulti``). The schema and
+an example are installed next to it as ``error_mapping/error_mapping.schema.json`` and
+``error_mapping/error_mapping.example.json``.
+
+The module loads and validates the file at startup. The reporting described above does not use it yet.
+
+Each key is an EVerest error type ``<namespace>/<type>``, optionally refined by a sub_type as
+``<namespace>/<type>#<sub_type>``. An entry for type and sub_type takes precedence over an entry for the type alone.
+An entry has the following optional parts, and at least one of ``v16``, ``v2`` and ``tier_mapping``:
+
+* ``v16``: ``error_code`` (an OCPP 1.6 ``ChargePointErrorCode`` other than ``NoError``), ``vendor_id``,
+  ``vendor_error_code`` and ``info``
+* ``v2``: ``tech_code``, ``techInfo``, ``component_name``, ``component_instance``, ``variable_name``,
+  ``variable_instance`` and ``severity`` (the OCPP 2.1 severity 0-9 for each of ``high``, ``medium`` and ``low``)
+* ``tier_mapping``: ``evse`` and optionally ``connector`` the error is reported on, overriding the mapping of the
+  raising module; ``evse`` 0 is the charging station
+
+``info`` and ``techInfo`` may contain the placeholder ``${actual_value}``.
+
+An entry whose key equals a built-in MREC entry (e.g. ``evse_board_support/MREC3HighTemperature``) replaces it; the
+module logs each such entry at info level. An entry ``<namespace>/<type>#<sub_type>`` refines a built-in entry for that
+sub_type only.
+
+.. code-block:: json
+
+   {
+     "generic/VendorError#SurgeProtectionDevice2": {
+       "tier_mapping": { "evse": 2 },
+       "v16": { "error_code": "OtherError", "vendor_id": "com.example", "vendor_error_code": "SPD-2" },
+       "v2": { "tech_code": "SPD-2", "component_name": "EVSE" }
+     }
+   }
+
+The following findings stop the module at startup, each naming its entry:
+
+* malformed JSON, duplicate keys, and any violation of the schema (unknown fields, unknown OCPP 1.6 error codes,
+  field lengths beyond the OCPP limits, severities outside 0-9, malformed keys)
+* an error type that ``<namespace>.yaml`` in the EVerest errors directory does not declare; the sub_type is not
+  checked. The errors directory is the one the manager uses: its ``errors_dir`` setting, by default
+  ``share/everest/errors``. If that directory does not exist, the error types cannot be checked and the module stops.
+* a placeholder other than ``${actual_value}``
+* a ``tier_mapping`` naming an EVSE or connector the charger does not have, or a connector on ``evse`` 0
+
+The following findings are logged as warnings:
+
+* ``info`` or ``techInfo`` text that is longer than 50 or 500 characters without its placeholders
+* on OCPP 2.x, a component/variable combination the device model does not contain, on the station, any EVSE or
+  connector, or on the entry's ``tier_mapping``. Unset names count as **EVSE** and **Problem**. With
+  ``ErrorMappingStrictValidation`` set to ``true``, these findings stop the module instead. On OCPP 1.6 the device
+  model is not checked.
+
+Whether an entry's ``tier_mapping`` overrides a different mapping of the raising module can only be known once the error
+arrives, because the module that raises a given error type is not known at startup. The module logs a warning the
+first time this happens for an entry and a raising module.
+
 .. _handwritten_ocppmulti_suspend-reason-reporting:
 
 Suspend reason reporting in OCPP 1.6

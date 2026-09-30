@@ -111,6 +111,7 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::evse_soc_map;
     using ocpp_multi::GenericOcpp::evse_supported_energy_transfer_modes;
     using ocpp_multi::GenericOcpp::grid_support_state;
+    using ocpp_multi::GenericOcpp::loaded_error_mapping;
 
     // grid_support / DER
     using ocpp_multi::GenericOcpp::apply_der_capability;

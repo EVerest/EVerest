@@ -42,6 +42,7 @@ target_sources(${TEST_TARGET_NAME}
     error_mapping_loader_tests.cpp
     error_mapping_validation_tests.cpp
     generic_ocpp_error_dispatch_tests.cpp
+    generic_ocpp_error_mapping_tests.cpp
     generic_ocpp_tests.cpp
     generic_ocpp_v16_connector_tests.cpp
     grid_support_der_tests.cpp
@@ -72,9 +73,11 @@ target_sources(${TEST_TARGET_NAME}
     ${ERROR_MAPPING_SCHEMA_GENERATED}
 )
 
+file(RELATIVE_PATH EVEREST_ERRORS_DIR ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/errors)
 target_compile_definitions(${TEST_TARGET_NAME}
     PRIVATE
     UNIT_TESTS
+    EVEREST_ERRORS_DIR="${EVEREST_ERRORS_DIR}"
 )
 
 # Relative to the WORKING_DIRECTORY, so the compile flags don't differ between build trees.
@@ -92,17 +95,10 @@ set_property(
 )
 file(RELATIVE_PATH ERROR_MAPPING_DIR ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../error_mapping)
 set_property(
-    SOURCE error_mapping_loader_tests.cpp
+    SOURCE error_mapping_loader_tests.cpp generic_ocpp_error_mapping_tests.cpp
     APPEND
     PROPERTY COMPILE_DEFINITIONS
         ERROR_MAPPING_DIR="${ERROR_MAPPING_DIR}"
-)
-file(RELATIVE_PATH EVEREST_ERRORS_DIR ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/errors)
-set_property(
-    SOURCE error_mapping_validation_tests.cpp
-    APPEND
-    PROPERTY COMPILE_DEFINITIONS
-        EVEREST_ERRORS_DIR="${EVEREST_ERRORS_DIR}"
 )
 
 target_link_libraries(${TEST_TARGET_NAME}

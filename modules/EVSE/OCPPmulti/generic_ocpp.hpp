@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include "error_mapping/error_mapping.hpp"
 #include "generic_chargepoint_interface.hpp"
 #include "grid_support/grid_support_state.hpp"
 #include "ocpp_module_common_aliases.hpp"
@@ -49,6 +50,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <set>
 #include <utility>
 #include <variant>
 
@@ -128,6 +130,8 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getDeviceModelDatabaseMigrationPath() const = 0;
     [[nodiscard]] virtual bool getEnableExternalWebsocketControl() const = 0;
     [[nodiscard]] virtual bool getEnableLegacyConfigMigration() const = 0;
+    [[nodiscard]] virtual std::string getErrorMappingPath() const = 0;
+    [[nodiscard]] virtual bool getErrorMappingStrictValidation() const = 0;
     [[nodiscard]] virtual int getOcpp16NetworkConfigSlot() const = 0;
     [[nodiscard]] virtual std::string getEverestDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual int getGridSupportHeartbeatS() const = 0;
@@ -166,6 +170,10 @@ private:
     provides_t mv_provides;
     requires_t mv_requires;
     module::MREC_ERROR_MAP_TYPE mv_mrec_error_map;
+    // set in init() when ErrorMappingPath is configured, read-only afterwards
+    std::optional<error_mapping::CustomErrorMapping> mv_error_mapping;
+    // entry key and error origin of each mapping override already logged
+    everest::lib::util::monitor<std::set<std::string>> m_logged_mapping_overrides;
 
     std::atomic<std::int32_t> mv_event_id_counter{0};
     std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
@@ -312,9 +320,14 @@ protected:
     [[nodiscard]] auto& grid_support_state() {
         return m_grid_support_state;
     }
+    [[nodiscard]] const auto& loaded_error_mapping() const {
+        return mv_error_mapping;
+    }
 
     EventInfo convert_error(const Everest::error::Error& error);
 
+    /// \brief Loads ErrorMappingPath and checks it against the declared error types; throws when the file has errors
+    void init_error_mapping();
     void init_check_energy_sink();
     void init_mrec_error_map();
     void init_error_handlers();
@@ -322,7 +335,11 @@ protected:
     void init_subscribe();
     void init_evse_subscribe();
 
+    /// \brief Checks the error mapping against the charger topology and, on OCPP 2.x, the device model; throws when
+    ///        the file has errors
+    void ready_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
+    void log_mapping_override(const Everest::error::Error& error);
     void ready_module_configuration();
     void ready_transaction_handler();
 
