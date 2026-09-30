@@ -67,7 +67,7 @@ private:
 
     std::filesystem::path scripts_path;
 
-    std::atomic<bool> interrupt_firmware_download;
+    std::shared_ptr<std::atomic_bool> interrupt_firmware_download = std::make_shared<std::atomic_bool>(false);
     std::shared_ptr<std::atomic_bool> interrupt_log_upload = std::make_shared<std::atomic_bool>(false);
 
     enum class LogUploadState {
@@ -76,13 +76,15 @@ private:
     };
     everest::lib::util::monitor<LogUploadState> log_upload_state{LogUploadState::Idle};
 
+    enum class FirmwareDownloadState {
+        Idle,
+        Downloading,
+        Reporting
+    };
+    everest::lib::util::monitor<FirmwareDownloadState> firmware_download_state{FirmwareDownloadState::Idle};
+
     bool standard_firmware_update_running;
-    std::atomic<bool> firmware_download_running;
     std::atomic<bool> firmware_installation_running;
-
-    std::condition_variable firmware_update_cv;
-
-    std::mutex firmware_update_mutex;
 
     std::thread update_firmware_thread;
     std::thread upload_logs_thread;
