@@ -132,6 +132,11 @@ void EnergyManagerImpl::warn_about_meter_timestamps(const PowerMeterAggregator::
                       << " lies in the future beyond the aggregation window (clock or time zone error), "
                          "treating its readings as stale until it recovers";
     });
+    warn_once_per_meter(m_warned_far_past_meters, aggregate.far_past_meters, [](const std::string& uuid) {
+        EVLOG_warning << "power meter timestamp of meter " << uuid
+                      << " lies more than 15 minutes before the aggregation window (frozen meter, or a UTC offset "
+                         "the timestamp parser ignores), treating its readings as stale until it recovers";
+    });
 }
 
 #ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER

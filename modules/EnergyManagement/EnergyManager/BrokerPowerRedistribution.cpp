@@ -11,25 +11,6 @@ namespace module {
 
 namespace {
 
-const types::powermeter::Powermeter* find_reading(const types::energy::EnergyFlowRequest& node) {
-    const auto pick =
-        [&node](bool (*carries)(const types::powermeter::Powermeter&)) -> const types::powermeter::Powermeter* {
-        if (node.energy_usage_leaves.has_value() and carries(node.energy_usage_leaves.value())) {
-            return &node.energy_usage_leaves.value();
-        }
-        if (node.energy_usage_root.has_value() and carries(node.energy_usage_root.value())) {
-            return &node.energy_usage_root.value();
-        }
-        return nullptr;
-    };
-
-    if (const auto* reading = pick([](const types::powermeter::Powermeter& p) { return p.power_W.has_value(); })) {
-        return reading;
-    }
-
-    return pick([](const types::powermeter::Powermeter& p) { return p.current_A.has_value(); });
-}
-
 // Outside Charging a connector measures zero for reasons unrelated to what the EV will draw.
 bool consumption_is_demand(const types::energy::EnergyFlowRequest& node) {
     return not node.evse_state.has_value() or node.evse_state.value() == types::energy::EvseState::Charging;
@@ -254,7 +235,7 @@ SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggr
 }
 
 ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node) {
-    const auto* reading = find_reading(node);
+    const auto* reading = select_reading(node);
     if (reading == nullptr) {
         return {};
     }

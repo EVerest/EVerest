@@ -20,14 +20,16 @@ namespace module {
 /// \returns the measurement time, or std::nullopt when the timestamp is unusable
 std::optional<date::utc_clock::time_point> parse_meter_timestamp(const std::string& timestamp);
 
-/// \brief The module's one staleness rule for power meter readings, shared by the site
-/// aggregate and the per connector limit.
-///
-/// A reading is fresh while its own timestamp is less than \p window away from \p now, in
-/// either direction: clock skew within the window is tolerated. A reading without a usable
-/// timestamp is never fresh; a \p window of zero or less accepts every other reading.
-///
-/// \p now must be a real wall clock time.
+/// \brief The reading that stands for a node's measurement, shared by the site aggregate and
+/// the per connector limit: the one reporting power, leaves side before root side, else the
+/// one reporting current.
+/// \returns nullptr when neither side reports power or current
+const types::powermeter::Powermeter* select_reading(const types::energy::EnergyFlowRequest& node);
+
+/// \brief The staleness rule shared by the site aggregate and the per connector limit: fresh
+/// while the reading's own timestamp is less than \p window from the wall clock time \p now,
+/// in either direction. Never fresh without a usable timestamp; a \p window of zero or less
+/// accepts every other reading.
 bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, date::utc_clock::time_point now,
               std::chrono::seconds window);
 
@@ -58,6 +60,9 @@ public:
         /// Meters excluded because their timestamp lies more than the window in the future:
         /// a clock or time zone error, for the caller to warn about once
         std::vector<std::string> future_meters;
+        /// Meters excluded because their timestamp lies at least 15 minutes before the window:
+        /// a frozen meter or an ignored negative UTC offset, for the caller to warn about once
+        std::vector<std::string> far_past_meters;
     };
 
     /// \param window validity window for a reading, see is_fresh().
@@ -77,9 +82,8 @@ private:
     std::chrono::seconds m_aggregation_window;
 };
 
-/// \brief Feeds the aggregator with the power meter reading of every EVSE node in the tree,
-/// leaves side before root side. Intermediate nodes are skipped: their meters measure the
-/// sum of their children.
+/// \brief Feeds the aggregator with the select_reading() of every EVSE node in the tree.
+/// Intermediate nodes are skipped: their meters measure the sum of their children.
 void collect_leaf_measurements(const types::energy::EnergyFlowRequest& node, PowerMeterAggregator& aggregator);
 
 /// \brief Where a site measurement came from.

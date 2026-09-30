@@ -150,6 +150,7 @@ private:
     // Meters already warned about, so each fault is logged once until the meter recovers.
     std::set<std::string> m_warned_unparsable_meters;
     std::set<std::string> m_warned_future_meters;
+    std::set<std::string> m_warned_far_past_meters;
 
     RedistributionInference m_redistribution_inference;
     // How long the site has continuously had headroom to hand out.
