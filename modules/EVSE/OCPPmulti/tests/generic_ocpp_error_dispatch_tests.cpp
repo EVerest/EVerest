@@ -2,8 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 // Pins how GenericOcpp hands errors to the chargepoint implementation: which errors are dropped,
-// the fault path, the ids stamped on each event, and how errors raised before ready() are queued
-// and replayed.
+// the fault path, the ids stamped on each event, and how errors and faults raised before ready()
+// are queued and replayed.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
@@ -98,6 +98,23 @@ TEST_F(GenericOcppErrorDispatch, FaultConnectorFromOrigin) {
     ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(1, 2)));
 }
 
+// a live fault goes to the EVSE the handler was subscribed for, whatever the origin mapping says
+TEST_F(GenericOcppErrorDispatch, LiveFaultWithoutOriginMappingUsesSubscribedEvse) {
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 0)));
+    EXPECT_CALL(chargepoint, on_faulted(2, 1));
+
+    ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
+}
+
+TEST_F(GenericOcppErrorDispatch, LiveFaultWithMismatchedMappingUsesSubscribedEvse) {
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 2)));
+    EXPECT_CALL(chargepoint, on_faulted(1, 1));
+
+    ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(2, 1)));
+}
+
 TEST_F(GenericOcppErrorDispatch, OrdinaryErrorNeverFaults) {
     capture_events();
     EXPECT_CALL(chargepoint, on_faulted(_, _)).Times(0);
@@ -143,13 +160,12 @@ TEST_F(GenericOcppErrorDispatch, EventIdsAreDistinctAndIncreasing) {
 
 // same setup as stubs::GenericOcppProvidesTester, but stops after init(): errors raised before
 // start() are queued
-class GenericOcppErrorQueue : public testing::Test {
+class GenericOcppNotStarted : public testing::Test {
 protected:
     stubs::ChargePointStub chargepoint;
     stubs::ConfigStub config;
     std::unique_ptr<stubs::ModuleInterfaces> interfaces;
     std::unique_ptr<stubs::GenericOcppTester> ocpp;
-    std::vector<EventInfo> events;
 
     void SetUp() override {
         interfaces = std::make_unique<stubs::ModuleInterfaces>();
@@ -170,11 +186,6 @@ protected:
             .Times(1);
         EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
         EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
-        EXPECT_CALL(chargepoint, on_event(_)).WillRepeatedly([this](const EventInfo& event) {
-            events.push_back(event);
-        });
-        EXPECT_CALL(chargepoint, on_faulted(_, _)).Times(0);
-        EXPECT_CALL(chargepoint, on_fault_cleared(_, _)).Times(0);
         ocpp->init();
     }
 
@@ -190,6 +201,24 @@ protected:
         ocpp->ready(interfaces->get_config_service_client());
     }
 };
+
+class GenericOcppErrorQueue : public GenericOcppNotStarted {
+protected:
+    std::vector<EventInfo> events;
+
+    void SetUp() override {
+        EXPECT_CALL(chargepoint, on_event(_)).WillRepeatedly([this](const EventInfo& event) {
+            events.push_back(event);
+        });
+        EXPECT_CALL(chargepoint, on_faulted(_, _)).Times(0);
+        EXPECT_CALL(chargepoint, on_fault_cleared(_, _)).Times(0);
+        GenericOcppNotStarted::SetUp();
+    }
+};
+
+// EvseManager Inoperative faults raised before ready() are queued under the EVSE of the origin
+// mapping, 0 without one, and replayed on that EVSE rather than on the subscribed one
+using GenericOcppFaultQueue = GenericOcppNotStarted;
 
 TEST_F(GenericOcppErrorQueue, QueuedErrorsAreHeldUntilReady) {
     ocpp->cb_error_handler(make_error(MREC_ERROR, Mapping(1, 1)));
@@ -247,6 +276,57 @@ TEST_F(GenericOcppErrorQueue, QueuedReplayCanSendDecreasingEventIds) {
     ASSERT_EQ(events.size(), 3U);
     EXPECT_EQ(events[1].event_id, events[0].event_id - 1);
     EXPECT_EQ(events[2].event_id, events[1].event_id - 1);
+}
+
+// OCPP 2.x libocpp rejects EVSE 0 in on_faulted/on_fault_cleared with EvseOutOfRangeException
+TEST_F(GenericOcppFaultQueue, QueuedFaultWithoutOriginMappingFaultsEvseZero) {
+    ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
+
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(raised()));
+    EXPECT_CALL(chargepoint, on_faulted(0, 1));
+    start();
+}
+
+TEST_F(GenericOcppFaultQueue, QueuedFaultClearWithoutOriginMappingClearsEvseZero) {
+    const auto error = make_error(INOPERATIVE, std::nullopt);
+    ocpp->cb_fault_handler(2, error);
+    ocpp->cb_fault_cleared_handler(2, error);
+
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(raised()));
+    EXPECT_CALL(chargepoint, on_faulted(0, 1));
+    EXPECT_CALL(chargepoint, on_event(cleared()));
+    EXPECT_CALL(chargepoint, on_fault_cleared(0, 1));
+    start();
+}
+
+TEST_F(GenericOcppFaultQueue, QueuedFaultWithMismatchedMappingFaultsMappedEvse) {
+    ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(2, 1)));
+
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(_));
+    EXPECT_CALL(chargepoint, on_faulted(2, 1));
+    start();
+}
+
+TEST_F(GenericOcppFaultQueue, QueuedFaultWithMatchingMapping) {
+    ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(1, 1)));
+
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(_));
+    EXPECT_CALL(chargepoint, on_faulted(1, 1));
+    start();
+}
+
+// the reported event keeps the EVSE from the origin, as on the live path
+TEST_F(GenericOcppFaultQueue, QueuedFaultKeepsOriginInEvent) {
+    ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
+
+    InSequence seq;
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 0)));
+    EXPECT_CALL(chargepoint, on_faulted(_, _));
+    start();
 }
 
 } // namespace
