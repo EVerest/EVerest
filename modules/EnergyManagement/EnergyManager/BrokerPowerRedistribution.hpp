@@ -7,6 +7,7 @@
 #include <string>
 
 #include "BrokerFastCharging.hpp"
+#include "PowerMeterAggregator.hpp"
 
 namespace module {
 
@@ -23,8 +24,7 @@ ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& nod
 PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, float nominal_ac_voltage,
                                       int active_phases);
 
-/// \brief True while \p measurement has a value and its own timestamp is at most
-/// \p max_age old. A timestamp in the future is accepted.
+/// \brief True while \p measurement has a value and is_fresh() accepts its timestamp.
 ///
 /// \param max_age zero accepts any age
 bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clock::time_point now,

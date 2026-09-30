@@ -11,33 +11,6 @@ namespace module {
 
 namespace {
 
-const types::powermeter::Powermeter* find_reading(const types::energy::EnergyFlowRequest& node) {
-    const auto pick =
-        [&node](bool (*carries)(const types::powermeter::Powermeter&)) -> const types::powermeter::Powermeter* {
-        if (node.energy_usage_leaves.has_value() and carries(node.energy_usage_leaves.value())) {
-            return &node.energy_usage_leaves.value();
-        }
-        if (node.energy_usage_root.has_value() and carries(node.energy_usage_root.value())) {
-            return &node.energy_usage_root.value();
-        }
-        return nullptr;
-    };
-
-    if (const auto* reading = pick([](const types::powermeter::Powermeter& p) { return p.power_W.has_value(); })) {
-        return reading;
-    }
-
-    return pick([](const types::powermeter::Powermeter& p) { return p.current_A.has_value(); });
-}
-
-std::optional<date::utc_clock::time_point> measured_time_of(const types::powermeter::Powermeter& reading) {
-    const auto measured_at = Everest::Date::from_rfc3339(reading.timestamp);
-    if (measured_at == date::utc_clock::time_point{}) {
-        return std::nullopt;
-    }
-    return measured_at;
-}
-
 // Outside Charging a connector measures zero for reasons unrelated to what the EV will draw.
 bool consumption_is_demand(const types::energy::EnergyFlowRequest& node) {
     return not node.evse_state.has_value() or node.evse_state.value() == types::energy::EvseState::Charging;
@@ -57,7 +30,7 @@ std::optional<float> add_margin(const std::optional<float>& phase, float margin_
 } // namespace
 
 ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node) {
-    const auto* reading = find_reading(node);
+    const auto* reading = select_reading(node);
     if (reading == nullptr) {
         return {};
     }
@@ -65,7 +38,7 @@ ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& nod
     ObservedMeasurement measurement;
     measurement.power_W = reading->power_W;
     measurement.current_A = reading->current_A.value_or(types::units::Current{});
-    measurement.measured_at = measured_time_of(*reading);
+    measurement.measured_at = parse_meter_timestamp(reading->timestamp);
     return measurement;
 }
 
@@ -112,13 +85,7 @@ bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clo
     if (not has_value) {
         return false;
     }
-    if (not measurement.measured_at.has_value()) {
-        return false;
-    }
-    if (max_age <= std::chrono::seconds::zero()) {
-        return true;
-    }
-    return now - measurement.measured_at.value() <= max_age;
+    return is_fresh(measurement.measured_at, now, max_age);
 }
 
 std::optional<float> to_scalar_cap(const PhaseCurrents& cap) {
