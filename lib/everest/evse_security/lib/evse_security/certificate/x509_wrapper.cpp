@@ -165,6 +165,10 @@ std::string X509Wrapper::get_key_hash() const {
     return CryptoSupplier::x509_get_key_hash(get());
 }
 
+std::string X509Wrapper::get_public_key_algorithm() const {
+    return CryptoSupplier::x509_get_public_key_algorithm(get());
+}
+
 CertificateHashData X509Wrapper::get_certificate_hash_data() const {
     CertificateHashData certificate_hash_data;
     certificate_hash_data.hash_algorithm = HashAlgorithm::SHA256;

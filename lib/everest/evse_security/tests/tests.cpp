@@ -1,10 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
+#include <array>
 #include <fstream>
 #include <gtest/gtest.h>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
+#include <openssl/pem.h>
+#include <openssl/x509.h>
+#include <openssl/x509v3.h>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <string>
 #include <thread>
@@ -99,6 +105,13 @@ class EvseSecurityTestsMultiLeaf : public EvseSecurityTests {
 protected:
     void install_certs() override {
         std::system("./generate_test_certs_leaf_multi.sh");
+    }
+};
+
+class EvseSecurityTestsDualAlgorithmLeaf : public EvseSecurityTests {
+protected:
+    void install_certs() override {
+        std::system("./generate_test_certs_leaf_dual_algorithm.sh");
     }
 };
 
@@ -343,6 +356,168 @@ TEST_F(EvseSecurityTestsMulti, verify_multi_root_leaf_retrieval) {
                 equal_certificate_strings(result.info[0].certificate_root.value(), root_grid));
     ASSERT_TRUE(equal_certificate_strings(result.info[1].certificate_root.value(), root_v2g) ||
                 equal_certificate_strings(result.info[1].certificate_root.value(), root_grid));
+}
+
+TEST_F(EvseSecurityTests, verify_leaf_public_key_algorithm) {
+    const auto result =
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+    ASSERT_EQ(result.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_TRUE(result.info.has_value());
+    // generate_test_certs.sh creates all keys on prime256v1
+    ASSERT_EQ(result.info.value().public_key_algorithm, "prime256v1");
+}
+
+TEST_F(EvseSecurityTestsDualAlgorithmLeaf, verify_dual_algorithm_leaf_retrieval) {
+    // A prime256v1 (ISO 15118-2) and a secp521r1 (ISO 15118-20) SECC leaf under the SAME V2G root are two
+    // leaf types (V2G / V2G20) sharing one store: each type lists its own leaf, both report the shared root
+    const std::string root_v2g = read_file_to_string("certs/ca/v2g/V2G_ROOT_CA.pem");
+
+    for (const auto [type, algorithm] : {std::make_pair(LeafCertificateType::V2G, "prime256v1"),
+                                         std::make_pair(LeafCertificateType::V2G20, "secp521r1")}) {
+        const auto result = this->evse_security->get_all_valid_certificates_info(type, EncodingFormat::PEM, false);
+        ASSERT_EQ(result.status, GetCertificateInfoStatus::Accepted);
+        ASSERT_EQ(result.info.size(), 1);
+        ASSERT_EQ(result.info[0].public_key_algorithm, algorithm);
+        ASSERT_TRUE(result.info[0].certificate_root.has_value());
+        ASSERT_TRUE(equal_certificate_strings(result.info[0].certificate_root.value(), root_v2g));
+    }
+}
+
+TEST_F(EvseSecurityTestsDualAlgorithmLeaf, installed_certificates_carry_the_key_algorithm) {
+    const auto roots = this->evse_security->get_installed_certificates({CertificateType::V2GRootCertificate});
+    ASSERT_EQ(roots.status, GetInstalledCertificatesStatus::Accepted);
+    ASSERT_FALSE(roots.certificate_hash_data_chain.empty());
+    for (const auto& root : roots.certificate_hash_data_chain) {
+        ASSERT_EQ(root.public_key_algorithm, "prime256v1");
+    }
+
+    // the leaf chains report the leaf's algorithm: one -2 and one -20 leaf share the V2G root
+    const auto chains = this->evse_security->get_installed_certificates({CertificateType::V2GCertificateChain});
+    ASSERT_EQ(chains.status, GetInstalledCertificatesStatus::Accepted);
+    std::set<std::string> leaf_algorithms;
+    for (const auto& chain : chains.certificate_hash_data_chain) {
+        leaf_algorithms.insert(chain.public_key_algorithm);
+    }
+    ASSERT_EQ(leaf_algorithms, (std::set<std::string>{"prime256v1", "secp521r1"}));
+}
+
+TEST_F(EvseSecurityTestsDualAlgorithmLeaf, verify_v2g_and_v2g20_are_distinct_leaf_types) {
+    // V2G resolves to the ISO 15118-2 profile leaf (prime256v1), V2G20 to the ISO 15118-20 profile leaf
+    // (secp521r1), although both live in the same SECC directory under the same root
+    const auto v2g =
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+    ASSERT_EQ(v2g.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_TRUE(v2g.info.has_value());
+    ASSERT_EQ(v2g.info.value().public_key_algorithm, "prime256v1");
+
+    const auto v2g20 =
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G20, EncodingFormat::PEM, false);
+    ASSERT_EQ(v2g20.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_TRUE(v2g20.info.has_value());
+    ASSERT_EQ(v2g20.info.value().public_key_algorithm, "secp521r1");
+
+    // Per-type listings are disjoint
+    const auto all_v2g =
+        this->evse_security->get_all_valid_certificates_info(LeafCertificateType::V2G, EncodingFormat::PEM, false);
+    ASSERT_EQ(all_v2g.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_EQ(all_v2g.info.size(), 1);
+    ASSERT_EQ(all_v2g.info[0].public_key_algorithm, "prime256v1");
+    const auto all_v2g20 =
+        this->evse_security->get_all_valid_certificates_info(LeafCertificateType::V2G20, EncodingFormat::PEM, false);
+    ASSERT_EQ(all_v2g20.status, GetCertificateInfoStatus::Accepted);
+    ASSERT_EQ(all_v2g20.info.size(), 1);
+    ASSERT_EQ(all_v2g20.info[0].public_key_algorithm, "secp521r1");
+
+    // Expiry is tracked per type, both leafs are valid
+    ASSERT_GT(this->evse_security->get_leaf_expiry_days_count(LeafCertificateType::V2G), 0);
+    ASSERT_GT(this->evse_security->get_leaf_expiry_days_count(LeafCertificateType::V2G20), 0);
+
+    // OCSP request data still covers the whole SECC store: 2 sub-CAs + 2 leafs
+    const auto ocsp = this->evse_security->get_v2g_ocsp_request_data();
+    ASSERT_EQ(ocsp.ocsp_request_data_list.size(), 4);
+}
+
+static std::string csr_subject_entry(X509_REQ* req, int nid) {
+    X509_NAME* name = X509_REQ_get_subject_name(req);
+    const int index = X509_NAME_get_index_by_NID(name, nid, -1);
+    if (index < 0) {
+        return {};
+    }
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(name, index));
+    return std::string(reinterpret_cast<const char*>(ASN1_STRING_get0_data(data)), ASN1_STRING_length(data));
+}
+
+/// Requested keyUsage of a CSR as "critical:" or "non-critical:" plus the set RFC 5280 bit names
+static std::string csr_key_usage(X509_REQ* req) {
+    static const char* const names[] = {"digitalSignature", "nonRepudiation", "keyEncipherment",
+                                        "dataEncipherment", "keyAgreement",   "keyCertSign",
+                                        "cRLSign",          "encipherOnly",   "decipherOnly"};
+    STACK_OF(X509_EXTENSION)* extensions = X509_REQ_get_extensions(req);
+    const int index = X509v3_get_ext_by_NID(extensions, NID_key_usage, -1);
+    if (index < 0) {
+        sk_X509_EXTENSION_pop_free(extensions, X509_EXTENSION_free);
+        return "absent";
+    }
+    X509_EXTENSION* extension = X509v3_get_ext(extensions, index);
+    std::string result = X509_EXTENSION_get_critical(extension) == 1 ? "critical:" : "non-critical:";
+    auto* bits = static_cast<ASN1_BIT_STRING*>(X509V3_EXT_d2i(extension));
+    for (int bit = 0; bit < 9; bit++) {
+        if (ASN1_BIT_STRING_get_bit(bits, bit) == 1) {
+            result += std::string(result.back() == ':' ? "" : ",") + names[bit];
+        }
+    }
+    ASN1_BIT_STRING_free(bits);
+    sk_X509_EXTENSION_pop_free(extensions, X509_EXTENSION_free);
+    return result;
+}
+
+TEST_F(EvseSecurityTests, verify_secc_csr_profiles) {
+    // ISO 15118-20 mandates secp521r1 (or Ed448) for the SECC TLS leaf, so a V2G20 CSR carries a P-521 key
+    const auto csr =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G20, "DE", "Pionix", "SECC20");
+    ASSERT_EQ(csr.status, GetCertificateSignRequestStatus::Accepted);
+    ASSERT_TRUE(csr.csr.has_value());
+
+    BIO* bio = BIO_new_mem_buf(csr.csr.value().data(), static_cast<int>(csr.csr.value().size()));
+    ASSERT_NE(bio, nullptr);
+    X509_REQ* req = PEM_read_bio_X509_REQ(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    ASSERT_NE(req, nullptr);
+    EVP_PKEY* pkey = X509_REQ_get0_pubkey(req);
+    ASSERT_NE(pkey, nullptr);
+    std::array<char, 64> group{};
+    std::size_t group_len = 0;
+    ASSERT_EQ(EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len), 1);
+    ASSERT_EQ(std::string(group.data(), group_len), "secp521r1");
+    // and is signed with SHA-512 as ISO 15118-20 pairs with P-521
+    ASSERT_EQ(X509_REQ_get_signature_nid(req), NID_ecdsa_with_SHA512);
+    // subject per ISO 15118-20 Table B.5: CN = SECCID, DC = "CSO"
+    ASSERT_EQ(csr_subject_entry(req, NID_commonName), "SECC20");
+    ASSERT_EQ(csr_subject_entry(req, NID_domainComponent), "CSO");
+    ASSERT_EQ(csr_key_usage(req), "critical:digitalSignature,keyAgreement");
+    X509_REQ_free(req);
+
+    // The managed key sits in the SECC key directory, next to the -2 keys, under its own prefix
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
+    const auto key_path = this->evse_security->managed_csr.begin()->first;
+    ASSERT_TRUE(fs::exists(key_path));
+    ASSERT_NE(key_path.filename().string().find("SECC_LEAF_20_"), std::string::npos);
+
+    // The plain -2 CSR still yields prime256v1
+    const auto csr2 =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G, "DE", "Pionix", "SECC");
+    ASSERT_EQ(csr2.status, GetCertificateSignRequestStatus::Accepted);
+    bio = BIO_new_mem_buf(csr2.csr.value().data(), static_cast<int>(csr2.csr.value().size()));
+    req = PEM_read_bio_X509_REQ(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    ASSERT_NE(req, nullptr);
+    ASSERT_EQ(EVP_PKEY_get_group_name(X509_REQ_get0_pubkey(req), group.data(), group.size(), &group_len), 1);
+    ASSERT_EQ(std::string(group.data(), group_len), "prime256v1");
+    // subject per ISO 15118-2 Table F.2: DC = "CPO"
+    ASSERT_EQ(csr_subject_entry(req, NID_commonName), "SECC");
+    ASSERT_EQ(csr_subject_entry(req, NID_domainComponent), "CPO");
+    ASSERT_EQ(csr_key_usage(req), "critical:digitalSignature");
+    X509_REQ_free(req);
 }
 
 TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {

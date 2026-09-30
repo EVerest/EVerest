@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls.hpp>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <openssl/ssl.h>
@@ -145,6 +146,31 @@ TEST(OcspCache, init) {
     // std::cout << "digest: " << to_string(digest) << std::endl;
     auto res = cache.lookup(digest);
     EXPECT_NE(res.get(), nullptr);
+}
+
+TEST(OcspCache, loadKeepsTheResponsesThatParse) {
+    // a stale or corrupt cache file must not drop the responses that do parse
+    {
+        std::ofstream garbage("garbage_ocsp_response.der");
+        garbage << "not a DER encoded OCSP response";
+    }
+
+    auto chain = openssl::load_certificates("client_chain.pem");
+    ASSERT_GE(chain.size(), 2);
+
+    tls::OcspCache::digest_t garbage_digest{};
+    tls::OcspCache::digest_t good_digest{};
+    ASSERT_TRUE(tls::OcspCache::digest(garbage_digest, chain[0].get()));
+    ASSERT_TRUE(tls::OcspCache::digest(good_digest, chain[1].get()));
+
+    std::vector<tls::OcspCache::ocsp_entry_t> entries;
+    entries.emplace_back(garbage_digest, "garbage_ocsp_response.der");
+    entries.emplace_back(good_digest, "ocsp_response.der");
+
+    tls::OcspCache cache;
+    EXPECT_FALSE(cache.load(entries));
+    EXPECT_EQ(cache.lookup(garbage_digest).get(), nullptr);
+    EXPECT_NE(cache.lookup(good_digest).get(), nullptr);
 }
 
 TEST(TrustedCaKeys, parseAudi) {
@@ -731,6 +757,76 @@ TEST_F(ServerTrustedCaKeysApply, noMatchKeepsDefaultAndWarns) {
     // the SSL_CTX is kept.
     EXPECT_EQ(SSL_get_certificate(ssl), nullptr);
     EXPECT_TRUE(LogCapture::contains(openssl::log_level_t::warning, "no configured chain matched"));
+}
+
+TEST(TrustedCaKeys, compatible) {
+    chain_t chain;
+    EXPECT_TRUE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_TRUE(compatible(chain, TLS1_3_VERSION));
+    chain.tls_version = TLS1_2_VERSION;
+    EXPECT_TRUE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_FALSE(compatible(chain, TLS1_3_VERSION));
+    chain.tls_version = TLS1_3_VERSION;
+    EXPECT_FALSE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_TRUE(compatible(chain, TLS1_3_VERSION));
+}
+
+TEST(TrustedCaKeys, selectByVersion) {
+    chain_list chains;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), nullptr);
+
+    // nothing tagged: leave the SSL_CTX default alone
+    chains.emplace_back();
+    chains.emplace_back();
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), nullptr);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), nullptr);
+
+    // ISO 15118-2 leaf for TLS 1.2, ISO 15118-20 leaf for TLS 1.3
+    chains[0].tls_version = TLS1_2_VERSION;
+    chains[1].tls_version = TLS1_3_VERSION;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), &chains[0]);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), &chains[1]);
+
+    // no exact match: untagged chain is the fallback
+    chains.emplace_back();
+    chains[1].tls_version = TLS1_2_VERSION;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), &chains[0]);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), &chains[2]);
+
+    // no exact match and nothing untagged
+    chains.pop_back();
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), nullptr);
+}
+
+TEST(TrustedCaKeys, selectWithVersion) {
+    trusted_ca_keys_t keys;
+    chain_list chains;
+
+    sha_1_digest_t digest;
+    auto root = load_certificates("client_root_cert.pem");
+    auto* client_root_cert = root[0].get();
+    EXPECT_TRUE(certificate_sha_1(digest, client_root_cert));
+    keys.cert_sha1_hash.push_back(digest);
+
+    // two chains under the same trust anchor, one per TLS version
+    chains.emplace_back();
+    chains[0].chain.trust_anchors.emplace_back(std::move(root[0]));
+    chains[0].tls_version = TLS1_3_VERSION;
+    chains.emplace_back();
+    root = load_certificates("client_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(root[0]));
+    chains[1].tls_version = TLS1_2_VERSION;
+
+    EXPECT_EQ(select(keys, chains), &chains[0]);
+    EXPECT_EQ(select(keys, chains, TLS1_2_VERSION), &chains[1]);
+    EXPECT_EQ(select(keys, chains, TLS1_3_VERSION), &chains[0]);
+
+    // trust anchor unknown to the client: no match at all
+    trusted_ca_keys_t other_keys;
+    root = load_certificates("server_root_cert.pem");
+    EXPECT_TRUE(certificate_sha_1(digest, root[0].get()));
+    other_keys.cert_sha1_hash.push_back(digest);
+    EXPECT_EQ(select(other_keys, chains, TLS1_2_VERSION), nullptr);
 }
 
 } // namespace

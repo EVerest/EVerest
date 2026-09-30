@@ -65,7 +65,8 @@ private:
     std::thread updater_thread;
 
     // This mutex guards access to everything below it, INCLUDING explicit_update_trigger
-    // - The updater thread always holds the lock, except when it's waiting on explicit_update_trigger
+    // - The updater thread always holds the lock, except when it's waiting on explicit_update_trigger or exchanging
+    //   GetCertificateStatus messages with the CSMS, so trigger_ocsp_cache_update never blocks on a running update
     // - The lib needs to hold the lock to notify the explicit_update_trigger (this guarantees it wakes up the worker)
     std::mutex update_ocsp_cache_lock;
     // Condition variable used to wake up the updater thread

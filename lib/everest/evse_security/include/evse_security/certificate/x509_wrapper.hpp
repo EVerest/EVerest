@@ -83,6 +83,10 @@ public:
     /// @result
     std::string get_key_hash() const;
 
+    /// @brief Gets the public key algorithm of this certificate: the EC curve name for EC keys
+    /// (e.g. "prime256v1", "secp521r1"), otherwise the key type name (e.g. "ED448", "RSA")
+    std::string get_public_key_algorithm() const;
+
     /// @brief Gets serial number of certificate
     /// @result
     std::string get_serial_number() const;
