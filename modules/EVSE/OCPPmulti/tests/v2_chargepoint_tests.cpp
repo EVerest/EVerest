@@ -268,6 +268,27 @@ TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
     EXPECT_EQ(reported_value.value(), "60");
 }
 
+TEST_F(ChargePointV2Test, variableListenerMasksWriteOnlyValues) {
+    stubs::Ocpp2ChargePointMock::variable_listener_t libocpp_listener;
+    EXPECT_CALL(*m_libocpp, register_variable_listener(_))
+        .WillOnce([&libocpp_listener](stubs::Ocpp2ChargePointMock::variable_listener_t&& listener) {
+            libocpp_listener = std::move(listener);
+        });
+
+    std::optional<std::string> reported_value;
+    m_chargepoint.register_variable_listener({"SecurityCtrlr"}, {"BasicAuthPassword"},
+                                             [&reported_value](const ocpp::v2::Component&, const ocpp::v2::Variable&,
+                                                               const std::string& value) { reported_value = value; });
+
+    ASSERT_TRUE(libocpp_listener);
+    ocpp::v2::VariableAttribute attribute;
+    attribute.mutability = ocpp::v2::MutabilityEnum::WriteOnly;
+    libocpp_listener({}, {"SecurityCtrlr"}, {"BasicAuthPassword"}, {}, attribute, "old-secret", "new-secret");
+
+    ASSERT_TRUE(reported_value.has_value());
+    EXPECT_EQ(reported_value.value(), "");
+}
+
 // key-only (empty component) get request is passed through unchanged; rejection comes from libocpp
 TEST_F(ChargePointV2Test, getVariablesEmptyComponentIsPassedThrough) {
     ocpp::v2::GetVariableData data;
