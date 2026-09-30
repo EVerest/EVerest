@@ -23,6 +23,7 @@ constexpr const char* ERROR_UUID = "mrec-error-uuid-1";
 struct TestChargePointV16 : public ocpp_multi::ChargePointV16 {
     using ocpp_multi::ChargePointV16::ChargePointV16;
     using ocpp_multi::ChargePointV16::convert_error;
+    using ocpp_multi::ChargePointV16::dispatch_error_event;
 };
 
 inline Everest::error::Error

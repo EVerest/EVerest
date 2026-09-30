@@ -12,6 +12,7 @@
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/variable_resolver.hpp>
 
+#include <functional>
 #include <optional>
 
 namespace ocpp_multi {
@@ -215,6 +216,9 @@ public:
 protected:
     // Access for unit tests
     ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
+    using error_raised_t = std::function<void(std::int32_t, const ocpp::v16::ErrorInfo&)>;
+    using error_cleared_t = std::function<void(std::int32_t, const std::string&)>;
+    void dispatch_error_event(const EventInfo& event, const error_raised_t& raised, const error_cleared_t& cleared);
 };
 
 } // namespace ocpp_multi

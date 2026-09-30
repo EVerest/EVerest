@@ -45,6 +45,7 @@ target_sources(${TEST_TARGET_NAME}
     main.cpp
     v16_chargepoint_tests.cpp
     v16_error_convert_freeze_tests.cpp
+    v16_error_dispatch_tests.cpp
     v16_mrec_freeze_tests.cpp
     v16_variable_access_tests.cpp
     v2_chargepoint_tests.cpp
