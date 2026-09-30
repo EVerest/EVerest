@@ -71,12 +71,15 @@ file(RELATIVE_PATH LIBOCPP_COMPONENT_CONFIG_DIR ${CMAKE_CURRENT_BINARY_DIR}
     ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/component_config)
 file(RELATIVE_PATH LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR ${CMAKE_CURRENT_BINARY_DIR}
     ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/common/device_model_migrations)
+file(RELATIVE_PATH LIBOCPP_V16_CONFIG_DIR ${CMAKE_CURRENT_BINARY_DIR}
+    ${PROJECT_SOURCE_DIR}/lib/everest/ocpp/config/v16)
 set_property(
-    SOURCE charge_point_config_factory_v16_tests.cpp
+    SOURCE charge_point_config_factory_v16_tests.cpp v16_chargepoint_tests.cpp
     APPEND
     PROPERTY COMPILE_DEFINITIONS
         LIBOCPP_COMPONENT_CONFIG_DIR="${LIBOCPP_COMPONENT_CONFIG_DIR}"
         LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR}"
+        LIBOCPP_V16_CONFIG_DIR="${LIBOCPP_V16_CONFIG_DIR}"
 
 )
 
