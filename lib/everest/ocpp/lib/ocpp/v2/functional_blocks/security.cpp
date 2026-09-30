@@ -247,6 +247,12 @@ bool Security::send_sign_certificate_req(const ocpp::CertificateSigningUseEnum& 
             << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
         return false;
     }
+    if (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate and
+        this->context.ocpp_version != OcppProtocolVersion::v21) {
+        // e.g. a retry or queued renewal that fires after a switch to an OCPP 2.0.1 connection
+        EVLOG_warning << "Not sending SignCertificate.req for V2G20Certificate, which OCPP 2.0.1 does not know";
+        return false;
+    }
 
     const auto csr_inputs_or_rejection = this->get_csr_inputs(certificate_signing_use);
     const auto* csr_inputs = std::get_if<CsrInputs>(&csr_inputs_or_rejection);
