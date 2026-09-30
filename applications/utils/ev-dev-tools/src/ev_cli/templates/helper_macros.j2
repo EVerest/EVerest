@@ -86,9 +86,9 @@ void publish_{{ var.name }}({% if var.json_type != 'null' %}{{ cpp_type(var) }} 
 {{ " "*indent }}{{ block.tag }}
 {%- endmacro %}
 
-{% macro print_spdx_line(license, year_tag=None) %}
+{% macro print_spdx_line(license) %}
 // SPDX-License-Identifier: {{ license }}
-// Copyright{% if year_tag %} {{ year_tag }}{% endif %} Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 {%- endmacro %}
 
 {% macro print_license_header(license) %}

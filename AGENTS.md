@@ -266,9 +266,15 @@ often:
 
 - Sign off every commit (`Signed-off-by`, DCO), enforced by
   `.github/workflows/job_dco-check.yaml`.
-- New files need copyright and license headers.
-- Files you modify get their copyright end year bumped to the current year: `2020 - 2025`
-  becomes `2020 - 2026`, a single `2023` becomes `2023 - 2026`. Never write `2026 - 2026`.
+- New files need copyright and license headers, without years:
+
+  ```cpp
+  // SPDX-License-Identifier: Apache-2.0
+  // Copyright Pionix GmbH and Contributors to EVerest
+  ```
+
+  Never add or bump years in existing notices, and never modify notices of other
+  copyright holders or of third-party code.
 - While review is open, do not rebase or force-push, so reviewers can see that feedback
   was addressed. Squashing to a single commit once approved is how changes land.
 - Every contribution must be reviewed and understood by a human before submission.

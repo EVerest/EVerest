@@ -60,7 +60,6 @@ env = Environment(
 env.filters['snake_case'] = snake_case
 env.filters['remove_last'] = remove_last
 env.globals['timestamp'] = datetime.utcnow
-env.globals['year'] = datetime.utcnow().year
 message_hpp_template = env.get_template('message.hpp.jinja')
 message_cpp_template = env.get_template('message.cpp.jinja')
 messages_cmakelists_txt_template = env.get_template(
