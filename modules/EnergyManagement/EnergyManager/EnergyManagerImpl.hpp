@@ -126,10 +126,8 @@ private:
                               const std::vector<types::energy::EnforcedLimits>& limits);
 
     /// \brief Writes each connector's share of the site headroom into its BrokerContext for
-    /// the brokers of the next run, clearing every other entry.
-    ///
-    /// The next run, because the inference needs this run's enforced limits; the one
-    /// interval of delay also keeps a grant from being counted twice.
+    /// the next run's brokers, clearing every other entry. The inference needs this run's
+    /// enforced limits, and the one interval of delay keeps a grant from being counted twice.
     /// \returns the number of connectors that were granted an increase
     int grant_site_headroom(const SiteInference& site);
 
@@ -166,6 +164,7 @@ private:
     // Meters already warned about, so each fault is logged once until the meter recovers.
     std::set<std::string> m_warned_unparsable_meters;
     std::set<std::string> m_warned_future_meters;
+    std::set<std::string> m_warned_far_past_meters;
 
     RedistributionInference m_redistribution_inference;
     // How long the site has continuously had headroom to hand out.

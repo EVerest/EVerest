@@ -30,11 +30,34 @@ bool is_fresh(const std::optional<date::utc_clock::time_point>& measured_at, dat
     return age > -window and age < window;
 }
 
+const types::powermeter::Powermeter* select_reading(const types::energy::EnergyFlowRequest& node) {
+    const auto pick =
+        [&node](bool (*carries)(const types::powermeter::Powermeter&)) -> const types::powermeter::Powermeter* {
+        if (node.energy_usage_leaves.has_value() and carries(node.energy_usage_leaves.value())) {
+            return &node.energy_usage_leaves.value();
+        }
+        if (node.energy_usage_root.has_value() and carries(node.energy_usage_root.value())) {
+            return &node.energy_usage_root.value();
+        }
+        return nullptr;
+    };
+
+    if (const auto* reading = pick([](const types::powermeter::Powermeter& p) { return p.power_W.has_value(); })) {
+        return reading;
+    }
+
+    return pick([](const types::powermeter::Powermeter& p) { return p.current_A.has_value(); });
+}
+
 namespace {
+
+// UTC offsets are multiples of 15 minutes, and from_rfc3339 ignores them.
+constexpr auto FAR_IN_THE_PAST = std::chrono::minutes(15);
 
 enum class Freshness {
     Fresh,
     Stale,
+    FarInThePast,
     InTheFuture,
     UnparsableTimestamp,
 };
@@ -51,7 +74,10 @@ Freshness check_freshness(const types::powermeter::Powermeter& reading, date::ut
     if (is_fresh(measured_at, now, window)) {
         return Freshness::Fresh;
     }
-    return measured_at.value() > now ? Freshness::InTheFuture : Freshness::Stale;
+    if (measured_at.value() > now) {
+        return Freshness::InTheFuture;
+    }
+    return now - measured_at.value() >= window + FAR_IN_THE_PAST ? Freshness::FarInThePast : Freshness::Stale;
 }
 
 // Sums one optional field across meters; nullopt once any meter does not report it.
@@ -109,6 +135,11 @@ PowerMeterAggregator::AggregateResult PowerMeterAggregator::aggregate(date::utc_
         }
         if (freshness == Freshness::InTheFuture) {
             result.future_meters.push_back(uuid);
+            result.stale_meters++;
+            continue;
+        }
+        if (freshness == Freshness::FarInThePast) {
+            result.far_past_meters.push_back(uuid);
             result.stale_meters++;
             continue;
         }
@@ -179,10 +210,8 @@ SiteMeterSource collect_site_measurement(const types::energy::EnergyFlowRequest&
 
 void collect_leaf_measurements(const types::energy::EnergyFlowRequest& node, PowerMeterAggregator& aggregator) {
     if (node.node_type == types::energy::NodeType::Evse) {
-        if (node.energy_usage_leaves.has_value()) {
-            aggregator.update(node.uuid, node.energy_usage_leaves.value());
-        } else if (node.energy_usage_root.has_value()) {
-            aggregator.update(node.uuid, node.energy_usage_root.value());
+        if (const auto* reading = select_reading(node)) {
+            aggregator.update(node.uuid, *reading);
         }
         // Its own meter covers everything below it.
         return;
