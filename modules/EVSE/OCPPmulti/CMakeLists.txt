@@ -44,6 +44,13 @@ target_link_libraries(${MODULE_NAME}
     everest::ocpp_module_common
 )
 
+install(
+    FILES
+        error_mapping/error_mapping.schema.json
+        error_mapping/error_mapping.example.json
+    DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}/error_mapping
+)
+
 if(EVEREST_CORE_BUILD_TESTING)
     add_subdirectory(tests)
 endif()
