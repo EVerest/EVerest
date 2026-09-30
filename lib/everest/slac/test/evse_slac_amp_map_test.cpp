@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Unit tests for the SECC-initiated CM_AMP_MAP exchange (src/fsm/evse/amp_map_handler.hpp), driven
 // directly instead of through the whole Matched sub-machine. The end-to-end path is covered by

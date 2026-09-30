@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef UUGREEN_POWER_UR1000X0_HPP
 #define UUGREEN_POWER_UR1000X0_HPP
 

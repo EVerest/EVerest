@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // The PLC keepalive frame re-teaches the ChargeBridge firmware the host's UDP endpoint. It goes onto
 // the wire, so its layout must stay a harmless broadcast with the local-experimental EtherType.

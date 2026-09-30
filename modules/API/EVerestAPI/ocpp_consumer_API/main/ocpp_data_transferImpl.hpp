@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_OCPP_DATA_TRANSFER_IMPL_HPP
 #define MAIN_OCPP_DATA_TRANSFER_IMPL_HPP
 

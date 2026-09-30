@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Tests for the shutdown handshake in async/lifecycle_gate.hpp: ready() first (shutdown waits) and
 // shutdown() first (ready never enters the loop, shutdown does not wait).

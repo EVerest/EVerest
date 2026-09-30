@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "protocol/cb_config.h"
 #include <charge_bridge/bridge_failure.hpp>
 #include <charge_bridge/charge_bridge.hpp>

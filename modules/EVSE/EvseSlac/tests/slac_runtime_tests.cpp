@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // SlacRuntime is the EvseSlac module without the framework: PLC I/O, event loop, state machine
 // controller and the init/ready/shutdown/command lifecycle. These tests drive it exactly the way the

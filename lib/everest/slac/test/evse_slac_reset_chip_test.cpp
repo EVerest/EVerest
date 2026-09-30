@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // ResetChip sub-machine: the optional modem reset between CM_SET_KEY.CNF and Idle must always end in
 // Idle, whether the modem confirms (Qualcomm), never confirms (Lumissil), cannot be reset, or stays

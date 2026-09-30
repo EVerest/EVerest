@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Decision table and failure modes of the tap carrier policy. decide_carrier() is a pure function
 // on purpose, so all of this runs without a kernel, a tap device or a ChargeBridge.

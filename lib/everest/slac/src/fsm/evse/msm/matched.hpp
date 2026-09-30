@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Matched sub-machine: the AVLN is up. Polls the modem link status (vendor specific), debounces
 // link loss and runs the CM_AMP_MAP exchange. Leaves through Matched_Fail when the link is lost;

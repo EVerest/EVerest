@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // The amplitude map limits transmit power; a file that cannot be applied exactly must be rejected as
 // a whole, never clamped or partially applied.

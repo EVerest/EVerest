@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // EvseManager keeps pushing DC limits and physical values for the whole session, so building the
 // session config and applying a mid-session control event must land on the same fields.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Top-level EVSE SLAC state machine: composes the sub-machines and defines the transitions
 // between them. Include this file to get the complete machine (SlacFSM).
