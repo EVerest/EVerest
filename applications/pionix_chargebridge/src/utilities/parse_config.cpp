@@ -193,10 +193,29 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     get_node(c.cb_name, "charge_bridge", "name");
     get_node(c.cb_remote, "charge_bridge", "ip");
 
-    // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV)
+    // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV/ANY)
     // and everything else pass through unchanged. Normalized here, before cb_remote
     // is copied into the per-bridge configs below.
-    if (not string_starts_with(c.cb_remote, "ANY_EV")) {
+    if (string_starts_with(c.cb_remote, "ANY")) {
+        // The only thing a discovery sentinel may carry is an interface list in parentheses,
+        // "ANY_EVSE(eth0,eth1)" or "ANY_EVSE(!wlan0)". Any other suffix ("ANY_EVSE:eth0") used to be
+        // ignored silently, which searched every interface instead of the one the author meant.
+        std::string suffix;
+        for (auto const* sentinel : {"ANY_EVSE", "ANY_EV", "ANY"}) {
+            if (string_starts_with(c.cb_remote, sentinel)) {
+                suffix = string_after_pattern(c.cb_remote, sentinel);
+                break;
+            }
+        }
+        auto const is_list = suffix.size() >= 3 && suffix.front() == '(' && suffix.back() == ')';
+        if (not suffix.empty() && not is_list) {
+            std::cerr << "Configuration error: charge_bridge::ip '" << c.cb_remote
+                      << "' is not a valid discovery endpoint; expected ANY_EVSE, ANY_EV or ANY, optionally "
+                         "followed by an interface list in parentheses, e.g. ANY_EVSE(eth0) or ANY_EV(!wlan0)"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+    } else {
         c.cb_remote = strip_brackets(c.cb_remote);
     }
     c.cb_port = g_cb_port_management;

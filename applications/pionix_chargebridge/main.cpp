@@ -48,7 +48,7 @@ mode parse_args(int argc, char* argv[], std::vector<std::string>& config_files,
                      "                    no status dashboard is started (--status-output is ignored, no TTY is\n"
                      "                    required), progress goes to stdout and the exit status reports whether\n"
                      "                    every configured instance was updated: a discovery endpoint\n"
-                     "                    (ip: ANY_EVSE / ANY_EV) is resolved by a single bounded mDNS discovery\n"
+                     "                    (ip: ANY_EVSE / ANY_EV / ANY) is resolved by a single bounded mDNS discovery\n"
                      "                    first, and an instance that is not reached or not updated fails the run\n";
         std::cout << "--status-output=auto|log|terminal|off\n"
                      "                    output mode for charge_bridge status output.\n"
@@ -187,7 +187,7 @@ constexpr auto update_only_discovery_timeout = std::chrono::seconds(10);
 constexpr auto update_only_discovery_poll_interval = std::chrono::milliseconds(100);
 
 // mDNS spelling of a config's `ip:` field. Mirrors parse_endpoint_intent()/make_interface_list() in
-// charge_bridge.cpp (both are file-local there): "ANY_EVSE"/"ANY_EV" pick the device type, an
+// charge_bridge.cpp (both are file-local there): "ANY_EVSE"/"ANY_EV"/"ANY" pick the device type, an
 // optional suffix restricts the interfaces to search ("ANY_EVSE(eth0,eth1)") or excludes them
 // ("ANY_EVSE(!wlan0)"). Only --update_only needs the intent here, because it resolves the endpoint
 // itself; every other mode gets it from charge_bridge::manage(). Keep the two in sync.
@@ -206,6 +206,10 @@ std::optional<mdns_endpoint> parse_mdns_endpoint(std::string const& cb_remote) {
     } else if (utilities::string_starts_with(cb_remote, "ANY_EV")) {
         result.type = discovery_device_type::CB_EV;
         pattern = "ANY_EV";
+    } else if (utilities::string_starts_with(cb_remote, "ANY")) {
+        // Tested last: "ANY" is a prefix of the two role-specific sentinels above.
+        result.type = discovery_device_type::CB_ANY;
+        pattern = "ANY";
     } else {
         return std::nullopt;
     }
