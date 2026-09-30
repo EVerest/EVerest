@@ -95,11 +95,9 @@ enum class SiteMeterSource {
 
 const char* to_string(SiteMeterSource source);
 
-/// \brief Feeds the aggregator with the measurement that describes the whole site.
-///
-/// Prefers the root node's own power meter (energy_usage_root), the only one that sees
-/// non-EVSE load behind the same fuse. Without it the EVSE meters are summed, which misses
-/// that load and so overstates the headroom.
+/// \brief Feeds the aggregator with the site measurement: the root node's own meter
+/// (energy_usage_root), the only one that sees non-EVSE load behind the fuse, else the sum of
+/// the EVSE meters, which misses that load and so overstates the headroom.
 /// \returns which source was used
 SiteMeterSource collect_site_measurement(const types::energy::EnergyFlowRequest& root,
                                          PowerMeterAggregator& aggregator);

@@ -117,10 +117,8 @@ private:
                               const std::vector<types::energy::EnforcedLimits>& limits);
 
     /// \brief Writes each connector's share of the site headroom into its BrokerContext for
-    /// the brokers of the next run, clearing every other entry.
-    ///
-    /// The next run, because the inference needs this run's enforced limits; the one
-    /// interval of delay also keeps a grant from being counted twice.
+    /// the next run's brokers, clearing every other entry. The inference needs this run's
+    /// enforced limits, and the one interval of delay keeps a grant from being counted twice.
     /// \returns the number of connectors that were granted an increase
     int grant_site_headroom(const SiteInference& site);
 

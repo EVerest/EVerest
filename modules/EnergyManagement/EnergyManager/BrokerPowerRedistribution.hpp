@@ -14,17 +14,12 @@
 namespace module {
 
 // ---------------------------------------------------------------- power redistribution inference
-//
-// Pure functions over one optimizer run that infer, from allocation, measurement and grid
-// headroom, where power could be reduced or increased. Only the increase side acts: each
-// connector's share of SiteInference::increase_W_by_connector is applied by its broker on
-// the next run. Reductions already happen through the measurement based cap.
+// Pure functions over one optimizer run. Only the increase side acts: each connector's share of
+// SiteInference::increase_W_by_connector is applied by its broker on the next run.
 
 /// \brief Import limit of the grid connection [W] at the slot in force: the lower of
-/// total_power_W and ac_max_current_A x declared phase count x nominal voltage.
-///
-/// Read from the root Market's offer, which is already resampled, the minimum of both sides
-/// and corrected for efficiency, not from the raw request.
+/// total_power_W and ac_max_current_A x declared phase count x nominal voltage, read from the
+/// root Market's resampled, efficiency corrected offer.
 /// \returns std::nullopt when the root has no import schedule at all
 std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
@@ -71,13 +66,9 @@ struct ConnectorInference {
     bool held{false};
 };
 
-/// \brief Compares what a connector was allotted with what it draws.
-///
-/// A gap of more than \p margin times the allocation is under-consumption. The deadband is
-/// floored at \p broker_margin_W, the margin the cap itself added, since a gap that size is
-/// the cap's doing, not the EV's. A smaller gap is Saturated, or AtMaximum at the static
-/// limit (within 1 W). Without an allocation or a measurement, or with a negative (export)
-/// measurement, the class is Unknown.
+/// \brief Compares allotted with drawn power. A gap above \p margin x allocation, floored at the
+/// cap's own \p broker_margin_W, is under-consumption; a smaller gap is Saturated, or AtMaximum
+/// at the static limit (within 1 W). Unknown without both values or with an export measurement.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
                                       const StaticBoundsW& bounds, float margin, float broker_margin_W);
 
