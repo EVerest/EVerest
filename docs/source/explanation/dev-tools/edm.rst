@@ -340,7 +340,9 @@ time.
        The pool grows so that a handler blocked waiting for another message
        still lets that message be handled; such threads do not run in
        parallel, so the core count is not the right bound. Must not be below
-       the minimum.
+       the minimum. It must exceed the number of handlers that may block on
+       each other at the same time; a maximum equal to the minimum disables
+       growth, so any such handler waits forever.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS``
      - ``50``
      - Maximum queued task wait time, in milliseconds, before the ``latency``
@@ -364,6 +366,12 @@ time.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR``
      - (empty)
      - Additional include directory for the custom policy header.
+
+Two conditions the pool cannot resolve itself are logged by the module as
+warnings: a handler thread that cannot be started (the pool keeps retrying;
+after five seconds of failures the module exits like a crash), and a message
+that has waited more than a second with every handler thread busy, which means
+the maximum is too low for the handlers that wait for each other.
 
 The built-in policies are:
 
@@ -433,11 +441,14 @@ A custom policy must provide the same interface as the built-in policies:
           std::optional<std::chrono::steady_clock::time_point> oldest_arrival);
   };
 
-``should_grow`` is evaluated on every submission below the thread limit. A
-policy with a ``supervisor_tick`` additionally gets a supervisor thread that
-re-evaluates ``should_grow`` for tasks that queue behind busy workers, backing
-off one tick after each evaluation. It sleeps while the queue is empty and, at
-the thread limit, until a worker retires. If the policy also provides
+``should_grow`` is evaluated on a submission below the thread limit only if the
+submitted task may wait, that is, if the queue is now longer than the number of
+workers waiting at it or about to; a task that an idle worker takes at once
+never grows the pool, so ``queue_size`` is at least 1 whenever the policy is
+asked. A policy with a ``supervisor_tick`` additionally gets a supervisor thread
+that re-evaluates ``should_grow`` for tasks that queue behind busy workers,
+backing off one tick after each evaluation. It sleeps while the queue is empty
+and, at the thread limit, until a worker retires. If the policy also provides
 
 .. code-block:: cpp
 

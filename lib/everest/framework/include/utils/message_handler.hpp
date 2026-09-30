@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <map>
 #include <string>
 #include <thread>
@@ -28,6 +29,19 @@ namespace Everest {
 constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS =
     detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS;
 constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
+/// \brief Age of the oldest queued message at which the pool reports it stalled at the thread limit.
+constexpr std::chrono::seconds THREAD_POOL_SCALING_STALL_THRESHOLD{1};
+/// \brief How long starting a handler thread may keep failing before the failure is rethrown, which ends the
+/// module like a crash and lets the manager restart the stack.
+constexpr std::chrono::seconds THREAD_POOL_SCALING_START_FAILURE_TOLERANCE{5};
+
+/// \brief Exception policy of the message handler pool. A handler's exception is rethrown from the worker and
+/// terminates the process. A failed worker start is logged and left to the pool to retry, until it has kept
+/// failing for THREAD_POOL_SCALING_START_FAILURE_TOLERANCE; then it is rethrown. A message stalled at the thread
+/// limit is logged; the remedy is a higher EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT.
+struct MessageHandlerExceptionPolicy {
+    static void handle_exception(std::exception_ptr eptr);
+};
 /// \brief Worker count range of the message handler pool, configured at build time and independent of the CPU
 /// core count: the pool grows to let handlers that block waiting for another message make progress (see #2102),
 /// and those threads do not run in parallel.
@@ -119,8 +133,8 @@ private:
     // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
     everest::lib::util::monitor<std::thread> ready;
 
-    using ThreadPool = everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy,
-                                                               everest::lib::util::RethrowExceptions>;
+    using ThreadPool =
+        everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy, MessageHandlerExceptionPolicy>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
     using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;

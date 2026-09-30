@@ -103,9 +103,56 @@ void warn_on_high_queue_size(everest::lib::util::simple_queue<ParsedMessage> con
 
 using everest::lib::util::bind_obj;
 
+namespace {
+constexpr std::size_t START_FAILURE_LOG_EVERY = 100;
+constexpr std::chrono::seconds STALL_LOG_INTERVAL{1};
+
+std::string describe(const std::exception_ptr& cause) {
+    try {
+        std::rethrow_exception(cause);
+    } catch (const std::exception& e) {
+        return e.what();
+    } catch (...) {
+        return "unknown error";
+    }
+}
+} // namespace
+
+void MessageHandlerExceptionPolicy::handle_exception(std::exception_ptr eptr) {
+    try {
+        std::rethrow_exception(eptr);
+    } catch (const everest::lib::util::worker_start_error& error) {
+        const bool give_up = error.failing_for >= THREAD_POOL_SCALING_START_FAILURE_TOLERANCE;
+        if (give_up or error.attempt == 1 or error.attempt % START_FAILURE_LOG_EVERY == 0) {
+            EVLOG_warning << "Could not start a message handler thread (attempt " << error.attempt << ", failing for "
+                          << error.failing_for.count() << " ms): " << describe(error.cause);
+        }
+        if (give_up) {
+            EVLOG_error << "Starting a message handler thread kept failing for "
+                        << std::chrono::duration_cast<std::chrono::seconds>(error.failing_for).count()
+                        << " s, giving up";
+            throw;
+        }
+    } catch (const everest::lib::util::thread_limit_stall& stall) {
+        static std::mutex mutex;
+        static std::chrono::steady_clock::time_point last_log;
+        const auto now = std::chrono::steady_clock::now();
+        std::lock_guard lock(mutex);
+        if (now - last_log < STALL_LOG_INTERVAL) {
+            return;
+        }
+        last_log = now;
+        EVLOG_warning << "A message has waited " << stall.waited.count() << " ms for a handler thread with all "
+                      << stall.thread_limit
+                      << " busy. Handlers that wait for each other need "
+                         "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT above their number";
+    }
+}
+
 MessageHandler::MessageHandler() {
     operation_thread_pool = std::make_unique<ThreadPool>(
-        THREAD_POOL_SCALING_MIN_THREAD_COUNT, THREAD_POOL_SCALING_MAX_THREAD_COUNT, THREAD_POOL_SCALING_IDLE_TIMEOUT);
+        THREAD_POOL_SCALING_MIN_THREAD_COUNT, THREAD_POOL_SCALING_MAX_THREAD_COUNT, THREAD_POOL_SCALING_IDLE_TIMEOUT,
+        ThreadPool::unbounded_queue, THREAD_POOL_SCALING_STALL_THRESHOLD);
     operation_dispatcher_thread = std::thread([this] { run_operation_dispatcher(); });
     result_worker_thread = std::thread([this] { run_result_message_worker(); });
     external_mqtt_worker_thread = std::thread([this] { run_external_mqtt_worker(); });

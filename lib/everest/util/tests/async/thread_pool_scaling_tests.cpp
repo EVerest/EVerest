@@ -9,6 +9,8 @@
 #include <future>
 #include <mutex>
 #include <random>
+#include <stdexcept>
+#include <utility>
 #include <vector>
 
 using namespace std::chrono_literals;
@@ -962,31 +964,118 @@ TEST(ThreadPoolScalingShutdownTest, DestructorGrowsWorkerlessPoolBeyondPolicy) {
 }
 
 /**
- * @test MaximumBelowMinimumIsRaisedToMinimum
- * @brief A maximum below the minimum would silently stop every growth decision; the pool raises it to the minimum,
- * so the minimum workers exist and run concurrently.
+ * @test RejectsMaximumOfZeroOrBelowMinimum
+ * @brief A maximum of 0, or one below the minimum, could never pass a growth decision, so an accepted task might
+ * never run; the constructor rejects both instead of building a pool that silently does not grow.
  */
-TEST(ThreadPoolScalingTest, MaximumBelowMinimumIsRaisedToMinimum) {
-    thread_pool_scaling<LatencyScaling<5, 5>> pool(2, 0, 60s);
-    std::promise<void> release;
-    auto released = release.get_future().share();
-    std::atomic<int> entered{0};
-    for (int i = 0; i < 2; ++i) {
-        pool.run([released, &entered] {
-            ++entered;
-            released.wait();
-        });
-    }
-    const auto deadline = std::chrono::steady_clock::now() + 1s;
-    while (entered < 2 and std::chrono::steady_clock::now() < deadline) {
-        std::this_thread::sleep_for(1ms);
-    }
-    EXPECT_EQ(entered, 2);
-    release.set_value();
+TEST(ThreadPoolScalingTest, RejectsMaximumOfZeroOrBelowMinimum) {
+    EXPECT_THROW((thread_pool_scaling<GreedyScaling>(0, 0, 60s)), std::invalid_argument);
+    EXPECT_THROW((thread_pool_scaling<GreedyScaling>(2, 1, 60s)), std::invalid_argument);
+    EXPECT_THROW((thread_pool_scaling<LatencyScaling<5, 5>>(2, 0, 60s)), std::invalid_argument);
+    EXPECT_NO_THROW((thread_pool_scaling<GreedyScaling>(2, 2, 60s)));
 }
 
 // =================================================================
-// 10. Greedy Scaling Tests
+// 10. Conditions reported to the exception policy
+// =================================================================
+
+/**
+ * @brief Exception policy that keeps every reported condition.
+ */
+struct RecordingExceptions {
+    static inline std::mutex mutex;
+    static inline std::vector<std::exception_ptr> reported;
+
+    static void handle_exception(std::exception_ptr eptr) noexcept {
+        std::lock_guard lock(mutex);
+        reported.push_back(std::move(eptr));
+    }
+
+    static void clear() {
+        std::lock_guard lock(mutex);
+        reported.clear();
+    }
+
+    static std::vector<std::exception_ptr> take() {
+        std::lock_guard lock(mutex);
+        return std::exchange(reported, {});
+    }
+};
+
+/**
+ * @brief Releases a blocked worker when the scope ends, so that a failed assertion cannot leave the pool's
+ * destructor waiting for it. Declare after the pool.
+ */
+struct release_on_exit {
+    std::promise<void>& release;
+    ~release_on_exit() {
+        release.set_value();
+    }
+};
+
+/**
+ * @test ReportsTaskStalledAtThreadLimit
+ * @brief A submission that finds the oldest task older than the stall threshold, the pool at its limit and no worker
+ * coming reports a thread_limit_stall with the task's age and the limit; a submission before the threshold does not.
+ */
+TEST(ThreadPoolScalingConditionTest, ReportsTaskStalledAtThreadLimit) {
+    RecordingExceptions::clear();
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    {
+        thread_pool_scaling<GreedyScaling, RecordingExceptions> pool(1, 1, 60s, 0, 50ms);
+        release_on_exit releaser{release};
+        pool.run([released] { released.wait(); });
+        std::this_thread::sleep_for(20ms);
+        pool.run([] {});
+        pool.run([] {});
+        EXPECT_TRUE(RecordingExceptions::take().empty());
+
+        std::this_thread::sleep_for(100ms);
+        pool.run([] {});
+        const auto reported = RecordingExceptions::take();
+        ASSERT_EQ(reported.size(), 1u);
+        try {
+            std::rethrow_exception(reported.front());
+            FAIL() << "no condition";
+        } catch (const thread_limit_stall& stall) {
+            EXPECT_GE(stall.waited, 50ms);
+            EXPECT_LT(stall.waited, 5s);
+            EXPECT_EQ(stall.thread_limit, 1u);
+        }
+    }
+    EXPECT_TRUE(RecordingExceptions::take().empty());
+}
+
+/**
+ * @test NoStallReportWhileAWorkerIsComing
+ * @brief Below the thread limit an old task is grown for, not reported; the stall report is only for the case the
+ * pool cannot resolve itself.
+ */
+TEST(ThreadPoolScalingConditionTest, NoStallReportWhileAWorkerIsComing) {
+    RecordingExceptions::clear();
+    std::promise<void> release;
+    auto released = release.get_future().share();
+    std::atomic<int> ran{0};
+    {
+        thread_pool_scaling<FixedSizeScaling<3>, RecordingExceptions> pool(1, 2, 60s, 0, 20ms);
+        pool.run([released] { released.wait(); });
+        pool.run([&ran] { ++ran; });
+        std::this_thread::sleep_for(50ms);
+        pool.run([&ran] { ++ran; });
+        pool.run([&ran] { ++ran; });
+        const auto deadline = std::chrono::steady_clock::now() + 1s;
+        while (ran < 3 and std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(1ms);
+        }
+        EXPECT_EQ(ran, 3);
+        EXPECT_TRUE(RecordingExceptions::take().empty());
+        release.set_value();
+    }
+}
+
+// =================================================================
+// 11. Greedy Scaling Tests
 // =================================================================
 
 /**

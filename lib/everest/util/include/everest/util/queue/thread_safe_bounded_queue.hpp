@@ -102,7 +102,7 @@ public:
     template <class... Args> [[nodiscard]] push_result emplace_tracked(Args&&... args) {
         std::unique_lock lock(m_mtx);
         if (m_max_size > 0) {
-            m_cv_producer.wait(lock, [this]() { return m_queue.size() < m_max_size || m_stop; });
+            m_cv_producer.wait(lock, [this] { return has_room_or_stopped(); });
         }
 
         if (m_stop) {
@@ -127,7 +127,8 @@ public:
      * @return An element from the queue, if one is available. \p std::nullopt otherwise
      */
     std::optional<value_type> try_pop() {
-        return pop_impl(0);
+        std::unique_lock lock(m_mtx);
+        return take_locked(lock);
     }
 
     /**
@@ -138,8 +139,13 @@ public:
      * @return An element from the queue, if one is available. \p std::nullopt otherwise
      */
     template <class Rep, class Period> std::optional<value_type> try_pop(std::chrono::duration<Rep, Period> timeout) {
-        auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(timeout);
-        return pop_impl(ms.count());
+        std::unique_lock lock(m_mtx);
+        {
+            waiting_guard waiting(m_waiting_consumers);
+            (void)m_cv_consumer.wait_for(lock, std::chrono::duration_cast<std::chrono::milliseconds>(timeout),
+                                         [this] { return has_data_or_stopped(); });
+        }
+        return take_locked(lock);
     }
 
     /**
@@ -148,7 +154,7 @@ public:
      * @return An element from the queue.
      */
     value_type pop() {
-        return pop_impl(-1).value();
+        return wait_and_pop().value();
     }
 
     /**
@@ -157,7 +163,12 @@ public:
      * @return An element from the queue. Empty optional if stopped.
      */
     std::optional<value_type> wait_and_pop() {
-        return pop_impl(-1);
+        std::unique_lock lock(m_mtx);
+        {
+            waiting_guard waiting(m_waiting_consumers);
+            m_cv_consumer.wait(lock, [this] { return has_data_or_stopped(); });
+        }
+        return take_locked(lock);
     }
 
     /**
@@ -217,28 +228,43 @@ public:
 
 private:
     /**
-     * @brief Internal implementation of the pop logic.
-     * @param[in] timeout_ms Timeout in milliseconds. -1 for infinite wait, 0 for immediate return.
-     * @return An optional containing the popped value or std::nullopt.
+     * @brief Counts the calling consumer as waiting for its lifetime. Created and destroyed under \p m_mtx.
      */
-    std::optional<value_type> pop_impl(int timeout_ms) {
-        std::unique_lock lock(m_mtx);
-        auto wait_predicate = [this]() { return not m_queue.empty() or m_stop; };
-
-        if (timeout_ms < 0) {
-            ++m_waiting_consumers;
-            m_cv_consumer.wait(lock, wait_predicate);
-            --m_waiting_consumers;
-        } else if (timeout_ms > 0) {
-            ++m_waiting_consumers;
-            (void)m_cv_consumer.wait_for(lock, std::chrono::milliseconds(timeout_ms), wait_predicate);
-            --m_waiting_consumers;
+    struct waiting_guard {
+        size_type& count;
+        explicit waiting_guard(size_type& c) : count(c) {
+            ++count;
         }
+        ~waiting_guard() {
+            --count;
+        }
+        waiting_guard(const waiting_guard&) = delete;
+        waiting_guard& operator=(const waiting_guard&) = delete;
+    };
 
+    /**
+     * @brief Wait predicate of the producers.
+     */
+    bool has_room_or_stopped() const {
+        return m_queue.size() < m_max_size or m_stop;
+    }
+
+    /**
+     * @brief Wait predicate of the consumers.
+     */
+    bool has_data_or_stopped() const {
+        return not m_queue.empty() or m_stop;
+    }
+
+    /**
+     * @brief Pops the front element if there is one.
+     * @param[in] lock The held queue lock. Released before the producers are notified.
+     * @return The front element, or \p std::nullopt if the queue is empty.
+     */
+    std::optional<value_type> take_locked(std::unique_lock<std::mutex>& lock) {
         if (m_queue.empty()) {
             return std::nullopt;
         }
-
         auto result = m_queue.pop();
         lock.unlock();
         m_cv_producer.notify_one();
