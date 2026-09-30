@@ -16,7 +16,11 @@ namespace charge_bridge {
 
 enum class discovery_device_type {
     CB_EVSE,
-    CB_EV
+    CB_EV,
+    // Any board that announces a board_type at all (config ip: ANY). For a slot whose occupant is not
+    // known up front - a production tester that identifies the inserted board from the announced
+    // board_type instead of filtering on it.
+    CB_ANY
 };
 
 class discovery : public everest::lib::io::event::fd_event_register_interface {

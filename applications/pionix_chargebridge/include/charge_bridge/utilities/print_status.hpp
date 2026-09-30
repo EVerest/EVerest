@@ -29,9 +29,10 @@ struct chargebridge_telemetry {
     int vdd_3v3_mV{};
 };
 
-// Read-only network identity of an instance, surfaced by the interactive terminal UI only (not part
-// of the key=value log output). mDNS fields are empty for fixed-IP configs. (No MAC: the MCU does
-// not report one anywhere in the protocol.)
+// Read-only network identity of an instance, surfaced by the interactive terminal UI (not part of
+// the key=value log output); the board_type TXT record is also published over MQTT as
+// chargebridge/board_type while connected. mDNS fields are empty for fixed-IP configs. (No MAC: the
+// MCU does not report one anywhere in the protocol.)
 struct chargebridge_network_info {
     std::string ip;
     std::string mdns_hostname;
