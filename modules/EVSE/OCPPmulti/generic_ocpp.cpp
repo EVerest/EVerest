@@ -1131,7 +1131,7 @@ void GenericOcpp::cb_fault_cleared_handler(std::int32_t evse_id, const Everest::
 
     auto event_data = convert_error(error);
     event_data.event_cleared = true;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
+    if (!enqueue_if_not_started(evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(error));
     }
@@ -1142,7 +1142,7 @@ void GenericOcpp::cb_fault_handler(std::int32_t evse_id, const Everest::error::E
 
     auto event_data = convert_error(error);
     event_data.event_cleared = false;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
+    if (!enqueue_if_not_started(evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(error));
     }
