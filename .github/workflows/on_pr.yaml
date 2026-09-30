@@ -16,6 +16,11 @@ on:
   schedule:
     - cron: '37 13,1 * * *'
 
+# Let pushes to PRs cancel already running CI runs on that PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
 
@@ -137,8 +142,12 @@ jobs:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
+  # The cross builds run in the merge queue and the nightly run,
+  # not on every PR push since they use too many resources.
+  # A manual run of this workflow on a branch includes them.
   bazel-cross-build:
     name: Bazel Cross (${{ matrix.platform }})
+    if: ${{ github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:
