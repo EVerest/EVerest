@@ -3,6 +3,10 @@
 
 #include "v2_chargepoint.hpp"
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
+#include <array>
+
 #include <algorithm>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
@@ -587,14 +591,26 @@ void ChargePointV2::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRe
 }
 void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
-    if (event.error) {
-        // TODO(james-ctc): needs tidying up. MREC error map is in generic_ocpp
-        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {});
-        std::string updated;
-        m_callbacks_ptr->map_error(event.error->type, updated);
-        event_data.techCode = std::move(updated);
-        m_charge_point->on_event({event_data});
+    if (!event.error) {
+        return;
     }
+
+    using namespace ocpp_module_common;
+
+    // MREC before the fallback: a more specific mapping is asked first
+    static const MrecErrorMapping mrec;
+    static const DefaultErrorMappingV2X fallback;
+    static const std::array<const ErrorMappingV2X*, 2> mappings{&mrec, &fallback};
+
+    for (const auto* mapping : mappings) {
+        if (auto event_data = mapping->try_convert(event.error.value(), event.event_cleared, event.event_id);
+            event_data.has_value()) {
+            m_charge_point->on_event({std::move(event_data).value()});
+            return;
+        }
+    }
+
+    EVLOG_error << "no OCPP 2.x mapping converted error type '" << event.error->type << "', reporting nothing";
 }
 void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
                                         const types::evse_manager::SessionEvent& session_event) {
