@@ -72,6 +72,9 @@ private:
     std::string source_base;
     std::string source_bsp_caps;
     std::string source_psu_caps;
+    int phase_pattern_mismatches{0};
+    bool phase_pattern_mismatch_warned{false};
+    void check_phase_patterns();
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

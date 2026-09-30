@@ -3,6 +3,9 @@
 
 #include <everest/helpers/phase_rotation.hpp>
 
+#include <algorithm>
+#include <array>
+
 namespace everest::helpers {
 
 namespace {
@@ -75,6 +78,37 @@ types::powermeter::Powermeter apply_phase_rotation(types::powermeter::Powermeter
     );
 
     return powermeter;
+}
+
+namespace {
+
+std::optional<std::array<bool, 3>> loaded_phases(const types::powermeter::Powermeter& powermeter, float noise_floor_A) {
+    if (not powermeter.current_A.has_value()) {
+        return std::nullopt;
+    }
+    const auto& current = powermeter.current_A.value();
+    if (not current.L1.has_value() or not current.L2.has_value() or not current.L3.has_value()) {
+        return std::nullopt;
+    }
+    const std::array<bool, 3> loaded{current.L1.value() > noise_floor_A, current.L2.value() > noise_floor_A,
+                                     current.L3.value() > noise_floor_A};
+    const auto count = std::count(loaded.begin(), loaded.end(), true);
+    if (count == 0 or count == 3) {
+        return std::nullopt;
+    }
+    return loaded;
+}
+
+} // namespace
+
+std::optional<bool> same_loaded_phases(const types::powermeter::Powermeter& a, const types::powermeter::Powermeter& b,
+                                       float noise_floor_A) {
+    const auto on_a = loaded_phases(a, noise_floor_A);
+    const auto on_b = loaded_phases(b, noise_floor_A);
+    if (not on_a.has_value() or not on_b.has_value()) {
+        return std::nullopt;
+    }
+    return on_a.value() == on_b.value();
 }
 
 } // namespace everest::helpers

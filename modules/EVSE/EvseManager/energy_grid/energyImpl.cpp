@@ -48,6 +48,7 @@ void energyImpl::init() {
                 everest::helpers::phase_rotation_from_string(mod->config.phase_rotation_car_side);
 
             energy_flow_request.energy_usage_leaves = everest::helpers::apply_phase_rotation(p, phase_rotation);
+            check_phase_patterns();
         });
     }
 
@@ -61,6 +62,32 @@ void energyImpl::init() {
 
             energy_flow_request.energy_usage_root = everest::helpers::apply_phase_rotation(p, phase_rotation);
         });
+    }
+}
+
+void energyImpl::check_phase_patterns() {
+    // Consecutive readings, so that one meter lagging the other while an EV starts is not taken for a wiring fault.
+    constexpr int mismatches_to_warn = 3;
+    constexpr float noise_floor_A = 1.0f;
+
+    if (not energy_flow_request.energy_usage_root.has_value() or
+        not energy_flow_request.energy_usage_leaves.has_value()) {
+        return;
+    }
+    const auto same = everest::helpers::same_loaded_phases(
+        energy_flow_request.energy_usage_root.value(), energy_flow_request.energy_usage_leaves.value(), noise_floor_A);
+    if (not same.has_value()) {
+        return;
+    }
+    if (same.value()) {
+        phase_pattern_mismatches = 0;
+        return;
+    }
+    if (++phase_pattern_mismatches == mismatches_to_warn and not phase_pattern_mismatch_warned) {
+        phase_pattern_mismatch_warned = true;
+        EVLOG_warning << "The car side and grid side power meters report current on different phases. Check "
+                         "phase_rotation_car_side and phase_rotation_grid_side: the energy manager books the car side "
+                         "reading on the grid phases.";
     }
 }
 
