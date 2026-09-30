@@ -40,6 +40,7 @@ target_sources(${TEST_TARGET_NAME}
     # general
     charge_point_config_factory_v16_tests.cpp
     error_mapping_loader_tests.cpp
+    error_mapping_validation_tests.cpp
     generic_ocpp_error_dispatch_tests.cpp
     generic_ocpp_tests.cpp
     generic_ocpp_v16_connector_tests.cpp
@@ -67,6 +68,7 @@ target_sources(${TEST_TARGET_NAME}
     ../v2_chargepoint.cpp
     ../charge_point_config_factory_v16.cpp
     ../error_mapping/error_mapping.cpp
+    ../error_mapping/error_mapping_validation.cpp
     ${ERROR_MAPPING_SCHEMA_GENERATED}
 )
 
@@ -94,6 +96,13 @@ set_property(
     APPEND
     PROPERTY COMPILE_DEFINITIONS
         ERROR_MAPPING_DIR="${ERROR_MAPPING_DIR}"
+)
+file(RELATIVE_PATH EVEREST_ERRORS_DIR ${CMAKE_CURRENT_BINARY_DIR} ${PROJECT_SOURCE_DIR}/errors)
+set_property(
+    SOURCE error_mapping_validation_tests.cpp
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS
+        EVEREST_ERRORS_DIR="${EVEREST_ERRORS_DIR}"
 )
 
 target_link_libraries(${TEST_TARGET_NAME}

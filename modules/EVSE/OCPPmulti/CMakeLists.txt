@@ -27,6 +27,7 @@ target_sources(${MODULE_NAME}
     charge_point_config_factory_v16.cpp
 
     error_mapping/error_mapping.cpp
+    error_mapping/error_mapping_validation.cpp
     generic_chargepoint.cpp
     generic_ocpp.cpp
     grid_support/grid_support_state.cpp
