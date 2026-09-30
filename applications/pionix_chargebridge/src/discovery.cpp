@@ -18,7 +18,12 @@ namespace {
 // been provisioned, which either intent accepts so a fresh board can be reached by the host
 // that is about to provision it. A board provisioned for the other role is invisible to this
 // instance until it has been re-provisioned once with a fixed address.
+// ANY takes whatever announces a board_type (CB-CAN included): the host then learns the variant from
+// the value, which the status publish passes on as chargebridge/board_type.
 bool is_cb_match(std::string const& board_type, discovery_device_type discriminator) {
+    if (discriminator == discovery_device_type::CB_ANY) {
+        return not board_type.empty();
+    }
     if (board_type == "CB-MCS") {
         return true;
     }
@@ -27,6 +32,8 @@ bool is_cb_match(std::string const& board_type, discovery_device_type discrimina
         return board_type == "CB-CCS-EV-LU" or board_type == "CB-MCS-EV";
     case discovery_device_type::CB_EVSE:
         return board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA" or board_type == "CB-MCS-EVSE";
+    case discovery_device_type::CB_ANY:
+        break;
     }
     return false;
 }

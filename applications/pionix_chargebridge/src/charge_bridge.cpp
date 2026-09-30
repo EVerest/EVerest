@@ -179,6 +179,12 @@ endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
         result.value = endpoint_intent::any_ev_mdns;
         result.excluding_interfaces = params.first;
         result.interfaces = params.second;
+    } else if (utilities::string_starts_with(cb_remote, "ANY")) {
+        // Tested last: "ANY" is a prefix of the two role-specific sentinels above.
+        auto params = make_interface_list(cb_remote, "ANY");
+        result.value = endpoint_intent::any_mdns;
+        result.excluding_interfaces = params.first;
+        result.interfaces = params.second;
     }
 
     return result;
@@ -209,8 +215,14 @@ bool charge_bridge::is_mdns_endpoint() const {
 }
 
 discovery_device_type charge_bridge::mdns_device_type() const {
-    if (m_endpoint_intent.value == endpoint_intent::any_evse_mdns) {
+    switch (m_endpoint_intent.value) {
+    case endpoint_intent::any_evse_mdns:
         return discovery_device_type::CB_EVSE;
+    case endpoint_intent::any_mdns:
+        return discovery_device_type::CB_ANY;
+    case endpoint_intent::any_ev_mdns:
+    case endpoint_intent::fixed_ip:
+        break;
     }
     return discovery_device_type::CB_EV;
 }
@@ -1437,11 +1449,13 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
     }
 
     bool result = true;
-    auto publish = [this](std::string_view component, std::string_view item, bool status) {
+    auto publish_str = [this](std::string_view component, std::string_view item, std::string_view payload) {
         std::stringstream topic;
         topic << m_config.telemetry->telemetry_topic << "/" << m_config.cb_name << "/" << component << "/" << item;
-        std::string_view payload = status ? "true" : "false";
         m_mqtt->publish(topic.str(), payload);
+    };
+    auto publish = [publish_str](std::string_view component, std::string_view item, bool status) {
+        publish_str(component, item, status ? "true" : "false");
     };
 
     publish("chargebridge", "connected", status.connected);
@@ -1449,6 +1463,23 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
         auto discovered = status.discovered.value();
         publish("chargebridge", "discovered", discovered);
         result = result && discovered;
+    }
+    // The hardware variant, as the board announced it in its mDNS TXT record (CB-CCS-EVSE-LU,
+    // CB-CCS-EV-LU, CB-MCS-EV, ...). Only while connected: the discovery record is kept across a
+    // disconnect, and a consumer that identifies the board in a slot (the production tester) must not
+    // be told about one that is gone or is being swapped. Absent for fixed-IP configs.
+    if (status.connected and status.network.has_value()) {
+        for (auto const& [key, value] : status.network->mdns_txt) {
+            if (key == "board_type") {
+                publish_str("chargebridge", "board_type", value);
+                break;
+            }
+        }
+    }
+    // The role the MCU reports it has latched ("EVSE", "EV", or "not yet latched" before its first
+    // accepted config), so a consumer can tell the two MCS roles apart without the mDNS record.
+    if (status.role.has_value()) {
+        publish_str("chargebridge", "role", status.role->latched);
     }
 
     auto publish_status = [publish](std::string_view component, bool status) { publish(component, "status", status); };

@@ -69,6 +69,7 @@ enum class endpoint_intent {
     fixed_ip,
     any_evse_mdns,
     any_ev_mdns,
+    any_mdns,
 };
 
 struct endpoint_intent_info {
