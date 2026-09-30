@@ -31,6 +31,12 @@ using PhaseCurrentsWithSource_External = PhaseCurrentsWithSource;
 PhaseCurrentsWithSource_Internal to_internal_api(PhaseCurrentsWithSource_External const& val);
 PhaseCurrentsWithSource_External to_external_api(PhaseCurrentsWithSource_Internal const& val);
 
+using PhasePowersWithSource_Internal = ::types::energy::PhasePowersWithSource;
+using PhasePowersWithSource_External = PhasePowersWithSource;
+
+PhasePowersWithSource_Internal to_internal_api(PhasePowersWithSource_External const& val);
+PhasePowersWithSource_External to_external_api(PhasePowersWithSource_Internal const& val);
+
 using FrequencyWattPoint_Internal = ::types::energy::FrequencyWattPoint;
 using FrequencyWattPoint_External = FrequencyWattPoint;
 

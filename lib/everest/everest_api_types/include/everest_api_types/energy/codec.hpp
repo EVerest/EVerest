@@ -13,6 +13,7 @@ namespace everest::lib::API::V1_0::types::energy {
 std::string serialize(NumberWithSource const& val) noexcept;
 std::string serialize(IntegerWithSource const& val) noexcept;
 std::string serialize(PhaseCurrentsWithSource const& val) noexcept;
+std::string serialize(PhasePowersWithSource const& val) noexcept;
 std::string serialize(FrequencyWattPoint const& val) noexcept;
 std::string serialize(SetpointType const& val) noexcept;
 std::string serialize(PricePerkWh const& val) noexcept;
@@ -28,6 +29,7 @@ std::string serialize(CapabilityLimits const& val) noexcept;
 std::ostream& operator<<(std::ostream& os, NumberWithSource const& val);
 std::ostream& operator<<(std::ostream& os, IntegerWithSource const& val);
 std::ostream& operator<<(std::ostream& os, PhaseCurrentsWithSource const& val);
+std::ostream& operator<<(std::ostream& os, PhasePowersWithSource const& val);
 std::ostream& operator<<(std::ostream& os, FrequencyWattPoint const& val);
 std::ostream& operator<<(std::ostream& os, SetpointType const& val);
 std::ostream& operator<<(std::ostream& os, PricePerkWh const& val);

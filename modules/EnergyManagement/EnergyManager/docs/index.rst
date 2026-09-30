@@ -166,7 +166,9 @@ A node limit can also differ per phase: ``ac_max_current_per_phase_A`` in a sche
 sets L1, L2 and L3 individually, as an OCPP 2.1 schedule with ``limit_L2`` and
 ``limit_L3`` does. On every phase the lower of it and ``ac_max_current_A`` applies, a phase
 it omits is limited by ``ac_max_current_A`` only, and root and leaves side limits merge per
-phase like the scalar ones. A connector is offered what is left on the tightest of its
+phase like the scalar ones. ``ac_max_power_per_phase_W``, a per phase limit in watt, is
+converted with ``nominal_ac_voltage`` and applies like ``ac_max_current_per_phase_A``;
+``total_power_W`` still limits the sum. A connector is offered what is left on the tightest of its
 phases, so a single phase EV on L1 is not held back by a lower limit on L2. Under
 ``FastCharging`` every connector counts on all three phases and is held to the tightest
 one. The site's grid limit in the power redistribution inference adds up the three phase
