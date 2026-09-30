@@ -27,7 +27,9 @@ within ``power_meter_aggregation_window_s`` of the optimizer's start time; older
 are excluded as stale rather than contributing a wrong value. The window applies in both
 directions: clock skew smaller than the window is tolerated, but a reading timestamped
 further in the future is excluded too and logged once per meter as a clock or time zone
-error, so a frozen meter with a skewed clock cannot stay "fresh". Only EVSE nodes contribute,
+error, so a frozen meter with a skewed clock cannot stay "fresh". A reading at least 15
+minutes older than the window is logged once per meter as well: the meter is frozen, or it
+reports a UTC offset, which the timestamp parser ignores. Only EVSE nodes contribute,
 so no meter is ever counted together with meters it already measures. Power and per phase
 current are aggregated together.
 

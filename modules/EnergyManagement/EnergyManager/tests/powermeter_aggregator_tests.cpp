@@ -426,6 +426,19 @@ TEST(PowerMeterAggregatorWindow, TimestampFarInTheFutureIsStaleAndReported) {
     EXPECT_TRUE(result.unparsable_meters.empty());
 }
 
+TEST(PowerMeterAggregatorWindow, TimestampFarInThePastIsStaleAndReported) {
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+
+    aggregator.update("cp01", make_reading(1000.0f, NOW, std::chrono::hours(5)));
+    aggregator.update("cp02", make_reading(700.0f, NOW, std::chrono::seconds(60)));
+
+    const auto result = aggregator.aggregate(NOW);
+
+    EXPECT_EQ(result.stale_meters, 2);
+    EXPECT_EQ(result.far_past_meters, std::vector<std::string>{"cp01"});
+    EXPECT_TRUE(result.future_meters.empty());
+}
+
 TEST(PowerMeterAggregatorWindow, UnparsableTimestampIsStale) {
     PowerMeterAggregator aggregator(std::chrono::seconds(5));
 
@@ -453,6 +466,7 @@ TEST(PowerMeterAggregatorWindow, MerelyOldTimestampIsNotReportedAsUnparsable) {
 
     EXPECT_EQ(result.stale_meters, 1);
     EXPECT_TRUE(result.unparsable_meters.empty());
+    EXPECT_TRUE(result.far_past_meters.empty());
 }
 
 TEST(PowerMeterAggregatorWindow, StaleMeterInvalidatesPerPhaseSums) {
@@ -527,6 +541,25 @@ TEST(CollectLeafMeasurements, FallsBackToRootMeasurementOnEvseNode) {
 
     EXPECT_EQ(aggregator.size(), 1U);
     EXPECT_FLOAT_EQ(aggregator.aggregate(NOW).power_W.value().total, 1200.0f);
+}
+
+TEST(CollectLeafMeasurements, PrefersTheRootReadingWhenOnlyItReportsPower) {
+    auto cp01 = make_node("cp01", types::energy::NodeType::Evse);
+    types::powermeter::Powermeter current_only;
+    current_only.timestamp = Everest::Date::to_rfc3339(NOW);
+    current_only.energy_Wh_import.total = 0.0f;
+    cp01.energy_usage_leaves = with_current(current_only, 10.0f, 0.0f, 0.0f);
+    cp01.energy_usage_root =
+        with_current(make_per_phase_reading(2300.0f, 0.0f, 0.0f, NOW, std::chrono::seconds(0)), 10.0f, 0.0f, 0.0f);
+
+    PowerMeterAggregator aggregator(std::chrono::seconds(5));
+    collect_leaf_measurements(cp01, aggregator);
+
+    const auto result = aggregator.aggregate(NOW);
+    EXPECT_EQ(result.stale_meters, 0);
+    ASSERT_TRUE(result.power_W.has_value());
+    EXPECT_FLOAT_EQ(result.power_W->L1.value_or(-1.0f), 2300.0f);
+    EXPECT_FLOAT_EQ(result.current_A.L1.value_or(-1.0f), 10.0f);
 }
 
 TEST(CollectLeafMeasurements, DoesNotRecurseBelowAnEvseNode) {
