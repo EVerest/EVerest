@@ -794,6 +794,7 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_accepted) {
 TEST_F(SecurityTest, sign_certificate_request_v2g20_accepted) {
     // The ISO 15118-20 SECC leaf uses the same ISO15118Ctrlr CSR inputs and TPM setting as the -2 leaf, but is
     // requested with the OCPP 2.1 certificateType V2G20Certificate.
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
     this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
                                   ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
                                   AttributeEnum::Actual, "iso_testcommonname", "test", true);
@@ -1134,6 +1135,7 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_hash_root_certificate_excludes
 TEST_F(SecurityTest, certificate_signed_without_type_installs_as_awaited_secc_leaf) {
     // The CSMS is only recommended to echo certificateType (A02.FR.14). Without it, the chain answers the
     // outstanding SignCertificate.req instead of being mistaken for the CSMS client certificate.
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
     set_secc_csr_inputs();
     ocpp::GetCertificateSignRequestResult sign_request_result;
     sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
@@ -2043,6 +2045,32 @@ TEST_F(SecurityTest, retry_that_cannot_be_sent_restarts_the_attempt_count) {
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
     security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
     EXPECT_EQ(timer_stub_get_timeout_interval_ms(), 30000);
+}
+
+TEST_F(SecurityTest, v2g20_retry_is_not_sent_on_an_ocpp_201_connection) {
+    // A retry (or queued renewal) can fire after the connection switched to OCPP 2.0.1, whose schema lacks
+    // V2G20Certificate
+    timer_stub_reset_callback();
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    this->device_model->set_value(ControllerComponentVariables::CertSigningWaitMinimum.component,
+                                  ControllerComponentVariables::CertSigningWaitMinimum.variable.value(),
+                                  AttributeEnum::Actual, "30", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::CertSigningRepeatTimes.component,
+                                  ControllerComponentVariables::CertSigningRepeatTimes.variable.value(),
+                                  AttributeEnum::Actual, "2", "test", true);
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+
+    this->ocpp_version = ocpp::OcppProtocolVersion::v201;
+    timer_stub_get_callback()();
+    EXPECT_FALSE(security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate).has_value());
 }
 
 TEST_F(SecurityTest, late_certificate_signed_after_the_last_retry_is_installed) {
