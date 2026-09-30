@@ -12,6 +12,10 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 bool ocppImpl::handle_stop() {
     return mod->m_ocpp.handle_stop();
 }
