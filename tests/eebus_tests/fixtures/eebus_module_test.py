@@ -21,7 +21,7 @@ from grpc_server.cs_lpc_control_server import CsLpcControlServer
 
 from .grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.conversions import convert_external_limits
-from conftest import EebusPortStrategy, eebus_grpc_port, eebus_service_port
+from eebus_test_utils import EebusPortStrategy
 
 
 @pytest.fixture

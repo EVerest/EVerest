@@ -210,25 +210,26 @@ case "$SUITE" in
         setup_ocpp
 
         SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
+        # eebus_tests are long-running, so run them first
         run_pytest_suite \
+            eebus_tests/eebus_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
             management_api_tests/*_tests.py \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
-            ocpp_tests/test_sets/ocpp21/*.py \
-            eebus_tests/eebus_tests.py
+            ocpp_tests/test_sets/ocpp21/*.py
         ;;
 
     integration)
         cd "$SCRIPT_DIR"
         run_pytest_suite \
+            eebus_tests/eebus_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
-            management_api_tests/*_tests.py \
-            eebus_tests/eebus_tests.py
+            management_api_tests/*_tests.py
         ;;
 
     core)

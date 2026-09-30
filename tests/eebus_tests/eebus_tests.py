@@ -17,11 +17,11 @@ from grpc_server.control_service_server import ControlServiceServer
 from grpc_servicer.cs_lpc_control_servicer import CsLpcControlServicer
 from grpc_server.cs_lpc_control_server import CsLpcControlServer
 
-from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, everest_config_strategies, eebus_grpc_port, eebus_service_port
+from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, everest_config_strategies
 from fixtures.grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.import_helpers import insert_dir_to_sys_path
 from helpers.async_helpers import async_get, async_wait_for
-from conftest import EebusModuleConfigStrategy
+from eebus_test_utils import EebusModuleConfigStrategy
 
 from test_data.test_data import TestData
 from test_data.test_data_not_active_load_limit import TestDataNotActiveLoadLimit
