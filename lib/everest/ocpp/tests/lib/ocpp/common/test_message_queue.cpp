@@ -114,6 +114,7 @@ template <> ControlMessage<TestMessageType>::ControlMessage(const json& message,
     EVLOG_info << this->message;
     this->messageType = to_test_message_type(this->message[2]);
     this->message_attempts = 0;
+    this->stall_until_accepted = stall_until_accepted;
 }
 
 std::ostream& operator<<(std::ostream& os, const TestMessageType& message_type) {
@@ -248,6 +249,58 @@ protected:
         message_queue->stop();
     };
 };
+
+// \brief Test transmission priority decisions before and after registration is accepted
+TEST(MessageTransmissionPriorityTest, test_non_transactional_discarded_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, false),
+              MessageTransmissionPriority::Discard);
+}
+
+TEST(MessageTransmissionPriorityTest, test_sent_immediately_after_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, true, false, false),
+              MessageTransmissionPriority::SendImmediately);
+    EXPECT_EQ(get_message_transmission_priority(false, false, true, false, false, true),
+              MessageTransmissionPriority::SendImmediately);
+}
+
+TEST(MessageTransmissionPriorityTest, test_transactional_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, true, false),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
+TEST(MessageTransmissionPriorityTest, test_queue_all_messages_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, true),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
+TEST(MessageTransmissionPriorityTest, test_queue_until_accepted_queued_before_registration) {
+    EXPECT_EQ(get_message_transmission_priority(false, false, false, false, false, true),
+              MessageTransmissionPriority::SendAfterRegistrationStatusAccepted);
+}
+
+// \brief Test that a non-transactional message pushed with stall_until_accepted while the queue is paused (before the
+// first connection) is kept and sent once the queue is resumed and registration is accepted
+TEST_F(MessageQueueTest, test_stall_until_accepted_message_pushed_while_paused_is_sent_after_accepted) {
+    message_queue->stop();
+    message_queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    message_queue->start();
+
+    EXPECT_CALL(send_callback_mock, Call(json{2, "0", "non_transactional", json{{"data", "test_data"}}}))
+        .WillOnce(MarkAndReturn(true));
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.msg.data = "test_data";
+    call.uniqueId = "0";
+    message_queue->push_call(call, true);
+
+    message_queue->resume(std::chrono::seconds(0));
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    EXPECT_EQ(0, get_call_count());
+
+    message_queue->set_registration_status_accepted();
+    wait_for_calls(1);
+}
 
 // \brief Test sending a transactional message
 TEST_F(MessageQueueTest, test_transactional_message_is_sent) {
