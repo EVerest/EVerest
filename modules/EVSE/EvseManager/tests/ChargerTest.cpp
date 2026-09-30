@@ -783,7 +783,7 @@ struct ChargerDlinkErrorTest : public ChargerTest {
     std::unique_ptr<evse_board_supportIntf> bsp_if;
 
     void SetUp() override {
-        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false);
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
         ChargerTest::SetUp();
     }
 
@@ -922,7 +922,7 @@ namespace module {
 // ----------------------------------------------------------------------------
 // IECStateMachine stub
 IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
-                                 bool use_authorized_) :
+                                 bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_) :
     r_bsp(r_bsp_) {
 }
 void IECStateMachine::process_bsp_event(const types::board_support_common::BspEvent& bsp_event) {

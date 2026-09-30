@@ -96,8 +96,12 @@ vars:
     description: >-
       Current carrying capacity of the connected cable in ampere for AC charging
       with a socket. Publish whenever it changes.
-      This has no meaning for DC or AC charging with a fixed attached cable, it does not 
+      This has no meaning for DC or AC charging with a fixed attached cable, it does not
       need to be implemented and the returned value is not used in those cases.
+      Note: only when the EvseManager option keep_cable_locked (captive cable mode) is used,
+      this must also be published outside of charging sessions (i.e. in CP state A with no EV
+      attached) and once at startup with the current value, since plug presence then controls
+      the connector lock (a cable already in the socket at boot must be detected).
     type: object
     $ref: /board_support_common#/ProximityPilot
   request_stop_transaction:
