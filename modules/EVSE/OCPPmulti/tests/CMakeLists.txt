@@ -39,6 +39,7 @@ target_sources(${TEST_TARGET_NAME}
 
     # general
     charge_point_config_factory_v16_tests.cpp
+    error_mapping_loader_tests.cpp
     generic_ocpp_error_dispatch_tests.cpp
     generic_ocpp_tests.cpp
     generic_ocpp_v16_connector_tests.cpp
@@ -65,6 +66,8 @@ target_sources(${TEST_TARGET_NAME}
     ../v16_variable_access.cpp
     ../v2_chargepoint.cpp
     ../charge_point_config_factory_v16.cpp
+    ../error_mapping/error_mapping.cpp
+    ${ERROR_MAPPING_SCHEMA_GENERATED}
 )
 
 target_compile_definitions(${TEST_TARGET_NAME}
@@ -85,6 +88,13 @@ set_property(
         LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR="${LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR}"
 
 )
+file(RELATIVE_PATH ERROR_MAPPING_DIR ${CMAKE_CURRENT_BINARY_DIR} ${CMAKE_CURRENT_SOURCE_DIR}/../error_mapping)
+set_property(
+    SOURCE error_mapping_loader_tests.cpp
+    APPEND
+    PROPERTY COMPILE_DEFINITIONS
+        ERROR_MAPPING_DIR="${ERROR_MAPPING_DIR}"
+)
 
 target_link_libraries(${TEST_TARGET_NAME}
     PRIVATE
@@ -93,6 +103,7 @@ target_link_libraries(${TEST_TARGET_NAME}
     everest::ocpp_conversions
     everest::ocpp_evse_security
     everest::ocpp_module_common
+    nlohmann_json_schema_validator
     GTest::gmock
     GTest::gtest
 )

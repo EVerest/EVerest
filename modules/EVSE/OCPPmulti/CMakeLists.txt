@@ -26,6 +26,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
     charge_point_config_factory_v16.cpp
 
+    error_mapping/error_mapping.cpp
     generic_chargepoint.cpp
     generic_ocpp.cpp
     grid_support/grid_support_state.cpp
@@ -42,7 +43,21 @@ target_link_libraries(${MODULE_NAME}
     everest::ocpp_conversions
     everest::ocpp_evse_security
     everest::ocpp_module_common
+    nlohmann_json_schema_validator
 )
+
+# Embed the error mapping schema as a build-time C++ string, so validation needs no installed file.
+set(ERROR_MAPPING_SCHEMA_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/error_mapping/error_mapping.schema.json")
+file(READ "${ERROR_MAPPING_SCHEMA_SOURCE}" ERROR_MAPPING_SCHEMA_JSON)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${ERROR_MAPPING_SCHEMA_SOURCE}")
+set(ERROR_MAPPING_SCHEMA_GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated/error_mapping_schema.cpp")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/error_mapping/error_mapping_schema.cpp.in"
+    "${ERROR_MAPPING_SCHEMA_GENERATED}"
+    @ONLY
+)
+target_sources(${MODULE_NAME} PRIVATE "${ERROR_MAPPING_SCHEMA_GENERATED}")
+target_include_directories(${MODULE_NAME} PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
 
 install(
     FILES
