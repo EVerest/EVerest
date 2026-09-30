@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifndef TEMPERATURESENSORSIMULATOR_HPP
-#define TEMPERATURESENSORSIMULATOR_HPP
+#ifndef TEMPERATURE_SENSOR_SIMULATOR_HPP
+#define TEMPERATURE_SENSOR_SIMULATOR_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
 
+// headers for provided interface implementations
 #include <generated/interfaces/temperature_sensor/Implementation.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -44,6 +45,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
@@ -56,4 +58,4 @@ private:
 
 } // namespace module
 
-#endif // TEMPERATURESENSORSIMULATOR_HPP
+#endif // TEMPERATURE_SENSOR_SIMULATOR_HPP
