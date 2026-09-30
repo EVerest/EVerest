@@ -216,4 +216,11 @@ TEST_F(ChargePointV16ConfigurationTest, monitoredKeyChangeStillReachesVariableSe
     EXPECT_EQ(monitored_value, "false");
 }
 
+TEST_F(ChargePointV16ConfigurationTest, evConnectionTimeoutIsReadFromConnectionTimeOutKey) {
+    const auto result = set_variable("TxCtrlr", "EVConnectionTimeOut", "45");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(m_chargepoint.get_ev_connection_timeout(), 45);
+}
+
 } // namespace
