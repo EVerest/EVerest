@@ -4,6 +4,7 @@
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
 #include "Market.hpp"
+#include <exception>
 #include <fmt/core.h>
 #include <optional>
 
@@ -40,7 +41,11 @@ void EnergyManager::init() {
                                           it.limits_root_side.ac_max_current_A.value_or(nonumber).value,
                                           it.limits_root_side.total_power_W.value_or(nonumber).value,
                                           it.limits_root_side.ac_max_phase_count.value_or(noint).value);
-            r_energy_trunk->call_enforce_limits(it);
+            try {
+                r_energy_trunk->call_enforce_limits(it);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Failed to enforce limits for " << it.uuid << ": " << e.what();
+            }
         }
     };
 
