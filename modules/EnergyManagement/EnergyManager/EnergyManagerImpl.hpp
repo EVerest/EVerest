@@ -137,6 +137,9 @@ private:
     /// releases, and keeps a connector's cap as it is for the hold time after it changed.
     /// Called under energy_mutex.
     void apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers);
+    /// \brief Warns once while the limiting decides nothing (\p reason set) with a session
+    /// running, and reports its end.
+    void report_phase_imbalance_suspension(const std::optional<std::string>& reason, bool any_in_session);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -173,6 +176,7 @@ private:
     ImbalanceResult m_phase_imbalance;
     // Per phase: whether an uncorrectable overshoot has been reported for this stretch.
     std::array<HoldLatch, 3> m_phase_residual_reported;
+    HoldLatch m_phase_imbalance_suspended;
 };
 
 } // namespace module

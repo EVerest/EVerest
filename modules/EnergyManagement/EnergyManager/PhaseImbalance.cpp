@@ -64,7 +64,7 @@ constexpr float UNBOUNDED_A = std::numeric_limits<float>::infinity();
 // Cap changes smaller than this are not worth a new limit.
 constexpr float CAP_RESOLUTION_A = 0.05f;
 
-// Support only ever falls between rounds, so this is a guard, not a tuning value.
+// Rounds for the support to settle; past them the budgets count on no support at all.
 constexpr int MAX_SUPPORT_ROUNDS = 16;
 
 // One ordered pair of phases (p, q): the connectors that can load p but not q may add at
@@ -401,8 +401,7 @@ ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::
     for (std::size_t i = 0; i < n; i++) {
         support[i] = participants[i]->measured_A;
     }
-    auto grant = decide(support);
-    for (int round = 0; round < MAX_SUPPORT_ROUNDS; round++) {
+    const auto lower_support = [&](const std::vector<float>& grant) {
         bool lowered = false;
         for (std::size_t i = 0; i < n; i++) {
             const float held_up = std::min(participants[i]->measured_A, grant[i]);
@@ -411,7 +410,13 @@ ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::
                 lowered = true;
             }
         }
-        if (not lowered) {
+        return lowered;
+    };
+    auto grant = decide(support);
+    for (int round = 0; lower_support(grant); round++) {
+        if (round == MAX_SUPPORT_ROUNDS) {
+            grant = decide(std::vector<float>(n, 0.f));
+            result.support_settled = false;
             break;
         }
         grant = decide(support);

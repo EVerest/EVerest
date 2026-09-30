@@ -7,6 +7,7 @@
 #include <chrono>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <set>
 
 #include "Broker.hpp"
@@ -297,6 +298,30 @@ float min_current_A(const Market& connector) {
     return min_current.has_value() ? min_current.value().value : 0.f;
 }
 
+// What the connector may draw on any one phase while its measurement is unknown: the cap in
+// force, else the offer's maximum.
+float may_draw_A(const Market& connector, const BrokerContext& ctx) {
+    std::optional<float> cap_A;
+    if (ctx.redistribution_cap_A.has_value()) {
+        cap_A = to_scalar_cap(ctx.redistribution_cap_A.value());
+    }
+    if (not cap_A.has_value()) {
+        const auto& offer = connector.get_import_max_available();
+        const auto slot = active_slot_index(offer);
+        if (slot.has_value()) {
+            const auto& max_current = offer[slot.value()].limits_to_root.ac_max_current_A;
+            if (max_current.has_value()) {
+                cap_A = max_current.value().value;
+            }
+        }
+    }
+    float may_draw = cap_A.value_or(std::numeric_limits<float>::infinity());
+    if (ctx.phase_imbalance_cap_A.has_value()) {
+        may_draw = std::min(may_draw, ctx.phase_imbalance_cap_A.value());
+    }
+    return std::max(0.f, may_draw);
+}
+
 std::string format_phase_report(Phase phase, const PhaseReport& report) {
     return fmt::format("{} +{:.1f} A (overshoot {:.1f}, corrected {:.1f}, residual {:.1f})", to_string(phase),
                        report.imbalance_A, report.overshoot_A, report.corrected_A, report.residual_A);
@@ -311,10 +336,15 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     const auto aggregation_window = std::chrono::seconds(config.power_meter_aggregation_window_s);
     const auto now = globals.start_time;
 
-    // A connector whose cap changed within the hold is settling: its measurement may not
-    // reflect the cap yet, so its cap is not raised again until it does.
+    const bool any_in_session = std::any_of(brokers.begin(), brokers.end(), [](const auto& broker) {
+        return in_session(broker->get_local_market().energy_flow_request);
+    });
+
     // A stale meter's load is missing from a leaf sum, so its phases cannot be judged.
     if (m_site_meter_source == SiteMeterSource::LeafSum and m_site_aggregate.stale_meters > 0) {
+        report_phase_imbalance_suspension(
+            fmt::format("{} of the EVSE meters summed for the site are stale", m_site_aggregate.stale_meters),
+            any_in_session);
         m_phase_imbalance = {};
         return;
     }
@@ -334,13 +364,7 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
         }
         const auto& measurement = ctx.last_observed_measurement;
         if (not is_fresh(measurement.measured_at, now, aggregation_window)) {
-            // Without a measurement the redistribution cap holds it at its minimum plus the
-            // margin, and a phase imbalance cap may hold it lower still.
-            float may_draw_A = min_current_A(connector_market) + static_cast<float>(config.redistribution_margin_A);
-            if (ctx.phase_imbalance_cap_A.has_value()) {
-                may_draw_A = std::min(may_draw_A, ctx.phase_imbalance_cap_A.value());
-            }
-            unmeasured_A += std::max(0.f, may_draw_A);
+            unmeasured_A += may_draw_A(connector_market, ctx);
             continue;
         }
 
@@ -350,6 +374,7 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
         connector.measured_A = measured_current_on(measurement, connector.draws_on, nominal_ac_voltage);
         connector.min_A = min_current_A(connector_market);
         connector.cap_A = ctx.phase_imbalance_cap_A;
+        // Its measurement may not reflect a cap changed within the hold yet.
         connector.settling =
             ctx.phase_imbalance_cap_since.has_value() and now - ctx.phase_imbalance_cap_since.value() < hold_time;
         connector.arrived_at = ctx.phase_imbalance_arrived_at.value();
@@ -360,6 +385,14 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     const PhaseCurrents site_A{m_site_aggregate.current_A.L1, m_site_aggregate.current_A.L2,
                                m_site_aggregate.current_A.L3};
     const auto result = correct_phase_imbalance(site_A, connectors, max_imbalance_A, unmeasured_A);
+    if (not result.reference.has_value()) {
+        report_phase_imbalance_suspension("fewer than two phases of the site are measured", any_in_session);
+    } else {
+        report_phase_imbalance_suspension(std::nullopt, any_in_session);
+    }
+    if (not result.support_settled) {
+        EVLOG_debug << "Phase imbalance: support did not settle, capping without support from the other phases";
+    }
 
     for (const auto& cap : result.caps) {
         auto& ctx = contexts.at(cap.uuid);
@@ -404,6 +437,18 @@ void EnergyManagerImpl::apply_phase_imbalance_correction(const std::vector<std::
     }
 
     m_phase_imbalance = result;
+}
+
+void EnergyManagerImpl::report_phase_imbalance_suspension(const std::optional<std::string>& reason,
+                                                          bool any_in_session) {
+    const auto edge = m_phase_imbalance_suspended.update(reason.has_value() and any_in_session, globals.start_time,
+                                                         std::chrono::seconds(0));
+    if (edge == HoldLatch::Edge::Held) {
+        EVLOG_warning << "Phase imbalance limiting suspended, " << reason.value()
+                      << ": the phase imbalance limits and pauses in force are kept";
+    } else if (edge == HoldLatch::Edge::Released) {
+        EVLOG_info << "Phase imbalance limiting resumed";
+    }
 }
 
 int EnergyManagerImpl::grant_site_headroom(const SiteInference& site) {

@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <array>
 
 #include <gtest/gtest.h>
 
@@ -362,6 +363,47 @@ TEST(PhaseImbalance, UnknownPhaseTakesPartInNoBudget) {
     EXPECT_FLOAT_EQ(result.L3.overshoot_A, 0.0f);
 }
 
+TEST(PhaseImbalance, UnsettledSupportFallsBackToNoSupport) {
+    // Found by the property test: the support of the connectors on L2 keeps falling.
+    std::vector<ImbalanceConnector> connectors{
+        make_connector("cp0", {}, 0.0f, 6.0f, 30.509834f),
+        make_connector("cp1", {Phase::L1, Phase::L3}, 30.3066f),
+        make_connector("cp2", {Phase::L2}, 8.78054f, 6.0f, 26.218008f),
+        make_connector("cp3", {}, 0.0f, 6.0f, 16.235371f),
+        make_connector("cp4", {Phase::L2}, 27.0257f),
+    };
+    for (std::size_t i = 0; i < connectors.size(); i++) {
+        connectors[i].arrived_at = date::utc_clock::time_point{} + std::chrono::seconds(i);
+    }
+    const std::array<float, 3> uncontrolled{1.45879f, 3.49156f, 2.02802f};
+    const PhaseCurrents site{uncontrolled[0] + 30.3066f, uncontrolled[1] + 8.78054f + 27.0257f,
+                             uncontrolled[2] + 30.3066f};
+
+    const auto result = correct_phase_imbalance(site, connectors, LIMIT_A);
+
+    ASSERT_FALSE(result.support_settled);
+    // Every connector at its cap keeps each pair within the limit without any support.
+    const auto cap = [&](const ImbalanceConnector& c) {
+        return cap_of(result, c.uuid).value_or(c.cap_A.value_or(0.f));
+    };
+    for (const auto p : {Phase::L1, Phase::L2, Phase::L3}) {
+        for (const auto q : {Phase::L1, Phase::L2, Phase::L3}) {
+            if (p == q) {
+                continue;
+            }
+            float difference = uncontrolled[static_cast<int>(p)] - uncontrolled[static_cast<int>(q)];
+            for (const auto& c : connectors) {
+                const bool loads_p = c.draws_on.empty() or c.draws_on.count(p) > 0;
+                const bool loads_q = not c.draws_on.empty() and c.draws_on.count(q) > 0;
+                if (loads_p and not loads_q) {
+                    difference += cap(c);
+                }
+            }
+            EXPECT_LE(difference, LIMIT_A + 0.5f) << to_string(p) << " over " << to_string(q);
+        }
+    }
+}
+
 TEST(PhaseImbalance, FewerThanTwoKnownPhasesMeansNothingIsDecided) {
     const PhaseCurrents site{std::nullopt, 90.0f, std::nullopt};
     const std::vector<ImbalanceConnector> connectors{make_connector("cp02", {Phase::L2}, 16.0f)};
@@ -556,8 +598,9 @@ TEST(PhaseImbalanceLoop, NoSiteMeasurementMeansNoCorrection) {
 TEST(PhaseImbalanceLoop, AConnectorWithoutAMeasurementIsBookedOnEveryPhase) {
     EnergyManagerImpl impl(make_imbalance_config(), [](const auto&) {});
 
-    // cp05's reading is an hour old. It may still draw its 6 A minimum plus the 2 A margin on
-    // whichever phase it is, so cp02 has 8 A less on L2 than the 11 A it would get alone.
+    // cp05's reading is an hour old. Its cap follows it down to its 6 A minimum plus the 2 A
+    // margin at once, which it may draw on whichever phase it is: cp02 has 8 A less on L2 than
+    // the 11 A it would get alone.
     auto tree = make_example_tree(90.0f, 16.0f, at_plus(0));
     test::set_measurement_current(tree.children[1], std::nullopt, 16.0f, std::nullopt, at_plus(-3600));
     impl.run_optimizer(tree, AT);
@@ -585,6 +628,51 @@ TEST(PhaseImbalanceLoop, AStaleMeterInALeafSumDecidesNothing) {
     EXPECT_TRUE(impl.get_phase_imbalance().caps.empty());
     EXPECT_FALSE(impl.get_phase_imbalance().reference.has_value());
     EXPECT_FLOAT_EQ(enforced_current(results, "cp02"), 16.0f);
+}
+
+TEST(PhaseImbalanceLoop, AConnectorWithoutAMeasurementIsBookedAtTheCapInForce) {
+    auto config = make_imbalance_config();
+    config.redistribution_reduction_hold_s = 60;
+    EnergyManagerImpl impl(config, [](const auto&) {});
+
+    // cp05 keeps its 16 A start value until the hold has passed. The 8 A of its minimum plus the
+    // margin would leave cp02 17 A; the 16 A in force leave it 9 A.
+    auto tree = make_example_tree(76.0f, 16.0f, at_plus(0));
+    test::set_measurement_current(tree.children[1], std::nullopt, 16.0f, std::nullopt, at_plus(-3600));
+    impl.run_optimizer(tree, AT);
+
+    const auto cap = cap_of(impl.get_phase_imbalance(), "cp02");
+    ASSERT_TRUE(cap.has_value());
+    EXPECT_NEAR(cap.value(), 9.0f, 0.1f);
+}
+
+TEST(PhaseImbalanceLoop, AnUncappedConnectorWithoutAMeasurementIsBookedAtItsMaximum) {
+    EnergyManagerImpl impl(make_imbalance_config(), [](const auto&) {});
+
+    // Outside Charging cp05 has no redistribution cap, so it may resume at its 16 A maximum.
+    auto tree = make_example_tree(76.0f, 16.0f, at_plus(0));
+    test::set_measurement_current(tree.children[1], std::nullopt, 16.0f, std::nullopt, at_plus(-3600));
+    tree.children[1].evse_state = types::energy::EvseState::PausedEV;
+    impl.run_optimizer(tree, AT);
+
+    const auto cap = cap_of(impl.get_phase_imbalance(), "cp02");
+    ASSERT_TRUE(cap.has_value());
+    EXPECT_NEAR(cap.value(), 9.0f, 0.1f);
+}
+
+TEST(PhaseImbalanceLoop, ASuspensionKeepsThePausesInForce) {
+    EnergyManagerImpl impl(make_imbalance_config(), [](const auto&) {});
+    const auto paused = impl.run_optimizer(make_example_tree(124.0f, 16.0f, at_plus(0)), AT);
+    ASSERT_FLOAT_EQ(enforced_current(paused, "cp02"), 0.0f);
+
+    // The grid meter stops reporting: nothing can be judged, and the pause stays.
+    auto tree = make_example_tree(124.0f, 0.0f, at_plus(10));
+    tree.energy_usage_root.reset();
+    const auto suspended = impl.run_optimizer(tree, AT + std::chrono::seconds(10));
+
+    EXPECT_FALSE(impl.get_phase_imbalance().reference.has_value());
+    EXPECT_FLOAT_EQ(enforced_current(suspended, "cp02"), 0.0f);
+    EXPECT_FLOAT_EQ(enforced_current(suspended, "cp05"), 0.0f);
 }
 
 } // namespace module
