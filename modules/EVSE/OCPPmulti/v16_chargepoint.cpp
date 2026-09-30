@@ -389,6 +389,10 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogReques
 }
 
 void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) {
+    // In ocpp::v16::ChargePoint a key-specific callback replaces the generic one; forward so other modules (e.g.
+    // EvseManager, Auth) still receive the change
+    cb_generic_configuration_key_changed(key_value);
+
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
     // fired key -> canonical CV
