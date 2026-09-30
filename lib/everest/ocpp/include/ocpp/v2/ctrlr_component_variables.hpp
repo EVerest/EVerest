@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 -  Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_V2_CTRLR_COMPONENT_VARIABLES
 #define OCPP_V2_CTRLR_COMPONENT_VARIABLES

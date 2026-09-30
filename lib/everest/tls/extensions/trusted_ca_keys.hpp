@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef EXTENSIONS_TRUSTED_CA_KEYS_
 #define EXTENSIONS_TRUSTED_CA_KEYS_

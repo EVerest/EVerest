@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <chrono>
 #include <everest/io/raw/raw_socket.hpp>
 #include <everest/io/socket/socket.hpp>

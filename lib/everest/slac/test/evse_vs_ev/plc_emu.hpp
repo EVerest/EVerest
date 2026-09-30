@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef TESTS_EVSE_VS_EV_PLC_EMU_HPP
 #define TESTS_EVSE_VS_EV_PLC_EMU_HPP
 

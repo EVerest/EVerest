@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright 2026 Pionix GmbH and Contributors to EVerest
+ * Copyright Pionix GmbH and Contributors to EVerest
  *
  * cbv2g_json_wrapper.h - JSON-based API wrapper for libcbv2g
  *

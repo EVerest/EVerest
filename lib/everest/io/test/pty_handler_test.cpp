@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // pty_handler as fd_event_client policy: a false from tx()/rx() that means retry must leave
 // get_error() at zero.
