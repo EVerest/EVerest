@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 // FIXME (aw): we only need the payload types from sdp.hpp, this could be shared in a separate header file
 #include <iso15118/io/sdp.hpp>
@@ -29,6 +30,12 @@ public:
     [[nodiscard]] Type get_type() const;
     [[nodiscard]] const std::string& get_error() const;
 
+    // Empty for a variant built directly from a C++ message. The PnC signature verification re-decodes
+    // the request from it to rebuild the signed EXI fragment; the certificate relay forwards it verbatim.
+    [[nodiscard]] const std::vector<uint8_t>& get_exi_payload() const {
+        return exi_payload;
+    }
+
     template <typename T> const T& get() const {
         static_assert(TypeTrait<T>::type != Type::None, "Unhandled type!");
         if (TypeTrait<T>::type != type) {
@@ -51,5 +58,6 @@ private:
     std::unique_ptr<void, CustomDeleter> data;
     Type type{Type::None};
     std::string error;
+    std::vector<uint8_t> exi_payload;
 };
 } // namespace iso15118::message_20
