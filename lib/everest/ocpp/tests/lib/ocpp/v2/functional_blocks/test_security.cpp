@@ -1280,6 +1280,30 @@ TEST_F(SecurityTest, secc_leaf_expiry_check_requests_the_second_leaf_once_at_mos
                                                   ocpp::v2::CertificateSigningUseEnum::V2G20Certificate));
 }
 
+TEST_F(SecurityTest, secc_leaf_expiry_check_queues_the_second_leaf_before_the_first_is_answered) {
+    // the CSMS may reject the first request before the expiry check has returned from sending it
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_bool_variable(this->device_model, ControllerComponentVariables::V2GCertificateInstallationEnabled, true);
+    set_secc_csr_inputs();
+    EXPECT_CALL(this->evse_security, get_leaf_expiry_days_count(_)).WillRepeatedly(Return(0));
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillRepeatedly(Return(sign_request_result));
+    std::vector<ocpp::v2::CertificateSigningUseEnum> requested;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillRepeatedly(Invoke([&](const json& call, bool) {
+        requested.push_back(call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>().certificateType.value());
+        if (requested.size() == 1) {
+            security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Rejected));
+        }
+    }));
+
+    security.check_secc_certificates_expiration();
+    EXPECT_THAT(requested, ::testing::ElementsAre(ocpp::v2::CertificateSigningUseEnum::V2GCertificate,
+                                                  ocpp::v2::CertificateSigningUseEnum::V2G20Certificate));
+}
+
 TEST_F(SecurityTest, secc_leaf_expiry_check_skips_the_queued_leaf_when_it_is_not_due) {
     // the queued leaf's expiry is only evaluated once the slot is free, e.g. after it was renewed in between
     this->ocpp_version = ocpp::OcppProtocolVersion::v21;

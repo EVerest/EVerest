@@ -85,6 +85,11 @@ private:
     std::variant<CsrInputs, StatusInfo>
     get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const;
 
+    /// \brief Sends a SignCertificate.req for \p certificate_signing_use (see \ref sign_certificate_req)
+    /// \return false when nothing was sent: another request is outstanding, or the CSR could not be built
+    bool send_sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
+                                   const bool initiated_by_trigger_message = false);
+
     /// \brief Forgets the last SignCertificate.req, once the CSMS has answered or rejected it.
     void reset_certificate_signing_state();
 
@@ -141,8 +146,8 @@ private:
 
     /// \brief Request a new SECC leaf (V2GCertificate or V2G20Certificate) when it is missing or expires within 30
     /// days
-    /// \return true when a SignCertificate.req for it is outstanding afterwards; false when it is not due or the
-    /// request could not be sent
+    /// \return true when a SignCertificate.req for it was sent; false when it is not due or the request could not be
+    /// sent
     bool renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use);
 
     /// \brief Which SECC leaf goes first when both are due, alternated per check: only one SignCertificate.req can

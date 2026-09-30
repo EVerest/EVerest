@@ -237,16 +237,21 @@ Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& ce
 
 void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                                     const bool initiated_by_trigger_message) {
+    this->send_sign_certificate_req(certificate_signing_use, initiated_by_trigger_message);
+}
+
+bool Security::send_sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
+                                         const bool initiated_by_trigger_message) {
     if (this->awaiting_certificate_signed) {
         EVLOG_warning
             << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
-        return;
+        return false;
     }
 
     const auto csr_inputs_or_rejection = this->get_csr_inputs(certificate_signing_use);
     const auto* csr_inputs = std::get_if<CsrInputs>(&csr_inputs_or_rejection);
     if (csr_inputs == nullptr) {
-        return;
+        return false;
     }
 
     SignCertificateRequest req;
@@ -286,7 +291,7 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
                                 ocpp::conversions::generate_certificate_signing_request_status_to_string(result.status);
         this->security_event_notification_req(ocpp::security_events::CSRGENERATIONFAILED,
                                               std::optional<CiString<255>>(gen_error), true, true);
-        return;
+        return false;
     }
 
     req.csr = result.csr.value();
@@ -307,6 +312,7 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
 
     const ocpp::Call<SignCertificateRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
+    return true;
 }
 
 void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call) {
@@ -456,8 +462,7 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
                 const auto certificate_signing_use = this->requested_certificate_signing_use.value();
                 this->csr_attempt++;
                 this->awaiting_certificate_signed = false;
-                this->sign_certificate_req(certificate_signing_use);
-                if (!this->awaiting_certificate_signed) {
+                if (!this->send_sign_certificate_req(certificate_signing_use)) {
                     // not sent: the previous request stays the one a CertificateSigned.req answers
                     this->csr_attempt = 1;
                 }
@@ -702,9 +707,7 @@ bool Security::renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEn
     }
     EVLOG_info << name << " is invalid in " << expiry_days_count
                << " days. Requesting new certificate with certificate signing request";
-    this->sign_certificate_req(certificate_signing_use);
-    // nothing is sent while another request is outstanding or the CSR cannot be built
-    return this->awaiting_certificate_signed and this->requested_certificate_signing_use == certificate_signing_use;
+    return this->send_sign_certificate_req(certificate_signing_use);
 }
 
 void Security::check_secc_certificates_expiration() {
@@ -733,11 +736,12 @@ void Security::check_secc_certificates_expiration() {
     const auto second = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2GCertificate
                                                      : ocpp::CertificateSigningUseEnum::V2G20Certificate;
     this->check_v2g20_leaf_first = !this->check_v2g20_leaf_first;
-    this->queued_secc_renewal.reset();
+    // queued before the first request is sent, as the CSMS may answer it before this returns
+    this->queued_secc_renewal = second;
     if (this->renew_secc_certificate_if_due(first)) {
-        this->queued_secc_renewal = second;
         return;
     }
+    this->queued_secc_renewal.reset();
     this->renew_secc_certificate_if_due(second);
 }
 
