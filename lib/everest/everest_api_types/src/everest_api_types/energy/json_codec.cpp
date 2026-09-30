@@ -63,6 +63,34 @@ void from_json(const json& j, PhaseCurrentsWithSource& k) {
     }
 }
 
+void to_json(json& j, PhasePowersWithSource const& k) noexcept {
+    j = json{
+        {"source", k.source},
+    };
+    if (k.L1) {
+        j["L1"] = k.L1.value();
+    }
+    if (k.L2) {
+        j["L2"] = k.L2.value();
+    }
+    if (k.L3) {
+        j["L3"] = k.L3.value();
+    }
+}
+
+void from_json(const json& j, PhasePowersWithSource& k) {
+    k.source = j.at("source");
+    if (j.contains("L1")) {
+        k.L1.emplace(j.at("L1"));
+    }
+    if (j.contains("L2")) {
+        k.L2.emplace(j.at("L2"));
+    }
+    if (j.contains("L3")) {
+        k.L3.emplace(j.at("L3"));
+    }
+}
+
 void to_json(json& j, FrequencyWattPoint const& k) noexcept {
     j = json{
         {"frequency_Hz", k.frequency_Hz},
@@ -140,6 +168,9 @@ void to_json(json& j, LimitsReq const& k) noexcept {
     if (k.ac_max_current_per_phase_A) {
         j["ac_max_current_per_phase_A"] = k.ac_max_current_per_phase_A.value();
     }
+    if (k.ac_max_power_per_phase_W) {
+        j["ac_max_power_per_phase_W"] = k.ac_max_power_per_phase_W.value();
+    }
     if (k.ac_min_current_A) {
         j["ac_min_current_A"] = k.ac_min_current_A.value();
     }
@@ -166,6 +197,9 @@ void from_json(const json& j, LimitsReq& k) {
     }
     if (j.contains("ac_max_current_per_phase_A")) {
         k.ac_max_current_per_phase_A.emplace(j.at("ac_max_current_per_phase_A"));
+    }
+    if (j.contains("ac_max_power_per_phase_W")) {
+        k.ac_max_power_per_phase_W.emplace(j.at("ac_max_power_per_phase_W"));
     }
     if (j.contains("ac_min_current_A")) {
         k.ac_min_current_A.emplace(j.at("ac_min_current_A"));

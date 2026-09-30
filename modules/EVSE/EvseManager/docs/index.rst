@@ -326,7 +326,8 @@ The power meter readings passed to the energy tree carry grid phases.
 onto grid L1/L2/L3 (``RST`` no rotation, ``STR``, ``TRS``). The EnergyManager reads the
 phases a vehicle draws on from the car side meter, so on a charger connected to the grid
 with rotated phases ``phase_rotation_car_side`` must be set to that rotation for per phase
-limits and phase imbalance limiting to act on the right grid phase.
+limits and phase imbalance limiting to act on the right grid phase. With both meters
+connected, a warning is logged once when they keep reporting current on different phases.
 
 Energy Management: 1ph/3ph switching
 ====================================

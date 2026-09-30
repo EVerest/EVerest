@@ -47,6 +47,27 @@ types:
       source:
         description: Source of the values
         type: string
+  PhasePowersWithSource:
+    description: >-
+      Power per AC phase in Watt with source information. A phase that is omitted is not
+      limited by this object.
+    type: object
+    additionalProperties: false
+    required:
+      - source
+    properties:
+      L1:
+        description: Power on phase L1 in Watt
+        type: number
+      L2:
+        description: Power on phase L2 in Watt
+        type: number
+      L3:
+        description: Power on phase L3 in Watt
+        type: number
+      source:
+        description: Source of the values
+        type: string
   NodeType:
     description: Enum Type for different Nodes on the energy tree
     type: string
@@ -91,6 +112,14 @@ types:
           consumer that limits all phases must read this too. AC only. Positive numbers.
         type: object
         $ref: /energy#/PhaseCurrentsWithSource
+      ac_max_power_per_phase_W:
+        description: >-
+          Max power limit in Watt for individual phases, such as an OCPP 2.1 limit given per
+          phase in Watt. The EnergyManager converts it with its nominal voltage and applies it
+          like ac_max_current_per_phase_A. total_power_W still limits the sum. AC only.
+          Positive numbers.
+        type: object
+        $ref: /energy#/PhasePowersWithSource
       ac_min_current_A:
         description: >-
           Min AC current limit per phase in Ampere. Values below that value indicate the

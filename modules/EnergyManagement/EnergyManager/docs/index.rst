@@ -27,7 +27,9 @@ within ``power_meter_aggregation_window_s`` of the optimizer's start time; older
 are excluded as stale rather than contributing a wrong value. The window applies in both
 directions: clock skew smaller than the window is tolerated, but a reading timestamped
 further in the future is excluded too and logged once per meter as a clock or time zone
-error, so a frozen meter with a skewed clock cannot stay "fresh". The grid connection's own
+error, so a frozen meter with a skewed clock cannot stay "fresh". A reading at least 15
+minutes older than the window is logged once per meter as well: the meter is frozen, or it
+reports a UTC offset, which the timestamp parser ignores. The grid connection's own
 meter is used wherever there is one; otherwise the EVSE meters are summed, and then only
 the EVSE nodes contribute, so no meter is ever counted together with meters it already
 measures. Power and per phase current are aggregated together.
@@ -164,7 +166,9 @@ A node limit can also differ per phase: ``ac_max_current_per_phase_A`` in a sche
 sets L1, L2 and L3 individually, as an OCPP 2.1 schedule with ``limit_L2`` and
 ``limit_L3`` does. On every phase the lower of it and ``ac_max_current_A`` applies, a phase
 it omits is limited by ``ac_max_current_A`` only, and root and leaves side limits merge per
-phase like the scalar ones. A connector is offered what is left on the tightest of its
+phase like the scalar ones. ``ac_max_power_per_phase_W``, a per phase limit in watt, is
+converted with ``nominal_ac_voltage`` and applies like ``ac_max_current_per_phase_A``;
+``total_power_W`` still limits the sum. A connector is offered what is left on the tightest of its
 phases, so a single phase EV on L1 is not held back by a lower limit on L2. Under
 ``FastCharging`` every connector counts on all three phases and is held to the tightest
 one. The site's grid limit in the power redistribution inference adds up the three phase
@@ -333,8 +337,10 @@ connector draws the current, rather than reacting once a meter shows the oversho
    on is read from its own per phase measurement (current above 1 A), never guessed from a
    total. A connector that draws nothing yet, a newly plugged in EV, may start on any single
    phase, so it counts on every phase. A connector whose meter has no fresh reading keeps
-   its limit; what it may draw, its minimum current plus ``redistribution_margin_A`` or its
-   imbalance limit if lower, is kept free in every budget, as its phase is unknown.
+   its limit; what it may draw is kept free in every budget, as its phase is unknown. That is
+   the limit in force: its measurement based cap, which may still be above its minimum plus
+   ``redistribution_margin_A`` during the reduction hold, or its maximum where it has none
+   (outside Charging), and its imbalance limit if lower.
 
 3. **Share each budget equally.** Every connector gets the same share. One drawing clearly
    below its limit (1 A or more) counts as wanting a little more than it draws and leaves
@@ -370,14 +376,15 @@ stay within ``max_phase_imbalance_A``. An EV that draws less or stops cannot be 
 from doing so, and the next run shares the difference anew. A difference in the load the
 manager does not control, such as a building behind the grid meter, cannot be limited
 either: what of it exceeds the limit is logged once as a *residual*. When the site
-measurement is the sum of the EVSE meters and one of them is stale, the per phase load is
-unknown and nothing is decided that run. The limiting requires
+measurement is the sum of the EVSE meters and one of them is stale, or fewer than two phases
+of the site are measured, the limiting is **suspended**: nothing is decided, the limits and
+pauses in force are kept, since the load they guard against cannot be ruled out, and a
+warning is logged once until it resumes. The limiting requires
 ``broker_strategy`` ``PowerRedistribution``: it is the strategy that observes the per phase
 measurements and applies the limit as one more upper bound on the connector's current,
 next to the measurement based cap. With ``FastCharging`` the option has no effect. As
 everywhere in this module an unknown phase is absent, not zero: a phase the site meter does
-not report takes part in no budget, and with fewer than two known phases nothing is
-limited.
+not report takes part in no budget.
 
 .. list-table::
    :header-rows: 1

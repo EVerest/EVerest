@@ -14,17 +14,12 @@
 namespace module {
 
 // ---------------------------------------------------------------- power redistribution inference
-//
-// Pure functions over one optimizer run that infer, from allocation, measurement and grid
-// headroom, where power could be reduced or increased. Only the increase side acts: each
-// connector's share of SiteInference::increase_W_by_connector is applied by its broker on
-// the next run. Reductions already happen through the measurement based cap.
+// Pure functions over one optimizer run. Only the increase side acts: each connector's share of
+// SiteInference::increase_W_by_connector is applied by its broker on the next run.
 
 /// \brief Import limit of the grid connection [W] at the slot in force: the lower of
-/// total_power_W and ac_max_current_A x declared phase count x nominal voltage.
-///
-/// Read from the root Market's offer, which is already resampled, the minimum of both sides
-/// and corrected for efficiency, not from the raw request.
+/// total_power_W and ac_max_current_A x declared phase count x nominal voltage, read from the
+/// root Market's resampled, efficiency corrected offer.
 /// \returns std::nullopt when the root has no import schedule at all
 std::optional<float> get_grid_limit_W(const Market& root, float nominal_ac_voltage);
 
@@ -77,13 +72,9 @@ struct ConnectorInference {
     bool held{false};
 };
 
-/// \brief Compares what a connector was allotted with what it draws.
-///
-/// A gap of more than \p margin times the allocation is under-consumption. The deadband is
-/// floored at \p broker_margin_W, the margin the cap itself added, since a gap that size is
-/// the cap's doing, not the EV's. A smaller gap is Saturated, or AtMaximum at the static
-/// limit (within 1 W). Without an allocation or a measurement, or with a negative (export)
-/// measurement, the class is Unknown.
+/// \brief Compares allotted with drawn power. A gap above \p margin x allocation, floored at the
+/// cap's own \p broker_margin_W, is under-consumption; a smaller gap is Saturated, or AtMaximum
+/// at the static limit (within 1 W). Unknown without both values or with an export measurement.
 ConnectorInference classify_connector(std::optional<float> allocated_W, std::optional<float> measured_W,
                                       const StaticBoundsW& bounds, float margin, float broker_margin_W);
 
@@ -132,27 +123,15 @@ SiteInference infer_site(std::optional<float> grid_limit_W, const PowerMeterAggr
 
 // ---------------------------------------------------------------- measurement extraction
 
-/// \brief Reads the power meter measurement of one node of the energy tree.
-///
-/// All fields come from a single reading, so a value never carries another meter's
-/// timestamp. The reading that reports power wins, leaves side before root side; current
-/// decides only when neither reports power. Phases a meter does not report stay
-/// std::nullopt.
-///
-/// A reading without a parsable timestamp gets no measured_at: EnergyNode and EvseManager
-/// republish the last reading on every request, so only its own timestamp tells a frozen
-/// meter from a steady one. Parsed by parse_meter_timestamp(), like the aggregator.
-///
-/// \returns the observed measurement, all fields std::nullopt if the node carries none
+/// \brief Measurement of one node, from a single reading so no value carries another meter's
+/// timestamp. The reading with power wins, leaves side before root side, then current.
+/// measured_at stays empty without a parsable timestamp: the last reading is republished on
+/// every request, so only its own timestamp reveals a frozen meter.
+/// \returns all fields std::nullopt if the node carries none
 ObservedMeasurement read_measurement(const types::energy::EnergyFlowRequest& node);
 
-/// \brief Current the connector draws, per phase. Precedence: measured per-phase current,
-/// then per-phase power divided by \p nominal_ac_voltage, then total power spread over
-/// \p active_phases.
-///
-/// \param active_phases only used for the total-power fallback. Pass 1 when unknown: all
-/// power on one phase gives the highest per-phase current, so the least restrictive limit.
-///
+/// \brief Per-phase current: measured current, else per-phase power / \p nominal_ac_voltage,
+/// else total power over \p active_phases (pass 1 when unknown, the least restrictive).
 /// \returns all phases std::nullopt when no current can be derived
 PhaseCurrents measured_phase_currents(const ObservedMeasurement& measurement, float nominal_ac_voltage,
                                       int active_phases);
@@ -167,17 +146,10 @@ bool measurement_can_limit(const ObservedMeasurement& measurement, date::utc_clo
 /// the phase that draws most is not starved. std::nullopt when no phase is known.
 std::optional<float> to_scalar_cap(const PhaseCurrents& cap);
 
-/// \brief Broker of the PowerRedistribution strategy: trades like BrokerFastCharging, but
-/// caps a charging connector at its measured current plus a margin, freeing the unused
-/// allocation for the other connectors on the same fuse.
-///
-/// The cap only lowers what FastCharging would allocate, applies only to the slot covering
-/// now, and never goes below the connector's minimum current. Reductions wait out the
-/// configured hold; increases apply immediately. On top of measured plus margin the cap
-/// carries BrokerContext::distributed_power_W, this connector's share of the site headroom
-/// granted by the previous run's inference. Without a fresh measurement the connector is
-/// capped at its minimum current plus the margin. Nodes without an AC current limit (DC)
-/// trade like FastCharging.
+/// \brief Trades like BrokerFastCharging, but caps a charging connector at its measured current
+/// plus a margin plus BrokerContext::distributed_power_W, its share of the site headroom. The cap
+/// lowers only the slot covering now, never below the minimum current; reductions wait out the
+/// hold. Without a fresh measurement the cap is the minimum plus the margin. DC is not capped.
 class BrokerPowerRedistribution : public BrokerFastCharging {
 public:
     BrokerPowerRedistribution(Market& market, BrokerContext& context, EnergyManagerConfig config);

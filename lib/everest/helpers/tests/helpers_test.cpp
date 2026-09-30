@@ -124,3 +124,35 @@ TEST(HelpersTest, phase_rotation_handles_missing_optional_fields) {
     EXPECT_FALSE(rotated.voltage_V.has_value());
     EXPECT_FALSE(rotated.current_A.has_value());
 }
+
+namespace {
+
+types::powermeter::Powermeter with_current(float l1, float l2, float l3) {
+    types::powermeter::Powermeter pm;
+    pm.timestamp = "2024-01-01T00:00:00Z";
+    pm.energy_Wh_import = types::units::Energy{0.0f};
+    types::units::Current current;
+    current.L1 = l1;
+    current.L2 = l2;
+    current.L3 = l3;
+    pm.current_A = current;
+    return pm;
+}
+
+} // namespace
+
+TEST(HelpersTest, same_loaded_phases_compares_the_phases_above_the_noise_floor) {
+    EXPECT_EQ(same_loaded_phases(with_current(16.0f, 0.2f, 0.0f), with_current(15.5f, 0.0f, 0.4f), 1.0f), true);
+    EXPECT_EQ(same_loaded_phases(with_current(16.0f, 0.0f, 0.0f), with_current(0.0f, 16.0f, 0.0f), 1.0f), false);
+    EXPECT_EQ(same_loaded_phases(with_current(16.0f, 0.0f, 0.0f),
+                                 apply_phase_rotation(with_current(16.0f, 0.0f, 0.0f), PhaseRotation::STR), 1.0f),
+              false);
+}
+
+TEST(HelpersTest, same_loaded_phases_cannot_tell_idle_or_three_phase_loads) {
+    EXPECT_FALSE(same_loaded_phases(with_current(0.0f, 0.0f, 0.0f), with_current(0.0f, 16.0f, 0.0f), 1.0f));
+    EXPECT_FALSE(same_loaded_phases(with_current(16.0f, 16.0f, 16.0f), with_current(16.0f, 16.0f, 16.0f), 1.0f));
+    types::powermeter::Powermeter without_current = with_current(0.0f, 0.0f, 0.0f);
+    without_current.current_A.reset();
+    EXPECT_FALSE(same_loaded_phases(without_current, with_current(16.0f, 0.0f, 0.0f), 1.0f));
+}

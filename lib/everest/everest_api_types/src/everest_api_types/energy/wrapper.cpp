@@ -96,6 +96,24 @@ PhaseCurrentsWithSource_External to_external_api(PhaseCurrentsWithSource_Interna
     return result;
 }
 
+PhasePowersWithSource_Internal to_internal_api(PhasePowersWithSource_External const& val) {
+    PhasePowersWithSource_Internal result;
+    result.L1 = val.L1;
+    result.L2 = val.L2;
+    result.L3 = val.L3;
+    result.source = val.source;
+    return result;
+}
+
+PhasePowersWithSource_External to_external_api(PhasePowersWithSource_Internal const& val) {
+    PhasePowersWithSource_External result;
+    result.L1 = val.L1;
+    result.L2 = val.L2;
+    result.L3 = val.L3;
+    result.source = val.source;
+    return result;
+}
+
 FrequencyWattPoint_Internal to_internal_api(FrequencyWattPoint_External const& val) {
     FrequencyWattPoint_Internal result;
     result.frequency_Hz = val.frequency_Hz;
@@ -155,6 +173,7 @@ LimitsReq_Internal to_internal_api(LimitsReq_External const& val) {
     result.total_power_W = optToInternal(val.total_power_W);
     result.ac_max_current_A = optToInternal(val.ac_max_current_A);
     result.ac_max_current_per_phase_A = optToInternal(val.ac_max_current_per_phase_A);
+    result.ac_max_power_per_phase_W = optToInternal(val.ac_max_power_per_phase_W);
     result.ac_min_current_A = optToInternal(val.ac_min_current_A);
     result.ac_max_phase_count = optToInternal(val.ac_max_phase_count);
     result.ac_min_phase_count = optToInternal(val.ac_min_phase_count);
@@ -168,6 +187,7 @@ LimitsReq_External to_external_api(LimitsReq_Internal const& val) {
     result.total_power_W = optToExternal(val.total_power_W);
     result.ac_max_current_A = optToExternal(val.ac_max_current_A);
     result.ac_max_current_per_phase_A = optToExternal(val.ac_max_current_per_phase_A);
+    result.ac_max_power_per_phase_W = optToExternal(val.ac_max_power_per_phase_W);
     result.ac_min_current_A = optToExternal(val.ac_min_current_A);
     result.ac_max_phase_count = optToExternal(val.ac_max_phase_count);
     result.ac_min_phase_count = optToExternal(val.ac_min_phase_count);

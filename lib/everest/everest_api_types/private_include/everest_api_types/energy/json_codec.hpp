@@ -17,6 +17,8 @@ void to_json(json& j, IntegerWithSource const& k) noexcept;
 void from_json(const json& j, IntegerWithSource& k);
 void to_json(json& j, PhaseCurrentsWithSource const& k) noexcept;
 void from_json(const json& j, PhaseCurrentsWithSource& k);
+void to_json(json& j, PhasePowersWithSource const& k) noexcept;
+void from_json(const json& j, PhasePowersWithSource& k);
 
 void to_json(json& j, FrequencyWattPoint const& k) noexcept;
 void from_json(const json& j, FrequencyWattPoint& k);

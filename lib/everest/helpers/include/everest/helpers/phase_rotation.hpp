@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <optional>
+
 #include <generated/types/powermeter.hpp>
 
 namespace everest::helpers {
@@ -24,5 +26,12 @@ PhaseRotation phase_rotation_from_string(const std::string& phase_rotation);
 /// \returns the rotated powermeter reading
 types::powermeter::Powermeter apply_phase_rotation(types::powermeter::Powermeter powermeter,
                                                    PhaseRotation phase_rotation);
+
+/// \brief Whether \p a and \p b carry current above \p noise_floor_A on the same phases, for two meters in series
+/// such as an EVSE's grid and car side meter.
+/// \returns std::nullopt when it cannot be told: a meter reports no per-phase current, or either load is on no phase
+/// or on all three
+std::optional<bool> same_loaded_phases(const types::powermeter::Powermeter& a, const types::powermeter::Powermeter& b,
+                                       float noise_floor_A);
 
 } // namespace everest::helpers

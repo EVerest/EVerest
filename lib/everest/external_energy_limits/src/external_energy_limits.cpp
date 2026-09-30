@@ -40,27 +40,58 @@ get_evse_sink_by_evse_id(const std::vector<std::unique_ptr<external_energy_limit
     throw std::runtime_error("No mapping configured for evse_id: " + std::to_string(evse_id));
 }
 
+namespace {
+
+std::optional<float> min_with(float limit, const std::optional<float>& phase_limit) {
+    if (not phase_limit.has_value()) {
+        return std::nullopt;
+    }
+    return std::min(limit, phase_limit.value());
+}
+
+} // namespace
+
 void set_current_limit(types::energy::LimitsReq& limits, float limit, const std::optional<float>& limit_L2,
                        const std::optional<float>& limit_L3, const std::string& source) {
-    if (not limit_L2.has_value() or not limit_L3.has_value()) {
+    if (not limit_L2.has_value() and not limit_L3.has_value()) {
         limits.ac_max_current_A = {limit, source};
         return;
     }
     types::energy::PhaseCurrentsWithSource per_phase;
-    per_phase.L1 = limit;
-    per_phase.L2 = limit_L2.value();
-    per_phase.L3 = limit_L3.value();
     per_phase.source = source;
-    limits.ac_max_current_A = {std::max({per_phase.L1.value(), per_phase.L2.value(), per_phase.L3.value()}), source};
+    if (limit_L2.has_value() and limit_L3.has_value()) {
+        per_phase.L1 = limit;
+        per_phase.L2 = limit_L2.value();
+        per_phase.L3 = limit_L3.value();
+        limits.ac_max_current_A = {std::max({limit, limit_L2.value(), limit_L3.value()}), source};
+    } else {
+        per_phase.L2 = min_with(limit, limit_L2);
+        per_phase.L3 = min_with(limit, limit_L3);
+        limits.ac_max_current_A = {limit, source};
+    }
     limits.ac_max_current_per_phase_A = per_phase;
 }
 
-float total_power_limit(float limit, const std::optional<float>& limit_L2, const std::optional<float>& limit_L3) {
-    if (not limit_L2.has_value() or not limit_L3.has_value()) {
-        return limit;
+void set_power_limit(types::energy::LimitsReq& limits, float limit, const std::optional<float>& limit_L2,
+                     const std::optional<float>& limit_L3, const std::string& source) {
+    if (not limit_L2.has_value() and not limit_L3.has_value()) {
+        limits.total_power_W = {limit, source};
+        return;
     }
-    // A total can only be spent symmetrically, so the tightest phase decides.
-    return 3.0f * std::min({limit, limit_L2.value(), limit_L3.value()});
+    types::energy::PhasePowersWithSource per_phase;
+    per_phase.source = source;
+    if (limit_L2.has_value() and limit_L3.has_value()) {
+        per_phase.L1 = limit;
+        per_phase.L2 = limit_L2.value();
+        per_phase.L3 = limit_L3.value();
+        limits.total_power_W = {3.0f * std::min({limit, limit_L2.value(), limit_L3.value()}), source};
+    } else {
+        per_phase.L2 = min_with(limit, limit_L2);
+        per_phase.L3 = min_with(limit, limit_L3);
+        const float lone = limit_L2.has_value() ? limit_L2.value() : limit_L3.value();
+        limits.total_power_W = {std::min(limit, 3.0f * lone), source};
+    }
+    limits.ac_max_power_per_phase_W = per_phase;
 }
 
 } // namespace external_energy_limits

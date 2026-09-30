@@ -71,6 +71,9 @@ struct ImbalanceResult {
     /// The least loaded phase, which the imbalance of the others is measured against.
     /// nullopt when fewer than two phases are known, in which case nothing else is set.
     std::optional<Phase> reference;
+    /// False when the support did not settle and the caps count on no support from the
+    /// connectors on the other phase, the tightest budgets.
+    bool support_settled{true};
 
     const PhaseReport& report(Phase phase) const;
 };
@@ -102,20 +105,11 @@ std::set<Phase> phases_drawn_on(const ObservedMeasurement& measurement, float no
 float measured_current_on(const ObservedMeasurement& measurement, const std::set<Phase>& phases,
                           float nominal_ac_voltage);
 
-/// \brief Computes the caps that keep every pair of phases within \p max_phase_imbalance_A
-/// even when every connector draws its full cap. See the module docs for the full rules.
-///
-/// For each ordered pair of known phases (p, q) the connectors that can load p but not q
-/// share max_phase_imbalance_A - PHASE_IMBALANCE_HYSTERESIS_A - (U_p - U_q) - \p unmeasured_A,
-/// plus what the connectors on q alone draw, at most their resulting caps. U is the load not
-/// controlled; a connector drawing nothing may start on any phase; one on all three is never
-/// capped. Shares are equal; a share below a connector's minimum pauses the newest such
-/// connector. A cap is 0 or at least the connector's minimum. Room is handed out only once
-/// it is free, and a settling cap is not raised.
-///
-/// \p unmeasured_A is what the connectors without a fresh measurement may draw together, kept
-/// free in every budget since its phase is unknown. With fewer than two known phases nothing
-/// is decided.
+/// \brief Caps that keep every pair of phases within \p max_phase_imbalance_A even when every
+/// connector draws its full cap; the module docs give the rules. Per ordered pair (p, q) the
+/// connectors loading p but not q share max - hysteresis - (U_p - U_q) - \p unmeasured_A plus
+/// what those on q alone draw, at most their caps. \p unmeasured_A is what the connectors
+/// without a fresh measurement may draw on any phase. Fewer than two known phases decide nothing.
 ImbalanceResult correct_phase_imbalance(const PhaseCurrents& site_A, const std::vector<ImbalanceConnector>& connectors,
                                         float max_phase_imbalance_A, float unmeasured_A = 0.f);
 

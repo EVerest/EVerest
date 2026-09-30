@@ -169,6 +169,25 @@ min_per_phase(const std::optional<types::energy::PhaseCurrentsWithSource>& a,
     return merged;
 }
 
+static std::optional<types::energy::PhaseCurrentsWithSource>
+to_phase_currents(const std::optional<types::energy::PhasePowersWithSource>& power, float watt_per_ampere) {
+    if (not power.has_value() or watt_per_ampere <= 0.f) {
+        return std::nullopt;
+    }
+    const auto to_A = [watt_per_ampere](const std::optional<float>& W) -> std::optional<float> {
+        if (not W.has_value()) {
+            return std::nullopt;
+        }
+        return W.value() / watt_per_ampere;
+    };
+    types::energy::PhaseCurrentsWithSource current;
+    current.L1 = to_A(power.value().L1);
+    current.L2 = to_A(power.value().L2);
+    current.L3 = to_A(power.value().L3);
+    current.source = power.value().source;
+    return current;
+}
+
 std::optional<types::energy::NumberWithSource> phase_limit_A(const types::energy::LimitsReq& limits, Phase phase) {
     std::optional<types::energy::NumberWithSource> on_phase;
     if (limits.ac_max_current_per_phase_A.has_value()) {
@@ -283,8 +302,14 @@ ScheduleReq Market::get_max_available_energy(const ScheduleReq& request) {
             a.limits_to_root.ac_max_current_A =
                 min_optional((*r).limits_to_leaves.ac_max_current_A, (*r).limits_to_root.ac_max_current_A);
 
-            a.limits_to_root.ac_max_current_per_phase_A = min_per_phase(
-                (*r).limits_to_leaves.ac_max_current_per_phase_A, (*r).limits_to_root.ac_max_current_per_phase_A);
+            const auto efficiency = static_cast<float>((*r).conversion_efficiency.value_or(1.));
+            const auto per_phase_power_A = min_per_phase(
+                to_phase_currents((*r).limits_to_leaves.ac_max_power_per_phase_W, _nominal_ac_voltage * efficiency),
+                to_phase_currents((*r).limits_to_root.ac_max_power_per_phase_W, _nominal_ac_voltage));
+            a.limits_to_root.ac_max_current_per_phase_A =
+                min_per_phase(min_per_phase((*r).limits_to_leaves.ac_max_current_per_phase_A,
+                                            (*r).limits_to_root.ac_max_current_per_phase_A),
+                              per_phase_power_A);
 
             a.limits_to_root.ac_min_phase_count =
                 max_optional((*r).limits_to_root.ac_min_phase_count, (*r).limits_to_leaves.ac_min_phase_count);

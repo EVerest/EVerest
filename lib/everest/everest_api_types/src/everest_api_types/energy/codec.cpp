@@ -22,6 +22,10 @@ std::string serialize(PhaseCurrentsWithSource const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(PhasePowersWithSource const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(FrequencyWattPoint const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -93,6 +97,11 @@ std::ostream& operator<<(std::ostream& os, IntegerWithSource const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, PhaseCurrentsWithSource const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, PhasePowersWithSource const& val) {
     os << serialize(val);
     return os;
 }
@@ -182,6 +191,10 @@ template <> IntegerWithSource deserialize(std::string_view val) {
 
 template <> PhaseCurrentsWithSource deserialize(std::string_view val) {
     return utilities::parse_json<PhaseCurrentsWithSource>(val);
+}
+
+template <> PhasePowersWithSource deserialize(std::string_view val) {
+    return utilities::parse_json<PhasePowersWithSource>(val);
 }
 
 template <> FrequencyWattPoint deserialize(std::string_view val) {

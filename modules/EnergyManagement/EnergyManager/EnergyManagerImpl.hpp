@@ -126,10 +126,8 @@ private:
                               const std::vector<types::energy::EnforcedLimits>& limits);
 
     /// \brief Writes each connector's share of the site headroom into its BrokerContext for
-    /// the brokers of the next run, clearing every other entry.
-    ///
-    /// The next run, because the inference needs this run's enforced limits; the one
-    /// interval of delay also keeps a grant from being counted twice.
+    /// the next run's brokers, clearing every other entry. The inference needs this run's
+    /// enforced limits, and the one interval of delay keeps a grant from being counted twice.
     /// \returns the number of connectors that were granted an increase
     int grant_site_headroom(const SiteInference& site);
 
@@ -139,6 +137,9 @@ private:
     /// releases, and keeps a connector's cap as it is for the hold time after it changed.
     /// Called under energy_mutex.
     void apply_phase_imbalance_correction(const std::vector<std::shared_ptr<Broker>>& brokers);
+    /// \brief Warns once while the limiting decides nothing (\p reason set) with a session
+    /// running, and reports its end.
+    void report_phase_imbalance_suspension(const std::optional<std::string>& reason, bool any_in_session);
 
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
@@ -166,6 +167,7 @@ private:
     // Meters already warned about, so each fault is logged once until the meter recovers.
     std::set<std::string> m_warned_unparsable_meters;
     std::set<std::string> m_warned_future_meters;
+    std::set<std::string> m_warned_far_past_meters;
 
     RedistributionInference m_redistribution_inference;
     // How long the site has continuously had headroom to hand out.
@@ -174,6 +176,7 @@ private:
     ImbalanceResult m_phase_imbalance;
     // Per phase: whether an uncorrectable overshoot has been reported for this stretch.
     std::array<HoldLatch, 3> m_phase_residual_reported;
+    HoldLatch m_phase_imbalance_suspended;
 };
 
 } // namespace module

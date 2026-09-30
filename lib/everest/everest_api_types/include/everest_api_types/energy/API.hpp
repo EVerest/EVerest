@@ -28,6 +28,13 @@ struct PhaseCurrentsWithSource {
     std::string source;
 };
 
+struct PhasePowersWithSource {
+    std::optional<float> L1;
+    std::optional<float> L2;
+    std::optional<float> L3;
+    std::string source;
+};
+
 struct FrequencyWattPoint {
     float frequency_Hz;
     float total_power_W;
@@ -51,6 +58,7 @@ struct LimitsReq {
     std::optional<NumberWithSource> total_power_W;
     std::optional<NumberWithSource> ac_max_current_A;
     std::optional<PhaseCurrentsWithSource> ac_max_current_per_phase_A;
+    std::optional<PhasePowersWithSource> ac_max_power_per_phase_W;
     std::optional<NumberWithSource> ac_min_current_A;
     std::optional<IntegerWithSource> ac_max_phase_count;
     std::optional<IntegerWithSource> ac_min_phase_count;

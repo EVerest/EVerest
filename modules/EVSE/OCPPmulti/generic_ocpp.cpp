@@ -2206,9 +2206,8 @@ GenericOcpp::create_limits_entry(const std::string& timestamp, const ocpp::v2::E
                 limits_req.ac_max_phase_count = {period.numberPhases.value(), source_ext_limit};
             }
         } else {
-            limits_req.total_power_W = {
-                external_energy_limits::total_power_limit(period.limit.value(), period.limit_L2, period.limit_L3),
-                source_ext_limit};
+            external_energy_limits::set_power_limit(limits_req, period.limit.value(), period.limit_L2, period.limit_L3,
+                                                    source_ext_limit);
         }
 
         entry.limits_to_leaves = limits_req;

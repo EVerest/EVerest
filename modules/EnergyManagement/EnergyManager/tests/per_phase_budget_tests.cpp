@@ -315,6 +315,39 @@ TEST(PerPhaseLimit, GridLimitAddsUpThePhases) {
     EXPECT_FLOAT_EQ(limit.value(), (32.0f + 20.0f + 10.0f) * U);
 }
 
+TEST(PerPhaseLimit, PowerPerPhaseIsConvertedWithTheNominalVoltage) {
+    auto tree = two_evse_tree(32.0f);
+    types::energy::PhasePowersWithSource power;
+    power.L2 = 10.0f * U;
+    power.source = "PER_PHASE_W";
+    tree.schedule_import[0].limits_to_leaves.ac_max_power_per_phase_W = power;
+    tree.schedule_import[0].limits_to_root.ac_max_current_per_phase_A = per_phase(std::nullopt, 12.0f, 20.0f);
+    MarketFixture f(tree);
+
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L1}), 32.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L2}), 10.0f);
+    EXPECT_FLOAT_EQ(available_A(f.root(), {Phase::L3}), 20.0f);
+}
+
+TEST(PerPhaseLimitLoop, ASinglePhaseEvIsHeldByItsPhasesWattLimit) {
+    EnergyManagerImpl impl(make_config(), [](const auto&) {});
+
+    // OCPP 2.1 in watt: L1 7000 W, L2 5000 W, L3 2300 W, and 6900 W in total. The EV on L3 may
+    // draw 10 A, not the 30 A the total would allow on one phase.
+    auto cp1 = test::make_evse_node("cp1", 32.0f, 6.0f);
+    test::set_measurement_current(cp1, 0.0f, 0.0f, 16.0f, at_plus(0));
+    auto tree = test::make_root_node("grid", 32.0f, 6900.0f, {cp1});
+    types::energy::PhasePowersWithSource power;
+    power.L1 = 7000.0f;
+    power.L2 = 5000.0f;
+    power.L3 = 2300.0f;
+    power.source = "OCPP";
+    tree.schedule_import[0].limits_to_leaves.ac_max_power_per_phase_W = power;
+    const auto results = impl.run_optimizer(tree, AT);
+
+    EXPECT_NEAR(enforced_current(results, "cp1"), 10.0f, 1e-3f);
+}
+
 TEST(PerPhaseLimitLoop, ASinglePhaseEvIsHeldByItsGridPhase) {
     EnergyManagerImpl impl(make_config(), [](const auto&) {});
 

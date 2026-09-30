@@ -149,7 +149,7 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimitsPerPhase) {
               R"({"source":"ocpp/OCPP_set_external_limits","L1":16.0,"L2":20.0,"L3":18.0})"_json);
 }
 
-TEST_F(GenericOcppProvidesTester, callSetExternalLimitsOnlyL2IsNotPerPhase) {
+TEST_F(GenericOcppProvidesTester, callSetExternalLimitsOnlyL2LowersL2) {
     using ocpp::DateTime;
     using ocpp::v2::ChargingRateUnitEnum;
     using ocpp::v2::EnhancedChargingSchedulePeriod;
@@ -165,11 +165,11 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimitsOnlyL2IsNotPerPhase) {
     schedule.scheduleStart = DateTime{"2026-06-05T13:37:36.409Z"};
     schedule.chargingRateUnit = ChargingRateUnitEnum::A;
 
-    // Without limit_L3, limit keeps its meaning for every phase.
+    // Without limit_L3, limit keeps its meaning for every phase and limit_L2 lowers L2.
     EnhancedChargingSchedulePeriod period;
     period.startPeriod = 0;
     period.limit = 16.;
-    period.limit_L2 = 20.;
+    period.limit_L2 = 10.;
     period.stackLevel = 8;
     schedule.chargingSchedulePeriod.push_back(period);
 
@@ -178,7 +178,7 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimitsOnlyL2IsNotPerPhase) {
     ASSERT_EQ(received.size(), 1);
     const auto& leaves = received[0]["value"]["schedule_import"][0]["limits_to_leaves"];
     EXPECT_EQ(leaves["ac_max_current_A"], R"({"source":"ocpp/OCPP_set_external_limits","value":16.0})"_json);
-    EXPECT_FALSE(leaves.contains("ac_max_current_per_phase_A"));
+    EXPECT_EQ(leaves["ac_max_current_per_phase_A"], R"({"source":"ocpp/OCPP_set_external_limits","L2":10.0})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, callSetExternalLimitsPerPhasePower) {
@@ -211,7 +211,41 @@ TEST_F(GenericOcppProvidesTester, callSetExternalLimitsPerPhasePower) {
     const auto& leaves = received[0]["value"]["schedule_import"][0]["limits_to_leaves"];
     // A symmetric load at 3000 W draws 1000 W per phase, what L3 allows.
     EXPECT_EQ(leaves["total_power_W"], R"({"source":"ocpp/OCPP_set_external_limits","value":3000.0})"_json);
+    EXPECT_EQ(leaves["ac_max_power_per_phase_W"],
+              R"({"source":"ocpp/OCPP_set_external_limits","L1":3000.0,"L2":2000.0,"L3":1000.0})"_json);
     EXPECT_FALSE(leaves.contains("ac_max_current_per_phase_A"));
+}
+
+TEST_F(GenericOcppProvidesTester, callSetExternalLimitsOnlyL3PowerLowersL3) {
+    using ocpp::DateTime;
+    using ocpp::v2::ChargingRateUnitEnum;
+    using ocpp::v2::EnhancedChargingSchedulePeriod;
+    using ocpp::v2::EnhancedCompositeSchedule;
+
+    std::vector<json> received;
+    interfaces->subscribe_var("external_energy_limits", "call_set_external_limits",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    EnhancedCompositeSchedule schedule;
+    schedule.evseId = 1;
+    schedule.duration = 1500;
+    schedule.scheduleStart = DateTime{"2026-06-05T13:37:36.409Z"};
+    schedule.chargingRateUnit = ChargingRateUnitEnum::W;
+
+    // Without limit_L2, limit is the sum over all phases and limit_L3 lowers L3.
+    EnhancedChargingSchedulePeriod period;
+    period.startPeriod = 0;
+    period.limit = 11000.;
+    period.limit_L3 = 2000.;
+    period.stackLevel = 8;
+    schedule.chargingSchedulePeriod.push_back(period);
+
+    ocpp->set_external_limits({schedule});
+
+    ASSERT_EQ(received.size(), 1);
+    const auto& leaves = received[0]["value"]["schedule_import"][0]["limits_to_leaves"];
+    EXPECT_EQ(leaves["total_power_W"], R"({"source":"ocpp/OCPP_set_external_limits","value":6000.0})"_json);
+    EXPECT_EQ(leaves["ac_max_power_per_phase_W"], R"({"source":"ocpp/OCPP_set_external_limits","L3":2000.0})"_json);
 }
 
 } // namespace

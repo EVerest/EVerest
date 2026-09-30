@@ -76,13 +76,10 @@ public:
     Market(const types::energy::EnergyFlowRequest& _energy_flow_request, const float __nominal_ac_voltage,
            Market* __parent = nullptr);
 
-    /// \brief Books a trade of the connector at this node here and on the path to the root.
-    ///
-    /// The current counts on \p phases only, the grid phases the connector draws on. Its
-    /// watt figure stays as traded at this node, where it is what the connector is sent,
-    /// but counts on the path above for \p phases only: a connector converts a watt limit
-    /// with the phase count it declares, while a single phase EV on a three phase connector
-    /// draws that power on one phase.
+    /// \brief Books a trade here and on the path to the root, the current on \p phases only,
+    /// the grid phases the connector draws on. The watts stay as traded here, where they are
+    /// what the connector is sent, but count above for \p phases only: a single phase EV on a
+    /// three phase connector draws on one phase what the connector converts for three.
     void trade(const ScheduleRes& s, const PhaseSet& phases = ALL_GRID_PHASES);
 
     bool is_root();
