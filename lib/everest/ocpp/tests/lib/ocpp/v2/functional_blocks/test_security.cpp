@@ -513,14 +513,14 @@ TEST_F(SecurityTest, sign_certificate_request_triggered_dropped_while_awaiting) 
     EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
-    ASSERT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+    ASSERT_TRUE(security.awaiting_certificate_signed);
 
     // A retry chain is already in progress; the dropped trigger must not restart it.
     security.csr_attempt = 4;
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, true);
 
-    EXPECT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+    EXPECT_TRUE(security.awaiting_certificate_signed);
     EXPECT_EQ(security.csr_attempt, 4);
 }
 
@@ -584,7 +584,7 @@ TEST_F(SecurityTest, is_sign_certificate_possible_while_awaiting) {
         security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate).has_value());
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
-    ASSERT_TRUE(security.awaited_certificate_signing_use_enum.has_value());
+    ASSERT_TRUE(security.awaiting_certificate_signed);
 
     const auto rejection =
         security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
@@ -1848,6 +1848,216 @@ protected:
     SecurityWithoutCertSigningRepeatTimesTest() : SecurityTest({"CertSigningRepeatTimes"}) {
     }
 };
+
+namespace {
+std::int32_t capture_request_id(const json& call) {
+    return call[ocpp::CALL_PAYLOAD].get<SignCertificateRequest>().requestId.value_or(-1);
+}
+
+void expect_certificate_signed_status(MockMessageDispatcher& dispatcher, const CertificateSignedStatusEnum status) {
+    EXPECT_CALL(dispatcher, dispatch_call_result(_)).WillOnce(Invoke([status](const json& call_result) {
+        EXPECT_EQ(call_result[ocpp::CALLRESULT_PAYLOAD].get<CertificateSignedResponse>().status, status);
+    }));
+}
+} // namespace
+
+TEST_F(SecurityWithoutCertSigningWaitMinimumTest, late_certificate_signed_answers_the_request_given_up_on) {
+    // Without a retry timer the request is no longer awaited once accepted, so it does not block new requests, but
+    // the CSMS's CertificateSigned.req for it still carries its requestId (A02.FR.24) and is installed
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_security_profile(this->device_model, 1);
+    set_charging_station_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    std::int32_t request_id = -1;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([&](const json& call, bool) {
+        request_id = capture_request_id(call);
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    EXPECT_FALSE(
+        security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate).has_value());
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Accepted);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_id));
+
+    // answered once: a repetition is unknown
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Rejected);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_id));
+}
+
+TEST_F(SecurityWithoutCertSigningWaitMinimumTest, request_given_up_on_is_superseded_by_the_next_request) {
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_security_profile(this->device_model, 1);
+    set_charging_station_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillRepeatedly(Return(sign_request_result));
+    std::vector<std::int32_t> request_ids;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillRepeatedly(Invoke([&](const json& call, bool) {
+        request_ids.push_back(capture_request_id(call));
+    }));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    ASSERT_EQ(request_ids.size(), 2);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate(_, _)).Times(0);
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Rejected);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_ids[0]));
+}
+
+TEST_F(SecurityWithoutCertSigningWaitMinimumTest,
+       late_certificate_signed_without_type_installs_as_the_request_given_up_on) {
+    // OCPP 2.0.1 has no requestId; an untyped late answer is for the request given up on, not the CSMS client
+    set_secc_csr_inputs();
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(sign_request_result));
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(1);
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2GCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Accepted);
+    security.handle_message(create_example_certificate_signed_request("", std::nullopt));
+}
+
+TEST_F(SecurityTest, retry_that_cannot_be_sent_keeps_the_previous_request_answerable) {
+    // The retry's CSR fails: nothing new is outstanding, and the previous request still gets its answer installed
+    // under its own type
+    timer_stub_reset_timeout_called_count();
+    timer_stub_reset_callback();
+    timer_stub_reset_timeout_interval();
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    this->device_model->set_value(ControllerComponentVariables::CertSigningWaitMinimum.component,
+                                  ControllerComponentVariables::CertSigningWaitMinimum.variable.value(),
+                                  AttributeEnum::Actual, "30", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::CertSigningRepeatTimes.component,
+                                  ControllerComponentVariables::CertSigningRepeatTimes.variable.value(),
+                                  AttributeEnum::Actual, "2", "test", true);
+    ocpp::GetCertificateSignRequestResult csr_ok;
+    csr_ok.status = GetCertificateSignRequestStatus::Accepted;
+    csr_ok.csr = "csr";
+    ocpp::GetCertificateSignRequestResult csr_failed;
+    csr_failed.status = GetCertificateSignRequestStatus::GenerationError;
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(csr_ok))
+        .WillOnce(Return(csr_failed));
+    EXPECT_CALL(security_event_callback_mock, Call(CiString<50>(ocpp::security_events::CSRGENERATIONFAILED), _));
+    std::vector<std::int32_t> request_ids;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillRepeatedly(Invoke([&](const json& call, bool) {
+        if (call[ocpp::CALL_ACTION] == "SignCertificate") {
+            request_ids.push_back(capture_request_id(call));
+        }
+    }));
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    timer_stub_get_callback()();
+    ASSERT_EQ(request_ids.size(), 1);
+    EXPECT_FALSE(security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::V2GCertificate).has_value());
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::V2GCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(ocsp_updater, trigger_ocsp_cache_update()).Times(1);
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Accepted);
+    security.handle_message(create_example_certificate_signed_request("", std::nullopt, request_ids[0]));
+}
+
+TEST_F(SecurityTest, retry_that_cannot_be_sent_restarts_the_attempt_count) {
+    // the next request after a retry that could not be sent waits CertSigningWaitMinimum again, not a doubled time
+    timer_stub_reset_timeout_called_count();
+    timer_stub_reset_callback();
+    timer_stub_reset_timeout_interval();
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_secc_csr_inputs();
+    this->device_model->set_value(ControllerComponentVariables::CertSigningWaitMinimum.component,
+                                  ControllerComponentVariables::CertSigningWaitMinimum.variable.value(),
+                                  AttributeEnum::Actual, "30", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::CertSigningRepeatTimes.component,
+                                  ControllerComponentVariables::CertSigningRepeatTimes.variable.value(),
+                                  AttributeEnum::Actual, "2", "test", true);
+    ocpp::GetCertificateSignRequestResult csr_ok;
+    csr_ok.status = GetCertificateSignRequestStatus::Accepted;
+    csr_ok.csr = "csr";
+    ocpp::GetCertificateSignRequestResult csr_failed;
+    csr_failed.status = GetCertificateSignRequestStatus::GenerationError;
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillOnce(Return(csr_ok))
+        .WillOnce(Return(csr_failed))
+        .WillOnce(Return(csr_ok));
+    EXPECT_CALL(security_event_callback_mock, Call(CiString<50>(ocpp::security_events::CSRGENERATIONFAILED), _));
+    std::vector<std::int32_t> request_ids;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillRepeatedly(Invoke([&](const json& call, bool) {
+        if (call[ocpp::CALL_ACTION] == "SignCertificate") {
+            request_ids.push_back(capture_request_id(call));
+        }
+    }));
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    timer_stub_get_callback()();
+    ASSERT_EQ(request_ids.size(), 1);
+
+    timer_stub_reset_timeout_interval();
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    EXPECT_EQ(timer_stub_get_timeout_interval_ms(), 30000);
+}
+
+TEST_F(SecurityTest, late_certificate_signed_after_the_last_retry_is_installed) {
+    // With CertSigningRepeatTimes=2 the third request is not retried; its answer arrives after that decision
+    timer_stub_reset_timeout_called_count();
+    timer_stub_reset_callback();
+    this->ocpp_version = ocpp::OcppProtocolVersion::v21;
+    set_security_profile(this->device_model, 1);
+    set_charging_station_csr_inputs();
+    this->device_model->set_value(ControllerComponentVariables::CertSigningWaitMinimum.component,
+                                  ControllerComponentVariables::CertSigningWaitMinimum.variable.value(),
+                                  AttributeEnum::Actual, "30", "test", true);
+    this->device_model->set_value(ControllerComponentVariables::CertSigningRepeatTimes.component,
+                                  ControllerComponentVariables::CertSigningRepeatTimes.variable.value(),
+                                  AttributeEnum::Actual, "2", "test", true);
+    ocpp::GetCertificateSignRequestResult sign_request_result;
+    sign_request_result.status = GetCertificateSignRequestStatus::Accepted;
+    sign_request_result.csr = "csr";
+    EXPECT_CALL(this->evse_security, generate_certificate_signing_request(_, _, _, _, _))
+        .WillRepeatedly(Return(sign_request_result));
+    std::vector<std::int32_t> request_ids;
+    EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillRepeatedly(Invoke([&](const json& call, bool) {
+        request_ids.push_back(capture_request_id(call));
+    }));
+
+    security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    timer_stub_get_callback()();
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    timer_stub_get_callback()();
+    security.handle_message(create_example_sign_certificate_response(GenericStatusEnum::Accepted));
+    ASSERT_EQ(request_ids.size(), 3);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    expect_certificate_signed_status(mock_dispatcher, CertificateSignedStatusEnum::Accepted);
+    security.handle_message(create_example_certificate_signed_request(
+        "", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate, request_ids[2]));
+}
 
 TEST_F(SecurityWithoutCertSigningWaitMinimumTest, secc_leaf_expiry_check_alternates_the_leaf_that_goes_first) {
     // Without a retry timer the CSMS may still answer an accepted SignCertificate.req, so the second leaf is not

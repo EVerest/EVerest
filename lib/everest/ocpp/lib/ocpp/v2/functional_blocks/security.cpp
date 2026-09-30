@@ -222,7 +222,7 @@ Security::get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_sign
 
 std::optional<StatusInfo>
 Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
-    if (this->awaited_certificate_signing_use_enum.has_value()) {
+    if (this->awaiting_certificate_signed) {
         EVLOG_warning << "Cannot send a SignCertificate.req while still waiting for CertificateSigned.req from CSMS";
         return make_status_info(reason_code_unspecified, "Awaiting CertificateSigned.req from the CSMS");
     }
@@ -237,7 +237,7 @@ Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& ce
 
 void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
                                     const bool initiated_by_trigger_message) {
-    if (this->awaited_certificate_signing_use_enum.has_value()) {
+    if (this->awaiting_certificate_signed) {
         EVLOG_warning
             << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
         return;
@@ -301,8 +301,9 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
                 : this->next_sign_certificate_request_id + 1;
     }
 
-    this->awaited_certificate_signing_use_enum = certificate_signing_use;
-    this->awaited_sign_certificate_request_id = req.requestId;
+    this->requested_certificate_signing_use = certificate_signing_use;
+    this->sign_certificate_request_id = req.requestId;
+    this->awaiting_certificate_signed = true;
 
     const ocpp::Call<SignCertificateRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
@@ -312,17 +313,16 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnum::Rejected;
 
-    const auto awaited_certificate_signing_use = this->awaited_certificate_signing_use_enum;
+    const auto requested_signing_use = this->requested_certificate_signing_use;
     const bool request_id_matches =
-        call.msg.requestId.has_value() and call.msg.requestId == this->awaited_sign_certificate_request_id;
+        call.msg.requestId.has_value() and call.msg.requestId == this->sign_certificate_request_id;
 
     if (call.msg.requestId.has_value() and not request_id_matches) {
         // A02.FR.26: a CertificateSigned.req with an unknown requestId is rejected. The outstanding request (if any)
         // stays outstanding, so the CSMS can still answer it.
         EVLOG_warning << "Rejecting CertificateSigned.req with unknown requestId " << call.msg.requestId.value()
-                      << (this->awaited_sign_certificate_request_id.has_value()
-                              ? ", awaiting requestId " +
-                                    std::to_string(this->awaited_sign_certificate_request_id.value())
+                      << (this->sign_certificate_request_id.has_value()
+                              ? ", expected requestId " + std::to_string(this->sign_certificate_request_id.value())
                               : ", no SignCertificate.req with a requestId is outstanding");
         response.statusInfo = make_status_info(reason_code_unspecified, "Unknown requestId");
         const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
@@ -334,14 +334,12 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
 
     if (!call.msg.certificateType.has_value()) {
-        // The CSMS is only recommended to echo the type (A02.FR.14). Without it, the certificate answers the
-        // SignCertificate.req we are waiting for; the spec's "used for both connections" fallback only applies when
-        // nothing is outstanding, and then the CSMS client certificate is the only leaf a chain could be for that
-        // was not requested with a type.
-        cert_signing_use =
-            awaited_certificate_signing_use.value_or(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
-        if (awaited_certificate_signing_use.has_value()) {
-            EVLOG_info << "CertificateSigned.req without certificateType, installing as the awaited "
+        // The CSMS is only recommended to echo the type (A02.FR.14). Without it, the certificate answers the last
+        // SignCertificate.req; the spec's "used for both connections" fallback only applies when there is none, and
+        // then the CSMS client certificate is the only leaf a chain could be for that was not requested with a type.
+        cert_signing_use = requested_signing_use.value_or(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (requested_signing_use.has_value()) {
+            EVLOG_info << "CertificateSigned.req without certificateType, installing as the requested "
                        << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use);
         }
     } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
@@ -352,16 +350,15 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2GCertificate;
     }
 
-    if (request_id_matches and awaited_certificate_signing_use.has_value() and
-        cert_signing_use != awaited_certificate_signing_use.value()) {
+    if (request_id_matches and requested_signing_use.has_value() and
+        cert_signing_use != requested_signing_use.value()) {
         // Installing the chain under either type could leave a leaf that does not match the key or PKI it is used
         // with. The outstanding request stays outstanding, so the CSMS can still answer it correctly.
         EVLOG_warning << "Rejecting CertificateSigned.req with requestId " << call.msg.requestId.value()
                       << " and certificateType "
                       << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use)
                       << ", it answers a SignCertificate.req for "
-                      << ocpp::conversions::certificate_signing_use_enum_to_string(
-                             awaited_certificate_signing_use.value());
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(requested_signing_use.value());
         response.statusInfo = make_status_info(reason_code_unspecified, "certificateType does not match requestId");
         const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
         this->context.message_dispatcher.dispatch_call_result(call_result);
@@ -416,7 +413,7 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
 }
 
 void Security::handle_sign_certificate_response(CallResult<SignCertificateResponse> call_result) {
-    if (!this->awaited_certificate_signing_use_enum.has_value()) {
+    if (!this->awaiting_certificate_signed) {
         EVLOG_warning
             << "Received SignCertificate.conf while not awaiting a CertificateSigned.req . This should not happen.";
         return;
@@ -432,19 +429,19 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
         if (!cert_signing_wait_minimum.has_value()) {
             EVLOG_warning << "No CertSigningWaitMinimum is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
-            this->reset_certificate_signing_state();
+            this->stop_awaiting_certificate_signed();
             return;
         }
         if (!cert_signing_repeat_times.has_value()) {
             EVLOG_warning << "No CertSigningRepeatTimes is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
-            this->reset_certificate_signing_state();
+            this->stop_awaiting_certificate_signed();
             return;
         }
 
         if (this->csr_attempt > cert_signing_repeat_times.value()) {
             this->certificate_signed_timer.stop();
-            this->reset_certificate_signing_state();
+            this->stop_awaiting_certificate_signed();
             return;
         }
         const int retry_backoff_seconds = clamp_to<int>(
@@ -452,12 +449,18 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
             std::pow(2, std::max(0, this->csr_attempt - 1))); // first wait = CertSigningWaitMinimum * 2^0
         this->certificate_signed_timer.timeout(
             [this]() {
+                if (!this->awaiting_certificate_signed) {
+                    return;
+                }
                 EVLOG_info << "Did not receive CertificateSigned.req in time. Will retry with SignCertificate.req";
+                const auto certificate_signing_use = this->requested_certificate_signing_use.value();
                 this->csr_attempt++;
-                const auto current_awaited_certificate_signing_use_enum =
-                    this->awaited_certificate_signing_use_enum.value();
-                this->awaited_certificate_signing_use_enum.reset();
-                this->sign_certificate_req(current_awaited_certificate_signing_use_enum);
+                this->awaiting_certificate_signed = false;
+                this->sign_certificate_req(certificate_signing_use);
+                if (!this->awaiting_certificate_signed) {
+                    // not sent: the previous request stays the one a CertificateSigned.req answers
+                    this->csr_attempt = 1;
+                }
             },
             std::chrono::seconds(retry_backoff_seconds));
     } else {
@@ -520,8 +523,13 @@ Security::get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& 
 }
 
 void Security::reset_certificate_signing_state() {
-    this->awaited_certificate_signing_use_enum = std::nullopt;
-    this->awaited_sign_certificate_request_id = std::nullopt;
+    this->requested_certificate_signing_use = std::nullopt;
+    this->sign_certificate_request_id = std::nullopt;
+    this->stop_awaiting_certificate_signed();
+}
+
+void Security::stop_awaiting_certificate_signed() {
+    this->awaiting_certificate_signed = false;
     this->csr_attempt = 1;
 }
 
@@ -696,7 +704,7 @@ bool Security::renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEn
                << " days. Requesting new certificate with certificate signing request";
     this->sign_certificate_req(certificate_signing_use);
     // nothing is sent while another request is outstanding or the CSR cannot be built
-    return this->awaited_certificate_signing_use_enum == certificate_signing_use;
+    return this->awaiting_certificate_signed and this->requested_certificate_signing_use == certificate_signing_use;
 }
 
 void Security::check_secc_certificates_expiration() {
