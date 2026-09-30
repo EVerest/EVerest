@@ -9,8 +9,10 @@
 #include <generated/interfaces/energy/Interface.hpp>
 
 #include <mutex>
+#include <thread>
 
 #include <Broker.hpp>
+#include <everest/util/async/monitor.hpp>
 
 namespace module {
 
@@ -27,6 +29,17 @@ struct EnergyManagerConfig {
     std::string switch_3ph1ph_switch_limit_stickyness;
     int switch_3ph1ph_power_hysteresis_W;
     int switch_3ph1ph_time_hysteresis_s;
+    std::string broker_strategy;
+    double redistribution_margin_A;
+    bool redistribution_start_with_lower_limit;
+    int redistribution_reduction_hold_s;
+    int redistribution_measurement_max_age_s;
+};
+
+/// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
+enum class BrokerStrategy {
+    FastCharging,
+    PowerRedistribution,
 };
 
 class EnergyManagerImpl {
@@ -36,9 +49,16 @@ public:
         const EnergyManagerConfig& config,
         const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback);
 
-    /// \brief Starts and detaches worker thread that runs run_optimizer periodically or when energy flow request is
-    /// updated
+    ~EnergyManagerImpl();
+
+    /// \brief Starts the worker thread that runs run_optimizer periodically or when the
+    /// energy flow request is updated. Calling it twice is a no-op.
     void start();
+
+    /// \brief Stops the worker thread and waits for it to finish. A run that has not yet
+    /// called enforced_limits_callback skips it; one already inside it is waited for.
+    /// Idempotent, and safe to call when start() never ran.
+    void stop();
 
     /// \brief Updates the energy_flow_request and notifies the worker thread
     /// \param e
@@ -52,13 +72,27 @@ public:
                                                              date::utc_clock::time_point start_time,
                                                              const std::string& test_name = "");
 
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
+    /// \brief Test observation only: the reading the power redistribution broker last
+    /// observed for connector \p uuid, all fields std::nullopt if there is none.
+    ObservedMeasurement get_observed_measurement(const std::string& uuid);
+#endif
+
 private:
     EnergyManagerConfig config;
+    BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
     std::mutex energy_mutex;
-    std::condition_variable mainloop_sleep_condvar;
-    std::mutex mainloop_sleep_mutex;
+
+    struct LoopState {
+        bool running{false};
+        // A priority request asks for a run before the update interval is up.
+        bool wakeup{false};
+    };
+    everest::lib::util::monitor<LoopState> m_loop_state;
+    // Joined, not detached: it reads this object's state on every run.
+    std::thread m_mainloop;
 
     // complete energy tree request
     types::energy::EnergyFlowRequest energy_flow_request;

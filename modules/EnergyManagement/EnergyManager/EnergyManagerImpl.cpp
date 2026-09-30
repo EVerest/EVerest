@@ -8,6 +8,7 @@
 
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
+#include "BrokerPowerRedistribution.hpp"
 #include "Market.hpp"
 
 namespace module {
@@ -32,14 +33,40 @@ static BrokerFastCharging::StickyNess to_stickyness(const std::string& m) {
     }
 }
 
-static BrokerFastCharging::EnergyManagerConfig to_broker_fast_charging_config(const EnergyManagerConfig& config) {
-    BrokerFastCharging::EnergyManagerConfig broker_conf;
+static BrokerStrategy to_broker_strategy(const std::string& s) {
+    if (s == "PowerRedistribution") {
+        return BrokerStrategy::PowerRedistribution;
+    }
+    // The manifest enum rejects typos; configs built otherwise are not validated.
+    if (s != "FastCharging") {
+        EVLOG_warning << "Unknown broker_strategy '" << s << "', falling back to FastCharging";
+    }
+    return BrokerStrategy::FastCharging;
+}
+
+static std::shared_ptr<Broker> make_broker(BrokerStrategy strategy, Market& market, BrokerContext& context,
+                                           const Broker::EnergyManagerConfig& broker_config) {
+    switch (strategy) {
+    case BrokerStrategy::PowerRedistribution:
+        return std::make_shared<BrokerPowerRedistribution>(market, context, broker_config);
+    case BrokerStrategy::FastCharging:
+    default:
+        return std::make_shared<BrokerFastCharging>(market, context, broker_config);
+    }
+}
+
+static Broker::EnergyManagerConfig to_broker_config(const EnergyManagerConfig& config) {
+    Broker::EnergyManagerConfig broker_conf;
 
     broker_conf.max_nr_of_switches_per_session = config.switch_3ph1ph_max_nr_of_switches_per_session;
     broker_conf.power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
     broker_conf.switch_1ph_3ph_mode = to_switch_1ph3ph_mode(config.switch_3ph1ph_while_charging_mode);
     broker_conf.time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
     broker_conf.stickyness = to_stickyness(config.switch_3ph1ph_switch_limit_stickyness);
+    broker_conf.redistribution.margin_A = config.redistribution_margin_A;
+    broker_conf.redistribution.start_with_lower_limit = config.redistribution_start_with_lower_limit;
+    broker_conf.redistribution.reduction_hold = std::chrono::seconds(config.redistribution_reduction_hold_s);
+    broker_conf.redistribution.measurement_max_age = std::chrono::seconds(config.redistribution_measurement_max_age_s);
 
     return broker_conf;
 }
@@ -66,22 +93,54 @@ bool is_priority_request(const types::energy::EnergyFlowRequest& e) {
 EnergyManagerImpl::EnergyManagerImpl(
     const EnergyManagerConfig& config,
     const std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)>& enforced_limits_callback) :
-    config(config), enforced_limits_callback(enforced_limits_callback) {
+    config(config),
+    broker_strategy(to_broker_strategy(config.broker_strategy)),
+    enforced_limits_callback(enforced_limits_callback) {
     this->energy_flow_request.node_type = types::energy::NodeType::Undefined;
 }
 
+EnergyManagerImpl::~EnergyManagerImpl() {
+    stop();
+}
+
 void EnergyManagerImpl::start() {
-    // start thread to update energy optimization
-    std::thread([this] {
+    {
+        auto loop = m_loop_state.handle();
+        if (loop->running) {
+            return;
+        }
+        loop->running = true;
+    }
+
+    m_mainloop = std::thread([this] {
         while (true) {
             auto optimized_values = this->run_optimizer(energy_flow_request, date::utc_clock::now());
-            enforced_limits_callback(optimized_values);
-            {
-                std::unique_lock<std::mutex> lock(mainloop_sleep_mutex);
-                mainloop_sleep_condvar.wait_for(lock, std::chrono::seconds(config.update_interval));
+            if (not m_loop_state.handle()->running) {
+                return;
             }
+            try {
+                enforced_limits_callback(optimized_values);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Failed to enforce limits: " << e.what();
+            }
+
+            auto loop = m_loop_state.handle();
+            loop.wait_for([&loop] { return not loop->running or loop->wakeup; },
+                          std::chrono::seconds(config.update_interval));
+            if (not loop->running) {
+                return;
+            }
+            loop->wakeup = false;
         }
-    }).detach();
+    });
+}
+
+void EnergyManagerImpl::stop() {
+    m_loop_state.handle()->running = false;
+    m_loop_state.notify_all();
+    if (m_mainloop.joinable()) {
+        m_mainloop.join();
+    }
 }
 
 void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRequest& e) {
@@ -90,10 +149,22 @@ void EnergyManagerImpl::on_energy_flow_request(const types::energy::EnergyFlowRe
     energy_flow_request = e;
 
     if (is_priority_request(e)) {
-        // trigger optimization now
-        mainloop_sleep_condvar.notify_all();
+        m_loop_state.handle()->wakeup = true;
+        m_loop_state.notify_all();
     }
 }
+
+#ifdef BUILD_TESTING_MODULE_ENERGY_MANAGER
+ObservedMeasurement EnergyManagerImpl::get_observed_measurement(const std::string& uuid) {
+    std::scoped_lock lock(energy_mutex);
+
+    const auto it = contexts.find(uuid);
+    if (it == contexts.end()) {
+        return {};
+    }
+    return it->second.last_observed_measurement;
+}
+#endif
 
 std::vector<types::energy::EnforcedLimits>
 EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request,
@@ -123,17 +194,15 @@ EnergyManagerImpl::run_optimizer(const types::energy::EnergyFlowRequest& request
     for (auto m : evse_markets) {
         // Check if we need to clear the context
         // Note that context is created here if it does not exist implicitly by operator[] of the map
-        if (m->energy_flow_request.evse_state == types::energy::EvseState::Unplugged or
-            m->energy_flow_request.evse_state == types::energy::EvseState::Finished) {
+        if (not in_session(m->energy_flow_request)) {
             contexts[m->energy_flow_request.uuid].clear();
             contexts[m->energy_flow_request.uuid].ts_1ph_optimal =
                 globals.start_time - std::chrono::seconds(config.switch_3ph1ph_time_hysteresis_s);
         }
 
-        // FIXME: check for actual optimizer_targets and create correct broker for this evse
-        // For now always create simple FastCharging broker
-        brokers.push_back(std::make_shared<BrokerFastCharging>(*m, contexts[m->energy_flow_request.uuid],
-                                                               to_broker_fast_charging_config(config)));
+        brokers.push_back(
+            make_broker(broker_strategy, *m, contexts[m->energy_flow_request.uuid], to_broker_config(config)));
+        brokers.back()->observe();
         // EVLOG_info << fmt::format("Created broker for {}", m->energy_flow_request.uuid);
     }
 

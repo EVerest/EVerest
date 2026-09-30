@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 #include "EnergyManager.hpp"
 #include "Broker.hpp"
 #include "BrokerFastCharging.hpp"
 #include "Market.hpp"
+#include <exception>
 #include <fmt/core.h>
 #include <optional>
 
@@ -25,6 +26,11 @@ void EnergyManager::init() {
     energy_manager_config.switch_3ph1ph_switch_limit_stickyness = config.switch_3ph1ph_switch_limit_stickyness;
     energy_manager_config.switch_3ph1ph_power_hysteresis_W = config.switch_3ph1ph_power_hysteresis_W;
     energy_manager_config.switch_3ph1ph_time_hysteresis_s = config.switch_3ph1ph_time_hysteresis_s;
+    energy_manager_config.broker_strategy = config.broker_strategy;
+    energy_manager_config.redistribution_margin_A = config.redistribution_margin_A;
+    energy_manager_config.redistribution_start_with_lower_limit = config.redistribution_start_with_lower_limit;
+    energy_manager_config.redistribution_reduction_hold_s = config.redistribution_reduction_hold_s;
+    energy_manager_config.redistribution_measurement_max_age_s = config.redistribution_measurement_max_age_s;
 
     const auto enforce_limits_callback = [this](const std::vector<types::energy::EnforcedLimits>& limits) {
         const types::energy::NumberWithSource nonumber = {-9999.0};
@@ -35,7 +41,11 @@ void EnergyManager::init() {
                                           it.limits_root_side.ac_max_current_A.value_or(nonumber).value,
                                           it.limits_root_side.total_power_W.value_or(nonumber).value,
                                           it.limits_root_side.ac_max_phase_count.value_or(noint).value);
-            r_energy_trunk->call_enforce_limits(it);
+            try {
+                r_energy_trunk->call_enforce_limits(it);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Failed to enforce limits for " << it.uuid << ": " << e.what();
+            }
         }
     };
 
@@ -51,6 +61,14 @@ void EnergyManager::ready() {
     invoke_ready(*p_main);
 
     this->impl->start();
+}
+
+void EnergyManager::shutdown() {
+    // Joined here, not at static destruction: the framework's Everest object that
+    // call_enforce_limits uses is gone by then.
+    this->impl->stop();
+
+    invoke_shutdown(*p_main);
 }
 
 } // namespace module
