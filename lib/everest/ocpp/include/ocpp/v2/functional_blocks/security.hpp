@@ -85,8 +85,12 @@ private:
     std::variant<CsrInputs, StatusInfo>
     get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const;
 
-    /// \brief Stops awaiting a CertificateSigned.req, which the retry timer would otherwise be the only thing to do.
+    /// \brief Forgets the last SignCertificate.req, once the CSMS has answered or rejected it.
     void reset_certificate_signing_state();
+
+    /// \brief Allows new SignCertificate.req without forgetting the last one, whose CertificateSigned.req the CSMS
+    /// may still send.
+    void stop_awaiting_certificate_signed();
 
     /// \brief The V2G root the SECC leaf of \p certificate_signing_use is (or will be) issued under, for
     /// SignCertificateRequest.hashRootCertificate (A02.FR.27): the root of the installed leaf if there is one,
@@ -102,10 +106,13 @@ private:
     SecurityEventCallback security_event_callback;
 
     int csr_attempt;
-    std::optional<ocpp::CertificateSigningUseEnum> awaited_certificate_signing_use_enum;
-    /// \brief requestId of the outstanding SignCertificate.req (OCPP 2.1, A02.FR.24). A CertificateSigned.req that
-    /// carries a different requestId is rejected (A02.FR.26). Not set on OCPP 2.0.1, whose schema lacks the field.
-    std::optional<std::int32_t> awaited_sign_certificate_request_id;
+    /// \brief Type of the last SignCertificate.req. A CertificateSigned.req answers it until the next one is sent.
+    std::optional<ocpp::CertificateSigningUseEnum> requested_certificate_signing_use;
+    /// \brief requestId of the last SignCertificate.req (OCPP 2.1, A02.FR.24). A CertificateSigned.req that carries
+    /// a different requestId is rejected (A02.FR.26). Not set on OCPP 2.0.1, whose schema lacks the field.
+    std::optional<std::int32_t> sign_certificate_request_id;
+    /// \brief No new SignCertificate.req is sent while the CertificateSigned.req for the last one is awaited
+    bool awaiting_certificate_signed{false};
     std::int32_t next_sign_certificate_request_id;
     Everest::SteadyTimer certificate_signed_timer;
     Everest::SteadyTimer client_certificate_expiration_check_timer;
