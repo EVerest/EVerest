@@ -978,7 +978,8 @@ Monitoring configuration changes
    ]}
 
 Legacy-form registrations (empty component name) receive legacy-shaped events.
-Registrations are additive across calls.
+Registrations are additive across calls. Changes to write-only variables (e.g.
+``BasicAuthPassword``) are published with an empty value.
 
 ``monitor_and_get_variables`` takes the same request, registers the same
 monitors and additionally returns the current values in the reply (same result

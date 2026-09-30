@@ -300,9 +300,12 @@ void ChargePointV2::cb_variable_listener(
     const std::string& value_previous, const std::string& value_current) {
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
-    if (listener != nullptr) {
-        listener(component, variable, value_current);
+    if (listener == nullptr) {
+        return;
     }
+    const bool write_only =
+        attribute.mutability.value_or(ocpp::v2::MutabilityEnum::ReadWrite) == ocpp::v2::MutabilityEnum::WriteOnly;
+    listener(component, variable, write_only ? std::string{} : value_current);
 }
 
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
