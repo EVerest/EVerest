@@ -63,6 +63,9 @@ Each code contribution must include:
 
 - Tests and documentation to explain the functionality.
 - Any new files have `Copyright and license headers <https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#license>`_
+  without years, for example ``// SPDX-License-Identifier: Apache-2.0`` followed by
+  ``// Copyright Pionix GmbH and Contributors to EVerest``.
+  Notices of other copyright holders and of third-party code are kept unchanged.
 - A `Developer Certificate of Origin signoff <https://github.com/lf-energy/tac/blob/main/process/contribution_guidelines.md#contribution-sign-off>`_.
 - Submitted to the project as a pull request.
 

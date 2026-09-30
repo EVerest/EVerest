@@ -6,8 +6,6 @@
 #include <memory>
 #include <string>
 
-// SPDX-License-Identifier: Apache-2.0
-// Copyright Pionix GmbH and Contributors to EVerest
 #include <slac/slac.hpp>
 
 namespace utils {
