@@ -334,6 +334,9 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     if (m_config.bsp) {
         m_config.bsp->cb_remote = ip;
     }
+    if (m_config.bsp_alternate) {
+        m_config.bsp_alternate->cb_remote = ip;
+    }
     if (m_config.heartbeat) {
         m_config.heartbeat->cb_remote = ip;
     }
@@ -342,6 +345,7 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     }
 
     m_config.firmware.cb_remote = ip;
+    select_bsp_for_board(info);
 
     m_event_handler->add_action([this]() {
         std::unique_ptr<discovery> tmp;
@@ -565,21 +569,7 @@ void charge_bridge::create_internal_runtime() {
                       [this]() { return std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify); });
     }
     if (m_config.bsp.has_value()) {
-        create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
-                      m_bridge_permanently_disabled, [this]() {
-                          auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
-                          // The CE state arrives on the BSP connection but the plc bridge owns the
-                          // carrier it gates (plc.carrier_gate: ce_mated). Same pattern as the
-                          // heartbeat's link-status routing above: both run on the event loop
-                          // thread, the same thread that owns m_plc, and the guard tolerates the
-                          // bridges (re)appearing in any order.
-                          bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
-                              if (m_plc) {
-                                  m_plc->set_ce_state(ce_state);
-                              }
-                          });
-                          return bsp;
-                      });
+        create_bsp_bridge();
     }
     if (m_config.io.has_value()) {
         create_bridge(m_config.cb_name, "io bridge", m_io, m_bridge_create_failures_reported,
@@ -622,6 +612,72 @@ void charge_bridge::create_internal_runtime() {
 }
 
 // True if the config asks for at least one bridge, i.e. if an empty runtime means something failed.
+void charge_bridge::create_bsp_bridge() {
+    create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
+                  m_bridge_permanently_disabled, [this]() {
+                      auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
+                      // The CE state arrives on the BSP connection but the plc bridge owns the
+                      // carrier it gates (plc.carrier_gate: ce_mated). Same pattern as the
+                      // heartbeat's link-status routing: both run on the event loop thread, the
+                      // same thread that owns m_plc, and the guard tolerates the bridges
+                      // (re)appearing in any order.
+                      bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
+                          if (m_plc) {
+                              m_plc->set_ce_state(ce_state);
+                          }
+                      });
+                      return bsp;
+                  });
+}
+
+namespace {
+// The role a board_type TXT value implies, or nullopt where the value does not decide it: the
+// neutral CB-MCS (never provisioned, role comes from charge_bridge.type), CB-CAN and anything
+// unknown. Mirrors is_cb_match() in discovery.cpp.
+std::optional<cb_role> role_of_board_type(std::string const& board_type) {
+    if (board_type == "CB-CCS-EV-LU" or board_type == "CB-MCS-EV") {
+        return cb_role::ev;
+    }
+    if (board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA" or board_type == "CB-MCS-EVSE") {
+        return cb_role::evse;
+    }
+    return std::nullopt;
+}
+} // namespace
+
+void charge_bridge::select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery const& info) {
+    // Only a config with both BSP flavours has a choice to make (see charge_bridge_config::bsp_alternate).
+    if (not m_config.bsp_alternate.has_value() or not m_config.bsp.has_value()) {
+        return;
+    }
+    auto const txt = info.txt.find("board_type");
+    auto role = txt == info.txt.end() ? std::nullopt : role_of_board_type(txt->second);
+    if (not role.has_value() and m_config.type != cb_role::unspecified) {
+        role = m_config.type;
+    }
+    if (not role.has_value()) {
+        utilities::print_error(m_config.cb_name, "DISCOVERY", 1)
+            << "board_type '" << (txt == info.txt.end() ? std::string{} : txt->second)
+            << "' does not decide the role, keeping the " << (m_config.bsp->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+            << std::endl;
+        return;
+    }
+    auto const want_ev = role.value() == cb_role::ev;
+    if (m_config.bsp->api.ev.enabled == want_ev) {
+        return;
+    }
+    // Runs on the event loop thread while the runtime is stopped: discovery is only armed after
+    // stop_internal_runtime() has unregistered and disconnected the bridges (see manage()), so the
+    // current bsp bridge can be dropped and rebuilt here the same way retry_missing_bridges does it.
+    utilities::print_error(m_config.cb_name, "DISCOVERY", 0)
+        << "Board is an " << (want_ev ? "EV" : "EVSE") << ": activating the " << (want_ev ? "ev_bsp" : "evse_bsp")
+        << " (module " << (want_ev ? m_config.bsp_alternate->api.ev.module_id : m_config.bsp_alternate->api.evse.module_id)
+        << ")" << std::endl;
+    std::swap(m_config.bsp, m_config.bsp_alternate);
+    m_bsp.reset();
+    create_bsp_bridge();
+}
+
 bool charge_bridge::has_configured_bridge() const {
     return m_config.can0.has_value() or m_config.serial1.has_value() or m_config.serial2.has_value() or
            m_config.serial3.has_value() or m_config.plc.has_value() or m_config.bsp.has_value() or
@@ -1691,6 +1747,10 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
             std::cout << " * evse_bsp:  ";
         } else if (c.bsp->api.ev.enabled) {
             std::cout << " * ev_bsp:    ";
+        }
+        if (c.bsp_alternate) {
+            std::cout << "(" << (c.bsp_alternate->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+                      << " configured too, the discovered board selects the flavour) ";
         }
         std::cout << format_host_port(c.bsp->cb_remote, c.bsp->cb_port);
         std::cout << " module " << c.bsp->api.evse.module_id;

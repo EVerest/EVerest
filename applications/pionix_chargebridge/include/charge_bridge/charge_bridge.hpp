@@ -60,6 +60,11 @@ struct charge_bridge_config {
     std::optional<serial_bridge_config> serial3;
     std::optional<plc_bridge_config> plc;
     std::optional<bsp_bridge_config> bsp;
+    // The BSP flavour for the other role. Only set when the config enables both evse_bsp and ev_bsp,
+    // which parse_config allows for an ANY* mDNS endpoint: the role is then decided by the board that
+    // shows up, and handle_discovery() swaps this into bsp when the discovered board_type calls for
+    // it. Never active at the same time as bsp.
+    std::optional<bsp_bridge_config> bsp_alternate;
     std::optional<heartbeat_config> heartbeat;
     std::optional<io_config> io;
     firmware_update::fw_update_config firmware;
@@ -129,6 +134,8 @@ private:
     bool needs_liveness_probe(charge_bridge_status const& status) const;
     bool probe_device_liveness(std::function<bool()> const& abort_requested);
     void handle_discovery(everest::lib::io::mdns::mDNS_discovery const& info);
+    void select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery const& info);
+    void create_bsp_bridge();
     void handle_ready();
     void handle_tick();
     bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);

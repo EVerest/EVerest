@@ -11,6 +11,7 @@
 #include <cstring>
 #include <everest_api_types/ev_board_support/codec.hpp>
 #include <everest_api_types/evse_board_support/codec.hpp>
+#include <everest_api_types/evse_manager/codec.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
@@ -93,6 +94,18 @@ void ev_bsp_api::handle_event_relay(std::uint8_t relay) {
     if (relaise_state_valid) {
         send_bsp_event(relaise_event);
     }
+}
+
+void ev_bsp_api::handle_stop_button(std::uint8_t data) {
+    // Pressed edge only, like the EVSE API.
+    if (data == 0) {
+        return;
+    }
+    utilities::print_error(m_cb_identifier, "EV/EVEREST", 0)
+        << "Stop charging button pressed -> requesting local stop transaction." << std::endl;
+    API_EVM::StopTransactionRequest request;
+    request.reason = API_EVM::StopTransactionReason::Local;
+    send_mqtt("request_stop_transaction", serialize(request));
 }
 
 void ev_bsp_api::handle_event_cp(std::uint8_t cp) {
@@ -180,11 +193,12 @@ void ev_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
         handle_error(msg.error_flags);
     }
 
-    // This is not supported in EVerest yet but should be added at some point
-    /*
-    if (cb_status.stop_charging not_eq msg.stop_charging) {
+    // EVerest's ev_board_support has no stop-button surface yet; the press is still published with
+    // the EVSE API's message so a host (the production tester checks the STOP_CHARGING input on EV
+    // boards too) can observe it. Unknown topics are ignored by the EVerest side.
+    if (m_cb_status.stop_charging not_eq msg.stop_charging) {
         handle_stop_button(msg.stop_charging);
-    }*/
+    }
 
     // The ev_board_support interface in EVerest does not yet have proper errors defined, so we do not handle errors
     // here yet
@@ -230,6 +244,22 @@ static constexpr FlagSpec error_specs[] = {
     {safety_error_mask::id_fault, "MCS Insertion Detection lost"},
 };
 
+// The subset that is also raised/cleared through the generic error surface the EV API already uses
+// for its communication fault: the safety latches a host must be able to observe. The rest stays
+// log-only until EVerest defines errors for ev_board_support. Same type/sub_type as the EVSE API.
+struct PublishedFlagSpec {
+    safety_error_mask mask;
+    API_GENERIC::ErrorEnum error;
+    const char* subtype;
+    const char* message;
+};
+
+static constexpr PublishedFlagSpec published_error_specs[] = {
+    {safety_error_mask::emergency_input_latched, API_GENERIC::ErrorEnum::VendorError, "EMGINPUT",
+     "Emergency input latched"},
+    {safety_error_mask::relay_health_latched, API_GENERIC::ErrorEnum::VendorError, "RELAYS", "Relay welded error"},
+};
+
 static constexpr FlagSpec print_warning_specs[] = {
     {safety_error_mask::cp_not_state_c, "CP is not state C"},
     {safety_error_mask::pwm_not_enabled, "PWM not enabled"},
@@ -239,6 +269,19 @@ static constexpr FlagSpec print_warning_specs[] = {
 void ev_bsp_api::handle_error(const SafetyErrorFlags& data) {
     std::uint32_t next = data.raw; // current raw value
     std::stringstream log;
+
+    // Edge driven like evse_bsp_api::publish_error_flag_edges: m_cb_status still holds the previous
+    // frame here (set_cb_message assigns it last).
+    std::uint32_t const prev = m_cb_status.error_flags.raw;
+    for (const auto& s : published_error_specs) {
+        auto const bit = static_cast<std::uint32_t>(s.mask);
+        if ((next & bit) and not(prev & bit)) {
+            send_raise_error(s.error, s.subtype, s.message);
+        }
+        if ((prev & bit) and not(next & bit)) {
+            send_clear_error(s.error, s.subtype);
+        }
+    }
 
     for (const auto& s : print_warning_specs) {
         if (next & static_cast<std::uint32_t>(s.mask)) {

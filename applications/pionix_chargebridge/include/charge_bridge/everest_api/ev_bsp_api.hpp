@@ -76,6 +76,7 @@ private:
     void handle_error(const SafetyErrorFlags& data);
     void handle_event_cp(std::uint8_t cp);
     void handle_event_relay(std::uint8_t relay);
+    void handle_stop_button(std::uint8_t data);
     void handle_bsp_measurement(uint16_t cp, uint8_t pp_1, uint8_t pp2);
 
     bool check_everest_heartbeat();

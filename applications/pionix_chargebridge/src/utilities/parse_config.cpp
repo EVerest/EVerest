@@ -338,8 +338,14 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         bool wants_evse = false;
         get_node_or_default(wants_ev, "ev_bsp", "enable", false);
         get_node_or_default(wants_evse, "evse_bsp", "enable", false);
-        if (wants_ev && wants_evse) {
-            std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time" << std::endl;
+        // Both flavours are allowed only where the board decides the role: an ANY* mDNS endpoint
+        // may discover either an EVSE or an EV board, and the instance then activates the matching
+        // flavour (charge_bridge::select_bsp_for_board). With a fixed address the role is a
+        // property of the config, and two enabled blocks are a contradiction.
+        if (wants_ev && wants_evse && not string_starts_with(c.cb_remote, "ANY")) {
+            std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time (both are only "
+                         "allowed with an ANY* mDNS endpoint, where the discovered board selects the role)"
+                      << std::endl;
             throw std::exception();
         }
     }
@@ -359,21 +365,21 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
     });
 
-    if (not c.bsp.has_value()) {
-        get_block("ev_bsp", c.bsp, [&](auto& cfg, auto const& main) {
-            cfg.cb_port = g_cb_port_evse_bsp;
-            cfg.api.ev.enabled = true;
-            get_node(cfg.api.ev.module_id, main, "module_id");
-            get_node(cfg.api.mqtt_remote, main, "mqtt_remote");
-            get_node_or_default(cfg.api.mqtt_bind, main, "mqtt_bind", "");
-            get_node(cfg.api.mqtt_port, main, "mqtt_port");
-            get_node_or_default(cfg.api.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms",
-                                default_mqtt_ping_interval_ms);
-            cfg.cb_remote = c.cb_remote;
-            get_node(cfg.api.ovm.enabled, main, "ovm_enabled");
-            get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
-        });
-    }
+    // With an evse_bsp block present the EV flavour becomes the alternate (see charge_bridge_config);
+    // the EVSE flavour stays active until a discovered EV board asks for the swap.
+    get_block("ev_bsp", c.bsp.has_value() ? c.bsp_alternate : c.bsp, [&](auto& cfg, auto const& main) {
+        cfg.cb_port = g_cb_port_evse_bsp;
+        cfg.api.ev.enabled = true;
+        get_node(cfg.api.ev.module_id, main, "module_id");
+        get_node(cfg.api.mqtt_remote, main, "mqtt_remote");
+        get_node_or_default(cfg.api.mqtt_bind, main, "mqtt_bind", "");
+        get_node(cfg.api.mqtt_port, main, "mqtt_port");
+        get_node_or_default(cfg.api.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms",
+                            default_mqtt_ping_interval_ms);
+        cfg.cb_remote = c.cb_remote;
+        get_node(cfg.api.ovm.enabled, main, "ovm_enabled");
+        get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
+    });
 
     // The section was renamed "gpio" -> "io". Reject the old name explicitly: silently ignoring it
     // would leave c.io unset and send a zeroed GPIO config to the MCU (all pins disabled, IO MQTT
@@ -559,12 +565,14 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         replace(result.plc->plc_ip);
         replace(result.plc->plc_netmaks);
     }
-    if (result.bsp.has_value()) {
-        result.bsp->cb_remote = ip;
-        result.bsp->cb = result.cb_name;
-        replace(result.bsp->api.evse.module_id);
-        replace(result.bsp->api.ev.module_id);
-        replace(result.bsp->api.ovm.module_id);
+    for (auto* bsp : {&result.bsp, &result.bsp_alternate}) {
+        if (bsp->has_value()) {
+            (*bsp)->cb_remote = ip;
+            (*bsp)->cb = result.cb_name;
+            replace((*bsp)->api.evse.module_id);
+            replace((*bsp)->api.ev.module_id);
+            replace((*bsp)->api.ovm.module_id);
+        }
     }
     if (result.heartbeat.has_value()) {
         result.heartbeat->cb = result.cb_name;
