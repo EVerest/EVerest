@@ -56,6 +56,10 @@ jobs:
       - setup-env
       - build-build-kit
     uses: ./.github/workflows/job_sonar-cmake-gcc.yml
+    # the called job looks up pull requests by number; a nested job can't exceed what its caller grants
+    permissions:
+      contents: read
+      pull-requests: read
     secrets:
       SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
     with:
