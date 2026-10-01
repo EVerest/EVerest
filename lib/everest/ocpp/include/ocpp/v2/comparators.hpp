@@ -1,12 +1,36 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
 namespace ocpp {
 namespace v2 {
+namespace utils {
+inline bool identifier_equals(const CiString<50>& lhs, const CiString<50>& rhs) {
+    return iequals(lhs.get(), rhs.get());
+}
+
+inline bool identifier_equals(const std::optional<CiString<50>>& lhs, const std::optional<CiString<50>>& rhs) {
+    if (lhs.has_value() != rhs.has_value()) {
+        return false;
+    }
+    return not lhs.has_value() or identifier_equals(*lhs, *rhs);
+}
+
+inline bool identifier_less(const CiString<50>& lhs, const CiString<50>& rhs) {
+    return iless(lhs.get(), rhs.get());
+}
+
+inline bool identifier_less(const std::optional<CiString<50>>& lhs, const std::optional<CiString<50>>& rhs) {
+    if (lhs.has_value() != rhs.has_value()) {
+        return not lhs.has_value();
+    }
+    return lhs.has_value() and identifier_less(*lhs, *rhs);
+}
+} // namespace utils
 
 inline bool operator==(const EVSE& lhs, const EVSE& rhs) {
     return lhs.id == rhs.id and lhs.connectorId == rhs.connectorId;
@@ -20,28 +44,29 @@ inline bool operator<(const EVSE& lhs, const EVSE& rhs) {
 }
 
 inline bool operator==(const Component& lhs, const Component& rhs) {
-    return lhs.name.get() == rhs.name.get() and lhs.instance == rhs.instance and lhs.evse == rhs.evse;
+    return utils::identifier_equals(lhs.name, rhs.name) and utils::identifier_equals(lhs.instance, rhs.instance) and
+           lhs.evse == rhs.evse;
 };
 
 inline bool operator<(const Component& lhs, const Component& rhs) {
-    if (lhs.name != rhs.name) {
-        return lhs.name < rhs.name;
+    if (!utils::identifier_equals(lhs.name, rhs.name)) {
+        return utils::identifier_less(lhs.name, rhs.name);
     }
-    if (lhs.instance != rhs.instance) {
-        return lhs.instance < rhs.instance;
+    if (!utils::identifier_equals(lhs.instance, rhs.instance)) {
+        return utils::identifier_less(lhs.instance, rhs.instance);
     }
     return lhs.evse < rhs.evse;
 };
 
 inline bool operator==(const Variable& lhs, const Variable& rhs) {
-    return lhs.name.get() == rhs.name.get() and lhs.instance == rhs.instance;
+    return utils::identifier_equals(lhs.name, rhs.name) and utils::identifier_equals(lhs.instance, rhs.instance);
 };
 
 inline bool operator<(const Variable& lhs, const Variable& rhs) {
-    if (lhs.name != rhs.name) {
-        return lhs.name < rhs.name;
+    if (!utils::identifier_equals(lhs.name, rhs.name)) {
+        return utils::identifier_less(lhs.name, rhs.name);
     }
-    return lhs.instance < rhs.instance;
+    return utils::identifier_less(lhs.instance, rhs.instance);
 };
 
 inline bool operator==(const ComponentVariable& lhs, const ComponentVariable& rhs) {

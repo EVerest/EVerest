@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <gtest/gtest.h>
 
@@ -108,6 +108,82 @@ TEST_F(DeviceModelTest, test_component_as_key_in_map) {
     EXPECT_EQ(components_to_ints.find(different_evse_and_instance_comp), components_to_ints.end());
     EXPECT_EQ(components_to_ints.find(comp_with_custom_data)->second, 1);
     EXPECT_EQ(components_to_ints.find(different_name_comp), components_to_ints.end());
+
+    // OCPP 2.1 Part 2: ComponentType.name and .instance are identifierString, which is case-insensitive.
+    Component lower_case_name_comp;
+    lower_case_name_comp.name = "foo";
+
+    Component upper_case_name_comp;
+    upper_case_name_comp.name = "FOO";
+
+    EXPECT_EQ(components_to_ints.count(lower_case_name_comp), 1U) << "\"foo\" should match \"Foo\"";
+    EXPECT_EQ(components_to_ints.count(upper_case_name_comp), 1U) << "\"FOO\" should match \"Foo\"";
+    EXPECT_EQ(base_comp, lower_case_name_comp);
+    EXPECT_EQ(base_comp, upper_case_name_comp);
+
+    components_to_ints[different_instance_comp] = 2;
+
+    Component different_case_instance_comp;
+    different_case_instance_comp.name = "Foo";
+    different_case_instance_comp.instance = "BAR";
+
+    EXPECT_EQ(components_to_ints.count(different_case_instance_comp), 1U) << "instance \"BAR\" should match \"bar\"";
+    EXPECT_EQ(different_instance_comp, different_case_instance_comp);
+
+    ASSERT_EQ(components_to_ints.count(lower_case_name_comp), 1U);
+    EXPECT_EQ(components_to_ints.at(lower_case_name_comp), 1);
+    ASSERT_EQ(components_to_ints.count(different_case_instance_comp), 1U);
+    EXPECT_EQ(components_to_ints.at(different_case_instance_comp), 2);
+}
+
+TEST_F(DeviceModelTest, test_variable_as_key_in_map) {
+    std::map<Variable, std::int32_t> variables_to_ints;
+
+    Variable base_var;
+    base_var.name = "Foo";
+    variables_to_ints[base_var] = 1;
+
+    Variable different_instance_var;
+    different_instance_var.name = "Foo";
+    different_instance_var.instance = "bar";
+
+    Variable var_with_custom_data;
+    var_with_custom_data.name = "Foo";
+    var_with_custom_data.customData = json::object({{"vendorId", "Baz"}});
+
+    Variable different_name_var;
+    different_name_var.name = "Bar";
+
+    EXPECT_EQ(variables_to_ints.find(base_var)->second, 1);
+    EXPECT_EQ(variables_to_ints.find(different_instance_var), variables_to_ints.end());
+    EXPECT_EQ(variables_to_ints.find(var_with_custom_data)->second, 1);
+    EXPECT_EQ(variables_to_ints.find(different_name_var), variables_to_ints.end());
+
+    // OCPP 2.1 Part 2: VariableType.name and .instance are identifierString, which is case-insensitive.
+    Variable lower_case_name_var;
+    lower_case_name_var.name = "foo";
+
+    Variable upper_case_name_var;
+    upper_case_name_var.name = "FOO";
+
+    EXPECT_EQ(variables_to_ints.count(lower_case_name_var), 1U) << "\"foo\" should match \"Foo\"";
+    EXPECT_EQ(variables_to_ints.count(upper_case_name_var), 1U) << "\"FOO\" should match \"Foo\"";
+    EXPECT_EQ(base_var, lower_case_name_var);
+    EXPECT_EQ(base_var, upper_case_name_var);
+
+    variables_to_ints[different_instance_var] = 2;
+
+    Variable different_case_instance_var;
+    different_case_instance_var.name = "Foo";
+    different_case_instance_var.instance = "BAR";
+
+    EXPECT_EQ(variables_to_ints.count(different_case_instance_var), 1U) << "instance \"BAR\" should match \"bar\"";
+    EXPECT_EQ(different_instance_var, different_case_instance_var);
+
+    ASSERT_EQ(variables_to_ints.count(lower_case_name_var), 1U);
+    EXPECT_EQ(variables_to_ints.at(lower_case_name_var), 1);
+    ASSERT_EQ(variables_to_ints.count(different_case_instance_var), 1U);
+    EXPECT_EQ(variables_to_ints.at(different_case_instance_var), 2);
 }
 
 TEST_F(DeviceModelTest, test_set_monitors) {
