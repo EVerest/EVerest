@@ -54,11 +54,17 @@ jobs:
           ALLOW_FORK: ${{ inputs.allow_fork }}
         run: |
           if [ -z "$PR_NUMBER" ]; then
+            sonar_branch="${GITHUB_REF_NAME}"
+            # TEMPORARY (drop before merge): this branch's C++ code equals main, so report the
+            # test run as main to get a full analysis instead of a changed-files-only short branch
+            if [ "$sonar_branch" = "ci/sonarqube-manual" ]; then
+              sonar_branch=main
+            fi
             {
               echo "checkout_ref=${GITHUB_SHA}"
-              echo "sonar_branch=${GITHUB_REF_NAME}"
+              echo "sonar_branch=${sonar_branch}"
             } >> "$GITHUB_OUTPUT"
-            echo "Branch analysis of \`${GITHUB_REF_NAME}\` @ ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+            echo "Branch analysis of \`${GITHUB_REF_NAME}\` @ ${GITHUB_SHA}, reported as \`${sonar_branch}\`" >> "$GITHUB_STEP_SUMMARY"
             exit 0
           fi
           case "$PR_NUMBER" in

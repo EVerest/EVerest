@@ -25,6 +25,10 @@ on:
         options:
           - 'ubuntu-24.04'
           - 'large-ubuntu-24.04-xxl'
+  # TEMPORARY: test runs before the workflow is on main. Drop this commit before merging.
+  push:
+    branches:
+      - ci/sonarqube-manual
 
 concurrency:
   group: sonarqube-cloud-${{ inputs.pr_number || github.ref_name }}
@@ -67,4 +71,4 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       pr_number: ${{ inputs.pr_number }}
-      allow_fork: ${{ inputs.allow_fork }}
+      allow_fork: ${{ inputs.allow_fork || false }}
