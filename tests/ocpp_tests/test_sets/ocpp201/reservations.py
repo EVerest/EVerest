@@ -66,13 +66,15 @@ async def test_reservation_local_start_tx(
         ),
     )
 
+    test_utility.messages.clear()
+
     # swipe invalid id tag
     test_controller.swipe(test_config.authorization_info.invalid_id_tag)
 
     # swipe valid id tag to authorize
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
 
-    # expect StatusNotification with status available (reservation is now used)
+    # expect StatusNotification with status available before plug in (reservation is now used, H03.FR.10)
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v201,
