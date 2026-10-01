@@ -75,6 +75,45 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
     }
 }
 
+SCENARIO("Check the errors directory in RuntimeSettings", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    GIVEN("A config without an errors_dir setting") {
+        auto ms = Everest::ManagerSettings(Everest::ManagerSettings::WithoutConfig{}, bin_dir + "empty_yaml/", "");
+        THEN("The runtime settings carry the default errors directory resolved by the manager") {
+            CHECK(ms.runtime_settings.errors_dir == ms.errors_dir);
+            CHECK(ms.runtime_settings.errors_dir == ms.runtime_settings.data_dir / Everest::defaults::ERRORS_DIR);
+        }
+    }
+    GIVEN("A config with a custom errors_dir setting") {
+        auto ms = Everest::ManagerSettings(bin_dir + "valid_config_custom_errors_dir/",
+                                           bin_dir + "valid_config_custom_errors_dir/config.yaml");
+        THEN("The runtime settings carry the custom errors directory") {
+            CHECK(ms.runtime_settings.errors_dir == ms.errors_dir);
+            CHECK(fs::equivalent(ms.runtime_settings.errors_dir,
+                                 bin_dir + "valid_config_custom_errors_dir/custom_errors"));
+        }
+        THEN("The errors directory survives the serialization to modules and reaches the module paths") {
+            const Everest::RuntimeSettings received = nlohmann::json(ms.runtime_settings);
+            CHECK(received.errors_dir == ms.runtime_settings.errors_dir);
+
+            ModuleInfo module_info;
+            module_info.name = "TESTModule";
+            Everest::populate_module_info_path_from_runtime_settings(module_info, received);
+            CHECK(module_info.paths.errors == ms.runtime_settings.errors_dir);
+        }
+    }
+    GIVEN("Serialized runtime settings without an errors directory") {
+        auto settings_json = nlohmann::json(Everest::create_runtime_settings(
+            "/prefix", "/prefix/etc", "/prefix/share/everest", "/prefix/libexec", "/elsewhere/errors",
+            "/prefix/etc/logging.ini", "everest/", false, false, false));
+        settings_json.erase("errors_dir");
+        THEN("The errors directory defaults to the one in the data directory") {
+            const Everest::RuntimeSettings received = settings_json;
+            CHECK(received.errors_dir == fs::path("/prefix/share/everest") / Everest::defaults::ERRORS_DIR);
+        }
+    }
+}
+
 SCENARIO("Check ManagerSettings without a config file", "[!throws]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
     // The empty_yaml fixture uses the filesystem hierarchy standard layout (share/everest/...,
