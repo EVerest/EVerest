@@ -60,10 +60,11 @@ class EebusTestProbeModule(ProbeModule):
 
 
 @pytest_asyncio.fixture
-async def eebus_test_env(everest_core: EverestCore, test_controller: EverestTestController, control_service_server: ControlServiceServer, cs_lpc_control_server: CsLpcControlServer, control_service_servicer: ControlServiceServicer, cs_lpc_control_servicer: CsLpcControlServicer):
+async def eebus_test_env(eebus_clock, everest_core: EverestCore, test_controller: EverestTestController, control_service_server: ControlServiceServer, cs_lpc_control_server: CsLpcControlServer, control_service_servicer: ControlServiceServicer, cs_lpc_control_servicer: CsLpcControlServicer):
     """
     This fixture provides the basic test environment for the EEBUS module.
     It starts EVerest and the mock gRPC servers.
+    It depends on eebus_clock so the clock shim is set up before EVerest starts the module.
     """
     # Start everest in a thread so it doesn't block the event loop
     everest_thread = threading.Thread(target=test_controller.start)

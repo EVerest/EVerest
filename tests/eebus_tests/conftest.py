@@ -11,7 +11,16 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
     EverestConfigAdjustmentStrategy,
 )
 
-from eebus_test_utils import EebusPortStrategy, ReferenceControlBox, get_free_port
+from eebus_test_utils import ClockShift, EebusPortStrategy, ReferenceControlBox, get_free_port
+
+EEBUS_MODULE_PROCESS_NAME = "eebus:EEBUS"
+
+
+@pytest.fixture
+def eebus_clock(core_config, tmp_path, monkeypatch) -> ClockShift:
+    """Clock of the EEBUS module process, to be advanced across LPC timeouts."""
+    return ClockShift(core_config.everest_core_path, tmp_path / "clockshift_offset", EEBUS_MODULE_PROCESS_NAME,
+                      monkeypatch)
 
 
 @pytest.fixture

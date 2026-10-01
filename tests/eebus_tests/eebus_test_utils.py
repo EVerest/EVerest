@@ -11,6 +11,7 @@ the order of the paths passed to pytest.
 import os
 import signal
 import socket
+import struct
 import subprocess
 import time
 from copy import deepcopy
@@ -22,6 +23,44 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
 
 CERT_DIR = Path(__file__).parent
 CONTROLBOX_CERT_SKI = "5f4db7163af56b9f24ccf9eac9c1758bcde762de"
+
+CLOCKSHIFT_LIB = Path("libexec") / "everest" / "testing" / "libeverest_clockshift.so"
+
+
+class ClockShift:
+    """Advances the monotonic clock of one EVerest module process through
+    the everest_clockshift LD_PRELOAD shim , so tests can cross timeouts
+    mandated by a specification without waiting for them in real time.
+
+    The environment has to be in place before the manager starts, because the module
+    inherits it from there; everything else keeps the real clock.
+    """
+
+    def __init__(self, everest_prefix: Path, offset_file: Path, process_name: str, monkeypatch):
+        library = everest_prefix / CLOCKSHIFT_LIB
+        if not library.exists():
+            raise FileNotFoundError(f"{library} not found; build and install EVerest with BUILD_TESTING=ON")
+        self._offset_file = offset_file
+        self._offset_s = 0
+        self._offset_file.write_bytes(self._encoded_offset())
+        preload = os.environ.get("LD_PRELOAD")
+        monkeypatch.setenv("LD_PRELOAD", f"{library}:{preload}" if preload else str(library))
+        monkeypatch.setenv("CLOCKSHIFT_FILE", str(offset_file))
+        monkeypatch.setenv("CLOCKSHIFT_ONLY", process_name)
+
+    def advance(self, seconds: int):
+        """Move the module's monotonic clock forward by ``seconds``."""
+        assert seconds > 0, "the monotonic clock must not go backwards"
+        self._offset_s += seconds
+        # Overwrite in place: the module has the file mapped, truncating it would crash the module.
+        fd = os.open(self._offset_file, os.O_WRONLY)
+        try:
+            os.pwrite(fd, self._encoded_offset(), 0)
+        finally:
+            os.close(fd)
+
+    def _encoded_offset(self) -> bytes:
+        return struct.pack("<q", self._offset_s * 1_000_000_000)
 
 
 class EebusPortStrategy(EverestConfigAdjustmentStrategy):
