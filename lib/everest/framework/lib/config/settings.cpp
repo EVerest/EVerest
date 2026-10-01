@@ -3,17 +3,20 @@
 
 #include <utils/config/settings.hpp>
 
+#include <framework/runtime.hpp>
+
 namespace Everest {
 
 RuntimeSettings create_runtime_settings(const fs::path& prefix, const fs::path& etc_dir, const fs::path& data_dir,
-                                        const fs::path& modules_dir, const fs::path& logging_config_file,
-                                        const std::string& telemetry_prefix, bool telemetry_enabled,
-                                        bool validate_schema, bool forward_exceptions) {
+                                        const fs::path& modules_dir, const fs::path& errors_dir,
+                                        const fs::path& logging_config_file, const std::string& telemetry_prefix,
+                                        bool telemetry_enabled, bool validate_schema, bool forward_exceptions) {
     RuntimeSettings runtime_settings;
     runtime_settings.prefix = prefix;
     runtime_settings.etc_dir = etc_dir;
     runtime_settings.data_dir = data_dir;
     runtime_settings.modules_dir = modules_dir;
+    runtime_settings.errors_dir = errors_dir;
     runtime_settings.logging_config_file = logging_config_file;
     runtime_settings.telemetry_prefix = telemetry_prefix;
     runtime_settings.telemetry_enabled = telemetry_enabled;
@@ -23,13 +26,14 @@ RuntimeSettings create_runtime_settings(const fs::path& prefix, const fs::path& 
 }
 
 void populate_runtime_settings(RuntimeSettings& runtime_settings, const fs::path& prefix, const fs::path& etc_dir,
-                               const fs::path& data_dir, const fs::path& modules_dir,
+                               const fs::path& data_dir, const fs::path& modules_dir, const fs::path& errors_dir,
                                const fs::path& logging_config_file, const std::string& telemetry_prefix,
                                bool telemetry_enabled, bool validate_schema, bool forward_exceptions) {
     runtime_settings.prefix = prefix;
     runtime_settings.etc_dir = etc_dir;
     runtime_settings.data_dir = data_dir;
     runtime_settings.modules_dir = modules_dir;
+    runtime_settings.errors_dir = errors_dir;
     runtime_settings.logging_config_file = logging_config_file;
     runtime_settings.telemetry_prefix = telemetry_prefix;
     runtime_settings.telemetry_enabled = telemetry_enabled;
@@ -45,6 +49,7 @@ void adl_serializer<Everest::RuntimeSettings>::to_json(nlohmann::json& j, const 
          {"etc_dir", r.etc_dir},
          {"data_dir", r.data_dir},
          {"modules_dir", r.modules_dir},
+         {"errors_dir", r.errors_dir},
          {"telemetry_prefix", r.telemetry_prefix},
          {"telemetry_enabled", r.telemetry_enabled},
          {"validate_schema", r.validate_schema},
@@ -56,6 +61,9 @@ void adl_serializer<Everest::RuntimeSettings>::from_json(const nlohmann::json& j
     r.etc_dir = j.at("etc_dir").get<std::string>();
     r.data_dir = j.at("data_dir").get<std::string>();
     r.modules_dir = j.at("modules_dir").get<std::string>();
+    // absent when published by a manager that predates the field
+    r.errors_dir = j.contains("errors_dir") ? fs::path(j.at("errors_dir").get<std::string>())
+                                            : r.data_dir / Everest::defaults::ERRORS_DIR;
     r.telemetry_prefix = j.at("telemetry_prefix").get<std::string>();
     r.telemetry_enabled = j.at("telemetry_enabled").get<bool>();
     r.validate_schema = j.at("validate_schema").get<bool>();

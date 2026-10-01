@@ -1,0 +1,260 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <everest/ocpp_module_common/custom_error_mapping_validation.hpp>
+
+#include <gmock/gmock.h>
+#include <gtest/gtest.h>
+
+#include <set>
+#include <string>
+#include <utility>
+#include <vector>
+
+namespace {
+
+using namespace ocpp_module_common::custom_error_mapping;
+using ::testing::HasSubstr;
+using ::testing::UnorderedElementsAre;
+
+const std::filesystem::path ERRORS_DIR{EVEREST_ERRORS_DIR};
+
+CustomFileErrorMapping mapping_of(const std::string& content) {
+    auto result = parse_error_mapping(content);
+    EXPECT_NE(result.error_mapping, nullptr) << (result.findings.empty() ? "" : result.findings.front().to_string());
+    return result.error_mapping != nullptr ? *result.error_mapping : CustomFileErrorMapping{};
+}
+
+Finding single(const std::vector<Finding>& findings) {
+    EXPECT_EQ(findings.size(), 1U);
+    return findings.empty() ? Finding{} : findings.front();
+}
+
+TEST(ErrorMappingErrorTypesTest, ReadsDeclaredErrorTypesFromErrorsDir) {
+    const auto declared = read_declared_error_types(ERRORS_DIR);
+    ASSERT_TRUE(declared.has_value());
+    EXPECT_EQ(declared->count("generic/VendorError"), 1U);
+    EXPECT_EQ(declared->count("evse_board_support/MREC3HighTemperature"), 1U);
+}
+
+TEST(ErrorMappingErrorTypesTest, MissingErrorsDirIsReported) {
+    EXPECT_FALSE(read_declared_error_types("does/not/exist").has_value());
+}
+
+TEST(ErrorMappingErrorTypesTest, AcceptsDeclaredTypesAndAnySubType) {
+    const auto mapping = mapping_of(R"({
+        "generic/VendorError#AnySubType": {"v2": {"tech_code": "A"}},
+        "evse_board_support/MREC3HighTemperature": {"v2": {"tech_code": "B"}}
+    })");
+    EXPECT_TRUE(validate_error_types(mapping, read_declared_error_types(ERRORS_DIR).value()).empty());
+}
+
+TEST(ErrorMappingErrorTypesTest, RejectsUnknownNamespace) {
+    const auto mapping = mapping_of(R"({"genric/VendorError": {"v2": {"tech_code": "A"}}})");
+    const auto finding = single(validate_error_types(mapping, read_declared_error_types(ERRORS_DIR).value()));
+    EXPECT_EQ(finding.level, Finding::Level::Error);
+    EXPECT_EQ(finding.entry, "genric/VendorError");
+    EXPECT_THAT(finding.message, HasSubstr("unknown error namespace 'genric'"));
+}
+
+TEST(ErrorMappingErrorTypesTest, RejectsUnknownTypeInKnownNamespace) {
+    const auto mapping = mapping_of(R"({"evse_board_support/MREC3HighTemprature": {"v2": {"tech_code": "A"}}})");
+    const auto finding = single(validate_error_types(mapping, read_declared_error_types(ERRORS_DIR).value()));
+    EXPECT_EQ(finding.level, Finding::Level::Error);
+    EXPECT_THAT(finding.message, HasSubstr("unknown error type 'evse_board_support/MREC3HighTemprature'"));
+}
+
+TEST(ErrorMappingBuiltinTest, BuiltinTypesAreTheMrecKeys) {
+    const auto builtin = builtin_error_types();
+    EXPECT_EQ(builtin.size(), 23U);
+    EXPECT_EQ(builtin.count("evse_board_support/MREC3HighTemperature"), 1U);
+}
+
+TEST(ErrorMappingBuiltinTest, ListsEntriesReplacingBuiltin) {
+    const auto mapping = mapping_of(R"({
+        "evse_board_support/MREC3HighTemperature": {"v2": {"tech_code": "T-210"}},
+        "evse_board_support/MREC3HighTemperature#Sensor2": {"v2": {"tech_code": "T-211"}},
+        "generic/VendorError": {"v2": {"tech_code": "A"}}
+    })");
+    EXPECT_EQ(replaced_builtin_entries(mapping, builtin_error_types()),
+              std::vector<std::string>{"evse_board_support/MREC3HighTemperature"});
+}
+
+TEST(ErrorMappingValuesTest, AcceptsErrorPlaceholders) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"info": "${severity} on ${evse}/${connector}"}, "v2": {"tech_info": "${type}: ${message} [${uuid}]"}}})");
+    EXPECT_TRUE(validate_values(mapping).empty());
+}
+
+TEST(ErrorMappingValuesTest, ChecksPlaceholdersInEveryText) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"vendor_id": "${unknown}", "vendor_error_code": "${unknown}", "info": "${unknown}"},
+        "v2": {"tech_code": "${unknown}", "tech_info": "${unknown}"}}})");
+    std::vector<std::string> pointers;
+    for (const auto& finding : validate_values(mapping)) {
+        EXPECT_EQ(finding.level, Finding::Level::Warning);
+        pointers.push_back(finding.pointer);
+    }
+    EXPECT_THAT(pointers,
+                UnorderedElementsAre("/generic~1VendorError/v16/vendor_id",
+                                     "/generic~1VendorError/v16/vendor_error_code", "/generic~1VendorError/v16/info",
+                                     "/generic~1VendorError/v2/tech_code", "/generic~1VendorError/v2/tech_info"));
+}
+
+TEST(ErrorMappingValuesTest, WarnsAboutStaticCodeOverOcppLimit) {
+    const auto mapping =
+        mapping_of(R"({"generic/VendorError": {"v2": {"tech_code": ")" + std::string(51, 'x') + R"("}}})");
+    const auto finding = single(validate_values(mapping));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_code");
+}
+
+TEST(ErrorMappingValuesTest, WarnsAboutUnknownPlaceholder) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actual_value} deg"}}})");
+    const auto finding = single(validate_values(mapping));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_info");
+    EXPECT_THAT(finding.message, HasSubstr("${actual_value}"));
+}
+
+TEST(ErrorMappingValuesTest, WarnsAboutUnterminatedPlaceholder) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "at ${message deg"}}})");
+    const auto finding = single(validate_values(mapping));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v16/info");
+}
+
+TEST(ErrorMappingValuesTest, WarnsAboutStaticTextOverOcppLimit) {
+    const auto info = std::string(50, 'x') + "${message}";
+    const auto too_long_info = std::string(51, 'x');
+    const auto mapping = mapping_of(R"({
+        "generic/VendorError": {"v16": {"info": ")" +
+                                    info + R"("}},
+        "generic/VendorWarning": {"v16": {"info": ")" +
+                                    too_long_info + R"("}}
+    })");
+    const auto finding = single(validate_values(mapping));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.entry, "generic/VendorWarning");
+    EXPECT_THAT(finding.message, HasSubstr("51"));
+}
+
+/// \brief Device model holding the given components (name, evse, connector) with the given variables
+class FakeDeviceModel {
+public:
+    void add(const std::string& component, std::optional<std::int32_t> evse, std::optional<std::int32_t> connector,
+             std::set<std::string> variables) {
+        m_components.push_back({component, evse, connector, std::move(variables)});
+    }
+
+    DeviceModelLookup operator()(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+        m_lookups.push_back(component);
+        for (const auto& entry : m_components) {
+            const auto evse =
+                component.evse.has_value() ? std::optional<std::int32_t>(component.evse->id) : std::nullopt;
+            const auto connector = component.evse.has_value() ? component.evse->connectorId : std::nullopt;
+            if (entry.name == component.name.get() && entry.evse == evse && entry.connector == connector) {
+                return entry.variables.count(variable.name.get()) > 0 ? DeviceModelLookup::Known
+                                                                      : DeviceModelLookup::UnknownVariable;
+            }
+        }
+        return DeviceModelLookup::UnknownComponent;
+    }
+
+    const std::vector<ocpp::v2::Component>& lookups() const {
+        return m_lookups;
+    }
+
+private:
+    struct Component {
+        std::string name;
+        std::optional<std::int32_t> evse;
+        std::optional<std::int32_t> connector;
+        std::set<std::string> variables;
+    };
+    std::vector<Component> m_components;
+    std::vector<ocpp::v2::Component> m_lookups;
+};
+
+const EvseTopology TWO_EVSES{{1, 1}, {2, 1}};
+
+TEST(ErrorMappingDeviceModelTest, SkipsEntriesWithoutComponentOrVariable) {
+    FakeDeviceModel model;
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_code": "A"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, true).empty());
+    EXPECT_TRUE(model.lookups().empty());
+}
+
+TEST(ErrorMappingDeviceModelTest, AcceptsCombinationOnAnyConnector) {
+    FakeDeviceModel model;
+    model.add("Connector", 2, 1, {"Temperature"});
+    const auto mapping = mapping_of(
+        R"({"generic/VendorError": {"v2": {"component_name": "Connector", "variable_name": "Temperature"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, true).empty());
+}
+
+TEST(ErrorMappingDeviceModelTest, UsesDefaultComponentAndVariable) {
+    FakeDeviceModel model;
+    model.add("EVSE", 1, std::nullopt, {"Problem"});
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Problem"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
+    ASSERT_FALSE(model.lookups().empty());
+    EXPECT_EQ(model.lookups().back().name.get(), "EVSE");
+}
+
+// the raising module decides where its error is reported: modules without a mapping report on the ChargingStation
+TEST(ErrorMappingDeviceModelTest, AcceptsTheChargingStation) {
+    FakeDeviceModel model;
+    model.add("ChargingStation", std::nullopt, std::nullopt, {"Temperature"});
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Temperature"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
+}
+
+TEST(ErrorMappingDeviceModelTest, ChecksANamedChargingStationWithoutEvse) {
+    FakeDeviceModel model;
+    model.add("ChargingStation", std::nullopt, std::nullopt, {"Temperature"});
+    const auto mapping = mapping_of(
+        R"({"generic/VendorError": {"v2": {"component_name": "ChargingStation", "variable_name": "Temperature"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
+    for (const auto& lookup : model.lookups()) {
+        EXPECT_FALSE(lookup.evse.has_value());
+    }
+}
+
+TEST(ErrorMappingDeviceModelTest, WarningNamesEveryComponentChecked) {
+    FakeDeviceModel model;
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Temperature"}}})");
+    const auto finding = single(validate_device_model(mapping, std::ref(model), TWO_EVSES, false));
+    EXPECT_THAT(finding.message, HasSubstr("no component 'ChargingStation' or 'EVSE'"));
+}
+
+TEST(ErrorMappingDeviceModelTest, WarnsAboutUnknownVariable) {
+    FakeDeviceModel model;
+    model.add("Connector", 1, 1, {"Available"});
+    const auto mapping = mapping_of(
+        R"({"generic/VendorError": {"v2": {"component_name": "Connector", "variable_name": "Temperature"}}})");
+    const auto finding = single(validate_device_model(mapping, std::ref(model), TWO_EVSES, false));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2");
+    EXPECT_THAT(finding.message, HasSubstr("no variable 'Temperature' on component 'Connector'"));
+}
+
+TEST(ErrorMappingDeviceModelTest, StrictReportsUnknownComponentAsError) {
+    FakeDeviceModel model;
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"component_name": "SurgeProtector"}}})");
+    const auto finding = single(validate_device_model(mapping, std::ref(model), TWO_EVSES, true));
+    EXPECT_EQ(finding.level, Finding::Level::Error);
+    EXPECT_THAT(finding.message, HasSubstr("no component 'SurgeProtector'"));
+}
+
+TEST(ErrorMappingDeviceModelTest, PassesInstancesToTheLookup) {
+    FakeDeviceModel model;
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v2": {"component_name": "Spd", "component_instance": "1", "variable_name": "Tripped", "variable_instance": "L1"}}})");
+    validate_device_model(mapping, std::ref(model), TWO_EVSES, false);
+    ASSERT_FALSE(model.lookups().empty());
+    EXPECT_EQ(model.lookups().front().instance.value().get(), "1");
+    EXPECT_FALSE(model.lookups().front().evse.has_value());
+}
+
+} // namespace

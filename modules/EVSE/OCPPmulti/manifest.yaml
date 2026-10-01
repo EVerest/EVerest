@@ -23,10 +23,12 @@ config:
       about the database and its structure.
     type: string
     default: /tmp/ocpp201
-  CustomMrecErrorMapPath:
+  CustomErrorMappingPath:
     description: >-
-      Optional path to a JSON file mapping EVerest error types to OCPP techCodes. Entries overwrite the
-      built-in defaults. Leave empty to use only the defaults.
+      Optional path to a JSON file describing how EVerest errors are reported over OCPP, following
+      lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json. The fields an entry sets
+      override those of the built-in mapping; all other fields and errors keep it. Leave empty to use
+      only the built-in mapping. A relative path is resolved against the module's share directory.
     type: string
     default: ''
   DatabasePath:

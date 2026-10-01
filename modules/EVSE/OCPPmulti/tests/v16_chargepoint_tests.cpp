@@ -11,6 +11,8 @@
 
 #include <filesystem>
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 namespace {
 using namespace ocpp_multi;
 
@@ -93,26 +95,26 @@ protected:
 
 TEST(ChargePointV16, defaultIsFault) {
     Everest::error::Error error;
-    EXPECT_FALSE(ChargePointV16::default_is_fault(error));
+    EXPECT_FALSE(ocpp_module_common::DefaultErrorMappingV16::is_fault(error));
 }
 
 TEST(ChargePointV16, defaultVendorErrorCode) {
     Everest::error::Error error;
     error.type = "";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/");
     error.sub_type = "12345";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "/";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "abcd/";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "abcd/def";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/12345");
     error.sub_type = "";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/");
     error.type = "abcd/def/ghi";
     error.sub_type = "apples";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/ghi/apples");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/ghi/apples");
 }
 
 TEST(ChargePointV16, defaultVendorErrorCodeOriginal) {
@@ -131,7 +133,7 @@ TEST(ChargePointV16, defaultVendorErrorCodeOriginal) {
     EXPECT_EQ(vendor_error_code_orig(error), "def/");
     error.type = "abcd/def/ghi";
     error.sub_type = "apples";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/ghi/apples");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/ghi/apples");
 }
 
 TEST(ChargePointV16, encodePauseReasonsEmpty) {
