@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "protocol/cb_config.h"
+#include <charge_bridge/bridge_failure.hpp>
 #include <charge_bridge/charge_bridge.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/firmware_update/sync_fw_updater.hpp>
@@ -97,15 +98,25 @@ private:
 // the missing bridge is simply retried on the next attempt. An existing object is left untouched.
 // Failures are reported once per bridge (see failures_reported) because the retry runs on the ~10 s
 // manager cadence and a permanently missing capability would otherwise flood the log.
+// A permanent_bridge_failure is different in kind: the host can never satisfy the configuration (a
+// kernel that does not implement an ioctl the config asks for), so retrying would recreate and
+// destroy the bridge's host-local device every cadence for the rest of the session with no chance of
+// ever succeeding. Such a bridge is disabled for the lifetime of the process; the config-driven
+// status entry keeps reporting it as unavailable.
 template <class BridgeT, class FactoryT>
 void create_bridge(std::string const& cb_name, std::string const& bridge_name, std::unique_ptr<BridgeT>& bridge,
-                   std::set<std::string>& failures_reported, FactoryT&& factory) {
-    if (bridge) {
+                   std::set<std::string>& failures_reported, std::set<std::string>& permanently_disabled,
+                   FactoryT&& factory) {
+    if (bridge or permanently_disabled.count(bridge_name) > 0) {
         return;
     }
     try {
         bridge = factory();
         failures_reported.erase(bridge_name);
+    } catch (permanent_bridge_failure const& e) {
+        permanently_disabled.insert(bridge_name);
+        utilities::print_error(cb_name, "RUNTIME", -1)
+            << bridge_name << " permanently disabled: " << e.what() << std::endl;
     } catch (std::exception const& e) {
         if (failures_reported.insert(bridge_name).second) {
             utilities::print_error(cb_name, "RUNTIME", -1)
@@ -349,6 +360,18 @@ void charge_bridge::set_bridges_cb_connection_status(bool connected) {
     if (m_plc) {
         m_plc->set_cb_connection_status(connected);
     }
+    if (m_pty_1) {
+        m_pty_1->set_cb_connection_status(connected);
+    }
+    if (m_pty_2) {
+        m_pty_2->set_cb_connection_status(connected);
+    }
+    if (m_pty_3) {
+        m_pty_3->set_cb_connection_status(connected);
+    }
+    if (m_bsp) {
+        m_bsp->set_cb_connection_status(connected);
+    }
     if (m_io) {
         m_io->set_cb_connection_status(connected);
     }
@@ -484,67 +507,105 @@ std::future<bool> charge_bridge::start_internal_runtime() {
 // host-local device does not suppress the others, and is retried on the next call.
 void charge_bridge::create_internal_runtime() {
     if (m_config.can0.has_value()) {
-        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported, [this]() {
-            auto cfg = m_config.can0.value();
-            // Bus-rate pacing needs the CB's CAN bitrate; the heartbeat config carries it.
-            if (m_config.heartbeat.has_value()) {
-                switch (m_config.heartbeat->cb_config.can.baudrate) {
-                case CBCBR_125000:
-                    cfg.can_bitrate_bps = 125000;
-                    break;
-                case CBCBR_250000:
-                    cfg.can_bitrate_bps = 250000;
-                    break;
-                case CBCBR_500000:
-                    cfg.can_bitrate_bps = 500000;
-                    break;
-                case CBCBR_1000000:
-                    cfg.can_bitrate_bps = 1000000;
-                    break;
-                default:
-                    break;
-                }
-            }
-            return std::make_unique<can_bridge>(cfg, m_ready_notify);
-        });
+        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled, [this]() {
+                          auto cfg = m_config.can0.value();
+                          // Bus-rate pacing needs the CB's CAN bitrate; the heartbeat config carries it.
+                          if (m_config.heartbeat.has_value()) {
+                              switch (m_config.heartbeat->cb_config.can.baudrate) {
+                              case CBCBR_125000:
+                                  cfg.can_bitrate_bps = 125000;
+                                  break;
+                              case CBCBR_250000:
+                                  cfg.can_bitrate_bps = 250000;
+                                  break;
+                              case CBCBR_500000:
+                                  cfg.can_bitrate_bps = 500000;
+                                  break;
+                              case CBCBR_1000000:
+                                  cfg.can_bitrate_bps = 1000000;
+                                  break;
+                              default:
+                                  break;
+                              }
+                          }
+                          return std::make_unique<can_bridge>(cfg, m_ready_notify);
+                      });
     }
     if (m_config.serial1.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 1", m_pty_1, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial1.value(), m_ready_notify); });
     }
     if (m_config.serial2.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 2", m_pty_2, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial2.value(), m_ready_notify); });
     }
     if (m_config.serial3.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 3", m_pty_3, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial3.value(), m_ready_notify); });
     }
     if (m_config.plc.has_value()) {
         create_bridge(m_config.cb_name, "plc bridge", m_plc, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify); });
     }
     if (m_config.bsp.has_value()) {
         create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
-                      [this]() { return std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify); });
+                      m_bridge_permanently_disabled, [this]() {
+                          auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
+                          // The CE state arrives on the BSP connection but the plc bridge owns the
+                          // carrier it gates (plc.carrier_gate: ce_mated). Same pattern as the
+                          // heartbeat's link-status routing above: both run on the event loop
+                          // thread, the same thread that owns m_plc, and the guard tolerates the
+                          // bridges (re)appearing in any order.
+                          bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
+                              if (m_plc) {
+                                  m_plc->set_ce_state(ce_state);
+                              }
+                          });
+                          return bsp;
+                      });
     }
     if (m_config.io.has_value()) {
         create_bridge(m_config.cb_name, "io bridge", m_io, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<io_bridge>(m_config.io.value(), m_ready_notify); });
     }
     if (m_config.heartbeat.has_value()) {
-        create_bridge(m_config.cb_name, "heartbeat service", m_heartbeat, m_bridge_create_failures_reported, [this]() {
-            auto heartbeat_cb = [this](bool connected) {
-                {
-                    auto handle = m_cb_status.handle();
-                    handle->is_connected = connected;
-                }
-                set_bridges_cb_connection_status(connected);
-                m_cb_status.notify_one();
-            };
+        create_bridge(m_config.cb_name, "heartbeat service", m_heartbeat, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled, [this]() {
+                          auto heartbeat_cb = [this](bool connected) {
+                              {
+                                  auto handle = m_cb_status.handle();
+                                  handle->is_connected = connected;
+                              }
+                              set_bridges_cb_connection_status(connected);
+                              m_cb_status.notify_one();
+                          };
 
-            return std::make_unique<heartbeat_service>(m_config.heartbeat.value(), heartbeat_cb, m_ready_notify);
-        });
+                          // The MCU's link-status reports arrive on the heartbeat connection but belong to the plc
+                          // bridge, which owns the tap and its carrier. Both callbacks run on the event loop
+                          // thread, the same thread that owns m_plc.
+                          auto link_status_cb = [this](CbLinkStatusPacket const& status) {
+                              if (m_plc) {
+                                  m_plc->set_link_status(status);
+                              }
+                              // The BSP side needs only the board class, and only the real value:
+                              // the reboot path synthesizes an all-zero report, and letting that
+                              // reset the class to "assume CCS" would re-enable PP publication on an
+                              // MCS connector for a heartbeat. The MCU latches the technology at
+                              // plc_init, so a real value never becomes UNKNOWN again either.
+                              if (m_bsp and status.technology not_eq CB_LINK_TECH_UNKNOWN) {
+                                  m_bsp->set_link_technology(status.technology);
+                              }
+                          };
+
+                          return std::make_unique<heartbeat_service>(m_config.heartbeat.value(), heartbeat_cb,
+                                                                     link_status_cb, m_ready_notify);
+                      });
     }
 }
 
@@ -624,7 +685,7 @@ void charge_bridge::retry_missing_bridges() {
 
         // A bridge created here missed every set_bridges_cb_connection_status() that ran while it did
         // not exist, and nothing repeats that call for it: on a config without a heartbeat block the
-        // state is published once per connection edge, so a late can/plc/io bridge would report
+        // state is published once per connection edge, so a late can/plc/io/serial/bsp bridge would report
         // available() == false for the rest of the session. (Heartbeat configs heal themselves only
         // because the heartbeat republishes the state on every tick.) Apply the current state the way
         // heartbeat_cb does: read it under the monitor, then publish to the bridges with the lock
@@ -1292,14 +1353,40 @@ utilities::chargebridge_status charge_bridge::get_status() {
         auto available = m_bsp->available();
         status.bsp.emplace(available);
         status.cp_state = m_bsp->cp_state();
+        status.ce_state = m_bsp->ce_state();
+        status.id_state = m_bsp->id_state();
+        status.lock_state = m_bsp->lock_state();
     } else if (m_config.bsp.has_value()) {
         status.bsp.emplace(false);
     }
     if (m_plc) {
         auto available = m_plc->available();
         status.plc.emplace(available);
+        status.link_status = m_plc->link_status();
     } else if (m_config.plc.has_value()) {
         status.plc.emplace(false);
+    }
+    // The configured role is always known; what the MCU latched only ever arrives in a heartbeat
+    // reply, so without a heartbeat service there is nothing to compare it against and the latch
+    // reads as unlatched.
+    if (m_config.heartbeat.has_value()) {
+        auto const configured = to_wire(m_config.type);
+        auto const latched = m_heartbeat ? m_heartbeat->latched_cb_type() : cb_type_not_latched;
+        auto const technology =
+            m_heartbeat ? m_heartbeat->link_technology() : static_cast<std::uint8_t>(CB_LINK_TECH_UNKNOWN);
+        auto const state = evaluate_role_latch(configured, latched);
+        utilities::chargebridge_role_status role;
+        role.configured = cb_type_name(normalize_cb_type(configured));
+        role.latched = cb_type_name(latched);
+        role.not_configured = state == role_latch_state::not_configured;
+        role.awaiting_latch = state == role_latch_state::not_latched;
+        role.mismatch = state == role_latch_state::mismatched;
+        if (role.mismatch) {
+            // The remedy is board-specific, and the board class is only known from the reply's link
+            // technology - so it is resolved here, where that is in reach, rather than in the UI.
+            role.remedy = role_mismatch_remedy(technology);
+        }
+        status.role.emplace(std::move(role));
     }
     if (m_heartbeat) {
         auto available = m_heartbeat->available();
@@ -1528,6 +1615,7 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
     using namespace utilities;
     std::cout << "ChargeBridge: " << c.cb_name << std::endl;
     std::cout << " * remote:    " << c.cb_remote << std::endl;
+    std::cout << " * type:      " << to_string(c.type) << std::endl;
     if (c.serial1) {
         std::cout << " * serial 1:  " << c.serial1->serial_device;
         if (c.heartbeat.has_value() && CB_NUMBER_OF_UARTS >= 1) {
@@ -1560,7 +1648,12 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
         std::cout << " " << format_host_port(c.cb_remote, c.plc->cb_port);
         std::cout << " adress " << c.plc->plc_ip;
         std::cout << " netmask " << c.plc->plc_netmaks;
-        std::cout << " MTU " << c.plc->plc_mtu << std::endl;
+        std::cout << " MTU " << c.plc->plc_mtu;
+        if (c.plc->carrier == carrier_mode::firmware) {
+            std::cout << " carrier firmware (fallback "
+                      << (c.plc->carrier_fallback_policy == carrier_fallback::warn ? "warn" : "fail") << ")";
+        }
+        std::cout << std::endl;
     }
     if (c.bsp) {
         if (c.bsp->api.evse.enabled) {
