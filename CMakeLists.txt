@@ -21,7 +21,7 @@ if (NOT everest-cmake_FOUND)
     FetchContent_Declare(
         everest-cmake
         GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        dbd5bc399ff534f5477c83805f21fa425990e613 # v0.8.1 (not yet tagged)
+        GIT_TAG        8290dee47445c15f75ac3a5b4f971d6ddd4bef29 # v0.8.1 (not yet tagged)
     )
     FetchContent_MakeAvailable(everest-cmake)
     set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
