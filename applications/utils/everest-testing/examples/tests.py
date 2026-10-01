@@ -12,7 +12,7 @@ from everest.testing.core_utils.controller.test_controller_interface import Test
 from everest.testing.core_utils.fixtures import *
 # noinspection PyUnresolvedReferences
 from everest.testing.ocpp_utils.fixtures import test_utility, charge_point_v16, central_system, test_config, ocpp_config, charge_point, ocpp_version
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, OcppTestConfiguration, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, OcppTestConfiguration, TestUtility
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 
@@ -126,8 +126,8 @@ async def test_ocpp_201(charge_point_v201: ChargePoint201, test_controller: Ever
                                        validate_status_notification_201)
 
     # because LocalPreAuthorize is true we dont expect an authorize here
-    r: call.TransactionEventPayload = call.TransactionEventPayload(**await wait_for_and_validate(test_utility, charge_point_v201,
-                                                                                                 "TransactionEvent", {"eventType": "Started"}))
+    r: call.TransactionEventPayload = call.TransactionEventPayload(**await wait_for_payload(test_utility, charge_point_v201,
+                                                                                            "TransactionEvent", {"eventType": "Started"}))
 
     # Disable LocalPreAuthorize
     r: call_result.SetVariablesPayload = await charge_point_v201.set_config_variables_req("AuthCtrlr", "LocalPreAuthorize", "false")

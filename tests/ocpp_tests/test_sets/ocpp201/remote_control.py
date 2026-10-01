@@ -11,7 +11,7 @@ from everest.testing.core_utils.controller.test_controller_interface import Test
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../..")))
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility, ValidationMode
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility, ValidationMode
 from everest.testing.ocpp_utils.fixtures import *
 from ocpp.routing import on, after, create_route_map
 from ocpp.v201.enums import (IdTokenEnumType as IdTokenTypeEnum, TriggerMessageStatusEnumType)
@@ -234,7 +234,7 @@ async def test_F01_F02_F03(
 
     # because AuthorizeRemoteStart is false we directly expect a TransactionEvent(eventType=Started)
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -284,7 +284,7 @@ async def test_F01_F02_F03(
     )
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "TransactionEvent", {
                 "eventType": "Ended"}
         )
@@ -488,7 +488,7 @@ async def test_F06(
                 assert value.context == ReadingContextEnumType.trigger
 
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 1}
         )
     )
@@ -503,13 +503,13 @@ async def test_F06(
         r.status) == TriggerMessageStatusEnumType.accepted
 
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 1}
         )
     )
     check_meter_value(r)
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 2}
         )
     )
@@ -593,7 +593,7 @@ async def test_F06(
     test_controller.plug_in()
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -647,7 +647,7 @@ async def test_F06(
     test_controller.plug_in(connector_id=2)
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -657,7 +657,7 @@ async def test_F06(
     transaction_2: TransactionType = TransactionType(**r.transaction_info)
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",

@@ -15,7 +15,7 @@ from ocpp.v201 import call as call201
 from ocpp.routing import create_route_map
 import asyncio
 import pytest
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
 from everest_test_utils import *
@@ -83,7 +83,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -154,7 +154,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -250,7 +250,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, True, False)
@@ -462,7 +462,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point,
                 "Authorize",
@@ -564,7 +564,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -631,7 +631,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {"idToken": {"type": "ISO14443"}})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {"idToken": {"type": "ISO14443"}})
         )
 
         assert validate_authorize_req(authorize_req, False, False)
