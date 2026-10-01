@@ -652,7 +652,11 @@ void charge_bridge::select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery 
     }
     auto const txt = info.txt.find("board_type");
     auto role = txt == info.txt.end() ? std::nullopt : role_of_board_type(txt->second);
-    if (not role.has_value() and m_config.type != cb_role::unspecified) {
+    // MCS hardware has no role strapping: the board announces the role persisted in its EEPROM,
+    // but it takes charge_bridge.type from this instance's first config heartbeat, so a configured
+    // type decides here even when the board still announces the other role (or the neutral CB-MCS).
+    auto const is_mcs = txt != info.txt.end() and utilities::string_starts_with(txt->second, "CB-MCS");
+    if (m_config.type != cb_role::unspecified and (is_mcs or not role.has_value())) {
         role = m_config.type;
     }
     if (not role.has_value()) {
