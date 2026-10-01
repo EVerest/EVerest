@@ -1,13 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef SLAC_CHANNEL_HPP
 #define SLAC_CHANNEL_HPP
 
 #include <memory>
 #include <string>
 
-// SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
 #include <slac/slac.hpp>
 
 namespace utils {

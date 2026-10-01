@@ -73,7 +73,7 @@ Example header file called ``ocpp/OcppDataModel.hpp``:
 .. code-block:: cpp
 
   // SPDX-License-Identifier: Apache-2.0
-  // Copyright 2026 Pionix GmbH and Contributors to EVerest
+  // Copyright Pionix GmbH and Contributors to EVerest
 
   /// \file Object to manage the OCPP data model
 
@@ -112,7 +112,7 @@ Example source file called ``ocpp/OcppDataModel.cpp``:
 .. code-block:: cpp
 
   // SPDX-License-Identifier: Apache-2.0
-  // Copyright 2026 Pionix GmbH and Contributors to EVerest
+  // Copyright Pionix GmbH and Contributors to EVerest
 
   namespace {
   int internal_function(int parameter) {

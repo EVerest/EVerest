@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/openssl_util.hpp>

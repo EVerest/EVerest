@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // pause_rx()/resume_rx(), tx_coalescing() and the tx drained action on a fake byte stream policy;
 // the peer close case uses tcp_client on loopback.

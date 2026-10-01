@@ -14,6 +14,6 @@ _create_snapshot.py_ uses EDM to create an snapshot in a temporary subdirectory 
 
 _parsebb.py_ parses .bb files and returns a json object containing the repository link, branch, revision and direct link to a file relative to the repo link
 
-_replace_license.py_ parses C++ files and replaces license headers with up2date Apache 2.0 headers used in EVerest
+_replace_license.py_ parses C++ files and replaces license headers with up2date Apache 2.0 headers used in EVerest. With `--strip-years` it only removes the years from existing Pionix copyright notices in all tracked files
 
 _snapshot2bb.py_ parses a snapshot.yaml file and modifies the corresponding recipe .bb files

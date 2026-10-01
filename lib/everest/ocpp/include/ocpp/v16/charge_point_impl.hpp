@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_CHARGE_POINT_IMPL_HPP
 #define OCPP_V16_CHARGE_POINT_IMPL_HPP
 #include "ocpp/v16/ocpp_enums.hpp"

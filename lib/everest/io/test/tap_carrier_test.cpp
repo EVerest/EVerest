@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Carrier support for TAP devices: tap_handler's open(..., carrier_on), set_carrier, carrier, and the kernel
 // behaviour a carrier watcher relies on (IFF_LOWER_UP of RTM_NEWLINK; a tap has no operstate string).

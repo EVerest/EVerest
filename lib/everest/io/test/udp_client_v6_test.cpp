@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Characterization test: the connected udp_client already works over IPv6.
 // This locks that guarantee so the unconnected-client refactor cannot regress

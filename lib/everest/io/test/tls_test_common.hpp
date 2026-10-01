@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Shared helpers for the everest_io_tls_test binary. All four TLS test TUs compile into one
 // executable, so everything here is inline.

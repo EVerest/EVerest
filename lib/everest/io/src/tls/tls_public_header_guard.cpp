@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Compiled without libtls on the include path, so re-adding an everest/tls/tls.hpp include to any
 // header below fails here. The impl and config headers need ::tls complete, so they are not listed.

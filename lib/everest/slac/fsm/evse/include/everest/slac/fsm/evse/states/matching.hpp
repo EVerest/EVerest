@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef EVSE_SLAC_STATES_MATCHING_HPP
 #define EVSE_SLAC_STATES_MATCHING_HPP
 
