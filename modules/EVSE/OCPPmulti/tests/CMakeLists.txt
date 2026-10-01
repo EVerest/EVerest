@@ -39,13 +39,19 @@ target_sources(${TEST_TARGET_NAME}
 
     # general
     charge_point_config_factory_v16_tests.cpp
+    generic_ocpp_error_dispatch_tests.cpp
     generic_ocpp_tests.cpp
+    generic_ocpp_v16_connector_tests.cpp
     grid_support_der_tests.cpp
     grid_support_state_test.cpp
     main.cpp
     v16_chargepoint_tests.cpp
+    v16_error_convert_freeze_tests.cpp
+    v16_error_dispatch_tests.cpp
+    v16_mrec_freeze_tests.cpp
     v16_variable_access_tests.cpp
     v2_chargepoint_tests.cpp
+    v2_mrec_freeze_tests.cpp
 
     everest/logging.cpp
     stubs/chargepoint_stub.cpp

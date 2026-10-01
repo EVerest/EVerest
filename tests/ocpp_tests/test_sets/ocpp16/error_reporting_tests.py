@@ -391,3 +391,59 @@ async def test_mrec_error_cleared_reports_nothing_while_still_faulted_by_default
             "vendor_error_code": None,
         },
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-sil-ocpp.yaml")
+)
+@pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Internal", "ReportClearedErrors", True)])
+)
+async def test_mrec_over_current_failure_reports_its_own_error_code(
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    logging.info("######### test_mrec_over_current_failure_reports_its_own_error_code #########")
+
+    # A second MREC key with a dedicated OCPP 1.6 errorCode, next to MREC2GroundFailure above
+    error_type = "MREC4OverCurrentFailure"
+    vendor_error_code = "CX004"
+    message = "over current detected"
+
+    test_controller.publish(
+        _raise_error_topic(test_controller),
+        json.dumps({"type": error_type, "message": message}),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "error_code": ChargePointErrorCode.over_current_failure,
+            "info": message,
+            "vendor_id": MREC_VENDOR_ID,
+            "vendor_error_code": vendor_error_code,
+        },
+    )
+
+    test_controller.publish(
+        _clear_error_topic(test_controller),
+        json.dumps({"type": error_type}),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        {
+            "connector_id": 1,
+            "info": f"{vendor_error_code} resolved",
+            "vendor_id": MREC_VENDOR_ID,
+            "vendor_error_code": vendor_error_code,
+        },
+    )

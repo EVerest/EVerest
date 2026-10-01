@@ -812,12 +812,18 @@ void ChargePointV16::on_der_republish_active_directives() {
 
 void ChargePointV16::on_event(const EventInfo& event) {
     check_configured("on_event");
+    dispatch_error_event(
+        event, [this](std::int32_t evse_id, const auto& info) { m_charge_point->on_error(evse_id, info); },
+        [this](std::int32_t evse_id, const auto& uuid) { m_charge_point->on_error_cleared(evse_id, uuid); });
+}
+
+void ChargePointV16::dispatch_error_event(const EventInfo& event, const error_raised_t& raised,
+                                          const error_cleared_t& cleared) {
     if (event.error) {
         if (event.event_cleared) {
-            m_charge_point->on_error_cleared(event.evse_id, event.error->uuid.uuid);
+            cleared(event.evse_id, event.error->uuid.uuid);
         } else {
-            const auto error_info = convert_error(event.error.value());
-            m_charge_point->on_error(event.evse_id, error_info);
+            raised(event.evse_id, convert_error(event.error.value()));
         }
     }
 }
