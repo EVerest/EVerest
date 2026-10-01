@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <everest/database/sqlite/statement.hpp>
 #include <everest/logging.hpp>
@@ -48,8 +48,8 @@ void DeviceModelStorageSqlite::initialize_connection(const fs::path& db_path) {
 }
 
 int DeviceModelStorageSqlite::get_component_id(const Component& component_id) {
-    const std::string select_query =
-        "SELECT ID FROM COMPONENT WHERE NAME = ? AND INSTANCE IS ? AND EVSE_ID IS ? AND CONNECTOR_ID IS ?";
+    const std::string select_query = "SELECT ID FROM COMPONENT WHERE NAME = ? COLLATE NOCASE AND INSTANCE IS ? COLLATE "
+                                     "NOCASE AND EVSE_ID IS ? AND CONNECTOR_ID IS ?";
 
     auto select_stmt = this->db->new_statement(select_query);
 
@@ -82,7 +82,8 @@ int DeviceModelStorageSqlite::get_variable_id(const Component& component_id, con
         return -1;
     }
 
-    const std::string select_query = "SELECT ID FROM VARIABLE WHERE COMPONENT_ID = ? AND NAME = ? AND INSTANCE IS ?";
+    const std::string select_query = "SELECT ID FROM VARIABLE WHERE COMPONENT_ID = ? AND NAME = ? COLLATE NOCASE AND "
+                                     "INSTANCE IS ? COLLATE NOCASE";
     auto select_stmt = this->db->new_statement(select_query);
 
     select_stmt->bind_int(1, _component_id);
@@ -492,8 +493,8 @@ bool DeviceModelStorageSqlite::create_network_configuration_slot_from_default_sc
     const auto& variables = parsed.second;
 
     try {
-        auto select_existing = this->db->new_statement(
-            "SELECT 1 FROM COMPONENT WHERE NAME = 'NetworkConfiguration' AND INSTANCE = @instance");
+        auto select_existing = this->db->new_statement("SELECT 1 FROM COMPONENT WHERE NAME = 'NetworkConfiguration' "
+                                                       "COLLATE NOCASE AND INSTANCE = @instance COLLATE NOCASE");
         select_existing->bind_text("@instance", new_instance, SQLiteString::Transient);
         if (select_existing->step() == SQLITE_ROW) {
             EVLOG_warning << "create_network_configuration_slot_from_default_schema: slot " << new_slot

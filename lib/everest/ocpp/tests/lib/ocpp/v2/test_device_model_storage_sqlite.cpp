@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <filesystem>
 
@@ -47,6 +47,35 @@ TEST_F(DeviceModelStorageSQLiteTest, test_check_integrity_invalid) {
     DeviceModelStorageSqlite dm(DATABASE_PATH);
 
     EXPECT_NO_THROW(dm.check_integrity());
+}
+
+/// \brief identifierString fields (component and variable name and instance) are matched case-insensitively
+TEST_F(DeviceModelStorageSQLiteTest, test_set_variable_attribute_value_case_insensitive) {
+    DeviceModelStorageSqlite dm(DATABASE_PATH);
+
+    EVSE evse;
+    evse.id = 2;
+    evse.connectorId = 3;
+
+    Component component;
+    component.name = "unittestCTRLR";
+    component.evse = evse;
+    Variable variable;
+    variable.name = "UNITTESTPROPERTYANAME";
+
+    EXPECT_EQ(dm.set_variable_attribute_value(component, variable, AttributeEnum::Actual, "false", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    Component stored_component;
+    stored_component.name = "UnitTestCtrlr";
+    stored_component.evse = evse;
+    Variable stored_variable;
+    stored_variable.name = "UnitTestPropertyAName";
+
+    const auto attribute = dm.get_variable_attribute(stored_component, stored_variable, AttributeEnum::Actual);
+    ASSERT_TRUE(attribute.has_value());
+    ASSERT_TRUE(attribute->value.has_value());
+    EXPECT_EQ(attribute->value.value().get(), "false");
 }
 
 /// \brief Fixture that mimics a DeviceModelConfigPath copied from a release that predates OCPP16LegacyCtrlr: a copy
