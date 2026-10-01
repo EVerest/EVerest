@@ -96,6 +96,8 @@ struct Conf {
     int MessageQueueResumeDelay;
     std::string RequestCompositeScheduleUnit;
     int DelayOcppStart;
+    int ErrorGracePeriodS;
+    int ErrorGraceMinPeriodS;
     int ResetStopDelay;
     int Ocpp16NetworkConfigSlot;
 };
@@ -197,6 +199,7 @@ private:
     std::map<int32_t, int32_t> connector_evse_index_map; // provides access to r_evse_manager index by
                                                          // using OCPP connector id
     everest::lib::util::monitor<std::map<int32_t, bool>> evse_ready_map;
+    everest::lib::util::monitor<std::map<int32_t, bool>> evse_errors_cleared_map;
     everest::lib::util::monitor<std::map<int32_t, std::optional<float>>> evse_soc_map;
     std::set<std::string> resuming_session_ids;
 
