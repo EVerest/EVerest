@@ -25,6 +25,14 @@ target_sources(libocpp_unit_tests PRIVATE
         test_message_queue.cpp
         test_charge_point_state_machine.cpp
         test_composite_schedule.cpp
+<<<<<<< HEAD
+=======
+        test_charge_point_connectivity.cpp
+        test_devicemodel_connectivity.cpp
+        test_charge_point_status_notification.cpp
+        test_charge_point_suspend_reason.cpp
+        test_charge_point_malformed_call_result.cpp
+>>>>>>> 3856a96 (fix(ocpp): Various 1.6 crashes (#2870))
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp

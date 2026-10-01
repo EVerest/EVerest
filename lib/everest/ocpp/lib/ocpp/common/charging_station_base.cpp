@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <boost/make_shared.hpp>
 #include <ocpp/common/charging_station_base.hpp>
@@ -23,9 +23,11 @@ ChargingStationBase::ChargingStationBase(const std::shared_ptr<EvseSecurity>& ev
 }
 
 ChargingStationBase::~ChargingStationBase() {
-    work->get_executor().context().stop();
-    io_context.stop();
-    io_context_thread.join();
+    this->work.reset();
+    this->io_context.stop();
+    if (this->io_context_thread.joinable()) {
+        this->io_context_thread.join();
+    }
 }
 
 } // namespace ocpp
