@@ -4,8 +4,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <string>
+
 #include <generic_ocpp.hpp>
 
+#include "mrec_fixture.hpp"
 #include "stubs/chargepoint_stub.hpp"
 #include "stubs/config_stub.hpp"
 #include "stubs/generic_ocpp_stub.hpp"
@@ -143,6 +146,37 @@ TEST_F(GenericOcppProvidesTester, errorTypeNotRemapped) {
     ASSERT_TRUE(event->error.has_value());
     EXPECT_EQ(event->error->type, "evse_board_support/MREC2GroundFailure");
     EXPECT_FALSE(event->event_cleared);
+}
+
+TEST_F(GenericOcppProvidesTester, mrecErrorsForwardedUnmodifiedOnRaiseAndClear) {
+    // every MREC error reaches the chargepoint implementation unchanged, with the
+    // cleared flag matching the direction; the protocol-specific mapping happens there
+    using ::testing::_;
+
+    std::vector<ocpp_multi::GenericChargePointInterface::EventInfo> events;
+    EXPECT_CALL(chargepoint, on_event(_)).WillRepeatedly([&events](const auto& arg) { events.push_back(arg); });
+
+    for (const auto& entry : mrec_fixture::ENTRIES) {
+        SCOPED_TRACE(std::string(entry.type));
+        events.clear();
+
+        Everest::error::Error error;
+        error.type = std::string(entry.type);
+        error.sub_type = "some_sub_type";
+        error.message = "sensor reports fault";
+        ocpp->cb_error_handler(error);
+        ocpp->cb_error_cleared_handler(error);
+
+        ASSERT_EQ(events.size(), 2U);
+        for (std::size_t i = 0; i < events.size(); ++i) {
+            ASSERT_TRUE(events[i].error.has_value());
+            EXPECT_EQ(events[i].error->type, entry.type);
+            EXPECT_EQ(events[i].error->sub_type, "some_sub_type");
+            EXPECT_EQ(events[i].error->message, "sensor reports fault");
+            EXPECT_EQ(events[i].error->uuid, error.uuid);
+            EXPECT_EQ(events[i].event_cleared, i == 1);
+        }
+    }
 }
 
 } // namespace

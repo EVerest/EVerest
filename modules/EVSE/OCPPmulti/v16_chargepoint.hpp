@@ -12,6 +12,7 @@
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/variable_resolver.hpp>
 
+#include <functional>
 #include <optional>
 
 namespace ocpp_multi {
@@ -98,7 +99,6 @@ private:
     ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
     void cb_variable_listener(const ocpp::v16::KeyValue& key_value);
 
-    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
     ocpp::v2::AuthorizeResponse validate_pnc(const types::authorization::ProvidedIdToken& provided_token);
     ocpp::v2::AuthorizeResponse validate_standard(const types::authorization::ProvidedIdToken& provided_token);
 
@@ -212,6 +212,13 @@ public:
     static std::optional<ocpp::CiString<50>>
     encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons);
     static std::string default_vendor_error_code(const Everest::error::Error& error);
+
+protected:
+    // Access for unit tests
+    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
+    using error_raised_t = std::function<void(std::int32_t, const ocpp::v16::ErrorInfo&)>;
+    using error_cleared_t = std::function<void(std::int32_t, const std::string&)>;
+    void dispatch_error_event(const EventInfo& event, const error_raised_t& raised, const error_cleared_t& cleared);
 };
 
 } // namespace ocpp_multi
