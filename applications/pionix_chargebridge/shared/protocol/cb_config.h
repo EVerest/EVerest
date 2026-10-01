@@ -153,7 +153,7 @@ typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 5
+#define CB_CONFIG_VERSION 6
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
@@ -163,4 +163,11 @@ typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint8_t plc_powersaving_mode;
 	CbAdcConfig adcs[CB_NUMBER_OF_ADCS];
 	uint8_t debug_uart_udp_enabled; // 1: forward MCU debug-UART printf to the host over UDP (CST_CbToHost_DebugUart)
+	int8_t station_id;              // MCS station ID, -1 for non-PLCA mode (Physical Layer Collision Avoidance)
+	// charge_bridge.type: 0 = EVSE, 1 = EV, 2 = unspecified (the YAML key is absent).
+	// Latched at the first config after MCU boot; on MCS boards 2 latches EVSE, the fail-safe
+	// role. The distinction between 0 and 2 exists so a board whose role is strapping-coded (CCS)
+	// can tell "the host explicitly asked for the other role" from "the host said nothing", and
+	// only complain about the former -- see mcs_role_decide().
+	uint8_t cb_type;
 } CbConfig;

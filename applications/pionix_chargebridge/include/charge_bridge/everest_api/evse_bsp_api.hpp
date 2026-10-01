@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <charge_bridge/mcs_bsp.hpp>
 #include <chrono>
 #include <cstdint>
 #include <everest/io/event/fd_event_register_interface.hpp>
@@ -11,6 +12,7 @@
 #include <everest_api_types/utilities/Topics.hpp>
 #include <functional>
 #include <protocol/cb_common.h>
+#include <protocol/cb_management.h>
 #include <protocol/evse_bsp_cb_to_host.h>
 #include <protocol/evse_bsp_host_to_cb.h>
 #include <string>
@@ -43,6 +45,12 @@ public:
     void raise_comm_fault();
     void clear_comm_fault();
     void sync(bool cb_connected);
+    // CbLinkTechnology from the heartbeat link status. Tells an MCS board from a CCS one, which
+    // decides whether the PP conductor exists at all (see set_cb_message). Latched: see
+    // technology_latch.
+    void set_link_technology(std::uint8_t technology);
+    // Retarget: the next endpoint may be a different board, so the class is learned again.
+    void forget_link_technology();
 
 private:
     void tx(evse_bsp_host_to_cb const& msg);
@@ -95,6 +103,9 @@ private:
     bool m_cb_connected{false};
     bool m_bc_initial_comm_check{true};
     bool m_pp_fault_raised{false};
+    // Starts unlatched, i.e. "assume CCS until told otherwise": that keeps a board whose heartbeat
+    // has not answered yet behaving exactly as it did before MCS existed.
+    technology_latch m_link_technology;
     std::string m_cb_identifier;
     std::chrono::steady_clock::time_point last_everest_heartbeat;
 
