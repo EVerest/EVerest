@@ -435,6 +435,8 @@ void GenericOcpp::init_mrec_error_map() {
                                            " (relative paths resolve against the OCPPmulti share directory)"));
     }
     mv_mrec_error_map = module::load_mrec_error_map_overrides(resolved);
+    EVLOG_warning << "CustomMrecErrorMapPath is set but the overrides are not applied to the codes reported to the "
+                     "CSMS: the OCPP 2.x error mapping uses the built-in MREC table";
 }
 
 void GenericOcpp::init() {

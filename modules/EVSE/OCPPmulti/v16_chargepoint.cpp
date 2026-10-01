@@ -3,6 +3,8 @@
 
 #include "v16_chargepoint.hpp"
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 #include "charge_point_config_factory_v16.hpp"
 #include "ocpp_module_common_aliases.hpp"
 #include "v16_conversions.hpp"
@@ -12,6 +14,7 @@
 #include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
 #include <algorithm>
+#include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -33,7 +36,6 @@ constexpr const auto ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
 constexpr const auto ISO15118_PNC_ENABLED_COMPONENT = "ISO15118Ctrlr";
 constexpr const auto ISO15118_PNC_ENABLED_VARIABLE = "PnCEnabled";
 
-constexpr const auto INOPERATIVE_ERROR_TYPE = "evse_manager/Inoperative";
 constexpr const auto SWITCHING_PHASES_REASON = "SwitchingPhases";
 constexpr const auto REPORT_SUSPENDED_EVSE_REASON_CHANGE_CONFIG_KEY = "ReportSuspendedEVSEReasonChange";
 
@@ -407,63 +409,23 @@ void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) 
 }
 
 ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& error) {
-    const auto& error_type = error.type;
+    using namespace ocpp_module_common;
 
-    ocpp::v16::ErrorInfo result(error.uuid.uuid, ocpp::v16::ChargePointErrorCode::OtherError, false);
-    result.timestamp = ocpp::DateTime(error.timestamp);
-    bool incomplete{true};
+    // MREC before the OCPP table before Inoperative: a more specific mapping is asked first
+    static const MrecErrorMapping mrec;
+    static const OcppErrorMappingV16 ocpp_table;
+    static const InoperativeErrorMappingV16 inoperative;
+    static const DefaultErrorMappingV16 fallback;
+    static const std::array<const ErrorMappingV16*, 4> mappings{&mrec, &ocpp_table, &inoperative, &fallback};
 
-    // MREC mapping
-    const auto mrec_it =
-        std::find_if(ocpp_module_common::v16::MREC_ERROR_MAP.begin(), ocpp_module_common::v16::MREC_ERROR_MAP.end(),
-                     [error_type](const auto& entry) { return error_type.find(entry.first) != std::string::npos; });
-    if (mrec_it != ocpp_module_common::v16::MREC_ERROR_MAP.end()) {
-        const auto& [error_code, vendor_error_code] = mrec_it->second;
-        // update the result
-        result.error_code = error_code;
-        result.vendor_id = ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
-        result.vendor_error_code = ocpp::CiString<50>(vendor_error_code, ocpp::StringTooLarge::Truncate);
-        if (not error.message.empty()) {
-            result.info = ocpp::CiString<50>(error.message, ocpp::StringTooLarge::Truncate);
-        }
-        incomplete = false;
-    }
-
-    // OCPP mapping
-    if (incomplete) {
-        const auto ocpp_it =
-            std::find_if(ocpp_module_common::v16::OCPP_ERROR_MAP.begin(), ocpp_module_common::v16::OCPP_ERROR_MAP.end(),
-                         [error_type](const auto& entry) { return error_type.find(entry.first) != std::string::npos; });
-
-        // is OCPP error
-        if (ocpp_it != ocpp_module_common::v16::OCPP_ERROR_MAP.end()) {
-            // update the result
-            result.error_code = ocpp_it->second;
-            result.vendor_id = ocpp::CiString<255>(error.message, ocpp::StringTooLarge::Truncate);
-            incomplete = false;
+    for (const auto* mapping : mappings) {
+        if (auto result = mapping->try_convert(error); result.has_value()) {
+            return std::move(result).value();
         }
     }
 
-    if (incomplete) {
-        if (error_type == INOPERATIVE_ERROR_TYPE) {
-            // update the result
-            result.is_fault = true;
-            result.info = ocpp::CiString<50>("caused_by:" + error.message, ocpp::StringTooLarge::Truncate);
-            result.vendor_id = ocpp::CiString<255>(error.vendor_id, ocpp::StringTooLarge::Truncate);
-            result.vendor_error_code = ocpp::CiString<50>(error.description, ocpp::StringTooLarge::Truncate);
-            incomplete = false;
-        }
-    }
-
-    if (incomplete) {
-        // default processing
-        result.is_fault = default_is_fault(error);
-        result.info = ocpp::CiString<50>(error.origin.to_string(), ocpp::StringTooLarge::Truncate);
-        result.vendor_id = ocpp::CiString<255>(error.message, ocpp::StringTooLarge::Truncate);
-        result.vendor_error_code = ocpp::CiString<50>(default_vendor_error_code(error), ocpp::StringTooLarge::Truncate);
-    }
-
-    return result;
+    EVLOG_error << "no OCPP 1.6 mapping converted error type '" << error.type << "', reporting it as OtherError";
+    return make_v16_error_info(error);
 }
 
 ocpp::v2::AuthorizeResponse ChargePointV16::validate_pnc(const types::authorization::ProvidedIdToken& provided_token) {
@@ -1121,10 +1083,6 @@ ChargePointV16::validate_token(const types::authorization::ProvidedIdToken& prov
     return validation_result;
 }
 
-bool ChargePointV16::default_is_fault(const Everest::error::Error& error) {
-    return false;
-}
-
 std::optional<ocpp::CiString<50>>
 ChargePointV16::encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons) {
     if (!reasons.has_value()) {
@@ -1163,25 +1121,6 @@ ChargePointV16::encode_pause_reasons(const std::optional<types::evse_manager::Ch
     }
 
     return ocpp::CiString<50>{result, ocpp::StringTooLarge::Truncate};
-}
-
-std::string ChargePointV16::default_vendor_error_code(const Everest::error::Error& error) {
-    std::string result;
-
-    // this function should return everything after the first '/'
-    // delimiter - if there is no delimiter or the delimiter is at
-    // the end, it should return the input itself
-
-    auto npos = error.type.find('/');
-    if (npos == std::string::npos) {
-        result = error.type;
-    } else {
-        result = error.type.substr(npos + 1);
-    }
-
-    result.push_back('/');
-    result += error.sub_type;
-    return result;
 }
 
 } // namespace ocpp_multi
