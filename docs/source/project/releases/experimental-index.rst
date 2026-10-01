@@ -87,3 +87,9 @@ any experimental option it was given.
        PersistentSessionStorage module (``get_sessions``, ``get_session``,
        ``clear_sessions``). Channels, operations and message payloads may change
        without further notice.
+   * - :ref:`powermeter_consumer_API module <everest_modules_powermeter_consumer_API>`
+       and its ``powermeter_consumer_API`` AsyncAPI specification
+     - 2026.10.0
+     - External read access to a powermeter (``powermeter``,
+       ``public_key_ocmf``, ``capabilities``). Channels, operations and message
+       payloads may change without further notice.
