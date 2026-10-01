@@ -38,10 +38,14 @@ all prerequisites into your environment.
 
 After that, you should in particular have:
 
-- *optional:* The EVerest dependency manager (check via ``edm --version``)
+- The EVerest dependency manager (check via ``edm --version``)
 - The EVerest cli utility (check via ``ev-cli --version``)
 - A running MQTT broker (e.g. started as container as described in the setup
   guide; per default expected on localhost on port 1883)
+
+It is not necessary to compile and install EVerest. During this tutorial, it
+will be included as a dependency and compiled as part of the build process
+anyway.
 
 Workspace Setup
 ===============
@@ -64,7 +68,14 @@ Alternative 1: Clone required repositories (recommended for recent versions)
 Just clone this, to get the required dependencies::
 
     git clone https://github.com/EVerest/everest-cmake.git ${EVEREST_WORKSPACE}/everest-cmake
-    git clone https://github.com/EVerest/everest-core.git ${EVEREST_WORKSPACE}/everest-core
+    git clone https://github.com/EVerest/EVerest.git ${EVEREST_WORKSPACE}/everest-core
+
+.. note::
+
+    The repository is now named ``EVerest``, but it has to be checked out into a
+    directory called ``everest-core``. The EVerest dependency manager matches
+    directories in the workspace to dependency names, and the CMake project is
+    still called ``everest-core``.
 
 Alternative 2: Setup Workspace via EVerest Dependency Manager (recommended for pre-2026 version)
 ------------------------------------------------------------------------------------------------
@@ -98,7 +109,7 @@ First, create an empty folder that is to contain your module. In the
 following, we assume the environment variable ``EVEREST_TUTORIAL_DIR`` to hold
 this directory, for example::
 
-    export EVEREST_TUTORIAL_DIR=~/everest-tutorial-module
+    export EVEREST_TUTORIAL_DIR=${EVEREST_WORKSPACE}/everest-tutorial-module
     git clone https://github.com/EVerest/everest-template.git $EVEREST_TUTORIAL_DIR
 
 This provides you in particular with the ``.clang-format`` and ``.eslintrc.json``
@@ -355,7 +366,7 @@ only ``everest-core`` as a dependency looks like this::
 
     ---
     everest-core:
-      git: https://github.com/EVerest/everest-core.git
+      git: https://github.com/EVerest/EVerest.git
       git_tag: main
 
 With the above setup taken care of, you are now ready to build the project.
@@ -502,7 +513,7 @@ notice an `everest` topic popping up.
 
 We can now publish a command to our self-written module. For this, choose the topic::
 
-    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd
+    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd/command_tutorial
 
 and publish the JSON::
 
@@ -514,13 +525,13 @@ and publish the JSON::
         "id": "00000000-0000-0000-0000-000000000042",
         "origin": "manual_test"
       },
-      "name": "command_tutorial",
-      "type": "call"
+      "msg_type": "Cmd"
     }
 
-Our module should return with a "everest" response (you may have to reselect
-the ``everest/tutorial_module_instance/interface_impl_tutorial_module/cmd``
-on the left to refresh this view.
+Our module should return a response including "everest" as ``retval`` (the
+reply topic is
+``everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd/command_tutorial/response/manual_test``,
+where the last segment is the ``origin`` from the request).
 
 .. image:: images/mqtt_explorer_example.png
 
@@ -580,7 +591,7 @@ modules have now started. You may now again use MQTT Explorer as before and
 send a command call via MQTT, this should hit your set breakpoint with a
 output similar to::
 
-    Thread 4 "tutorial_module" hit Breakpoint 1, module::interface_impl_tutorial_module::interface_tutorial_moduleImpl::handle_command_tutorial (this=0xaaaaaad24fc0, payload="mock_transaction_id") at /tmp/everest-tutorial-verify/modules/TutorialModule/interface_impl_tutorial_module/interface_tutorial_moduleImpl.cpp:17
+    Thread 4 "tutorial_module" hit Breakpoint 1, module::interface_impl_tutorial_module::interface_tutorial_moduleImpl::handle_command_tutorial (this=0xaaaaaad24fc0, payload="Hello World!") at $EVEREST_TUTORIAL_DIR/modules/TutorialModule/interface_impl_tutorial_module/interface_tutorial_moduleImpl.cpp:17
     17	    return "everest";
 
 
@@ -624,12 +635,12 @@ to ``modules/TutorialModule/manifest.yaml``:
       countdown:
          interface: countdown_interface
 
-Adding a new requirement necessitates regenerating some of our source code. The `ev-cli` tool
+Adding a new requirement necessitates regenerating some of our source code. The ``ev-cli`` tool
 can help with that::
 
-    cd $EVEREST_TUTORIAL_DIR && ev-cli module update --force --schemas-dir $EVEREST_WORKSPACE/everest-framework/schemas TutorialModule
+    cd $EVEREST_TUTORIAL_DIR && ev-cli module update --force --everest-dir . --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/everest-core/applications/utils/ev-dev-tools/src/ev_cli/licenses
 
-The `force` flag makes sure that the tool doesn't skip existing files, but still overwrites what's
+The ``--force`` flag makes sure that the tool doesn't skip existing files, but still overwrites what's
 necessary to reflect changes in the manifest.
 
 Now we can implement our interaction with the timer in ``interface_tutorial_moduleImpl.cpp``:
@@ -763,6 +774,12 @@ Finally, implement the module in ``modules/PyCountdown/module.py``:
     Notice that along with the boilerplate, module authors must also implement
     some kind of run loop so that the process won't exit immediately.
 
+.. note::
+
+    The ``CMakeLists.txt`` file for the PyCountdown module remains empty, but is still
+    required to let the ``ev_add_module(PyCountdown)`` call in the higher-level
+    ``CMakeLists.txt`` succeed.
+
 Don't forget to add the new module to the build system in ``modules/CMakeLists.txt``::
 
     ev_add_module(TutorialModule)
@@ -772,7 +789,7 @@ Connecting the Modules At Runtime
 ---------------------------------
 
 Our tutorial module requires an implementation of the countdown interface, so let's add
-the new module to the config in ``config-everest-tutorial-module.yaml``:
+the new module to the config in ``$EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml``:
 
 ..  code-block:: yaml
 
@@ -786,7 +803,7 @@ the new module to the config in ``config-everest-tutorial-module.yaml``:
       countdown:
         module: PyCountdown
 
-After building the project and running the script, try sending the `command_tutorial` command
+After building the project and running the script, try sending the ``command_tutorial`` command
 as before. If the payload is a number string, PyCountdown will count down from that number until
 it reaches zero. If the payload is not a valid number, the tutorial module will log that the
 countdown was unsuccessful.
