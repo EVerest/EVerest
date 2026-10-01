@@ -1010,7 +1010,9 @@ public:
     /// \return a response containing the requested key(s) including the values and unkown keys if present
     GetConfigurationResponse get_configuration_key(const GetConfigurationRequest& request);
 
-    /// \brief Sets a configuration key
+    /// \brief Sets a configuration key on behalf of a local caller
+    /// \note Unlike a ChangeConfiguration.req from the CSMS, this also writes ReadOnly keys. Keys whose value the
+    /// stack derives itself are still rejected.
     /// \param key
     /// \param value
     /// \return Indicates the result of the operation

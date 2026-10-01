@@ -767,6 +767,15 @@ are **currently not** carried on this interface; its result has no ``statusInfo`
 in either protocol mode. A rejected write therefore has to be diagnosed from the
 module log, which names the reason code and the offending component/variable.
 
+``ReadOnly`` mutability constrains the CSMS, not these channels: ``set_variables``
+also writes ``ReadOnly`` variables, e.g. ``InternalCtrlr``/``ChargePointModel``,
+in both protocol modes. In OCPP 1.6 mode, keys whose value the stack computes stay
+``Rejected``, e.g. ``NumberOfConnectors``, ``SupportedFeatureProfiles`` or
+``SupportedMeasurands``. ``CentralSystemURI`` is one of them: change the CSMS URL
+through ``NetworkConfiguration``/``OcppCsmsUrl`` of a slot that is not in use, as in
+OCPP 2.x. Most ``ReadOnly`` values are only read at boot or on (re)connect, so an
+accepted write takes effect then.
+
 Addressing rules:
 
 - Standard OCPP 2.x variables: their standard component (``OCPPCommCtrlr``,

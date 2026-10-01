@@ -55,12 +55,18 @@ TEST_P(Configuration, CustomDisplayCostAndPriceEnabled) {
     EXPECT_TRUE(kv.value().readonly);
 }
 
-TEST_P(Configuration, CustomDisplayCostAndPriceSetRejectedWhenReadOnly) {
+TEST_P(Configuration, CustomDisplayCostAndPriceSetWhenReadOnly) {
     ASSERT_NE(get(), nullptr);
     // by default the key is read-only (CostAndPrice.json / OCPP16LegacyCtrlr.json)
     device_model->set_readonly("CustomDisplayCostAndPrice");
-    EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Rejected);
-    EXPECT_FALSE(get()->getCustomDisplayCostAndPriceEnabled());
+    if (GetParam() == "sql") {
+        // ReadOnly binds the CSMS only, the ChangeConfiguration.req handler rejects it
+        EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Accepted);
+        EXPECT_TRUE(get()->getCustomDisplayCostAndPriceEnabled());
+    } else {
+        EXPECT_EQ(get()->set("CustomDisplayCostAndPrice", "true"), ocpp::v16::ConfigurationStatus::Rejected);
+        EXPECT_FALSE(get()->getCustomDisplayCostAndPriceEnabled());
+    }
 }
 
 TEST_P(Configuration, CustomDisplayCostAndPriceSetAcceptedWhenWritable) {
