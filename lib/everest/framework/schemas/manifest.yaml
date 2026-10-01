@@ -172,7 +172,7 @@ properties:
     type: boolean
     default: false
   capabilities:
-    description: Linux capabilities required to run this module
+    description: Linux capabilities required to run this module, e.g. "CAP_NET_RAW"
     type: array
     items:
       type: string
