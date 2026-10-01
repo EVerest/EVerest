@@ -43,6 +43,13 @@ public:
     api_connector(everest_api_config const& config, std::string const& cb_identifier);
     void set_cb_tx(tx_ftor const& handler);
     void set_cb_message(evse_bsp_cb_to_host const& msg);
+    // Heartbeat-verified connection state. On the up edge the host status goes out at once: the MCU
+    // opens its BSP slot only after a host packet, so waiting for the sync tick would delay the first
+    // BSP packet, and with it the connected report, by up to one tick.
+    void notify_cb_connection(bool connected);
+    // CbLinkTechnology from the heartbeat link status; only the EVSE API acts on it so far.
+    void set_link_technology(std::uint8_t technology);
+    void forget_link_technology();
     void set_error_handler(error_ftor const& handler);
 
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override;
@@ -51,6 +58,7 @@ public:
 private:
     void handle_mqtt_connect();
     void handle_cb_connection_state();
+    void sync_cb_connection_state();
     bool check_cb_heartbeat();
 
     std::string m_cb_identifier;
