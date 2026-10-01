@@ -49,14 +49,16 @@ cc_test(
     name = "ocpp_module_common_tests",
     srcs = [
         "tests/custom_error_mapping_loader_tests.cpp",
+        "tests/custom_error_mapping_validation_tests.cpp",
         "tests/error_handling_tests.cpp",
         "tests/transaction_handler_tests.cpp",
     ],
-    data = glob(["tests/data/*.json"]) + ["schemas/custom_error_mapping.example.json"],
+    data = glob(["tests/data/*.json"]) + ["schemas/custom_error_mapping.example.json"] + ["//errors"],
     linkstatic = True,
     local_defines = [
         'TEST_DATA_DIR=\\"lib/everest/ocpp_module_common/tests/data\\"',
         'CUSTOM_ERROR_MAPPING_SCHEMAS_DIR=\\"lib/everest/ocpp_module_common/schemas\\"',
+        'EVEREST_ERRORS_DIR=\\"errors\\"',
     ],
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,
     deps = [
