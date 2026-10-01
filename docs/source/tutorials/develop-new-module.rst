@@ -223,6 +223,11 @@ configuration::
 
     cd $EVEREST_TUTORIAL_DIR && ev-cli module create --everest-dir . --schemas-dir $EVEREST_WORKSPACE/everest-core/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/everest-core/applications/utils/ev-dev-tools/src/ev_cli/licenses
 
+.. note::
+
+    ``ev-cli`` prints ``Could not detect EVerest path in --everest-dir`` at
+    this point, because the project has not been configured with CMake yet.
+    This message can be ignored, the files are generated nevertheless.
 
 After that, you should have the following file structure::
 
@@ -230,7 +235,6 @@ After that, you should have the following file structure::
     ├── build
     │        └── generated
     │            (...)
-    ├── config
     ├── interfaces
     │        └── interface_tutorial_module.yaml
     └── modules
@@ -238,7 +242,6 @@ After that, you should have the following file structure::
             ├── CMakeLists.txt
             ├── TutorialModule.cpp
             ├── TutorialModule.hpp
-            ├── doc.rst
             ├── docs
             │        └── index.rst
             ├── interface_impl_tutorial_module
@@ -401,6 +404,14 @@ And finally, install the binaries::
 
     make install -j <number of parallel jobs>
 
+.. note::
+
+    Since ``everest-core`` is included as a dependency, the first build
+    compiles all of EVerest and installs all of its modules and run scripts
+    alongside your own into ``dist/`` and ``build/run-scripts/``. Expect this
+    to take a while (e.g. about 20 minutes with 6 parallel jobs). Subsequent
+    builds only recompile what changed.
+
 
 If everything worked smoothly so far, your modules are installed and ready to
 run.
@@ -470,7 +481,7 @@ Up to path substitution this will have the following content::
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
     manager \
         --prefix $EVEREST_TUTORIAL_DIR/dist \
-        --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
+        --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
 
 It puts the compiled libraries and binaries into the respective paths, and
 then runs EVerest by calling the `manager` binary with the respective
@@ -483,13 +494,14 @@ project!).
 Executing ``run-modules-tutorial.sh`` then should start EVerest, and provide
 an output similar to::
 
-    YYYY-MM-DD 00:00:12.500139 [INFO] manager          :: 8< 8< 8< ------------------------------------------------------------------------------ 8< 8< 8<
-    YYYY-MM-DD 00:00:12.500327 [INFO] manager          :: EVerest manager starting using /home/everest/everest-module-tutorial/config/config-modules-tutorial.yaml
-    YYYY-MM-DD 00:00:12.500354 [INFO] manager          :: EVerest using MQTT broker localhost:1883
-    YYYY-MM-DD 00:00:12.799618 [INFO] everest_ctrl     :: everest controller process started ...
-    YYYY-MM-DD 00:00:12.799822 [INFO] everest_ctrl     :: Launching controller service on port 8849
-    YYYY-MM-DD 00:00:13.120267 [INFO] tutorial_module  :: Module tutorial_module_instance initialized.
-    YYYY-MM-DD 00:00:13.149934 [INFO] manager          :: >>> All modules are initialized. EVerest up and running <<<
+    YYYY-MM-DD 00:00:12.012386 [INFO] manager          :: Manager state transition: Idle -> Initializing
+    (...)
+    YYYY-MM-DD 00:00:12.016459 [INFO] manager          :: Using MQTT broker localhost:1883
+    (...)
+    YYYY-MM-DD 00:00:12.085100 [INFO] manager          :: Starting 1 modules
+    YYYY-MM-DD 00:00:12.421989 [INFO] tutorial_module  :: Module tutorial_module_instance initialized [325ms]
+    YYYY-MM-DD 00:00:12.422833 [INFO] manager          :: 🚙🚙🚙 All modules are initialized. EVerest up and running [337ms] 🚙🚙🚙
+    YYYY-MM-DD 00:00:12.422879 [INFO] manager          :: Manager state transition: StartingModules -> Running
 
 If your socket can't be connected, make sure that your MQTT brocker is running.
 
@@ -552,6 +564,9 @@ Rerun Cmake, this time with `-DCMAKE_BUILD_TYPE=Debug`, and rebuild::
     CMAKE_PREFIX_PATH=$EVEREST_WORKSPACE cmake --install-prefix $EVEREST_TUTORIAL_DIR/dist -DCMAKE_BUILD_TYPE=Debug ..
     make -j <number of parallel jobs>
 
+Note that changing the build type rebuilds everything, including all of
+``everest-core``, so this takes about as long as the first build.
+
 *2) Start EVerest with your module with your module marked as "standalone"*
 
 With EVerest built as described before, but with the additonal option
@@ -559,7 +574,7 @@ With EVerest built as described before, but with the additonal option
 
     LD_LIBRARY_PATH=$EVEREST_TUTORIAL_DIR/dist/lib:$LD_LIBRARY_PATH \
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
-    manager --prefix $EVEREST_TUTORIAL_DIR/dist  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
+    manager --prefix $EVEREST_TUTORIAL_DIR/dist  --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
 
 This starts EVerest, but without your module. Instead, the output contains a
 line::
@@ -576,7 +591,7 @@ Now open a second terminal (while keeping EVerest running in the frist
 terminal), and start your  module via ``gdb``::
 
     cd $EVEREST_TUTORIAL_DIR/build
-    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
+    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance  --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
 
 
 In gdb, we set a break in the line that returns the payload when  your test
@@ -633,7 +648,7 @@ to ``modules/TutorialModule/manifest.yaml``:
     # ...
     requires:
       countdown:
-         interface: countdown_interface
+        interface: countdown_interface
 
 Adding a new requirement necessitates regenerating some of our source code. The ``ev-cli`` tool
 can help with that::
