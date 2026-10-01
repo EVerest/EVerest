@@ -4,6 +4,7 @@
 #include <everest/database/exceptions.hpp>
 #include <everest/database/sqlite/schema_updater.hpp>
 #include <framework/runtime.hpp>
+#include <utils/capabilities.hpp>
 #include <utils/config.hpp>
 #include <utils/config/slot_manager.hpp>
 #include <utils/config/storage_sqlite.hpp>
@@ -591,7 +592,13 @@ int ModuleLoader::initialize() {
     if (m_should_exit) {
         return EXIT_FAILURE;
     }
+    // before any thread is created, capabilities are per thread
+    const auto capabilities_error = raise_ambient_capabilities();
     Logging::init(m_logging_config_file.string(), m_module_id);
+    if (capabilities_error) {
+        EVLOG_warning << "Child processes of this module will not inherit its Linux capabilities: "
+                      << *capabilities_error;
+    }
 
     Date::preload_tzdb();
 

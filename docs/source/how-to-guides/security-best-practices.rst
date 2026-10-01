@@ -115,6 +115,10 @@ Run the script again whenever module binaries are replaced, since
 overwriting a file drops its capabilities. File capabilities are ignored
 on file systems mounted with ``nosuid``.
 
+At startup, the framework adds these capabilities to the ambient set of
+the module process, so programs it starts, e.g. ``ip`` called by the Setup
+module, run with the same capabilities.
+
 .. note::
 
    Setting Linux capabilities for a module with the ``capabilities`` key
