@@ -681,11 +681,48 @@ TEST_F(ChargerTest, DelayedAuthorizeAfterCancelTransactionIsIgnored) {
     types::authorization::ValidationResult validation_result;
     validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
 
-    charger->authorize(true, token, validation_result);
+    EXPECT_FALSE(charger->authorize(true, token, validation_result));
 
     // The delayed response must not restore authorization
     EXPECT_FALSE(ctx.flag_authorized);
     EXPECT_TRUE(ctx.flag_externally_cancelled);
+}
+
+TEST_F(ChargerTest, AuthorizeWhileDisableRequestedIsIgnored) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_disable_requested = true;
+
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::ISO14443;
+    token.authorization_type = types::authorization::AuthorizationType::RFID;
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    EXPECT_FALSE(charger->authorize(true, token, validation_result));
+    EXPECT_FALSE(ctx.flag_authorized);
+}
+
+TEST_F(ChargerTest, AuthorizeAppliesToken) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::ISO14443;
+    token.authorization_type = types::authorization::AuthorizationType::RFID;
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    reset_last_event();
+    EXPECT_TRUE(charger->authorize(true, token, validation_result));
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_EQ(last_event, SessionEventEnum::Authorized);
 }
 
 // Test that disabling while a transaction is active goes through the proper

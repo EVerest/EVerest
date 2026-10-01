@@ -32,6 +32,7 @@ def validate_standard_start_transaction(meta_data, msg, exp_payload):
         and (msg.payload["idTag"] == exp_payload.id_tag or exp_payload.id_tag == None)
         and msg.payload["meterStart"] == exp_payload.meter_start
         and "timestamp" in msg.payload
+        and (exp_payload.reservation_id is None or msg.payload.get("reservationId") == exp_payload.reservation_id)
     )
 
     if success:
