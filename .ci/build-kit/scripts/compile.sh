@@ -1,5 +1,21 @@
 #!/bin/sh
 
+mkdir -p "$EXT_MOUNT/build"
+if [ ! -f "$EXT_MOUNT/build/venv/pyvenv.cfg" ]; then
+    python3 -m venv "$EXT_MOUNT/build/venv"
+fi
+if ! "$EXT_MOUNT/build/venv/bin/python" -m pip show grpcio >/dev/null 2>&1 || \
+    ! "$EXT_MOUNT/build/venv/bin/python" -c \
+        'import importlib.metadata, sys; sys.exit(importlib.metadata.version("grpcio-tools") != "1.70.0")' \
+        >/dev/null 2>&1; then
+    "$EXT_MOUNT/build/venv/bin/python" -m pip install setuptools grpcio grpcio-tools==1.70.0
+    retVal=$?
+    if [ $retVal -ne 0 ]; then
+        echo "Installing Python gRPC generator dependencies failed with return code $retVal"
+        exit $retVal
+    fi
+fi
+
 cmake \
     -B "$EXT_MOUNT/build" \
     -S "$EXT_MOUNT/source" \

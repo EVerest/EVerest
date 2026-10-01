@@ -45,6 +45,33 @@ function(eebus_check_dependencies)
         list(APPEND missing "eebus-grpc sources (check EVEREST_DEPENDENCY_ENABLED_EEBUS_GRPC)")
     endif()
 
+    if (NOT Python3_EXECUTABLE)
+        list(APPEND missing "Python interpreter (Python3_EXECUTABLE is not set)")
+    else()
+        foreach(package IN ITEMS grpcio)
+            execute_process(
+                COMMAND "${Python3_EXECUTABLE}" -m pip show "${package}"
+                RESULT_VARIABLE pip_result
+                OUTPUT_QUIET
+                ERROR_QUIET
+            )
+            if (NOT pip_result EQUAL 0)
+                list(APPEND missing "Python package ${package} (install with '${Python3_EXECUTABLE} -m pip install ${package}')")
+            endif()
+        endforeach()
+
+        execute_process(
+            COMMAND "${Python3_EXECUTABLE}" -c
+                "import importlib.metadata, sys; sys.exit(importlib.metadata.version('grpcio-tools') != '1.70.0')"
+            RESULT_VARIABLE grpcio_tools_result
+            OUTPUT_QUIET
+            ERROR_QUIET
+        )
+        if (NOT grpcio_tools_result EQUAL 0)
+            list(APPEND missing "Python package grpcio-tools==1.70.0 (install with '${Python3_EXECUTABLE} -m pip install grpcio-tools==1.70.0')")
+        endif()
+    endif()
+
     if (missing)
         set(${arg_RESULT_VAR} FALSE PARENT_SCOPE)
     else()
