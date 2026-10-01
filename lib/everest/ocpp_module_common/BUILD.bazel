@@ -48,6 +48,7 @@ cc_library(
 cc_test(
     name = "ocpp_module_common_tests",
     srcs = [
+        "tests/custom_error_mapping_converter_tests.cpp",
         "tests/custom_error_mapping_loader_tests.cpp",
         "tests/custom_error_mapping_validation_tests.cpp",
         "tests/error_handling_tests.cpp",

@@ -8,6 +8,7 @@ add_executable(${TEST_TARGET_NAME})
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
     composed_device_model_storage_test.cpp
+    custom_error_mapping_converter_tests.cpp
     custom_error_mapping_loader_tests.cpp
     custom_error_mapping_validation_tests.cpp
     data_transfer_conversions_test.cpp
