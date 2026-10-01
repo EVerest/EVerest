@@ -279,8 +279,9 @@ class ModuleInterfaces {
 private:
     ModuleAdapter m_adapter;
     Requirement m_requirement{"ocpp", 0};
-    ModuleInfo m_module_info{"name", {/*authors*/}, "Apache-2.0", "ocpp", {"./etc", "./libexec", "./OCPP201"},
-                             false,  false,         std::nullopt};
+    ModuleInfo m_module_info{
+        "name", {/*authors*/}, "Apache-2.0", "ocpp", {"./etc", "./libexec", "./OCPP201", EVEREST_ERRORS_DIR},
+        false,  false,         std::nullopt};
 
 public:
     using provides_t = ocpp_multi::GenericOcppInterface::provides_t;
@@ -315,6 +316,10 @@ public:
 
     const ModuleInfo& get_module_info() const {
         return m_module_info;
+    }
+
+    void set_errors_dir(const std::filesystem::path& errors_dir) {
+        m_module_info.paths.errors = errors_dir;
     }
 
     void add_charger_information(const std::string& module_id) {

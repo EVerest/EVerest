@@ -47,6 +47,12 @@ bool ConfigAccess::getEnableExternalWebsocketControl() const {
 bool ConfigAccess::getEnableLegacyConfigMigration() const {
     return m_config.EnableLegacyConfigMigration;
 }
+std::string ConfigAccess::getErrorMappingPath() const {
+    return m_config.ErrorMappingPath;
+}
+bool ConfigAccess::getErrorMappingStrictValidation() const {
+    return m_config.ErrorMappingStrictValidation;
+}
 std::string ConfigAccess::getEverestDeviceModelDatabasePath() const {
     return m_config.EverestDeviceModelDatabasePath;
 }

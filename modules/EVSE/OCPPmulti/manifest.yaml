@@ -101,6 +101,20 @@ config:
       If true websocket can be disconnected and connected externally. This parameter is for debug and testing purposes.
     type: boolean
     default: false
+  ErrorMappingPath:
+    description: >-
+      Optional path to a JSON file defining how EVerest errors are reported in OCPP 1.6 and 2.x, following
+      error_mapping/error_mapping.schema.json. Relative paths are resolved against this module's share path.
+      The file is loaded and validated at startup; the module fails to start if it has errors.
+      Leave empty to use no error mapping file.
+    type: string
+    default: ''
+  ErrorMappingStrictValidation:
+    description: >-
+      If true, OCPP 2.x component/variable combinations of the error mapping file that the device model does not
+      contain are errors that stop the module. If false, they are logged as warnings.
+    type: boolean
+    default: false
   EverestDeviceModelDatabasePath:
     description: >-
       OCPP 2.0.1

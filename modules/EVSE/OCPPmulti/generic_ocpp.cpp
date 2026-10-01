@@ -2,10 +2,12 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "generic_ocpp.hpp"
+#include "error_mapping/error_mapping_validation.hpp"
 #include "everest/logging.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/common/utils.hpp"
 #include <set>
+#include <sstream>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
@@ -151,6 +153,34 @@ std::filesystem::path remove_dir(std::filesystem::path path) {
         }
     }
     return result;
+}
+
+std::filesystem::path resolve_error_mapping_path(const std::filesystem::path& module_share,
+                                                 const std::string& configured) {
+    return update_path_multi(remove_dir(module_share), configured);
+}
+
+void append(std::vector<ocpp_multi::error_mapping::Finding>& findings,
+            std::vector<ocpp_multi::error_mapping::Finding> more) {
+    findings.insert(findings.end(), std::make_move_iterator(more.begin()), std::make_move_iterator(more.end()));
+}
+
+/// \brief Logs every finding and throws when one of them is an error
+void report_error_mapping_findings(const std::filesystem::path& path,
+                                   const std::vector<ocpp_multi::error_mapping::Finding>& findings) {
+    using ocpp_multi::error_mapping::Finding;
+    std::ostringstream errors;
+    for (const auto& finding : findings) {
+        if (finding.level == Finding::Level::Error) {
+            EVLOG_error << "Error mapping " << path << ": " << finding.to_string();
+            errors << "\n  " << finding.to_string();
+        } else {
+            EVLOG_warning << "Error mapping " << path << ": " << finding.to_string();
+        }
+    }
+    if (ocpp_multi::error_mapping::has_errors(findings)) {
+        throw std::runtime_error("Error mapping file " + path.string() + " is invalid:" + errors.str());
+    }
 }
 
 } // namespace
@@ -454,10 +484,92 @@ void GenericOcpp::init() {
         }
     }
 
+    init_error_mapping();
     init_check_energy_sink();
     init_evse_maps();
     init_subscribe();
     init_evse_subscribe();
+}
+
+void GenericOcpp::init_error_mapping() {
+    namespace em = error_mapping;
+    const auto configured = mv_config.getErrorMappingPath();
+    if (configured.empty()) {
+        return;
+    }
+    const auto path = resolve_error_mapping_path(mv_info.paths.share, configured);
+    EVLOG_info << "Error mapping file: " << path;
+
+    auto result = em::load_error_mapping(path);
+    auto findings = std::move(result.findings);
+    if (result.error_mapping.has_value()) {
+        const auto& mapping = result.error_mapping.value();
+        append(findings, em::validate_values(mapping));
+        if (const auto declared = em::read_declared_error_types(mv_info.paths.errors); declared.has_value()) {
+            append(findings, em::validate_error_types(mapping, declared.value()));
+        } else {
+            findings.push_back({em::Finding::Level::Error, "", "",
+                                "error types cannot be checked, the errors directory " + mv_info.paths.errors.string() +
+                                    " does not exist"});
+        }
+    }
+    report_error_mapping_findings(path, findings);
+    mv_error_mapping = std::move(result.error_mapping);
+    EVLOG_info << "Error mapping: " << mv_error_mapping->entries().size() << " entries loaded";
+    for (const auto& key : em::replaced_builtin_entries(mv_error_mapping.value(), em::builtin_error_types())) {
+        EVLOG_info << "Error mapping: entry '" << key << "' replaces the built-in MREC entry";
+    }
+}
+
+void GenericOcpp::ready_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure) {
+    namespace em = error_mapping;
+    if (!mv_error_mapping.has_value()) {
+        return;
+    }
+    auto findings = em::validate_topology(mv_error_mapping.value(), evse_connector_structure);
+    if (ocpp_2_selected()) {
+        const auto lookup = [this](const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+            ocpp::v2::GetVariableData request;
+            request.component = component;
+            request.variable = variable;
+            const auto results = mv_charge_point.get_variables({request});
+            if (results.empty()) {
+                return em::DeviceModelLookup::UnknownComponent;
+            }
+            switch (results.front().attributeStatus) {
+            case ocpp::v2::GetVariableStatusEnum::UnknownComponent:
+                return em::DeviceModelLookup::UnknownComponent;
+            case ocpp::v2::GetVariableStatusEnum::UnknownVariable:
+                return em::DeviceModelLookup::UnknownVariable;
+            default:
+                return em::DeviceModelLookup::Known;
+            }
+        };
+        append(findings, em::validate_device_model(mv_error_mapping.value(), lookup, evse_connector_structure,
+                                                   mv_config.getErrorMappingStrictValidation()));
+    } else {
+        EVLOG_info << "Error mapping: device model not checked, OCPP 1.6 has no NotifyEvent component/variable";
+    }
+    report_error_mapping_findings(resolve_error_mapping_path(mv_info.paths.share, mv_config.getErrorMappingPath()),
+                                  findings);
+}
+
+void GenericOcpp::log_mapping_override(const Everest::error::Error& error) {
+    if (!mv_error_mapping.has_value()) {
+        return;
+    }
+    const auto* entry = mv_error_mapping->find(error.type, error.sub_type);
+    if (entry == nullptr) {
+        return;
+    }
+    const auto conflict = error_mapping::mapping_override(*entry, error);
+    if (!conflict.has_value()) {
+        return;
+    }
+    const auto key = entry->key.to_string() + '|' + error.origin.module_id + '|' + error.origin.implementation_id;
+    if (m_logged_mapping_overrides.handle()->insert(key).second) {
+        EVLOG_warning << "Error mapping: " << conflict.value();
+    }
 }
 
 void GenericOcpp::ready(const ConfigServiceClient& client) {
@@ -541,7 +653,9 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         args.charger_info = mv_requires.charger_information.at(0)->call_get_charger_information();
     }
 
+    const auto evse_topology = args.evse_connector_structure;
     mv_charge_point.init(args);
+    ready_error_mapping(evse_topology);
 
     // publish charging schedules at least once on startup
     cb_set_charging_profiles();
@@ -1123,6 +1237,8 @@ void GenericOcpp::cb_error_cleared_handler(const Everest::error::Error& error) {
 
 void GenericOcpp::cb_error_handler(const Everest::error::Error& error) {
     using namespace module;
+
+    log_mapping_override(error);
 
     // handled by specific evse_manager error handler
     if (error.type != EVSE_MANAGER_INOPERATIVE_ERROR) {
