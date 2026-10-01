@@ -83,11 +83,17 @@ jobs:
         id: run_ocpp_tests
         continue-on-error: true
         run: |
+          # The OCPP tests mostly wait on protocol timers, so they run with more workers than cores:
+          # 4 per core keep a runner well below full load. Beyond 64 the longest tests set the
+          # wall time and further workers only cost memory.
+          workers=$(( $(nproc) * 4 ))
+          workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/.ci/e2e/docker-compose.yaml \
           run \
           e2e-test-server \
           tests/run-tests.sh ocpp \
+          -j "$workers" \
           --everest-prefix /ext/dist \
           --junitxml /ext/ocpp-tests-result.xml \
           --html /ext/ocpp-tests-report.html

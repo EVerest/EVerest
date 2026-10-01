@@ -103,11 +103,17 @@ jobs:
       - name: Run integration tests
         id: run_integration_tests
         run: |
+          # The integration tests mostly wait on the system under test, so they run with more workers
+          # than cores: 4 per core keep a runner well below full load. Beyond 64 the longest tests set
+          # the wall time and further workers only cost memory.
+          workers=$(( $(nproc) * 4 ))
+          workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/${{ inputs.docker_compose_file_path }} \
           run \
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
+          -j "$workers" \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
           --html /ext/${{ inputs.report_html_path }}
