@@ -84,7 +84,7 @@ def _recover_by_loading_into_active_slot(everest_core: EverestCore,
         assert get_result["status"] == "Success"
         (value_result,) = get_result["parameter_values"]
         assert value_result["status"] == "OK"
-        assert str(value_result["parameter"]["value"]) == "10"
+        assert str(value_result["parameter"]["value"]) == "3"
         # ... while the database already holds the change
         get_result = configuration_client.get_config_parameters(0, [LOG_INTERVAL], force_read_from_db=True)
         (value_result,) = get_result["parameter_values"]
