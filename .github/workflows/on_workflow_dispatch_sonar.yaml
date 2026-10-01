@@ -1,0 +1,66 @@
+name: Dispatch / SonarQube Cloud / Analyse
+# Manual only: nothing here runs on push, pull_request or schedule.
+on:
+  workflow_dispatch:
+    inputs:
+      pr_number:
+        description: >
+          Pull request number to analyse as a pull request (result is reported on the PR).
+          Leave empty to analyse the branch selected in "Use workflow from" as a branch.
+        required: false
+        type: string
+        default: ''
+      allow_fork:
+        description: >
+          Allow analysing a pull request from a fork. The build runs the fork's code on a
+          runner that later holds the SonarQube Cloud token, so review the PR first.
+        required: false
+        type: boolean
+        default: false
+      runner:
+        description: Which runner to use
+        type: choice
+        default: 'ubuntu-24.04'
+        required: true
+        options:
+          - 'ubuntu-24.04'
+          - 'large-ubuntu-24.04-xxl'
+
+concurrency:
+  group: sonarqube-cloud-${{ inputs.pr_number || github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+
+  setup-env:
+    name: Setup
+    uses: ./.github/workflows/job_setup-env.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      ref_everest_ci: v1.6.0
+
+
+  build-build-kit:
+    name: Build-kit
+    needs:
+      - setup-env
+    uses: ./.github/workflows/job_build-build-kit.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      base_image_tag_everest_ci: ${{ needs.setup-env.outputs.closest_tag_everest_ci }}
+
+
+  sonar:
+    name: SonarQube Cloud
+    needs:
+      - setup-env
+      - build-build-kit
+    uses: ./.github/workflows/job_sonar-cmake-gcc.yml
+    secrets:
+      SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+      pr_number: ${{ inputs.pr_number }}
+      allow_fork: ${{ inputs.allow_fork }}

@@ -1,0 +1,139 @@
+name: SonarQube Cloud analysis with CMake and GCC
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build_kit_artifact_name:
+        description: 'The name of the build-kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to use for building the project'
+        required: true
+        type: string
+      pr_number:
+        description: 'Pull request to analyse; empty analyses the calling ref as a branch'
+        required: false
+        default: ''
+        type: string
+      allow_fork:
+        description: 'Allow analysing a pull request whose head is in a fork'
+        required: false
+        default: false
+        type: boolean
+      sonar_scanner_version:
+        description: 'sonar-scanner CLI version'
+        required: false
+        default: '8.1.0.6389'
+        type: string
+    secrets:
+      SONAR_TOKEN:
+        description: 'SonarQube Cloud analysis token'
+        required: true
+
+jobs:
+  sonar:
+    name: build + analyse
+    runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
+      pull-requests: read
+    env:
+      BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
+    steps:
+      - name: Resolve analysis target
+        id: target
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR_NUMBER: ${{ inputs.pr_number }}
+          ALLOW_FORK: ${{ inputs.allow_fork }}
+        run: |
+          if [ -z "$PR_NUMBER" ]; then
+            {
+              echo "checkout_ref=${GITHUB_SHA}"
+              echo "sonar_branch=${GITHUB_REF_NAME}"
+            } >> "$GITHUB_OUTPUT"
+            echo "Branch analysis of \`${GITHUB_REF_NAME}\` @ ${GITHUB_SHA}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          case "$PR_NUMBER" in
+            *[!0-9]*) echo "pr_number must be a number, got '$PR_NUMBER'"; exit 1 ;;
+          esac
+          gh api "repos/${GITHUB_REPOSITORY}/pulls/${PR_NUMBER}" > pr.json
+          head_repo=$(jq -r '.head.repo.full_name // "deleted"' pr.json)
+          if [ "$head_repo" != "$GITHUB_REPOSITORY" ] && [ "$ALLOW_FORK" != "true" ]; then
+            echo "PR #$PR_NUMBER comes from $head_repo. Review it and re-run with allow_fork to analyse it."
+            exit 1
+          fi
+          {
+            echo "checkout_ref=$(jq -r '.head.sha' pr.json)"
+            echo "pr_key=${PR_NUMBER}"
+            echo "pr_branch=$(jq -r '.head.ref' pr.json)"
+            echo "pr_base=$(jq -r '.base.ref' pr.json)"
+          } >> "$GITHUB_OUTPUT"
+          echo "Pull request analysis of #${PR_NUMBER} ($head_repo @ $(jq -r '.head.sha' pr.json))" >> "$GITHUB_STEP_SUMMARY"
+      - name: Setup cache
+        uses: actions/cache@v6
+        with:
+          path: cache
+          key: sonar-${{ steps.target.outputs.checkout_ref }}
+          restore-keys: |
+            sonar-
+            compile-
+      # Build scripts and Sonar settings come from the ref this workflow was started on,
+      # so PRs that predate the Sonar setup can be analysed and a PR can't change them.
+      - name: Checkout build scripts and Sonar settings
+        uses: actions/checkout@v7
+        with:
+          path: trusted
+          sparse-checkout: |
+            .ci/build-kit/scripts
+            sonar-project.properties
+          sparse-checkout-cone-mode: false
+      - name: Checkout code to analyse
+        uses: actions/checkout@v7
+        with:
+          path: source
+          ref: ${{ steps.target.outputs.checkout_ref }}
+          # full history for new-code detection; also fetches the PR base branch
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Setup run scripts
+        run: |
+          mkdir scripts
+          rsync -a trusted/.ci/build-kit/scripts/ scripts
+          cp trusted/sonar-project.properties scripts/
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_kit_artifact_name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ env.BUILD_KIT_IMAGE }} build-kit
+      - name: Compile
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name compile-container \
+          build-kit run-script compile
+      - name: Analyse
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+          SONAR_SCANNER_VERSION: ${{ inputs.sonar_scanner_version }}
+          SONAR_PR_KEY: ${{ steps.target.outputs.pr_key }}
+          SONAR_PR_BRANCH: ${{ steps.target.outputs.pr_branch }}
+          SONAR_PR_BASE: ${{ steps.target.outputs.pr_base }}
+          SONAR_BRANCH: ${{ steps.target.outputs.sonar_branch }}
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --env SONAR_TOKEN --env SONAR_SCANNER_VERSION \
+          --env SONAR_PR_KEY --env SONAR_PR_BRANCH --env SONAR_PR_BASE --env SONAR_BRANCH \
+          --name sonar-container \
+          build-kit run-script sonar_scan
