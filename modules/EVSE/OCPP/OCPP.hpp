@@ -166,6 +166,9 @@ public:
     // Return the OCPP connector id from a pair of EVerest EVSE id and connector
     // id
     int32_t get_ocpp_connector_id(int32_t evse_id, int32_t connector_id);
+
+    // Rejects ReadOnly keys like a ChangeConfiguration.req from the CSMS
+    ocpp::v16::ConfigurationStatus set_writable_configuration_key(const std::string& key, const std::string& value);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:

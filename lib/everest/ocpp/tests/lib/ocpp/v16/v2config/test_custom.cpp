@@ -165,21 +165,26 @@ TEST_P(Configuration, Set) {
     EXPECT_EQ(kv.value().value, "Yeti");
     EXPECT_TRUE(kv.value().readonly);
 
-    EXPECT_EQ(get()->set("ChargePointModel", "ToThisValue"), std::nullopt);
+    // ReadOnly binds the CSMS only: the device model backend writes it for local callers
+    const bool writes_read_only = GetParam() == "sql";
+    const auto read_only_result =
+        writes_read_only ? std::optional<ConfigurationStatus>{ConfigurationStatus::Accepted} : std::nullopt;
+    EXPECT_EQ(get()->set("ChargePointModel", "ToThisValue"), read_only_result);
     kv = get()->get("ChargePointModel");
     ASSERT_TRUE(kv);
     EXPECT_EQ(kv.value().key, "ChargePointModel");
-    EXPECT_EQ(kv.value().value, "Yeti");
+    EXPECT_EQ(kv.value().value, writes_read_only ? "ToThisValue" : "Yeti");
     EXPECT_TRUE(kv.value().readonly);
 
     // some other examples
-    EXPECT_EQ(get()->set("ChargePointSerialNumber", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("ICCID", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("ConnectorPhaseRotationMaxLength", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("NumberOfConnectors", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("MeterType", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("UseSslDefaultVerifyPaths", "<won't be set>"), std::nullopt);
-    EXPECT_EQ(get()->set("CertificateStoreMaxLength", "<won't be set>"), std::nullopt);
+    EXPECT_EQ(get()->set("ChargePointSerialNumber", "SN-1"), read_only_result);
+    EXPECT_EQ(get()->set("ICCID", "ICCID-1"), read_only_result);
+    EXPECT_EQ(get()->set("ConnectorPhaseRotationMaxLength", "3"), read_only_result);
+    EXPECT_EQ(get()->set("MeterType", "Meter-1"), read_only_result);
+    EXPECT_EQ(get()->set("UseSslDefaultVerifyPaths", "false"), read_only_result);
+    EXPECT_EQ(get()->set("CertificateStoreMaxLength", "10"), read_only_result);
+    // derived by the stack
+    EXPECT_EQ(get()->set("NumberOfConnectors", "5"), std::nullopt);
 
     // read-write key
     kv = get()->get("ClockAlignedDataInterval");
@@ -202,8 +207,13 @@ TEST_P(Configuration, Set) {
     kv = get()->get("TLSKeylogFile");
     ASSERT_TRUE(kv);
     EXPECT_TRUE(kv.value().readonly);
-    EXPECT_EQ(get()->set("TLSKeylogFile", "1201"), std::nullopt);
-    EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
+    if (GetParam() == "sql") {
+        EXPECT_EQ(get()->set("TLSKeylogFile", "/tmp/other_keylog.txt"), ConfigurationStatus::Accepted);
+        EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/other_keylog.txt");
+    } else {
+        EXPECT_EQ(get()->set("TLSKeylogFile", "1201"), std::nullopt);
+        EXPECT_EQ(get()->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
+    }
 
     // custom key (none defined)
 }
@@ -330,11 +340,11 @@ TEST_F(Configuration, SetV2) {
     EXPECT_EQ(kv.value().value, "Yeti");
     EXPECT_TRUE(kv.value().readonly);
 
-    EXPECT_EQ(v2_config->set("ChargePointModel", "ToThisValue"), std::nullopt);
+    EXPECT_EQ(v2_config->set("ChargePointModel", "ToThisValue"), ConfigurationStatus::Accepted);
     kv = v2_config->get("ChargePointModel");
     ASSERT_TRUE(kv);
     EXPECT_EQ(kv.value().key, "ChargePointModel");
-    EXPECT_EQ(kv.value().value, "Yeti");
+    EXPECT_EQ(kv.value().value, "ToThisValue");
     EXPECT_TRUE(kv.value().readonly);
 
     // read-write key
@@ -358,8 +368,8 @@ TEST_F(Configuration, SetV2) {
     kv = v2_config->get("TLSKeylogFile");
     ASSERT_TRUE(kv);
     EXPECT_TRUE(kv.value().readonly);
-    EXPECT_EQ(v2_config->set("TLSKeylogFile", "1201"), std::nullopt);
-    EXPECT_EQ(v2_config->getTLSKeylogFile(), "/tmp/ocpp_tls_keylog.txt");
+    EXPECT_EQ(v2_config->set("TLSKeylogFile", "/tmp/other_keylog.txt"), ConfigurationStatus::Accepted);
+    EXPECT_EQ(v2_config->getTLSKeylogFile(), "/tmp/other_keylog.txt");
 
     // custom key (read only)
     kv = v2_config->get("ACustomKey");
@@ -367,11 +377,11 @@ TEST_F(Configuration, SetV2) {
     EXPECT_EQ(kv.value().key, "ACustomKey");
     EXPECT_EQ(kv.value().value, "");
     EXPECT_TRUE(kv.value().readonly);
-    EXPECT_EQ(v2_config->set("ACustomKey", "ToThisValueToo"), std::nullopt);
+    EXPECT_EQ(v2_config->set("ACustomKey", "ToThisValueToo"), ConfigurationStatus::Accepted);
     kv = v2_config->get("ACustomKey");
     ASSERT_TRUE(kv);
     EXPECT_EQ(kv.value().key, "ACustomKey");
-    EXPECT_EQ(kv.value().value, "");
+    EXPECT_EQ(kv.value().value, "ToThisValueToo");
     EXPECT_TRUE(kv.value().readonly);
 
     // custom key (read write)
@@ -386,6 +396,21 @@ TEST_F(Configuration, SetV2) {
     EXPECT_EQ(kv.value().key, "ACustomRWKey");
     EXPECT_EQ(kv.value().value, "ToThisValueTooMore");
     EXPECT_FALSE(kv.value().readonly);
+}
+
+TEST_F(Configuration, SetV2RejectsStackDerivedKeys) {
+    ASSERT_TRUE(device_model);
+    for (const auto* key :
+         {"CentralSystemURI", "ChargePointId", "ChargingScheduleAllowedChargingRateUnit", "HostName",
+          "LocalAuthListMaxLength", "NumberOfConnectors", "SupportedFeatureProfiles", "SupportedMeasurands"}) {
+        const auto before = v2_config->get(key);
+        EXPECT_EQ(v2_config->set(key, "ToThisValue"), std::nullopt) << key;
+        const auto after = v2_config->get(key);
+        ASSERT_EQ(before.has_value(), after.has_value()) << key;
+        if (before.has_value()) {
+            EXPECT_EQ(before->value, after->value) << key;
+        }
+    }
 }
 
 } // namespace
