@@ -420,7 +420,28 @@ GenericOcpp::EventInfo GenericOcpp::convert_error(const Everest::error::Error& e
     return event_data;
 }
 
+void GenericOcpp::init_mrec_error_map() {
+    const auto configured = mv_config.getCustomMrecErrorMapPath();
+    if (configured.empty()) {
+        mv_mrec_error_map = module::MREC_ERROR_MAP;
+        return;
+    }
+
+    // relative paths resolve against the module share directory, like the other configured paths
+    const auto resolved = update_path_multi(remove_dir(mv_info.paths.share), configured);
+    if (!fs::exists(resolved)) {
+        EVLOG_AND_THROW(std::runtime_error("CustomMrecErrorMapPath '" + configured + "' not found at " +
+                                           resolved.string() +
+                                           " (relative paths resolve against the OCPPmulti share directory)"));
+    }
+    mv_mrec_error_map = module::load_mrec_error_map_overrides(resolved);
+}
+
 void GenericOcpp::init() {
+    // loaded before the error subscriptions and before the charge point starts,
+    // so map_error() never sees an empty map
+    init_mrec_error_map();
+
     // was originally in ready()
     const auto log_path = mv_config.getMessageLogPath();
     if (!fs::exists(log_path)) {
