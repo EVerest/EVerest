@@ -494,7 +494,7 @@ bool DeviceModelStorageSqlite::create_network_configuration_slot_from_default_sc
 
     try {
         auto select_existing = this->db->new_statement("SELECT 1 FROM COMPONENT WHERE NAME = 'NetworkConfiguration' "
-                                                       "COLLATE NOCASE AND INSTANCE = @instance COLLATE NOCASE");
+                                                       "COLLATE NOCASE AND INSTANCE = @instance");
         select_existing->bind_text("@instance", new_instance, SQLiteString::Transient);
         if (select_existing->step() == SQLITE_ROW) {
             EVLOG_warning << "create_network_configuration_slot_from_default_schema: slot " << new_slot
