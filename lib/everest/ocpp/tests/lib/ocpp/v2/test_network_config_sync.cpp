@@ -1494,8 +1494,24 @@ TEST_F(ProvisioningActiveSlotTest, RetainedPrioritySlotsRequireRootCertificateOn
         SCOPED_TRACE(security_profile);
         write_slot(*dm, 2, "wss://retained.example.com/ocpp", security_profile);
         EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2,1"))));
-        EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2"))));
     }
+}
+
+TEST_F(ProvisioningActiveSlotTest, RemovingPrioritySlotsSkipsSecurityPreconditions) {
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 2);
+    GetCertificateInfoResult no_leaf;
+    no_leaf.status = GetCertificateInfoStatus::NotFound;
+    ON_CALL(evse_security, get_leaf_certificate_info(testing::_, testing::_)).WillByDefault(testing::Return(no_leaf));
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
+    write_slot(*dm, 2, "wss://retained.example.com/ocpp", 3);
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "2");
 }
 
 TEST_F(ProvisioningActiveSlotTest, RetainedPrioritySlotDoesNotValidateContent) {

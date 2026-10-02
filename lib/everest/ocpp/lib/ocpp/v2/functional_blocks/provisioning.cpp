@@ -3,6 +3,7 @@
 
 #include <ocpp/v2/functional_blocks/provisioning.hpp>
 
+#include <algorithm>
 #include <set>
 
 #include <ocpp/common/connectivity_manager.hpp>
@@ -38,6 +39,8 @@ namespace ocpp::v2 {
 namespace {
 std::optional<std::vector<int>> parse_network_configuration_priority(const std::string& value,
                                                                      bool skip_invalid_tokens);
+
+bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots);
 
 bool component_variable_change_requires_websocket_option_update_without_reconnect(
     const ComponentVariable& component_variable);
@@ -819,13 +822,17 @@ Provisioning::validate_network_configuration_priority(const SetVariableData& set
         return "InvalidNetworkConf";
     }
 
-    std::set<int> current_slots;
+    std::vector<int> stored_slots;
     const auto current_priority = this->context.device_model.get_optional_value<std::string>(
         ControllerComponentVariables::NetworkConfigurationPriority);
     if (current_priority.has_value()) {
-        const auto stored_slots = parse_network_configuration_priority(current_priority.value(), true).value();
-        current_slots.insert(stored_slots.begin(), stored_slots.end());
+        stored_slots = parse_network_configuration_priority(current_priority.value(), true).value();
     }
+    // B09.FR.20
+    if (only_removes_slots(slots.value(), stored_slots)) {
+        return std::nullopt;
+    }
+    const std::set<int> current_slots(stored_slots.begin(), stored_slots.end());
 
     for (const auto slot : slots.value()) {
         const bool added = current_slots.count(slot) == 0;
@@ -1016,6 +1023,21 @@ std::optional<std::vector<int>> parse_network_configuration_priority(const std::
         }
     }
     return slots;
+}
+
+bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots) {
+    if (new_slots.size() >= current_slots.size()) {
+        return false;
+    }
+    auto current = current_slots.begin();
+    for (const auto slot : new_slots) {
+        current = std::find(current, current_slots.end(), slot);
+        if (current == current_slots.end()) {
+            return false;
+        }
+        ++current;
+    }
+    return true;
 }
 
 /**

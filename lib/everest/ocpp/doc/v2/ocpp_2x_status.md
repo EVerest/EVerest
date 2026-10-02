@@ -260,8 +260,8 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 
 | ID                   | Status | Remark |
 | -------------------- | ------ | ------ |
-| A05.FR.02            | ✅     | Checks every readable slot in a NetworkConfigurationPriority SetVariables value for a CSMS root certificate if its SecurityProfile >= 2 and above the active profile; SetNetworkProfile checks content only |
-| A05.FR.03            | ✅     | Checks every readable slot in a NetworkConfigurationPriority SetVariables value for a ChargingStationCertificate if its SecurityProfile is 3 and above the active profile; SetNetworkProfile checks content only |
+| A05.FR.02            | ✅     | Checks every readable slot in a NetworkConfigurationPriority SetVariables value for a CSMS root certificate if its SecurityProfile >= 2 and above the active profile, unless the value only removes slots (B09.FR.20); SetNetworkProfile checks content only |
+| A05.FR.03            | ✅     | Checks every readable slot in a NetworkConfigurationPriority SetVariables value for a ChargingStationCertificate if its SecurityProfile is 3 and above the active profile, unless the value only removes slots (B09.FR.20); SetNetworkProfile checks content only |
 | A05.FR.04            | ✅     |        |
 | A05.FR.05            | ✅     |        |
 | A05.FR.06            |        |        |
@@ -435,7 +435,7 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 | B09.FR.15 <br> (2.1)  | ✅     | Unsupported network config variables reported as ReadOnly |
 | B09.FR.16 <br> (2.1)  | ✅     | Falls back to SecurityCtrlr credentials when per-slot not set |
 | B09.FR.18 <br> (2.1)  | ✅     | Uses per-slot Identity/BasicAuthPassword when set |
-| B09.FR.20 <br> (2.1)  | ✅     |        |
+| B09.FR.20 <br> (2.1)  | ✅     | Accepts a value that only removes slots, keeping the order of the remaining ones, without validating them |
 | B09.FR.21 <br> (2.1)  | 🌐     |        |
 | B09.FR.22 <br> (2.1)  | ✅     | Rejects active slot with reasonCode "PriorityNetworkConf" |
 | B09.FR.23 <br> (2.1)  | ✅     | Ed2: Stores SetVariables for inactive slots outside NetworkConfigurationPriority, subject to device-model value checks and NoSecurityDowngrade; validates the whole profile on activation |
@@ -446,7 +446,7 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 | B09.FR.30 <br> (2.1)  | 🌐     |        |
 | B09.FR.31 <br> (2.1)  |        | AllowSecurityProfileDowngrade not implemented |
 | B09.FR.32 <br> (2.1)  |        | AllowSecurityProfileDowngrade not implemented |
-| B09.FR.33 <br> (2.1)  | ✅     | Validates profile content for slots added to NetworkConfigurationPriority (2025-11 errata §2.10) and certificate preconditions for every readable slot in the value; removal and reordering re-check certificates of retained slots |
+| B09.FR.33 <br> (2.1)  | ✅     | Validates profile content for slots added to NetworkConfigurationPriority (2025-11 errata §2.10) and certificate preconditions for every readable slot in the value; reordering re-checks certificates of retained slots, removal only (B09.FR.20) does not |
 | B09.FR.34 <br> (2.1)  | ✅     | Rejects unreadable or invalid added slots with "InvalidNetworkConf" |
 | B09.FR.35 <br> (2.1)  |        | AllowSecurityProfileDowngrade not implemented |
 
