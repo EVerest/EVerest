@@ -38,4 +38,6 @@ target_link_libraries(test_tbd_controller_start_session
         Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test_tbd_controller_start_session)
+catch_discover_tests(test_tbd_controller_start_session
+    PROPERTIES RUN_SERIAL TRUE
+)

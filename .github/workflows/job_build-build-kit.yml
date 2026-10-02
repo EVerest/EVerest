@@ -45,7 +45,9 @@ jobs:
           path: source
           ref: ${{ github.ref }}
           token: ${{ github.token}}
-          fetch-depth: 0
+          # Only the Docker build context is needed, not the history or the rest of the tree.
+          fetch-depth: 1
+          sparse-checkout: ${{ inputs.build_kit_docker_directory }}
       - name: Docker Meta
         id: meta
         uses: docker/metadata-action@v6
@@ -70,6 +72,8 @@ jobs:
         with:
           name: ${{ env.BUILD_KIT_ARTIFACT_NAME }}
           path: build-kit.tar
+          # The image layers are already gzip-compressed, compressing them again only costs time.
+          compression-level: 0
       - name: Set output tag
         id: set-outputs
         shell: python3 {0}

@@ -17,11 +17,11 @@ from grpc_server.control_service_server import ControlServiceServer
 from grpc_servicer.cs_lpc_control_servicer import CsLpcControlServicer
 from grpc_server.cs_lpc_control_server import CsLpcControlServer
 
-from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, everest_config_strategies, eebus_grpc_port, eebus_service_port
+from fixtures.eebus_module_test import eebus_test_env, EebusTestProbeModule, everest_config_strategies
 from fixtures.grpc_testing_server import control_service_server, control_service_servicer, cs_lpc_control_server, cs_lpc_control_servicer
 from helpers.import_helpers import insert_dir_to_sys_path
 from helpers.async_helpers import async_get, async_wait_for
-from conftest import EebusModuleConfigStrategy
+from eebus_test_utils import ClockShift, EebusModuleConfigStrategy
 
 from test_data.test_data import TestData
 from test_data.test_data_not_active_load_limit import TestDataNotActiveLoadLimit
@@ -184,6 +184,20 @@ async def transition_to_unlimited_controlled(
 
     # Drain the UnlimitedControlled limit the transition emits.
     await async_get(probe.external_limits_queue, timeout=5)
+
+
+# Heartbeat [LPC-911/912] and Init [LPC-906] timeout of the LPC use case.
+LPC_TIMEOUT_S = 120
+
+
+async def cross_lpc_timeout(eebus_clock: ClockShift, probe: EebusTestProbeModule):
+    """Advance the module's clock across the 120 s LPC timeout and return the limits it publishes in
+    response. Shortly before the timeout expires, nothing may be published yet."""
+    eebus_clock.advance(LPC_TIMEOUT_S - 10)
+    with pytest.raises(TimeoutError):
+        await async_get(probe.external_limits_queue, timeout=3)
+    eebus_clock.advance(11)
+    return await async_get(probe.external_limits_queue, timeout=5)
 
 
 @pytest.mark.everest_core_config("config-test-eebus-module-001.yaml")
@@ -362,6 +376,7 @@ class TestEEBUSModule:
     async def test_ignores_out_of_range_failsafe_duration(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """[LPC-022] CS must ignore EG-written FailsafeDurationMinimum outside [2h, 24h]
         and keep the previously cached 2h default."""
@@ -400,18 +415,20 @@ class TestEEBUSModule:
         # Let the 120 s heartbeat timeout expire — the module must enter Failsafe.
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)  # config default
-        limits = await async_wait_for(probe.external_limits_queue, failsafe_limits, timeout=140)
+        limits = await cross_lpc_timeout(eebus_clock, probe)
+        assert failsafe_limits == limits
 
         # The C++ predicate must have rejected the 5 s write and kept the 2 h default.
         # Therefore the module must still be in Failsafe 10 s later — NOT in UnlimitedAutonomous.
-        await asyncio.sleep(10)
+        eebus_clock.advance(10)
         with pytest.raises(TimeoutError):
-            await async_get(probe.external_limits_queue, timeout=1)
+            await async_get(probe.external_limits_queue, timeout=2)
 
     @pytest.mark.asyncio
     async def test_update_failsafe_consumption_active_power_limit(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """
         This test verifies that the failsafe consumption active power limit can be updated.
@@ -453,13 +470,14 @@ class TestEEBUSModule:
         # Simulate missing heartbeat
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(new_failsafe_control_limit)
-        limits = await async_get(probe.external_limits_queue, timeout=130) # Wait for 120s heartbeat timeout + buffer
+        limits = await cross_lpc_timeout(eebus_clock, probe)
         assert failsafe_limits == limits
 
     @pytest.mark.asyncio
     async def test_ignores_negative_failsafe_consumption_limit(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """[LPC-001] CS must ignore a negative FailsafeConsumptionActivePowerLimit write
         and keep the previously cached (4200 W default) value."""
@@ -500,12 +518,14 @@ class TestEEBUSModule:
         # When Failsafe triggers, the applied limit must still be the 4200 W config default — NOT -1000.
         test_data_failsafe = TestDataFailsafe()
         expected_failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)  # config default
-        limits = await async_wait_for(probe.external_limits_queue, expected_failsafe_limits, timeout=140)
+        limits = await cross_lpc_timeout(eebus_clock, probe)
+        assert expected_failsafe_limits == limits
 
     @pytest.mark.asyncio
     async def test_failsafe_to_unlimited_controlled(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """
         This test verifies that the module transitions from failsafe to unlimited controlled
@@ -524,7 +544,7 @@ class TestEEBUSModule:
         # Simulate missing heartbeat to enter failsafe state
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)
-        limits = await async_get(probe.external_limits_queue, timeout=130) # Wait for 120s heartbeat timeout + buffer
+        limits = await cross_lpc_timeout(eebus_clock, probe)
         assert failsafe_limits == limits
 
         # Simulate a DataUpdateHeartbeat event
@@ -601,6 +621,7 @@ class TestEEBUSModule:
     async def test_failsafe_to_limited(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """
         This test verifies that the module transitions from failsafe to unlimited controlled
@@ -619,7 +640,7 @@ class TestEEBUSModule:
         # Simulate missing heartbeat to enter failsafe state
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)
-        limits = await async_get(probe.external_limits_queue, timeout=130) # Wait for 120s heartbeat timeout + buffer
+        limits = await cross_lpc_timeout(eebus_clock, probe)
         assert failsafe_limits == limits
 
         # Simulate a DataUpdateHeartbeat event
@@ -761,10 +782,11 @@ class TestEEBUSModule:
     async def test_init_state_timeout(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """
         This test verifies that the module transitions from Init to UnlimitedAutonomous
-        if no events are received within LPC_TIMEOUT (120), but heartbeats are received as to not go into failsafe.
+        if no limit is received within LPC_TIMEOUT_S [LPC-906], but heartbeats are received as to not go into failsafe.
         """
         everest_core = eebus_test_env["everest_core"]
         control_service_servicer = eebus_test_env["control_service_servicer"]
@@ -785,25 +807,19 @@ class TestEEBUSModule:
                 event="DataUpdateHeartbeat",
             )
         )
-        # Send periodic heartbeats in the background to prevent failsafe while
-        # waiting for the Init → UnlimitedAutonomous transition (120s LPC_INIT_TIMEOUT).
-        async def send_heartbeats():
-            for _ in range(3):
-                control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
-                await asyncio.sleep(50)
+        # The EG keeps sending heartbeats while the Init timeout runs, so it is not lost.
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+        eebus_clock.advance(LPC_TIMEOUT_S - 10)
+        control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(uc_event)
+        with pytest.raises(TimeoutError):
+            await async_get(probe.external_limits_queue, timeout=3)
 
-        hb_task = asyncio.create_task(send_heartbeats())
-        try:
-            # No limits are sent, so the module should transition from Init to UnlimitedAutonomous
-            test_data_not_active_load_limit = TestDataNotActiveLoadLimit()
-            unlimited_autonomous_limits = test_data_not_active_load_limit.get_expected_external_limits()
-            limits = await async_wait_for(probe.external_limits_queue, unlimited_autonomous_limits, timeout=140)
-        finally:
-            hb_task.cancel()
-            try:
-                await hb_task
-            except asyncio.CancelledError:
-                pass
+        # No limits are sent, so the module should transition from Init to UnlimitedAutonomous
+        eebus_clock.advance(11)
+        test_data_not_active_load_limit = TestDataNotActiveLoadLimit()
+        unlimited_autonomous_limits = test_data_not_active_load_limit.get_expected_external_limits()
+        limits = await async_get(probe.external_limits_queue, timeout=5)
+        assert unlimited_autonomous_limits == limits
 
 
 # ---------------------------------------------------------------------------
@@ -1128,6 +1144,7 @@ class TestEEBUSAllowlistDiscovery:
     async def test_active_ems_failover_through_failsafe(
         self,
         eebus_test_env: dict,
+        eebus_clock: ClockShift,
     ):
         """[Phase 3A] When the active EG goes quiet and the heartbeat timeout fires, the module enters
         Failsafe which clears the connected EG. A different allowlisted EG can then take over."""
@@ -1167,7 +1184,8 @@ class TestEEBUSAllowlistDiscovery:
         # Failsafe, which clears the active-EMS connected EG.
         test_data_failsafe = TestDataFailsafe()
         failsafe_limits = test_data_failsafe.get_expected_failsafe_limits(4200)
-        limits = await async_wait_for(probe.external_limits_queue, failsafe_limits, timeout=140)
+        limits = await cross_lpc_timeout(eebus_clock, probe)
+        assert failsafe_limits == limits
 
         # After Failsafe, SKI-B (different EG) heartbeats. The connected EG is unset, so SKI-B becomes the new active EG.
         control_service_servicer.command_queues["SubscribeUseCaseEvents"].response_queue.put_nowait(

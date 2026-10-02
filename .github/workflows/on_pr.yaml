@@ -14,7 +14,12 @@ on:
           - 'ubuntu-24.04'
           - 'large-ubuntu-24.04-xxl'
   schedule:
-    - cron: '37 13,1 * * *'
+    - cron: '37 1 * * *'
+
+# Let pushes to PRs cancel already running CI runs on that PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
 

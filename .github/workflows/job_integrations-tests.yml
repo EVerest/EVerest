@@ -103,11 +103,17 @@ jobs:
       - name: Run integration tests
         id: run_integration_tests
         run: |
+          # The integration tests mostly wait on the system under test, so they run with more workers
+          # than cores. The ISO15118 tests are CPU-heavy and limited to one per core.
+          workers=$(( $(nproc) * 2 ))
+          workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/${{ inputs.docker_compose_file_path }} \
           run \
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
+          -j "$workers" \
+          --iso15118-parallel "$(nproc)" \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
           --html /ext/${{ inputs.report_html_path }}

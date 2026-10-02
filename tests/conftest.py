@@ -17,6 +17,15 @@ def pytest_addoption(parser):
         help="Enable network isolation for parallel ISO 15118 tests. "
              "Requires veth pairs created by setup-network-isolation.sh.",
     )
+    parser.addoption(
+        "--iso15118-parallel",
+        action="store",
+        type=int,
+        default=None,
+        metavar="N",
+        help="With --network-isolation, run at most N ISO 15118 tests at the same time; "
+             "default: no limit.",
+    )
 
 
 def pytest_configure(config):
