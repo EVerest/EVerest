@@ -28,11 +28,13 @@ struct VariableMonitoringPeriodic {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
-/// \brief Helper struct that combines VariableCharacteristics and VariableMonitoring
+/// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
     std::optional<std::string> source;
+    /// \brief The attributes of the variable with their current values
+    std::vector<VariableAttribute> attributes;
 };
 
 using VariableMap = std::map<Variable, VariableMetaData>;

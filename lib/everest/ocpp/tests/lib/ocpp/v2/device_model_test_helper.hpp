@@ -50,6 +50,10 @@ public:
                                    const std::string& config_path = CONFIG_PATH, bool seed_der_ctrlr_enabled = false);
     DeviceModel* get_device_model();
 
+    /// \brief Creates the device model again from the database, for a test that changed the database behind it.
+    ///        The previous device model is destroyed: request the new one with get_device_model().
+    void reload_device_model();
+
     ///
     /// \brief Remove a variable from the database.
     /// \param component_name       The component name.
@@ -102,6 +106,9 @@ public:
     /// \param variable_instance    The variable instance.
     /// \param attribute_enum       The variable attribute.
     /// \return True on success.
+    ///
+    /// \note After using this function, request a new device model with DeviceModelTestHelper::get_device_model(),
+    ///       because the device model has been changed in the database and the device model map has been read again.
     ///
     bool set_variable_attribute_value_null(const std::string& component_name,
                                            const std::optional<std::string>& component_instance,

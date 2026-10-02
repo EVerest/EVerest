@@ -558,6 +558,7 @@ TEST_F(DeviceModelTest, test_check_integrity_invalid_missing_required_variable_v
     device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
                                                                std::nullopt, "OrganizationName", std::nullopt,
                                                                AttributeEnum::Actual);
+    dm = device_model_test_helper.get_device_model();
     // This should throw an exception.
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }

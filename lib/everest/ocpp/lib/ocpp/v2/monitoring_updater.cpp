@@ -399,7 +399,7 @@ void MonitoringUpdater::update_periodic_monitors_internal(State& state) {
         }
     }
 
-    // Remove the monitors in our list that don't exist any more in the database
+    // Remove the monitors in our list that don't exist any more in the device model
     for (auto it = std::begin(updater_monitors_meta); it != std::end(updater_monitors_meta);) {
         std::int32_t updater_meta_id = it->first;
         auto updater_meta_data = it->second;
@@ -499,7 +499,6 @@ void MonitoringUpdater::process_monitor_meta_internal(State& state, UpdaterMonit
             comp_var.component = updater_meta_data.component;
             comp_var.variable = updater_meta_data.variable;
 
-            // This operation can cause a small stall, but only if this is triggered
             const auto current_value = this->device_model.get_value<std::string>(comp_var);
 
             EventData notify_event =

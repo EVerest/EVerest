@@ -45,8 +45,8 @@ private:
     on_monitor_updated monitor_update_listener;
 
     /// \brief Private helper method that does some checks with the device model representation in memory to evaluate if
-    /// a value for the given parameters can be requested. If it can be requested it will be retrieved from the device
-    /// model interface and the given \p value will be set to the value that was retrieved
+    /// a value for the given parameters can be requested. If it can be requested the given \p value will be set to the
+    /// value held in memory
     /// \param component_id
     /// \param variable_id
     /// \param attribute_enum
@@ -57,6 +57,17 @@ private:
     GetVariableStatusEnum request_value_internal(const Component& component_id, const Variable& variable_id,
                                                  const AttributeEnum& attribute_enum, std::string& value,
                                                  bool allow_write_only, UnsetValue unset_value) const;
+
+    /// \brief The attribute of a variable with its current value. A variable with a source is held by the storage of
+    /// that source, which changes its value without DeviceModel, so its value is read from the storage and every
+    /// write goes to the storage.
+    std::optional<VariableAttribute> read_attribute(const Component& component, const Variable& variable,
+                                                    const VariableMetaData& meta_data,
+                                                    const AttributeEnum& attribute_enum) const;
+
+    /// \brief All attributes of a variable with their current values, see read_attribute
+    std::vector<VariableAttribute> read_attributes(const Component& component, const Variable& variable,
+                                                   const VariableMetaData& meta_data) const;
 
     /// \brief Iterates over the given \p component_criteria and converts this to the variable names
     /// (Active,Available,Enabled,Problem). If any of the variables can not be found as part of a component this
@@ -110,6 +121,11 @@ public:
     /// \brief Constructor for the device model
     /// \param device_model_storage_interface pointer to a device model interface class
     explicit DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_model_storage_interface);
+    ~DeviceModel() override;
+    DeviceModel(const DeviceModel&) = delete;
+    DeviceModel& operator=(const DeviceModel&) = delete;
+    DeviceModel(DeviceModel&&) = delete;
+    DeviceModel& operator=(DeviceModel&&) = delete;
 
     GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
                                        const AttributeEnum& attribute_enum, std::string& value, bool allow_write_only,

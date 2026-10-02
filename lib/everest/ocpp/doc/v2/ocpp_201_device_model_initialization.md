@@ -32,6 +32,22 @@ accordingly. Only the initial values will be set to the values in the component 
 changed a value, it will not be updated to the value from the component config file.
 
 
+## Values in memory
+
+`DeviceModel` reads the whole device model, including the values of all attributes, from the database when it is
+created, and serves every read from memory. A write goes to the database first and to memory only after the database
+accepted it; if the database rejects the write, the request is rejected and memory keeps the old value. Attributes that
+are not persistent are held in memory only: a write to such an attribute is not stored, and the attribute starts with
+the value of the component config again at the next start.
+
+As a consequence, the database must only be edited while the charging station software is stopped. Changes made to the
+database while it runs are not seen until the next start.
+
+The exception is a variable that the storage reports with a `source`: it is held by the storage of that source, which
+changes its value without `DeviceModel`, so its values are read from the storage and every write goes to the storage.
+The EVerest device model storage of the OCPP modules marks every variable it creates with the source `EVEREST`, and the
+composed storage of those modules routes the reads and writes of such a variable to it.
+
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 

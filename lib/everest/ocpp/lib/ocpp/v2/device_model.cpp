@@ -32,6 +32,18 @@ bool allow_zero(const Component& component, const Variable& variable) {
            component_variable == ControllerComponentVariables::SecurityProfile;
 }
 
+template <typename MetaData> auto* find_attribute(MetaData& meta_data, const AttributeEnum attribute_enum) {
+    const auto it = std::find_if(meta_data.attributes.begin(), meta_data.attributes.end(),
+                                 [attribute_enum](const VariableAttribute& attribute) {
+                                     return attribute.type.value_or(AttributeEnum::Actual) == attribute_enum;
+                                 });
+    return it == meta_data.attributes.end() ? nullptr : &*it;
+}
+
+bool is_persistent(const VariableAttribute& attribute) {
+    return attribute.persistent.value_or(true);
+}
+
 bool allow_set_read_only_value(const Component& component, const Variable& variable,
                                const AttributeEnum attribute_enum) {
     if (attribute_enum != AttributeEnum::Actual) {
@@ -332,19 +344,18 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
         return GetVariableStatusEnum::UnknownVariable;
     }
 
-    const auto attribute_opt = this->device_model->get_variable_attribute(component_id, variable_id, attribute_enum);
+    const auto attribute = this->read_attribute(component_id, variable_id, variable_it->second, attribute_enum);
 
-    if (not attribute_opt) {
+    if (not attribute.has_value()) {
         return GetVariableStatusEnum::NotSupportedAttributeType;
     }
 
     // only internal functions can access WriteOnly variables
-    if (!allow_write_only and attribute_opt.value().mutability.has_value() and
-        attribute_opt.value().mutability.value() == MutabilityEnum::WriteOnly) {
+    if (!allow_write_only and attribute->mutability == MutabilityEnum::WriteOnly) {
         return GetVariableStatusEnum::Rejected;
     }
 
-    if (not attribute_opt->value) {
+    if (not attribute->value.has_value()) {
         if (unset_value == UnsetValue::NotSupported) {
             return GetVariableStatusEnum::NotSupportedAttributeType;
         }
@@ -352,19 +363,48 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
         return GetVariableStatusEnum::Accepted;
     }
 
-    value = attribute_opt->value->get();
+    value = attribute->value->get();
     return GetVariableStatusEnum::Accepted;
+}
+
+std::optional<VariableAttribute> DeviceModel::read_attribute(const Component& component, const Variable& variable,
+                                                             const VariableMetaData& meta_data,
+                                                             const AttributeEnum& attribute_enum) const {
+    if (meta_data.source.has_value()) {
+        return this->device_model->get_variable_attribute(component, variable, attribute_enum);
+    }
+    const auto* attribute = find_attribute(meta_data, attribute_enum);
+    if (attribute == nullptr) {
+        return std::nullopt;
+    }
+    return *attribute;
+}
+
+std::vector<VariableAttribute> DeviceModel::read_attributes(const Component& component, const Variable& variable,
+                                                            const VariableMetaData& meta_data) const {
+    if (meta_data.source.has_value()) {
+        return this->device_model->get_variable_attributes(component, variable);
+    }
+    return meta_data.attributes;
 }
 
 std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& component, const Variable& variable,
                                                           const AttributeEnum& attribute_enum) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
-    const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
-    if (!attribute.has_value()) {
+    const auto component_it = this->device_model_map.find(component);
+    if (component_it == this->device_model_map.end()) {
+        return std::nullopt;
+    }
+    const auto variable_it = component_it->second.find(variable);
+    if (variable_it == component_it->second.end()) {
+        return std::nullopt;
+    }
+    const auto* attribute = find_attribute(variable_it->second, attribute_enum);
+    if (attribute == nullptr) {
         return std::nullopt;
     }
 
-    return attribute.value().mutability;
+    return attribute->mutability;
 }
 
 SetVariableStatusEnum DeviceModel::set_value(const Component& component, const Variable& variable,
@@ -372,19 +412,19 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
                                              const std::string& source, bool allow_read_only) {
     std::unique_lock<std::recursive_mutex> lock(this->mutex);
 
-    if (this->device_model_map.find(component) == this->device_model_map.end()) {
+    const auto component_it = this->device_model_map.find(component);
+    if (component_it == this->device_model_map.end()) {
         return SetVariableStatusEnum::UnknownComponent;
     }
 
-    auto variable_map = this->device_model_map[component];
-
-    if (variable_map.find(variable) == variable_map.end()) {
+    const auto variable_it = component_it->second.find(variable);
+    if (variable_it == component_it->second.end()) {
         return SetVariableStatusEnum::UnknownVariable;
     }
+    auto& meta_data = variable_it->second;
 
-    const auto& characteristics = variable_map[variable].characteristics;
     try {
-        if (!validate_value(characteristics, value, allow_zero(component, variable))) {
+        if (!validate_value(meta_data.characteristics, value, allow_zero(component, variable))) {
             return SetVariableStatusEnum::Rejected;
         }
     } catch (const std::exception& e) {
@@ -393,52 +433,56 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
         return SetVariableStatusEnum::Rejected;
     }
 
-    const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
+    auto attribute = this->read_attribute(component, variable, meta_data, attribute_enum);
 
-    if (!attribute.has_value()) {
+    if (not attribute.has_value()) {
         return SetVariableStatusEnum::NotSupportedAttributeType;
     }
 
     // If allow_read_only is false, don't allow read only
-    if (!attribute.value().mutability.has_value() or
-        ((attribute.value().mutability.value() == MutabilityEnum::ReadOnly) and !allow_read_only)) {
+    if (!attribute->mutability.has_value() or
+        ((attribute->mutability.value() == MutabilityEnum::ReadOnly) and !allow_read_only)) {
         return SetVariableStatusEnum::Rejected;
     }
 
-    const auto result =
-        this->device_model->set_variable_attribute_value(component, variable, attribute_enum, value, source);
-    const auto success = (result == SetVariableStatusEnum::Accepted);
-
-    // Only trigger for actual values
-    if ((attribute_enum == AttributeEnum::Actual) && success && !variable_listener.empty()) {
-        const auto& monitors = variable_map[variable].monitors;
-
-        // If we had a variable value change, trigger the listener
-        static const std::string EMPTY_VALUE{};
-
-        const std::string& value_previous = attribute.value().value.value_or(EMPTY_VALUE);
-        const std::string& value_current = value;
-
-        if (value_previous != value_current) {
-            // Copy the listeners and release the lock before invoking them: a listener taking its own lock
-            // would otherwise invert lock order against a thread calling register_variable_listener while
-            // holding that lock.
-            const auto listeners = variable_listener;
-            lock.unlock();
-            for (const auto& listener : listeners) {
-                listener(monitors, component, variable, characteristics, attribute.value(), value_previous,
-                         value_current);
-            }
+    if (meta_data.source.has_value() or is_persistent(*attribute)) {
+        const auto result =
+            this->device_model->set_variable_attribute_value(component, variable, attribute_enum, value, source);
+        if (result != SetVariableStatusEnum::Accepted) {
+            return result;
         }
     }
 
-    return result;
+    static const std::string EMPTY_VALUE{};
+    const std::string value_previous = attribute->value.has_value() ? attribute->value->get() : EMPTY_VALUE;
+    attribute->value = value;
+    if (auto* in_memory = find_attribute(meta_data, attribute_enum); in_memory != nullptr) {
+        in_memory->value = value;
+    }
+
+    // Only trigger for actual values
+    if (attribute_enum == AttributeEnum::Actual and value_previous != value and !variable_listener.empty()) {
+        // Copy the listeners and payload and release the lock before invoking them: a listener taking its own lock
+        // would otherwise invert lock order against a thread calling register_variable_listener while holding that
+        // lock.
+        const auto listeners = variable_listener;
+        const auto monitors = meta_data.monitors;
+        const auto characteristics = meta_data.characteristics;
+        lock.unlock();
+        for (const auto& listener : listeners) {
+            listener(monitors, component, variable, characteristics, attribute.value(), value_previous, value);
+        }
+    }
+
+    return SetVariableStatusEnum::Accepted;
 };
 
 DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_model_storage_interface) :
     device_model{std::move(device_model_storage_interface)} {
     this->device_model_map = this->device_model->get_device_model();
 }
+
+DeviceModel::~DeviceModel() = default;
 
 bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
@@ -449,9 +493,12 @@ bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int
         return false;
     }
     try {
-        // Reload the cached map so the freshly created component is visible to subsequent
-        // get_variable / set_value calls; the cache is built once at construction.
-        this->device_model_map = this->device_model->get_device_model();
+        // Only the created component is taken over: the components already in memory keep their values, which the
+        // storage does not hold for attributes that are not persistent.
+        auto reloaded = this->device_model->get_device_model();
+        for (auto& [component, variables] : reloaded) {
+            this->device_model_map.try_emplace(component, std::move(variables));
+        }
     } catch (const std::exception& e) {
         EVLOG_error << "DeviceModel::create_network_configuration_slot_from_default_schema: storage "
                        "committed slot "
@@ -477,43 +524,49 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
 SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const Variable& variable,
                                                const AttributeEnum& attribute_enum, const std::string& source) {
     std::unique_lock<std::recursive_mutex> lock(this->mutex);
-    if (this->device_model_map.find(component) == this->device_model_map.end()) {
+    const auto component_it = this->device_model_map.find(component);
+    if (component_it == this->device_model_map.end()) {
         return SetVariableStatusEnum::UnknownComponent;
     }
-    auto& variable_map = this->device_model_map[component];
-    if (variable_map.find(variable) == variable_map.end()) {
+    const auto variable_it = component_it->second.find(variable);
+    if (variable_it == component_it->second.end()) {
         return SetVariableStatusEnum::UnknownVariable;
     }
-    const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
-    if (!attribute.has_value()) {
+    auto& meta_data = variable_it->second;
+    auto attribute = this->read_attribute(component, variable, meta_data, attribute_enum);
+    if (not attribute.has_value()) {
         return SetVariableStatusEnum::NotSupportedAttributeType;
     }
-
-    const auto& attribute_value = attribute.value();
 
     // Bypass validate_value: empty-string clears can violate length/range characteristics
     // by design (the cleared row is the sentinel for "no value").
     const std::string empty;
-    const auto result =
-        this->device_model->set_variable_attribute_value(component, variable, attribute_enum, empty, source);
-
-    // Fire variable_listener for value change observers, mirroring set_value's behavior.
-    if ((attribute_enum == AttributeEnum::Actual) && (result == SetVariableStatusEnum::Accepted) &&
-        !variable_listener.empty()) {
-        static const std::string EMPTY_VALUE{};
-        const std::string value_previous = attribute_value.value.value_or(EMPTY_VALUE);
-        if (value_previous != empty) {
-            // Copy listeners and payload, then release the lock before invoking: see set_value.
-            const auto listeners = variable_listener;
-            const auto monitors = variable_map[variable].monitors;
-            const auto characteristics = variable_map[variable].characteristics;
-            lock.unlock();
-            for (const auto& listener : listeners) {
-                listener(monitors, component, variable, characteristics, attribute_value, value_previous, empty);
-            }
+    if (meta_data.source.has_value() or is_persistent(*attribute)) {
+        const auto result =
+            this->device_model->set_variable_attribute_value(component, variable, attribute_enum, empty, source);
+        if (result != SetVariableStatusEnum::Accepted) {
+            return result;
         }
     }
-    return result;
+
+    const std::string value_previous = attribute->value.has_value() ? attribute->value->get() : empty;
+    attribute->value = empty;
+    if (auto* in_memory = find_attribute(meta_data, attribute_enum); in_memory != nullptr) {
+        in_memory->value = empty;
+    }
+
+    // Fire variable_listener for value change observers, mirroring set_value's behavior.
+    if (attribute_enum == AttributeEnum::Actual and value_previous != empty and !variable_listener.empty()) {
+        // Copy listeners and payload, then release the lock before invoking: see set_value.
+        const auto listeners = variable_listener;
+        const auto monitors = meta_data.monitors;
+        const auto characteristics = meta_data.characteristics;
+        lock.unlock();
+        for (const auto& listener : listeners) {
+            listener(monitors, component, variable, characteristics, attribute.value(), value_previous, empty);
+        }
+    }
+    return SetVariableStatusEnum::Accepted;
 }
 
 std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Component& component,
@@ -541,11 +594,8 @@ std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& 
             cv.component = component;
             cv.variable = variable;
 
-            // request the variable attribute from the device model
-            const auto variable_attributes = this->device_model->get_variable_attributes(component, variable);
-
             // iterate over possibly (Actual, Target, MinSet, MaxSet)
-            for (const auto& variable_attribute : variable_attributes) {
+            for (const auto& variable_attribute : this->read_attributes(component, variable, variable_meta_data)) {
                 if (report_base == ReportBaseEnum::FullInventory or
                     (report_base == ReportBaseEnum::ConfigurationInventory and
                      (variable_attribute.mutability == MutabilityEnum::ReadWrite or
@@ -586,10 +636,8 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
                     report_data.component = component;
                     report_data.variable = variable;
 
-                    //  request the variable attribute from the device model
-                    const auto variable_attributes = this->device_model->get_variable_attributes(component, variable);
-
-                    for (const auto& variable_attribute : variable_attributes) {
+                    for (const auto& variable_attribute :
+                         this->read_attributes(component, variable, variable_meta_data)) {
                         report_data.variableAttribute.push_back(variable_attribute);
                         report_data.variableCharacteristics = variable_map.at(variable).characteristics;
                     }
@@ -877,22 +925,32 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
             auto monitor_meta = this->device_model->set_monitoring_data(request, type);
 
             if (monitor_meta.has_value()) {
+                const auto attribute = this->read_attribute(component_it->first, variable_it->first,
+                                                            variable_it->second, AttributeEnum::Actual);
+                static const std::string empty_value{};
+                const std::string current_value =
+                    (attribute.has_value() and attribute->value.has_value()) ? attribute->value->get() : empty_value;
+
+                // The storage takes the reference of a delta monitor from its own copy of the value
+                if (request.type == MonitorEnum::Delta and monitor_meta->reference_value != current_value) {
+                    if (this->device_model->update_monitoring_reference(monitor_meta->monitor.id, current_value)) {
+                        monitor_meta->reference_value = current_value;
+                    } else {
+                        EVLOG_warning << "Could not update the reference value of delta monitor: "
+                                      << monitor_meta->monitor.id;
+                    }
+                }
+
                 // N07.FR.11
                 // In case of an existing monitor update
                 if (request_has_id && monitor_update_listener) {
-                    auto attribute = this->device_model->get_variable_attribute(component_it->first, variable_it->first,
-                                                                                AttributeEnum::Actual);
-
                     if (attribute.has_value()) {
-                        static const std::string empty_value{};
-                        const std::string current_value = attribute.value().value.value_or(empty_value);
-
-                        pending_notifications.push_back(
-                            [listener = monitor_update_listener, monitor_meta = monitor_meta.value(),
-                             component = component_it->first, variable = variable_it->first, characteristics,
-                             attribute = attribute.value(), current_value]() {
-                                listener(monitor_meta, component, variable, characteristics, attribute, current_value);
-                            });
+                        pending_notifications.push_back([listener = monitor_update_listener,
+                                                         monitor_meta = monitor_meta.value(),
+                                                         component = component_it->first, variable = variable_it->first,
+                                                         characteristics, attribute = *attribute, current_value]() {
+                            listener(monitor_meta, component, variable, characteristics, attribute, current_value);
+                        });
                     } else {
                         EVLOG_warning << "Could not notify monitor update listener, missing variable attribute: "
                                       << variable_it->first;
