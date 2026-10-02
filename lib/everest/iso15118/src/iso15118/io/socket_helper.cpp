@@ -9,6 +9,8 @@
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <sys/socket.h>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -106,6 +108,38 @@ bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, soc
 
     // Todo(sl): What to do if interface was not found?
     return found_interface;
+}
+
+bool set_tcp_keepalive(int fd) {
+    constexpr int TCP_KEEPALIVE_IDLE_S = 10;
+    constexpr int TCP_KEEPALIVE_INTERVAL_S = 3;
+    constexpr int TCP_KEEPALIVE_PROBE_COUNT = 3;
+
+    int enable = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) == -1) {
+        logf_error("Failed to enable SO_KEEPALIVE");
+        return false;
+    }
+
+    int idle = TCP_KEEPALIVE_IDLE_S;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) == -1) {
+        logf_error("Failed to set TCP_KEEPIDLE");
+        return false;
+    }
+
+    int interval = TCP_KEEPALIVE_INTERVAL_S;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) == -1) {
+        logf_error("Failed to set TCP_KEEPINTVL");
+        return false;
+    }
+
+    int count = TCP_KEEPALIVE_PROBE_COUNT;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count)) == -1) {
+        logf_error("Failed to set TCP_KEEPCNT");
+        return false;
+    }
+
+    return true;
 }
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {
