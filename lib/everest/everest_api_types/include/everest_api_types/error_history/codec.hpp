@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -13,6 +13,7 @@ namespace everest::lib::API::V1_0::types::error_history {
 std::string serialize(State val) noexcept;
 std::string serialize(SeverityFilter val) noexcept;
 std::string serialize(Severity val) noexcept;
+std::string serialize(Mapping const& val) noexcept;
 std::string serialize(ImplementationIdentifier const& val) noexcept;
 std::string serialize(TimeperiodFilter const& val) noexcept;
 std::string serialize(FilterArguments const& val) noexcept;
@@ -22,6 +23,7 @@ std::string serialize(ErrorList const& val) noexcept;
 std::ostream& operator<<(std::ostream& os, State const& val);
 std::ostream& operator<<(std::ostream& os, SeverityFilter const& val);
 std::ostream& operator<<(std::ostream& os, Severity const& val);
+std::ostream& operator<<(std::ostream& os, Mapping const& val);
 std::ostream& operator<<(std::ostream& os, ImplementationIdentifier const& val);
 std::ostream& operator<<(std::ostream& os, TimeperiodFilter const& val);
 std::ostream& operator<<(std::ostream& os, FilterArguments const& val);
