@@ -11,13 +11,10 @@ SRC_URI[boot-jdk.sha256sum] = "987387933b64b9833846dee373b640440d3e1fd48a04804ec
 SRCREV_target-jdk = "176422b885d2d045dd44b61b7fcdcb01be2d00a7"
 PV = "25-ga"
 
-S = "${WORKDIR}/git"
-B = "${WORKDIR}/build"
-
 inherit autotools update-alternatives
 
 OPENJDK_INSTALL_PREFIX = "/usr/lib/jvm/java-25-openjdk-${TARGET_ARCH}"
-OPENJDK_BOOT_JDK_DIR = "${WORKDIR}/jdk-25.0.2+10/"
+OPENJDK_BOOT_JDK_DIR = "${UNPACKDIR}/jdk-25.0.2+10/"
 
 
 mangle_environement_vars() {
@@ -26,7 +23,7 @@ mangle_environement_vars() {
     unset LDFLAGS
 }
 
-TARGET_CFLAGS +=" -Wno-nonnull -Wno-maybe-uninitialized"
+TARGET_CFLAGS += " -Wno-nonnull -Wno-maybe-uninitialized -Wno-discarded-qualifiers"
 
 do_configure () {
     rm -rf ${B}
