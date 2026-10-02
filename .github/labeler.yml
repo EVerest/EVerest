@@ -11,8 +11,6 @@ changed-files-labels-limit: 10
 OCPP:
   - changed-files:
       - any-glob-to-any-file:
-          - modules/EVSE/OCPP/**
-          - modules/EVSE/OCPP201/**
           - modules/EVSE/OCPPmulti/**
           - lib/everest/ocpp/**
           - lib/everest/ocpp_module_common/**

@@ -21,23 +21,8 @@ from everest.testing.ocpp_utils.fixtures import charge_point_v16
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
-from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 from everest_test_utils import *
 # fmt: on
-
-from copy import deepcopy
-from typing import Dict
-
-
-class _DeviceModelMigrationConfigAdjustment(EverestConfigAdjustmentStrategy):
-    """Sets ConfigBackend=device_model_with_migration on the ocpp module."""
-
-    def adjust_everest_configuration(self, everest_config: Dict) -> Dict:
-        adjusted = deepcopy(everest_config)
-        adjusted["active_modules"]["ocpp"]["config_module"]["ConfigBackend"] = (
-            "device_model_with_migration"
-        )
-        return adjusted
 
 
 @pytest.mark.asyncio
@@ -613,7 +598,6 @@ async def test_boot_notification_rejected_and_call_by_csms(
 
 
 @pytest.mark.asyncio
-@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
 async def test_migration_boot_notification(
     test_config: OcppTestConfiguration,
     central_system_v16: CentralSystem,
@@ -644,7 +628,6 @@ async def test_migration_boot_notification(
 
 
 @pytest.mark.asyncio
-@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
 async def test_migration_get_configuration_key(
     central_system_v16: CentralSystem,
     test_controller: TestController,
@@ -671,7 +654,6 @@ async def test_migration_get_configuration_key(
 
 
 @pytest.mark.asyncio
-@pytest.mark.everest_config_adaptions(_DeviceModelMigrationConfigAdjustment())
 async def test_migration_change_configuration_persists_after_restart(
     central_system_v16: CentralSystem,
     test_utility: TestUtility,

@@ -46,9 +46,8 @@
 /modules/EVSE/EvseSecurity/ @pietfried @hikinggrass @james-ctc @mlitre @SebaLukas @a-w50
 /modules/EVSE/EvseSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass @djchhp
 /modules/EVSE/EvseV2G/ @corneliusclaussen @SebaLukas @james-ctc @pietfried @hikinggrass @james-ctc @mlitre @barsnick @FaHaGit @a-w50
-/modules/EVSE/OCPP/ @hikinggrass @pietfried @mlitre
+/modules/EVSE/OCPPmulti/ @hikinggrass @pietfried @mlitre
 /modules/HardwareDrivers/ @pietfried @hikinggrass @corneliusclaussen @florinmihut @cburandt @djchhp @a-w50
-/modules/EVSE/OCPP201/ @hikinggrass @pietfried @mlitre
 /modules/Examples/CppExamples/error-framework/ @corneliusclaussen @hikinggrass @pietfried @andistorm
 /modules/Examples/RustExamples/ @SirVer @dorezyuk
 /modules/HardwareDrivers/EVSE/MicroMegaWattBSP/ @corneliusclaussen @hikinggrass @a-w50

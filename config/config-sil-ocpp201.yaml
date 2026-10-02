@@ -126,7 +126,9 @@ active_modules:
         - module_id: slac
           implementation_id: ev
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
+    config_module:
+      Mode: Only2
     connections:
       evse_manager:
         - module_id: evse_manager_1

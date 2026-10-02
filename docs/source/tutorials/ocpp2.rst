@@ -4,11 +4,10 @@
 OCPP 2.0.1 and 2.1 in EVerest
 *****************************
 
-.. warning::
+.. note::
 
-  **Deprecated:** The OCPP201 module used in this tutorial is deprecated in
-  favor of the combined OCPP module OCPPmulti, which supports OCPP 1.6,
-  2.0.1 and 2.1 in one module. New integrations should use it — see the
+  The combined OCPP module OCPPmulti supports OCPP 1.6, 2.0.1 and 2.1 in one
+  module. This tutorial runs it with ``Mode: Only2``. See also the
   :ref:`combined module tutorial <tutorial-ocpp-combined>` and the
   :ref:`module documentation <everest_modules_OCPPmulti>`.
 
@@ -27,7 +26,7 @@ is mostly backwards compatible, the implementation of OCPP 2.1 is based on the
 2.0.1 implementation. Every functionality that is provided as part of OCPP 2.0.1
 is also available in OCPP 2.1.
 
-In EVerest, the :ref:`OCPP201 module <everest_modules_OCPP201>`
+In EVerest, the :ref:`OCPPmulti module <everest_modules_OCPPmulti>`
 provides the OCPP 2.0.1 and 2.1 functionality.
 
 Where applicable the following documentation uses "2.x" to refer to both versions.
@@ -278,7 +277,7 @@ for detailed information about this process.
 
 You should specify the path to the directory of your device model definitions
 using the configuration parameter ``DeviceModelConfigPath``
-of the OCPP201 module within EVerest.
+of the OCPPmulti module within EVerest.
 It shall point to the directory where the component files are located in these
 two subdirectories:
 
@@ -467,32 +466,33 @@ In order to enable Plug&Charge, adjust your component files according to the
 
 .. _tutorial-configure-ocpp2-everest:
 
-Configuring the OCPP201 module within EVerest
-=============================================
+Configuring the OCPPmulti module within EVerest
+===============================================
 
 To be able to follow the further explanations, you should be familiar with the configuration of EVerest modules.
 Take a look into :doc:`EVerest Module Concept </explanation/detail-module-concept>` for that.
 
-To configure the OCPP201 module of EVerest, find the available configuration parameters
+To configure the OCPPmulti module of EVerest, find the available configuration parameters
 and carefully read the further explanations in the
-:ref:`OCPP201 module documentation <everest_modules_OCPP201>`
+:ref:`OCPPmulti module documentation <everest_modules_OCPPmulti>`
 in order to configure it according to your needs.
 
 In order to enable OCPP2.x in EVerest, you need to load the module in the EVerest configuration file and set up the module connections. The interfaces
-provided and required by the OCPP module and its purposes are described in the :ref:`OCPP201 module documentation <everest_modules_OCPP201>`.
+provided and required by the OCPP module and its purposes are described in the :ref:`OCPPmulti module documentation <everest_modules_OCPPmulti>`.
 
 The EVerest configuration file `config-sil-ocpp201.yaml <https://github.com/EVerest/EVerest/blob/main/config/config-sil-ocpp201.yaml>`_
 which was used previously serves as a good example
 for how the connections of the module could be set up.
 
-Here is a quick list of things you should remember when adding OCPP201 to your EVerest configuration file:
+Here is a quick list of things you should remember when adding OCPPmulti to your EVerest configuration file:
 
-1. Load the OCPP201 module by including it in the the configuration file.
+1. Load the OCPPmulti module by including it in the configuration file, and set its
+   ``Mode`` config key to ``Only2``.
 
 2. Make sure to add and connect the module requirements:
 
    - evse_manager (interface: energy_manager, 1 to 128 connections):
-     OCPP201 requires this connection in order to integrate with the charge control
+     OCPPmulti requires this connection in order to integrate with the charge control
      logic of EVerest.
      One connection represents one EVSE.
      In order to manage multiple EVSEs via one OCPP connection, multiple
@@ -547,7 +547,7 @@ Here is a quick list of things you should remember when adding OCPP201 to your E
      EVerest currently does not provide a display module that implements this
      interface.
 
-3. Make sure to configure the OCPP201 module as part of the token_provider (implementation_id: auth_provider) and token_validator (implementation_id: auth_validator)
+3. Make sure to configure the OCPPmulti module as part of the token_provider (implementation_id: auth_provider) and token_validator (implementation_id: auth_validator)
    connections of the Auth module (if you use it). Please see the documentation of the auth module for more information.
 
 4. In case you want to use the Plug&Charge feature, you must also add the EvseManager (implementation_id: token_provider) module to the connections of the

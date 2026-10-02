@@ -4,9 +4,7 @@
 """Integration tests for the OCPP1.6 -> system provider `configure_network` delegation.
 
 Covers the NotSupported / Ready direct answers and the deferred Processing variant
-(completed via the configure_network_status var). Only the combined OCPPmulti module
-implements the delegation, so the tests are pinned via ocpp_multi_only; the config
-rewrite swaps the legacy OCPP module in the probe config for OCPPmulti (Mode Only1.6).
+(completed via the configure_network_status var).
 The delegation is opt-in (DelegateNetworkConfigurationToSystem, default false), so the config
 adaption below switches it on.
 
@@ -58,7 +56,6 @@ async def _connect(probe_module):
 
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp1.6")
-@pytest.mark.ocpp_multi_only
 @pytest.mark.everest_core_config("everest-config-ocpp16-probe-module.yaml")
 @pytest.mark.everest_config_adaptions(OCPPMultiModuleConfigStrategy({"DelegateNetworkConfigurationToSystem": True}))
 @pytest.mark.probe_module
