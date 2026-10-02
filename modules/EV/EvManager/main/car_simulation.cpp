@@ -369,6 +369,21 @@ bool CarSimulation::iso_draw_power_regulated(const CmdArguments& arguments) {
     return true;
 }
 
+std::string CarSimulation::set_evcc_id(const std::string& evcc_id) {
+    if (r_ev.empty()) {
+        EVLOG_error << "set_evcc_id requires an ISO15118_ev connection, none is configured";
+        return {};
+    }
+
+    const auto accepted = r_ev[0]->call_set_evcc_id(evcc_id);
+    if (accepted.empty()) {
+        EVLOG_error << "EV rejected EVCCID \"" << evcc_id << "\", the previous one is still in use";
+    } else {
+        EVLOG_info << "EV will announce EVCCID " << accepted << " on the next session";
+    }
+    return accepted;
+}
+
 bool CarSimulation::iso_stop_charging(const CmdArguments& arguments) {
     r_ev[0]->call_stop_charging();
     r_ev_board_support->call_allow_power_on(false);
