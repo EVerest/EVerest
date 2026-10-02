@@ -854,8 +854,10 @@ void InitDeviceModelDb::update_variable_monitor(const VariableMonitoringMeta& ne
     update_stmt->bind_int(4, static_cast<int>(new_monitor.type));
     update_stmt->bind_double(5, new_monitor.monitor.value);
 
-    if (new_monitor.reference_value.has_value()) {
-        update_stmt->bind_text(6, new_monitor.reference_value.value(), SQLiteString::Transient);
+    const auto& reference_value =
+        db_monitor.reference_value.has_value() ? db_monitor.reference_value : new_monitor.reference_value;
+    if (reference_value.has_value()) {
+        update_stmt->bind_text(6, reference_value.value(), SQLiteString::Transient);
     } else {
         update_stmt->bind_null(6);
     }
@@ -1564,7 +1566,8 @@ bool is_monitor_duplicate(const VariableMonitoringMeta& meta1, const VariableMon
 }
 
 bool is_monitor_different(const VariableMonitoringMeta& meta1, const VariableMonitoringMeta& meta2) {
-    if (meta1.type != meta2.type || meta1.reference_value != meta2.reference_value) {
+    // The reference value of a Delta monitor follows the last sent event (N07.FR.18), so it is not configuration
+    if (meta1.type != meta2.type) {
         return true;
     }
 
