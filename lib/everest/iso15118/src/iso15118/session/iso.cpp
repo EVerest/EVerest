@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/session/iso.hpp>
 
 #include <cassert>
@@ -17,7 +17,9 @@
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
-static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100; // minimum time between two response messages
+// Minimum time between two consecutive responses of the same type. A response that ends or pauses the
+// session is sent at once.
+static constexpr auto MIN_RESPONSE_INTERVAL_MS = 100;
 
 namespace {
 
@@ -255,12 +257,13 @@ TimePoint const& Session::poll() {
     }
 
     if (message_exchange.has_response()) {
-        // Before we send back the response message, we check the time between two response messages
-        // sent out. If this is less than MIN_RESPONSE_INTERVAL_MS, we delay the response message to
-        // avoid potential performance issues.
+        // A response of the same type as the last one sent is delayed until MIN_RESPONSE_INTERVAL_MS
+        // after it, to avoid potential performance issues with repeated requests. A response of a
+        // different type, or one that ends or pauses the session, is sent at once.
         if (not response_send_after.has_value()) {
             response_send_after = now;
-            if (last_response_tx_time.has_value()) {
+            if (last_response_tx_time.has_value() and message_exchange.peek_response_type() == last_response_type and
+                not(ctx.session_stopped or ctx.session_paused)) {
                 const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds>(
                     get_current_time_point() - last_response_tx_time.value());
                 if (elapsed < std::chrono::milliseconds(MIN_RESPONSE_INTERVAL_MS)) {
@@ -308,6 +311,7 @@ void Session::send_response() {
     const auto response_size = setup_response_header(response_buffer, stored_payload_type, payload_size);
     connection->write(response_buffer, response_size);
     last_response_tx_time = get_current_time_point();
+    last_response_type = stored_response_type;
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, d20::TIMEOUT_SEQUENCE);
 

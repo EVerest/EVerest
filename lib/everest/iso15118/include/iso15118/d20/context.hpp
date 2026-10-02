@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <any>
@@ -55,6 +55,9 @@ public:
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
     bool has_response() const {
         return response_available;
+    }
+    message_20::Type peek_response_type() const {
+        return response_type;
     }
 
 private:

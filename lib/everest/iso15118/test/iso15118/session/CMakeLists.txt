@@ -10,15 +10,15 @@ target_link_libraries(test_feedback
 
 catch_discover_tests(test_feedback)
 
-add_executable(test_session_teardown session_teardown.cpp)
+add_executable(test_session session.cpp)
 
-target_link_libraries(test_session_teardown
+target_link_libraries(test_session
     PRIVATE
         iso15118
         Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test_session_teardown)
+catch_discover_tests(test_session)
 
 add_executable(test_tbd_controller_teardown tbd_controller_teardown.cpp)
 
