@@ -1846,6 +1846,10 @@ module::TxEventEffect GenericOcpp::transaction_event(std::int32_t evse_id, modul
     return result;
 }
 
+bool GenericOcpp::transaction_is_ev_connect_timeout(std::int32_t evse_id, std::chrono::seconds ev_connection_timeout) {
+    return m_transaction_handler and m_transaction_handler->is_ev_connect_timeout(evse_id, ev_connection_timeout);
+}
+
 void GenericOcpp::transaction_reset(std::int32_t evse_id) {
     if (m_transaction_handler) {
         m_transaction_handler->reset_transaction_data(evse_id);
