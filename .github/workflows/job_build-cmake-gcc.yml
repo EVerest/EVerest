@@ -235,6 +235,8 @@ jobs:
           if-no-files-found: error
           path: dist.tar.gz
           name: ${{ env.DIST_ARTIFACT_NAME }}
+          # Already gzip-compressed
+          compression-level: 0
       - name: Create wheels
         id: create_wheels
         run: |
@@ -251,3 +253,5 @@ jobs:
           if-no-files-found: error
           path: ${{ inputs.wheels_path }}
           name: ${{ env.WHEELS_ARTIFACT_NAME }}
+          # Wheels are zip archives already
+          compression-level: 0
