@@ -139,17 +139,6 @@ private:
                                                  const AttributeEnum& attribute_enum, std::string& value,
                                                  bool allow_write_only, UnsetValue unset_value) const;
 
-    /// \brief The attribute of a variable with its current value. A variable of the component config with a source
-    /// is held by the storage of that source, which changes its value without DeviceModel, so its value is read from
-    /// the storage and every write goes to the storage.
-    std::optional<VariableAttribute> read_attribute(const Component& component, const Variable& variable,
-                                                    const ComposedVariable& composed,
-                                                    const AttributeEnum& attribute_enum) const;
-
-    /// \brief All attributes of a variable with their current values, see read_attribute
-    std::vector<VariableAttribute> read_attributes(const Component& component, const Variable& variable,
-                                                   const ComposedVariable& composed) const;
-
     /// \brief Iterates over the given \p component_criteria and converts this to the variable names
     /// (Active,Available,Enabled,Problem). If any of the variables can not be found as part of a component this
     /// function returns false. If any of those variable's value is true, this function returns true (except for

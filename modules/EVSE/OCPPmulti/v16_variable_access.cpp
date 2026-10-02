@@ -326,9 +326,10 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
             }
         }
 
-        // Free / ConnectionConfig: allow writing ReadOnly variables, mirroring the 2.x consumer path
-        // (Provisioning::set_variables); this API is a trusted local channel, and mutability models the
-        // CSMS-facing contract. ReadOnlyDerived CVs stay rejected above.
+        // Free / ConnectionConfig: allow writing ReadOnly variables of the component config, mirroring the 2.x
+        // consumer path (Provisioning::set_variables); this API is a trusted local channel, and mutability models
+        // the CSMS-facing contract. The device model rejects a variable that a runtime source registered, and
+        // ReadOnlyDerived CVs stay rejected above.
         const auto attribute = request.attributeType.value_or(ocpp::v2::AttributeEnum::Actual);
         const auto status = m_device_model.set_value(request.component, request.variable, attribute,
                                                      request.attributeValue.get(), source, true);

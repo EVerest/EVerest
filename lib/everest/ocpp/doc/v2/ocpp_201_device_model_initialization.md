@@ -121,6 +121,10 @@ caller that builds the `DeviceModel` itself calls `register_availability_states`
 as well, for a `DeviceModel` built without that call; the registration overrides it. The `ChargePoint` only checks
 that they are defined.
 
+How EVerest uses this is described in
+[How the device model is composed](../../../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the documentation
+of the OCPPmulti module.
+
 ## Required variables
 
 There are some required Variables, which can be found in the OCPP spec.  

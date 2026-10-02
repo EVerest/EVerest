@@ -27,14 +27,6 @@ const VariableCharacteristics AllowReset = [] {
     return var;
 }();
 
-const VariableCharacteristics AvailabilityState = [] {
-    VariableCharacteristics var;
-    var.dataType = DataEnum::OptionList;
-    var.supportsMonitoring = false;
-    var.valuesList = CiString<1000>("Available,Occupied,Reserved,Unavailable,Faulted");
-    return var;
-}();
-
 const VariableCharacteristics Available = [] {
     VariableCharacteristics var;
     var.dataType = DataEnum::boolean;
@@ -78,14 +70,6 @@ const VariableCharacteristics ISO15118EvseId = [] {
 
 namespace ConnectorDefinitions {
 namespace Characteristics {
-
-const VariableCharacteristics AvailabilityState = [] {
-    VariableCharacteristics var;
-    var.dataType = DataEnum::OptionList;
-    var.supportsMonitoring = false;
-    var.valuesList = CiString<1000>("Available,Occupied,Reserved,Unavailable,Faulted");
-    return var;
-}();
 
 const VariableCharacteristics Available = [] {
     VariableCharacteristics var;

@@ -105,8 +105,9 @@ The following table shows the known CSMS with which this library was tested.
 
 Check the [detailed current implementation status.](doc/v2/ocpp_2x_status.md).
 
-How integrating firmware adds its own components to the device model at runtime is described in
-[Components registered at runtime](doc/v2/ocpp_201_device_model_initialization.md#components-registered-at-runtime).
+How EVerest composes the device model from the component config and the components it registers at runtime is
+described in [How the device model is composed](../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the
+documentation of the OCPPmulti module.
 
 | Whitepapers & Application Notes                                                                                                                              | Supported              |
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |

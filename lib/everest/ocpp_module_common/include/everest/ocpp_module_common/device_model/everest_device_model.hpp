@@ -3,21 +3,28 @@
 
 #pragma once
 
-#include <mutex>
-#include <optional>
+#include <map>
+#include <memory>
 #include <set>
+#include <string>
+#include <vector>
+
+#include <everest/util/async/monitor.hpp>
 
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/iso15118_extensions/Interface.hpp>
 #include <generated/types/evse_board_support.hpp>
-#include <generated/types/grid_support.hpp>
+#include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
-#include <generated/types/powermeter.hpp>
 
+#include <filesystem>
+#include <optional>
+
+#include <generated/types/grid_support.hpp>
+
+#include <ocpp/v2/device_model_registry_interface.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
-#include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
-#include <utils/mqtt_config_service.hpp>
 
 namespace ocpp_module_common::device_model {
 
@@ -129,91 +136,86 @@ build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrl
 std::vector<ocpp::v2::SetVariableData>
 to_der_ctrlr_config_set_variables(int32_t evse_id, const types::grid_support::DERCapability& capability);
 
-/// \brief Forces every DER controller of \p evse_id other than \p keep to Available "false" and Enabled "false".
-/// \details Writes "false" to the Available and Enabled Actual attributes only when the current value is
-///          "true"; absent components/variables and values already not "true" are skipped silently. That guard
-///          preserves a CSMS-written Enabled "false" and its source across an unwire/rewire cycle.
-///          Run after provisioning so a component written by an earlier boot, when the EVSE resolved to a
-///          different component, cannot linger in the database still marked available. Passing
-///          DerCtrlrComponent::None clears both, which is the unwired case.
-void disable_other_der_ctrlrs(ocpp::v2::DeviceModelStorageInterface& storage, int32_t evse_id, DerCtrlrComponent keep);
+/// \brief Builds the components that EVerest provides at runtime: EVSE, Connector, V2XChargingCtrlr,
+/// ISO15118Ctrlr, ConnectedEV and the DER controllers
+std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>> build_runtime_component_configs(
+    const std::vector<types::evse_manager::Evse>& evses,
+    const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
+    const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
+    const std::map<int32_t, bool>& evse_service_renegotiation_supported, bool with_der_components,
+    const std::set<int32_t>& der_wired_evse_ids, const std::vector<int32_t>& iso_extension_evse_ids);
 
-class EverestDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
+/// \brief Converts \p component_configs into a registration. Every variable supports monitoring except WriteOnly
+/// ones, and the Enabled attribute of the DER controllers is persistent.
+std::vector<ocpp::v2::RegisteredComponent> to_registered_components(
+    const std::map<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>& component_configs);
+
+/// \brief Stores \p values in \p ocpp_storage, except those it holds a value for already
+/// \return false if \p ocpp_storage did not accept one of them
+bool import_stored_values(const std::vector<ocpp::v2::StoredVariableValue>& values,
+                          ocpp::v2::DeviceModelStorageInterface& ocpp_storage);
+
+/// \brief The DER Enabled values that the CSMS set while the DER controllers were stored in the EVerest device model
+/// database at \p everest_db_path
+std::vector<ocpp::v2::StoredVariableValue> read_legacy_der_enabled_values(const std::filesystem::path& everest_db_path);
+
+/// \brief Takes over the EVerest device model database that earlier versions kept at \p everest_db_path: the DER
+/// Enabled values the CSMS set are imported into \p ocpp_storage, then the file is renamed to \c *.migrated. The
+/// other values it holds are not needed, the components EVerest provides are registered at runtime and the module
+/// configurations are read from the configuration service. Does nothing when the file does not exist, so it runs once.
+/// A path that is not a regular file, or that names the device model database at \p device_model_db_path, is left
+/// alone. A file that cannot be read is renamed without importing anything. A value \p ocpp_storage does not accept
+/// keeps the file, so the next start repeats the import.
+void migrate_everest_device_model_database(const std::filesystem::path& everest_db_path,
+                                           const std::filesystem::path& device_model_db_path,
+                                           ocpp::v2::DeviceModelStorageInterface& ocpp_storage);
+
+/// \brief Registers the components that EVerest provides with the device model under the source \c EVEREST and
+/// reports their runtime state to it
+class EverestDeviceModel {
 public:
-    /// \param with_der_components When true, EVSEs with a wired grid_support connection get a
-    ///        DCDERCtrlr/ACDERCtrlr component. Pass true only if the module implements
-    ///        der_active_directives_callback: a present DER component makes that callback mandatory in
-    ///        ocpp::v2::Callbacks::all_callbacks_valid. True with an empty der_wired_evse_ids provisions no
-    ///        DER controller and clears both controllers on every EVSE. False provisions nothing and clears
-    ///        nothing, so whatever an earlier boot wrote survives.
-    /// \param der_wired_evse_ids The EVSE ids with a wired grid_support connection. Matched against
-    ///        types::evse_manager::Evse::id, not an index into r_evse_manager. Only consulted when
-    ///        with_der_components is true.
-    EverestDeviceModelStorage(
+    EverestDeviceModel(
         const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
         const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
         const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
         const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
-        const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
-        const std::set<int32_t>& der_wired_evse_ids, const std::filesystem::path& db_path,
-        const std::filesystem::path& migration_files_path,
-        std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client);
-    virtual ~EverestDeviceModelStorage() override = default;
-    virtual ocpp::v2::DeviceModelMap get_device_model() override;
-    virtual std::optional<ocpp::v2::VariableAttribute>
-    get_variable_attribute(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                           const ocpp::v2::AttributeEnum& attribute_enum) override;
-    virtual std::vector<ocpp::v2::VariableAttribute>
-    get_variable_attributes(const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
-                            const std::optional<ocpp::v2::AttributeEnum>& attribute_enum) override;
-    virtual ocpp::v2::SetVariableStatusEnum set_variable_attribute_value(const ocpp::v2::Component& component_id,
-                                                                         const ocpp::v2::Variable& variable_id,
-                                                                         const ocpp::v2::AttributeEnum& attribute_enum,
-                                                                         const std::string& value,
-                                                                         const std::string& source) override;
-    virtual std::optional<ocpp::v2::VariableMonitoringMeta>
-    set_monitoring_data(const ocpp::v2::SetMonitoringData& data, const ocpp::v2::VariableMonitorType type) override;
-    virtual bool update_monitoring_reference(const int32_t monitor_id, const std::string& reference_value) override;
-    virtual ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) override;
-    virtual int32_t clear_custom_variable_monitors() override;
-    virtual std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override;
-    virtual void check_integrity() override;
-    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
+        const std::map<int32_t, bool>& evse_service_renegotiation_supported, bool with_der_components,
+        const std::set<int32_t>& der_wired_evse_ids);
 
-    /// \brief Updates the actual value of the EVSE Power variable to the given \p total_power_active_import value
-    void update_power(const int32_t evse_id, const float total_power_active_import);
+    /// \brief Registers the components with \p registry, which receives the later changes. \p registry must stay
+    /// valid until this object is destroyed or registers with another registry.
+    ocpp::v2::ComponentRegistrationResult register_with(ocpp::v2::DeviceModelRegistryInterface& registry);
 
-    /// \bried Updates the Available variable for the ConnectedEV component
-    void update_connected_ev_available(const int32_t evse_id, const bool connected);
+    /// \brief Stops reporting to the registry. Must be called before the registry is destroyed.
+    void detach();
 
-    /// \bried Updates the VehicleId variable for the ConnectedEV component
-    void update_connected_ev_vehicle_id(const int32_t evse_id, const std::string& vehicle_id);
+    /// \brief The registered components with their current values
+    std::vector<ocpp::v2::RegisteredComponent> get_components();
+
+    void update_power(int32_t evse_id, float total_power_active_import);
+    void update_connected_ev_available(int32_t evse_id, bool connected);
+    void update_connected_ev_vehicle_id(int32_t evse_id, const std::string& vehicle_id);
+
+    /// \brief Reports the DER controller values of EVSE \p evse_id that \p capability determines, see
+    /// to_der_ctrlr_config_set_variables.
+    /// \returns One result per variable. A variable the EVSE's controller does not have is UnknownComponent or
+    ///          UnknownVariable.
+    std::vector<ocpp::v2::SetVariableResult>
+    update_der_capability(int32_t evse_id, const types::grid_support::DERCapability& capability);
 
 private:
-    const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager;
-    const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118;
-    std::mutex device_model_mutex;
-    std::unique_ptr<ocpp::v2::DeviceModelStorageSqlite> device_model_storage;
-    std::set<ocpp::v2::ComponentVariable> stored_in_everest_config_service;
-    std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client;
-    std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters> module_configs;
-    std::map<std::string, ModuleTierMappings> mappings;
+    struct State {
+        ocpp::v2::DeviceModelRegistryInterface* registry{nullptr};
+        std::vector<ocpp::v2::RegisteredComponent> components;
+        std::size_t reports_in_progress{0};
+    };
+    everest::lib::util::monitor<State> state;
 
-    void init_evse_components_and_variables(
-        const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
-        const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers);
-    void update_hw_capabilities(const ocpp::v2::Component& evse_component,
-                                const types::evse_board_support::HardwareCapabilities& hw_capabilities);
-    void update_supported_energy_transfers(
-        const ocpp::v2::Component& evse_component,
-        const std::vector<types::iso15118::EnergyTransferMode>& evse_supported_energy_transfers);
-    void
-    update_supported_operation_modes(const ocpp::v2::Component& evse_component,
-                                     const std::vector<ocpp::v2::OperationModeEnum>& evse_supported_operation_modes);
-    void update_service_renegotiation_supported(const ocpp::v2::Component& iso15118_component,
-                                                const bool& service_renegotiation_supported);
+    /// \brief Keeps \p value as the current value of the variable and reports it to the registry
+    ocpp::v2::SetVariableStatusEnum set_value(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                                              const std::string& value);
     void update_connected_ev_information(const ocpp::v2::Component& connected_ev_component,
                                          const types::iso15118::EvInformation& ev_information);
-    void init_everest_config();
 };
+
 } // namespace ocpp_module_common::device_model

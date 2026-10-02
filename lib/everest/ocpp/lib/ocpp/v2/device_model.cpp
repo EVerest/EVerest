@@ -44,10 +44,6 @@ bool is_persistent(const VariableAttribute& attribute) {
     return attribute.persistent.value_or(true);
 }
 
-bool is_held_by_storage(const ComposedVariable& composed) {
-    return composed.registration == nullptr and composed.meta_data->source.has_value();
-}
-
 /// \brief A registered attribute is the Actual attribute, not persistent and not constant unless it says otherwise
 VariableAttribute normalize_registered_attribute(VariableAttribute attribute) {
     attribute.type = attribute.type.value_or(AttributeEnum::Actual);
@@ -425,9 +421,9 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
         return GetVariableStatusEnum::UnknownVariable;
     }
 
-    const auto attribute = this->read_attribute(component_id, variable_id, variable_it->second, attribute_enum);
+    const auto* attribute = find_attribute(*variable_it->second.meta_data, attribute_enum);
 
-    if (not attribute.has_value()) {
+    if (attribute == nullptr) {
         return GetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -446,27 +442,6 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
 
     value = attribute->value->get();
     return GetVariableStatusEnum::Accepted;
-}
-
-std::optional<VariableAttribute> DeviceModel::read_attribute(const Component& component, const Variable& variable,
-                                                             const ComposedVariable& composed,
-                                                             const AttributeEnum& attribute_enum) const {
-    if (is_held_by_storage(composed)) {
-        return this->device_model->get_variable_attribute(component, variable, attribute_enum);
-    }
-    const auto* attribute = find_attribute(*composed.meta_data, attribute_enum);
-    if (attribute == nullptr) {
-        return std::nullopt;
-    }
-    return *attribute;
-}
-
-std::vector<VariableAttribute> DeviceModel::read_attributes(const Component& component, const Variable& variable,
-                                                            const ComposedVariable& composed) const {
-    if (is_held_by_storage(composed)) {
-        return this->device_model->get_variable_attributes(component, variable);
-    }
-    return composed.meta_data->attributes;
 }
 
 std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& component, const Variable& variable,
@@ -521,9 +496,9 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
         return SetVariableStatusEnum::Rejected;
     }
 
-    const auto attribute = this->read_attribute(component, variable, composed, attribute_enum);
+    const auto* attribute = find_attribute(meta_data, attribute_enum);
 
-    if (not attribute.has_value()) {
+    if (attribute == nullptr) {
         return SetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -561,15 +536,13 @@ DeviceModel::AppliedValue DeviceModel::store_value(const Component& component, c
                                                    const AttributeEnum& attribute_enum, const std::string& value,
                                                    const std::string& source, const bool write_to_storage) {
     auto& meta_data = *composed.meta_data;
-    // A variable held by the storage may have no attribute in memory; the storage copy is authoritative for it
-    auto attribute = this->read_attribute(component, variable, composed, attribute_enum);
-    if (not attribute.has_value()) {
+    auto* attribute = find_attribute(meta_data, attribute_enum);
+    if (attribute == nullptr) {
         return {SetVariableStatusEnum::NotSupportedAttributeType, std::nullopt};
     }
-    std::string value_previous = attribute->value.has_value() ? attribute->value->get() : std::string{};
 
     const auto* registration = composed.registration;
-    if (write_to_storage and (is_held_by_storage(composed) or is_persistent(*attribute))) {
+    if (write_to_storage and is_persistent(*attribute)) {
         if (registration == nullptr) {
             const auto result =
                 this->device_model->set_variable_attribute_value(component, variable, attribute_enum, value, source);
@@ -585,10 +558,8 @@ DeviceModel::AppliedValue DeviceModel::store_value(const Component& component, c
         }
     }
 
+    std::string value_previous = attribute->value.has_value() ? attribute->value->get() : std::string{};
     attribute->value = value;
-    if (auto* in_memory = find_attribute(meta_data, attribute_enum); in_memory != nullptr) {
-        in_memory->value = value;
-    }
 
     // Only trigger for actual values
     if (attribute_enum != AttributeEnum::Actual or value_previous == value or this->variable_listener.empty()) {
@@ -596,7 +567,7 @@ DeviceModel::AppliedValue DeviceModel::store_value(const Component& component, c
     }
     return {SetVariableStatusEnum::Accepted,
             ValueChange{this->variable_listener, this->monitors.of(component, variable), meta_data.characteristics,
-                        attribute.value(), std::move(value_previous)}};
+                        *attribute, std::move(value_previous)}};
 }
 
 void DeviceModel::notify(const ValueChange& change, const Component& component, const Variable& variable,
@@ -757,7 +728,7 @@ SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const
     if (variable_it == component_it->second.end()) {
         return SetVariableStatusEnum::UnknownVariable;
     }
-    if (not this->read_attribute(component, variable, variable_it->second, attribute_enum).has_value()) {
+    if (find_attribute(*variable_it->second.meta_data, attribute_enum) == nullptr) {
         return SetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -925,7 +896,7 @@ std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& 
             cv.variable = variable;
 
             // iterate over possibly (Actual, Target, MinSet, MaxSet)
-            for (const auto& variable_attribute : this->read_attributes(component, variable, composed)) {
+            for (const auto& variable_attribute : variable_meta_data.attributes) {
                 if (report_base == ReportBaseEnum::FullInventory or
                     (report_base == ReportBaseEnum::ConfigurationInventory and
                      (variable_attribute.mutability == MutabilityEnum::ReadWrite or
@@ -967,7 +938,7 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
                     report_data.component = component;
                     report_data.variable = variable;
 
-                    for (const auto& variable_attribute : this->read_attributes(component, variable, composed)) {
+                    for (const auto& variable_attribute : variable_meta_data.attributes) {
                         report_data.variableAttribute.push_back(variable_attribute);
                         report_data.variableCharacteristics = variable_meta_data.characteristics;
                     }
@@ -1180,11 +1151,10 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
             }
         }
 
-        const auto attribute =
-            this->read_attribute(request.component, request.variable, composed, AttributeEnum::Actual);
+        const auto* attribute = find_attribute(meta_data, AttributeEnum::Actual);
         static const std::string empty_value{};
         const std::string current_value =
-            (attribute.has_value() and attribute->value.has_value()) ? attribute->value->get() : empty_value;
+            (attribute != nullptr and attribute->value.has_value()) ? attribute->value->get() : empty_value;
         const auto source = composed.registration != nullptr ? std::optional<std::string>{composed.registration->source}
                                                              : meta_data.source;
 
@@ -1199,11 +1169,11 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
             // N07.FR.11
             // In case of an existing monitor update
             if (request_has_id && monitor_update_listener) {
-                if (attribute.has_value()) {
+                if (attribute != nullptr) {
                     pending_notifications.push_back(
                         [listener = monitor_update_listener, monitor_meta = monitor_meta.value(),
                          component = request.component, variable = request.variable,
-                         characteristics = meta_data.characteristics, attribute = attribute.value(), current_value]() {
+                         characteristics = meta_data.characteristics, attribute = *attribute, current_value]() {
                             listener(monitor_meta, component, variable, characteristics, attribute, current_value);
                         });
                 } else {

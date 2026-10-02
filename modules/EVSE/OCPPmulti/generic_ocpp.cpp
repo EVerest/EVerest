@@ -583,12 +583,12 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     {
         std::lock_guard lock(m_member_mux);
         // initialise everest device model
-        m_everest_device_model_storage = std::make_shared<module::device_model::EverestDeviceModelStorage>(
+        mv_device_model_sources.everest_device_model = std::make_unique<module::device_model::EverestDeviceModel>(
             mv_requires.evse_manager, mv_requires.extensions_15118, m_evse_hardware_capabilities_map,
             m_evse_supported_energy_transfer_modes, m_evse_service_renegotiation_supported,
-            /*with_der_components=*/true, der_wired_evse_ids, everest_device_model_database_path,
-            device_model_database_migration_path, client);
+            /*with_der_components=*/true, der_wired_evse_ids);
     }
+    mv_device_model_sources.config_service_access = module::device_model::make_config_service_access(client);
 
     // clang-format off
     ocpp_multi::GenericChargePointInterface::init_args_t args{
@@ -603,7 +603,9 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         device_model_database_path,
         std::move(evse_connector_structure),
         std::move(connector_mapping),
-        m_everest_device_model_storage,
+        everest_device_model_database_path,
+        mv_device_model_sources.everest_device_model.get(),
+        mv_device_model_sources.config_service_access.get(),
         mv_config.getDeviceModelConfigMappings(),
         static_cast<std::int32_t>(mv_config.getOcpp16NetworkConfigSlot()),
         mv_config.getEnableLegacyConfigMigration(),
@@ -918,7 +920,7 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const powermeter_t& meter) {
         EVLOG_debug << "Processing queued meter value for evse_id: " << evse_id;
         mv_charge_point.on_meter_value(evse_id, meter.state_of_charge, meter.meter.value());
         if (meter.meter->power_W) {
-            m_everest_device_model_storage->update_power(evse_id, meter.meter->power_W->total);
+            mv_device_model_sources.everest_device_model->update_power(evse_id, meter.meter->power_W->total);
         }
     }
     if (meter.public_key) {
@@ -1236,7 +1238,8 @@ void GenericOcpp::cb_ev_info(std::int32_t evse_id, const types::evse_manager::EV
         }
         if (ev_info.evcc_id.has_value()) {
             mv_evse_evcc_id.handle()->at(evse_id) = ev_info.evcc_id.value();
-            m_everest_device_model_storage->update_connected_ev_vehicle_id(evse_id, ev_info.evcc_id.value());
+            mv_device_model_sources.everest_device_model->update_connected_ev_vehicle_id(evse_id,
+                                                                                         ev_info.evcc_id.value());
         }
     } else {
         EVLOG_debug << "EV Info received from evse_manager before OCPP was started, ignoring";
@@ -1465,7 +1468,7 @@ void GenericOcpp::cb_powermeter(std::int32_t evse_id, const types::powermeter::P
     if (!enqueue_if_not_started(evse_id, meter)) {
         mv_charge_point.on_meter_value(evse_id, meter.state_of_charge, meter.meter.value());
         if (power_meter.power_W) {
-            m_everest_device_model_storage->update_power(evse_id, power_meter.power_W->total);
+            mv_device_model_sources.everest_device_model->update_power(evse_id, power_meter.power_W->total);
         }
     }
 }
@@ -2103,8 +2106,9 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
                                                               const types::grid_support::DERCapability& capability) {
     DerApplyResult result;
 
-    // Handle per access: set_variables/on_der_republish re-enter der_active_directives_callback (self-deadlock).
-    // get_variables only reads the device model, so it is safe under the handle.
+    // Handle per access: a report to the device model runs its listeners, and on_der_republish re-enters
+    // der_active_directives_callback (self-deadlock). get_variables only reads the device model, so it is safe
+    // under the handle.
     std::optional<types::grid_support::DERCapability> previous;
     {
         auto state_handle = m_grid_support_state.handle();
@@ -2118,10 +2122,15 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
         }
     }
 
-    const auto collect_rejected = [](const std::vector<SetVariableOutcome>& outcomes) {
+    // EverestDeviceModel owns the DER controller variables and reports the capability to the device model
+    const auto report_capability = [this](const std::int32_t evse_id,
+                                          const types::grid_support::DERCapability& capability) {
         std::string rejected_details;
-        for (const auto& outcome : outcomes) {
-            const auto& set_result = outcome.result;
+        if (mv_device_model_sources.everest_device_model == nullptr) {
+            return std::string{"device model not initialised"};
+        }
+        for (const auto& set_result :
+             mv_device_model_sources.everest_device_model->update_der_capability(evse_id, capability)) {
             if (set_result.attributeStatus != ocpp::v2::SetVariableStatusEnum::Accepted) {
                 if (not rejected_details.empty()) {
                     rejected_details += ", ";
@@ -2146,8 +2155,7 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
             // Best-effort restore of the previous config variables. Enabled stays untouched: the EVSE
             // keeps running its previous accepted config.
             // Variables the rejected capability wrote but the previous one does not define keep their new values.
-            const auto rollback_rejected = collect_rejected(mv_charge_point.set_variables(
-                module::device_model::to_der_ctrlr_config_set_variables(evse_id, *previous), "internal"));
+            const auto rollback_rejected = report_capability(evse_id, *previous);
             if (not rollback_rejected.empty()) {
                 EVLOG_warning << "DER capability rollback for EVSE " << evse_id
                               << " partially rejected: " << rollback_rejected;
@@ -2169,8 +2177,7 @@ GenericOcpp::DerApplyResult GenericOcpp::apply_der_capability(std::int32_t evse_
     };
 
     // Config variables only (no Available/Enabled): a partial rejection leaves the component state untouched.
-    const auto config_rejected = collect_rejected(mv_charge_point.set_variables(
-        module::device_model::to_der_ctrlr_config_set_variables(evse_id, capability), "internal"));
+    const auto config_rejected = report_capability(evse_id, capability);
     if (not config_rejected.empty()) {
         reject(config_rejected);
         return result;
@@ -2526,14 +2533,14 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
             mv_evse_soc_map.handle()->at(evse_id).reset();
             mv_evse_evcc_id.handle()->at(evse_id) = "";
             mv_charge_point.on_event_session_finished(evse_id, connector_id, session_event);
-            m_everest_device_model_storage->update_connected_ev_available(evse_id, false);
+            mv_device_model_sources.everest_device_model->update_connected_ev_available(evse_id, false);
             break;
         case types::evse_manager::SessionEventEnum::SessionResumed:
             mv_charge_point.on_event_session_resumed(evse_id, connector_id, session_event);
             break;
         case types::evse_manager::SessionEventEnum::SessionStarted:
             if (mv_charge_point.on_event_session_started(evse_id, connector_id, session_event)) {
-                m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
+                mv_device_model_sources.everest_device_model->update_connected_ev_available(evse_id, true);
             }
             break;
         case types::evse_manager::SessionEventEnum::SwitchingPhases:
@@ -2544,7 +2551,7 @@ void GenericOcpp::process_session_event(std::int32_t evse_id, const types::evse_
             break;
         case types::evse_manager::SessionEventEnum::TransactionStarted:
             if (mv_charge_point.on_event_transaction_started(evse_id, connector_id, session_event)) {
-                m_everest_device_model_storage->update_connected_ev_available(evse_id, true);
+                mv_device_model_sources.everest_device_model->update_connected_ev_available(evse_id, true);
             }
             break;
 

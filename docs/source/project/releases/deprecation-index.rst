@@ -127,3 +127,11 @@ to the corresponding migration guide.
        ``applications/utils/scripts/set_module_capabilities.py`` elsewhere (see
        :doc:`/how-to-guides/security-best-practices`). The key is already
        ignored, and the manager logs a warning at startup.
+   * - :ref:`OCPPmulti <everest_modules_OCPPmulti>` configuration option
+       ``EverestDeviceModelDatabasePath``
+     - 2027.04.0
+     - 2027.10.0
+     - Nothing to migrate by hand. At the first start the module takes the
+       database over into ``DeviceModelDatabasePath`` and renames it to
+       ``*.migrated``, see :ref:`howto-ocpp-storage-migration`. Remove the
+       option from the configuration afterwards.

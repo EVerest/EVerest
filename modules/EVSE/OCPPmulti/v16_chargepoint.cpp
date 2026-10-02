@@ -521,7 +521,9 @@ void ChargePointV16::configure_callbacks() {
         [this](auto&&... args) { cb_generic_configuration_key_changed(args...); });
 }
 
-void ChargePointV16::configure_data_model(const config_info_t& config) {
+void ChargePointV16::configure_data_model(const config_info_t& config,
+                                          ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
+                                          ocpp_module_common::device_model::ConfigServiceAccess* config_service) {
     const auto ocpp_share_path = fs::path(config.ocpp_share_path);
 
     const module::config_factory_v16::Ocpp16DeviceModelParams params{
@@ -535,10 +537,14 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         config.user_config_path,                     // UserConfigPath
     };
 
+    stop_config_service_binding();
     auto factory_result = module::config_factory_v16::create_charge_point_configuration(
-        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors), config.everest_device_model);
+        ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors),
+        config.everest_device_model_database_path, everest_device_model, config_service);
     m_charge_point_configuration = std::move(factory_result.configuration);
     m_custom_mappings = std::move(factory_result.custom_mappings);
+    m_config_service_binding = std::move(factory_result.config_service_binding);
+    m_everest_device_model = everest_device_model;
 
     // m_charge_point is constructed later in init(); the lambdas resolve it at call time.
     // check_configured() guards get/set_variables until then.
@@ -597,10 +603,10 @@ void ChargePointV16::init(init_args_t& args) {
         args.v16_device_model_config_mappings,
         args.v16_ocpp16_network_config_slot,
         args.v16_enable_legacy_config_migration,
-        args.everest_device_model,
+        args.everest_device_model_database_path.string(),
     };
 
-    configure_data_model(config);
+    configure_data_model(config, args.everest_device_model, args.config_service);
 
     // clang-format off
     m_charge_point = std::make_unique<ocpp::v16::ChargePoint>(
