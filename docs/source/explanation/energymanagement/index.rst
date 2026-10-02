@@ -523,7 +523,7 @@ Finally, we also add the **EnergyManager** module and connect the
                   - module_id: api_sink_2
                     implementation_id: energy_grid
         ocpp:
-            module: OCPP
+            module: OCPPmulti
             connections:
                 evse_energy_sink:
                   - module_id: grid_connection_point
@@ -630,7 +630,7 @@ This is a full example including the module mappings:
                   - module_id: api_sink_2
                     implementation_id: energy_grid
         ocpp:
-            module: OCPP
+            module: OCPPmulti
             connections:
                 evse_energy_sink:
                   - module_id: grid_connection_point

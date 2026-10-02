@@ -62,10 +62,8 @@ OCPP 1.6 and OCPP 2.x configuration
 -----------------------------------
 
 For a general introduction to how to configure OCPP in EVerest, please refer to
-:ref:`the combined-module tutorial <tutorial-ocpp-combined>` (recommended). For the deprecated
-single-version modules, see :ref:`the OCPP1.6 tutorial <tutorial-ocpp16>` or
-:ref:`the OCPP2.x tutorial <tutorial-ocpp2>`. The configuration keys below are
-protocol-level and apply to OCPPmulti and the deprecated modules alike.
+:ref:`the combined-module tutorial <tutorial-ocpp-combined>`, :ref:`the OCPP1.6 tutorial <tutorial-ocpp16>`
+or :ref:`the OCPP2.x tutorial <tutorial-ocpp2>`. The configuration keys below are protocol-level.
 
 Since Plug&Charge has been backported from OCPP 2.x to OCPP 1.6, the
 configuration options to control the process are mostly identical.

@@ -94,48 +94,9 @@ from ocpp.v201.enums import (
 # smallest well-formed one: responseStatus tryLater without responseBytes, i.e. the responder has no status yet.
 OCSP_RESULT_TRY_LATER = "MAMKAQM="
 
-# NOTE: The module name and the `Mode` enum values below are duplicated from
-# `modules/EVSE/OCPPmulti/manifest.yaml`. They must stay in sync with that
-# manifest: `OCPP_MULTI_MODULE_NAME` matches the module directory name and the
-# values here must match the `Mode` config option's enum entries.
-OCPP_MULTI_MODULE_NAME = "OCPPmulti"
-
-OCPP_VERSION_TO_MULTI_MODE = {
-    OCPPVersion.ocpp16: "Only1.6",
-    OCPPVersion.ocpp201: "Only2",
-    OCPPVersion.ocpp21: "Only2",
-}
-
-
-class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
-    """Rewrites the EVerest config so the OCPP module is the combined `OCPPmulti`
-    module instead of legacy `OCPP`/`OCPP201`. Must run AFTER the framework's
-    OCPPModuleConfigurationStrategy so the temporary libocpp paths are already
-    present in `config_module` (this strategy only renames the module and sets `Mode`)."""
-
-    def __init__(self, ocpp_version: OCPPVersion, ocpp_module_id: str = "ocpp"):
-        self._ocpp_version = ocpp_version
-        self._ocpp_module_id = ocpp_module_id
-
-    def adjust_everest_configuration(self, everest_config: dict) -> dict:
-        adjusted = deepcopy(everest_config)
-        assert "active_modules" in adjusted and self._ocpp_module_id in adjusted["active_modules"], \
-            f"OCPP module id '{self._ocpp_module_id}' missing from EVerest config"
-        module_config = adjusted["active_modules"][self._ocpp_module_id]
-        assert module_config["module"] in ("OCPP", "OCPP201"), \
-            f"OCPPMultiConfigurationStrategy expected legacy 'OCPP'/'OCPP201' module, got '{module_config['module']}'"
-        module_config["module"] = OCPP_MULTI_MODULE_NAME
-        module_config.setdefault("config_module", {})
-        module_config["config_module"]["Mode"] = OCPP_VERSION_TO_MULTI_MODE[self._ocpp_version]
-        if self._ocpp_version == OCPPVersion.ocpp16:
-            module_config["config_module"]["EnableLegacyConfigMigration"] = True
-        return adjusted
-
 
 class OCPPMultiModuleConfigStrategy(EverestConfigAdjustmentStrategy):
-    """Sets additional `config_module` keys on the OCPP module, for OCPPmulti-only options such as
-    `DelegateNetworkConfigurationToSystem`. Use together with `ocpp_multi_only`: the keys are applied before the
-    rename to `OCPPmulti` and survive it because the framework strategies merge `config_module`."""
+    """Sets additional `config_module` keys on the OCPP module, such as `DelegateNetworkConfigurationToSystem`."""
 
     def __init__(self, config_module: dict, ocpp_module_id: str = "ocpp"):
         self._config_module = config_module

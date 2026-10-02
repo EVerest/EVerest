@@ -7,7 +7,9 @@ Migrate to the Combined OCPP Module
 This is a goal-oriented how-to guide on migrating an existing deployment from
 the separate ``OCPP`` (1.6) or ``OCPP201`` module to the combined OCPP module
 :ref:`OCPPmulti <everest_modules_OCPPmulti>`, which supports OCPP 1.6, 2.0.1,
-and 2.1 from a single module instance.
+and 2.1 from a single module instance. The ``OCPP`` and ``OCPP201`` modules were
+removed in 2027.04.0, so an installation that still uses one of them switches
+to OCPPmulti as part of that upgrade.
 
 The migration has up to three parts:
 

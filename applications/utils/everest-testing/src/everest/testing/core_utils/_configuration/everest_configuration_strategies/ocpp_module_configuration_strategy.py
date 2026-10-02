@@ -35,15 +35,13 @@ class OCPPModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
     def __init__(self, ocpp_paths: Union[OCPPModulePaths16, OCPPModulePaths2X],
                  ocpp_module_id: str,
-                 ocpp_version: OCPPVersion,
-                 enable_config_migration: bool = False):
+                 ocpp_version: OCPPVersion):
         self._ocpp_paths = ocpp_paths
         self._ocpp_module_id = ocpp_module_id
         self._ocpp_version = ocpp_version
-        self._enable_config_migration = enable_config_migration
 
     def adjust_everest_configuration(self, everest_config: Dict):
-        """ Changes the provided configuration of the Everest "OCPP" module .
+        """ Changes the provided configuration of the Everest "OCPPmulti" module.
 
         Creates the TEST_LOGS_DIR if not existent
         """
@@ -54,11 +52,14 @@ class OCPPModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
         module_config = adjusted_config["active_modules"][self._ocpp_module_id]
 
-        module_config["config_module"] = {**module_config["config_module"],
+        module_config["config_module"] = {**module_config.get("config_module", {}),
                                           **asdict(self._ocpp_paths)}
-
-        if self._ocpp_version == OCPPVersion.ocpp16 and self._enable_config_migration:
-            module_config["config_module"]["ConfigBackend"] = "device_model_with_migration"
+        if self._ocpp_version == OCPPVersion.ocpp16:
+            module_config["config_module"]["Mode"] = "Only1.6"
+            # The 1.6 tests provide their configuration as a legacy JSON config
+            module_config["config_module"]["EnableLegacyConfigMigration"] = True
+        else:
+            module_config["config_module"]["Mode"] = "Only2"
 
         return adjusted_config
 
@@ -67,7 +68,4 @@ class OCPPModuleConfigurationStrategy(EverestConfigAdjustmentStrategy):
         assert "active_modules" in everest_config and self._ocpp_module_id in everest_config[
             "active_modules"], "OCPP Module is missing from EVerest config"
         ocpp_module = everest_config["active_modules"][self._ocpp_module_id]["module"]
-        assert (ocpp_module == "OCPP" and self._ocpp_version == OCPPVersion.ocpp16) or (
-            ocpp_module == "OCPP201" and (self._ocpp_version == OCPPVersion.ocpp201 or
-                                          self._ocpp_version == OCPPVersion.ocpp21)), \
-            f"Invalid OCCP Module {ocpp_module} for provided OCCP version {self._ocpp_version}"
+        assert ocpp_module == "OCPPmulti", f"Invalid OCPP module {ocpp_module}, expected OCPPmulti"

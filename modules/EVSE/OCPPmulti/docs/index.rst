@@ -8,10 +8,9 @@ This module implements and integrates OCPP within EVerest. It supports three pro
 OCPP 1.6, OCPP 2.0.1 and OCPP 2.1. A connection to a Charging Station Management System (CSMS) can be established by
 loading this module as part of the EVerest configuration. The module leverages libocpp, EVerest's OCPP library.
 
-OCPPmulti is the recommended OCPP module for new EVerest configurations. It deprecates the separate
-:ref:`OCPP <everest_modules_OCPP>` (OCPP 1.6) and :ref:`OCPP201 <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1)
-modules; see :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>` for moving an
-existing deployment.
+OCPPmulti is the OCPP module of EVerest. It replaces the separate ``OCPP`` (OCPP 1.6) and ``OCPP201``
+(OCPP 2.0.1 / 2.1) modules, which were removed in 2027.04.0; see
+:ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>` for moving an existing deployment.
 
 In this document, **OCPP 2.x** refers to OCPP 2.0.1 and OCPP 2.1 collectively.
 
@@ -53,13 +52,13 @@ reference section of this page (taken from the module's ``manifest.yaml``). The 
 Renamed configuration keys
 ^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Compared to the deprecated :ref:`OCPP <everest_modules_OCPP>` (1.6) module, two keys were renamed (the
-:ref:`OCPP201 <everest_modules_OCPP201>` module already uses the new names):
+Compared to the removed ``OCPP`` (1.6) module, two keys were renamed (the removed ``OCPP201`` module already
+used the new names):
 
 * ``PublishChargingScheduleIntervalS`` is now ``CompositeScheduleIntervalS``
 * ``PublishChargingScheduleDurationS`` is now ``RequestCompositeScheduleDurationS``
 
-Compared to the :ref:`OCPP201 <everest_modules_OCPP201>` module, ``CustomMrecErrorMapPath`` is replaced by
+Compared to the removed ``OCPP201`` module, ``CustomMrecErrorMapPath`` is replaced by
 the experimental ``CustomErrorMappingPath``, which takes a file in a different format (see
 :ref:`error reporting <handwritten_ocppmulti_error-reporting>`). An override ``"<error type>": "<techCode>"`` of the
 old file becomes ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
@@ -85,8 +84,8 @@ The provider must answer promptly (``NotSupported`` is acceptable). With the :re
 module the external client must reply to ``e2m/configure_network``; a client that stays silent blocks every
 connection attempt until the request times out, so the charge point never reaches the CSMS.
 
-With the default ``false`` no request is sent and the connection is established as with the
-:ref:`OCPP201 <everest_modules_OCPP201>` module (``IFace`` handling included).
+With the default ``false`` no request is sent and the connection is established directly (``IFace`` handling
+included).
 
 Device model configuration via component configs
 =================================================
@@ -128,8 +127,7 @@ applied and reported automatically.
 OCPP 1.6 configuration: two supported paths
 ===========================================
 
-Unlike the deprecated :ref:`OCPP <everest_modules_OCPP>` module, OCPP 1.6 in this module is backed by the device
-model as well. Two configuration paths are supported:
+Unlike the removed ``OCPP`` module, OCPP 1.6 in this module is backed by the device model as well. Two configuration paths are supported:
 
 **(a) Legacy OCPP 1.6 JSON config.** The classic JSON configuration (``ChargePointConfigPath``, overlaid by
 ``UserConfigPath``) can still be used. It enters the device model via a one-time migration that is enabled by setting
@@ -204,7 +202,7 @@ With ``DelegateNetworkConfigurationToSystem`` set to ``true``, the ``interface_a
 **configure_network** *replaces* the static ``Internal``/``IFace`` configuration key when binding the websocket -
 including clearing it when the provider answers ``Ready`` or ``NotSupported`` without an address, so ``IFace`` is
 effectively not used on successful attempts. With the default ``false`` no configure_network round-trip is performed
-and ``IFace`` is handled as in the OCPP201 module.
+and ``IFace`` binds the websocket as configured.
 
 The legacy JSON configuration backend (OCPP 1.6 without a device model, as used by the ``OCPP`` module) is
 unaffected by this and keeps the previous single-profile behavior.
@@ -287,8 +285,8 @@ Libocpp fulfills a large amount of protocol requirements internally, but OCPP af
 areas of a charging station's operation. The integration of libocpp with the other parts of EVerest is done by this
 module via the interfaces it provides and requires.
 
-📌 **Note:** The ``ocpp_1_6_charge_point`` interface (``main`` implementation) of the deprecated
-:ref:`OCPP <everest_modules_OCPP>` module is NOT provided by this module. The ``ocpp_generic`` interface
+📌 **Note:** The ``ocpp_1_6_charge_point`` interface (``main`` implementation) of the removed ``OCPP`` module is
+NOT provided by this module. The ``ocpp_generic`` interface
 covers the same functionality.
 
 .. _handwritten_ocppmulti_control-from-outside-everest:

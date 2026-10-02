@@ -33,7 +33,6 @@ set -euo pipefail
 #   --iso15118-parallel N
 #                        Run at most N ISO 15118 tests at the same time
 #                        (default: no limit; only with network isolation)
-#   --ocpp-impl V        OCPP module(s) to test: both (default), legacy, multi
 #   --                   Pass remaining args directly to pytest (e.g. -k ...)
 #   -h, --help           Show this help
 #
@@ -60,7 +59,6 @@ ISOLATION="${NETWORK_ISOLATION:-true}"
 ISO15118_PARALLEL="${ISO15118_PARALLEL:-}"
 SUITE=""
 EXTRA_PYTEST_ARGS=()
-OCPP_IMPL="both"
 
 usage() {
     sed -n '3,/^$/s/^# \?//p' "$0"
@@ -78,7 +76,6 @@ while [[ $# -gt 0 ]]; do
         --html)            HTML="$2"; shift 2;;
         --no-isolation)    ISOLATION=false; shift;;
         --iso15118-parallel) ISO15118_PARALLEL="$2"; shift 2;;
-        --ocpp-impl)       OCPP_IMPL="$2"; shift 2;;
         --)                shift; EXTRA_PYTEST_ARGS+=("$@"); break;;
         -h|--help)         usage;;
         -*)                echo "Unknown option: $1" >&2; exit 1;;
@@ -91,11 +88,6 @@ if [[ -z "$SUITE" ]]; then
     echo "Run '$(basename "$0") --help' for usage." >&2
     exit 1
 fi
-
-case "$OCPP_IMPL" in
-    both|legacy|multi) ;;
-    *) echo "Error: --ocpp-impl must be one of: both, legacy, multi (got '$OCPP_IMPL')." >&2; exit 1;;
-esac
 
 echo "Suite:   $SUITE"
 echo "Python:  $PYTHON"
@@ -183,11 +175,6 @@ for arg in "${EXTRA_PYTEST_ARGS[@]}"; do
     fi
 done
 
-# --ocpp-impl is registered in ocpp_tests/conftest.py, so it is only passed
-# to suites that include OCPP targets (via SUITE_PYTEST_ARGS below).
-OCPP_IMPL_ARGS=(--ocpp-impl "$OCPP_IMPL")
-SUITE_PYTEST_ARGS=()
-
 run_pytest_suite() {
     local default_targets=("$@")
     local selected_targets=("${default_targets[@]}")
@@ -196,7 +183,6 @@ run_pytest_suite() {
     fi
 
     "$PYTHON" -m pytest "${PYTEST_ARGS[@]}" \
-        "${SUITE_PYTEST_ARGS[@]}" \
         "${EXTRA_PYTEST_ARGS[@]}" \
         --junitxml="$JUNITXML" --html="$HTML" \
         "${selected_targets[@]}"
@@ -220,7 +206,6 @@ case "$SUITE" in
 
         setup_ocpp
 
-        SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
         # eebus_tests are long-running, so run them first
         run_pytest_suite \
             eebus_tests/eebus_tests.py \
@@ -270,7 +255,6 @@ case "$SUITE" in
     ocpp)
         setup_ocpp
         cd "$SCRIPT_DIR"
-        SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
         run_pytest_suite \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
@@ -280,7 +264,6 @@ case "$SUITE" in
     ocpp16)
         setup_ocpp
         cd "$SCRIPT_DIR"
-        SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
         run_pytest_suite \
             ocpp_tests/test_sets/ocpp16/*.py
         ;;
@@ -288,7 +271,6 @@ case "$SUITE" in
     ocpp201)
         setup_ocpp
         cd "$SCRIPT_DIR"
-        SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
         run_pytest_suite \
             ocpp_tests/test_sets/ocpp201/*.py
         ;;
@@ -296,7 +278,6 @@ case "$SUITE" in
     ocpp21)
         setup_ocpp
         cd "$SCRIPT_DIR"
-        SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
         run_pytest_suite \
             ocpp_tests/test_sets/ocpp21/*.py
         ;;
