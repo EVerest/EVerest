@@ -44,6 +44,7 @@ struct TbdConfig {
     std::string interface_name;
     config::TlsNegotiationStrategy tls_negotiation_strategy{config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER};
     bool enable_sdp_server{true};
+    uint16_t tcp_port{50000};
 };
 
 // TbdController is single-threaded. Exactly one driver may run at a time: either loop() or start_session(), driven from

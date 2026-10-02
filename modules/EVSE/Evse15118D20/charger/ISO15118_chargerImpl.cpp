@@ -264,6 +264,7 @@ void ISO15118_chargerImpl::ready() {
         mod->config.device,
         negotiation_strategy,
         mod->config.enable_sdp_server,
+        static_cast<uint16_t>(mod->config.tcp_port),
     };
     auto callbacks = create_callbacks();
 

@@ -32,8 +32,6 @@ struct SSLContext {
 
 namespace {
 
-constexpr auto TLS_PORT = 50000;
-
 std::string_view result_name(tls::Connection::result_t r) {
     switch (r) {
     case tls::Connection::result_t::success:
@@ -81,7 +79,7 @@ tls::Server::config_t make_tls_server_config(const config::SSLConfig& cfg, const
 } // namespace
 
 ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& interface_name_,
-                             const config::SSLConfig& ssl_config) :
+                             const config::SSLConfig& ssl_config, uint16_t tcp_port) :
     poll_manager(poll_manager_), ssl(std::make_unique<SSLContext>()) {
 
     if (ssl_config.chains.empty()) {
@@ -94,7 +92,7 @@ ConnectionSSL::ConnectionSSL(PollManager& poll_manager_, const std::string& inte
         log_and_throw(msg.c_str());
     }
 
-    end_point.port = TLS_PORT;
+    end_point.port = tcp_port;
     memcpy(&end_point.address, &address.sin6_addr, sizeof(address.sin6_addr));
 
     const auto address_name = sockaddr_in6_to_name(address);

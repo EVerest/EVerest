@@ -262,7 +262,7 @@ SCENARIO("ConnectionSSL completes a TLS handshake against a real client") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         std::atomic<bool> got_new_data{false};
@@ -314,7 +314,7 @@ SCENARIO("ConnectionSSL surfaces a peer close through read()") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         std::atomic<bool> peer_closed{false};
@@ -361,7 +361,7 @@ SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", true);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -412,7 +412,7 @@ SCENARIO("ConnectionSSL accepts a TLS 1.3 client chained to the MO root") {
         // make_ssl_config passes OEM_ROOT as path_certificate_mo_root; the client below
         // presents the OEM provisioning chain, which does NOT verify against the V2G root.
         const auto ssl_cfg = make_ssl_config(false, "/tmp", true);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -452,7 +452,7 @@ SCENARIO("ConnectionSSL tears down when the peer closes during the handshake") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<int> closed_count{0};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -523,7 +523,7 @@ SCENARIO("ConnectionSSL close before connect releases the listener") {
 
         WHEN("close() is called before any client connects, then the connection is destroyed") {
             {
-                iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+                iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
                 connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
                     if (event == iso15118::io::ConnectionEvent::CLOSED) {
                         closed_count.fetch_add(1);
@@ -563,7 +563,7 @@ SCENARIO("ConnectionSSL writes an SSLKEYLOGFILE-format keylog when enabled") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(true, keylog_dir, false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
