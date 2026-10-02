@@ -73,25 +73,25 @@ public:
     };
 
     struct SetupConfig {
-        bool has_ventilation;
-        ChargeMode charge_mode;
-        bool ac_hlc_enabled;
-        bool ac_hlc_use_5percent;
-        bool ac_enforce_hlc;
-        bool ac_with_soc_timeout;
-        float soft_over_current_tolerance_percent;
-        float soft_over_current_measurement_noise_A;
-        int switch_3ph1ph_delay_s;
-        std::string switch_3ph1ph_cp_state;
-        int soft_over_current_timeout_ms;
-        int state_F_after_fault_ms;
-        int reinit_duration_ms;
-        std::string reinit_method;
-        bool fail_on_powermeter_errors;
-        bool raise_mrec9;
-        int sleep_before_enabling_pwm_hlc_mode_ms;
-        utils::SessionIdType session_id_type;
-        int hlc_charge_loop_without_energy_timeout_s;
+        bool has_ventilation{false};
+        ChargeMode charge_mode{ChargeMode::AC};
+        bool ac_hlc_enabled{false};
+        bool ac_hlc_use_5percent{false};
+        bool ac_enforce_hlc{false};
+        bool ac_with_soc_timeout{false};
+        float soft_over_current_tolerance_percent{0};
+        float soft_over_current_measurement_noise_A{0};
+        int switch_3ph1ph_delay_s{0};
+        std::string switch_3ph1ph_cp_state{};
+        int soft_over_current_timeout_ms{0};
+        int state_F_after_fault_ms{0};
+        int reinit_duration_ms{0};
+        std::string reinit_method{};
+        bool fail_on_powermeter_errors{false};
+        bool raise_mrec9{false};
+        int sleep_before_enabling_pwm_hlc_mode_ms{0};
+        utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
+        int hlc_charge_loop_without_energy_timeout_s{0};
     };
 
     enum class EvseState {

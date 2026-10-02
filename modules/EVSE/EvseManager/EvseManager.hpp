@@ -386,10 +386,10 @@ private:
     Charger::SetupConfig get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_hlc_enabled,
                                                   bool ac_with_soc_timeout) const;
     struct HlcSessionSetupConfig {
-        bool include_contract_payment;
-        bool supported_certificate_service;
-        bool central_contract_validation;
-        bool force_external_payment;
+        bool include_contract_payment{false};
+        bool supported_certificate_service{false};
+        bool central_contract_validation{false};
+        bool force_external_payment{false};
     };
     void update_hlc_session_setup(const HlcSessionSetupConfig& session_setup);
 
