@@ -1,0 +1,22 @@
+load("@rules_python//python:py_test.bzl", "py_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
+
+# The Yocto build fetches the git crates of the Rust modules itself, at the revision
+# the recipe names, and patches them into cargo. The pins must agree.
+py_test(
+    name = "rust_pins_test",
+    size = "small",
+    srcs = ["check_rust_pins.py"],
+    args = [
+        "$(rootpath //modules:Cargo.lock)",
+        "$(rootpath scarthgap/meta-everest/recipes-core/everest/everest-core-rust.inc)",
+        "zvt",
+        "zvt_feig_terminal",
+    ],
+    data = [
+        "scarthgap/meta-everest/recipes-core/everest/everest-core-rust.inc",
+        "//modules:Cargo.lock",
+    ],
+    main = "check_rust_pins.py",
+    target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+)
