@@ -129,6 +129,14 @@ class PyEVJosevModule():
     def _handler_pause_charging(self, args):
         self._es.Pause = True
 
+    def _handler_abort_charging(self, args):
+        # Josev has no immediate-abort entry point; falls back to stop.
+        self._es.StopCharging = True
+
+    def _handler_cp_state_changed(self, args):
+        # Josev derives the CP state itself; informational.
+        pass
+
     def _handler_set_fault(self, args):
         pass
 
@@ -153,6 +161,12 @@ class PyEVJosevModule():
 
     def _handler_update_soc(self, args):
         self._es.actual_soc = math.floor(args['SoC'])
+
+    def _handler_update_present_values(self, args):
+        # Josev derives the present values it sends from its own charge loop, so it has
+        # no state to write these into. The command still has to exist: every command on
+        # the ISO15118_ev interface is bound by name at start-up.
+        pass
 
 py_ev_josev = PyEVJosevModule()
 py_ev_josev.start_evcc_handler()

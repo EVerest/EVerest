@@ -17,15 +17,20 @@ void CarSimulation::state_machine() {
     switch (sim_data.state) {
     case SimState::UNPLUGGED:
         if (state_has_changed) {
+            EVLOG_info << "<<< UNPLUGGED: resetting the vehicle - CP state A (resistor released), power off, "
+                          "SLAC unmatched, charging stopped";
 
             r_ev_board_support->call_set_cp_state(EvCpState::A);
             r_ev_board_support->call_allow_power_on(false);
             // Wait for physical plugin (ev BSP sees state A on CP and not Disconnected)
 
-            sim_data.slac_state = types::slac::State::UNMATCHED;
+            // [V2G3-A09-126]: stop matching on plug out; the SLAC stack otherwise repeats it
+            // for TT_matching_repetition.
+            stop_matching();
             if (!r_ev.empty()) {
                 r_ev[0]->call_stop_charging();
             }
+            EVLOG_info << "Vehicle reset complete - ready for the next plug-in";
         }
         break;
     case SimState::PLUGGED_IN:
@@ -104,6 +109,19 @@ void CarSimulation::state_machine() {
     timepoint_last_update = std::chrono::steady_clock::now();
 };
 
+bool CarSimulation::cp_state_allows_matching() const {
+    using types::board_support_common::Event;
+    const auto cp = sim_data.actual_bsp_event;
+    return cp == Event::B or cp == Event::C or cp == Event::D;
+}
+
+void CarSimulation::stop_matching() {
+    sim_data.slac_state = types::slac::State::UNMATCHED;
+    if (!r_slac.empty()) {
+        r_slac[0]->call_reset();
+    }
+}
+
 void CarSimulation::simulate_soc() {
     const double ms =
         std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - timepoint_last_update)
@@ -154,6 +172,35 @@ void CarSimulation::simulate_soc() {
         }
     }
 
+    // The values the simulated EV "measures". Kept here, not in the protocol stack,
+    // since the stack must not invent a measurement but a simulator may.
+    std::optional<double> present_voltage;
+    std::optional<double> present_active_power;
+    switch (charge_mode) {
+    case ChargeMode::None:
+        break;
+    case ChargeMode::AC:
+    case ChargeMode::ACThreePhase:
+        present_active_power = power;
+        break;
+    case ChargeMode::DC:
+        present_voltage = config.dc_target_voltage;
+        present_active_power = power;
+        break;
+    }
+
+    if (present_voltage != latest_present_voltage or present_active_power != latest_present_active_power) {
+        latest_present_voltage = present_voltage;
+        latest_present_active_power = present_active_power;
+
+        if (!r_ev.empty() and (present_voltage.has_value() or present_active_power.has_value())) {
+            types::iso15118::EvPresentValues values;
+            values.present_voltage = present_voltage;
+            values.present_active_power = present_active_power;
+            r_ev[0]->call_update_present_values(values);
+        }
+    }
+
     ev_info.soc = soc;
     ev_info.battery_capacity = sim_data.battery_capacity_wh;
     ev_info.battery_full_soc = 100;
@@ -182,9 +229,31 @@ bool CarSimulation::iec_wait_pwr_ready(const CmdArguments& arguments) {
     return (sim_data.pwm_duty_cycle > 7.0f && sim_data.pwm_duty_cycle < 97.0f);
 }
 
-bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments) {
+bool CarSimulation::iso_wait_pwm_is_running(const CmdArguments& arguments, size_t loop_interval_ms) {
     sim_data.state = SimState::PLUGGED_IN;
-    return (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f);
+    if (sim_data.pwm_duty_cycle > 4.0f && sim_data.pwm_duty_cycle < 97.0f) {
+        sim_data.pwm_wait_ticks_left.reset();
+        return true;
+    }
+    if (arguments.empty()) {
+        // No fallback requested: wait for the PWM indefinitely (default).
+        return false;
+    }
+    // Optional fallback: [V2G3-M06-13] starts matching on the CP transition alone, so a static
+    // +12 V EVSE must not stall the EV.
+    if (not sim_data.pwm_wait_ticks_left.has_value()) {
+        const auto timeout_ms = std::stold(arguments[0]) * 1000;
+        sim_data.pwm_wait_ticks_left = static_cast<size_t>(timeout_ms / loop_interval_ms) + 1;
+    }
+    auto& ticks_left = sim_data.pwm_wait_ticks_left.value();
+    ticks_left -= 1;
+    if (ticks_left > 0) {
+        return false;
+    }
+    sim_data.pwm_wait_ticks_left.reset();
+    EVLOG_info << "iso_wait_pwm_is_running: no PWM within " << arguments[0]
+               << " s, starting the matching process on the CP state alone";
+    return true;
 }
 
 bool CarSimulation::draw_power_regulated(const CmdArguments& arguments) {
@@ -247,7 +316,8 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
 
     if (sim_data.slac_state == types::slac::State::UNMATCHED) {
         EVLOG_debug << "Slac UNMATCHED";
-        if (!r_slac.empty()) {
+        // [V2G3-A09-123]: only repeat matching while the pilot is in Bx/Cx/Dx.
+        if (!r_slac.empty() and cp_state_allows_matching()) {
             EVLOG_debug << "Slac trigger matching";
             r_slac[0]->call_reset();
             r_slac[0]->call_trigger_matching();
@@ -270,6 +340,13 @@ bool CarSimulation::iso_wait_pwr_ready(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
+    // not iso_charger_paused: a pause ends the session too, but is resumed by the branch below.
+    if (sim_data.v2g_finished and not sim_data.iso_charger_paused) {
+        // Session already ended: stay in State B and let the sequence run on. Falling through
+        // would re-assert ISO_POWER_READY and drive the pilot back to C.
+        EVLOG_info << "V2G session already ended - not powering on";
+        return true;
+    }
     sim_data.state = SimState::ISO_POWER_READY;
     if (sim_data.dc_power_on) {
         sim_data.state = SimState::ISO_CHARGING_REGULATED;
@@ -287,7 +364,8 @@ bool CarSimulation::iso_dc_power_on(const CmdArguments& arguments) {
         EVLOG_info << "Charger wants to pause the session";
         r_ev_board_support->call_allow_power_on(false);
 
-        // NOTE(sl): Change when the Energymode has more then 2 values
+        // NOTE(sl): Change when the Energymode has more then 2 values; BPT sessions resume as
+        // non-BPT here; the internal enum reuse loses the BPT flag.
         const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
         const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
 
@@ -333,6 +411,13 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
         return selected_payment_option;
     }(payment_option == "auto");
 
+    // Clear the per-session latches; a stale one short-circuits the matching iso_wait_* command.
+    sim_data.v2g_finished = false;
+    sim_data.iso_pwr_ready = false;
+    sim_data.iso_stopped = false;
+    sim_data.iso_charger_paused = false;
+    sim_data.dc_power_on = false;
+
     if (energy_mode == constants::AC) {
         sim_data.energy_mode = EnergyMode::AC;
         if (not three_phases) {
@@ -344,10 +429,25 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
                                          selected_payment_option, departure_time, e_amount);
             charge_mode = ChargeMode::ACThreePhase;
         }
+    } else if (energy_mode == constants::AC_BPT) {
+        sim_data.energy_mode = EnergyMode::AC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_BPT, selected_payment_option,
+                                     departure_time, e_amount);
+        charge_mode = ChargeMode::AC;
+    } else if (energy_mode == constants::AC_DER) {
+        sim_data.energy_mode = EnergyMode::AC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_DER_IEC, selected_payment_option,
+                                     departure_time, e_amount);
+        charge_mode = ChargeMode::AC;
     } else if (energy_mode == constants::DC) {
         r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, selected_payment_option,
                                      departure_time, e_amount);
         sim_data.energy_mode = EnergyMode::DC;
+        charge_mode = ChargeMode::DC;
+    } else if (energy_mode == constants::DC_BPT) {
+        sim_data.energy_mode = EnergyMode::DC;
+        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_BPT, selected_payment_option,
+                                     departure_time, e_amount);
         charge_mode = ChargeMode::DC;
     } else {
         return false;
@@ -400,6 +500,11 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.sleep_ticks_left.reset();
         return true;
     }
+    // not iso_charger_paused: see iso_dc_power_on.
+    if (sim_data.v2g_finished and not sim_data.iso_charger_paused) {
+        // Session already ended: nothing left to wait out. Bounded by the tick budget above.
+        return false;
+    }
 
     if (sim_data.iso_charger_paused) {
 
@@ -410,7 +515,8 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         EVLOG_info << "Charger wants to pause the session";
         r_ev_board_support->call_allow_power_on(false);
 
-        // NOTE(sl): Change when the Energymode has more then 2 values
+        // NOTE(sl): Change when the Energymode has more then 2 values; BPT sessions resume as
+        // non-BPT here; the internal enum reuse loses the BPT flag.
         const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
         const std::string iso_start_v2g_session = "iso_start_v2g_session " + energy_mode + ";";
 
@@ -463,9 +569,15 @@ bool CarSimulation::iso_start_bcb_toggle(const CmdArguments& arguments) {
 bool CarSimulation::wait_for_real_plugin(const CmdArguments& arguments) {
     using types::board_support_common::Event;
     if (sim_data.actual_bsp_event == Event::A) {
-        EVLOG_info << "Real plugin detected";
+        EVLOG_info << ">>> PLUG-IN detected (CP energized, measured state A) - starting charging session";
         sim_data.state = SimState::PLUGGED_IN;
         return true;
+    }
+    // Log once per distinct CP state.
+    if (sim_data.actual_bsp_event != sim_data.last_logged_wait_event) {
+        sim_data.last_logged_wait_event = sim_data.actual_bsp_event;
+        EVLOG_info << "Waiting for plug-in: CP currently measures " << sim_data.actual_bsp_event
+                   << " (plug-in requires state A)";
     }
     return false;
 }
