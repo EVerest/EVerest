@@ -1,7 +1,9 @@
 active_modules:
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
+      Mode: Only1.6
+      EnableLegacyConfigMigration: true
       ChargePointConfigPath: libocpp-config-test.json
       DeviceModelConfigMappings: ocpp16-custom-config-mappings.yaml
       UserConfigPath: user_config.json

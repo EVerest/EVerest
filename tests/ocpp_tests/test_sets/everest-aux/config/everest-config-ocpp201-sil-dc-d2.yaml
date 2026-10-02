@@ -120,7 +120,7 @@ active_modules:
     config_module:
       connector_id: 2
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
     config_module:
       EnableExternalWebsocketControl: true
     connections:

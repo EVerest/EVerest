@@ -532,8 +532,8 @@ or (respectively)
 How to activate OCPP
 ====================
 
-Please refer to the :ref:`OCPP1.6 <everest_modules_OCPP>` and :ref:`OCPP2.0.1 <everest_modules_OCPP201>` module
-documentation for the general information about how to activate OCPP 1.6 or OCPP 2.x in EVerest.
+Please refer to the :ref:`OCPPmulti <everest_modules_OCPPmulti>` module documentation for the general
+information about how to activate OCPP 1.6 or OCPP 2.x in EVerest.
 
 For OCPP2.x the configuration files are located in ``/usr/share/everest/modules/OCPP201/component_config``.
 You can configure the CSMS endpoint and edit the files according to your needs.

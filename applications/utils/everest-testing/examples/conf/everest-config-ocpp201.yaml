@@ -105,8 +105,9 @@ active_modules:
         - module_id: slac
           implementation_id: ev
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
     config_module:
+      Mode: Only2
       ChargePointConfigPath: config.json
     connections:
       evse_manager:

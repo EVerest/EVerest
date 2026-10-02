@@ -89,8 +89,10 @@ active_modules:
         - module_id: connector_1
           implementation_id: evse
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
+      Mode: Only1.6
+      EnableLegacyConfigMigration: true
       ChargePointConfigPath: libocpp-config-iso-pnc.json
       UserConfigPath: user_config.json
     connections:

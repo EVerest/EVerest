@@ -1068,7 +1068,7 @@ std::future<ocpp::ConfigNetworkResult> GenericOcpp::cb_configure_network_connect
     }
 
     if (!mv_config.getDelegateNetworkConfigurationToSystem()) {
-        // no provider round-trip: connect as the OCPP201 module does, without an interface address
+        // no provider round-trip: connect without an interface address
         ocpp::ConfigNetworkResult result{};
         result.success = true;
         promise.set_value(result);
