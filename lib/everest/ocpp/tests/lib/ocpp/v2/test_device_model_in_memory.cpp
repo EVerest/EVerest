@@ -84,7 +84,8 @@ protected:
 
     std::string get(const Component& in_component, const Variable& variable) {
         std::string value;
-        EXPECT_EQ(device_model->get_variable(in_component, variable, AttributeEnum::Actual, value),
+        EXPECT_EQ(device_model->get_variable(in_component, variable, AttributeEnum::Actual, value, false,
+                                             UnsetValue::NotSupported),
                   GetVariableStatusEnum::Accepted);
         return value;
     }

@@ -154,6 +154,16 @@ protected:
     std::optional<std::optional<std::int32_t>> reset_callback_evse_id;
 
     ProvisioningResetTest() : dm_helper() {
+        create_functional_blocks();
+    }
+
+    /// \brief Creates the functional blocks on the device model that dm_helper currently holds. Call again after a
+    ///        dm_helper function that creates the device model anew.
+    void create_functional_blocks() {
+        provisioning.reset();
+        tariff_and_cost.reset();
+        message_queue.reset();
+        fb_context.reset();
         dm = dm_helper.get_device_model();
         evse_manager = std::make_unique<EvseManagerFake>(1);
 
@@ -247,6 +257,7 @@ using ProvisioningGetVariablesTest = ProvisioningResetTest;
 TEST_F(ProvisioningGetVariablesTest, AttributeWithoutValueIsAcceptedWithEmptyValue) {
     ASSERT_TRUE(dm_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                                             "OrganizationName", std::nullopt, AttributeEnum::Actual));
+    create_functional_blocks();
     GetVariableData data;
     data.component = ControllerComponentVariables::OrganizationName.component;
     data.variable = ControllerComponentVariables::OrganizationName.variable.value();

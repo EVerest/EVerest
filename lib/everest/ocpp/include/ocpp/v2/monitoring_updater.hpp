@@ -13,7 +13,7 @@
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
-#include <ocpp/v2/device_model_abstract.hpp>
+#include <ocpp/v2/device_model_interface.hpp>
 
 namespace ocpp::v2 {
 
@@ -106,7 +106,7 @@ public:
     /// \param notify_csms_events Function that can be invoked with a number of alert events
     /// \param is_chargepoint_offline Function that can be invoked in order to retrieve the
     /// status of the charging station connection to the CSMS
-    MonitoringUpdater(DeviceModelAbstract& device_model, notify_events notify_csms_events,
+    MonitoringUpdater(DeviceModelMonitoringInterface& device_model, notify_events notify_csms_events,
                       is_offline is_chargepoint_offline);
     ~MonitoringUpdater();
 
@@ -178,7 +178,7 @@ private:
 
     bool is_monitoring_enabled();
 
-    DeviceModelAbstract& device_model;
+    DeviceModelMonitoringInterface& device_model;
 
     notify_events notify_csms_events;
     is_offline is_chargepoint_offline;
