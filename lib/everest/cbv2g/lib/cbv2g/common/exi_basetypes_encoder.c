@@ -229,7 +229,7 @@ int exi_basetypes_encoder_integer_32(exi_bitstream_t* stream, int32_t value)
 
     if (sign)
     {
-        result = -value - 1;
+        result = (uint32_t)(-(value + 1));
     }
 
     return exi_basetypes_encoder_uint_32(stream, result);
@@ -250,7 +250,7 @@ int exi_basetypes_encoder_integer_64(exi_bitstream_t* stream, int64_t value)
 
     if (sign)
     {
-        result = -value - 1;
+        result = (uint64_t)(-(value + 1));
     }
 
     return exi_basetypes_encoder_uint_64(stream, result);
