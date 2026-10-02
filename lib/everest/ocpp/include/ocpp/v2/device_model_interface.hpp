@@ -92,7 +92,9 @@ public:
     /// \param attribute_enum The attribute
     /// \param value The value to set (as string)
     /// \param source The source of the value (e.g., 'csms', 'default', 'internal')
-    /// \param allow_read_only If true, read-only variables can be changed
+    /// \param allow_read_only If true, read-only variables of the component config can be changed. A variable that a
+    ///        runtime source registered is then rejected whatever its mutability: it is changed by its owner or by the
+    ///        CSMS
     /// \return Result of the requested operation
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,

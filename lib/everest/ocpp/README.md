@@ -105,6 +105,9 @@ The following table shows the known CSMS with which this library was tested.
 
 Check the [detailed current implementation status.](doc/v2/ocpp_2x_status.md).
 
+How integrating firmware adds its own components to the device model at runtime is described in
+[Components registered at runtime](doc/v2/ocpp_201_device_model_initialization.md#components-registered-at-runtime).
+
 | Whitepapers & Application Notes                                                                                                                              | Supported              |
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |
 | [OCPP & California Pricing Requirements](https://openchargealliance.org/wp-content/uploads/2024/09/ocpp_and_dms_evse_regulation-v3.1.pdf)          | ✅ yes                  |

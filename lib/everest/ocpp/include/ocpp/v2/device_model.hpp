@@ -4,13 +4,20 @@
 #ifndef DEVICE_MODEL_HPP
 #define DEVICE_MODEL_HPP
 
+#include <map>
 #include <mutex>
+#include <optional>
+#include <string>
 #include <type_traits>
 
 #include <everest/logging.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_abstract.hpp>
+#include <ocpp/v2/device_model_composition.hpp>
+#include <ocpp/v2/device_model_monitor_store.hpp>
+#include <ocpp/v2/device_model_provider_calls.hpp>
+#include <ocpp/v2/device_model_registry_interface.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
 
 namespace ocpp {
@@ -27,22 +34,95 @@ using on_monitor_updated = std::function<void(const VariableMonitoringMeta& upda
 
 /// \brief This class manages access to the device model representation and to the device model interface and provides
 /// functionality to support the use cases defined in the functional block Provisioning
-class DeviceModel : public DeviceModelAbstract {
+class DeviceModel : public DeviceModelAbstract, public DeviceModelRegistryInterface {
 
 private:
-    // Serializes access to device_model_map / device_model storage. Recursive: locked methods call back into
+    // Serializes access to the model and the storage. Recursive: locked methods call back into
     // public methods (e.g. via DeviceModelInterface& composites). Invariant: never held while listeners are
     // invoked; set_value / clear_value / set_monitors copy listeners and payload, unlock, then notify, and
     // no method may hold the mutex around a call into them.
     mutable std::recursive_mutex mutex;
 
-    DeviceModelMap device_model_map;
     std::unique_ptr<DeviceModelStorageInterface> device_model;
+    /// \brief The variables of the component config with their values. Their monitors are in \c monitors.
+    DeviceModelMap component_config;
+    /// \brief What each runtime source registered
+    std::map<std::string, Registration> registrations;
+    /// \brief The model the CSMS sees, composed from component_config and registrations
+    ComposedModel model;
+    MonitorStore monitors;
+    ProviderCalls provider_calls;
 
     /// \brief Listener for the internal change of a variable
     std::vector<on_variable_changed> variable_listener;
     /// \brief Listener for the internal update of a monitor
     on_monitor_updated monitor_update_listener;
+
+    /// \brief Composes \c model again after component_config or registrations changed. Requires the mutex.
+    void recompose();
+
+    ComposedVariable* find_variable(const Component& component, const Variable& variable);
+    const ComposedVariable* find_variable(const Component& component, const Variable& variable) const;
+
+    /// \brief The runtime source that registered the variable, if any
+    std::optional<std::string> runtime_owner(const Component& component, const Variable& variable) const;
+
+    /// \brief Builds the variable that \p source registers. Requires the mutex.
+    VariableMetaData build_registered_variable(const std::string& source, const Component& component,
+                                               const RegisteredVariable& registered_variable,
+                                               std::vector<VariableAttribute> attributes);
+
+    /// \brief Writes \p value through the provider of the owner of the variable, if it has one, and to the model
+    /// otherwise. Releases \p lock.
+    SetVariableStatusEnum write_value(std::unique_lock<std::recursive_mutex>& lock, const Component& component,
+                                      const Variable& variable, const ComposedVariable& composed,
+                                      const AttributeEnum& attribute_enum, const std::string& value,
+                                      const std::string& source);
+
+    /// \brief A changed Actual value with everything the variable listeners receive, copied under the mutex
+    struct ValueChange {
+        std::vector<on_variable_changed> listeners;
+        MonitorStore::Monitors monitors;
+        VariableCharacteristics characteristics;
+        VariableAttribute attribute;
+        std::string value_previous;
+    };
+
+    struct AppliedValue {
+        SetVariableStatusEnum status;
+        std::optional<ValueChange> change;
+    };
+
+    /// \brief Applies \p value to \p attribute_enum of the variable in memory. Requires the mutex.
+    AppliedValue store_value(const Component& component, const Variable& variable, const ComposedVariable& composed,
+                             const AttributeEnum& attribute_enum, const std::string& value, const std::string& source,
+                             bool write_to_storage);
+
+    /// \brief Invokes the variable listeners for \p change. Requires the mutex not to be held.
+    static void notify(const ValueChange& change, const Component& component, const Variable& variable,
+                       const std::string& value);
+
+    /// \brief Applies \p value to \p attribute_enum of the variable in memory and notifies the variable listeners.
+    /// Releases \p lock before the listeners run.
+    SetVariableStatusEnum apply_value(std::unique_lock<std::recursive_mutex>& lock, const Component& component,
+                                      const Variable& variable, const ComposedVariable& composed,
+                                      const AttributeEnum& attribute_enum, const std::string& value,
+                                      const std::string& source, bool write_to_storage);
+
+    /// \brief The write behind the public set_value and set_read_only_value
+    /// \param allow_read_only Whether a ReadOnly attribute may be written
+    /// \param allow_registered Whether a variable that a runtime source registered may be written: true for the
+    ///        CSMS and for an owner writing its own variable, false for the local channel
+    SetVariableStatusEnum set_value(const Component& component, const Variable& variable,
+                                    const AttributeEnum& attribute_enum, const std::string& value,
+                                    const std::string& source, bool allow_read_only, bool allow_registered);
+
+    /// \brief Writes \p value through \p provider, which \p owner registered, and updates memory when the provider
+    /// accepted it and still provides the variable
+    SetVariableStatusEnum set_value_through_provider(VariableValueProvider& provider, const std::string& owner,
+                                                     ProviderCalls::Call call, const Component& component,
+                                                     const Variable& variable, const AttributeEnum& attribute_enum,
+                                                     const std::string& value, const std::string& source);
 
     /// \brief Private helper method that does some checks with the device model representation in memory to evaluate if
     /// a value for the given parameters can be requested. If it can be requested the given \p value will be set to the
@@ -58,16 +138,16 @@ private:
                                                  const AttributeEnum& attribute_enum, std::string& value,
                                                  bool allow_write_only, UnsetValue unset_value) const;
 
-    /// \brief The attribute of a variable with its current value. A variable with a source is held by the storage of
-    /// that source, which changes its value without DeviceModel, so its value is read from the storage and every
-    /// write goes to the storage.
+    /// \brief The attribute of a variable with its current value. A variable of the component config with a source
+    /// is held by the storage of that source, which changes its value without DeviceModel, so its value is read from
+    /// the storage and every write goes to the storage.
     std::optional<VariableAttribute> read_attribute(const Component& component, const Variable& variable,
-                                                    const VariableMetaData& meta_data,
+                                                    const ComposedVariable& composed,
                                                     const AttributeEnum& attribute_enum) const;
 
     /// \brief All attributes of a variable with their current values, see read_attribute
     std::vector<VariableAttribute> read_attributes(const Component& component, const Variable& variable,
-                                                   const VariableMetaData& meta_data) const;
+                                                   const ComposedVariable& composed) const;
 
     /// \brief Iterates over the given \p component_criteria and converts this to the variable names
     /// (Active,Available,Enabled,Problem). If any of the variables can not be found as part of a component this
@@ -184,6 +264,15 @@ public:
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
 
+    // DeviceModelRegistryInterface
+    ComponentRegistrationResult register_components(const std::string& source,
+                                                    const std::vector<RegisteredComponent>& components,
+                                                    VariableValueProvider* provider) override;
+    void unregister_components(const std::string& source) override;
+    SetVariableStatusEnum notify_value_changed(const Component& component, const Variable& variable,
+                                               AttributeEnum attribute, const std::string& value,
+                                               const std::string& source) override;
+
     // ConnectivityManagerConfiguration interface
     std::string get_network_configuration_priority() override;
     void set_network_configuration_priority(const std::string& priority, const std::string& source) override;
@@ -203,6 +292,9 @@ public:
     void set_security_ctrl_identity(const std::string& identity, const std::string& source) override;
     void set_active_message_timeout(std::int32_t message_timeout_s, const std::string& source) override;
 };
+
+static_assert(!std::is_base_of_v<DeviceModelRegistryInterface, DeviceModelAbstract>,
+              "the OCPP protocol code must not be able to register components");
 
 } // namespace v2
 } // namespace ocpp

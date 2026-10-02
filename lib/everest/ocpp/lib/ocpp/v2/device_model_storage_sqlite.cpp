@@ -269,18 +269,6 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
         variable_it->second.attributes.push_back(read_attribute(*attributes_stmt, 6));
     }
 
-    for (auto& stored_monitor : get_all_monitors()) {
-        const auto component_it = device_model.find(stored_monitor.component);
-        if (component_it == device_model.end()) {
-            continue;
-        }
-        const auto variable_it = component_it->second.find(stored_monitor.variable);
-        if (variable_it == component_it->second.end()) {
-            continue;
-        }
-        variable_it->second.monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
-    }
-
     EVLOG_info << "Successfully retrieved Device Model from DeviceModelStorage";
     return device_model;
 }
@@ -449,13 +437,10 @@ std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_d
                                                                                     const VariableMonitorType type) {
     std::optional<std::string> actual_value;
 
-    // For a delta monitor, the actual value is mandatory,
-    // since it is used as a reference value when triggering
+    // A delta monitor triggers relative to its reference value. A variable without a stored value gets its reference
+    // from the caller through update_monitoring_reference.
     if (data.type == MonitorEnum::Delta) {
         actual_value = this->get_actual_value(data.component, data.variable);
-        if (!actual_value.has_value()) {
-            return std::nullopt;
-        }
     }
 
     auto transaction = this->db->begin_transaction();

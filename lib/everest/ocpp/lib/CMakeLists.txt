@@ -79,6 +79,9 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp
             ocpp/v2/device_model.cpp
+            ocpp/v2/device_model_composition.cpp
+            ocpp/v2/device_model_monitor_store.cpp
+            ocpp/v2/device_model_provider_calls.cpp
             ocpp/v2/device_model_storage_sqlite.cpp
             ocpp/v2/enums.cpp
             ocpp/v2/evse.cpp

@@ -46,7 +46,8 @@ public:
 
     /// \brief Gets the device model from the device model interface
     /// \return std::map<Component, std::map<Variable, VariableMetaData>> that will contain a full representation of the
-    /// device model, including the VariableAttribute(s) of each Variable with their values.
+    /// device model, including the VariableAttribute(s) of each Variable with their values. The monitors are returned
+    /// by get_all_monitors.
     virtual DeviceModelMap get_device_model() = 0;
 
     /// \brief Gets a VariableAttribute from the storage if present

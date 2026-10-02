@@ -81,14 +81,31 @@ The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EV
 
 Because monitors are not linked to variable rows, removing a variable from the component config removes only the
 hardwired and preconfigured monitors that the component config defines for it. Custom monitors stay in the database.
-`DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
-`get_all_monitors` returns all of them.
+`DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
+returns all monitors.
 
 Migration 4 moves the monitors of schema 3 into the name-keyed table. Monitors keep their ids, and the id sequence is
 kept, so ids of monitors deleted before the migration are not handed out again. It also drops `VARIABLE.SOURCE`: the
 component tables hold only the component config, and the `source` key of a component config variable is not read. The
 down migration keeps only the monitors whose variable has a row in the component tables, drops the values in
 `VARIABLE_ATTRIBUTE_VALUE` and restores `VARIABLE.SOURCE` empty.
+
+## Components registered at runtime
+
+Besides the component config, the integrating firmware can register components and variables at runtime through
+`DeviceModelRegistryInterface::register_components`. They are not written to the component tables of the database:
+a registration is held in memory and repeated at every start. The rules:
+
+- Every variable has one owner. A variable that another runtime source registered already is rejected.
+- A registered variable overrides a variable of the same name from the component config, with a warning; the
+  component config variable returns when the source unregisters. Once EVSE or Connector components are registered,
+  the component config of other EVSEs and connectors is hidden.
+- A source may register a `VariableValueProvider`, which receives the validated writes to its variables and keeps
+  their values. Without a provider, the owner reports its values with `notify_value_changed`, and `DeviceModel`
+  stores the values of persistent attributes by name key.
+- A write from the local channel (`set_value` with `allow_read_only`, which `ChargePoint::set_variables` uses)
+  reaches the component config only. A registered variable is rejected there whatever its mutability: its owner or
+  the CSMS change it.
 
 ## Required variables
 
