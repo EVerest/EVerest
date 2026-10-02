@@ -157,7 +157,6 @@ jobs:
           --volume "${{ github.workspace }}:/ext" \
           --name build-docs-container \
           build-kit run-script build_docs
-          docker commit build-docs-container build-docs-image
       - name: Upload Documentation Artifact
         uses: actions/upload-artifact@v7.0.1
         with:
