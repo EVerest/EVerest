@@ -30,6 +30,9 @@ set -euo pipefail
 #   --junitxml PATH      JUnit XML output (default: result.xml)
 #   --html PATH          HTML report output (default: report.html)
 #   --no-isolation       Disable network isolation
+#   --iso15118-parallel N
+#                        Run at most N ISO 15118 tests at the same time
+#                        (default: no limit; only with network isolation)
 #   --ocpp-impl V        OCPP module(s) to test: both (default), legacy, multi
 #   --                   Pass remaining args directly to pytest (e.g. -k ...)
 #   -h, --help           Show this help
@@ -38,6 +41,7 @@ set -euo pipefail
 #   PYTHON_INTERPRETER   Python to use (default: python3)
 #   PARALLEL_TESTS       Worker count (overridden by -j)
 #   NETWORK_ISOLATION    true/false (overridden by --no-isolation)
+#   ISO15118_PARALLEL    ISO 15118 test limit (overridden by --iso15118-parallel)
 #   EVEREST_PREFIX       Install prefix (overridden by --everest-prefix)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)"
@@ -53,6 +57,7 @@ PREFIX="${EVEREST_PREFIX:-${EVEREST_CORE_DIR}/build/dist}"
 JUNITXML="result.xml"
 HTML="report.html"
 ISOLATION="${NETWORK_ISOLATION:-true}"
+ISO15118_PARALLEL="${ISO15118_PARALLEL:-}"
 SUITE=""
 EXTRA_PYTEST_ARGS=()
 OCPP_IMPL="both"
@@ -72,6 +77,7 @@ while [[ $# -gt 0 ]]; do
         --junitxml)        JUNITXML="$2"; shift 2;;
         --html)            HTML="$2"; shift 2;;
         --no-isolation)    ISOLATION=false; shift;;
+        --iso15118-parallel) ISO15118_PARALLEL="$2"; shift 2;;
         --ocpp-impl)       OCPP_IMPL="$2"; shift 2;;
         --)                shift; EXTRA_PYTEST_ARGS+=("$@"); break;;
         -h|--help)         usage;;
@@ -158,6 +164,11 @@ if [[ "N$PATTERN" != "N" ]]; then
 fi
 
 [[ -n "$ISOLATION_FLAG" ]] && PYTEST_ARGS+=("$ISOLATION_FLAG")
+
+if [[ -n "$ISOLATION_FLAG" && -n "$ISO15118_PARALLEL" ]]; then
+    echo "ISO 15118 tests in parallel: at most $ISO15118_PARALLEL"
+    PYTEST_ARGS+=(--iso15118-parallel "$ISO15118_PARALLEL")
+fi
 
 if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
     echo "Pytest passthrough args: ${EXTRA_PYTEST_ARGS[*]}"

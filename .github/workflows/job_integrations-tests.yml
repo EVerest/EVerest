@@ -104,9 +104,7 @@ jobs:
         id: run_integration_tests
         run: |
           # The integration tests mostly wait on the system under test, so they run with more workers
-          # than cores. 2 per core is the most a GitHub runner sustains: at 4 per core it was CPU-bound
-          # and the ISO 15118 sessions ran into their timeouts. Beyond 64 the longest tests set the
-          # wall time and further workers only cost memory.
+          # than cores. The ISO15118 tests are CPU-heavy and limited to one per core.
           workers=$(( $(nproc) * 2 ))
           workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
@@ -115,6 +113,7 @@ jobs:
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
           -j "$workers" \
+          --iso15118-parallel "$(nproc)" \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
           --html /ext/${{ inputs.report_html_path }}
