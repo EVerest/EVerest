@@ -104,9 +104,10 @@ jobs:
         id: run_integration_tests
         run: |
           # The integration tests mostly wait on the system under test, so they run with more workers
-          # than cores: 4 per core keep a runner well below full load. Beyond 64 the longest tests set
-          # the wall time and further workers only cost memory.
-          workers=$(( $(nproc) * 4 ))
+          # than cores. 2 per core is the most a GitHub runner sustains: at 4 per core it was CPU-bound
+          # and the ISO 15118 sessions ran into their timeouts. Beyond 64 the longest tests set the
+          # wall time and further workers only cost memory.
+          workers=$(( $(nproc) * 2 ))
           workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/${{ inputs.docker_compose_file_path }} \

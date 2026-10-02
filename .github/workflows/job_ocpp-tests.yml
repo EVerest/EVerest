@@ -83,10 +83,11 @@ jobs:
         id: run_ocpp_tests
         continue-on-error: true
         run: |
-          # The OCPP tests mostly wait on protocol timers, so they run with more workers than cores:
-          # 4 per core keep a runner well below full load. Beyond 64 the longest tests set the
+          # The OCPP tests mostly wait on protocol timers, so they run with more workers than cores.
+          # 2 per core is the most a GitHub runner sustains: at 4 per core it was CPU-bound, each test
+          # took twice as long and timing-sensitive tests failed. Beyond 64 the longest tests set the
           # wall time and further workers only cost memory.
-          workers=$(( $(nproc) * 4 ))
+          workers=$(( $(nproc) * 2 ))
           workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/.ci/e2e/docker-compose.yaml \
