@@ -82,14 +82,56 @@ target_sources(iso15118
 if(ISO15118_BUILD_EV_SIDE)
     target_sources(iso15118
         PRIVATE
+        # message_din (DIN SPEC 70121)
+        message_din/variant.cpp
+        message_din/common_types.cpp
+        message_din/session_setup.cpp
+        message_din/service_discovery.cpp
+        message_din/service_payment_selection.cpp
+        message_din/contract_authentication.cpp
+        message_din/charge_parameter_discovery.cpp
+        message_din/cable_check.cpp
+        message_din/pre_charge.cpp
+        message_din/power_delivery.cpp
+        message_din/current_demand.cpp
+        message_din/welding_detection.cpp
+        message_din/session_stop.cpp
+
+        # message_2 (ISO 15118-2)
+        message_2/variant.cpp
+        message_2/common_types.cpp
+        message_2/session_setup.cpp
+        message_2/service_discovery.cpp
+        message_2/service_detail.cpp
+        message_2/payment_service_selection.cpp
+        message_2/payment_details.cpp
+        message_2/authorization.cpp
+        message_2/charge_parameter_discovery.cpp
+        message_2/power_delivery.cpp
+        message_2/charging_status.cpp
+        message_2/cable_check.cpp
+        message_2/pre_charge.cpp
+        message_2/current_demand.cpp
+        message_2/welding_detection.cpp
+        message_2/session_stop.cpp
+        message_2/metering_receipt.cpp
+        message_2/certificate_installation.cpp
+
+        session/protocol.cpp
+
         ev/fsm_base.cpp
         ev/session/feedback.cpp
         ev/transport/sdp_client.cpp
         ev/transport/data_client.cpp
     )
 
-    # Only the EV side uses everest::io.
-    target_link_libraries(iso15118 PUBLIC everest::io)
+    # Only the EV side uses everest::io, and only it speaks ISO 15118-2 or DIN SPEC 70121.
+    target_link_libraries(iso15118
+        PUBLIC
+            everest::io
+            cbv2g::iso2
+            cbv2g::din
+    )
 endif()
 
 target_link_libraries(iso15118
