@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
+#include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
@@ -26,9 +27,15 @@ enum class Severity {
     Low,
 };
 
+struct Mapping {
+    int32_t evse;
+    std::optional<int32_t> connector;
+};
+
 struct ImplementationIdentifier {
     std::string module_id;
     std::string implementation_id;
+    std::optional<Mapping> mapping;
 };
 
 struct TimeperiodFilter {

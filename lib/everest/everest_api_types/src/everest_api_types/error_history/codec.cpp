@@ -25,6 +25,10 @@ std::string serialize(Severity val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(Mapping const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(ImplementationIdentifier const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -56,6 +60,11 @@ std::ostream& operator<<(std::ostream& os, SeverityFilter const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, Severity const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, Mapping const& val) {
     os << serialize(val);
     return os;
 }
@@ -95,6 +104,10 @@ template <> SeverityFilter deserialize(std::string_view val) {
 
 template <> Severity deserialize(std::string_view val) {
     return utilities::parse_json<Severity>(val);
+}
+
+template <> Mapping deserialize(std::string_view val) {
+    return utilities::parse_json<Mapping>(val);
 }
 
 template <> ImplementationIdentifier deserialize(std::string_view val) {
