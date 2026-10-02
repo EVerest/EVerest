@@ -633,6 +633,8 @@ energy management through the optional ``evse_energy_sink`` requirements (interf
 Each composite limit is communicated via a separate sink, including the composite schedule for EVSE id 0
 (representing the whole charging station). For a charging station with two EVSEs, three modules implementing
 ``external_energy_limits`` need to be connected: one representing EVSE id 0 and two representing the actual EVSEs.
+If at least one sink is connected, the module warns once at startup for every EVSE id without one; composite
+schedules for those EVSE ids are not applied. Without any connected sink, external limits are skipped silently.
 
 📌 **Note:** An EVSE mapping must be configured for each module connected via the ``evse_energy_sink`` connection, so
 the module can identify which requirement to use when communicating the limits. See
