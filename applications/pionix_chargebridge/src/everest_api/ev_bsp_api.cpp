@@ -244,9 +244,6 @@ static constexpr FlagSpec error_specs[] = {
     {safety_error_mask::id_fault, "MCS Insertion Detection lost"},
 };
 
-// The subset that is also raised/cleared through the generic error surface the EV API already uses
-// for its communication fault: the safety latches a host must be able to observe. The rest stays
-// log-only until EVerest defines errors for ev_board_support. Same type/sub_type as the EVSE API.
 struct PublishedFlagSpec {
     safety_error_mask mask;
     API_GENERIC::ErrorEnum error;

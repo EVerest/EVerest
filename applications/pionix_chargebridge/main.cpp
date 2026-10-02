@@ -207,7 +207,6 @@ std::optional<mdns_endpoint> parse_mdns_endpoint(std::string const& cb_remote) {
         result.type = discovery_device_type::CB_EV;
         pattern = "ANY_EV";
     } else if (utilities::string_starts_with(cb_remote, "ANY")) {
-        // Tested last: "ANY" is a prefix of the two role-specific sentinels above.
         result.type = discovery_device_type::CB_ANY;
         pattern = "ANY";
     } else {

@@ -180,7 +180,6 @@ endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
         result.excluding_interfaces = params.first;
         result.interfaces = params.second;
     } else if (utilities::string_starts_with(cb_remote, "ANY")) {
-        // Tested last: "ANY" is a prefix of the two role-specific sentinels above.
         auto params = make_interface_list(cb_remote, "ANY");
         result.value = endpoint_intent::any_mdns;
         result.excluding_interfaces = params.first;
@@ -616,11 +615,6 @@ void charge_bridge::create_bsp_bridge() {
     create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
                   m_bridge_permanently_disabled, [this]() {
                       auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
-                      // The CE state arrives on the BSP connection but the plc bridge owns the
-                      // carrier it gates (plc.carrier_gate: ce_mated). Same pattern as the
-                      // heartbeat's link-status routing: both run on the event loop thread, the
-                      // same thread that owns m_plc, and the guard tolerates the bridges
-                      // (re)appearing in any order.
                       bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
                           if (m_plc) {
                               m_plc->set_ce_state(ce_state);
@@ -631,9 +625,6 @@ void charge_bridge::create_bsp_bridge() {
 }
 
 namespace {
-// The role a board_type TXT value implies, or nullopt where the value does not decide it: the
-// neutral CB-MCS (never provisioned, role comes from charge_bridge.type), CB-CAN and anything
-// unknown. Mirrors is_cb_match() in discovery.cpp.
 std::optional<cb_role> role_of_board_type(std::string const& board_type) {
     if (board_type == "CB-CCS-EV-LU" or board_type == "CB-MCS-EV") {
         return cb_role::ev;
@@ -670,13 +661,11 @@ void charge_bridge::select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery 
     if (m_config.bsp->api.ev.enabled == want_ev) {
         return;
     }
-    // Runs on the event loop thread while the runtime is stopped: discovery is only armed after
-    // stop_internal_runtime() has unregistered and disconnected the bridges (see manage()), so the
-    // current bsp bridge can be dropped and rebuilt here the same way retry_missing_bridges does it.
     utilities::print_error(m_config.cb_name, "DISCOVERY", 0)
         << "Board is an " << (want_ev ? "EV" : "EVSE") << ": activating the " << (want_ev ? "ev_bsp" : "evse_bsp")
-        << " (module " << (want_ev ? m_config.bsp_alternate->api.ev.module_id : m_config.bsp_alternate->api.evse.module_id)
-        << ")" << std::endl;
+        << " (module "
+        << (want_ev ? m_config.bsp_alternate->api.ev.module_id : m_config.bsp_alternate->api.evse.module_id) << ")"
+        << std::endl;
     std::swap(m_config.bsp, m_config.bsp_alternate);
     m_bsp.reset();
     create_bsp_bridge();
@@ -1524,10 +1513,6 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
         publish("chargebridge", "discovered", discovered);
         result = result && discovered;
     }
-    // The hardware variant, as the board announced it in its mDNS TXT record (CB-CCS-EVSE-LU,
-    // CB-CCS-EV-LU, CB-MCS-EV, ...). Only while connected: the discovery record is kept across a
-    // disconnect, and a consumer that identifies the board in a slot (the production tester) must not
-    // be told about one that is gone or is being swapped. Absent for fixed-IP configs.
     if (status.connected and status.network.has_value()) {
         for (auto const& [key, value] : status.network->mdns_txt) {
             if (key == "board_type") {
@@ -1536,8 +1521,6 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
             }
         }
     }
-    // The role the MCU reports it has latched ("EVSE", "EV", or "not yet latched" before its first
-    // accepted config), so a consumer can tell the two MCS roles apart without the mDNS record.
     if (status.role.has_value()) {
         publish_str("chargebridge", "role", status.role->latched);
     }

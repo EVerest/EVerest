@@ -197,9 +197,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     // and everything else pass through unchanged. Normalized here, before cb_remote
     // is copied into the per-bridge configs below.
     if (string_starts_with(c.cb_remote, "ANY")) {
-        // The only thing a discovery sentinel may carry is an interface list in parentheses,
-        // "ANY_EVSE(eth0,eth1)" or "ANY_EVSE(!wlan0)". Any other suffix ("ANY_EVSE:eth0") used to be
-        // ignored silently, which searched every interface instead of the one the author meant.
+        // "ANY_EVSE(eth0,eth1)", "ANY_EVSE(!wlan0)"
         std::string suffix;
         for (auto const* sentinel : {"ANY_EVSE", "ANY_EV", "ANY"}) {
             if (string_starts_with(c.cb_remote, sentinel)) {
@@ -338,10 +336,6 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         bool wants_evse = false;
         get_node_or_default(wants_ev, "ev_bsp", "enable", false);
         get_node_or_default(wants_evse, "evse_bsp", "enable", false);
-        // Both flavours are allowed only where the board decides the role: an ANY* mDNS endpoint
-        // may discover either an EVSE or an EV board, and the instance then activates the matching
-        // flavour (charge_bridge::select_bsp_for_board). With a fixed address the role is a
-        // property of the config, and two enabled blocks are a contradiction.
         if (wants_ev && wants_evse && not string_starts_with(c.cb_remote, "ANY")) {
             std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time (both are only "
                          "allowed with an ANY* mDNS endpoint, where the discovered board selects the role)"
@@ -365,8 +359,6 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
     });
 
-    // With an evse_bsp block present the EV flavour becomes the alternate (see charge_bridge_config);
-    // the EVSE flavour stays active until a discovered EV board asks for the swap.
     get_block("ev_bsp", c.bsp.has_value() ? c.bsp_alternate : c.bsp, [&](auto& cfg, auto const& main) {
         cfg.cb_port = g_cb_port_evse_bsp;
         cfg.api.ev.enabled = true;
