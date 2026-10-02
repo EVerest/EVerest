@@ -103,6 +103,12 @@ Have a look at this categorized list of all guides:
 
       How to get started with the Pionix Belay Box, an AC charging station dev kit based on EVerest.
 
+   .. grid-item-card:: Pionix ChargeBridge
+      :link: pionix-chargebridge
+      :link-type: doc
+
+      How to connect a Pionix ChargeBridge to a host PC and run EVerest with it.
+
    .. grid-item-card:: Integrate Tariff and Cost
       :link: integrate-tariff-and-cost
       :link-type: doc
@@ -138,6 +144,7 @@ Have a look at this categorized list of all guides:
     bringup/index
     choosing-version-and-upgrading
     pionix-belay-box
+    pionix-chargebridge
     integrate-tariff-and-cost
     devcontainer-usage/index
     c++-coding-guidelines
