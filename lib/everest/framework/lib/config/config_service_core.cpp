@@ -380,10 +380,13 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
                 EVLOG_error << "Failed to load from YAML into slot " << target_slot_id << ": " << err_msg;
                 return {false, std::nullopt, err_msg};
             }
+        }
 
-            if (target_slot_id == m_active_slot_id) {
-                internal_reinitialize_from_db(true);
-            }
+        // The active slot's in-memory configuration follows the database, whether the slot was replaced or
+        // just created (a service constructed on an empty database has a default active slot 0 that does not
+        // exist yet).
+        if (target_slot_id == m_active_slot_id) {
+            internal_reinitialize_from_db(true);
         }
 
         EVLOG_info << "Successfully loaded from YAML into slot " << target_slot_id << ".";
@@ -494,6 +497,7 @@ ConfigServiceCore::internal_set_config_parameters(int slot_id, const std::vector
 void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParameterUpdate>& updates,
                                                   SetConfigParameterResult& result, ConfigurationUpdate& event) {
     const bool modules_are_running = m_module_status == ActiveSlotStatus::Running;
+    const bool modules_down = modules_are_down(m_module_status);
 
     for (size_t i = 0; i < updates.size(); ++i) {
         const auto& update = updates[i];
@@ -548,6 +552,14 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
             continue;
         }
         result_enum = SetConfigParameterResultEnum::WillApplyOnRestart;
+
+        // With the modules down there is no runtime value to keep: the in-memory configuration is
+        // exactly what the next start uses, so it follows the persisted value right away. While the
+        // modules run, it only changes once the module confirms the runtime change (see below).
+        if (modules_down) {
+            in_memory_parameter->value =
+                ec::parse_config_value(in_memory_parameter->characteristics.datatype, update.value);
+        }
 
         // Now test if the module applies the update at runtime
         if (mutability == ec::Mutability::ReadWrite and modules_are_running) {

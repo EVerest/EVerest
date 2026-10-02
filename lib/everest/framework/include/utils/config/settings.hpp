@@ -112,8 +112,8 @@ enum class BootMode {
     YamlWithInMemoryDb,
     /// --db only: the database file is the only configuration source.
     DatabaseOnly,
-    /// --config and --db: the database wins when it holds a valid boot slot, otherwise it is
-    /// seeded from the YAML config (use --reset-from-yaml to force re-seeding).
+    /// --config and --db: the database wins when its boot slot holds at least one module, otherwise
+    /// the boot slot is (re-)seeded from the YAML config (use --reset-from-yaml to force re-seeding).
     DatabaseWithYamlSeed,
 };
 
@@ -136,14 +136,24 @@ BootSource resolve_boot_source(const std::string& config_path, const std::string
 
 /// \brief Result of a database bootstrap operation
 struct DatabaseBootstrap {
+    /// \brief True once the boot slot exists and is readable, possibly with zero modules. False only when the
+    /// boot slot could not be written (or --reset-from-yaml met an invalid YAML and kept the existing slot);
+    /// the manager must abort then.
     bool module_configs_initialized{false};
+    /// \brief Set when the YAML config failed to load or validate. Human-readable ("Seeding from <yaml>
+    /// failed: <first line of the error>"); it is also stored as the description of the empty placeholder
+    /// boot slot written in that case.
+    std::optional<std::string> seed_failure;
     /// \brief Shared connection to the config database (already migrated).
     std::shared_ptr<everest::db::sqlite::ConnectionInterface> db_connection;
 };
 
 /// \brief Initialize a DatabaseBootstrap from an already-initialized ManagerSettings.
-/// Loads module configs from the database if it is already valid, or seeds the database from YAML if it is
-/// not yet valid or \p reset_from_yaml is true.
+///
+/// Invariant: after a successful bootstrap the boot slot exists. The database wins when the boot slot holds at
+/// least one module (and \p reset_from_yaml is false). Otherwise the boot slot is (re-)seeded from the YAML
+/// config; an invalid YAML yields an empty placeholder slot and sets DatabaseBootstrap::seed_failure. Without a
+/// YAML config a missing boot slot is created empty and an existing one is kept as it is.
 DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_from_yaml = false);
 
 } // namespace Everest
