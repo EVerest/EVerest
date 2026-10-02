@@ -16,6 +16,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_database_handler.cpp
         test_device_model.cpp
         test_device_model_concurrency.cpp
+        test_device_model_in_memory.cpp
         test_init_device_model_db.cpp
         test_network_config_sync.cpp
         comparators.cpp

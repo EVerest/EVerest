@@ -14,7 +14,7 @@ The monitors are evaluated from time to time in the case of periodic monitors an
 - To filter the verbosity level: set the `ActiveMonitoringLevel` variable to a value of 0-9 with 9 being the most verbose
 - To filter the verbosity level when the charging station is offline: set the `OfflineQueuingSeverity` value to 0-9, with 9 keeping all monitor generated event while being offline
 
-Note: There is a small overhead for the monitoring process interval. The periodic monitors that are triggered will require a database value query. However, based on the count and config of monitors it is unlikely that many of them will trigger at the same time, therefore, the database queries will be limited.
+Note: The periodic monitors read the current values from the device model in memory, so a triggered periodic monitor does not query the database.
 
 ## Hardwired/Preconfigured Monitors
 
