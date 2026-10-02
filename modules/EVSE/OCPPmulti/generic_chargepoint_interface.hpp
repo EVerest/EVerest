@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <everest/ocpp_module_common/custom_error_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
@@ -159,7 +160,10 @@ struct GenericChargePointCallbacks {
     virtual void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) = 0;
     virtual void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) = 0;
 
-    virtual bool map_error(const std::string& error, std::string& updated_error) = 0;
+    /// \returns the mapping loaded from the configured custom error mapping file, or nullptr when no
+    ///          file is configured
+    virtual std::shared_ptr<const ocpp_module_common::custom_error_mapping::CustomFileErrorMapping>
+    custom_error_mapping() const = 0;
     virtual void transaction_add(std::int32_t evse_id,
                                  const std::shared_ptr<ocpp_module_common::TransactionData>& transaction_data) = 0;
     virtual std::shared_ptr<ocpp_module_common::TransactionData> transaction_data(std::int32_t evse_id) = 0;

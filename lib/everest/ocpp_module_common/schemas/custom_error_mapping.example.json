@@ -11,7 +11,7 @@
       "tech_code": "T-210",
       "component_name": "Connector",
       "variable_name": "Temperature",
-      "severity": { "high": 3, "medium": 5, "low": 8 },
+      "severity": 5,
       "techInfo": "Failed at connector temperature ${actual_value} deg"
     }
   },
@@ -26,7 +26,7 @@
       "tech_code": "T-210",
       "component_name": "Connector",
       "variable_name": "Temperature",
-      "severity": { "high": 3, "medium": 5, "low": 8 },
+      "severity": 3,
       "techInfo": "The Connector temperature is high"
     }
   },
@@ -40,6 +40,20 @@
     "tier_mapping": { "evse": 2 },
     "v2": {
       "tech_code": "SPD-2"
+    }
+  },
+  "connector_lock/MREC1ConnectorLockFailure": {
+    "tier_mapping": { "evse": 1, "connector": 2 },
+    "v16": {
+      "error_code": "ConnectorLockFailure",
+      "vendor_id": "com.example",
+      "vendor_error_code": "L-110"
+    },
+    "v2": {
+      "tech_code": "L-110",
+      "component_name": "Connector",
+      "component_instance": "2",
+      "variable_name": "Problem"
     }
   }
 }

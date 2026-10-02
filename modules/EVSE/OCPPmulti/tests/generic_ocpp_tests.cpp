@@ -73,7 +73,7 @@ TEST(GenericOcppTester, init) {
 
 TEST_F(GenericOcppProvidesTester, errorTypeNotRemapped) {
     // the error type must reach the chargepoint implementations unmodified: the v16
-    // error-code map and the v2 map_error() lookup are keyed on the full type
+    // error-code map and the v2 techCode lookup are keyed on the full type
     using ::testing::_;
 
     std::optional<ocpp_multi::GenericChargePointInterface::EventInfo> event;

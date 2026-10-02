@@ -12,6 +12,8 @@
 #include <string_view>
 #include <vector>
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 #include <ocpp/v16/ocpp_enums.hpp>
 #include <utils/config/types.hpp>
 
@@ -39,13 +41,6 @@ struct V16Identity {
     std::optional<std::string> info;
 };
 
-/// \brief OCPP 2.1 severity (0-9) per EVerest severity level
-struct SeverityEncoding {
-    std::int32_t high;
-    std::int32_t medium;
-    std::int32_t low;
-};
-
 struct V2Identity {
     std::optional<std::string> tech_code;
     std::optional<std::string> tech_info;
@@ -53,7 +48,8 @@ struct V2Identity {
     std::optional<std::string> component_instance;
     std::optional<std::string> variable_name;
     std::optional<std::string> variable_instance;
-    std::optional<SeverityEncoding> severity;
+    /// OCPP 2.1 severity (0-9) reported for the error; unset reports no severity
+    std::optional<std::int32_t> severity;
 };
 
 struct Entry {
@@ -64,10 +60,24 @@ struct Entry {
     std::optional<V2Identity> v2;
 };
 
-class CustomErrorMapping {
+/// \brief Reports errors as the entries of a custom error mapping file describe them.
+///
+/// Converts an error from its entry alone: the fields the entry sets are reported, every other field
+/// follows from the error itself. An error without an entry, or whose entry has no section for the
+/// asked protocol version, is not handled, so \ref try_convert returns std::nullopt for it.
+///
+/// \code
+/// const CustomFileErrorMapping mapping{load_error_mapping(path).error_mapping};
+/// const auto info = mapping.try_convert(error);
+/// \endcode
+class CustomFileErrorMapping : public ErrorMappingV16, public ErrorMappingV2X {
 public:
-    CustomErrorMapping() = default;
-    explicit CustomErrorMapping(std::map<ErrorKey, Entry> entries);
+    CustomFileErrorMapping() = default;
+    explicit CustomFileErrorMapping(std::map<ErrorKey, Entry> entries);
+
+    std::optional<ocpp::v16::ErrorInfo> try_convert(const Everest::error::Error& error) const override;
+    std::optional<ocpp::v2::EventData> try_convert(const Everest::error::Error& error, bool cleared,
+                                                   std::int32_t event_id) const override;
 
     /// \returns the entry for \p type and \p sub_type, else the entry for \p type alone, else nullptr
     const Entry* find(const std::string& type, const std::string& sub_type) const;
@@ -96,7 +106,7 @@ bool has_errors(const std::vector<Finding>& findings);
 
 struct LoadResult {
     /// set only when no finding is an error; immutable, so it can be shared by every reader without copies
-    std::shared_ptr<const CustomErrorMapping> error_mapping;
+    std::shared_ptr<const CustomFileErrorMapping> error_mapping;
     std::vector<Finding> findings;
 };
 

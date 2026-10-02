@@ -420,29 +420,39 @@ GenericOcpp::EventInfo GenericOcpp::convert_error(const Everest::error::Error& e
     return event_data;
 }
 
-void GenericOcpp::init_mrec_error_map() {
-    const auto configured = mv_config.getCustomMrecErrorMapPath();
+void GenericOcpp::init_custom_error_mapping() {
+    const auto configured = mv_config.getCustomErrorMappingPath();
     if (configured.empty()) {
-        mv_mrec_error_map = module::MREC_ERROR_MAP;
         return;
     }
 
     // relative paths resolve against the module share directory, like the other configured paths
     const auto resolved = update_path_multi(remove_dir(mv_info.paths.share), configured);
     if (!fs::exists(resolved)) {
-        EVLOG_AND_THROW(std::runtime_error("CustomMrecErrorMapPath '" + configured + "' not found at " +
+        EVLOG_AND_THROW(std::runtime_error("CustomErrorMappingPath '" + configured + "' not found at " +
                                            resolved.string() +
                                            " (relative paths resolve against the OCPPmulti share directory)"));
     }
-    mv_mrec_error_map = module::load_mrec_error_map_overrides(resolved);
-    EVLOG_warning << "CustomMrecErrorMapPath is set but the overrides are not applied to the codes reported to the "
-                     "CSMS: the OCPP 2.x error mapping uses the built-in MREC table";
+
+    auto result = module::custom_error_mapping::load_error_mapping(resolved);
+    for (const auto& finding : result.findings) {
+        if (finding.level == module::custom_error_mapping::Finding::Level::Error) {
+            EVLOG_error << resolved.string() << ": " << finding.to_string();
+        } else {
+            EVLOG_warning << resolved.string() << ": " << finding.to_string();
+        }
+    }
+    if (result.error_mapping == nullptr) {
+        EVLOG_AND_THROW(
+            std::runtime_error("CustomErrorMappingPath '" + resolved.string() + "' is not a valid error mapping"));
+    }
+    mv_custom_error_mapping = std::move(result.error_mapping);
 }
 
 void GenericOcpp::init() {
     // loaded before the error subscriptions and before the charge point starts,
-    // so map_error() never sees an empty map
-    init_mrec_error_map();
+    // so the first converted error already sees it
+    init_custom_error_mapping();
 
     // was originally in ready()
     const auto log_path = mv_config.getMessageLogPath();
@@ -1835,15 +1845,8 @@ void GenericOcpp::cb_waiting_for_external_ready(std::int32_t evse_id, bool ready
     }
 }
 
-bool GenericOcpp::map_error(const std::string& error, std::string& updated_error) {
-    bool result{false};
-    if (const auto it = mv_mrec_error_map.find(error); it != mv_mrec_error_map.end()) {
-        updated_error = it->second;
-        result = true;
-    } else {
-        updated_error = error;
-    }
-    return result;
+std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> GenericOcpp::custom_error_mapping() const {
+    return mv_custom_error_mapping;
 }
 
 void GenericOcpp::transaction_add(std::int32_t evse_id,

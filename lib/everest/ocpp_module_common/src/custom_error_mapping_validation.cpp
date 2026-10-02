@@ -131,7 +131,7 @@ std::set<std::string> builtin_error_types() {
     return types;
 }
 
-std::vector<Finding> validate_error_types(const CustomErrorMapping& mapping,
+std::vector<Finding> validate_error_types(const CustomFileErrorMapping& mapping,
                                           const Everest::error::ErrorTypes& declared) {
     std::set<std::string> namespaces;
     for (const auto& [type, description] : declared) {
@@ -153,7 +153,7 @@ std::vector<Finding> validate_error_types(const CustomErrorMapping& mapping,
     return findings;
 }
 
-std::vector<std::string> replaced_builtin_entries(const CustomErrorMapping& mapping,
+std::vector<std::string> replaced_builtin_entries(const CustomFileErrorMapping& mapping,
                                                   const std::set<std::string>& builtin) {
     std::vector<std::string> replaced;
     for (const auto& [key, entry] : mapping.entries()) {
@@ -164,7 +164,7 @@ std::vector<std::string> replaced_builtin_entries(const CustomErrorMapping& mapp
     return replaced;
 }
 
-std::vector<Finding> validate_values(const CustomErrorMapping& mapping) {
+std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping) {
     std::vector<Finding> findings;
     for (const auto& [key, entry] : mapping.entries()) {
         if (entry.v16.has_value() && entry.v16->info.has_value()) {
@@ -182,7 +182,7 @@ std::vector<Finding> validate_values(const CustomErrorMapping& mapping) {
     return findings;
 }
 
-std::vector<Finding> validate_topology(const CustomErrorMapping& mapping, const EvseTopology& topology) {
+std::vector<Finding> validate_topology(const CustomFileErrorMapping& mapping, const EvseTopology& topology) {
     std::vector<Finding> findings;
     for (const auto& [key, entry] : mapping.entries()) {
         if (!entry.tier_mapping.has_value() || entry.tier_mapping->evse == 0) {
@@ -201,8 +201,9 @@ std::vector<Finding> validate_topology(const CustomErrorMapping& mapping, const 
     return findings;
 }
 
-std::vector<Finding> validate_device_model(const CustomErrorMapping& mapping, const DeviceModelLookupFunction& lookup,
-                                           const EvseTopology& topology, bool strict) {
+std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping,
+                                           const DeviceModelLookupFunction& lookup, const EvseTopology& topology,
+                                           bool strict) {
     std::vector<Finding> findings;
     for (const auto& [key, entry] : mapping.entries()) {
         if (!entry.v2.has_value() || !names_device_model_entry(entry.v2.value())) {

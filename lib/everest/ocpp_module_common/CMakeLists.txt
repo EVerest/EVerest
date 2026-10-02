@@ -12,7 +12,6 @@ target_sources(ocpp_module_common
     PRIVATE
         src/conversions.cpp
         src/custom_error_mapping.cpp
-        src/custom_error_mapping_converter.cpp
         src/custom_error_mapping_validation.cpp
         src/error_handling.cpp
         src/error_mapping.cpp

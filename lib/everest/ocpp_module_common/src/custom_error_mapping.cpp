@@ -166,8 +166,7 @@ V2Identity to_v2(const json& v2) {
     identity.variable_name = optional_string(v2, "variable_name");
     identity.variable_instance = optional_string(v2, "variable_instance");
     if (const auto it = v2.find("severity"); it != v2.end()) {
-        identity.severity = SeverityEncoding{it->at("high").get<std::int32_t>(), it->at("medium").get<std::int32_t>(),
-                                             it->at("low").get<std::int32_t>()};
+        identity.severity = it->get<std::int32_t>();
     }
     return identity;
 }
@@ -226,10 +225,10 @@ std::optional<ErrorKey> parse_error_key(std::string_view key) {
     return ErrorKey{std::string(type), std::string(sub_type)};
 }
 
-CustomErrorMapping::CustomErrorMapping(std::map<ErrorKey, Entry> entries) : m_entries(std::move(entries)) {
+CustomFileErrorMapping::CustomFileErrorMapping(std::map<ErrorKey, Entry> entries) : m_entries(std::move(entries)) {
 }
 
-const Entry* CustomErrorMapping::find(const std::string& type, const std::string& sub_type) const {
+const Entry* CustomFileErrorMapping::find(const std::string& type, const std::string& sub_type) const {
     if (!sub_type.empty()) {
         if (const auto it = m_entries.find(ErrorKey{type, sub_type}); it != m_entries.end()) {
             return &it->second;
@@ -239,8 +238,63 @@ const Entry* CustomErrorMapping::find(const std::string& type, const std::string
     return it != m_entries.end() ? &it->second : nullptr;
 }
 
-const std::map<ErrorKey, Entry>& CustomErrorMapping::entries() const {
+const std::map<ErrorKey, Entry>& CustomFileErrorMapping::entries() const {
     return m_entries;
+}
+
+std::optional<ocpp::v16::ErrorInfo> CustomFileErrorMapping::try_convert(const Everest::error::Error& error) const {
+    const auto* entry = find(error.type, error.sub_type);
+    if (entry == nullptr || !entry->v16.has_value()) {
+        return std::nullopt;
+    }
+
+    auto result = make_v16_error_info(error);
+    const auto& v16 = entry->v16.value();
+    if (v16.error_code.has_value()) {
+        result.error_code = v16.error_code.value();
+    }
+    if (v16.vendor_id.has_value()) {
+        result.vendor_id = ocpp::CiString<255>(v16.vendor_id.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v16.vendor_error_code.has_value()) {
+        result.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v16.info.has_value()) {
+        result.info = ocpp::CiString<50>(v16.info.value(), ocpp::StringTooLarge::Truncate);
+    }
+    return result;
+}
+
+std::optional<ocpp::v2::EventData> CustomFileErrorMapping::try_convert(const Everest::error::Error& error,
+                                                                       const bool cleared,
+                                                                       const std::int32_t event_id) const {
+    const auto* entry = find(error.type, error.sub_type);
+    if (entry == nullptr || !entry->v2.has_value()) {
+        return std::nullopt;
+    }
+
+    auto result = make_v2_event_data(error, cleared, event_id);
+    const auto& v2 = entry->v2.value();
+    if (v2.tech_code.has_value()) {
+        result.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v2.tech_info.has_value()) {
+        result.techInfo = ocpp::CiString<500>(v2.tech_info.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v2.component_name.has_value()) {
+        result.component.name = ocpp::CiString<50>(v2.component_name.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v2.component_instance.has_value()) {
+        result.component.instance = ocpp::CiString<50>(v2.component_instance.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v2.variable_name.has_value()) {
+        result.variable.name = ocpp::CiString<50>(v2.variable_name.value(), ocpp::StringTooLarge::Truncate);
+    }
+    if (v2.variable_instance.has_value()) {
+        result.variable.instance = ocpp::CiString<50>(v2.variable_instance.value(), ocpp::StringTooLarge::Truncate);
+    }
+    result.severity = v2.severity;
+    return result;
 }
 
 std::string Finding::to_string() const {
@@ -289,7 +343,7 @@ LoadResult parse_error_mapping(std::string_view content) {
         }
     }
     if (!has_errors(result.findings)) {
-        result.error_mapping = std::make_shared<const CustomErrorMapping>(std::move(entries));
+        result.error_mapping = std::make_shared<const CustomFileErrorMapping>(std::move(entries));
     }
     return result;
 }

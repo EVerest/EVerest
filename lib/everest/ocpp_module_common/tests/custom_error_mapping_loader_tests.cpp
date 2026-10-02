@@ -69,7 +69,7 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
     ASSERT_TRUE(result.error_mapping != nullptr)
         << (result.findings.empty() ? "" : result.findings.front().to_string());
     EXPECT_TRUE(result.findings.empty());
-    EXPECT_EQ(result.error_mapping->entries().size(), 4U);
+    EXPECT_EQ(result.error_mapping->entries().size(), 5U);
 
     const auto* api = result.error_mapping->find("generic/VendorError", "YourCustomErrorType");
     ASSERT_NE(api, nullptr);
@@ -86,9 +86,7 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
     EXPECT_FALSE(api->v2->component_instance.has_value());
     EXPECT_EQ(api->v2->tech_info, "Failed at connector temperature ${actual_value} deg");
     ASSERT_TRUE(api->v2->severity.has_value());
-    EXPECT_EQ(api->v2->severity->high, 3);
-    EXPECT_EQ(api->v2->severity->medium, 5);
-    EXPECT_EQ(api->v2->severity->low, 8);
+    EXPECT_EQ(api->v2->severity.value(), 5);
 
     const auto* internal = result.error_mapping->find("evse_board_support/MREC3HighTemperature", "");
     ASSERT_NE(internal, nullptr);
@@ -100,6 +98,13 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
     EXPECT_EQ(surge->tier_mapping->evse, 2);
     EXPECT_FALSE(surge->tier_mapping->connector.has_value());
     EXPECT_FALSE(surge->v16.has_value());
+
+    const auto* lock = result.error_mapping->find("connector_lock/MREC1ConnectorLockFailure", "");
+    ASSERT_NE(lock, nullptr);
+    ASSERT_TRUE(lock->tier_mapping.has_value());
+    EXPECT_EQ(lock->tier_mapping->evse, 1);
+    ASSERT_TRUE(lock->tier_mapping->connector.has_value());
+    EXPECT_EQ(lock->tier_mapping->connector.value(), 2);
 }
 
 TEST(ErrorMappingLoaderTest, CopiesOfTheResultShareOneImmutableMapping) {
@@ -184,21 +189,22 @@ TEST(ErrorMappingLoaderTest, RejectsFieldLongerThanOcppLimit) {
 }
 
 TEST(ErrorMappingLoaderTest, RejectsSeverityOutOfRange) {
-    const auto finding =
-        single_error(R"({"generic/VendorError": {"v2": {"severity": {"high": 10, "medium": 5, "low": 8}}}})");
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/severity/high");
+    const auto finding = single_error(R"({"generic/VendorError": {"v2": {"severity": 10}}})");
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/severity");
 }
 
-TEST(ErrorMappingLoaderTest, RejectsIncompleteSeverity) {
-    const auto result = parse_error_mapping(R"({"generic/VendorError": {"v2": {"severity": {"high": 3}}}})");
-    EXPECT_FALSE(result.error_mapping != nullptr);
-    const auto errors = errors_of(result);
-    ASSERT_EQ(errors.size(), 2U);
-    EXPECT_THAT(errors[0].message, HasSubstr("medium"));
-    EXPECT_THAT(errors[1].message, HasSubstr("low"));
-    for (const auto& finding : errors) {
-        EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/severity");
-    }
+TEST(ErrorMappingLoaderTest, RejectsNonIntegerSeverity) {
+    const auto finding = single_error(R"({"generic/VendorError": {"v2": {"severity": "high"}}})");
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/severity");
+}
+
+TEST(ErrorMappingLoaderTest, KeepsSeverityUnsetWithoutTheField) {
+    const auto result = parse_error_mapping(R"({"generic/VendorError": {"v2": {"tech_code": "A"}}})");
+    ASSERT_NE(result.error_mapping, nullptr);
+    const auto* entry = result.error_mapping->find("generic/VendorError", "");
+    ASSERT_NE(entry, nullptr);
+    ASSERT_TRUE(entry->v2.has_value());
+    EXPECT_FALSE(entry->v2->severity.has_value());
 }
 
 TEST(ErrorMappingLoaderTest, RejectsNegativeEvse) {

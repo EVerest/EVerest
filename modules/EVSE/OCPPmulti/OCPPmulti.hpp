@@ -49,7 +49,7 @@ public:
     [[nodiscard]] std::string getChargePointConfigPath() const override;
     [[nodiscard]] int getCompositeScheduleIntervalS() const override;
     [[nodiscard]] std::string getCoreDatabasePath() const override;
-    [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
+    [[nodiscard]] std::string getCustomErrorMappingPath() const override;
     [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
     [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override;
@@ -79,7 +79,7 @@ struct Conf {
     std::string ChargePointConfigPath;
     int CompositeScheduleIntervalS;
     std::string CoreDatabasePath;
-    std::string CustomMrecErrorMapPath;
+    std::string CustomErrorMappingPath;
     std::string DatabasePath;
     int DelayOcppStart;
     bool DelegateNetworkConfigurationToSystem;

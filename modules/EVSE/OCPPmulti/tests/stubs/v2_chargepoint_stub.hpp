@@ -222,7 +222,8 @@ struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCa
     MOCK_METHOD(void, cb_variable_set, (const ocpp::v2::SetVariableData& set_variable_data), (override));
     MOCK_METHOD(void, cb_waiting_for_external_ready, (std::int32_t evse_id, bool ready), (override));
 
-    MOCK_METHOD(bool, map_error, (const std::string& error, std::string& updated_error), (override));
+    MOCK_METHOD(std::shared_ptr<const ocpp_module_common::custom_error_mapping::CustomFileErrorMapping>,
+                custom_error_mapping, (), (const, override));
     MOCK_METHOD(void, transaction_add,
                 (std::int32_t evse_id, const std::shared_ptr<module::TransactionData>& transaction_data), (override));
     MOCK_METHOD(std::shared_ptr<module::TransactionData>, transaction_data, (std::int32_t evse_id), (override));

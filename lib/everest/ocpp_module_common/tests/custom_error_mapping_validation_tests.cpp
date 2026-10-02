@@ -18,10 +18,10 @@ using ::testing::HasSubstr;
 
 const std::filesystem::path ERRORS_DIR{EVEREST_ERRORS_DIR};
 
-CustomErrorMapping mapping_of(const std::string& content) {
+CustomFileErrorMapping mapping_of(const std::string& content) {
     auto result = parse_error_mapping(content);
     EXPECT_NE(result.error_mapping, nullptr) << (result.findings.empty() ? "" : result.findings.front().to_string());
-    return result.error_mapping != nullptr ? *result.error_mapping : CustomErrorMapping{};
+    return result.error_mapping != nullptr ? *result.error_mapping : CustomFileErrorMapping{};
 }
 
 Finding single(const std::vector<Finding>& findings) {
