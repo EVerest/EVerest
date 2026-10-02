@@ -49,8 +49,8 @@ TEST_F(DeviceModelStorageSQLiteTest, test_check_integrity_invalid) {
     EXPECT_NO_THROW(dm.check_integrity());
 }
 
-/// \brief identifierString fields (component and variable name and instance) are matched case-insensitively
-TEST_F(DeviceModelStorageSQLiteTest, test_set_variable_attribute_value_case_insensitive) {
+/// \brief A variable is looked up by name and instance, both matched case-insensitively
+TEST_F(DeviceModelStorageSQLiteTest, test_set_variable_attribute_value_variable_case_insensitive) {
     DeviceModelStorageSqlite dm(DATABASE_PATH);
 
     EVSE evse;
@@ -58,24 +58,80 @@ TEST_F(DeviceModelStorageSQLiteTest, test_set_variable_attribute_value_case_inse
     evse.connectorId = 3;
 
     Component component;
-    component.name = "unittestCTRLR";
+    component.name = "UnitTestCtrlr";
+    component.instance = "UnitTestInstance";
     component.evse = evse;
-    Variable variable;
-    variable.name = "UNITTESTPROPERTYANAME";
 
-    EXPECT_EQ(dm.set_variable_attribute_value(component, variable, AttributeEnum::Actual, "false", "test"),
+    Variable miscased_variable;
+    miscased_variable.name = "UNITTESTPROPERTYBNAME";
+    miscased_variable.instance = "UNITTESTINSTANCE";
+
+    EXPECT_EQ(dm.set_variable_attribute_value(component, miscased_variable, AttributeEnum::Actual, "false", "test"),
               SetVariableStatusEnum::Accepted);
 
-    Component stored_component;
-    stored_component.name = "UnitTestCtrlr";
-    stored_component.evse = evse;
-    Variable stored_variable;
-    stored_variable.name = "UnitTestPropertyAName";
+    Variable configured_variable;
+    configured_variable.name = "UnitTestPropertyBName";
+    configured_variable.instance = "UnitTestInstance";
 
-    const auto attribute = dm.get_variable_attribute(stored_component, stored_variable, AttributeEnum::Actual);
+    const auto attribute = dm.get_variable_attribute(component, configured_variable, AttributeEnum::Actual);
     ASSERT_TRUE(attribute.has_value());
     ASSERT_TRUE(attribute->value.has_value());
     EXPECT_EQ(attribute->value.value().get(), "false");
+
+    Variable other_instance_variable;
+    other_instance_variable.name = "UnitTestPropertyBName";
+    other_instance_variable.instance = "OtherInstance";
+    EXPECT_FALSE(dm.get_variable_attribute(component, other_instance_variable, AttributeEnum::Actual).has_value());
+
+    Variable other_name_variable;
+    other_name_variable.name = "UnitTestPropertyAName";
+    other_name_variable.instance = "UnitTestInstance";
+    EXPECT_FALSE(dm.get_variable_attribute(component, other_name_variable, AttributeEnum::Actual).has_value());
+}
+
+/// \brief A component is looked up by name and instance, both matched case-insensitively
+TEST_F(DeviceModelStorageSQLiteTest, test_set_variable_attribute_value_component_case_insensitive) {
+    DeviceModelStorageSqlite dm(DATABASE_PATH);
+
+    EVSE evse;
+    evse.id = 2;
+    evse.connectorId = 3;
+
+    Variable variable;
+    variable.name = "UnitTestPropertyAName";
+
+    Component miscased_component;
+    miscased_component.name = "unittestCTRLR";
+    miscased_component.instance = "UNITTESTINSTANCE";
+    miscased_component.evse = evse;
+
+    EXPECT_EQ(dm.set_variable_attribute_value(miscased_component, variable, AttributeEnum::Actual, "false", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    Component configured_component;
+    configured_component.name = "UnitTestCtrlr";
+    configured_component.instance = "UnitTestInstance";
+    configured_component.evse = evse;
+
+    const auto attribute = dm.get_variable_attribute(configured_component, variable, AttributeEnum::Actual);
+    ASSERT_TRUE(attribute.has_value());
+    ASSERT_TRUE(attribute->value.has_value());
+    EXPECT_EQ(attribute->value.value().get(), "false");
+
+    Component no_instance_component;
+    no_instance_component.name = "UnitTestCtrlr";
+    no_instance_component.evse = evse;
+
+    const auto untouched_attribute = dm.get_variable_attribute(no_instance_component, variable, AttributeEnum::Actual);
+    ASSERT_TRUE(untouched_attribute.has_value());
+    ASSERT_TRUE(untouched_attribute->value.has_value());
+    EXPECT_EQ(untouched_attribute->value.value().get(), "true");
+
+    Component other_name_component;
+    other_name_component.name = "OtherCtrlr";
+    other_name_component.instance = "UnitTestInstance";
+    other_name_component.evse = evse;
+    EXPECT_FALSE(dm.get_variable_attribute(other_name_component, variable, AttributeEnum::Actual).has_value());
 }
 
 /// \brief Fixture that mimics a DeviceModelConfigPath copied from a release that predates OCPP16LegacyCtrlr: a copy
