@@ -4,6 +4,7 @@
 #include "energy_transfer_modes.hpp"
 
 #include <algorithm>
+#include <iterator>
 #include <utility>
 
 namespace module {
@@ -34,6 +35,33 @@ get_supported_ac_energy_transfers(const types::evse_board_support::HardwareCapab
         energy_transfers.push_back(types::iso15118::EnergyTransferMode::AC_DER_IEC);
     }
     return energy_transfers;
+}
+
+std::vector<types::iso15118::EnergyTransferMode>
+filter_allowed_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& allowed,
+                                const std::optional<types::evse_manager::ConnectorTypeEnum>& connector_type) {
+    std::vector<types::iso15118::EnergyTransferMode> filtered;
+    filtered.reserve(allowed.size());
+
+    // TODO(mlitre): Add check for incompatible type(s), for now we just transform DC stuff
+    // in case of MCS and only if a connector type was configured at all;
+    // also TODO: for DC we can check whether BPT can be supported in case DC supply supports it
+    std::transform(allowed.begin(), allowed.end(), std::back_inserter(filtered),
+                   [&](types::iso15118::EnergyTransferMode m) {
+                       // for MCS we have to replace DC types with MCS types
+                       if (connector_type == types::evse_manager::ConnectorTypeEnum::cMCS) {
+                           if (m == types::iso15118::EnergyTransferMode::DC) {
+                               return types::iso15118::EnergyTransferMode::MCS;
+                           }
+                           if (m == types::iso15118::EnergyTransferMode::DC_BPT) {
+                               return types::iso15118::EnergyTransferMode::MCS_BPT;
+                           }
+                       }
+
+                       // everything else pass untouched
+                       return m;
+                   });
+    return filtered;
 }
 
 } // namespace module

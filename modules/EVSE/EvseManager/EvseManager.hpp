@@ -291,6 +291,7 @@ public:
 
     std::atomic<bool> der_available{false};
     void recompute_and_publish_supported_ac_energy_transfers();
+    void apply_allowed_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes);
     bool is_hlc_enabled() const {
         return hlc_enabled;
     }

@@ -1844,6 +1844,11 @@ void EvseManager::recompute_and_publish_supported_dc_energy_transfers() {
     set_supported_energy_transfers([this] { return dc_energy_transfers(); }, SendEnergyTransfers::OnChange);
 }
 
+void EvseManager::apply_allowed_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes) {
+    const auto handle = supported_energy_transfers.handle();
+    send_supported_energy_transfers(modes);
+}
+
 void EvseManager::update_hlc_ac_parameters() {
     // Copy hw_caps before acquiring hlc_ac_parameters_mutex to avoid holding two locks simultaneously
     const auto hw_caps = hw_capabilities.get();

@@ -11,6 +11,7 @@
 #include <fmt/core.h>
 
 #include "SessionLog.hpp"
+#include "energy_transfer_modes.hpp"
 
 namespace module {
 
@@ -543,41 +544,19 @@ void evse_managerImpl::handle_set_plug_and_charge_configuration(
 types::evse_manager::UpdateAllowedEnergyTransferModesResult
 evse_managerImpl::handle_update_allowed_energy_transfer_modes(
     std::vector<types::iso15118::EnergyTransferMode>& allowed_energy_transfer_modes) {
-    std::vector<types::iso15118::EnergyTransferMode> filtered_energy_transfer_modes;
-
-    if (mod->r_hlc.empty() or !mod->r_hlc[0]) {
+    if (not mod->is_hlc_enabled()) {
         return types::evse_manager::UpdateAllowedEnergyTransferModesResult::NoHlc;
     }
 
-    filtered_energy_transfer_modes.reserve(allowed_energy_transfer_modes.size());
-
-    // TODO(mlitre): Add check for incompatible type(s), for now we just transform DC stuff
-    // in case of MCS and only if a connector type was configured at all;
-    // also TODO: for DC we can check whether BPT can be supported in case DC supply supports it
-    std::transform(allowed_energy_transfer_modes.begin(), allowed_energy_transfer_modes.end(),
-                   filtered_energy_transfer_modes.begin(), [&](types::iso15118::EnergyTransferMode m) {
-                       // for MCS we have to replace DC types with MCS types
-                       if (mod->connector_type.has_value() and
-                           mod->connector_type == types::evse_manager::ConnectorTypeEnum::cMCS) {
-
-                           if (m == types::iso15118::EnergyTransferMode::DC) {
-                               return types::iso15118::EnergyTransferMode::MCS;
-                           }
-                           if (m == types::iso15118::EnergyTransferMode::DC_BPT) {
-                               return types::iso15118::EnergyTransferMode::MCS_BPT;
-                           }
-                       }
-
-                       // everything else pass untouched
-                       return m;
-                   });
+    const auto filtered_energy_transfer_modes =
+        filter_allowed_energy_transfers(allowed_energy_transfer_modes, mod->connector_type);
 
     // check whether at least one mode has survived our filtering
-    if (!filtered_energy_transfer_modes.size()) {
+    if (filtered_energy_transfer_modes.empty()) {
         return types::evse_manager::UpdateAllowedEnergyTransferModesResult::IncompatibleEnergyTransfer;
     }
 
-    mod->r_hlc[0]->call_update_energy_transfer_modes(filtered_energy_transfer_modes);
+    mod->apply_allowed_energy_transfers(filtered_energy_transfer_modes);
     return types::evse_manager::UpdateAllowedEnergyTransferModesResult::Accepted;
 }
 
