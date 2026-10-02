@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright (C) 2022 - 2026 Contributors to EVerest
  */
 
 /*****************************************************
@@ -2444,6 +2444,7 @@ struct iso20_exiFragment {
         struct iso20_AbsolutePriceScheduleType AbsolutePriceSchedule;
         struct iso20_CertificateInstallationReqType CertificateInstallationReq;
         struct iso20_MeteringConfirmationReqType MeteringConfirmationReq;
+        struct iso20_SignedCertificateChainType OEMProvisioningCertificateChain;
         struct iso20_PnC_AReqAuthorizationModeType PnC_AReqAuthorizationMode;
         struct iso20_SignedInfoType SignedInfo;
         struct iso20_SignedInstallationDataType SignedInstallationData;
@@ -2451,6 +2452,7 @@ struct iso20_exiFragment {
     unsigned int AbsolutePriceSchedule_isUsed:1;
     unsigned int CertificateInstallationReq_isUsed:1;
     unsigned int MeteringConfirmationReq_isUsed:1;
+    unsigned int OEMProvisioningCertificateChain_isUsed:1;
     unsigned int PnC_AReqAuthorizationMode_isUsed:1;
     unsigned int SignedInfo_isUsed:1;
     unsigned int SignedInstallationData_isUsed:1;
