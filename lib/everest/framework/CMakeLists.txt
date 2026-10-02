@@ -27,16 +27,20 @@ option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
 option(EVEREST_ENABLE_ADMIN_PANEL_BACKEND "Enable everest admin panel backend" OFF)
 option(EVEREST_INSTALL_ADMIN_PANEL "Download and install everest admin panel" OFF)
 
-set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "latency" CACHE STRING
-    "Thread pool scaling policy for framework message handling: latency, greedy, conservative, fixed_size, custom")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "greedy" CACHE STRING
+    "Thread pool scaling policy for framework message handling: greedy, latency, conservative, fixed_size, custom")
 set_property(CACHE EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY PROPERTY STRINGS
-    latency greedy conservative fixed_size custom)
+    greedy latency conservative fixed_size custom)
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS "50" CACHE STRING
     "Maximum queued task wait time in milliseconds before latency scaling grows the framework message handler pool")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS "5" CACHE STRING
-    "Supervisor tick in milliseconds for framework message handler latency scaling")
+    "Back-off in milliseconds before the latency scaling supervisor of the framework message handler re-evaluates a queued task")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD "3" CACHE STRING
     "Queue size threshold for framework message handler fixed-size scaling")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT "1" CACHE STRING
+    "Minimum worker count of the framework message handler pool")
+set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT "6" CACHE STRING
+    "Maximum worker count of the framework message handler pool, independent of the CPU core count")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_HEADER "" CACHE STRING
     "Header to include when EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY=custom")
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE "" CACHE STRING
@@ -47,12 +51,18 @@ set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR "" CACHE PAT
 foreach(_scaling_option IN ITEMS
         EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS
         EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS
-        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD)
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT
+        EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT)
     if(NOT ${_scaling_option} MATCHES "^[1-9][0-9]*$")
         message(FATAL_ERROR
             "${_scaling_option} must be a positive integer, got '${${_scaling_option}}'")
     endif()
 endforeach()
+if(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT LESS EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT)
+    message(FATAL_ERROR
+        "EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT (${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT}) must not be below EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT (${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT})")
+endif()
 
 if(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "latency")
     set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_ID 1)

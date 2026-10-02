@@ -5,6 +5,7 @@
 #include <atomic>
 #include <chrono>
 #include <everest/util/queue/thread_safe_bounded_queue.hpp>
+#include <future>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -257,4 +258,67 @@ TEST(ThreadSafeBoundedQueueTest, PopStrictlyMovesAndNeverCopies) {
     EXPECT_EQ(retrieved.id, 777);
     EXPECT_EQ(total_copies, 0) << "Failure: Bounded queue copied the object instead of moving it!";
     EXPECT_GE(total_moves, 1) << "Failure: Object was not safely moved during pop().";
+}
+
+namespace {
+// Waits until \p count consumers are blocked inside a pop, so that the test does not rely on the consumer thread
+// having started within some sleep.
+bool wait_for_waiting_consumers(const thread_safe_bounded_queue<int>& queue, std::size_t count) {
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (queue.waiting_consumers() != count) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return true;
+}
+} // namespace
+
+/**
+ * @test WaitingConsumersExcludePoppedConsumer
+ * @brief emplace_tracked reports the consumers blocked inside a pop at the moment of the push. A consumer that has
+ * popped an element is no longer counted even before it returns to its caller, and a consumer whose timed pop has
+ * expired is no longer counted either.
+ */
+TEST(ThreadSafeBoundedQueueTest, WaitingConsumersExcludePoppedConsumer) {
+    thread_safe_bounded_queue<int> queue;
+
+    // no consumer: nothing waits
+    EXPECT_EQ(queue.emplace_tracked(1).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value(), 1);
+
+    // a consumer blocked in wait_and_pop is counted
+    std::promise<void> popped;
+    auto popped_future = popped.get_future();
+    std::thread consumer([&queue, &popped] {
+        (void)queue.wait_and_pop();
+        popped.set_value();
+    });
+    ASSERT_TRUE(wait_for_waiting_consumers(queue, 1));
+    auto pushed = queue.emplace_tracked(2);
+    EXPECT_EQ(pushed.size, 1u);
+    EXPECT_EQ(pushed.waiting_consumers, 1u);
+    popped_future.wait();
+    consumer.join();
+
+    // a consumer that has popped and is busy with the element is not counted: the next push reports that its
+    // element has nobody waiting for it
+    EXPECT_EQ(queue.waiting_consumers(), 0u);
+    EXPECT_EQ(queue.emplace_tracked(3).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value(), 3);
+
+    // a consumer in a timed pop is counted while it waits
+    std::thread timed_consumer([&queue] { EXPECT_EQ(queue.try_pop(2s).value(), 4); });
+    ASSERT_TRUE(wait_for_waiting_consumers(queue, 1));
+    pushed = queue.emplace_tracked(4);
+    EXPECT_EQ(pushed.waiting_consumers, 1u);
+    timed_consumer.join();
+
+    // and not after its timeout expired
+    std::thread expired_consumer([&queue] { EXPECT_FALSE(queue.try_pop(20ms).has_value()); });
+    expired_consumer.join();
+    EXPECT_EQ(queue.waiting_consumers(), 0u);
+    EXPECT_EQ(queue.emplace_tracked(5).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value(), 5);
 }
