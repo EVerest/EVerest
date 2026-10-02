@@ -21,7 +21,7 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
     for (const auto& [component, variable_map] : device_model_map) {
         for (const auto& [variable, variable_meta] : variable_map) {
             // Note: Source should not be optional, should be changed in libocpp
-            const auto source = variable_meta.source.value_or(VARIABLE_SOURCE_OCPP);
+            const auto source = variable_meta.owner.value_or(VARIABLE_SOURCE_OCPP);
 
             // On overlap, the storage registered last takes precedence. The integrator is responsible for
             // avoiding overlaps.
@@ -115,17 +115,6 @@ bool ComposedDeviceModelStorage::update_monitoring_reference(const int32_t monit
         ->update_monitoring_reference(monitor_id, reference_value);
 }
 
-std::vector<ocpp::v2::VariableMonitoringMeta>
-ComposedDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                                                const ocpp::v2::Component& component_id,
-                                                const ocpp::v2::Variable& variable_id) {
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
-        return {};
-    }
-    return this->device_model_storages.at(variable_source)->get_monitoring_data(criteria, component_id, variable_id);
-}
-
 ocpp::v2::ClearMonitoringStatusEnum ComposedDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                        bool allow_protected) {
     if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
@@ -141,6 +130,44 @@ int32_t ComposedDeviceModelStorage::clear_custom_variable_monitors() {
         return 0;
     }
     return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->clear_custom_variable_monitors();
+}
+
+// Monitors and stored values are keyed by name and need no row in the component tables, so they all live in
+// the OCPP storage, whichever storage holds the variable.
+std::vector<ocpp::v2::StoredMonitor> ComposedDeviceModelStorage::get_all_monitors() {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot read monitors";
+        return {};
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->get_all_monitors();
+}
+
+std::vector<ocpp::v2::StoredVariableValue> ComposedDeviceModelStorage::get_stored_values() {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot read stored values";
+        return {};
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->get_stored_values();
+}
+
+ocpp::v2::SetVariableStatusEnum
+ComposedDeviceModelStorage::set_stored_value(const ocpp::v2::StoredVariableValue& value) {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot store a value";
+        return ocpp::v2::SetVariableStatusEnum::Rejected;
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->set_stored_value(value);
+}
+
+bool ComposedDeviceModelStorage::remove_stored_value(const ocpp::v2::Component& component,
+                                                     const ocpp::v2::Variable& variable,
+                                                     const ocpp::v2::AttributeEnum& attribute_enum) {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot remove a stored value";
+        return false;
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)
+        ->remove_stored_value(component, variable, attribute_enum);
 }
 
 void ComposedDeviceModelStorage::check_integrity() {

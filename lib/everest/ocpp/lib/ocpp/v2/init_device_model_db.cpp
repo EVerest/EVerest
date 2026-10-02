@@ -478,9 +478,8 @@ void InitDeviceModelDb::update_variable_characteristics(const VariableCharacteri
 }
 
 void InitDeviceModelDb::insert_variable(const DeviceModelVariable& variable, const std::uint64_t& component_id) {
-    static const std::string statement =
-        "INSERT OR REPLACE INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES "
-        "(@name, @instance, @component_id, @source)";
+    static const std::string statement = "INSERT OR REPLACE INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID) VALUES "
+                                         "(@name, @instance, @component_id)";
 
     std::unique_ptr<StatementInterface> insert_variable_statement;
     try {
@@ -496,12 +495,6 @@ void InitDeviceModelDb::insert_variable(const DeviceModelVariable& variable, con
         insert_variable_statement->bind_text("@instance", variable.instance.value(), SQLiteString::Transient);
     } else {
         insert_variable_statement->bind_null("@instance");
-    }
-
-    if (variable.source.has_value()) {
-        insert_variable_statement->bind_text("@source", variable.source.value());
-    } else {
-        insert_variable_statement->bind_null("@source");
     }
 
     if (insert_variable_statement->step() != SQLITE_DONE) {
@@ -524,8 +517,7 @@ void InitDeviceModelDb::update_variable(const DeviceModelVariable& variable, con
     }
 
     static const std::string update_variable_statement =
-        "UPDATE VARIABLE SET NAME=@name, INSTANCE=@instance, COMPONENT_ID=@component_id, "
-        "SOURCE=@source WHERE ID=@variable_id";
+        "UPDATE VARIABLE SET NAME=@name, INSTANCE=@instance, COMPONENT_ID=@component_id WHERE ID=@variable_id";
 
     std::unique_ptr<StatementInterface> update_statement;
     try {
@@ -542,12 +534,6 @@ void InitDeviceModelDb::update_variable(const DeviceModelVariable& variable, con
         update_statement->bind_text("@instance", variable.instance.value(), SQLiteString::Transient);
     } else {
         update_statement->bind_null("@instance");
-    }
-
-    if (variable.source.has_value()) {
-        update_statement->bind_text("@source", variable.source.value(), SQLiteString::Transient);
-    } else {
-        update_statement->bind_null("@source");
     }
 
     if (update_statement->step() != SQLITE_DONE) {
@@ -578,6 +564,8 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
         EVLOG_error << "Can not remove variable " << variable.name << " from db: id unknown";
         return;
     }
+
+    delete_configured_monitors("v.ID = @id", variable.db_id.value());
 
     static const std::string delete_variable_statement = "DELETE FROM VARIABLE WHERE ID=@variable_id";
 
@@ -802,28 +790,30 @@ bool InitDeviceModelDb::insert_variable_attribute_value(const std::int64_t& vari
 void InitDeviceModelDb::insert_variable_monitor(const VariableMonitoringMeta& monitor,
                                                 const std::int64_t& variable_id) {
     const std::string insert_statement =
-        "INSERT OR REPLACE INTO VARIABLE_MONITORING (VARIABLE_ID, SEVERITY, 'TRANSACTION', TYPE_ID, "
-        "CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        "INSERT INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, "
+        "VARIABLE_INSTANCE, OWNER, SEVERITY, 'TRANSACTION', TYPE_ID, CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
+        "SELECT c.NAME, IFNULL(c.INSTANCE, ''), IFNULL(c.EVSE_ID, 0), IFNULL(c.CONNECTOR_ID, 0), v.NAME, "
+        "IFNULL(v.INSTANCE, ''), NULL, ?, ?, ?, ?, ?, ? "
+        "FROM VARIABLE v JOIN COMPONENT c ON c.ID = v.COMPONENT_ID WHERE v.ID = ?";
 
     auto insert_stmt = this->database->new_statement(insert_statement);
 
-    insert_stmt->bind_int(1, clamp_to<int>(variable_id));
-    insert_stmt->bind_int(2, monitor.monitor.severity);
-    insert_stmt->bind_int(3, static_cast<int>(monitor.monitor.transaction));
-    insert_stmt->bind_int(4, static_cast<int>(monitor.monitor.type));
-    insert_stmt->bind_int(5, static_cast<int>(monitor.type));
-    insert_stmt->bind_double(6, monitor.monitor.value);
+    insert_stmt->bind_int(1, monitor.monitor.severity);
+    insert_stmt->bind_int(2, static_cast<int>(monitor.monitor.transaction));
+    insert_stmt->bind_int(3, static_cast<int>(monitor.monitor.type));
+    insert_stmt->bind_int(4, static_cast<int>(monitor.type));
+    insert_stmt->bind_double(5, monitor.monitor.value);
 
     if (monitor.monitor.type == MonitorEnum::Delta && !monitor.reference_value.has_value()) {
         throw InitDeviceModelDbError("Delta monitors must have a reference value set:" + std::to_string(variable_id));
     }
 
     if (monitor.reference_value.has_value()) {
-        insert_stmt->bind_text(7, monitor.reference_value.value(), SQLiteString::Transient);
+        insert_stmt->bind_text(6, monitor.reference_value.value(), SQLiteString::Transient);
     } else {
-        insert_stmt->bind_null(7);
+        insert_stmt->bind_null(6);
     }
+    insert_stmt->bind_int(7, clamp_to<int>(variable_id));
 
     if (insert_stmt->step() != SQLITE_DONE) {
         throw InitDeviceModelDbError("Can not insert monitor for variable id:" + std::to_string(variable_id));
@@ -921,6 +911,28 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
         throw InitDeviceModelDbError("Delete monitor error: " + std::string(e.what()));
     }
 }
+
+void InitDeviceModelDb::delete_configured_monitors(const std::string& variable_condition, const std::uint64_t id) {
+    const std::string delete_query =
+        "DELETE FROM VARIABLE_MONITORING WHERE CONFIG_TYPE_ID != @custom AND ID IN (SELECT vm.ID FROM "
+        "VARIABLE_MONITORING vm JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME AND "
+        "IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND "
+        "c.NAME = vm.COMPONENT_NAME AND IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE AND "
+        "IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID WHERE " +
+        variable_condition + ")";
+    try {
+        auto delete_stmt = this->database->new_statement(delete_query);
+        delete_stmt->bind_int("@custom", static_cast<int>(VariableMonitorType::CustomMonitor));
+        delete_stmt->bind_int("@id", static_cast<int>(id));
+        if (delete_stmt->step() != SQLITE_DONE) {
+            throw InitDeviceModelDbError("Can not delete monitors: " +
+                                         std::string(this->database->get_error_message()));
+        }
+    } catch (const QueryExecutionException& e) {
+        throw InitDeviceModelDbError("Delete monitors error: " + std::string(e.what()));
+    }
+}
+
 std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_all_components_from_db() {
     /* clang-format off */
     const std::string statement =
@@ -928,8 +940,7 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
             "c.ID, c.NAME, c.INSTANCE, c.EVSE_ID, c.CONNECTOR_ID, "
             "v.ID, v.NAME, v.INSTANCE, "
             "vc.ID, vc.DATATYPE_ID, vc.MAX_LIMIT, vc.MIN_LIMIT, vc.SUPPORTS_MONITORING, vc.UNIT, vc.VALUES_LIST, "
-            "va.ID, va.MUTABILITY_ID, va.PERSISTENT, va.CONSTANT, va.TYPE_ID, va.VALUE, va.VALUE_SOURCE,"
-            "v.SOURCE "
+            "va.ID, va.MUTABILITY_ID, va.PERSISTENT, va.CONSTANT, va.TYPE_ID, va.VALUE, va.VALUE_SOURCE "
         "FROM "
             "COMPONENT c "
             "JOIN VARIABLE v ON v.COMPONENT_ID = c.ID "
@@ -1016,14 +1027,6 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
         }
         attribute.variable_attribute.value = select_statement->column_text_nullable(20);
         attribute.value_source = select_statement->column_text_nullable(21);
-
-        if (select_statement->column_type(22) != SQLITE_NULL) {
-            try {
-                variable->source = select_statement->column_text(22);
-            } catch (const std::out_of_range& e) {
-                EVLOG_error << e.what() << ": Variable Source will not be set (so default will be used)";
-            }
-        }
 
         variable->attributes.push_back(attribute);
 
@@ -1120,6 +1123,8 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
         EVLOG_error << "Can not delete component " << component.name << ": no id given";
         return false;
     }
+
+    delete_configured_monitors("c.ID = @id", component.db_id.value());
 
     delete_statement->bind_int("@component_id", static_cast<int>(component.db_id.value()));
 
@@ -1224,7 +1229,11 @@ std::vector<VariableMonitoringMeta> InitDeviceModelDb::get_variable_monitors_fro
     const std::string select_query =
         "SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, vm.REFERENCE_VALUE "
         "FROM VARIABLE_MONITORING vm "
-        "WHERE vm.VARIABLE_ID = @variable_id";
+        "JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME AND IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE "
+        "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND c.NAME = vm.COMPONENT_NAME AND "
+        "IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE AND IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND "
+        "IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID "
+        "WHERE v.ID = @variable_id";
 
     auto select_stmt = this->database->new_statement(select_query);
     select_stmt->bind_int(1, clamp_to<int>(variable_id));
@@ -1341,10 +1350,6 @@ void from_json(const json& j, DeviceModelVariable& c) {
         // I want the default value as string here as it is stored in the db as a string as well.
         const json& default_value = j.at(DEFAULT_SOURCE);
         c.default_actual_value = get_string_value_from_json(default_value);
-    }
-
-    if (j.contains("source")) {
-        c.source = j.at("source");
     }
 
     if (j.contains("monitors")) {

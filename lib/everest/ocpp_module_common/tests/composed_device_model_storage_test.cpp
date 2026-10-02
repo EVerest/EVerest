@@ -83,12 +83,6 @@ public:
         return false;
     }
 
-    std::vector<ocpp::v2::VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>&, const ocpp::v2::Component&,
-                        const ocpp::v2::Variable&) override {
-        return {};
-    }
-
     ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int, bool) override {
         return ocpp::v2::ClearMonitoringStatusEnum::NotFound;
     }
@@ -97,11 +91,26 @@ public:
         return 0;
     }
 
+    std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override {
+        return this->monitors;
+    }
+
+    std::vector<ocpp::v2::StoredVariableValue> get_stored_values() override {
+        return this->stored_values;
+    }
+
+    ocpp::v2::SetVariableStatusEnum set_stored_value(const ocpp::v2::StoredVariableValue& value) override {
+        this->stored_values.push_back(value);
+        return ocpp::v2::SetVariableStatusEnum::Accepted;
+    }
+
     void check_integrity() override {
     }
 
     ocpp::v2::DeviceModelMap device_model_map;
     std::string attribute_value;
+    std::vector<ocpp::v2::StoredMonitor> monitors;
+    std::vector<ocpp::v2::StoredVariableValue> stored_values;
     std::optional<std::string> last_set_component;
     std::optional<std::string> last_set_variable;
     std::optional<std::string> last_set_value;
@@ -111,7 +120,7 @@ ocpp::v2::VariableMetaData make_meta(const std::optional<std::string>& source) {
     ocpp::v2::VariableMetaData meta;
     meta.characteristics.dataType = ocpp::v2::DataEnum::string;
     meta.characteristics.supportsMonitoring = false;
-    meta.source = source;
+    meta.owner = source;
     return meta;
 }
 
@@ -191,7 +200,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, OverlappingVariablePrefersEverestS
     EXPECT_EQ(evse_it->second.size(), 2u);
     ASSERT_NE(evse_it->second.find(make_variable("AllowReset")), evse_it->second.end());
     ASSERT_NE(evse_it->second.find(make_variable("Power")), evse_it->second.end());
-    EXPECT_EQ(evse_it->second.at(make_variable("Power")).source, "EVEREST");
+    EXPECT_EQ(evse_it->second.at(make_variable("Power")).owner, "EVEREST");
 
     // Reads and writes of the overlapping variable go to the EVerest storage.
     const auto power = composed->get_variable_attribute(make_component("EVSE"), make_variable("Power"),
@@ -212,6 +221,36 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, OverlappingVariablePrefersEverestS
     ASSERT_TRUE(allow_reset.has_value());
     ASSERT_TRUE(allow_reset->value.has_value());
     EXPECT_EQ(allow_reset->value.value().get(), "ocpp-value");
+}
+
+// Monitors and stored values are keyed by name, so they live in the OCPP storage whichever storage holds the variable
+TEST_F(ComposedDeviceModelStorageFactoryTest, MonitorsAndStoredValuesLiveInTheOcppStorage) {
+    ocpp::v2::StoredMonitor ocpp_monitor;
+    ocpp_monitor.component = make_component("ConnectedEV");
+    ocpp_monitor.variable = make_variable("VehicleId");
+    ocpp_monitor.monitor.monitor.id = 7;
+    ocpp_storage->monitors.push_back(ocpp_monitor);
+    ocpp::v2::StoredMonitor everest_monitor = ocpp_monitor;
+    everest_monitor.monitor.monitor.id = 8;
+    everest_storage->monitors.push_back(everest_monitor);
+
+    const auto composed = make_composed_device_model_storage(ocpp_storage, everest_storage);
+
+    const auto monitors = composed->get_all_monitors();
+    ASSERT_EQ(monitors.size(), 1);
+    EXPECT_EQ(monitors.at(0).monitor.monitor.id, 7);
+
+    const ocpp::v2::StoredVariableValue value{make_component("ConnectedEV"),
+                                              make_variable("VehicleId"),
+                                              ocpp::v2::AttributeEnum::Actual,
+                                              "WMI999",
+                                              "csms",
+                                              "EVEREST"};
+    EXPECT_EQ(composed->set_stored_value(value), ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(ocpp_storage->stored_values.size(), 1);
+    EXPECT_TRUE(everest_storage->stored_values.empty());
+    ASSERT_EQ(composed->get_stored_values().size(), 1);
+    EXPECT_EQ(composed->get_stored_values().at(0).value, "WMI999");
 }
 
 TEST_F(ComposedDeviceModelStorageFactoryTest, NullOcppStorageThrows) {

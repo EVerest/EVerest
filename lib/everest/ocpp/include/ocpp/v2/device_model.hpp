@@ -58,9 +58,9 @@ private:
                                                  const AttributeEnum& attribute_enum, std::string& value,
                                                  bool allow_write_only, UnsetValue unset_value) const;
 
-    /// \brief The attribute of a variable with its current value. A variable with a source is held by the storage of
-    /// that source, which changes its value without DeviceModel, so its value is read from the storage and every
-    /// write goes to the storage.
+    /// \brief The attribute of a variable with its current value. A variable with an owner other than OCPP is held by
+    /// the storage of that owner, which changes its value without DeviceModel, so its value is read from the storage
+    /// and every write goes to the storage.
     std::optional<VariableAttribute> read_attribute(const Component& component, const Variable& variable,
                                                     const VariableMetaData& meta_data,
                                                     const AttributeEnum& attribute_enum) const;
