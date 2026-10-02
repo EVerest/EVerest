@@ -65,7 +65,11 @@ private:
     void parse_header();
 
     State state{State::BUFFER_EMPTY};
-    uint8_t buffer[2048];
+    // An ISO 15118-2 CertificateInstallationRes carries six certificates plus the encrypted
+    // contract key, the DH public key, the eMAID and the XML signature, and does not fit in
+    // 2048 bytes. 8192 is what EvseV2G serves the same protocol with (DEFAULT_BUFFER_SIZE),
+    // and what the EV side already allows itself outbound (ev::MessageExchange, ev::d2::crypto).
+    uint8_t buffer[8192];
     size_t bytes_read{0};
     size_t length; // length includes V2GTP_HEADER_SIZE
 };
