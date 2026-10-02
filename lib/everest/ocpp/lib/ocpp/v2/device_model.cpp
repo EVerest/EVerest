@@ -731,15 +731,14 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
     {
         std::lock_guard<std::recursive_mutex> lock(this->mutex);
         owner = this->runtime_owner(component, variable);
-        if (owner.has_value() and owner.value() != VARIABLE_SOURCE_OCPP_RUNTIME) {
-            EVLOG_debug << "Not setting " << component << "." << variable << ": it is owned by source "
-                        << owner.value();
-            return SetVariableStatusEnum::Rejected;
-        }
+    }
+    if (owner.has_value() and owner.value() != VARIABLE_SOURCE_OCPP_RUNTIME) {
+        EVLOG_debug << "Not setting " << component << "." << variable << ": it is owned by source " << owner.value();
+        return SetVariableStatusEnum::Rejected;
     }
     // The lock is released before set_value: holding the recursive mutex here would keep it owned while set_value
     // invokes the listeners.
-    if (allow_set_read_only_value(component, variable, attribute_enum)) {
+    if (owner.has_value() or allow_set_read_only_value(component, variable, attribute_enum)) {
         return this->set_value(component, variable, attribute_enum, value, source, /*allow_read_only=*/true,
                                /*allow_registered=*/owner.has_value());
     }
@@ -842,7 +841,10 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& sourc
     const auto config_it = this->component_config.find(component);
     const bool overrides_component_config =
         config_it != this->component_config.end() and config_it->second.count(variable) != 0;
-    if (overrides_component_config) {
+    if (overrides_component_config and source == VARIABLE_SOURCE_OCPP_RUNTIME) {
+        EVLOG_debug << "The component config defines " << component << "." << variable
+                    << ", which libocpp registers: the registration overrides the component config";
+    } else if (overrides_component_config) {
         EVLOG_warning << "The component config defines " << component << "." << variable << ", which source " << source
                       << " registers: the registration overrides the component config";
     }

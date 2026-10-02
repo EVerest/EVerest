@@ -11,11 +11,15 @@ namespace ocpp {
 namespace v2 {
 
 namespace {
-/// \brief The EVSEs and connectors that runtime sources registered
+/// \brief The EVSEs and connectors that sources other than OCPP_RUNTIME registered. libocpp registers variables on
+/// EVSEs and connectors that exist already, so its registrations do not decide which exist.
 class RegisteredStructure {
 public:
     explicit RegisteredStructure(const std::map<std::string, Registration>& registrations) {
         for (const auto& [source, registration] : registrations) {
+            if (source == VARIABLE_SOURCE_OCPP_RUNTIME) {
+                continue;
+            }
             for (const auto& [component, variables] : registration.variables) {
                 if (!component.evse.has_value()) {
                     continue;

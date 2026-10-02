@@ -113,4 +113,13 @@ TEST_F(DeviceModelCompositionTest, component_config_of_unregistered_evses_and_co
     }
 }
 
+TEST_F(DeviceModelCompositionTest, ocpp_runtime_registrations_do_not_decide_which_evses_exist) {
+    this->register_variable(VARIABLE_SOURCE_OCPP_RUNTIME, this->evse_1, this->power);
+
+    const auto composition = compose_device_model(this->component_config, this->registrations);
+
+    EXPECT_TRUE(composition.hidden.empty());
+    EXPECT_NE(find(composition.model, this->evse_2, this->enabled), nullptr);
+}
+
 } // namespace ocpp::v2

@@ -22,6 +22,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_device_model_registry.cpp
         test_device_model_monitors_across_boots.cpp
         test_device_model_stored_values.cpp
+        test_availability_state_registration.cpp
         test_init_device_model_db.cpp
         test_network_config_sync.cpp
         comparators.cpp

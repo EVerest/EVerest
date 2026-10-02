@@ -40,8 +40,8 @@ struct Composition {
 };
 
 /// \brief Composes the model that the CSMS sees. A registered variable replaces the variable of the same name from the
-/// component config. Once a runtime source registered an EVSE or connector, variables of the component config on
-/// EVSEs and connectors that no runtime source registered are left out. The result points into both arguments
+/// component config. Once a source other than OCPP_RUNTIME registered an EVSE or connector, variables of the component
+/// config on EVSEs and connectors that no such source registered are left out. The result points into both arguments
 /// and is valid until one of them changes.
 Composition compose_device_model(DeviceModelMap& component_config, std::map<std::string, Registration>& registrations);
 

@@ -73,6 +73,7 @@ if(LIBOCPP_ENABLE_V2)
     target_sources(ocpp
         PRIVATE
             ocpp/v2/average_meter_values.cpp
+            ocpp/v2/availability_state_registration.cpp
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
             ocpp/v2/connector.cpp

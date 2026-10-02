@@ -98,8 +98,8 @@ a registration is held in memory and repeated at every start. The rules:
 
 - Every variable has one owner. A variable that another runtime source registered already is rejected.
 - A registered variable overrides a variable of the same name from the component config, with a warning; the
-  component config variable returns when the source unregisters. Once EVSE or Connector components are registered,
-  the component config of other EVSEs and connectors is hidden.
+  component config variable returns when the source unregisters. Once a source other than `OCPP_RUNTIME` registers EVSE
+  or Connector components, the component config of other EVSEs and connectors is hidden.
 - A source may register a `VariableValueProvider`, which receives the validated writes to its variables and keeps
   their values. Without a provider, the owner reports its values with `notify_value_changed`, and `DeviceModel`
   stores the values of persistent attributes by name key.
@@ -113,6 +113,13 @@ a registration is held in memory and repeated at every start. The rules:
 - A write from the local channel (`set_value` with `allow_read_only`, which `ChargePoint::set_variables` uses)
   reaches the component config only. A registered variable is rejected there whatever its mutability: its owner or
   the CSMS change it.
+
+The `AvailabilityState` of the charging station, the EVSEs and the connectors is registered under `OCPP_RUNTIME`,
+which does not hide anything, by the code that creates the `DeviceModel`, before it constructs the `ChargePoint`: the
+`ChargePoint` constructor that takes a storage does so through `create_device_model_with_availability_states`, a
+caller that builds the `DeviceModel` itself calls `register_availability_states`. The component config defines them
+as well, for a `DeviceModel` built without that call; the registration overrides it. The `ChargePoint` only checks
+that they are defined.
 
 ## Required variables
 
