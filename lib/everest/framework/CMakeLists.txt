@@ -236,8 +236,13 @@ endif()
 
 # FIXME (aw): should this be installed or not?  Right now it is needed for the
 #             current packaging approach
+if (EVEREST_CORE_BUILD AND DISABLE_EDM)
+    set(FRAMEWORK_EXPORT_TARGETS everest-core-targets)
+else()
+    set(FRAMEWORK_EXPORT_TARGETS framework-targets)
+endif()
 install(TARGETS framework
-    EXPORT framework-targets
+    EXPORT ${FRAMEWORK_EXPORT_TARGETS}
     LIBRARY
 )
 
@@ -253,21 +258,23 @@ if (FRAMEWORK_INSTALL)
         DESTINATION include/everest
     )
 
-    evc_setup_package(
-        NAME everest-framework
-        EXPORT framework-targets
-        NAMESPACE everest
-        ADDITIONAL_CONTENT
-            "find_dependency(everest-helpers)"
-            "find_dependency(everest-util)"
-            "find_dependency(nlohmann_json)"
-            "find_dependency(nlohmann_json_schema_validator)"
-            "find_dependency(fmt)"
-            "find_dependency(date)"
-            "set(EVEREST_SCHEMA_DIR \"@PACKAGE_EVEREST_SCHEMA_DIR@\")"
-        PATH_VARS
-            EVEREST_SCHEMA_DIR "${CMAKE_INSTALL_DATADIR}/everest/schemas"
-    )
+    if (NOT EVEREST_CORE_BUILD)
+        evc_setup_package(
+            NAME everest-framework
+            EXPORT framework-targets
+            NAMESPACE everest
+            ADDITIONAL_CONTENT
+                "find_dependency(everest-helpers)"
+                "find_dependency(everest-util)"
+                "find_dependency(nlohmann_json)"
+                "find_dependency(nlohmann_json_schema_validator)"
+                "find_dependency(fmt)"
+                "find_dependency(date)"
+                "set(EVEREST_SCHEMA_DIR \"@PACKAGE_EVEREST_SCHEMA_DIR@\")"
+            PATH_VARS
+                EVEREST_SCHEMA_DIR "${CMAKE_INSTALL_DATADIR}/everest/schemas"
+        )
+    endif()
 endif ()
 
 # testing
