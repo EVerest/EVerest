@@ -717,10 +717,10 @@ SCENARIO("ISO15118-2 EV Session re-arms a dropped frame with the configured resp
     }
 }
 
-// switch_engine emplaces into the engine variant, so its failure arm runs with the previous engine
-// already destroyed. It has to wind the session down rather than leave it hanging, and neither it
-// nor the finish check may throw on the way out.
-SCENARIO("ISO15118-2 EV Session finishes when the SECC selects a protocol with no engine") {
+// switch_engine emplaces into the engine variant, so the old engine is destroyed before the new one
+// exists. Every protocol the SAP offer carries has an engine, so what this pins is that the handover
+// completes and the session goes on driving the generation the SECC chose.
+SCENARIO("EV Session hands over to the DIN SPEC 70121 engine the SECC selected") {
     GIVEN("a Session offering ISO 15118-20, ISO 15118-2 and DIN SPEC 70121") {
         auto fx = make_fixture({ProtocolId::ISO15118_20, ProtocolId::ISO15118_2, ProtocolId::DIN70121}, walk_params(),
                                message_20::datatypes::ServiceCategory::DC);
@@ -728,14 +728,15 @@ SCENARIO("ISO15118-2 EV Session finishes when the SECC selects a protocol with n
         REQUIRE(run_reactor_until(
             fx->reactor, [&]() { return fx->captured.size() >= 1; }, 1s));
 
-        WHEN("the SECC picks the DIN SPEC 70121 schema id, which this build has no engine for") {
+        WHEN("the SECC picks the DIN SPEC 70121 schema id") {
             const auto before = fx->captured.size();
             fx->session.on_bytes_received(frame_payload(PT::SAP, serialize_msg(sap_response(3))));
 
-            THEN("the session finishes instead of hanging, and sends nothing further") {
+            THEN("the session switches engine and sends the DIN SessionSetupReq rather than finishing") {
+                REQUIRE(fx->selected_protocol == ProtocolId::DIN70121);
                 REQUIRE(run_reactor_until(
-                    fx->reactor, [&]() { return fx->session.is_finished(); }, 1s));
-                REQUIRE(fx->captured.size() == before);
+                    fx->reactor, [&]() { return fx->captured.size() > before; }, 1s));
+                REQUIRE_FALSE(fx->session.is_finished());
             }
         }
     }
