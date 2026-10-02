@@ -72,6 +72,28 @@ public:
         int duration;
     };
 
+    struct SetupConfig {
+        bool has_ventilation{false};
+        ChargeMode charge_mode{ChargeMode::AC};
+        bool ac_hlc_enabled{false};
+        bool ac_hlc_use_5percent{false};
+        bool ac_enforce_hlc{false};
+        bool ac_with_soc_timeout{false};
+        float soft_over_current_tolerance_percent{0};
+        float soft_over_current_measurement_noise_A{0};
+        int switch_3ph1ph_delay_s{0};
+        std::string switch_3ph1ph_cp_state{};
+        int soft_over_current_timeout_ms{0};
+        int state_F_after_fault_ms{0};
+        int reinit_duration_ms{0};
+        std::string reinit_method{};
+        bool fail_on_powermeter_errors{false};
+        bool raise_mrec9{false};
+        int sleep_before_enabling_pwm_hlc_mode_ms{0};
+        utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
+        int hlc_charge_loop_without_energy_timeout_s{0};
+    };
+
     enum class EvseState {
         Disabled,
         Idle,
@@ -106,14 +128,7 @@ public:
 
     sigslot::signal<float> signal_max_current;
 
-    void setup(bool has_ventilation, const ChargeMode charge_mode, bool ac_hlc_enabled, bool ac_hlc_use_5percent,
-               bool ac_enforce_hlc, bool ac_with_soc_timeout, float soft_over_current_tolerance_percent,
-               float soft_over_current_measurement_noise_A, const int switch_3ph1ph_delay_s,
-               const std::string switch_3ph1ph_cp_state, const int soft_over_current_timeout_ms,
-               const int _state_F_after_fault_ms, const int reinit_duration_ms, const std::string& reinit_method,
-               const bool fail_on_powermeter_errors, const bool raise_mrec9,
-               const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-               const int hlc_charge_loop_without_energy_timeout_s);
+    void setup(const SetupConfig& config);
 
     void enable_disable_initial_state_publish();
     bool enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source);
