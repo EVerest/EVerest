@@ -87,7 +87,7 @@ runs before the core is constructed. `resolve_boot_source()` is unit-tested in
 | `reinitialize_from_db(force_reload)` | reloads the marked slot; **not** part of `ConfigServiceInterface` |
 | `set_modules_at_rest()` | settles a transitional status while deliberately preserving a recorded `FailedToStart` |
 | `register_set_runtime_parameter_handler(cb)` | installs the runtime-parameter forwarder |
-| `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above |
+| `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above. `register_config_update_handler` returns a function that unregisters `cb` |
 
 Manager wiring, in `src/manager.cpp`: the `UserConfigStorage` persistence mirror is created for
 `BootMode::YamlWithInMemoryDb`, then `ConfigServiceCore`, then
@@ -102,8 +102,12 @@ when the round trip returns nothing. Lifecycle status is pushed in via
 `GetRequest` / `GetResponse` and `SetRequest` / `SetResponse` on the shared request topic
 `{everest_prefix}config/request`; the manager forwards a runtime change to the target module on
 `{everest_prefix}modules/{module_id}/config/set_request` and reads the verdict from
-`{everest_prefix}modules/{module_id}/config/set_response`. All at QOS2. Payload structures are in
-[MQTT Communication](MQTTCommunication.md).
+`{everest_prefix}modules/{module_id}/config/set_response`. Accepted changes of the active slot are announced
+on `{everest_prefix}modules/{module_id}/config/updates` to every module that may read the changed module, except the
+module that requested the change (`publish_config_update_notifications()` in `lib/mqtt_config_service.cpp`;
+`ConfigServiceClient::register_config_update_handler()` on the receiving side, which refuses modules the access
+rules do not allow reading). All at QOS2. Payload structures are
+in [MQTT Communication](MQTTCommunication.md).
 
 Modules reach this through `ConfigServiceClient`; read requests are answered by
 `MqttConfigServiceHandler` from the `ConfigServiceCore` snapshot, writes are forwarded to

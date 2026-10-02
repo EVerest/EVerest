@@ -393,3 +393,54 @@ returned to the calling module, with an explanation carrying the reason, for
 example the module's runtime veto.
 
 .. mermaid:: images/config_service_write_module.mmd
+
+.. _exp-configuration-service-change-notifications:
+
+**************************************
+Change Notifications for Other Modules
+**************************************
+
+A module can follow the configuration of another module, for example to mirror
+some of its parameters. It registers a handler for that module with the
+framework's configuration service client:
+
+.. code-block:: cpp
+
+    get_config_service_client()->register_config_update_handler(
+        "auth", [](const Everest::config::ConfigUpdateNotification& notification) {
+            // notification.identifier, notification.value, notification.status, notification.origin
+        });
+
+The manager sends a notification for every parameter change of the active slot
+that the ConfigServiceCore accepted, whether it came from a Configuration API
+Client or from an EVerest module. ``status`` is ``Accepted`` if the target
+module applied the value at runtime, and ``RebootRequired`` if it applies on the
+next start. ``origin`` names the module that requested the change and is empty
+for changes from outside EVerest. Changes that were not persisted, and changes of
+inactive slots, are not sent.
+
+A notification reaches a module only if its access rules allow it to read the
+configuration of the changed module, through ``allow_read`` for that module or
+``allow_global_read``. The changed module itself is notified as well, so it can
+follow changes that others make to its own configuration:
+
+.. code-block:: yaml
+
+    active_modules:
+      ocpp:
+        module: OCPPmulti
+        access:
+          config:
+            modules:
+              auth:
+                allow_read: true
+
+Registering a handler for an unknown module, or for one the access rules do not
+allow reading, fails: ``register_config_update_handler`` logs a warning and
+returns ``std::nullopt`` instead of the function that unregisters the handler.
+
+The module that requested a change is not notified about it; it receives the
+result as the reply to its write request. Notifications are not retained, so a
+module reads the current values after registering its handler. The handler runs
+on the module's MQTT dispatch thread, and notifications for one module arrive in
+the order the changes were accepted.

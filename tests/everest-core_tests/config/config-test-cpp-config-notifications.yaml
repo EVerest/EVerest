@@ -1,0 +1,21 @@
+active_modules:
+  test_config_target:
+    module: TestConfigTarget
+    config_module:
+      rw_param: "initial_value"
+      rw_reboot_param: "reboot_value"
+      rw_reject_param: "reject_value"
+      ro_param: "read_only_value"
+  observer_allowed:
+    module: TestConfigObserver
+    config_module:
+      observed_module_id: test_config_target
+    access:
+      config:
+        modules:
+          test_config_target:
+            allow_read: true
+  observer_denied:
+    module: TestConfigObserver
+    config_module:
+      observed_module_id: test_config_target
