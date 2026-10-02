@@ -142,13 +142,6 @@ if(Boost_VERSION_STRING VERSION_LESS "1.69.0")
     )
 endif()
 
-find_package(PkgConfig REQUIRED)
-pkg_check_modules(libcap
-    REQUIRED
-    IMPORTED_TARGET
-    libcap
-)
-
 # Make sure stdc++fs is linked for GCC < 9
 if (CMAKE_COMPILER_IS_GNUCC AND CMAKE_CXX_COMPILER_VERSION VERSION_LESS 9)
     set(STD_FILESYSTEM_COMPAT_LIB "stdc++fs")
