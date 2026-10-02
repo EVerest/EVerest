@@ -69,7 +69,8 @@ public:
     // Skip the SupportedAppProtocol handshake: the caller has already negotiated the protocol, so the
     // session starts directly on the -20 engine and expects a SessionSetupReq first.
     Session(std::unique_ptr<io::IConnection>, session::SessionConfig, const session::feedback::Callbacks&,
-            std::optional<d20::PauseContext>&, std::optional<d2::PauseContext>&, bool skip_app_protocol_negotiation);
+            std::optional<d20::PauseContext>&, std::optional<d2::PauseContext>&, bool skip_app_protocol_negotiation,
+            bool throttle_same_type_only = false);
     ~Session();
 
     TimePoint const& poll();
@@ -188,6 +189,8 @@ private:
     bool create_engine(const SapEngine::Negotiated&);
     void send_response();
 
+    bool throttle_same_type_only{false};
+    V2gMessageType last_response_type{message_20::Type::None};
     std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
     std::optional<TimePoint> last_request_rx_time;  // timestamp of the last request handed to the engine
     std::optional<TimePoint> response_send_after;   // time point when the next response message can be sent

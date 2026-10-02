@@ -35,8 +35,15 @@ public:
     void on_timeout(d20::TimeoutType);
 
     bool has_outgoing() const;
+    V2gMessageType peek_response_type() const {
+        return message_exchange.peek_response_type();
+    }
     std::optional<SeccOutgoing> take_outgoing();
 
+    // Includes a terminal response that is still pending on the wire.
+    bool is_stopping() const {
+        return ctx.session_stopped or ctx.session_paused;
+    }
     bool is_finished() const;
     bool is_paused() const;
     std::optional<session::feedback::SessionStopAction> pop_session_stop_res_pending();
