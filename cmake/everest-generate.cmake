@@ -315,52 +315,120 @@ if (EVEREST_ENABLE_RS_SUPPORT)
         message(STATUS "Creating rust workspace at ${RUST_WORKSPACE_DIR}")
     endif ()
 
-    # NOTE (aw): we could also write a small python script, which would do that for us
-    add_custom_command(OUTPUT ${RUST_WORKSPACE_CARGO_FILE}
-        COMMAND
-            echo "[workspace]" > Cargo.toml
-        COMMAND
-            echo "resolver = \"2\"" >> Cargo.toml
-        COMMAND
-            echo "members = [" >> Cargo.toml
-        COMMAND
-            echo "  \"$<JOIN:$<TARGET_PROPERTY:generate_rust,RUST_MODULE_LIST>,\", \">\"," >> Cargo.toml  # :)
-        COMMAND
-            echo "]" >> Cargo.toml && echo "" >> Cargo.toml
-        COMMAND
-            echo "[workspace.dependencies]" >> Cargo.toml
-        COMMAND
-            echo "everestrs = { path = \"$<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_DIR>\" }" >> Cargo.toml
-        COMMAND
-            echo "everestrs-build = { path = \"$<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_BUILD_DIR>\" }" >> Cargo.toml
-        WORKING_DIRECTORY
-            ${RUST_WORKSPACE_DIR}
-        VERBATIM
-        DEPENDS
-            ${RUST_WORKSPACE_DIR}
+    file(GENERATE
+        OUTPUT ${RUST_WORKSPACE_CARGO_FILE}
+        CONTENT
+"[workspace]
+# Resolver 3 picks versions the members' rust-version can still compile.
+resolver = \"3\"
+members = [
+  \"$<JOIN:$<TARGET_PROPERTY:generate_rust,RUST_MODULE_LIST>,\", \">\",
+]
+# The everestrs crates are members too, by way of the symlinks below. Only
+# the modules are built.
+default-members = [
+  \"$<JOIN:$<TARGET_PROPERTY:generate_rust,RUST_MODULE_LIST>,\", \">\",
+]
+
+[workspace.dependencies]
+everestrs = { path = \"everestrs\" }
+everestrs-build = { path = \"everestrs-build\" }
+everestrs-derive = { path = \"everestrs-derive\" }
+"
+    )
+
+    # Without a lock every fresh build resolves crates.io anew and can select
+    # versions the toolchain in use cannot compile. Build against the lock the
+    # Bazel build already pins, so both lanes ship the same crate versions.
+    configure_file(
+        ${CMAKE_CURRENT_SOURCE_DIR}/modules/Cargo.lock
+        ${RUST_WORKSPACE_DIR}/Cargo.lock
+        COPYONLY
     )
 
     # Put the resulting file in the top-level build directory so that it can be easily accessed without CMake
     set(RUST_LINK_DEPENDENCIES_FILE ${CMAKE_BINARY_DIR}/everestrs-link-dependencies.txt)
     set(RUST_LINK_DEPENDENCIES "$<TARGET_GENEX_EVAL:everest::everestrs_sys,$<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_LINK_DEPENDENCIES>>")
 
-    add_custom_command(OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-        COMMAND
-            echo -e $<LIST:JOIN,${RUST_LINK_DEPENDENCIES},\\n> > "${RUST_LINK_DEPENDENCIES_FILE}"
+    # Written with file(GENERATE) rather than a shell command: `echo -e` is not
+    # portable, dash prints the flag as data, and $<LIST:JOIN> needs CMake 3.27
+    # while the platform we build on ships 3.25.
+    file(GENERATE
+        OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
+        CONTENT "$<JOIN:${RUST_LINK_DEPENDENCIES},\n>\n"
     )
 
-    add_custom_target(generate_rust
-        DEPENDS
-            ${RUST_WORKSPACE_CARGO_FILE}
-            ${RUST_LINK_DEPENDENCIES_FILE}
-    )
+    # The workspace Cargo.toml and everestrs-link-dependencies.txt are both
+    # written at configure time, so they are inputs to cargo rather than
+    # build-time outputs; listing them as DEPENDS would turn a deleted file
+    # into a ninja error with no rule to recreate it.
+    add_custom_target(generate_rust)
+
+    # Cargo counts a path dependency living inside the workspace directory as
+    # a workspace member, and Cargo.lock is a lock over the member set.
+    # Symlinking the everestrs crates in, rather than pointing at them where
+    # they live, keeps the member set and the locked set identical, which is
+    # what lets `--locked` fail on a mismatch instead of cargo re-resolving.
+    foreach (crate IN ITEMS everestrs everestrs-build everestrs-derive)
+        add_custom_command(OUTPUT ${RUST_WORKSPACE_DIR}/${crate}
+            COMMAND
+                ${CMAKE_COMMAND} -E create_symlink
+                $<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_CRATES_DIR>/${crate} ${crate}
+            COMMENT
+                "Create symlink for rust crate ${crate}"
+            VERBATIM
+            WORKING_DIRECTORY
+                ${RUST_WORKSPACE_DIR}
+        )
+
+        list(APPEND RUST_CRATE_SYMLINKS ${RUST_WORKSPACE_DIR}/${crate})
+    endforeach ()
+
+    add_custom_target(rust_symlink_crates DEPENDS ${RUST_CRATE_SYMLINKS})
+    add_dependencies(generate_rust rust_symlink_crates)
 
     # Store the workspace directory as a target property so that it is accessible in different scopes
     set_property(TARGET generate_rust
         PROPERTY
             RUST_WORKSPACE_DIR "${RUST_WORKSPACE_DIR}"
+    )
+
+    set(EVEREST_RUST_BUILD_JOBS "" CACHE STRING
+        "Value for cargo's --jobs when building Rust modules; empty means cargo's default")
+
+    # A build that replaces a locked dependency with a [patch] in a cargo
+    # config, as Yocto's cargo_common does for git dependencies, must change
+    # that dependency's lock entries, which --locked refuses. Such a build
+    # owes the pinning another way, for example offline from crates vendored
+    # out of the same Cargo.lock.
+    option(EVEREST_RS_CARGO_LOCKED
+        "Pass --locked to cargo; OFF for builds that patch a locked dependency and pin versions another way"
+        ON)
+
+    # Runpath for installed Rust modules, relative to the module binary's own
+    # directory so that the install tree stays relocatable. Builder::generate
+    # adds the $ORIGIN, which ninja would otherwise expand as its own variable.
+    file(RELATIVE_PATH EVEREST_RUST_INSTALL_RPATH_REL
+        "/${CMAKE_INSTALL_LIBEXECDIR}/everest/modules/MODULE"
+        "/${CMAKE_INSTALL_LIBDIR}")
+
+    # The linker and job count live in the workspace's own config file rather
+    # than on the cargo command line, so that cargo run by hand in the workspace
+    # picks them up too.
+    file(GENERATE
+        OUTPUT ${RUST_WORKSPACE_DIR}/.cargo/config.toml
+        CONTENT
+"# Generated by CMake. Do not edit.
+# The linker must match the one used for C++ to avoid the following issue when
+# cross compiling: https://github.com/rust-lang/rust/issues/28924
+[target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>]
+linker = \"${CMAKE_CXX_COMPILER}\"
+$<$<BOOL:${EVEREST_RUST_BUILD_JOBS}>:
+# Ninja has no jobserver to hand down, so without this cargo runs one rustc per
+# core no matter what -j the surrounding build was given.
+[build]
+jobs = ${EVEREST_RUST_BUILD_JOBS}
+>"
     )
 
     # FIXME (aw): use generator expressions here, but this first needs to be fixed in the build.rs file ...
@@ -372,11 +440,11 @@ if (EVEREST_ENABLE_RS_SUPPORT)
             ${CMAKE_COMMAND} -E env
             EVEREST_CORE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
             EVEREST_RS_LINK_DEPENDENCIES="${RUST_LINK_DEPENDENCIES_FILE}"
+            EVEREST_RS_INSTALL_RPATH="${EVEREST_RUST_INSTALL_RPATH_REL}"
             ${CARGO_EXECUTABLE} build
-            $<IF:$<STREQUAL:$<CONFIG>,Release>,--release,>
-            # explicitly set the linker to match what we're using for C++ to avoid the following issue when cross compiling:
-            # https://github.com/rust-lang/rust/issues/28924
-            --config 'target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>.linker = \"${CMAKE_CXX_COMPILER}\"'
+            # Fail rather than re-resolve when a manifest and the lock disagree.
+            $<$<BOOL:${EVEREST_RS_CARGO_LOCKED}>:--locked>
+            $<$<CONFIG:Release,RelWithDebInfo,MinSizeRel>:--release>
             --target $<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>
         WORKING_DIRECTORY
             ${RUST_WORKSPACE_DIR}
@@ -389,7 +457,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     set_property(TARGET build_rust_modules
         APPEND
         PROPERTY
-            ADDITIONAL_CLEAN_FILES ${RUST_WORKSPACE_DIR}/target ${RUST_WORKSPACE_DIR}/Cargo.lock
+            ADDITIONAL_CLEAN_FILES ${RUST_WORKSPACE_DIR}/target
     )
 
     set_property(TARGET build_rust_modules
@@ -399,7 +467,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     )
 
     function (ev_add_rs_module MODULE_NAME)
-        if(NOT ${EVEREST_ENABLE_RS_SUPPORT})
+        if(NOT EVEREST_ENABLE_RS_SUPPORT)
             message(STATUS "Excluding Rust module ${MODULE_NAME} because EVEREST_ENABLE_RS_SUPPORT=${EVEREST_ENABLE_RS_SUPPORT}")
             return()
         elseif ("${MODULE_NAME}" IN_LIST EVEREST_EXCLUDE_MODULES)
@@ -412,8 +480,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
 
         set(MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/${MODULE_NAME}")
         if (NOT IS_DIRECTORY ${MODULE_PATH})
-            message(FATAL "Rust module ${MODULE_NAME} does not exist at ${MODULE_PATH}")
-            return()
+            message(FATAL_ERROR "Rust module ${MODULE_NAME} does not exist at ${MODULE_PATH}")
         endif ()
 
         message(STATUS "Setting up Rust module ${MODULE_NAME}")
@@ -444,15 +511,32 @@ if (EVEREST_ENABLE_RS_SUPPORT)
         add_dependencies(generate_rust rust_symlink_module_${MODULE_NAME})
 
         set(EVEREST_MODULE_INSTALL_PREFIX "${CMAKE_INSTALL_LIBEXECDIR}/everest/modules")
-        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<STREQUAL:$<CONFIG>,Release>,release,debug>")
+        # Derived from the same expression as --release above so that the flag and
+        # the directory cargo writes to cannot drift apart.
+        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<CONFIG:Release,RelWithDebInfo,MinSizeRel>,release,debug>")
 
         install(PROGRAMS ${RUST_WORKSPACE_DIR}/${BIN_PREFIX}/${MODULE_NAME}
             DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
         )
 
+        if (BUILD_TESTING)
+            add_test(
+                NAME rust_module_runpath_${MODULE_NAME}
+                COMMAND
+                    ${PROJECT_SOURCE_DIR}/cmake/lint/rust-module-runpath.sh
+                    ${RUST_WORKSPACE_DIR}/${BIN_PREFIX}/${MODULE_NAME}
+            )
+        endif ()
+
         # FIXME (aw): this should go into a general function for all add_module_* flavours
         install(FILES ${MODULE_PATH}/manifest.yaml
             DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+        )
+
+        set_property(
+            GLOBAL
+            APPEND
+            PROPERTY EVEREST_MODULES ${MODULE_NAME}
         )
     endfunction()
 
@@ -625,7 +709,8 @@ function (ev_add_module)
     string(FIND ${MODULE_NAME} "Rs" MODULE_PREFIX_POS)
     if (MODULE_PREFIX_POS EQUAL 0)
         if (NOT EVEREST_ENABLE_RS_SUPPORT)
-            return() # NOTE (aw): could log here
+            message(WARNING "Rust module ${MODULE_NAME} skipped: EVEREST_ENABLE_RS_SUPPORT is off")
+            return()
         endif ()
 
         ev_add_rs_module(${MODULE_NAME})

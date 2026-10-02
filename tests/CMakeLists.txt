@@ -44,3 +44,11 @@ add_subdirectory(async_api_tests)
 if (TARGET EEBUS)
     add_subdirectory(eebus_tests)
 endif()
+
+add_test(
+    NAME cmake_file_generation
+    COMMAND
+        ${PROJECT_SOURCE_DIR}/cmake/lint/cmake-file-generation.sh
+        ${PROJECT_SOURCE_DIR}
+        ${PROJECT_BINARY_DIR}
+)
