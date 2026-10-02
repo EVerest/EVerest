@@ -27,22 +27,45 @@ jobs:
           for host in github.com codeload.github.com; do
             printf 'machine %s\nlogin x-access-token\npassword %s\n' "$host" "$GITHUB_TOKEN"
           done > "$HOME/.netrc"
-      - name: Mount bazel repo cache
-        uses: actions/cache@v6
+      - name: Restore bazel repo cache
+        id: repo-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-repo-cache"
           key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
             ${{ runner.os }}-bazel-repo-
-      - name: Mount bazel disk cache
-        uses: actions/cache@v6
+      - name: Restore bazel disk cache
+        id: disk-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-disk-cache"
-          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-
             ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-
+      - name: Record build start
+        run: echo "BAZEL_BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Build all
         run: >
           bazelisk build --config=ci --config=${{ inputs.platform }} //...
           --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
+      - name: Save bazel repo cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-repo-cache"
+          key: ${{ steps.repo-cache.outputs.cache-primary-key }}
+      - name: Prune bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        run: |
+          du -sh ~/.cache/bazel-disk-cache
+          find ~/.cache/bazel-disk-cache -type f ! -newermt "@$BAZEL_BUILD_START" -delete
+          du -sh ~/.cache/bazel-disk-cache
+      - name: Save bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-disk-cache"
+          key: ${{ steps.disk-cache.outputs.cache-primary-key }}
