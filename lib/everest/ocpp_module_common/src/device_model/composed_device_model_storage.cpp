@@ -115,17 +115,6 @@ bool ComposedDeviceModelStorage::update_monitoring_reference(const int32_t monit
         ->update_monitoring_reference(monitor_id, reference_value);
 }
 
-std::vector<ocpp::v2::VariableMonitoringMeta>
-ComposedDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                                                const ocpp::v2::Component& component_id,
-                                                const ocpp::v2::Variable& variable_id) {
-    const auto variable_source = get_variable_source(component_id, variable_id);
-    if (this->device_model_storages.find(variable_source) == this->device_model_storages.end()) {
-        return {};
-    }
-    return this->device_model_storages.at(variable_source)->get_monitoring_data(criteria, component_id, variable_id);
-}
-
 ocpp::v2::ClearMonitoringStatusEnum ComposedDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                        bool allow_protected) {
     if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
@@ -151,6 +140,15 @@ std::vector<ocpp::v2::StoredMonitor> ComposedDeviceModelStorage::get_all_monitor
         return {};
     }
     return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->get_all_monitors();
+}
+
+bool ComposedDeviceModelStorage::update_monitoring_source(const std::int32_t monitor_id,
+                                                          const std::optional<std::string>& source) {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot update the monitor source";
+        return false;
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->update_monitoring_source(monitor_id, source);
 }
 
 std::vector<ocpp::v2::StoredVariableValue> ComposedDeviceModelStorage::get_stored_values() {

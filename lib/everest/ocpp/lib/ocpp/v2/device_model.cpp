@@ -327,6 +327,59 @@ std::string monitor_value_to_string(const float value, const DataEnum data_type)
     return std::to_string(value);
 }
 
+/// \brief Checks a monitor of \p type and \p value against the variable described by \p meta_data
+bool is_monitor_valid(const VariableMetaData& meta_data, const MonitorEnum type, const float value,
+                      const Component& component, const Variable& variable) {
+    const auto& characteristics = meta_data.characteristics;
+    if (!characteristics.supportsMonitoring) {
+        return false;
+    }
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    // A monitor would report the value of a WriteOnly variable in NotifyEvent
+    if (actual != nullptr and actual->mutability == MutabilityEnum::WriteOnly) {
+        return false;
+    }
+
+    // If the monitor is of type 'delta' (or periodic) and it is of a non-numeric type
+    // the value is ignored since all values will be reported (excepting negative values)
+    if (type == MonitorEnum::Delta) {
+        // N04.FR.14
+        if (std::signbit(value)) {
+            return false;
+        }
+        // A delta monitor needs a value to take its reference from
+        return actual != nullptr and actual->value.has_value();
+    }
+    if (type == MonitorEnum::Periodic or type == MonitorEnum::PeriodicClockAligned) {
+        return true;
+    }
+    try {
+        return validate_value(characteristics, monitor_value_to_string(value, characteristics.dataType),
+                              allow_zero(component, variable));
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not validate monitor value: " << value << " for component: " << component
+                      << " and variable: " << variable;
+        return false;
+    }
+}
+
+/// \brief Checks whether an existing monitor of \p type still fits the variable described by \p meta_data. The limits
+/// are not checked: limits registered at boot can be preliminary, and a threshold outside them stays meaningful.
+bool monitor_fits_variable(const VariableMetaData& meta_data, const MonitorEnum type) {
+    const auto& characteristics = meta_data.characteristics;
+    if (!characteristics.supportsMonitoring) {
+        return false;
+    }
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    if (actual != nullptr and actual->mutability == MutabilityEnum::WriteOnly) {
+        return false;
+    }
+    if (type == MonitorEnum::UpperThreshold or type == MonitorEnum::LowerThreshold) {
+        return characteristics.dataType == DataEnum::integer or characteristics.dataType == DataEnum::decimal;
+    }
+    return true;
+}
+
 bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAttribute& attribute) {
     if (cv == ControllerComponentVariables::ChargingStationAvailabilityState) {
         return true;
@@ -759,6 +812,13 @@ ComponentRegistrationResult DeviceModel::register_components(const std::string& 
 
     this->registrations.insert_or_assign(source, std::move(registration));
     this->recompose();
+    this->monitors.remove_of_vanished_variables(source, [this](const Component& component, const Variable& variable) {
+        if (this->find_variable(component, variable) != nullptr) {
+            return true;
+        }
+        const auto component_it = this->component_config.find(component);
+        return component_it != this->component_config.end() and component_it->second.count(variable) != 0;
+    });
 
     lock.unlock();
     if (provider_replaced) {
@@ -777,11 +837,23 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& sourc
     meta_data.attributes = std::move(attributes);
 
     const auto config_it = this->component_config.find(component);
-    if (config_it != this->component_config.end() and config_it->second.count(variable) != 0) {
+    const bool overrides_component_config =
+        config_it != this->component_config.end() and config_it->second.count(variable) != 0;
+    if (overrides_component_config) {
         EVLOG_warning << "The component config defines " << component << "." << variable << ", which source " << source
                       << " registers: the registration overrides the component config";
     }
 
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    const auto actual_value = (actual != nullptr and actual->value.has_value())
+                                  ? std::optional<std::string>{actual->value->get()}
+                                  : std::nullopt;
+    this->monitors.reconcile(
+        source, component, registered_variable, actual_value, overrides_component_config,
+        [&](const MonitorEnum type, const float) { return monitor_fits_variable(meta_data, type); },
+        [&](const MonitorEnum type, const float value) {
+            return is_monitor_valid(meta_data, type, value, component, variable);
+        });
     return meta_data;
 }
 
@@ -1076,48 +1148,7 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
 
         // Validate the data we want to set based on the characteristics and
         // see if it is out of range or out of the variable list
-        const auto& characteristics = meta_data.characteristics;
-        bool valid_value = true;
-
-        if (characteristics.supportsMonitoring) {
-            EVLOG_debug << "Validating monitor request of type: [" << request << "] and characteristics: ["
-                        << characteristics << "]"
-                        << " and value: " << request.value;
-
-            // If the monitor is of type 'delta' (or periodic) and it is of a non-numeric type
-            // the value is ignored since all values will be reported (excepting negative values)
-            if (request.type == MonitorEnum::Delta && std::signbit(request.value)) {
-                // N04.FR.14
-                valid_value = false;
-            } else if (request.type == MonitorEnum::Delta &&
-                       (characteristics.dataType != DataEnum::decimal &&
-                        characteristics.dataType != DataEnum::integer)) { // NOLINT(bugprone-branch-clone): readability
-                valid_value = true;
-            } else if (request.type == MonitorEnum::Periodic || request.type == MonitorEnum::PeriodicClockAligned) {
-                valid_value = true;
-            } else {
-                try {
-                    valid_value = validate_value(characteristics,
-                                                 monitor_value_to_string(request.value, characteristics.dataType),
-                                                 allow_zero(request.component, request.variable));
-                } catch (const std::exception& e) {
-                    EVLOG_warning << "Could not validate monitor value: " << request.value
-                                  << " for component: " << request.component << " and variable: " << request.variable;
-                    valid_value = false;
-                }
-            }
-        } else {
-            valid_value = false;
-        }
-
-        // A delta monitor needs a value to take its reference from
-        if (valid_value and request.type == MonitorEnum::Delta) {
-            const auto actual =
-                this->read_attribute(request.component, request.variable, composed, AttributeEnum::Actual);
-            valid_value = actual.has_value() and actual->value.has_value();
-        }
-
-        if (!valid_value) {
+        if (!is_monitor_valid(meta_data, request.type, request.value, request.component, request.variable)) {
             result.status = SetMonitoringStatusEnum::Rejected;
             set_monitors_res.push_back(result);
             continue;
@@ -1142,9 +1173,11 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
         static const std::string empty_value{};
         const std::string current_value =
             (attribute.has_value() and attribute->value.has_value()) ? attribute->value->get() : empty_value;
+        const auto source = composed.registration != nullptr ? std::optional<std::string>{composed.registration->source}
+                                                             : meta_data.source;
 
         try {
-            const auto monitor_meta = this->monitors.set(request, type, current_value);
+            const auto monitor_meta = this->monitors.set(request, type, source, current_value);
             if (!monitor_meta.has_value()) {
                 result.status = SetMonitoringStatusEnum::Rejected;
                 set_monitors_res.push_back(result);
@@ -1278,6 +1311,14 @@ std::vector<ClearMonitoringResult> DeviceModel::clear_monitors(const std::vector
     for (auto& id : request_ids) {
         ClearMonitoringResult clear_monitor_res;
         clear_monitor_res.id = id;
+
+        // N06.FR.02: monitors of variables that are not part of the model do not exist for the CSMS
+        const auto* monitor = this->monitors.find(id);
+        if (monitor == nullptr or this->find_variable(monitor->component, monitor->variable) == nullptr) {
+            clear_monitor_res.status = ClearMonitoringStatusEnum::NotFound;
+            clear_monitors_vec.push_back(clear_monitor_res);
+            continue;
+        }
 
         try {
             clear_monitor_res.status = this->monitors.clear(id, allow_protected);

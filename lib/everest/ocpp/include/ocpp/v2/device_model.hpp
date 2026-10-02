@@ -67,7 +67,7 @@ private:
     /// \brief The runtime source that registered the variable, if any
     std::optional<std::string> runtime_owner(const Component& component, const Variable& variable) const;
 
-    /// \brief Builds the variable that \p source registers. Requires the mutex.
+    /// \brief Builds the variable that \p source registers, with its monitors. Requires the mutex.
     VariableMetaData build_registered_variable(const std::string& source, const Component& component,
                                                const RegisteredVariable& registered_variable,
                                                std::vector<VariableAttribute> attributes);

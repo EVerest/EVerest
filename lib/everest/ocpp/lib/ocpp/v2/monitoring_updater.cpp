@@ -23,10 +23,18 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
 
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
             if (monitor_meta.reference_value.has_value()) {
-                auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-                auto delta = std::abs(raw_val_reference - raw_val_current);
-
-                return (delta > monitor_meta.monitor.value);
+                try {
+                    auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
+                    auto delta = std::abs(raw_val_reference - raw_val_current);
+                    return (delta > monitor_meta.monitor.value);
+                } catch (const std::exception&) {
+                    // An empty reference, or one of a former data type of the variable: the value that triggers
+                    // becomes the reference
+                    EVLOG_warning << "Reference value \"" << monitor_meta.reference_value.value() << "\" of monitor "
+                                  << monitor_meta.monitor.id
+                                  << " does not fit the variable: the monitor triggers to take a new reference";
+                    return true;
+                }
             }
             EVLOG_error << "Invalid reference value for monitor: " << monitor_meta.monitor;
             return false;

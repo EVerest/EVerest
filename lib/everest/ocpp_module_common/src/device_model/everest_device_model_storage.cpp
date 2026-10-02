@@ -1131,14 +1131,6 @@ bool EverestDeviceModelStorage::update_monitoring_reference(const int32_t monito
     return this->device_model_storage->update_monitoring_reference(monitor_id, reference_value);
 }
 
-std::vector<ocpp::v2::VariableMonitoringMeta>
-EverestDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                                               const ocpp::v2::Component& component_id,
-                                               const ocpp::v2::Variable& variable_id) {
-    std::lock_guard<std::mutex> lock(device_model_mutex);
-    return this->device_model_storage->get_monitoring_data(criteria, component_id, variable_id);
-}
-
 ocpp::v2::ClearMonitoringStatusEnum EverestDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                       bool allow_protected) {
     std::lock_guard<std::mutex> lock(device_model_mutex);

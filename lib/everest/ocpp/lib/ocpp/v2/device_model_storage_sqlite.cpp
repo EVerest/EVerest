@@ -7,7 +7,6 @@
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/network_configuration_default_schema.hpp>
-#include <ocpp/v2/utils.hpp>
 
 using namespace everest::db;
 using namespace everest::db::sqlite;
@@ -433,6 +432,24 @@ bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t mo
     return (changes == 1);
 }
 
+bool DeviceModelStorageSqlite::update_monitoring_source(const std::int32_t monitor_id,
+                                                        const std::optional<std::string>& source) {
+    auto transaction = this->db->begin_transaction();
+    auto update_stmt = this->db->new_statement("UPDATE VARIABLE_MONITORING SET SOURCE = @source WHERE ID = @id");
+    if (source.has_value()) {
+        update_stmt->bind_text("@source", source.value(), SQLiteString::Transient);
+    } else {
+        update_stmt->bind_null("@source");
+    }
+    update_stmt->bind_int("@id", monitor_id);
+    if (update_stmt->step() != SQLITE_DONE) {
+        EVLOG_error << this->db->get_error_message();
+        return false;
+    }
+    transaction->commit();
+    return update_stmt->changes() == 1;
+}
+
 std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_data(const SetMonitoringData& data,
                                                                                     const VariableMonitorType type) {
     std::optional<std::string> actual_value;
@@ -526,23 +543,6 @@ std::optional<std::string> DeviceModelStorageSqlite::get_actual_value(const Comp
         return std::nullopt;
     }
     return select_stmt->column_text_nullable(0);
-}
-
-std::vector<VariableMonitoringMeta>
-DeviceModelStorageSqlite::get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria,
-                                              const Component& component_id, const Variable& variable_id) {
-    auto select_stmt = this->db->new_statement(std::string("SELECT ") + MONITOR_COLUMNS +
-                                               " FROM VARIABLE_MONITORING WHERE " + NAME_KEY_CONDITION);
-    bind_name_key(*select_stmt, component_id, variable_id);
-
-    std::vector<VariableMonitoringMeta> monitors;
-    while (select_stmt->step() == SQLITE_ROW) {
-        monitors.push_back(read_monitor(*select_stmt, 0));
-    }
-
-    // Filter only required monitors
-    ocpp::v2::utils::filter_criteria_monitors(criteria, monitors);
-    return monitors;
 }
 
 std::vector<StoredMonitor> DeviceModelStorageSqlite::get_all_monitors() {

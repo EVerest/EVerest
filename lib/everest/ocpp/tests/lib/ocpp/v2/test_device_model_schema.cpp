@@ -336,21 +336,19 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_on_a_variable_without_row) {
         VariableMonitorType::CustomMonitor);
     ASSERT_TRUE(monitor.has_value());
 
-    const auto monitors = storage.get_monitoring_data({}, runtime_component, runtime_variable);
-    ASSERT_EQ(monitors.size(), 1);
-    EXPECT_EQ(monitors.at(0).monitor.id, monitor->monitor.id);
-    EXPECT_EQ(monitors.at(0).monitor.value, 7000);
-
     const auto all_monitors = storage.get_all_monitors();
     const auto it = std::find_if(all_monitors.begin(), all_monitors.end(),
                                  [&](const StoredMonitor& m) { return m.monitor.monitor.id == monitor->monitor.id; });
     ASSERT_NE(it, all_monitors.end());
     EXPECT_EQ(it->component, runtime_component);
     EXPECT_EQ(it->variable, runtime_variable);
+    EXPECT_EQ(it->monitor.monitor.value, 7000);
     EXPECT_FALSE(it->source.has_value());
 
     EXPECT_EQ(storage.clear_variable_monitor(monitor->monitor.id, false), ClearMonitoringStatusEnum::Accepted);
-    EXPECT_TRUE(storage.get_monitoring_data({}, runtime_component, runtime_variable).empty());
+    const auto remaining = storage.get_all_monitors();
+    EXPECT_TRUE(std::none_of(remaining.begin(), remaining.end(),
+                             [&](const StoredMonitor& m) { return m.monitor.monitor.id == monitor->monitor.id; }));
 }
 
 TEST_F(DeviceModelStorageSqliteNameKeyTest, all_monitors_are_returned_by_name_key) {

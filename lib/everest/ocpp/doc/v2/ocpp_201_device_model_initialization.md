@@ -103,6 +103,10 @@ a registration is held in memory and repeated at every start. The rules:
 - A source may register a `VariableValueProvider`, which receives the validated writes to its variables and keeps
   their values. Without a provider, the owner reports its values with `notify_value_changed`, and `DeviceModel`
   stores the values of persistent attributes by name key.
+- Monitors belong to OCPP, whoever owns the variable, and are stored by name. A monitor whose variable is not part
+  of the model is dormant, invisible to the CSMS and active again when the variable is registered; a source that
+  registers without the variable removes its monitors, as does a registration whose characteristics no longer fit
+  the monitor.
 - A write from the local channel (`set_value` with `allow_read_only`, which `ChargePoint::set_variables` uses)
   reaches the component config only. A registered variable is rejected there whatever its mutability: its owner or
   the CSMS change it.

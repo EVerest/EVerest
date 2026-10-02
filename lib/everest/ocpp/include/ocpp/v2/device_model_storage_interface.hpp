@@ -95,15 +95,12 @@ public:
     /// \return true if the reference value could be updated, false otherwise
     virtual bool update_monitoring_reference(const std::int32_t monitor_id, const std::string& reference_value) = 0;
 
-    /// \brief Returns all the monitors currently in the database based
-    /// on the provided filtering criteria
-    /// \param criteria
-    /// \param component_id
-    /// \param variable_id
-    /// \return the monitoring data if it could be found or an empty vector
-    virtual std::vector<VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria, const Component& component_id,
-                        const Variable& variable_id) = 0;
+    /// \brief Records \p source as the owner of the variable that monitor \p monitor_id belongs to
+    /// \return true if the monitor exists and was updated
+    virtual bool update_monitoring_source(const std::int32_t /*monitor_id*/,
+                                          const std::optional<std::string>& /*source*/) {
+        return false;
+    }
 
     /// \brief Clears a single monitor based on the ID from the database
     /// \param monitor_id Monitor ID

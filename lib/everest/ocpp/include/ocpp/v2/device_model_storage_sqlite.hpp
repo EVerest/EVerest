@@ -73,9 +73,7 @@ public:
 
     bool update_monitoring_reference(const std::int32_t monitor_id, const std::string& reference_value) final;
 
-    std::vector<VariableMonitoringMeta> get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria,
-                                                            const Component& component_id,
-                                                            const Variable& variable_id) final;
+    bool update_monitoring_source(const std::int32_t monitor_id, const std::optional<std::string>& source) final;
 
     ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) final;
 

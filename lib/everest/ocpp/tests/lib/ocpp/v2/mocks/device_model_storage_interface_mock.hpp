@@ -19,8 +19,6 @@ public:
                 (const Component&, const Variable&, const AttributeEnum&, const std::string&, const std::string&));
     MOCK_METHOD(std::optional<VariableMonitoringMeta>, set_monitoring_data,
                 (const SetMonitoringData&, const VariableMonitorType));
-    MOCK_METHOD(std::vector<VariableMonitoringMeta>, get_monitoring_data,
-                (const std::vector<MonitoringCriterionEnum>&, const Component&, const Variable&));
     MOCK_METHOD(ClearMonitoringStatusEnum, clear_variable_monitor, (int, bool));
     MOCK_METHOD(std::int32_t, clear_custom_variable_monitors, ());
     MOCK_METHOD(std::vector<StoredMonitor>, get_all_monitors, (), (override));

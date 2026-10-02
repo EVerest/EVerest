@@ -83,12 +83,6 @@ public:
         return false;
     }
 
-    std::vector<ocpp::v2::VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>&, const ocpp::v2::Component&,
-                        const ocpp::v2::Variable&) override {
-        return {};
-    }
-
     ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int, bool) override {
         return ocpp::v2::ClearMonitoringStatusEnum::NotFound;
     }
