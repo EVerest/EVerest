@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "ocpp_1_6_charge_pointImpl.hpp"
 
 namespace module {
@@ -120,8 +120,7 @@ types::ocpp::ConfigurationStatus ocpp_1_6_charge_pointImpl::handle_set_configura
         EVLOG_warning << "ChargePoint not initialized, cannot handle set configuration key command";
         return types::ocpp::ConfigurationStatus::Rejected;
     }
-    const auto response = this->mod->charge_point->set_configuration_key(key, value);
-    return to_everest(response);
+    return to_everest(this->mod->set_writable_configuration_key(key, value));
 }
 
 void ocpp_1_6_charge_pointImpl::handle_monitor_configuration_keys(Array& keys) {
