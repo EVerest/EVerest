@@ -515,7 +515,8 @@ void connection_teardown(struct v2g_connection* conn) {
     }
 
     const V2gMsgTypeId last_msg = conn->last_v2g_msg_at_disconnect;
-    const bool evse_initiated_stop = conn->ctx->stop_hlc || conn->ctx->intl_emergency_shutdown;
+    const bool evse_initiated_stop =
+        conn->ctx->stop_hlc || conn->ctx->intl_emergency_shutdown || conn->ctx->error_shutdown;
 
     /* init charging session */
     v2g_ctx_init_charging_session(conn->ctx, true);

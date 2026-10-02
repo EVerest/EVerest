@@ -99,6 +99,8 @@ void v2g_ctx_init_charging_session(struct v2g_context* const ctx, bool is_connec
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
+    ctx->error_shutdown = false;
+    ctx->error_shutdown_reported = false;
     ctx->is_connection_terminated = is_connection_terminated;
     ctx->last_v2g_msg = V2G_UNKNOWN_MSG;
     ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
