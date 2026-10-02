@@ -226,8 +226,9 @@ jobs:
           build-kit run-script install
       - name: Tar dist dir and keep permissions
         if: ${{ always() && (steps.create_dist.outcome == 'success' || steps.create_dist.outcome == 'failure') }}
+        # gzip -1 is about three times faster than the default level for a slightly larger archive
         run: |
-          tar -czf dist.tar.gz dist
+          tar -I 'gzip -1' -cf dist.tar.gz dist
       - name: Upload dist artifact
         if: ${{ always() && (steps.create_dist.outcome == 'success' || steps.create_dist.outcome == 'failure') }}
         uses: actions/upload-artifact@v7.0.1
