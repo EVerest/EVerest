@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <optional>
+#include <string_view>
 #include <variant>
 
 #include <everest/util/vector/fixed_vector.hpp>
@@ -34,6 +35,36 @@ enum class DERControlName : std::uint8_t {
     OverVoltageFaultRideThroughMode,
     UnderVoltageFaultRideThroughMode
 };
+
+constexpr std::string_view der_control_name(DERControlName name) {
+    switch (name) {
+    case DERControlName::OverFrequencyWattMode:
+        return "OverFrequencyWattMode";
+    case DERControlName::UnderFrequencyWattMode:
+        return "UnderFrequencyWattMode";
+    case DERControlName::VoltWattMode:
+        return "VoltWattMode";
+    case DERControlName::VoltVarMode:
+        return "VoltVarMode";
+    case DERControlName::WattVarMode:
+        return "WattVarMode";
+    case DERControlName::WattCosPhiMode:
+        return "WattCosPhiMode";
+    case DERControlName::DSOQSetpointProvision:
+        return "DSOQSetpointProvision";
+    case DERControlName::DSOCosPhiSetpointProvision:
+        return "DSOCosPhiSetpointProvision";
+    case DERControlName::DCInjectionRestriction:
+        return "DCInjectionRestriction";
+    case DERControlName::ZeroCurrentMode:
+        return "ZeroCurrentMode";
+    case DERControlName::OverVoltageFaultRideThroughMode:
+        return "OverVoltageFaultRideThroughMode";
+    case DERControlName::UnderVoltageFaultRideThroughMode:
+        return "UnderVoltageFaultRideThroughMode";
+    }
+    return "Unknown";
+}
 
 using MaximumLevelDCInjection = float;
 

@@ -2,6 +2,8 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/helper.hpp>
 #include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/ev/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/ev/d20/state/service_selection.hpp>
 #include <iso15118/ev/d20/state/stop_before_start.hpp>
@@ -35,7 +37,17 @@ Result ServiceSelection::feed(Event ev) {
         return std::move(*stop);
     }
 
-    if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::DC) {
+    // AC_DER_IEC is part of the AC family, so it must be matched before the
+    // family test or it would take the plain AC parameter discovery.
+    if (m_ctx.selected_service() == message_20::datatypes::ServiceCategory::AC_DER_IEC) {
+        return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
+    }
+
+    if (m_ctx.is_ac_family()) {
+        return m_ctx.create_state<AC_ChargeParameterDiscovery>();
+    }
+
+    if (m_ctx.is_dc_family()) {
         return m_ctx.create_state<DC_ChargeParameterDiscovery>();
     }
 

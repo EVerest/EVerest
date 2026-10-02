@@ -142,6 +142,11 @@ if(ISO15118_BUILD_EV_SIDE)
         ev/d20/state/dc_welding_detection.cpp
         ev/d20/state/power_delivery.cpp
         ev/d20/state/session_stop.cpp
+        ev/d20/state/ac_charge_parameter_discovery.cpp
+        ev/d20/state/ac_charge_loop.cpp
+        ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
+        ev/d20/state/ac_der_iec_charge_loop.cpp
+        ev/ac_phase_split.cpp
         ev/session.cpp
         ev/controller.cpp
         ev/config_validation.cpp

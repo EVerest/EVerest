@@ -50,6 +50,7 @@ Session::Session(feedback::Callbacks callbacks_, OutboundSend outbound_send_,
                  message_20::datatypes::Identifier evcc_id,
                  std::vector<message_20::SupportedAppProtocol> advertised_app_protocols,
                  everest::lib::util::monitor<DcChargeParams>* dc_params_,
+                 everest::lib::util::monitor<AcChargeParams>* ac_params_,
                  message_20::datatypes::ServiceCategory energy_service, d20::SessionOptions options,
                  EvSessionParams params_) :
     callbacks(callbacks_),
@@ -64,8 +65,9 @@ Session::Session(feedback::Callbacks callbacks_, OutboundSend outbound_send_,
 
     // The engine's Context keeps references to these monitors, so they must outlive it: the
     // caller's, or the owned fallbacks declared above the engine.
-    engine.emplace<d20::Engine>(callbacks, std::move(evcc_id), std::move(advertised_app_protocols),
-                                active_control_event, dc_params, energy_service, std::move(options));
+    engine.emplace<d20::Engine>(
+        callbacks, std::move(evcc_id), std::move(advertised_app_protocols), active_control_event, dc_params,
+        (ac_params_ != nullptr) ? *ac_params_ : owned_ac_params, energy_service, std::move(options));
 
     send_delay_timer.set_single_shot(true);
     watchdog_timer.set_single_shot(true);

@@ -13,6 +13,7 @@
 
 #include <everest/util/async/monitor.hpp>
 #include <everest/util/fsm/fsm.hpp>
+#include <iso15118/ev/ac_charge_params.hpp>
 #include <iso15118/ev/d20/context.hpp>
 #include <iso15118/ev/d20/states.hpp>
 #include <iso15118/ev/dc_charge_params.hpp>
@@ -31,16 +32,36 @@ inline constexpr auto WRONG_HEADER =
 inline const std::vector<message_20::SupportedAppProtocol> DEFAULT_APP_PROTOCOLS = {
     {"urn:iso:std:iso:15118:-20:DC", 1, 0, 1, 1}};
 
+// The DER configuration reaches the FSM through SessionOptions; tests still name the two
+// values separately, so fold them in here.
+inline ev::d20::SessionOptions with_der(ev::d20::SessionOptions options, ev::DerControlFunctions functions,
+                                        bool stop_on_unsupported) {
+    options.der_control_functions = functions;
+    options.der_stop_on_unsupported_functions = stop_on_unsupported;
+    return options;
+}
+
 class FsmStateHelper {
 public:
+    // The DER configuration travels inside SessionOptions; this overload keeps whatever the
+    // caller put there rather than overwriting it with the defaults below.
     FsmStateHelper(
         const ev::feedback::Callbacks& callbacks,
         std::vector<message_20::SupportedAppProtocol> protocols = DEFAULT_APP_PROTOCOLS,
         message_20::datatypes::ServiceCategory requested_service = message_20::datatypes::ServiceCategory::DC,
         ev::d20::SessionOptions options = {}) :
         advertised_app_protocols(std::move(protocols)),
-        ctx(callbacks, msg_exch, evcc_id, advertised_app_protocols, control_event, dc_params, requested_service,
-            std::move(options)) {
+        ctx(callbacks, msg_exch, evcc_id, advertised_app_protocols, control_event, dc_params, ac_params,
+            requested_service, std::move(options)) {
+    }
+
+    // Tests that name the two DER values separately rather than building SessionOptions.
+    FsmStateHelper(const ev::feedback::Callbacks& callbacks, std::vector<message_20::SupportedAppProtocol> protocols,
+                   message_20::datatypes::ServiceCategory requested_service,
+                   ev::DerControlFunctions der_control_functions, bool der_stop_on_unsupported_functions,
+                   ev::d20::SessionOptions options = {}) :
+        FsmStateHelper(callbacks, std::move(protocols), requested_service,
+                       with_der(std::move(options), der_control_functions, der_stop_on_unsupported_functions)) {
     }
 
     ev::d20::Context& get_context();
@@ -70,6 +91,17 @@ public:
         return dc_params;
     }
 
+    // Seed the module -> FSM AcChargeParams channel before creating a state.
+    void set_ac_params(const ev::AcChargeParams& params) {
+        auto h = ac_params.handle();
+        *h = params;
+    }
+
+    // Direct access to the module -> FSM AcChargeParams channel.
+    everest::lib::util::monitor<ev::AcChargeParams>& get_ac_params_monitor() {
+        return ac_params;
+    }
+
     // Set the active control event the Context reads via get_control_event<T>().
     void set_control_event(const ev::d20::ControlEvent& event) {
         control_event = event;
@@ -83,6 +115,8 @@ private:
     ev::d20::MessageExchange msg_exch{};
 
     everest::lib::util::monitor<ev::DcChargeParams> dc_params{ev::DcChargeParams{}};
+
+    everest::lib::util::monitor<ev::AcChargeParams> ac_params{ev::AcChargeParams{}};
 
     message_20::datatypes::Identifier evcc_id{"EVTESTID01"};
     // Always set from the constructor argument, which defaults to DEFAULT_APP_PROTOCOLS.
