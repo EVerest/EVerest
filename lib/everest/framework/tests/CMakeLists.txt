@@ -21,6 +21,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_conversions.cpp
     test_database_migration_files.cpp
     test_everest_external_mqtt.cpp
+    test_everest_incoming_data.cpp
     test_filesystem_helpers.cpp
     test_helpers.cpp
     test_message_handler.cpp
