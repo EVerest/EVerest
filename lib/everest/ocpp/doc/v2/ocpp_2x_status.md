@@ -426,7 +426,7 @@ This document contains the status of which OCPP 2.0.1 and OCPP2.1 numbered funct
 | B09.FR.06             | ✅     |        |
 | B09.FR.07 <br> (2.1)  |        | RECOMMENDATION only |
 | B09.FR.08 <br> (2.1)  | ✅     |        |
-| B09.FR.09 <br> (2.1)  | ✅     |        |
+| B09.FR.09 <br> (2.1)  | ✅     | Updates the NetworkConfiguration variables only; the slot is not added to NetworkConfigurationPriority |
 | B09.FR.10 <br> (2.1)  | ✅     |        |
 | B09.FR.11 <br> (2.1)  | ✅     |        |
 | B09.FR.12 <br> (2.1)  | ✅     |        |

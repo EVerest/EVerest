@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/common/connectivity_manager.hpp>
 
@@ -659,27 +659,6 @@ void ConnectivityManager::ensure_slot_in_working_set(NetworkProfileCacheState& s
     state.slots.push_back(slot);
 }
 
-void ConnectivityManager::append_slot_to_network_configuration_priority_if_absent(const int32_t slot,
-                                                                                  const std::string& source) {
-    const auto priority_str = this->configuration.get_network_configuration_priority();
-    const auto slot_str = std::to_string(slot);
-    bool slot_found = false;
-    for (const auto& s : ocpp::split_string(priority_str, ',')) {
-        if (s == slot_str) {
-            slot_found = true;
-            break;
-        }
-    }
-    if (!slot_found) {
-        std::string new_priority = priority_str;
-        if (!new_priority.empty()) {
-            new_priority += ',';
-        }
-        new_priority += slot_str;
-        this->configuration.set_network_configuration_priority(new_priority, source);
-    }
-}
-
 void ConnectivityManager::cache_network_connection_profiles() {
     auto state = this->m_state.handle();
 
@@ -778,8 +757,6 @@ bool ConnectivityManager::set_network_profile(const int32_t slot, const NetworkC
     if (!this->configuration.write_network_connection_profile(slot, profile, source)) {
         return false;
     }
-
-    this->append_slot_to_network_configuration_priority_if_absent(slot, source);
 
     try {
         cache_network_connection_profiles();

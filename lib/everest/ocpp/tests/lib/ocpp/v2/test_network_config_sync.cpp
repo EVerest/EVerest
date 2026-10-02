@@ -864,25 +864,21 @@ TEST_F(ConnectivityManagerCacheTest, ReloadAfterClearSlotRemovesFromCache) {
     EXPECT_FALSE(profile.has_value()) << "Cleared slot must not have a cached profile after reload";
 }
 
-// Add a profile to a previously-empty slot via set_network_profile
-TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileAddsNewSlotToCache) {
-    // Slot 2 has no default URL in the test config, so it should not be in the cache initially
-    auto initial = cm->get_network_connection_profile(2);
-    EXPECT_FALSE(initial.has_value()) << "Slot 2 must not be cached initially (no default URL)";
-
-    // Add a profile to slot 2 via the ConnectivityManager
-    auto profile = make_basic_profile(1, "wss://slot2.example.com/ocpp");
-    ASSERT_TRUE(cm->set_network_profile(2, profile, "test"));
-
-    // Slot 2 must now be in the cache
-    auto cached = cm->get_network_connection_profile(2);
-    ASSERT_TRUE(cached.has_value()) << "Newly added slot 2 must be in cache after set_network_profile";
-    EXPECT_EQ(cached->ocppCsmsUrl.get(), "wss://slot2.example.com/ocpp");
-
-    // Slot 2 must also appear in the priority list
+// set_network_profile on a slot outside NetworkConfigurationPriority stores the profile without activating it
+TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileDoesNotAddSlotToPriority) {
+    const auto priority_before = dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority);
     auto slots = cm->get_network_connection_slots();
-    EXPECT_NE(std::find(slots.begin(), slots.end(), 2), slots.end())
-        << "Slot 2 must be in the priority list after set_network_profile";
+    ASSERT_EQ(std::find(slots.begin(), slots.end(), 2), slots.end());
+
+    ASSERT_TRUE(cm->set_network_profile(2, make_basic_profile(1, "wss://slot2.example.com/ocpp"), "test"));
+
+    const auto stored = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2);
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->ocppCsmsUrl.get(), "wss://slot2.example.com/ocpp");
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), priority_before);
+    slots = cm->get_network_connection_slots();
+    EXPECT_EQ(std::find(slots.begin(), slots.end(), 2), slots.end());
+    EXPECT_FALSE(cm->get_network_connection_profile(2).has_value());
 }
 
 // B09.FR.18: set_network_profile must not inherit per-slot Identity from the currently
@@ -939,9 +935,11 @@ TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileDoesNotInheritBasicAuthFro
 
 // Full lifecycle — add, update, then clear a profile
 TEST_F(ConnectivityManagerCacheTest, AddUpdateClearLifecycle) {
-    // Step 1: Add profile to slot 2
+    // Step 1: Add profile to slot 2 and list it in NetworkConfigurationPriority
     auto added = make_basic_profile(1, "wss://added.example.com/ocpp");
     ASSERT_TRUE(cm->set_network_profile(2, added, "test"));
+    dm->set_network_configuration_priority("1,2", "test");
+    cm->reload_network_profiles();
     ASSERT_TRUE(cm->get_network_connection_profile(2).has_value());
 
     // Step 2: Update slot 2 via set_network_profile
@@ -1933,15 +1931,7 @@ TEST_F(ProvisioningSetNetworkProfileTest, SecurityProfile3WithoutLeafCertRejects
     make_provisioning([](auto, auto) { return SetNetworkProfileStatusEnum::Accepted; });
     EXPECT_CALL(connectivity_manager, set_network_profile(testing::_, testing::_, testing::_))
         .WillOnce(testing::Invoke([this](int32_t slot, const NetworkConnectionProfile& profile, const std::string&) {
-            if (!NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, slot, profile, "test")) {
-                return false;
-            }
-            const auto priority =
-                dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority);
-            return dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
-                                 ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
-                                 AttributeEnum::Actual, priority + "," + std::to_string(slot),
-                                 "test") == SetVariableStatusEnum::Accepted;
+            return NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, slot, profile, "test");
         }));
 
     SetNetworkProfileResponse response;
@@ -1950,7 +1940,7 @@ TEST_F(ProvisioningSetNetworkProfileTest, SecurityProfile3WithoutLeafCertRejects
     ASSERT_EQ(response.status, SetNetworkProfileStatusEnum::Accepted);
     ASSERT_TRUE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
 
-    ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "1,2");
+    ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "1");
     const auto result = provisioning->set_variables({make_priority_set_variable_data("2,1")}, "test");
     ASSERT_EQ(result.size(), 1u);
     EXPECT_TRUE(is_rejected_invalid_network_conf(result.begin()->second));
