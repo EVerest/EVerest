@@ -56,8 +56,6 @@ protected:
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:
-    std::string create_logs_filename(const std::string& type);
-
     const Everest::PtrContainer<System>& mod;
     const Conf& config;
 
@@ -66,6 +64,8 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
+
+    std::string create_logs_filename(const std::string& type);
 
     std::filesystem::path scripts_path;
 
