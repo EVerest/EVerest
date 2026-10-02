@@ -5,6 +5,9 @@
 #include "everest_api_types/utilities/codec.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace everest::lib::API::V1_0::types::evse_board_support;
 
@@ -55,4 +58,21 @@ TEST(evse_board_support, hardware_capabilities_serialization_emits_cp_state_E) {
     auto serialized = nlohmann::json::parse(serialize(capabilities));
     EXPECT_EQ(serialized.at("supports_cp_state_E"), true);
     EXPECT_EQ(serialized.at("connector_type"), "IEC62196Type2Socket");
+}
+
+TEST(evse_board_support, connector_type_roundtrip_dc_values) {
+    const std::vector<std::pair<Connector_type, std::string>> cases = {
+        {Connector_type::cCCS1, "cCCS1"}, {Connector_type::cCCS2, "cCCS2"}, {Connector_type::cTesla, "cTesla"},
+        {Connector_type::cNACS, "cNACS"}, {Connector_type::cG105, "cG105"}, {Connector_type::cMCS, "cMCS"},
+    };
+    for (const auto& [value, expected] : cases) {
+        HardwareCapabilities capabilities{};
+        capabilities.connector_type = value;
+        auto serialized = nlohmann::json::parse(serialize(capabilities));
+        EXPECT_EQ(serialized.at("connector_type"), expected);
+
+        HardwareCapabilities decoded{};
+        ASSERT_TRUE(everest::lib::API::deserialize(serialized.dump(), decoded));
+        EXPECT_EQ(decoded.connector_type, value);
+    }
 }
