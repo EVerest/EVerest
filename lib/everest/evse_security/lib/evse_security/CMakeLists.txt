@@ -12,6 +12,8 @@ target_sources(evse_security
         certificate/x509_wrapper.cpp
 
         utils/evse_filesystem.cpp
+        utils/enforce_certificate_rules.cpp
+
 
         crypto/interface/crypto_supplier.cpp
         crypto/interface/crypto_types.cpp
@@ -77,10 +79,11 @@ endif()
 
 target_link_libraries(evse_security
     PUBLIC
-        everest::timer
+        everest::timer  
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
+        ryml::ryml
 )
 
 if(LIBEVSE_SECURITY_BUILD_TESTING)

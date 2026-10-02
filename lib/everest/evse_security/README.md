@@ -97,6 +97,9 @@ have a flag to configure whether it uses the `default` provider or the `custom` 
 
 <b>Note:</b> The custom provider name has to be defined [here](https://github.com/EVerest/libevse-security/blob/4afe644cb62d0bf06fff1e2ca5d2dbc489342e0c/CMakeLists.txt#L32). Change the name from "custom_provider" to the required provider.
 
+## Profile-enforcement addon
+Security certificates have their key usage compared to the iso15118 standard. To change between the iso15118-2 standard and the iso15118-20 standard the target directory needs to be changed in the makefile. By default the security profiles are located within the Security_Profiles folder in the modules root directory. However, the target folder can be changed via the CERT_PROFILES_DIR CMake flag in the module’s root CMakeList. The addon can be disabled by setting the CMake compiler flag .ENFORCE_CERT_PROFILES.
+
 ## Garbage Collect
 
 By default a garbage collect function will run and delete all expired leaf certificates and their respective keys, only if the certificate storage is full. A minimum count of leaf certificates will be kept even if they are expired. 

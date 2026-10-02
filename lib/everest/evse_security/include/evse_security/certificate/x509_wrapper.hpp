@@ -5,7 +5,6 @@
 #include <memory>
 #include <stdexcept>
 #include <string>
-
 #include <evse_security/crypto/interface/crypto_types.hpp>
 #include <evse_security/evse_types.hpp>
 #include <evse_security/utils/evse_filesystem_types.hpp>
@@ -45,7 +44,6 @@ public:
     inline X509Handle* get() const {
         return x509.get();
     }
-
     /// @brief Gets valid_in
     /// @return seconds until certificate is valid; if > 0 cert is not yet valid
     int64_t get_valid_in() const;
@@ -68,6 +66,45 @@ public:
     /// @result
     std::string get_common_name() const;
 
+    /// @brief Get the Organization (O) from the certificate
+    std::string get_organization() const;
+
+    /// @brief Get the Organizational Unit (OU) from the certificate
+    std::string get_organizational_unit() const;
+
+    /// @brief Get the Country (C) from the certificate
+    std::string get_country() const;
+
+    /// @brief Get the State/Province (ST) from the certificate
+    std::string get_state() const;
+
+    /// @brief Get the Locality (L) from the certificate
+    std::string get_locality() const;
+
+    /// @brief Get the Domain Component (DC) from the certificate
+    std::string get_domain_component() const;
+
+    /// @brief Gets the issuer Common Name (CN) embedded in this certificate
+    std::string get_issuer_common_name() const;
+
+    /// @brief Gets the issuer Organization (O) embedded in this certificate
+    std::string get_issuer_organization() const;
+
+    /// @brief Gets the issuer Organizational Unit (OU) embedded in this certificate
+    std::string get_issuer_organizational_unit() const;
+
+    /// @brief Gets the issuer Country (C) embedded in this certificate
+    std::string get_issuer_country() const;
+
+    /// @brief Gets the issuer State/Province (ST) embedded in this certificate
+    std::string get_issuer_state() const;
+
+    /// @brief Gets the issuer Locality (L) embedded in this certificate
+    std::string get_issuer_locality() const;
+
+    /// @brief Gets the issuer Domain Component (DC) embedded in this certificate
+    std::string get_issuer_domain_component() const;
+
     /// @brief Gets issuer name hash of certificate
     /// @result
     std::string get_issuer_name_hash() const;
@@ -78,6 +115,26 @@ public:
     /// and the issuer key hash are the same
     /// @result
     std::string get_issuer_key_hash() const;
+
+    /// @brief Get the Key Usage extension from the certificate
+    /// @return Comma-separated list of key usage names, or empty if not present
+    std::string get_key_usage() const;
+
+        /// @brief Get the Basic Constraints extension from the certificate
+    /// @return String representation (e.g. "CA:TRUE" or "CA:FALSE"), or empty if not present
+    std::string get_basic_constraints() const;
+
+    /// @brief Get the Subject Key Identifier extension from the certificate
+    /// @return Subject Key Identifier string, or empty if not present
+    std::string get_subject_key_identifier() const;
+
+    /// @brief Get the Authority Key Identifier extension from the certificate
+    /// @return Authority Key Identifier string, or empty if not present
+    std::string get_authority_key_identifier() const;
+
+    /// @brief Get the CRL Distribution Points extension from the certificate
+    /// @return Comma-separated list of CRL distribution point URIs, or empty if not present
+    std::string get_crl_distribution_points() const;
 
     /// @brief Gets key hash of this certificate
     /// @result

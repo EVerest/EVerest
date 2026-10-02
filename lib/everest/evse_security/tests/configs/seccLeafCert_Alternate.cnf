@@ -11,5 +11,7 @@ domainComponent			= CPO
 [ext]
 basicConstraints		= critical,CA:false
 keyUsage				= critical,digitalSignature,keyAgreement
+extendedKeyUsage		= serverAuth,clientAuth
 subjectKeyIdentifier	= hash
+authorityKeyIdentifier	= keyid:always
 authorityInfoAccess = OCSP;URI:https://www.example.com/, caIssuers;URI:https://www.example.com/Leaf-CA.cer
