@@ -6,6 +6,7 @@
 #include <unordered_map>
 
 #include <everest/timer.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <ocpp/v2/enums.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
@@ -120,6 +121,13 @@ public:
     void process_triggered_monitors();
 
 private:
+    /// \brief Monitor state shared by the monitoring timer and the device model listeners
+    struct State {
+        // Charger to CSMS message unique ID for EventData
+        std::int32_t unique_id{0};
+        std::unordered_map<std::int32_t, UpdaterMonitorMeta> updater_monitors_meta;
+    };
+
     /// \brief Callback that is registered to the 'device_model' that determines if any of
     /// the monitors are triggered for a certain variable when the internal value is used. Will
     /// delay the sending of the monitors to the CSMS until the charging station has
@@ -141,7 +149,7 @@ private:
 
     /// \brief Evaluates if an monitor was triggered, and if it is triggered
     /// it adds it to our internal list
-    void evaluate_monitor(const VariableMonitoringMeta& monitor_meta, const Component& component,
+    void evaluate_monitor(State& state, const VariableMonitoringMeta& monitor_meta, const Component& component,
                           const Variable& variable, const VariableCharacteristics& characteristics,
                           const VariableAttribute& attribute, const std::string& value_previous,
                           const std::string& value_current);
@@ -155,11 +163,15 @@ private:
     /// \brief Processes the monitor meta, generating in it's internal list all the
     /// required events. It will generate the EventData for a notify regardless
     /// of the offline state
-    void process_monitor_meta_internal(UpdaterMonitorMeta& updater_meta_data);
+    void process_monitor_meta_internal(State& state, UpdaterMonitorMeta& updater_meta_data);
+
+    /// \brief Moves the reference of a Delta monitor to the value of an event that is sent or queued
+    /// for sending (N07.FR.18)
+    void update_delta_reference(std::int32_t monitor_id, const std::string& reference_value);
 
     /// \brief Query the database (from in-memory data for fast retrieval)
     /// and updates our internal monitors with the new database data
-    void update_periodic_monitors_internal();
+    void update_periodic_monitors_internal(State& state);
 
     void get_monitoring_info(bool& out_is_offline, int& out_offline_severity, int& out_active_monitoring_level,
                              MonitoringBaseEnum& out_active_monitoring_base);
@@ -169,13 +181,10 @@ private:
     DeviceModelAbstract& device_model;
     Everest::SteadyTimer monitors_timer;
 
-    // Charger to CSMS message unique ID for EventData
-    std::int32_t unique_id;
-
     notify_events notify_csms_events;
     is_offline is_chargepoint_offline;
 
-    std::unordered_map<std::int32_t, UpdaterMonitorMeta> updater_monitors_meta;
+    everest::lib::util::monitor<State> state;
 };
 
 } // namespace ocpp::v2
