@@ -1518,25 +1518,27 @@ void EvseManager::update_hlc_session_setup(const HlcSessionSetupConfig& session_
 
 Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_hlc_enabled,
                                                            bool ac_with_soc_timeout) const {
-    return {config.has_ventilation,
-            charge_mode,
-            ac_hlc_enabled,
-            config.ac_hlc_use_5percent,
-            config.ac_enforce_hlc,
-            ac_with_soc_timeout,
-            config.soft_over_current_tolerance_percent,
-            config.soft_over_current_measurement_noise_A,
-            config.switch_3ph1ph_delay_s,
-            config.switch_3ph1ph_cp_state,
-            config.soft_over_current_timeout_ms,
-            config.state_F_after_fault_ms,
-            config.reinit_duration_ms,
-            config.reinit_method,
-            config.fail_on_powermeter_errors,
-            config.raise_mrec9,
-            config.sleep_before_enabling_pwm_hlc_mode_ms,
-            utils::get_session_id_type_from_string(config.session_id_type),
-            config.hlc_charge_loop_without_energy_timeout_s};
+    Charger::SetupConfig charger_setup;
+    charger_setup.has_ventilation = config.has_ventilation;
+    charger_setup.charge_mode = charge_mode;
+    charger_setup.ac_hlc_enabled = ac_hlc_enabled;
+    charger_setup.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
+    charger_setup.ac_enforce_hlc = config.ac_enforce_hlc;
+    charger_setup.ac_with_soc_timeout = ac_with_soc_timeout;
+    charger_setup.soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
+    charger_setup.soft_over_current_measurement_noise_A = config.soft_over_current_measurement_noise_A;
+    charger_setup.switch_3ph1ph_delay_s = config.switch_3ph1ph_delay_s;
+    charger_setup.switch_3ph1ph_cp_state = config.switch_3ph1ph_cp_state;
+    charger_setup.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    charger_setup.state_F_after_fault_ms = config.state_F_after_fault_ms;
+    charger_setup.reinit_duration_ms = config.reinit_duration_ms;
+    charger_setup.reinit_method = config.reinit_method;
+    charger_setup.fail_on_powermeter_errors = config.fail_on_powermeter_errors;
+    charger_setup.raise_mrec9 = config.raise_mrec9;
+    charger_setup.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
+    charger_setup.session_id_type = utils::get_session_id_type_from_string(config.session_id_type);
+    charger_setup.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    return charger_setup;
 }
 
 // This sets up a fake DC mode that is just supposed to work until we get the SoC.
