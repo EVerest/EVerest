@@ -40,6 +40,26 @@ const auto remote_cmd_res_timeout_step = std::chrono::seconds(1);
 const std::array<std::string_view, 3> TELEMETRY_RESERVED_KEYS = {{"connector_id"}};
 constexpr auto ensure_ready_timeout_ms = 100;
 
+namespace {
+CmdResultError parse_cmd_result_error(const json& error) {
+    try {
+        return error.get<CmdResultError>();
+    } catch (const std::exception& e) {
+        return {CmdErrorType::MessageParsingError, fmt::format("Malformed error in command result: {}", e.what()),
+                nullptr};
+    }
+}
+
+std::optional<error::Error> parse_error(const std::string& topic, const json& data) {
+    try {
+        return data.get<error::Error>();
+    } catch (const std::exception& e) {
+        EVLOG_warning << fmt::format("Ignoring malformed error on topic '{}': {}", topic, e.what());
+        return std::nullopt;
+    }
+}
+} // namespace
+
 Everest::Everest(std::string module_id_, const Config& config_, bool validate_data_with_schema,
                  std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
                  bool telemetry_enabled, bool forward_exceptions) :
@@ -421,11 +441,11 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
         }
 
         if (data.contains("error")) {
+            auto error = parse_cmd_result_error(data.at("error"));
             EVLOG_error << fmt::format(
-                "{}: {} during command call: {}->{}()", data.at("error").at(conversions::ERROR_TYPE).get<std::string>(),
-                data.at("error").at(conversions::ERROR_MSG),
+                "{}: {} during command call: {}->{}()", conversions::cmd_error_type_to_string(error.event), error.msg,
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name);
-            res_promise.set_value(CmdResult{std::nullopt, data.at("error")});
+            res_promise.set_value(CmdResult{std::nullopt, std::move(error)});
         } else {
             EVLOG_verbose << fmt::format(
                 "Incoming res {} for {}->{}()", data_id,
@@ -639,8 +659,12 @@ void Everest::subscribe_error(const Requirement& req, const error::ErrorType& er
     }
 
     const auto error_handler = [this, requirement_module_id, requirement_impl_id, error_type, raise_callback,
-                                clear_callback](const std::string&, json const& data) {
-        auto error = data.get<error::Error>();
+                                clear_callback](const std::string& topic, json const& data) {
+        const auto parsed_error = parse_error(topic, data);
+        if (!parsed_error.has_value()) {
+            return;
+        }
+        const auto& error = parsed_error.value();
         if (error.type != error_type) {
             // error type doesn't match, ignoring
             return;
@@ -742,8 +766,12 @@ void Everest::subscribe_global_all_errors(const error::ErrorCallback& raise_call
         return;
     }
 
-    const auto error_handler = [this, raise_callback, clear_callback](const std::string&, json const& data) {
-        error::Error error = data.get<error::Error>();
+    const auto error_handler = [this, raise_callback, clear_callback](const std::string& topic, json const& data) {
+        const auto parsed_error = parse_error(topic, data);
+        if (!parsed_error.has_value()) {
+            return;
+        }
+        const auto& error = parsed_error.value();
         switch (error.state) {
         case error::State::Active:
             EVLOG_debug << fmt::format(
@@ -815,8 +843,8 @@ UnsubscribeToken Everest::provide_external_mqtt_handler(const std::string& topic
         topic, external_topic, [handler, external_topic](const std::string&, json const& data) {
             EVLOG_verbose << fmt::format("Incoming external mqtt data for topic '{}'...", external_topic);
             if (!data.is_string()) {
-                EVLOG_AND_THROW(
-                    EverestInternalError("External mqtt result is not a string (that should never happen)"));
+                EVLOG_warning << fmt::format("Ignoring non-string external mqtt data for topic '{}'", external_topic);
+                return;
             }
             handler(data.get<std::string>());
         });
@@ -977,12 +1005,13 @@ void Everest::provide_cmd(const std::string& impl_id, const std::string& cmd_nam
                                      this->config.printable_identifier(this->module_id, impl_id), cmd_name,
                                      fmt::join(arg_names, ","));
 
-        json res_data = json({});
-        try {
-            res_data["id"] = data.at("id");
-        } catch (const json::exception& e) {
-            throw CmdError("Command did not contain id");
+        const auto id_it = data.find("id");
+        if (id_it == data.end()) {
+            EVLOG_warning << fmt::format("Ignoring incoming cmd '{}' without id", cmd_name);
+            return;
         }
+        json res_data = json({});
+        res_data["id"] = *id_it;
         std::optional<CmdResultError> error;
 
         // check data and ignore it if not matching (publishing it should have
@@ -1270,9 +1299,20 @@ std::string Everest::check_external_mqtt(const std::string& topic) {
 }
 
 UnsubscribeToken Everest::create_external_handler(const std::string& topic, const std::string& external_topic,
-                                                  const StringPairHandler& handler) {
+                                                  const Handler& handler) {
+    const auto guarded_handler = [handler](const std::string& incoming_topic, const json& data) {
+        try {
+            handler(incoming_topic, data);
+        } catch (const std::exception& e) {
+            EVLOG_error << fmt::format("Exception in external MQTT handler for topic '{}', dropping message: {}",
+                                       incoming_topic, e.what());
+        } catch (...) {
+            EVLOG_error << fmt::format("Unknown exception in external MQTT handler for topic '{}', dropping message",
+                                       incoming_topic);
+        }
+    };
     const auto token =
-        std::make_shared<TypedHandler>(topic, HandlerType::ExternalMQTT, std::make_shared<Handler>(handler));
+        std::make_shared<TypedHandler>(topic, HandlerType::ExternalMQTT, std::make_shared<Handler>(guarded_handler));
     mqtt_abstraction->register_handler(external_topic, token, QOS::QOS0);
     return [this, external_topic, token]() { this->mqtt_abstraction->unregister_handler(external_topic, token); };
 }
