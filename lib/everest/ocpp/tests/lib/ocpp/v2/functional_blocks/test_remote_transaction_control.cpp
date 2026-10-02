@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <firmware_update_mock.hpp>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
@@ -93,15 +94,6 @@ public:
                 (override));
     MOCK_METHOD(void, set_remote_start_id_for_evse, (std::int32_t, IdToken, std::int32_t), (override));
     MOCK_METHOD(void, schedule_reset, (std::optional<std::int32_t>), (override));
-};
-
-class FirmwareUpdateMock : public FirmwareUpdateInterface {
-public:
-    MOCK_METHOD(void, handle_message, (const ocpp::EnhancedMessage<MessageType>&), (override));
-    MOCK_METHOD(void, on_firmware_update_status_notification, (std::int32_t, const FirmwareStatusEnum&, const bool),
-                (override));
-    MOCK_METHOD(void, on_firmware_status_notification_request, (), (override));
-    MOCK_METHOD(void, on_transaction_finished, (), (override));
 };
 
 class ProvisioningMock : public ProvisioningInterface {

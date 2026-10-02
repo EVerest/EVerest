@@ -25,13 +25,25 @@ const static std::array<FirmwareStatusEnum, 5> firmware_status_end_states = {
 FirmwareUpdate::FirmwareUpdate(const FunctionalBlockContext& functional_block_context,
                                AvailabilityInterface& availability, SecurityInterface& security,
                                UpdateFirmwareRequestCallback update_firmware_request_callback,
-                               std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback) :
+                               std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback,
+                               std::atomic<RegistrationStatusEnum>& registration_status) :
     context(functional_block_context),
     availability(availability),
     security(security),
+    registration_status(registration_status),
     update_firmware_request_callback(update_firmware_request_callback),
     all_connectors_unavailable_callback(all_connectors_unavailable_callback),
     firmware_status(FirmwareStatusEnum::Idle) {
+}
+
+void FirmwareUpdate::on_registration_accepted() {
+    auto handle = this->pending_status.handle();
+    auto& pending = *handle;
+    if (pending.has_value()) {
+        const ocpp::Call<FirmwareStatusNotificationRequest> call(pending.value());
+        this->context.message_dispatcher.dispatch_call_async(call);
+        pending.reset();
+    }
 }
 
 void FirmwareUpdate::handle_message(const ocpp::EnhancedMessage<MessageType>& message) {
@@ -62,8 +74,17 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
         this->firmware_status_id = request_id;
     }
 
-    const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
-    this->context.message_dispatcher.dispatch_call_async(call);
+    {
+        auto handle = this->pending_status.handle();
+        auto& pending = *handle;
+        if (this->registration_status == RegistrationStatusEnum::Accepted) {
+            const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
+            this->context.message_dispatcher.dispatch_call_async(call);
+            pending.reset();
+        } else {
+            pending = req;
+        }
+    }
 
     if (req.status == FirmwareStatusEnum::Installed) {
         std::string firmwareVersionMessage = "New firmware succesfully installed! Version: ";

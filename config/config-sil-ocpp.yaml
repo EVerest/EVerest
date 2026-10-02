@@ -315,5 +315,9 @@ active_modules:
         database_path: /tmp/error_history.db
   system:
     module: System
+    connections:
+      store:
+        - module_id: persistent_store
+          implementation_id: main
 
 x-module-layout: {}
