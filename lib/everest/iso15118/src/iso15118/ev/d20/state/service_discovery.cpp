@@ -1,0 +1,55 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+
+#include <iso15118/detail/helper.hpp>
+#include <iso15118/ev/d20/context.hpp>
+#include <iso15118/ev/d20/state/service_detail.hpp>
+#include <iso15118/ev/d20/state/service_discovery.hpp>
+#include <iso15118/ev/d20/state/stop_before_start.hpp>
+#include <iso15118/ev/detail/d20/context_helper.hpp>
+#include <iso15118/message/service_discovery.hpp>
+
+namespace iso15118::ev::d20::state {
+
+void ServiceDiscovery::enter() {
+    logf_debug("Enter state: ServiceDiscovery");
+
+    message_20::ServiceDiscoveryRequest req;
+    setup_header(req.header, m_ctx.get_session());
+    req.supported_service_ids =
+        message_20::datatypes::ServiceIdList{message_20::to_underlying_value(m_ctx.selected_service())};
+    m_ctx.send_request(req);
+}
+
+Result ServiceDiscovery::feed(Event ev) {
+    if (ev != Event::V2GTP_MESSAGE) {
+        return Result::ignored();
+    }
+
+    const auto variant = m_ctx.pull_response();
+
+    const auto* res = expect_response<message_20::ServiceDiscoveryResponse>(m_ctx, *variant);
+    if (res == nullptr) {
+        return Result::stopping();
+    }
+
+    if (auto stop = stop_before_start(m_ctx)) {
+        return std::move(*stop);
+    }
+
+    const auto requested = m_ctx.selected_service();
+    const auto& services = res->energy_transfer_service_list;
+    const auto offered = std::any_of(services.begin(), services.end(),
+                                     [requested](const auto& service) { return service.service_id == requested; });
+    if (not offered) {
+        logf_error("ServiceDiscoveryResponse does not offer the requested energy transfer service: %d",
+                   static_cast<int>(message_20::to_underlying_value(requested)));
+        m_ctx.stop_session();
+        return Result::stopping();
+    }
+
+    return m_ctx.create_state<ServiceDetail>();
+}
+
+} // namespace iso15118::ev::d20::state

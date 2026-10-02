@@ -120,7 +120,28 @@ if(ISO15118_BUILD_EV_SIDE)
         session/protocol.cpp
 
         ev/fsm_base.cpp
+        ev/sap_offer.cpp
         ev/session/feedback.cpp
+
+        ev/d20/context.cpp
+        ev/d20/context_helper.cpp
+        ev/d20/engine.cpp
+        ev/d20/timeouts.cpp
+        ev/d20/state/supported_app_protocol.cpp
+        ev/d20/state/session_setup.cpp
+        ev/d20/state/authorization_setup.cpp
+        ev/d20/state/authorization.cpp
+        ev/d20/state/service_discovery.cpp
+        ev/d20/state/service_detail.cpp
+        ev/d20/state/service_selection.cpp
+        ev/d20/state/schedule_exchange.cpp
+        ev/d20/state/dc_charge_parameter_discovery.cpp
+        ev/d20/state/dc_cable_check.cpp
+        ev/d20/state/dc_pre_charge.cpp
+        ev/d20/state/dc_charge_loop.cpp
+        ev/d20/state/dc_welding_detection.cpp
+        ev/d20/state/power_delivery.cpp
+        ev/d20/state/session_stop.cpp
         ev/transport/sdp_client.cpp
         ev/transport/data_client.cpp
     )
