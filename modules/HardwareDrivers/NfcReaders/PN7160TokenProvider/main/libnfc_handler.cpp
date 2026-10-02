@@ -18,13 +18,44 @@ extern "C" {
 static NfcHandler* nfc_handler_instance{nullptr};
 static nfcTagCallback_t nfc_callbacks;
 
-NfcHandler::NfcHandler(const std::filesystem::path& config_path) {
+namespace {
+
+void set_if_configured(const char* key, const std::string& value) {
+    if (!value.empty()) {
+        setNxpConfigValue(key, value.c_str());
+    }
+}
+
+} // namespace
+
+NfcHandler::NfcHandler(const std::filesystem::path& config_path, const RuntimeConfig& runtime_config) {
     // we could have also used a singleton instance,
     if (nfc_handler_instance) {
         throw std::runtime_error("Only one nfc handler instance allowed");
     }
 
+    // set path to static config file
     setConfigPath(config_path.c_str());
+
+    // or use dynamic runtime configuration from module configuration
+    if (!runtime_config.transport.empty()) {
+        setNxpConfigValue("NXP_TRANSPORT", runtime_config.transport.c_str());
+
+        // the GPIOs are in both transports important
+        set_if_configured("PIN_INT", runtime_config.pin_int);
+        set_if_configured("PIN_ENABLE", runtime_config.pin_enable);
+        set_if_configured("PIN_FWDNLD", runtime_config.pin_fwdnld);
+
+        // for I2C we need device and address
+        if (runtime_config.transport == "0x02") {
+            set_if_configured("I2C_ADDRESS", runtime_config.i2c_address);
+            set_if_configured("I2C_BUS", runtime_config.device);
+
+        // for SPI we only need the device
+        } else if (runtime_config.transport == "0x03") {
+            set_if_configured("SPI_BUS", runtime_config.device);
+        }
+    }
 
     InitializeLogLevel();
 
