@@ -65,8 +65,12 @@ struct RunOptions {
     std::function<CmdControl(const std::string& output_line)> callback = nullptr;
     /// How stdout is retained in CmdOutput. Independent of the callback.
     AccumulationPolicy accumulation = RetainAll{};
-    /// Optional cancellation flag. When non-null, a watcher thread terminates the child (SIGTERM, then SIGKILL after
-    /// terminate_grace) once it is set; exit_code then reflects the terminating signal.
+    /// Optional cancellation flag. When non-null, the child runs in its own process group, and once the flag is set a
+    /// watcher thread terminates the child and everything in that group (SIGTERM, then SIGKILL once stdout closes or
+    /// terminate_grace elapses); exit_code then reflects the signal that terminated the child. A callback Terminate
+    /// kills them with SIGKILL. The child is reached even if it moves to another process group; its descendants that
+    /// do are not. The child runs as a background job on the caller's terminal: it gets no terminal SIGINT, and a read
+    /// from the terminal stops it.
     std::shared_ptr<std::atomic_bool> stop_requested = nullptr;
     /// When true, sets PR_SET_PDEATHSIG(SIGKILL) on the child (Linux only) so the kernel kills it when the calling
     /// THREAD dies. Note this is thread death, not process death (Linux semantics): a caller that invokes
