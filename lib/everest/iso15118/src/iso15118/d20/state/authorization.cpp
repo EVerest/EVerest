@@ -358,12 +358,10 @@ Result Authorization::handle_authorization_request(const message_20::Authorizati
 
 void Authorization::respond_certificate_installation(const message_20::CertificateInstallationRequest& req,
                                                      dt::ResponseCode code, dt::Processing processing) {
-    // [V2G20-2202]: mandatory elements with minimal placeholder content.
     message_20::CertificateInstallationResponse res;
     validate_and_setup_header(res.header, m_ctx.session, req.header.session_id);
     res.evse_processing = processing;
-    res.signed_installation_data.id = "id1";
-    res.signed_installation_data.contract_certificate_chain.sub_certificates.emplace_back();
+    set_certificate_installation_placeholders(res);
     res.remaining_contract_certificate_chains = 0;
     set_response_code(res, code);
     m_ctx.respond(res);

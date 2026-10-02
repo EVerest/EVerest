@@ -54,7 +54,7 @@ struct CertificateInstallationRequest {
     std::optional<datatypes::EmaidList> prioritized_emaids;
 };
 
-// The SECC builds this itself only for Ongoing and WARNING, with empty placeholders in the mandatory
+// The SECC builds this itself only for Ongoing, WARNING and FAILED, with placeholders in the mandatory
 // chain and installation data ([V2G20-2202]). A positive response is the backend's signed EXI, spliced on.
 struct CertificateInstallationResponse {
     Header header;

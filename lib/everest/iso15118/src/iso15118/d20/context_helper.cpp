@@ -78,6 +78,21 @@ void setup_header(message_20::Header& header, const Session& cur_session) {
     header.timestamp = now_in_secc_time();
 }
 
+void set_certificate_installation_placeholders(message_20::CertificateInstallationResponse& res) {
+    constexpr std::size_t DH_PUBLIC_KEY_SIZE = 133;
+    constexpr std::size_t SECP521_ENCRYPTED_PRIVATE_KEY_SIZE = 94;
+
+    auto& data = res.signed_installation_data;
+    data.id = "id1";
+    // ContractCertificateChain requires at least one SubCertificate.
+    data.contract_certificate_chain.sub_certificates.emplace_back();
+    data.ecdh_curve = message_20::datatypes::EcdhCurve::SECP521;
+    data.dh_public_key.assign(DH_PUBLIC_KEY_SIZE, 0x00);
+    data.secp521_encrypted_private_key.emplace(SECP521_ENCRYPTED_PRIVATE_KEY_SIZE, 0x00);
+    data.x448_encrypted_private_key.reset();
+    data.tpm_encrypted_private_key.reset();
+}
+
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.
 void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
 
@@ -91,11 +106,9 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
         const auto res = handle_sequence_error<message_20::AuthorizationResponse>(ctx.session);
         ctx.respond(res);
     } else if (req_type == message_20::Type::CertificateInstallationReq) {
-        // Mandatory chains as empty placeholders ([V2G20-736]); ContractCertificateChain needs one entry.
         message_20::CertificateInstallationResponse res;
         setup_header(res.header, ctx.session);
-        res.signed_installation_data.id = "id1";
-        res.signed_installation_data.contract_certificate_chain.sub_certificates.emplace_back();
+        set_certificate_installation_placeholders(res);
         set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
         ctx.respond(res);
     } else if (req_type == message_20::Type::ServiceDiscoveryReq) {
