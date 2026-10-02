@@ -14,7 +14,7 @@ on:
           - 'ubuntu-24.04'
           - 'large-ubuntu-24.04-xxl'
   schedule:
-    - cron: '37 13,1 * * *'
+    - cron: '37 1 * * *'
 
 jobs:
 
