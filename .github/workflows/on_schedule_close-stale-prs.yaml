@@ -1,0 +1,66 @@
+name: On Schedule - Close Stale PRs
+
+on:
+  schedule:
+    - cron: '0 3 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Log actions without labeling/commenting/closing anything'
+        type: boolean
+        default: true
+
+jobs:
+  close-stale-prs:
+    name: Close Stale PRs
+    runs-on: ubuntu-24.04
+    permissions:
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Warn and close stale PRs
+        uses: actions/stale@v9
+        with:
+          debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
+          # Issues idle far longer than PRs by nature, so they get a longer
+          # window than PRs plus a longer reaction window for reporters who are
+          # not watching the tracker.
+          days-before-issue-stale: 180
+          days-before-issue-close: 30
+
+          days-before-pr-stale: 90
+          days-before-pr-close: 14
+
+          # Each already-stale item costs ~2 API ops per run just to re-check it,
+          # and ~2 more to close it; the ~140 item backlog needs headroom well
+          # above the default budget of 30.
+          operations-per-run: 600
+          # Oldest first: the default sorts newest-created first, putting the
+          # actually-stale PRs at the tail of the list.
+          ascending: true
+
+          stale-issue-label: 'stale'
+          stale-pr-label: 'stale'
+          exempt-issue-labels: 'keep-open'
+          exempt-pr-labels: 'keep-open'
+
+          stale-issue-message: >
+            This issue has had no activity for 6 months and will be
+            automatically closed in 30 days. To keep it open, add the
+            `keep-open` label or leave a comment.
+          close-issue-message: >
+            This issue was closed automatically after 6 months of inactivity
+            followed by a further 30 days without a response to the stale
+            warning. Feel free to reopen it if it is still relevant.
+
+          stale-pr-message: >
+            This pull request has had no activity for 90 days and will be
+            automatically closed in 14 days. To keep it open, add the
+            `keep-open` label or leave a comment. Note that pushing commits
+            alone does not always reset the timer.
+          close-pr-message: >
+            This pull request was closed automatically after 90 days of
+            inactivity followed by a further 14 days without a response to
+            the stale warning. Feel free to reopen it if it is still relevant.
+
+          remove-stale-when-updated: true
