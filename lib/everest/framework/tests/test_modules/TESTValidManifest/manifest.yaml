@@ -13,6 +13,11 @@ config:
     type: boolean
     mutability: ReadOnly
     default: true
+  module_id_default:
+    description: "A string default containing the module instance ID"
+    type: string
+    default: "/logs/${module_id}"
+    pattern: '^/logs/[a-zA-Z_][a-zA-Z0-9_.-]*$'
 provides:
   main:
     description: "This unit has a valid manifest but no corresponding class"
