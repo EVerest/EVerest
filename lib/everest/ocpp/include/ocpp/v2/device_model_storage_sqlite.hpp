@@ -23,6 +23,8 @@ private:
 
     int get_variable_id(const Component& component_id, const Variable& variable_id);
 
+    std::optional<std::string> get_actual_value(const Component& component_id, const Variable& variable_id);
+
     void initialize_connection(const fs::path& db_path);
 
 public:
@@ -78,6 +80,15 @@ public:
     ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) final;
 
     std::int32_t clear_custom_variable_monitors() final;
+
+    std::vector<StoredMonitor> get_all_monitors() final;
+
+    std::vector<StoredVariableValue> get_stored_values() final;
+
+    SetVariableStatusEnum set_stored_value(const StoredVariableValue& value) final;
+
+    bool remove_stored_value(const Component& component_id, const Variable& variable_id,
+                             const AttributeEnum& attribute_enum) final;
 
     void check_integrity() final;
 

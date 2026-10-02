@@ -152,7 +152,6 @@ DeviceModelVariable make_variable(const std::string& name, const ocpp::v2::Varia
     DeviceModelVariable var_data;
     var_data.name = name;
     var_data.characteristics = characteristics;
-    var_data.source = VARIABLE_SOURCE_EVEREST;
 
     DbVariableAttribute db_attr;
     VariableAttribute attr;
@@ -174,7 +173,6 @@ make_variable_with_instance(const std::string& name, const std::string& instance
     var_data.name = name;
     var_data.instance = instance;
     var_data.characteristics = characteristics;
-    var_data.source = VARIABLE_SOURCE_EVEREST;
 
     DbVariableAttribute db_attr;
     VariableAttribute attr;
@@ -1033,7 +1031,15 @@ void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float 
 
 ocpp::v2::DeviceModelMap EverestDeviceModelStorage::get_device_model() {
     std::lock_guard<std::mutex> lock(device_model_mutex);
-    return this->device_model_storage->get_device_model();
+    auto device_model_map = this->device_model_storage->get_device_model();
+    // This storage changes the values of its variables behind the DeviceModel, which reads a variable with a
+    // source through the storage. The composed storage routes requests by the same source.
+    for (auto& [component, variable_map] : device_model_map) {
+        for (auto& [variable, variable_meta] : variable_map) {
+            variable_meta.source = VARIABLE_SOURCE_EVEREST;
+        }
+    }
+    return device_model_map;
 }
 
 std::optional<ocpp::v2::VariableAttribute>
@@ -1142,6 +1148,11 @@ ocpp::v2::ClearMonitoringStatusEnum EverestDeviceModelStorage::clear_variable_mo
 int32_t EverestDeviceModelStorage::clear_custom_variable_monitors() {
     std::lock_guard<std::mutex> lock(device_model_mutex);
     return this->device_model_storage->clear_custom_variable_monitors();
+}
+
+std::vector<ocpp::v2::StoredMonitor> EverestDeviceModelStorage::get_all_monitors() {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_all_monitors();
 }
 
 void EverestDeviceModelStorage::check_integrity() {

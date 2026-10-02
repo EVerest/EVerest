@@ -43,11 +43,6 @@ the value of the component config again at the next start.
 As a consequence, the database must only be edited while the charging station software is stopped. Changes made to the
 database while it runs are not seen until the next start.
 
-The exception is a variable that the storage reports with a `source`: it is held by the storage of that source, which
-changes its value without `DeviceModel`, so its values are read from the storage and every write goes to the storage.
-The EVerest device model storage of the OCPP modules marks every variable it creates with the source `EVEREST`, and the
-composed storage of those modules routes the reads and writes of such a variable to it.
-
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
@@ -63,6 +58,37 @@ addition of a new one.
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
 Note: There should be no duplicate components or variables in the component config files.
+
+## Database schema
+
+The device model database (schema version 4) has two kinds of tables.
+
+The component tables `COMPONENT`, `VARIABLE`, `VARIABLE_CHARACTERISTICS` and `VARIABLE_ATTRIBUTE` hold the structure
+from the component config and the values of its variables. They are linked by foreign keys, and removing a component
+or variable removes its characteristics and attributes with it.
+
+Two tables are keyed by the identity of a component and variable instead of a foreign key, so they can hold data of
+variables that have no row in the component tables:
+
+| Table | Holds |
+|---|---|
+| `VARIABLE_MONITORING` | every monitor. `ID` is `AUTOINCREMENT`, so monitor ids stay unique and are never reused. `SOURCE` records the owner of a variable registered at runtime. It is NULL for variables of the component config. |
+| `VARIABLE_ATTRIBUTE_VALUE` | attribute values of variables without a row in the component tables, written by `DeviceModelStorageSqlite::set_stored_value`. `set_variable_attribute_value` rejects a variable without a row. The primary key is the name key plus the attribute type. `SOURCE` records the owner of the variable when the value was stored. |
+
+The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
+`VARIABLE_NAME` and `VARIABLE_INSTANCE`. SQLite treats NULLs as distinct in keys, so an absent instance is stored as
+`''` and an absent EVSE or connector id as `0`.
+
+Because monitors are not linked to variable rows, removing a variable from the component config removes only the
+hardwired and preconfigured monitors that the component config defines for it. Custom monitors stay in the database.
+`DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
+`get_all_monitors` returns all of them.
+
+Migration 4 moves the monitors of schema 3 into the name-keyed table. Monitors keep their ids, and the id sequence is
+kept, so ids of monitors deleted before the migration are not handed out again. It also drops `VARIABLE.SOURCE`: the
+component tables hold only the component config, and the `source` key of a component config variable is not read. The
+down migration keeps only the monitors whose variable has a row in the component tables, drops the values in
+`VARIABLE_ATTRIBUTE_VALUE` and restores `VARIABLE.SOURCE` empty.
 
 ## Required variables
 

@@ -50,6 +50,11 @@ public:
                         const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id) override;
     virtual ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) override;
     virtual int32_t clear_custom_variable_monitors() override;
+    virtual std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override;
+    virtual std::vector<ocpp::v2::StoredVariableValue> get_stored_values() override;
+    virtual ocpp::v2::SetVariableStatusEnum set_stored_value(const ocpp::v2::StoredVariableValue& value) override;
+    virtual bool remove_stored_value(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                                     const ocpp::v2::AttributeEnum& attribute_enum) override;
     virtual void check_integrity() override;
     virtual bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
 

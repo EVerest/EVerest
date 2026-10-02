@@ -45,6 +45,49 @@ std::pair<Component, Variable> read_component_variable(StatementInterface& state
     return {component, variable};
 }
 
+constexpr auto NAME_KEY_CONDITION =
+    "COMPONENT_NAME = @component_name AND COMPONENT_INSTANCE = @component_instance AND EVSE_ID = @evse_id AND "
+    "CONNECTOR_ID = @connector_id AND VARIABLE_NAME = @variable_name AND VARIABLE_INSTANCE = @variable_instance";
+
+constexpr auto MONITOR_COLUMNS = "TYPE_ID, ID, SEVERITY, \"TRANSACTION\", VALUE, CONFIG_TYPE_ID, REFERENCE_VALUE";
+
+/// \brief Binds the name key of \p component and \p variable. Absent instances and ids are stored as '' and 0,
+/// because SQLite treats NULLs as distinct in keys.
+void bind_name_key(StatementInterface& statement, const Component& component, const Variable& variable) {
+    statement.bind_text("@component_name", component.name.get(), SQLiteString::Transient);
+    statement.bind_text("@component_instance", component.instance.has_value() ? component.instance->get() : "",
+                        SQLiteString::Transient);
+    statement.bind_int("@evse_id", component.evse.has_value() ? component.evse->id : 0);
+    statement.bind_int("@connector_id", component.evse.has_value() ? component.evse->connectorId.value_or(0) : 0);
+    statement.bind_text("@variable_name", variable.name.get(), SQLiteString::Transient);
+    statement.bind_text("@variable_instance", variable.instance.has_value() ? variable.instance->get() : "",
+                        SQLiteString::Transient);
+}
+
+/// \brief Reads a name key from the six columns starting at \p first_column
+std::pair<Component, Variable> read_name_key(StatementInterface& statement, int first_column) {
+    Component component;
+    component.name = statement.column_text(first_column);
+    if (const auto instance = statement.column_text(first_column + 1); !instance.empty()) {
+        component.instance = instance;
+    }
+    if (const auto evse_id = statement.column_int(first_column + 2); evse_id != 0) {
+        EVSE evse;
+        evse.id = evse_id;
+        if (const auto connector_id = statement.column_int(first_column + 3); connector_id != 0) {
+            evse.connectorId = connector_id;
+        }
+        component.evse = evse;
+    }
+
+    Variable variable;
+    variable.name = statement.column_text(first_column + 4);
+    if (const auto instance = statement.column_text(first_column + 5); !instance.empty()) {
+        variable.instance = instance;
+    }
+    return {component, variable};
+}
+
 /// \brief Reads a VariableAttribute from the five columns VALUE, MUTABILITY_ID, PERSISTENT, CONSTANT and TYPE_ID
 /// starting at \p first_column
 VariableAttribute read_attribute(StatementInterface& statement, int first_column) {
@@ -57,6 +100,27 @@ VariableAttribute read_attribute(StatementInterface& statement, int first_column
     attribute.constant = static_cast<bool>(statement.column_int(first_column + 3));
     attribute.type = static_cast<AttributeEnum>(statement.column_int(first_column + 4));
     return attribute;
+}
+
+/// \brief Reads a monitor from the MONITOR_COLUMNS starting at \p first_column
+VariableMonitoringMeta read_monitor(StatementInterface& statement, int first_column) {
+    VariableMonitoring monitor;
+    monitor.type = static_cast<MonitorEnum>(statement.column_int(first_column));
+    monitor.id = statement.column_int(first_column + 1);
+    monitor.severity = statement.column_int(first_column + 2);
+    monitor.transaction = static_cast<bool>(statement.column_int(first_column + 3));
+    monitor.value = static_cast<float>(statement.column_double(first_column + 4));
+
+    const auto type = static_cast<VariableMonitorType>(statement.column_int(first_column + 5));
+    // this is a workaround to set the eventNotificationType which became a required property for the
+    // VariableMonitoringType in OCPP2.1
+    monitor.eventNotificationType = conversions::variable_monitor_type_to_event_notification_type(type);
+
+    VariableMonitoringMeta monitor_meta;
+    monitor_meta.monitor = monitor;
+    monitor_meta.reference_value = statement.column_text_nullable(first_column + 6);
+    monitor_meta.type = type;
+    return monitor_meta;
 }
 
 } // namespace
@@ -147,7 +211,7 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
 
     const std::string select_query =
         "SELECT c.NAME, c.EVSE_ID, c.CONNECTOR_ID, c.INSTANCE, v.NAME, v.INSTANCE, vc.DATATYPE_ID, "
-        "vc.SUPPORTS_MONITORING, vc.UNIT, vc.MIN_LIMIT, vc.MAX_LIMIT, vc.VALUES_LIST, v.SOURCE "
+        "vc.SUPPORTS_MONITORING, vc.UNIT, vc.MIN_LIMIT, vc.MAX_LIMIT, vc.VALUES_LIST "
         "FROM COMPONENT c "
         "JOIN VARIABLE v ON c.ID = v.COMPONENT_ID "
         "JOIN VARIABLE_CHARACTERISTICS vc ON vc.VARIABLE_ID = v.ID";
@@ -178,19 +242,7 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
             characteristics.valuesList = select_stmt->column_text(11);
         }
 
-        if (select_stmt->column_type(12) != SQLITE_NULL) {
-            meta_data.source = select_stmt->column_text(12);
-        }
-
         meta_data.characteristics = characteristics;
-
-        // Query all monitors for this variable
-        auto monitoring = get_monitoring_data({}, component, variable);
-        if (!monitoring.empty()) {
-            for (auto& monitor_meta : monitoring) {
-                meta_data.monitors.insert(std::pair{monitor_meta.monitor.id, std::move(monitor_meta)});
-            }
-        }
 
         device_model[component][variable] = meta_data;
     }
@@ -215,6 +267,18 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
             continue;
         }
         variable_it->second.attributes.push_back(read_attribute(*attributes_stmt, 6));
+    }
+
+    for (auto& stored_monitor : get_all_monitors()) {
+        const auto component_it = device_model.find(stored_monitor.component);
+        if (component_it == device_model.end()) {
+            continue;
+        }
+        const auto variable_it = component_it->second.find(stored_monitor.variable);
+        if (variable_it == component_it->second.end()) {
+            continue;
+        }
+        variable_it->second.monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
     }
 
     EVLOG_info << "Successfully retrieved Device Model from DeviceModelStorage";
@@ -266,17 +330,16 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
                                                                              const AttributeEnum& attribute_enum,
                                                                              const std::string& value,
                                                                              const std::string& source) {
+    const auto _variable_id = this->get_variable_id(component_id, variable_id);
+    if (_variable_id == -1) {
+        return SetVariableStatusEnum::Rejected;
+    }
+
     auto transaction = this->db->begin_transaction();
 
     const std::string insert_query =
         "UPDATE VARIABLE_ATTRIBUTE SET VALUE = ?, VALUE_SOURCE = ? WHERE VARIABLE_ID = ? AND TYPE_ID = ?";
     auto insert_stmt = this->db->new_statement(insert_query);
-
-    const auto _variable_id = this->get_variable_id(component_id, variable_id);
-
-    if (_variable_id == -1) {
-        return SetVariableStatusEnum::Rejected;
-    }
 
     insert_stmt->bind_text(1, value);
     insert_stmt->bind_text(2, source);
@@ -289,6 +352,75 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
 
     transaction->commit();
     return SetVariableStatusEnum::Accepted;
+}
+
+SetVariableStatusEnum DeviceModelStorageSqlite::set_stored_value(const StoredVariableValue& value) {
+    const std::string upsert_query =
+        "INSERT INTO VARIABLE_ATTRIBUTE_VALUE (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
+        "VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID, VALUE, VALUE_SOURCE, SOURCE) VALUES (@component_name, "
+        "@component_instance, @evse_id, @connector_id, @variable_name, @variable_instance, @type_id, @value, "
+        "@value_source, @source) ON CONFLICT (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
+        "VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID) DO UPDATE SET VALUE = excluded.VALUE, VALUE_SOURCE = "
+        "excluded.VALUE_SOURCE, SOURCE = excluded.SOURCE";
+
+    auto transaction = this->db->begin_transaction();
+    auto upsert_stmt = this->db->new_statement(upsert_query);
+    bind_name_key(*upsert_stmt, value.component, value.variable);
+    upsert_stmt->bind_int("@type_id", static_cast<int>(value.attribute));
+    upsert_stmt->bind_text("@value", value.value, SQLiteString::Transient);
+    if (value.value_source.has_value()) {
+        upsert_stmt->bind_text("@value_source", value.value_source.value(), SQLiteString::Transient);
+    } else {
+        upsert_stmt->bind_null("@value_source");
+    }
+    if (value.source.has_value()) {
+        upsert_stmt->bind_text("@source", value.source.value(), SQLiteString::Transient);
+    } else {
+        upsert_stmt->bind_null("@source");
+    }
+    if (upsert_stmt->step() != SQLITE_DONE) {
+        EVLOG_error << this->db->get_error_message();
+        return SetVariableStatusEnum::Rejected;
+    }
+
+    transaction->commit();
+    return SetVariableStatusEnum::Accepted;
+}
+
+std::vector<StoredVariableValue> DeviceModelStorageSqlite::get_stored_values() {
+    auto select_stmt = this->db->new_statement(
+        "SELECT COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID, "
+        "VALUE, VALUE_SOURCE, SOURCE FROM VARIABLE_ATTRIBUTE_VALUE");
+
+    std::vector<StoredVariableValue> values;
+    while (select_stmt->step() == SQLITE_ROW) {
+        auto [component, variable] = read_name_key(*select_stmt, 0);
+        StoredVariableValue stored_value;
+        stored_value.component = std::move(component);
+        stored_value.variable = std::move(variable);
+        stored_value.attribute = static_cast<AttributeEnum>(select_stmt->column_int(6));
+        stored_value.value = select_stmt->column_text_nullable(7).value_or("");
+        stored_value.value_source = select_stmt->column_text_nullable(8);
+        stored_value.source = select_stmt->column_text_nullable(9);
+        values.push_back(std::move(stored_value));
+    }
+    return values;
+}
+
+bool DeviceModelStorageSqlite::remove_stored_value(const Component& component_id, const Variable& variable_id,
+                                                   const AttributeEnum& attribute_enum) {
+    auto transaction = this->db->begin_transaction();
+    auto delete_stmt = this->db->new_statement(std::string("DELETE FROM VARIABLE_ATTRIBUTE_VALUE WHERE ") +
+                                               NAME_KEY_CONDITION + " AND TYPE_ID = @type_id");
+    bind_name_key(*delete_stmt, component_id, variable_id);
+    delete_stmt->bind_int("@type_id", static_cast<int>(attribute_enum));
+    if (delete_stmt->step() != SQLITE_DONE) {
+        EVLOG_error << this->db->get_error_message();
+        return false;
+    }
+
+    transaction->commit();
+    return delete_stmt->changes() == 1;
 }
 
 bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t monitor_id,
@@ -315,58 +447,51 @@ bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t mo
 
 std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_data(const SetMonitoringData& data,
                                                                                     const VariableMonitorType type) {
-    const auto _variable_id = this->get_variable_id(data.component, data.variable);
-    if (_variable_id == -1) {
-        return std::nullopt;
-    }
-
     std::optional<std::string> actual_value;
 
     // For a delta monitor, the actual value is mandatory,
     // since it is used as a reference value when triggering
     if (data.type == MonitorEnum::Delta) {
-        auto attrib = get_variable_attribute(data.component, data.variable, AttributeEnum::Actual);
-
-        if (attrib.has_value() && attrib.value().value.has_value()) {
-            actual_value = attrib.value().value.value();
-        } else {
+        actual_value = this->get_actual_value(data.component, data.variable);
+        if (!actual_value.has_value()) {
             return std::nullopt;
         }
     }
 
-    // TODO (ioan): see if we already have an existing monitor?
     auto transaction = this->db->begin_transaction();
 
-    std::string insert_query;
-
+    std::string insert_query =
+        "INSERT OR REPLACE INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
+        "VARIABLE_NAME, VARIABLE_INSTANCE, SEVERITY, \"TRANSACTION\", TYPE_ID, CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE";
     if (data.id.has_value()) {
-        insert_query = "INSERT OR REPLACE INTO VARIABLE_MONITORING (VARIABLE_ID, SEVERITY, 'TRANSACTION', TYPE_ID, "
-                       "CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE, ID) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
-    } else {
-        insert_query = "INSERT OR REPLACE INTO VARIABLE_MONITORING (VARIABLE_ID, SEVERITY, 'TRANSACTION', TYPE_ID, "
-                       "CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
-                       "VALUES (?, ?, ?, ?, ?, ?, ?)";
+        insert_query += ", ID";
     }
+    insert_query += ") VALUES (@component_name, @component_instance, @evse_id, @connector_id, @variable_name, "
+                    "@variable_instance, @severity, @transaction, @type_id, @config_type_id, @value, "
+                    "@reference_value";
+    if (data.id.has_value()) {
+        insert_query += ", @id";
+    }
+    insert_query += ")";
 
     auto insert_stmt = this->db->new_statement(insert_query);
 
-    insert_stmt->bind_int(1, _variable_id);
-    insert_stmt->bind_int(2, data.severity);
-    insert_stmt->bind_int(3, static_cast<int>(data.transaction.value_or(false)));
-    insert_stmt->bind_int(4, static_cast<int>(data.type));
-    insert_stmt->bind_int(5, static_cast<int>(type));
-    insert_stmt->bind_double(6, data.value);
+    bind_name_key(*insert_stmt, data.component, data.variable);
+    insert_stmt->bind_int("@severity", data.severity);
+    insert_stmt->bind_int("@transaction", static_cast<int>(data.transaction.value_or(false)));
+    insert_stmt->bind_int("@type_id", static_cast<int>(data.type));
+    insert_stmt->bind_int("@config_type_id", static_cast<int>(type));
+    insert_stmt->bind_double("@value", data.value);
 
     if (actual_value.has_value()) {
         // If the monitor is a delta, we need to insert the reference value
-        insert_stmt->bind_text(7, actual_value.value(), SQLiteString::Transient);
+        insert_stmt->bind_text("@reference_value", actual_value.value(), SQLiteString::Transient);
     } else {
-        insert_stmt->bind_null(7);
+        insert_stmt->bind_null("@reference_value");
     }
 
     if (data.id.has_value()) {
-        insert_stmt->bind_int(8, data.id.value());
+        insert_stmt->bind_int("@id", data.id.value());
     }
 
     if (insert_stmt->step() != SQLITE_DONE) {
@@ -398,52 +523,59 @@ std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_d
     return meta;
 }
 
+std::optional<std::string> DeviceModelStorageSqlite::get_actual_value(const Component& component_id,
+                                                                      const Variable& variable_id) {
+    if (this->get_variable_id(component_id, variable_id) != -1) {
+        const auto attribute = this->get_variable_attribute(component_id, variable_id, AttributeEnum::Actual);
+        if (!attribute.has_value() || !attribute->value.has_value()) {
+            return std::nullopt;
+        }
+        return attribute->value->get();
+    }
+
+    auto select_stmt = this->db->new_statement(std::string("SELECT VALUE FROM VARIABLE_ATTRIBUTE_VALUE WHERE ") +
+                                               NAME_KEY_CONDITION + " AND TYPE_ID = @type_id");
+    bind_name_key(*select_stmt, component_id, variable_id);
+    select_stmt->bind_int("@type_id", static_cast<int>(AttributeEnum::Actual));
+    if (select_stmt->step() != SQLITE_ROW) {
+        return std::nullopt;
+    }
+    return select_stmt->column_text_nullable(0);
+}
+
 std::vector<VariableMonitoringMeta>
 DeviceModelStorageSqlite::get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria,
                                               const Component& component_id, const Variable& variable_id) {
-    const auto _variable_id = this->get_variable_id(component_id, variable_id);
-    if (_variable_id == -1) {
-        return {};
-    }
-
-    // TODO (ioan): optimize select based on criterions
-    const std::string select_query =
-        "SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, vm.REFERENCE_VALUE "
-        "FROM VARIABLE_MONITORING vm "
-        "WHERE vm.VARIABLE_ID = @variable_id";
-
-    auto select_stmt = this->db->new_statement(select_query);
-    select_stmt->bind_int(1, _variable_id);
+    auto select_stmt = this->db->new_statement(std::string("SELECT ") + MONITOR_COLUMNS +
+                                               " FROM VARIABLE_MONITORING WHERE " + NAME_KEY_CONDITION);
+    bind_name_key(*select_stmt, component_id, variable_id);
 
     std::vector<VariableMonitoringMeta> monitors;
-
     while (select_stmt->step() == SQLITE_ROW) {
-        VariableMonitoringMeta monitor_meta;
-        VariableMonitoring monitor;
-
-        // Retrieve monitor data
-        monitor.type = static_cast<MonitorEnum>(select_stmt->column_int(0));
-        monitor.id = select_stmt->column_int(1);
-        monitor.severity = select_stmt->column_int(2);
-        monitor.transaction = static_cast<bool>(select_stmt->column_int(3));
-        monitor.value = static_cast<float>(select_stmt->column_double(4));
-
-        const auto type = static_cast<VariableMonitorType>(select_stmt->column_int(5));
-        auto reference_value = select_stmt->column_text_nullable(6);
-        // this is a workaround to set the eventNotificationType which became a required property for the
-        // VariableMonitoringType in OCPP2.1
-        monitor.eventNotificationType = conversions::variable_monitor_type_to_event_notification_type(type);
-
-        monitor_meta.monitor = monitor;
-        monitor_meta.reference_value = reference_value;
-        monitor_meta.type = type;
-
-        monitors.push_back(monitor_meta);
-
-        // Filter only required monitors
-        ocpp::v2::utils::filter_criteria_monitors(criteria, monitors);
+        monitors.push_back(read_monitor(*select_stmt, 0));
     }
 
+    // Filter only required monitors
+    ocpp::v2::utils::filter_criteria_monitors(criteria, monitors);
+    return monitors;
+}
+
+std::vector<StoredMonitor> DeviceModelStorageSqlite::get_all_monitors() {
+    auto select_stmt = this->db->new_statement(
+        std::string("SELECT COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, "
+                    "VARIABLE_INSTANCE, SOURCE, ") +
+        MONITOR_COLUMNS + " FROM VARIABLE_MONITORING ORDER BY ID");
+
+    std::vector<StoredMonitor> monitors;
+    while (select_stmt->step() == SQLITE_ROW) {
+        auto [component, variable] = read_name_key(*select_stmt, 0);
+        StoredMonitor stored_monitor;
+        stored_monitor.component = std::move(component);
+        stored_monitor.variable = std::move(variable);
+        stored_monitor.source = select_stmt->column_text_nullable(6);
+        stored_monitor.monitor = read_monitor(*select_stmt, 7);
+        monitors.push_back(std::move(stored_monitor));
+    }
     return monitors;
 }
 
@@ -572,12 +704,11 @@ bool DeviceModelStorageSqlite::create_network_configuration_slot_from_default_sc
         const auto new_component_id = this->db->get_last_inserted_rowid();
 
         for (const auto& variable : variables) {
-            auto insert_variable = this->db->new_statement(
-                "INSERT INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES (@n, @i, @cid, @src)");
+            auto insert_variable =
+                this->db->new_statement("INSERT INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID) VALUES (@n, @i, @cid)");
             insert_variable->bind_text("@n", variable.name, SQLiteString::Transient);
             bind_opt_text(*insert_variable, "@i", variable.instance);
             insert_variable->bind_int("@cid", static_cast<int>(new_component_id));
-            bind_opt_text(*insert_variable, "@src", variable.source);
             if (insert_variable->step() != SQLITE_DONE) {
                 EVLOG_error << "create_network_configuration_slot_from_default_schema: insert VARIABLE failed: "
                             << this->db->get_error_message();

@@ -143,6 +143,44 @@ int32_t ComposedDeviceModelStorage::clear_custom_variable_monitors() {
     return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->clear_custom_variable_monitors();
 }
 
+// Monitors and stored values are keyed by name and need no row in the component tables, so they all live in
+// the OCPP storage, whichever storage holds the variable.
+std::vector<ocpp::v2::StoredMonitor> ComposedDeviceModelStorage::get_all_monitors() {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot read monitors";
+        return {};
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->get_all_monitors();
+}
+
+std::vector<ocpp::v2::StoredVariableValue> ComposedDeviceModelStorage::get_stored_values() {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot read stored values";
+        return {};
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->get_stored_values();
+}
+
+ocpp::v2::SetVariableStatusEnum
+ComposedDeviceModelStorage::set_stored_value(const ocpp::v2::StoredVariableValue& value) {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot store a value";
+        return ocpp::v2::SetVariableStatusEnum::Rejected;
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)->set_stored_value(value);
+}
+
+bool ComposedDeviceModelStorage::remove_stored_value(const ocpp::v2::Component& component,
+                                                     const ocpp::v2::Variable& variable,
+                                                     const ocpp::v2::AttributeEnum& attribute_enum) {
+    if (this->device_model_storages.find(VARIABLE_SOURCE_OCPP) == this->device_model_storages.end()) {
+        EVLOG_error << "OCPP device model storage not registered, cannot remove a stored value";
+        return false;
+    }
+    return this->device_model_storages.at(VARIABLE_SOURCE_OCPP)
+        ->remove_stored_value(component, variable, attribute_enum);
+}
+
 void ComposedDeviceModelStorage::check_integrity() {
     for (const auto& [name, device_model_storage] : this->device_model_storages) {
         device_model_storage->check_integrity();

@@ -116,6 +116,10 @@ public:
         return 0;
     }
 
+    std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override {
+        return {};
+    }
+
     void check_integrity() override {
     }
 
