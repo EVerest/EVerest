@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -201,6 +201,7 @@ public:
     virtual void reload_network_profiles() = 0;
 
     /// \brief Write a network connection profile to the device model and refresh the in-memory cache.
+    /// The slot is not added to NetworkConfigurationPriority; the CSMS does that with a SetVariablesRequest (A05, B10).
     /// \param slot The configuration slot to write to
     /// \param profile The profile to write
     /// \param source The source of the change (e.g. 'csms', 'internal')
@@ -374,9 +375,6 @@ private:
     /// \return The next prioritized configuration slot, or std::nullopt if the slot list is empty.
     ///
     std::optional<int> get_next_configuration_slot(std::int32_t configuration_slot);
-
-    /// \brief Append the given slot to NetworkConfigurationPriority if it is not already listed.
-    void append_slot_to_network_configuration_priority_if_absent(int32_t slot, const std::string& source);
 
     /// \brief Ensure the fallback slot is present in the in-memory working set (slots + cached
     ///        profiles) so try_connect_websocket() can dial it even when it is absent from the
