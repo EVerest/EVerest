@@ -15,7 +15,7 @@
 
 namespace iso15118::test {
 
-// Test double for io::IConnection. Records close() and lets the test drive
+// Test double for io::IConnection. Records close() and write() calls and lets the test drive
 // connection events and read results without any real socket or sleep.
 class MockConnection final : public io::IConnection {
 public:
@@ -27,7 +27,9 @@ public:
         return {};
     }
 
-    void write(const uint8_t*, size_t) override {
+    void write(const uint8_t* buf, size_t len) override {
+        ++writes;
+        last_write.assign(buf, buf + len);
     }
 
     io::ReadResult read(uint8_t* buf, size_t len) override {
@@ -75,6 +77,8 @@ public:
 
     io::ReadResult next_read_result{};
     bool closed{false};
+    std::size_t writes{0};
+    std::vector<uint8_t> last_write;
 
 private:
     io::ConnectionEventCallback event_callback;

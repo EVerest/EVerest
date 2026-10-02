@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <memory>
@@ -78,6 +78,7 @@ private:
     void send_response();
     std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
     std::optional<TimePoint> response_send_after;   // time point when the next response message can be sent
+    message_20::Type last_response_type{message_20::Type::None}; // type of the last response message sent
 };
 
 } // namespace iso15118
