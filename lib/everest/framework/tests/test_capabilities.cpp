@@ -18,6 +18,7 @@
 
 namespace {
 constexpr int EXIT_USER_NAMESPACE_UNAVAILABLE = 77;
+constexpr int EXIT_USER_NAMESPACE_WITHOUT_CAPABILITIES = 78;
 constexpr const char* NO_CAPABILITIES = "0000000000000000";
 constexpr std::size_t READ_BUFFER_SIZE = 4096;
 
@@ -48,6 +49,11 @@ std::pair<int, std::string> child_status_after_raise() {
         close(pipe_fds.at(0));
         if (unshare(CLONE_NEWUSER) != 0) {
             _exit(EXIT_USER_NAMESPACE_UNAVAILABLE);
+        }
+        // needs CAP_SYS_ADMIN in the new namespace, which the AppArmor user namespace restriction, e.g. of
+        // Ubuntu 24.04, denies although unshare(CLONE_NEWUSER) succeeds
+        if (unshare(CLONE_NEWUTS) != 0) {
+            _exit(EXIT_USER_NAMESPACE_WITHOUT_CAPABILITIES);
         }
         if (Everest::raise_ambient_capabilities()) {
             _exit(EXIT_FAILURE);
@@ -99,6 +105,9 @@ SCENARIO("Passing ambient capabilities on to child processes", "[capabilities]")
             const auto [exit_code, output] = child_status_after_raise();
             if (exit_code == EXIT_USER_NAMESPACE_UNAVAILABLE) {
                 SKIP("Unprivileged user namespaces are not available");
+            }
+            if (exit_code == EXIT_USER_NAMESPACE_WITHOUT_CAPABILITIES) {
+                SKIP("Unprivileged user namespaces do not grant capabilities");
             }
             REQUIRE(exit_code == EXIT_SUCCESS);
 
