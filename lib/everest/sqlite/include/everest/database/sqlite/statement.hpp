@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <string>
@@ -42,6 +43,9 @@ public:
     virtual int bind_double(const std::string& param, const double val) = 0;
     virtual int bind_null(const int idx) = 0;
     virtual int bind_null(const std::string& param) = 0;
+    /// \brief Bind a time point as Unix milliseconds since epoch (INTEGER column)
+    virtual int bind_datetime(const int idx, const std::chrono::system_clock::time_point& val) = 0;
+    virtual int bind_datetime(const std::string& param, const std::chrono::system_clock::time_point& val) = 0;
 
     virtual int get_number_of_rows() = 0;
     virtual int column_type(const int idx) = 0;
@@ -51,6 +55,8 @@ public:
     virtual int column_int(const int idx) = 0;
     virtual int64_t column_int64(const int idx) = 0;
     virtual double column_double(const int idx) = 0;
+    /// \brief Read an INTEGER Unix-milliseconds column as a system_clock time point
+    virtual std::chrono::system_clock::time_point column_datetime(const int idx) = 0;
 };
 
 /// \brief RAII wrapper class that handles finalization, step, binding and column access of sqlite3_stmt
@@ -78,6 +84,8 @@ public:
     int bind_int64(const std::string& param, const int64_t val) override;
     int bind_null(const int idx) override;
     int bind_null(const std::string& param) override;
+    int bind_datetime(const int idx, const std::chrono::system_clock::time_point& val) override;
+    int bind_datetime(const std::string& param, const std::chrono::system_clock::time_point& val) override;
 
     int get_number_of_rows() override;
     int column_type(const int idx) override;
@@ -87,6 +95,7 @@ public:
     int column_int(const int idx) override;
     int64_t column_int64(const int idx) override;
     double column_double(const int idx) override;
+    std::chrono::system_clock::time_point column_datetime(const int idx) override;
 };
 
 } // namespace everest::db::sqlite
