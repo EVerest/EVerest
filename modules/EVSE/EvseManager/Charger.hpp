@@ -113,7 +113,7 @@ public:
                const int _state_F_after_fault_ms, const int reinit_duration_ms, const std::string& reinit_method,
                const bool fail_on_powermeter_errors, const bool raise_mrec9,
                const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-               const int hlc_charge_loop_without_energy_timeout_s);
+               const int hlc_charge_loop_without_energy_timeout_s, const bool wait_cable_removed_before_going_idle);
 
     void enable_disable_initial_state_publish();
     bool enable_disable(int connector_id, const types::evse_manager::EnableDisableSource& source);
@@ -409,6 +409,9 @@ private:
         // Timeout in seconds that defines for how long the EVSE allows the ISO charge loop (AC: ChargingStatus, DC:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
+        // If true, the EVSE will stay in the Finished state if the cable is disconnected from the EV side, but not the
+        // EVSE side i.e. the charging is finished, but the cable is visible through resistance on the PP pin.
+        bool wait_cable_removed_before_going_idle;
     } config_context;
 
     // Used by different threads, but requires no complete state machine locking

@@ -1344,7 +1344,7 @@ void EvseManager::ready() {
             config.state_F_after_fault_ms, config.reinit_duration_ms, config.reinit_method,
             config.fail_on_powermeter_errors, config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
             utils::get_session_id_type_from_string(config.session_id_type),
-            config.hlc_charge_loop_without_energy_timeout_s);
+            config.hlc_charge_loop_without_energy_timeout_s, config.wait_cable_removed_before_going_idle);
     }
 
     telemetryThreadHandle = std::thread([this]() {
@@ -1536,7 +1536,7 @@ void EvseManager::setup_fake_DC_mode() {
                    config.reinit_duration_ms, config.reinit_method, config.fail_on_powermeter_errors,
                    config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+                   config.hlc_charge_loop_without_energy_timeout_s, config.wait_cable_removed_before_going_idle);
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -1579,7 +1579,7 @@ void EvseManager::setup_AC_mode(bool ac_hlc_enabled) {
                    config.reinit_duration_ms, config.reinit_method, config.fail_on_powermeter_errors,
                    config.raise_mrec9, config.sleep_before_enabling_pwm_hlc_mode_ms,
                    utils::get_session_id_type_from_string(config.session_id_type),
-                   config.hlc_charge_loop_without_energy_timeout_s);
+                   config.hlc_charge_loop_without_energy_timeout_s, config.wait_cable_removed_before_going_idle);
 
     types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 

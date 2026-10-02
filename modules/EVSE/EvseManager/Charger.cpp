@@ -1681,7 +1681,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
                     const int reinit_duration_ms, const std::string& reinit_method,
                     const bool fail_on_powermeter_errors, const bool raise_mrec9,
                     const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-                    const int hlc_charge_loop_without_energy_timeout_s) {
+                    const int hlc_charge_loop_without_energy_timeout_s, const bool wait_cable_removed_before_going_idle) {
     // set up board support package
     bsp->setup(has_ventilation);
 
@@ -1708,6 +1708,7 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s;
+    config_context.wait_cable_removed_before_going_idle = wait_cable_removed_before_going_idle;
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;

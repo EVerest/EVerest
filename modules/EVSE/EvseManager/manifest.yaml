@@ -117,6 +117,14 @@ config:
       - CPStateF
       - CPStateX1
     default: CPStateF
+  wait_cable_removed_before_going_idle:
+    description: >-
+      Set to true to keep the EVSE in the Finished state if the cable is disconnected from the EV side, but not the
+      EVSE side i.e. the charging is finished, but the cable is visible through resistance on the PP pin.
+      This can be useful if the CSMS wants to track if the EV is still parked, for additional billing.
+      This works only when a IEC62196 Type2 socket is selected.
+    type: boolean
+    default: false
   internal_over_voltage_duration_ms:
     description: >-
       Time in milliseconds the internal software over voltage monitor waits before raising MREC5 once the measured
