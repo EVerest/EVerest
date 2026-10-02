@@ -8,6 +8,7 @@
 #include <iso15118/d20/state/authorization.hpp>
 #include <iso15118/d20/state/authorization_setup.hpp>
 #include <iso15118/detail/base64.hpp>
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/certificate_installation.hpp>
@@ -472,6 +473,9 @@ SCENARIO("ISO 15118-20 certificate installation relay") {
                     REQUIRE(res->response_code == dt::ResponseCode::WARNING_NoCertificateAvailable);
                     REQUIRE(res->evse_processing == dt::Processing::Finished);
                     REQUIRE_FALSE(ctx.session_stopped);
+                    REQUIRE(res->signed_installation_data.dh_public_key.size() == 133);
+                    REQUIRE(res->signed_installation_data.secp521_encrypted_private_key.has_value());
+                    REQUIRE(res->signed_installation_data.secp521_encrypted_private_key->size() == 94);
 
                     // The EV continues with the authorization.
                     const auto auth =
@@ -779,4 +783,35 @@ TEST_CASE("ISO 15118-20: invalid certificate relay produces a Finished warning")
     ctx.set_active_timeout(d20::TimeoutType::ONGOING);
     fsm.feed(d20::Event::TIMEOUT);
     CHECK_FALSE(ctx.session_stopped);
+}
+
+TEST_CASE("ISO 15118-20: Locally built installation response carries fixed-length key placeholders") {
+    message_20::CertificateInstallationResponse res;
+    res.header.session_id = {1, 2, 3, 4, 5, 6, 7, 8};
+    res.header.timestamp = 1;
+    res.response_code = dt::ResponseCode::WARNING_NoCertificateAvailable;
+    d20::set_certificate_installation_placeholders(res);
+
+    auto doc = std::make_unique<iso20_exiDocument>();
+    init_iso20_exiDocument(doc.get());
+    doc->CertificateInstallationRes_isUsed = 1;
+    message_20::convert(res, doc->CertificateInstallationRes);
+    std::vector<uint8_t> buffer(16384);
+    exi_bitstream_t out;
+    exi_bitstream_init(&out, buffer.data(), buffer.size(), 0, nullptr);
+    REQUIRE(encode_iso20_exiDocument(&out, doc.get()) == 0);
+    buffer.resize(exi_bitstream_get_length(&out));
+
+    auto decoded = std::make_unique<iso20_exiDocument>();
+    exi_bitstream_t in;
+    exi_bitstream_init(&in, buffer.data(), buffer.size(), 0, nullptr);
+    REQUIRE(decode_iso20_exiDocument(&in, decoded.get()) == 0);
+    REQUIRE(decoded->CertificateInstallationRes_isUsed);
+    const auto& data = decoded->CertificateInstallationRes.SignedInstallationData;
+    // dhPublicKeyType and secp521_EncryptedPrivateKeyType are fixed-length in V2G_CI_CommonMessages.xsd.
+    CHECK(data.DHPublicKey.bytesLen == 133);
+    REQUIRE(data.SECP521_EncryptedPrivateKey_isUsed);
+    CHECK(data.SECP521_EncryptedPrivateKey.bytesLen == 94);
+    CHECK_FALSE(data.X448_EncryptedPrivateKey_isUsed);
+    CHECK_FALSE(data.TPM_EncryptedPrivateKey_isUsed);
 }
