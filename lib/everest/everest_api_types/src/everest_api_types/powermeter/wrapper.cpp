@@ -618,6 +618,48 @@ TransactionStatus_External to_external_api(TransactionStatus_Internal const& val
         "Unexpected value for everest::lib::API::V1_0::types::powermeter::TransactionStatus_Internal");
 }
 
+Measurement_Internal to_internal_api(Measurement_External const& val) {
+    switch (val) {
+    case Measurement_External::EnergyImport:
+        return Measurement_Internal::EnergyImport;
+    case Measurement_External::EnergyExport:
+        return Measurement_Internal::EnergyExport;
+    case Measurement_External::Power:
+        return Measurement_Internal::Power;
+    case Measurement_External::Voltage:
+        return Measurement_Internal::Voltage;
+    case Measurement_External::ReactivePower:
+        return Measurement_Internal::ReactivePower;
+    case Measurement_External::Current:
+        return Measurement_Internal::Current;
+    case Measurement_External::Frequency:
+        return Measurement_Internal::Frequency;
+    }
+
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::powermeter::Measurement_External");
+}
+
+Measurement_External to_external_api(Measurement_Internal const& val) {
+    switch (val) {
+    case Measurement_Internal::EnergyImport:
+        return Measurement_External::EnergyImport;
+    case Measurement_Internal::EnergyExport:
+        return Measurement_External::EnergyExport;
+    case Measurement_Internal::Power:
+        return Measurement_External::Power;
+    case Measurement_Internal::Voltage:
+        return Measurement_External::Voltage;
+    case Measurement_Internal::ReactivePower:
+        return Measurement_External::ReactivePower;
+    case Measurement_Internal::Current:
+        return Measurement_External::Current;
+    case Measurement_Internal::Frequency:
+        return Measurement_External::Frequency;
+    }
+
+    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::powermeter::Measurement_Internal");
+}
+
 ReplyStartTransaction_Internal to_internal_api(ReplyStartTransaction_External const& val) {
     auto internal = ReplyStartTransaction_Internal();
     internal.status = to_internal_api(val.status);
@@ -691,6 +733,12 @@ Capabilities_Internal to_internal_api(Capabilities_External const& val) {
     Capabilities_Internal result;
     result.min_export_current_A = val.min_export_current_A;
     result.min_import_current_A = val.min_import_current_A;
+    if (val.supported_measurements) {
+        auto& tmp = result.supported_measurements.emplace();
+        for (auto const& elem : val.supported_measurements.value()) {
+            tmp.push_back(to_internal_api(elem));
+        }
+    }
     return result;
 }
 
@@ -698,6 +746,12 @@ Capabilities_External to_external_api(Capabilities_Internal const& val) {
     Capabilities_External result;
     result.min_export_current_A = val.min_export_current_A;
     result.min_import_current_A = val.min_import_current_A;
+    if (val.supported_measurements) {
+        auto& tmp = result.supported_measurements.emplace();
+        for (auto const& elem : val.supported_measurements.value()) {
+            tmp.push_back(to_external_api(elem));
+        }
+    }
     return result;
 }
 

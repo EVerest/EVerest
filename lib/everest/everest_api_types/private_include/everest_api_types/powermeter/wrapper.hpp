@@ -134,6 +134,12 @@ using TransactionStatus_External = TransactionStatus;
 TransactionStatus_Internal to_internal_api(TransactionStatus_External const& val);
 TransactionStatus_External to_external_api(TransactionStatus_Internal const& val);
 
+using Measurement_Internal = ::types::powermeter::Measurement;
+using Measurement_External = Measurement;
+
+Measurement_Internal to_internal_api(Measurement_External const& val);
+Measurement_External to_external_api(Measurement_Internal const& val);
+
 using ReplyStartTransaction_Internal = ::types::powermeter::TransactionStartResponse;
 using ReplyStartTransaction_External = ReplyStartTransaction;
 
