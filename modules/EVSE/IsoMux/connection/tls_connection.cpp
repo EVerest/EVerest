@@ -286,6 +286,7 @@ bool build_config(tls::Server::config_t& config, struct v2g_context* ctx) {
     config.io_timeout_ms = static_cast<std::int32_t>(ctx->network_read_timeout_tls);
 
     config.tls_key_logging = ctx->tls_key_logging;
+    config.host = ctx->if_name;
 
     // information from libevse-security
     const auto cert_info =
