@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/common/utils.hpp>
 
@@ -14,6 +14,10 @@ namespace ocpp {
 
 bool iequals(const std::string& lhs, const std::string rhs) {
     return boost::algorithm::iequals(lhs, rhs);
+}
+
+bool iless(const std::string& lhs, const std::string& rhs) {
+    return boost::algorithm::ilexicographical_compare(lhs, rhs);
 }
 
 bool is_finite_or_unset(const std::optional<float>& v) {
