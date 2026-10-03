@@ -45,6 +45,7 @@ void IsoMux::init() {
     v2g_ctx->iso20_proxy_enabled = true;
 
     v2g_ctx->tls_key_logging = config.tls_key_logging;
+    v2g_ctx->tls_key_logging_path = config.tls_key_logging_path;
 
     (void)openssl::set_log_handler(log_handler);
     v2g_ctx->tls_server = &tls_server;
