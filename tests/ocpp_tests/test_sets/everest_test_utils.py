@@ -13,13 +13,14 @@ import threading
 from types import FunctionType
 from typing import Optional
 
-from OpenSSL import crypto
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives import hashes, serialization
+from cryptography.hazmat.primitives.asymmetric import rsa
 from cryptography.x509 import load_pem_x509_certificate
+from cryptography.x509.oid import NameOID
 
 from copy import deepcopy
 
@@ -67,6 +68,7 @@ from everest.testing.ocpp_utils.charge_point_utils import (
     CertificateInfo,
     FirmwareInfo,
     AuthorizationInfo,
+    load_private_key,
 )
 
 from ocpp.charge_point import snake_to_camel_case, asdict, remove_nones
@@ -282,7 +284,7 @@ class EXIGenerator:
 
 
 
-def certificate_signed_response(csr: crypto.X509Req):
+def certificate_signed_response(csr: x509.CertificateSigningRequest):
     certs_path: str = Path(__file__).parent.resolve() / "everest-aux/certs/"
     ca_cert_file = certs_path / "ca/v2g/V2G_ROOT_CA.pem"
     ca_key_file = certs_path / "client/v2g/V2G_ROOT_CA.key"
@@ -293,30 +295,25 @@ def certificate_signed_response(csr: crypto.X509Req):
         ca_cert_data = ca_cert_file.read()
         ca_key_data = ca_key_file.read()
 
-    ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, ca_cert_data)
-    ca_key = crypto.load_privatekey(
-        crypto.FILETYPE_PEM, ca_key_data, b"123456")
-
-    signed_cert = crypto.X509()
-    signed_cert.set_version(3)
-    signed_cert.set_serial_number(1)
-
-    signed_cert.set_subject(csr.get_subject())
-    signed_cert.set_issuer(ca_cert.get_subject())
-    signed_cert.set_pubkey(csr.get_pubkey())
+    ca_cert = x509.load_pem_x509_certificate(ca_cert_data)
+    ca_key = load_private_key(ca_key_data, b"123456")
 
     validity_days = 365
-    not_before = datetime.utcnow()
+    not_before = datetime.now(timezone.utc)
     not_after = not_before + timedelta(days=validity_days)
 
-    signed_cert.set_notBefore(not_before.strftime(
-        "%Y%m%d%H%M%SZ").encode("utf-8"))
-    signed_cert.set_notAfter(not_after.strftime(
-        "%Y%m%d%H%M%SZ").encode("utf-8"))
+    signed_cert = (
+        x509.CertificateBuilder()
+        .serial_number(1)
+        .subject_name(csr.subject)
+        .issuer_name(ca_cert.subject)
+        .public_key(csr.public_key())
+        .not_valid_before(not_before)
+        .not_valid_after(not_after)
+        .sign(ca_key, hashes.SHA256())
+    )
 
-    signed_cert.sign(ca_key, "sha256")
-
-    return crypto.dump_certificate(crypto.FILETYPE_PEM, signed_cert).decode("utf-8")
+    return signed_cert.public_bytes(serialization.Encoding.PEM).decode("utf-8")
 
 
 def on_data_transfer(accept_pnc_authorize, exi_generator: EXIGenerator, **kwargs):
@@ -676,22 +673,14 @@ class CertificateHashDataGenerator:
 class CertificateHelper:
 
     @staticmethod
-    def _verify_private_key_matches_cert(private_key: crypto.PKey, cert: crypto.X509):
-        cert_public_key = (
-            cert.get_pubkey()
-            .to_cryptography_key()
-            .public_bytes(
-                encoding=serialization.Encoding.DER,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
+    def _verify_private_key_matches_cert(private_key, cert: x509.Certificate):
+        cert_public_key = cert.public_key().public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
-        pkey_public_key = (
-            private_key.to_cryptography_key()
-            .public_key()
-            .public_bytes(
-                encoding=serialization.Encoding.DER,
-                format=serialization.PublicFormat.SubjectPublicKeyInfo,
-            )
+        pkey_public_key = private_key.public_key().public_bytes(
+            encoding=serialization.Encoding.DER,
+            format=serialization.PublicFormat.SubjectPublicKeyInfo,
         )
 
         assert (
@@ -706,22 +695,29 @@ class CertificateHelper:
         Returns: tuple of certificate request and private key
         """
 
-        key = crypto.PKey()
-        key.generate_key(crypto.TYPE_RSA, 2048)
-        req = crypto.X509Req()
-        req.get_subject().CN = common_name
-        req.set_pubkey(key)
-        req.get_subject().C = "DE"
-        req.sign(key, "sha256")
-        csr_data = crypto.dump_certificate_request(crypto.FILETYPE_PEM, req)
-        private_key = crypto.dump_privatekey(
-            crypto.FILETYPE_PEM,
-            pkey=key,
-            cipher="aes256" if passphrase else None,
-            passphrase=(
-                passphrase.encode("utf-8")
-                if isinstance(passphrase, str)
-                else passphrase
+        key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+        req = (
+            x509.CertificateSigningRequestBuilder()
+            .subject_name(
+                x509.Name(
+                    [
+                        x509.NameAttribute(NameOID.COMMON_NAME, common_name),
+                        x509.NameAttribute(NameOID.COUNTRY_NAME, "DE"),
+                    ]
+                )
+            )
+            .sign(key, hashes.SHA256())
+        )
+        csr_data = req.public_bytes(serialization.Encoding.PEM)
+        if isinstance(passphrase, str):
+            passphrase = passphrase.encode("utf-8")
+        private_key = key.private_bytes(
+            encoding=serialization.Encoding.PEM,
+            format=serialization.PrivateFormat.PKCS8,
+            encryption_algorithm=(
+                serialization.BestAvailableEncryption(passphrase)
+                if passphrase
+                else serialization.NoEncryption()
             ),
         )
         return csr_data.decode("utf-8"), private_key.decode("utf-8")
@@ -745,31 +741,36 @@ class CertificateHelper:
         if isinstance(csr_data, str):
             csr_data = csr_data.encode("utf-8")
 
-        issuer_private_key = crypto.load_privatekey(
-            crypto.FILETYPE_PEM,
-            issuer_private_key_path.read_bytes(),
-            passphrase=issuer_private_key_passphrase,
+        issuer_private_key = load_private_key(
+            issuer_private_key_path.read_bytes(), issuer_private_key_passphrase
         )
-        issuer_cert = crypto.load_certificate(
-            crypto.FILETYPE_PEM, issuer_certificate_path.read_bytes()
+        issuer_cert = x509.load_pem_x509_certificate(
+            issuer_certificate_path.read_bytes()
         )
 
         cls._verify_private_key_matches_cert(issuer_private_key, issuer_cert)
 
-        csr = crypto.load_certificate_request(crypto.FILETYPE_PEM, csr_data)
+        csr = x509.load_pem_x509_csr(csr_data)
 
         # Create a new certificate
-        cert = crypto.X509()
-        cert.set_subject(csr.get_subject())
-        cert.set_pubkey(csr.get_pubkey())
-        cert.gmtime_adj_notBefore(
-            min(relative_valid_time, relative_expiration_time - 1)
+        now = datetime.now(timezone.utc)
+        cert = (
+            x509.CertificateBuilder()
+            .subject_name(csr.subject)
+            .public_key(csr.public_key())
+            .not_valid_before(
+                now
+                + timedelta(
+                    seconds=min(relative_valid_time,
+                                relative_expiration_time - 1)
+                )
+            )
+            .not_valid_after(now + timedelta(seconds=relative_expiration_time))
+            .issuer_name(issuer_cert.subject)
+            .serial_number(serial)
+            .sign(issuer_private_key, hashes.SHA256())
         )
-        cert.gmtime_adj_notAfter(relative_expiration_time)
-        cert.set_issuer(issuer_cert.get_subject())
-        cert.set_serial_number(serial)
-        cert.sign(issuer_private_key, "SHA256")
-        signed_certificate = crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+        signed_certificate = cert.public_bytes(serialization.Encoding.PEM)
 
         return signed_certificate.decode(encoding="utf-8")
 
