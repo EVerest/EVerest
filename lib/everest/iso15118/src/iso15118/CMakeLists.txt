@@ -186,6 +186,7 @@ target_link_libraries(iso15118
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
+        everest::evse_security
         everest::tls
 )
 target_sources(iso15118

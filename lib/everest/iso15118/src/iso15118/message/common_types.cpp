@@ -5,6 +5,7 @@
 #include <iso15118/message/common_types.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
+#include <iso15118/detail/cb_sub_certificates.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include <cbv2g/iso_20/iso20_AC_DER_IEC_Datatypes.h>
@@ -59,34 +60,16 @@ template <typename cb_SignatureType> void convert_signature(const cb_SignatureTy
 
 } // namespace
 
-template <typename cb_SubCertificatesType>
-void convert_sub_certificates(const cb_SubCertificatesType& in, datatypes::SubCertificate& out) {
-    out.clear();
-    for (uint16_t i = 0; i < in.Certificate.arrayLen and i < out.capacity(); ++i) {
-        const auto& cert = in.Certificate.array[i];
-        out.emplace_back(cert.bytes, cert.bytes + cert.bytesLen);
-    }
-}
-
-template <typename cb_SubCertificatesType>
-void convert_sub_certificates(const datatypes::SubCertificate& in, cb_SubCertificatesType& out) {
-    CPP2CB_ARRAY_SIZE_CHECK(in.size(), out.Certificate.array);
-    out.Certificate.arrayLen = static_cast<uint16_t>(in.size());
-    for (std::size_t i = 0; i < in.size(); ++i) {
-        CPP2CB_BYTES(in[i], out.Certificate.array[i]);
-    }
-}
-
 template <>
 void convert(const struct iso20_ContractCertificateChainType& in, datatypes::ContractCertificateChain& out) {
     out.certificate.assign(in.Certificate.bytes, in.Certificate.bytes + in.Certificate.bytesLen);
-    convert_sub_certificates(in.SubCertificates, out.sub_certificates);
+    sub_certificates_from_cb(in.SubCertificates, out.sub_certificates);
 }
 
 template <> void convert(const datatypes::ContractCertificateChain& in, iso20_ContractCertificateChainType& out) {
     init_iso20_ContractCertificateChainType(&out);
     CPP2CB_BYTES(in.certificate, out.Certificate);
-    convert_sub_certificates(in.sub_certificates, out.SubCertificates);
+    sub_certificates_to_cb(in.sub_certificates, out.SubCertificates);
 }
 
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out) {

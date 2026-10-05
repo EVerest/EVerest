@@ -6,6 +6,8 @@
 #include <cstddef>
 #include <cstring>
 #include <everest/tls/openssl_util.hpp>
+#include <fstream>
+#include <iterator>
 #include <openssl/bio.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
@@ -395,6 +397,28 @@ TEST(openssl, sha256Exi) {
 
     EXPECT_TRUE(openssl::sha_256(&iso_exi_b[0], sizeof(iso_exi_b), digest));
     EXPECT_EQ(std::memcmp(digest.data(), &iso_exi_b_hash[0], 32), 0);
+}
+
+TEST(openssl, pemToPrivateKey) {
+    std::ifstream file("server_priv.pem");
+    ASSERT_TRUE(file.is_open());
+    const std::string pem((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+
+    auto pkey = openssl::pem_to_private_key(pem, nullptr);
+    ASSERT_TRUE(pkey);
+
+    openssl::sha_256_digest_t digest;
+    EXPECT_TRUE(openssl::sha_256(&sign_test[0], openssl::sha_256_digest_size, digest));
+    std::array<std::uint8_t, 256> sig_der{};
+    std::size_t sig_der_len{sig_der.size()};
+    EXPECT_TRUE(openssl::sign(pkey.get(), sig_der.data(), sig_der_len, digest.data(), digest.size()));
+    EXPECT_TRUE(openssl::verify(pkey.get(), sig_der.data(), sig_der_len, digest.data(), digest.size()));
+}
+
+TEST(openssl, pemToPrivateKeyInvalid) {
+    EXPECT_FALSE(
+        openssl::pem_to_private_key("-----BEGIN PRIVATE KEY-----\nnot a key\n-----END PRIVATE KEY-----\n", nullptr));
+    EXPECT_FALSE(openssl::pem_to_private_key("", nullptr));
 }
 
 TEST(openssl, signVerify) {

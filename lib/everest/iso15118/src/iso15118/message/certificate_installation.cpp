@@ -2,6 +2,7 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/certificate_installation.hpp>
 
+#include <iso15118/detail/cb_sub_certificates.hpp>
 #include <iso15118/detail/variant_access.hpp>
 #include <stdexcept>
 
@@ -10,24 +11,6 @@
 namespace iso15118::message_20 {
 
 namespace {
-
-template <typename cb_SubCertificatesType>
-void sub_certificates_from_cb(const cb_SubCertificatesType& in, datatypes::SubCertificate& out) {
-    out.clear();
-    for (uint16_t i = 0; i < in.Certificate.arrayLen and i < out.capacity(); ++i) {
-        const auto& cert = in.Certificate.array[i];
-        out.emplace_back(cert.bytes, cert.bytes + cert.bytesLen);
-    }
-}
-
-template <typename cb_SubCertificatesType>
-void sub_certificates_to_cb(const datatypes::SubCertificate& in, cb_SubCertificatesType& out) {
-    CPP2CB_ARRAY_SIZE_CHECK(in.size(), out.Certificate.array);
-    out.Certificate.arrayLen = static_cast<uint16_t>(in.size());
-    for (std::size_t i = 0; i < in.size(); ++i) {
-        CPP2CB_BYTES(in[i], out.Certificate.array[i]);
-    }
-}
 
 template <typename cb_BytesType> std::vector<uint8_t> bytes_from_cb(const cb_BytesType& in) {
     return std::vector<uint8_t>(in.bytes, in.bytes + in.bytesLen);
