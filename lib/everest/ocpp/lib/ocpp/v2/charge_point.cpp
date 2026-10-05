@@ -1232,6 +1232,8 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
                                          const NetworkConnectionProfile& network_connection_profile,
                                          const OcppProtocolVersion ocpp_version) {
     this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
+    this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
+                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
     this->message_queue->resume(this->message_queue_resume_delay);
     this->ocpp_version = ocpp_version;
     const auto time_disconnected = this->connectivity_manager->get_time_disconnected();

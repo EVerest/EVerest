@@ -1022,6 +1022,27 @@ TEST_F(ConnectivityManagerCacheTest, ConfirmSuccessfulConnectionPersistsActiveSl
     EXPECT_EQ(persisted.value(), 1) << "confirm_successful_connection() must persist the active slot";
 }
 
+static void set_stored_message_timeout(DeviceModel& dm, const std::string& value) {
+    ASSERT_EQ(dm.set_read_only_value(ControllerComponentVariables::MessageTimeout.component,
+                                     ControllerComponentVariables::MessageTimeout.variable.value(),
+                                     AttributeEnum::Actual, value, "test"),
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST(ConnectivityManagerConstruction, MirrorsFirstPrioritySlotMessageTimeout) {
+    DeviceModelTestHelper dm_helper;
+    DeviceModel* dm = dm_helper.get_device_model();
+    auto profile = make_basic_profile(1, "wss://ocpp.example.com");
+    profile.messageTimeout = 45;
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 1, profile, "test"));
+    set_stored_message_timeout(*dm, "999");
+    auto evse_security = std::make_shared<ocpp::EvseSecurityMock>();
+
+    ConnectivityManager cm(*dm, evse_security, "");
+
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), 45);
+}
+
 // ---------------------------------------------------------------------------
 // Provisioning block — reject active slot modification (B09.FR.21/22)
 // Verifies that validate_set_variable() rejects SetVariables targeting the
@@ -1771,6 +1792,29 @@ TEST_F(ProvisioningActiveSlotTest, GetVariablesIdentityReturnsGlobalWhenActiveSl
     ASSERT_TRUE(results[0].attributeValue.has_value());
     EXPECT_EQ(results[0].attributeValue->get(), "global-id")
         << "FR.28: per-slot Identity must not leak when active slot is not in priority";
+}
+
+// A direct write to the active slot's MessageTimeout is mirrored into OCPPCommCtrlr.MessageTimeout[Default].
+TEST_F(ProvisioningActiveSlotTest, OnVariableChangedActiveSlotMessageTimeoutMirrorsDefault) {
+    set_active_slot(1);
+    const auto slot_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        1, NetworkConfigurationComponentVariables::MessageTimeout);
+    ASSERT_EQ(dm->set_value(slot_cv.component, slot_cv.variable.value(), AttributeEnum::Actual, "55", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    provisioning->on_variable_changed(make_set_variable_data(1, "MessageTimeout", "55"));
+
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), 55);
+}
+
+TEST_F(ProvisioningActiveSlotTest, SetVariablesOutsidePriorityLeavesDefaultMessageTimeout) {
+    set_active_slot(1);
+    const auto before = dm->get_value<int>(ControllerComponentVariables::MessageTimeout);
+
+    auto result = set_single_variable(make_set_variable_data(2, "MessageTimeout", "55"));
+
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), before);
 }
 
 // ---------------------------------------------------------------------------

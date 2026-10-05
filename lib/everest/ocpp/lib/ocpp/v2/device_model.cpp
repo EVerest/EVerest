@@ -1243,6 +1243,14 @@ void DeviceModel::set_active_security_profile(int32_t security_profile, const st
     }
 }
 
+void DeviceModel::set_active_message_timeout(std::int32_t message_timeout_s, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::MessageTimeout;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(message_timeout_s),
+                            source);
+    }
+}
+
 void DeviceModel::set_active_network_profile_slot(int32_t slot, const std::string& source) {
     const auto& cv = ControllerComponentVariables::ActiveNetworkProfile;
     if (cv.variable.has_value()) {

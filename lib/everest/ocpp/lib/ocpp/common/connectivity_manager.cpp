@@ -61,6 +61,12 @@ ConnectivityManager::ConnectivityManager(ocpp::ConnectivityManagerConfiguration&
     wants_to_be_connected{false},
     connected_ocpp_version{OcppProtocolVersion::Unknown} {
     cache_network_connection_profiles();
+    if (const auto slots = this->get_network_connection_slots(); !slots.empty()) {
+        if (const auto profile = this->get_network_connection_profile(slots.front()); profile.has_value()) {
+            this->configuration.set_active_message_timeout(profile->messageTimeout,
+                                                           VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+        }
+    }
     // Seed the B10.FR.07 fallback target from the persisted active network profile so a fallback
     // can happen after a reboot, when the last successful connection was made in a prior process
     // lifetime. Reuses the already-persisted OCPPCommCtrlr.ActiveNetworkProfile device-model value.
