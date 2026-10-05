@@ -76,7 +76,7 @@ std::optional<std::string> V16ConnectionConfigValidator::validate_network_config
         }
 
         // URL-scheme / security-profile consistency of the resulting profile (current state + proposed
-        // change), checked only once the slot holds a complete profile, like 2.x.
+        // change), checked only once the slot holds a complete profile.
         if (auto profile_opt = NC::read_profile_from_device_model(m_device_model, slot); profile_opt.has_value()) {
             auto profile = *profile_opt;
             if (variable.name == "SecurityProfile") {
