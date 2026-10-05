@@ -8,6 +8,7 @@
 #include <charge_bridge/utilities/logging.hpp>
 #include <cstring>
 #include <exception>
+#include <iterator>
 #include <stdexcept>
 
 using namespace std::chrono_literals;
@@ -43,14 +44,14 @@ api_connector::api_connector(everest_api_config const& config, std::string const
         m_evse_bsp_receive_topic = api_topics.everest_to_extern("");
         m_evse_bsp_send_topic = api_topics.extern_to_everest("");
         m_evse_bsp.set_mqtt_tx(
-            [this](auto const& topic, auto const& payload) { m_mqtt.publish(m_evse_bsp_send_topic + topic, payload); });
+            [this](auto const& topic, auto const& payload) { publish(m_evse_bsp_send_topic + topic, payload); });
     }
     if (m_ovm_enabled) {
         api_topics.setup(config.ovm.module_id, "over_voltage_monitor", 1);
         m_ovm_receive_topic = api_topics.everest_to_extern("");
         m_ovm_send_topic = api_topics.extern_to_everest("");
         m_ovm.set_mqtt_tx(
-            [this](auto const& topic, auto const& payload) { m_mqtt.publish(m_ovm_send_topic + topic, payload); });
+            [this](auto const& topic, auto const& payload) { publish(m_ovm_send_topic + topic, payload); });
     }
 
     if (m_ev_bsp_enabled) {
@@ -58,7 +59,7 @@ api_connector::api_connector(everest_api_config const& config, std::string const
         m_ev_bsp_receive_topic = api_topics.everest_to_extern("");
         m_ev_bsp_send_topic = api_topics.extern_to_everest("");
         m_ev_bsp.set_mqtt_tx(
-            [this](auto const& topic, auto const& payload) { m_mqtt.publish(m_ev_bsp_send_topic + topic, payload); });
+            [this](auto const& topic, auto const& payload) { publish(m_ev_bsp_send_topic + topic, payload); });
     }
 
     m_mqtt.set_error_handler([this](int code, std::string const& msg) {
@@ -134,6 +135,39 @@ void api_connector::set_cb_message(evse_bsp_cb_to_host const& msg) {
     }
 }
 
+void api_connector::publish(std::string const& topic, std::string const& payload) {
+    if (m_render_sink) {
+        m_render_sink->push_back({topic, payload});
+        return;
+    }
+    m_mqtt.publish(topic, payload);
+}
+
+void api_connector::clear_raised_errors() {
+    if (m_evse_bsp_enabled) {
+        m_evse_bsp.clear_raised_errors();
+    }
+    if (m_ovm_enabled) {
+        m_ovm.clear_raised_errors();
+    }
+    if (m_ev_bsp_enabled) {
+        m_ev_bsp.clear_raised_errors();
+    }
+}
+
+std::vector<api_connector::mqtt_message> api_connector::render_clear_messages() {
+    std::vector<mqtt_message> result;
+    m_render_sink = &result;
+    clear_raised_errors();
+    m_render_sink = nullptr;
+    return result;
+}
+
+void api_connector::publish_once_connected(std::vector<mqtt_message> messages) {
+    m_publish_once_connected.insert(m_publish_once_connected.end(), std::make_move_iterator(messages.begin()),
+                                    std::make_move_iterator(messages.end()));
+}
+
 void api_connector::notify_cb_connection(bool connected) {
     if (connected and m_tx) {
         m_tx(m_host_status);
@@ -166,6 +200,10 @@ bool api_connector::check_cb_heartbeat() {
 }
 
 void api_connector::handle_mqtt_connect() {
+    for (auto const& message : m_publish_once_connected) {
+        m_mqtt.publish(message.topic, message.payload);
+    }
+    m_publish_once_connected.clear();
     if (m_evse_bsp_enabled) {
         m_mqtt.subscribe(m_evse_bsp_receive_topic + "#",
                          [this](auto&, auto const& topic, auto const& payload, auto, auto const&) {

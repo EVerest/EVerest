@@ -138,6 +138,14 @@ void bsp_bridge::connect_cb_endpoint(std::string const& remote) {
     handle_status();
 }
 
+std::vector<evse_bsp::api_connector::mqtt_message> bsp_bridge::render_clear_messages() {
+    return m_api.render_clear_messages();
+}
+
+void bsp_bridge::publish_once_everest_connected(std::vector<evse_bsp::api_connector::mqtt_message> messages) {
+    m_api.publish_once_connected(std::move(messages));
+}
+
 void bsp_bridge::set_cb_connection_status(bool connected) {
     m_api.notify_cb_connection(connected);
 }

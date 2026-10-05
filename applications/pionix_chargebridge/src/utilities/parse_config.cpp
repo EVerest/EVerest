@@ -193,10 +193,21 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
     get_node(c.cb_name, "charge_bridge", "name");
     get_node(c.cb_remote, "charge_bridge", "ip");
 
-    // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV)
+    // accept the bracketed IPv6 spelling ("[fd00::1]"); sentinels (ANY_EVSE/ANY_EV/ANY)
     // and everything else pass through unchanged. Normalized here, before cb_remote
     // is copied into the per-bridge configs below.
-    if (not string_starts_with(c.cb_remote, "ANY_EV")) {
+    if (auto const sentinel = discovery_sentinel(c.cb_remote)) {
+        // "ANY_EVSE(eth0,eth1)", "ANY_EVSE(!wlan0)"
+        auto const suffix = string_after_pattern(c.cb_remote, *sentinel);
+        auto const is_list = suffix.size() >= 3 && suffix.front() == '(' && suffix.back() == ')';
+        if (not suffix.empty() && not is_list) {
+            std::cerr << "Configuration error: charge_bridge::ip '" << c.cb_remote
+                      << "' is not a valid discovery endpoint; expected ANY_EVSE, ANY_EV or ANY, optionally "
+                         "followed by an interface list in parentheses, e.g. ANY_EVSE(eth0) or ANY_EV(!wlan0)"
+                      << std::endl;
+            throw std::runtime_error("");
+        }
+    } else {
         c.cb_remote = strip_brackets(c.cb_remote);
     }
     c.cb_port = g_cb_port_management;
@@ -314,15 +325,16 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         }
     });
 
-    {
-        bool wants_ev = false;
-        bool wants_evse = false;
-        get_node_or_default(wants_ev, "ev_bsp", "enable", false);
-        get_node_or_default(wants_evse, "evse_bsp", "enable", false);
-        if (wants_ev && wants_evse) {
-            std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time" << std::endl;
-            throw std::exception();
-        }
+    bool wants_ev = false;
+    bool wants_evse = false;
+    get_node_or_default(wants_ev, "ev_bsp", "enable", false);
+    get_node_or_default(wants_evse, "evse_bsp", "enable", false);
+    bool const wants_both = wants_ev && wants_evse;
+    if (wants_both && not discovery_sentinel(c.cb_remote).has_value()) {
+        std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time (both are only "
+                     "allowed with an ANY* mDNS endpoint, where the discovered board selects the role)"
+                  << std::endl;
+        throw std::exception();
     }
 
     get_block("evse_bsp", c.bsp, [&](auto& cfg, auto const& main) {
@@ -340,20 +352,25 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
     });
 
+    auto const parse_ev_bsp = [&](auto& cfg, auto const& main) {
+        cfg.cb_port = g_cb_port_evse_bsp;
+        cfg.api.ev.enabled = true;
+        get_node(cfg.api.ev.module_id, main, "module_id");
+        get_node(cfg.api.mqtt_remote, main, "mqtt_remote");
+        get_node_or_default(cfg.api.mqtt_bind, main, "mqtt_bind", "");
+        get_node(cfg.api.mqtt_port, main, "mqtt_port");
+        get_node_or_default(cfg.api.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms",
+                            default_mqtt_ping_interval_ms);
+        cfg.cb_remote = c.cb_remote;
+        get_node(cfg.api.ovm.enabled, main, "ovm_enabled");
+        get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
+    };
+    // An ev_bsp block next to an EVSE BSP is the alternate only when both carry an explicit
+    // "enable: true"; get_block alone would also enable a block without the key.
     if (not c.bsp.has_value()) {
-        get_block("ev_bsp", c.bsp, [&](auto& cfg, auto const& main) {
-            cfg.cb_port = g_cb_port_evse_bsp;
-            cfg.api.ev.enabled = true;
-            get_node(cfg.api.ev.module_id, main, "module_id");
-            get_node(cfg.api.mqtt_remote, main, "mqtt_remote");
-            get_node_or_default(cfg.api.mqtt_bind, main, "mqtt_bind", "");
-            get_node(cfg.api.mqtt_port, main, "mqtt_port");
-            get_node_or_default(cfg.api.mqtt_ping_interval_ms, main, "mqtt_ping_interval_ms",
-                                default_mqtt_ping_interval_ms);
-            cfg.cb_remote = c.cb_remote;
-            get_node(cfg.api.ovm.enabled, main, "ovm_enabled");
-            get_node(cfg.api.ovm.module_id, main, "ovm_module_id");
-        });
+        get_block("ev_bsp", c.bsp, parse_ev_bsp);
+    } else if (wants_both) {
+        get_block("ev_bsp", c.bsp_alternate, parse_ev_bsp);
     }
 
     // The section was renamed "gpio" -> "io". Reject the old name explicitly: silently ignoring it
@@ -453,6 +470,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
             throw std::runtime_error("");
         }
         cfg.cb_config.station_id = static_cast<std::int8_t>(station.station_id);
+        cfg.station_id_derived = station.derived;
 
         // Optional: forward the MCU's debug-UART (printf) output to this host over UDP. Off by
         // default; the bridge logs each received line to the console prefixed with "[MCU]".
@@ -540,12 +558,14 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
         replace(result.plc->plc_ip);
         replace(result.plc->plc_netmaks);
     }
-    if (result.bsp.has_value()) {
-        result.bsp->cb_remote = ip;
-        result.bsp->cb = result.cb_name;
-        replace(result.bsp->api.evse.module_id);
-        replace(result.bsp->api.ev.module_id);
-        replace(result.bsp->api.ovm.module_id);
+    for (auto* bsp : {&result.bsp, &result.bsp_alternate}) {
+        if (bsp->has_value()) {
+            (*bsp)->cb_remote = ip;
+            (*bsp)->cb = result.cb_name;
+            replace((*bsp)->api.evse.module_id);
+            replace((*bsp)->api.ev.module_id);
+            replace((*bsp)->api.ovm.module_id);
+        }
     }
     if (result.heartbeat.has_value()) {
         result.heartbeat->cb = result.cb_name;

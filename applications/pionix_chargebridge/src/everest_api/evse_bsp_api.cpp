@@ -210,6 +210,17 @@ void evse_bsp_api::clear_comm_fault() {
     send_clear_error(API_BSP::ErrorEnum::CommunicationFault, comm_fault_subtype, "");
 }
 
+void evse_bsp_api::clear_raised_errors() {
+    clear_comm_fault();
+    publish_error_flag_edges(cb_status.error_flags.raw, 0);
+    send_clear_error(API_BSP::ErrorEnum::MREC14PilotFault, "", "");
+    send_clear_error(API_BSP::ErrorEnum::DiodeFault, "", "");
+    if (m_pp_fault_raised) {
+        send_clear_error(API_BSP::ErrorEnum::MREC23ProximityFault, pp_fault_subtype_state, "");
+        m_pp_fault_raised = false;
+    }
+}
+
 void evse_bsp_api::handle_event_cp(std::uint8_t cp) {
     using bc_event = API_BSP::Event;
     bc_event cp_event;

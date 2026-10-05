@@ -11,6 +11,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace charge_bridge {
 
@@ -34,6 +35,10 @@ public:
     // Heartbeat-verified connection state, see api_connector::notify_cb_connection. The bridge's own
     // availability keeps following the BSP packets.
     void set_cb_connection_status(bool connected);
+    // Hand-over between the BSP flavours on a role switch, see api_connector::render_clear_messages:
+    // the replaced bridge renders the clears for its EVerest module, the replacing bridge sends them.
+    std::vector<evse_bsp::api_connector::mqtt_message> render_clear_messages();
+    void publish_once_everest_connected(std::vector<evse_bsp::api_connector::mqtt_message> messages);
     bool available() const;
     // Latest CP state reported by the MCU ("A".."F", "DF", "INVALID"); empty until the first packet.
     std::optional<std::string> cp_state() const;

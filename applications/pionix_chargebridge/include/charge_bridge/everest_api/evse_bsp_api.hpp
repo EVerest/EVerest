@@ -44,6 +44,7 @@ public:
 
     void raise_comm_fault();
     void clear_comm_fault();
+    void clear_raised_errors();
     void sync(bool cb_connected);
     // CbLinkTechnology from the heartbeat link status. Tells an MCS board from a CCS one, which
     // decides whether the PP conductor exists at all (see set_cb_message). Latched: see
