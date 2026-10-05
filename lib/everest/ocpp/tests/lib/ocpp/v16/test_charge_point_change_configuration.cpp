@@ -23,10 +23,12 @@
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
+#include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/charge_point_impl.hpp>
 
 #include "connectivity_manager_mock.hpp"
 #include "evse_security_mock.hpp"
+#include "v2config/memory_storage.hpp"
 
 namespace fs = std::filesystem;
 
@@ -50,12 +52,7 @@ protected:
         this->evse_security = std::make_shared<NiceMock<EvseSecurityMock>>();
         this->connectivity_manager = std::make_shared<NiceMock<ConnectivityManagerMock>>();
         this->tmp_dir = libocpp_test::unique_temp_directory("ocpp_v16_change_configuration_test");
-
-        const auto user_config = this->tmp_dir / "user_config.json";
-        std::ofstream(user_config) << "{}";
-        std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
-        const std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-        this->configuration = std::make_unique<ChargePointConfiguration>(config_file, CONFIG_DIR_V16, user_config);
+        this->configuration = create_configuration();
 
         ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(true));
         ON_CALL(*this->connectivity_manager, set_message_callback(_))
@@ -79,6 +76,14 @@ protected:
         }
         std::error_code ec;
         fs::remove_all(this->tmp_dir, ec);
+    }
+
+    virtual std::unique_ptr<ChargePointConfigurationInterface> create_configuration() {
+        const auto user_config = this->tmp_dir / "user_config.json";
+        std::ofstream(user_config) << "{}";
+        std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+        const std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+        return std::make_unique<ChargePointConfiguration>(config_file, CONFIG_DIR_V16, user_config);
     }
 
     void make_charge_point() {
@@ -173,7 +178,7 @@ protected:
 
     std::shared_ptr<NiceMock<EvseSecurityMock>> evse_security;
     std::shared_ptr<NiceMock<ConnectivityManagerMock>> connectivity_manager;
-    std::unique_ptr<ChargePointConfiguration> configuration;
+    std::unique_ptr<ChargePointConfigurationInterface> configuration;
     std::unique_ptr<ChargePointImpl> charge_point;
     bool started{false};
     fs::path tmp_dir;
@@ -211,6 +216,54 @@ TEST_F(ChargePointChangeConfigurationTest, LocalCallerCanChangeReadOnlyKey) {
 
     EXPECT_EQ(this->charge_point->set_configuration_key(READ_ONLY_KEY, NEW_URI), ConfigurationStatus::RebootRequired);
     EXPECT_EQ(this->configuration->getCentralSystemURI(), NEW_URI);
+}
+
+class ChargePointChangeConfigurationDeviceModelTest : public ChargePointChangeConfigurationTest {
+protected:
+    std::unique_ptr<ChargePointConfigurationInterface> create_configuration() override {
+        this->device_model = std::make_unique<stubs::MemoryStorage>();
+        this->device_model->set("SomeOtherCtrlr", "ACustomKeyVar", "initial");
+        this->device_model->set_readonly("ACustomKeyVar");
+        ocpp::v2::Ocpp16CustomConfigMappings mappings;
+        mappings.emplace(CUSTOM_KEY,
+                         std::make_pair(ocpp::v2::Component{"SomeOtherCtrlr"}, ocpp::v2::Variable{"ACustomKeyVar"}));
+        return std::make_unique<ChargePointConfigurationDeviceModel>(
+            CONFIG_DIR_V16, std::make_unique<stubs::MemoryStorageProxy>(*this->device_model), std::move(mappings));
+    }
+
+    static constexpr auto CUSTOM_KEY = "ACustomKey";
+    std::unique_ptr<stubs::MemoryStorage> device_model;
+};
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, CsmsCannotChangeReadOnlyKey) {
+    make_booted_charge_point();
+    ASSERT_TRUE(this->configuration->get("ChargePointModel")->readonly);
+
+    EXPECT_EQ(change_configuration("ChargePointModel", "Other"), "Rejected");
+    EXPECT_EQ(this->configuration->getChargePointModel().get(), "Yeti");
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, CsmsCannotChangeReadOnlyCustomKey) {
+    make_booted_charge_point();
+    ASSERT_TRUE(this->configuration->get(CUSTOM_KEY)->readonly);
+
+    EXPECT_EQ(change_configuration(CUSTOM_KEY, "changed"), "Rejected");
+    EXPECT_EQ(this->configuration->get(CUSTOM_KEY)->value.value().get(), "initial");
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, CsmsCanChangeWritableKey) {
+    make_booted_charge_point();
+
+    EXPECT_EQ(change_configuration("HeartbeatInterval", "120"), "Accepted");
+    EXPECT_EQ(this->configuration->getHeartbeatInterval(), 120);
+}
+
+TEST_F(ChargePointChangeConfigurationDeviceModelTest, LocalCallerCanChangeReadOnlyKey) {
+    make_charge_point();
+    ASSERT_TRUE(this->configuration->get("ChargePointModel")->readonly);
+
+    EXPECT_EQ(this->charge_point->set_configuration_key("ChargePointModel", "Other"), ConfigurationStatus::Accepted);
+    EXPECT_EQ(this->configuration->getChargePointModel().get(), "Other");
 }
 
 } // namespace v16
