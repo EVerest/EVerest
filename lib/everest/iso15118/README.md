@@ -14,7 +14,8 @@ The following table shows the current support for the listed EVSE ISO15118-20 fe
 | DC, DC_BPT                         | :heavy_check_mark: |
 | AC, AC_BPT                         | :heavy_check_mark: |
 | MCS (Amd.)                         | :heavy_check_mark: |
-| AC DER (Amd.)                      |                    |
+| AC DER IEC (Amd., Annex L)         | :heavy_check_mark: |
+| AC DER SAE (Amd., Annex M)         | :heavy_check_mark: |
 | WPT                                |                    |
 | ACDP                               |                    |
 | ExternalPayment                    | :heavy_check_mark: |
