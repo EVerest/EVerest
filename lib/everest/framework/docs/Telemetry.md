@@ -16,7 +16,7 @@ and receiver, and the plan for the legacy telemetry API. It follows the discussi
 ```mermaid
 flowchart LR
     subgraph producer[Module process]
-        M[module code<br/>mod->tel.temperature.set&#40;41.2&#41;] --> H[generated tel::Elements<br/>typed handles]
+        M["module code<br/>mod->tel.temperature.set(41.2)"] --> H[generated tel::Elements<br/>typed handles]
         H -->|JSON value| F[libframework<br/>ModuleTelemetry]
     end
     F -->|datagram, non-blocking| S[(telemetry socket<br/>bound by the manager)]
