@@ -28,7 +28,28 @@ config:
     type: string
     mutability: ReadWrite
     default: "default_value"
+  enum_param:
+    description: "A ReadWrite config parameter restricted to an enum"
+    type: string
+    enum: ["one", "two", "three"]
+    mutability: ReadWrite
+    default: "one"
+  bounded_param:
+    description: "A ReadWrite config parameter with a range"
+    type: integer
+    minimum: 0
+    maximum: 10
+    mutability: ReadWrite
+    default: 5
 provides:
   main:
     description: "main implementation"
     interface: "test_interface"
+    config:
+      impl_bounded_param:
+        description: "An implementation config parameter with a range"
+        type: number
+        minimum: 0.5
+        maximum: 1.5
+        mutability: ReadWrite
+        default: 1.0

@@ -24,6 +24,7 @@ All paths relative to `lib/everest/framework/`.
 | `ConfigServiceCore` | `include/utils/config/config_service_core.hpp`, `lib/config/config_service_core.cpp` |
 | `MqttConfigServiceHandler`, `ConfigServiceClient` (EVerest Internal API) | `include/utils/mqtt_config_service.hpp`, `lib/mqtt_config_service.cpp` |
 | Config value types, `Mutability`, `Access`, `validate_config_value()` | `include/utils/config/types.hpp` |
+| Manifest schema check for a single parameter, `validate_config_parameter_value()` | `include/utils/config.hpp`, `lib/config.cpp` |
 | Boot source and database bootstrap | `include/utils/config/settings.hpp`, `lib/runtime.cpp` |
 | User-config YAML persistence mirror (`UserConfigStorage`) | `include/utils/config.hpp`, `include/utils/config/storage_userconfig.hpp` |
 | Manager wiring | `src/manager.cpp` |
@@ -112,10 +113,13 @@ Modules reach this through `ConfigServiceClient`; read requests are answered by
 
 These orderings are load-bearing and cheap to break; each has test coverage.
 
-1. **Validate before persisting.** `validate_config_value()` runs first, so a value that would
-   fail to parse on the next boot never reaches the database
-   (`config_service_core.cpp`). Datatype only — no min/max range check at
-   this layer.
+1. **Validate before persisting.** `ConfigServiceCore::validate_update()` runs first: the datatype
+   check `validate_config_value()`, then `validate_config_parameter_value()` against the
+   parameter's manifest entry (`enum`, `minimum`, `maximum`, `pattern`, ...), the same schema check
+   a configuration file gets. A value that would fail to parse, or that the manifest forbids, never
+   reaches the database (`config_service_core.cpp`). Manifests are cached in `m_manifests` from
+   every configuration validation; a module only referenced by an inactive slot has its manifest
+   loaded from `modules_dir` on first use.
 2. **Mirror before database.** Without `--db` the user-config YAML mirror is written *before* the
    in-memory database, and a failed mirror write rejects the update, because the mirror is the
    only persistence that survives a restart (`config_service_core.cpp`). The mirror exists only

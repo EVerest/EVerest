@@ -426,6 +426,13 @@ public:
     /// \returns a set of object keys
     static everest::config::Keys keys(const nlohmann::json& object);
 };
+
+/// \brief Result of validating module configurations against their manifests
+struct ValidatedModuleConfigurations {
+    ModuleConfigurations module_configs; ///< Validated and default-enriched module configurations
+    nlohmann::json manifests;            ///< Validated manifests of the configured modules, keyed by module name
+};
+
 /// \brief Validate a parsed configuration JSON against module manifests, interface definitions and requirements.
 ///
 /// Constructs a temporary ManagerConfig using \p ps for path resolution and \p json_config as the
@@ -434,21 +441,34 @@ public:
 ///
 /// \param ps         Parse settings providing paths to schemas, modules, interfaces, types and errors.
 /// \param json_config Full YAML-parsed JSON (must contain "active_modules").
-/// \returns Default-enriched ModuleConfigurations ready to be written to storage.
+/// \returns Default-enriched ModuleConfigurations ready to be written to storage, and the manifests they were
+///          validated against.
 /// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
 ///         or any requirement cannot be fulfilled.
-ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config);
+ValidatedModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config);
 
 /// \brief Validate already-parsed ModuleConfigurations (e.g. loaded from the database) against module manifests,
 /// interface definitions and requirements.
 ///
 /// \param ps             Parse settings providing paths to schemas, modules, interfaces, types and errors.
 /// \param module_configs Module configurations as loaded from storage.
-/// \returns Default-enriched ModuleConfigurations.
+/// \returns Default-enriched ModuleConfigurations, and the manifests they were validated against.
 /// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
 ///         or any requirement cannot be fulfilled.
-ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
-                                                       ModuleConfigurations module_configs);
+ValidatedModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                                ModuleConfigurations module_configs);
+
+/// \brief Validate a single configuration parameter value against its entry in the module manifest, as a
+/// configuration file is validated (enum, minimum, maximum, pattern, ...).
+///
+/// \param manifest   Manifest of the module that declares the parameter.
+/// \param identifier The parameter; an unset implementation id addresses the module config ("!module").
+/// \param value      The parsed value.
+/// \returns std::nullopt if the value is valid, otherwise a human-readable reason
+std::optional<std::string>
+validate_config_parameter_value(const nlohmann::json& manifest,
+                                const everest::config::ConfigurationParameterIdentifier& identifier,
+                                const everest::config::ConfigEntry& value);
 
 } // namespace Everest
 

@@ -1276,6 +1276,95 @@ active_modules:
         }
     }
 
+    SECTION("Set Parameters: values are validated against the manifest schema before persisting") {
+        everest::config::ModuleConfigurations mock_configs;
+        everest::config::ModuleConfig dummy_module;
+        dummy_module.module_name = "TESTCSTarget";
+        dummy_module.module_id = "dummy_module";
+
+        everest::config::ConfigurationParameter enum_param;
+        enum_param.name = "enum_param";
+        enum_param.value = "one";
+        enum_param.characteristics.datatype = everest::config::Datatype::String;
+        enum_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
+        dummy_module.configuration_parameters["!module"].push_back(enum_param);
+
+        everest::config::ConfigurationParameter bounded_param;
+        bounded_param.name = "bounded_param";
+        bounded_param.value = 5;
+        bounded_param.characteristics.datatype = everest::config::Datatype::Integer;
+        bounded_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
+        dummy_module.configuration_parameters["!module"].push_back(bounded_param);
+
+        everest::config::ConfigurationParameter impl_bounded_param;
+        impl_bounded_param.name = "impl_bounded_param";
+        impl_bounded_param.value = 1.0;
+        impl_bounded_param.characteristics.datatype = everest::config::Datatype::Decimal;
+        impl_bounded_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
+        dummy_module.configuration_parameters["main"].push_back(impl_bounded_param);
+
+        mock_configs["dummy_module"] = dummy_module;
+
+        everest::config::SqliteConfigSlotManager slot_manager(db);
+
+        const everest::config::ConfigurationParameterIdentifier enum_id{"dummy_module", "enum_param", "!module"};
+        const everest::config::ConfigurationParameterIdentifier bounded_id{"dummy_module", "bounded_param", "!module"};
+        const everest::config::ConfigurationParameterIdentifier impl_bounded_id{"dummy_module", "impl_bounded_param",
+                                                                                "main"};
+        const std::vector<ConfigParameterUpdate> updates{
+            {enum_id, "four"},  {bounded_id, "11"}, {impl_bounded_id, "2.0"}, // outside the manifest schema
+            {enum_id, "three"}, {bounded_id, "10"}, {impl_bounded_id, "0.5"}, // inside the manifest schema
+            {bounded_id, "-1"},                                               // below the minimum
+        };
+        Origin origin{false, "manager"};
+
+        const auto check_result = [&](const SetConfigParameterResult& result, everest::config::SqliteStorage& storage) {
+            REQUIRE(result.status == SetConfigParameterStatus::Ok);
+            REQUIRE(result.parameter_results.has_value());
+            REQUIRE(result.parameter_results->size() == updates.size());
+            for (const auto i : {0, 1, 2, 6}) {
+                INFO("update " << i << ": " << updates.at(i).value);
+                CHECK(result.parameter_results->at(i).status == SetConfigParameterResultEnum::Rejected);
+                CHECK_FALSE(result.parameter_results->at(i).status_info.empty());
+            }
+            for (const auto i : {3, 4, 5}) {
+                INFO("update " << i << ": " << updates.at(i).value << " - "
+                               << result.parameter_results->at(i).status_info);
+                CHECK(result.parameter_results->at(i).status == SetConfigParameterResultEnum::WillApplyOnRestart);
+            }
+
+            // Only the valid values were persisted.
+            auto persisted_enum = storage.get_configuration_parameter(enum_id);
+            REQUIRE(persisted_enum.status == everest::config::GetSetResponseStatus::OK);
+            CHECK(std::get<std::string>(persisted_enum.configuration_parameter.value().value) == "three");
+            auto persisted_bounded = storage.get_configuration_parameter(bounded_id);
+            REQUIRE(persisted_bounded.status == everest::config::GetSetResponseStatus::OK);
+            CHECK(std::get<int>(persisted_bounded.configuration_parameter.value().value) == 10);
+            auto persisted_impl = storage.get_configuration_parameter(impl_bounded_id);
+            REQUIRE(persisted_impl.status == everest::config::GetSetResponseStatus::OK);
+            CHECK(std::get<double>(persisted_impl.configuration_parameter.value().value) == 0.5);
+        };
+
+        SECTION("on the active slot") {
+            auto storage = std::make_unique<everest::config::SqliteStorage>(db, 0);
+            slot_manager.write_config_slot(0, "{}", std::nullopt, "Test Slot");
+            storage->write_module_configs(mock_configs);
+            config_service.mark_active_slot(0);
+            config_service.reinitialize_from_db(true);
+
+            check_result(config_service.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, updates, origin),
+                         *storage);
+        }
+
+        SECTION("on an inactive slot") {
+            auto storage = std::make_unique<everest::config::SqliteStorage>(db, 1);
+            slot_manager.write_config_slot(1, "{}", std::nullopt, "Inactive Slot");
+            storage->write_module_configs(mock_configs);
+
+            check_result(config_service.set_config_parameters(1, updates, origin), *storage);
+        }
+    }
+
     SECTION("Set Parameters: WriteOnly handling and SetCallFailed") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig test_module;
@@ -1450,11 +1539,11 @@ active_modules:
     SECTION("Set Parameters: direct modification of an inactive slot") {
         everest::config::ModuleConfigurations mock_configs;
         everest::config::ModuleConfig inactive_module;
-        inactive_module.module_name = "InactiveModule";
+        inactive_module.module_name = "TESTCSTarget";
         inactive_module.module_id = "inactive_module";
 
         everest::config::ConfigurationParameter rw_param;
-        rw_param.name = "inactive_param";
+        rw_param.name = "rw_param";
         rw_param.value = "old_value";
         rw_param.characteristics.datatype = everest::config::Datatype::String;
         rw_param.characteristics.mutability = everest::config::Mutability::ReadWrite;
@@ -1475,7 +1564,7 @@ active_modules:
         config_service.set_modules_running();
 
         // 3. Update the parameter in the INACTIVE slot (Slot 3)
-        everest::config::ConfigurationParameterIdentifier param_id{"inactive_module", "inactive_param", "!module"};
+        everest::config::ConfigurationParameterIdentifier param_id{"inactive_module", "rw_param", "!module"};
         ConfigParameterUpdate update{param_id, "new_value"};
         Origin origin{false, "manager"};
 

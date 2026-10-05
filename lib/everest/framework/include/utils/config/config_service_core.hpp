@@ -119,6 +119,8 @@ protected:
 
 private:
     everest::config::ModuleConfigurations m_module_configs;
+    /// \brief Manifests by module name, taken from every configuration validation and otherwise loaded on first use
+    nlohmann::json m_manifests = nlohmann::json::object();
     ConfigParseSettings m_parse_settings;
     everest::config::SqliteConfigSlotManager m_slot_manager;
     /// \brief Keepalive for the shared connection
@@ -206,6 +208,14 @@ private:
     void internal_set_modules_at_rest();
 
     void reload_from_storage();
+
+    /// \brief Validate an update against the parameter's datatype and its manifest schema before anything is
+    /// persisted, so a value that the manifest forbids, or that would fail to parse on the next boot, never
+    /// reaches the database.
+    /// \returns std::nullopt if the value is valid, otherwise a human-readable reason
+    std::optional<std::string> validate_update(const everest::config::ModuleConfigurations& configurations,
+                                               const everest::config::ConfigurationParameter& parameter,
+                                               const ConfigParameterUpdate& update);
 
     std::unique_ptr<everest::config::SqliteStorage> make_storage(int slot_id);
     /// \brief Emit an ActiveSlotUpdate to every registered handler.

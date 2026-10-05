@@ -229,12 +229,37 @@ void ConfigServiceCore::reload_from_storage() {
     }
     try {
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
-        m_module_configs = Everest::validate_preloaded_module_configs(m_parse_settings, resp.module_configs);
+        auto validated = Everest::validate_preloaded_module_configs(m_parse_settings, resp.module_configs);
+        m_module_configs = std::move(validated.module_configs);
+        m_manifests.update(validated.manifests);
         std::atomic_store(&m_active_configs_ptr, std::make_shared<const ec::ModuleConfigurations>(m_module_configs));
     } catch (const std::exception& e) {
         EVLOG_error << "Configuration loaded from database for slot " << m_active_slot_id
                     << " failed validation: " << e.what() << " -> Keeping the previous in-memory configuration.";
     }
+}
+
+std::optional<std::string> ConfigServiceCore::validate_update(const ec::ModuleConfigurations& configurations,
+                                                              const ec::ConfigurationParameter& parameter,
+                                                              const ConfigParameterUpdate& update) {
+    if (auto datatype_error = ec::validate_config_value(parameter.characteristics, update.value)) {
+        return datatype_error;
+    }
+
+    const auto& module_name = configurations.at(update.identifier.module_id).module_name;
+    if (not m_manifests.contains(module_name)) {
+        // Only an inactive slot that was not validated by this process refers to a module not cached yet
+        const auto manifest_path = m_parse_settings.modules_dir / module_name / "manifest.yaml";
+        try {
+            m_manifests[module_name] = Everest::load_yaml(manifest_path);
+        } catch (const std::exception& e) {
+            return fmt::format("Failed to load manifest {}: {}", manifest_path.string(), e.what());
+        }
+    }
+
+    return Everest::validate_config_parameter_value(
+        m_manifests.at(module_name), update.identifier,
+        ec::parse_config_value(parameter.characteristics.datatype, update.value));
 }
 
 // --- Slot management ---
@@ -345,7 +370,9 @@ LoadFromYamlResult ConfigServiceCore::internal_load_from_yaml(const std::string&
         const auto json_config = Everest::load_yaml_from_string(raw_yaml);
 
         // Validate against manifests, interfaces and requirements; enriches configs with manifest metadata.
-        const auto module_configs = Everest::validate_module_configs(m_parse_settings, json_config);
+        auto validated = Everest::validate_module_configs(m_parse_settings, json_config);
+        m_manifests.update(validated.manifests);
+        const auto module_configs = std::move(validated.module_configs);
 
         // If the slot doesn't exist, create it and write the config
         if (into_new_slot) {
@@ -512,11 +539,7 @@ void ConfigServiceCore::apply_active_slot_updates(const std::vector<ConfigParame
         auto [in_memory_parameter, parameter_access] = lookup.value();
         const auto mutability = in_memory_parameter->characteristics.mutability;
 
-        // Validate the value against the parameter's datatype before anything is persisted; a value
-        // that would fail to parse on the next boot must never reach the database. No range
-        // (min/max) validation happens at this layer.
-        if (const auto validation_error =
-                ec::validate_config_value(in_memory_parameter->characteristics, update.value)) {
+        if (const auto validation_error = validate_update(m_module_configs, *in_memory_parameter, update)) {
             result_enum = SetConfigParameterResultEnum::Rejected;
             per_result.status_info = validation_error.value();
             continue;
@@ -627,10 +650,7 @@ void ConfigServiceCore::apply_inactive_slot_updates(int slot_id, const std::vect
         }
         auto [parameter, parameter_access] = lookup.value();
 
-        // Validate the value against the parameter's datatype before persisting; a value that would
-        // fail to parse when booting from this slot must never reach the database. No range
-        // (min/max) validation happens at this layer.
-        if (const auto validation_error = ec::validate_config_value(parameter->characteristics, update.value)) {
+        if (const auto validation_error = validate_update(inactive_configuration.module_configs, *parameter, update)) {
             per_result.status = SetConfigParameterResultEnum::Rejected;
             per_result.status_info = validation_error.value();
             continue;
