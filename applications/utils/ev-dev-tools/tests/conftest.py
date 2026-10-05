@@ -20,10 +20,20 @@ TESTS_DIR = Path(__file__).resolve().parent
 FIXTURE_TREE = TESTS_DIR / 'fixtures' / 'tree'
 GOLDEN_DIR = TESTS_DIR / 'fixtures' / 'golden'
 
+#: Set when a checkout is named rather than inferred, which changes a missing
+#: one from "nothing to test against here" into a misconfiguration.
+NAMED_EVEREST_DIR = os.environ.get('EVEREST_CORE')
+
 #: tests/ -> ev-dev-tools/ -> utils/ -> applications/ -> repository root
-EVEREST_DIR = Path(os.environ.get('EVEREST_CORE', TESTS_DIR.parents[3]))
+EVEREST_DIR = Path(NAMED_EVEREST_DIR or TESTS_DIR.parents[3])
 SCHEMAS_DIR = EVEREST_DIR / 'lib' / 'everest' / 'framework' / 'schemas'
 
+if NAMED_EVEREST_DIR and not SCHEMAS_DIR.is_dir():
+    # Skipping here would let a run that was pointed at a checkout report success
+    # having tested nothing against it.
+    raise pytest.UsageError(
+        f'EVEREST_CORE={NAMED_EVEREST_DIR} has no framework schemas at {SCHEMAS_DIR}'
+    )
 
 needs_everest = pytest.mark.skipif(
     not SCHEMAS_DIR.is_dir(),

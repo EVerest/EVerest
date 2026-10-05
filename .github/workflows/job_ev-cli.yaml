@@ -107,4 +107,9 @@ jobs:
         run: pip install './applications/utils/ev-dev-tools[test]'
       - name: Run the tests
         working-directory: applications/utils/ev-dev-tools
+        env:
+          # Naming the checkout rather than letting the tests infer it: if the
+          # layout ever moves, the run fails instead of skipping everything that
+          # needs the definitions and still reporting success.
+          EVEREST_CORE: ${{ github.workspace }}
         run: pytest tests
