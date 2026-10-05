@@ -7,6 +7,8 @@
 
 #include <cerrno>
 #include <cstring>
+#include <stdexcept>
+#include <string>
 
 FSMController::FSMController(slac::fsm::evse::Context& context) : ctx(context), fsm(ctx) {
     m_retrigger.set_single_shot(true);
@@ -36,7 +38,21 @@ void FSMController::teardown() {
 }
 
 void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage const& msg) {
-    run_guarded("message", [&] { fsm.message(msg); });
+    // Runs under the lifecycle monitor (the module dispatches frames with it held), so a failure
+    // must leave by exception: the unwind releases the monitor before the loop's catch handler
+    // calls abort_event_loop, which takes it again. The fatal handler is for the paths that run
+    // without the monitor; reporting through it from here would deadlock the loop thread on itself.
+    if (!active.load()) {
+        return;
+    }
+    step([&] { fsm.message(msg); });
+}
+
+void FSMController::step(std::function<void()> const& task) {
+    task();
+    if (not schedule()) {
+        throw std::runtime_error(std::string("could not arm the timer: ") + std::strerror(errno));
+    }
 }
 
 void FSMController::set_fatal_handler(FatalHandler handler) {
@@ -61,11 +77,8 @@ void FSMController::run_guarded(char const* command, std::function<void()> const
     }
     std::string failure;
     try {
-        task();
-        if (schedule()) {
-            return;
-        }
-        failure = std::string("could not arm the timer: ") + std::strerror(errno);
+        step(task);
+        return;
     } catch (const std::exception& e) {
         failure = e.what();
     } catch (...) {

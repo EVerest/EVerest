@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <vector>
@@ -212,6 +213,31 @@ TEST(RxDispatch, DispatchDropsTheFrameWhenTheIoIsNotReadyOrShuttingDown) {
     EXPECT_FALSE(module::main::dispatch_to_controller(
         rig.lifecycle, [&req](FSMController& target) { target.signal_new_slac_message(req); }));
     EXPECT_FALSE(rig.send_attempted.load()) << "the FSM ran although the dispatch should have dropped the frame";
+}
+
+// The second half of the invariant: the controller must not call the fatal handler from inside the
+// dispatch either, because the module's handler (abort_event_loop) takes the monitor. A failure on
+// the receive path leaves dispatch_to_controller by exception; the unwind releases the monitor and
+// the loop's catch handler aborts the loop with it free. The throw comes from the telemetry
+// publisher, which runs after the transition in the wrapper's post-processing (a throw inside a
+// transition never leaves Boost.MSM), when the first session changes the machine's shape.
+TEST(RxDispatch, AFailureOnTheReceivePathPropagatesInsteadOfReachingTheFatalHandler) {
+    Rig rig;
+    rig.reach_matching();
+    int fatal_calls{0};
+    rig.ctrl->set_fatal_handler([&fatal_calls](std::string const&) { ++fatal_calls; });
+    rig.ctx->slac_config.provide_telemetry = true;
+    rig.callbacks.pub_telemetry = [](std::string const&, std::string const&, std::string const&) {
+        throw std::runtime_error("publisher exploded");
+    };
+    EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
+    auto const req = create_cm_slac_parm_req(ev_mac, make_run_id(0x41));
+    EXPECT_THROW(module::main::dispatch_to_controller(
+                     rig.lifecycle, [&req](FSMController& target) { target.signal_new_slac_message(req); }),
+                 std::runtime_error);
+    EXPECT_EQ(fatal_calls, 0) << "the fatal handler ran under the monitor it needs to take";
+    // What abort_event_loop needs next: the monitor is free once the dispatch has unwound.
+    EXPECT_TRUE(rig.lifecycle.handle(50ms).has_value()) << "the monitor is still held after the dispatch unwound";
 }
 
 } // namespace

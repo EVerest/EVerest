@@ -170,6 +170,8 @@ void ev_slacImpl::configure_fsm_context() {
 
 bool ev_slacImpl::create_fsm_controller() {
     fsm_ctrl = std::make_unique<FSMController>(*fsm_ctx);
+    // Posted commands and the timer run without the lifecycle monitor, so abort_event_loop can take
+    // it here; the receive path propagates to the loop's catch handler instead (see post_command).
     fsm_ctrl->set_fatal_handler([this](std::string const& reason) { abort_event_loop(reason); });
     {
         auto lifecycle = lifecycle_state.handle();
@@ -185,7 +187,8 @@ void ev_slacImpl::configure_slac_io_callbacks() {
     slac_io->set_callback([this](slac::messages::HomeplugMessage const& msg) {
         // Loop thread; runs the state machine in place under the lifecycle monitor like every other
         // dispatch. Nothing reachable from the machine takes the monitor (send_raw_slac reads only
-        // the I/O object), which is what makes holding it safe.
+        // the I/O object), which is what makes holding it safe. A failure propagates: the unwind
+        // releases the monitor and the loop's catch handler in ready() aborts the loop.
         // A dropped frame is logged by post_command; there is no one to hand the result to.
         (void)post_command("SLAC frame", [&msg](FSMController& target) {
             target.signal_new_slac_message(msg);
@@ -300,7 +303,9 @@ bool ev_slacImpl::post_command(char const* command, std::function<bool(FSMContro
     // The lifecycle monitor is held across the call, not just across the lookup: shutdown() waits
     // for the event loop, not for in-flight command handlers, and destroys the controller
     // afterwards under this monitor. Nothing reachable from the state machine takes the monitor, so
-    // frames and the I/O error teardown go through here as well.
+    // frames and the I/O error teardown go through here as well. The fatal handler (abort_event_loop)
+    // does take it, so the controller must not call it from inside \p post; a failure in there
+    // propagates as an exception and the loop's catch handler aborts the loop.
     auto lifecycle = lifecycle_state.handle();
     auto* const target = lifecycle->dispatch_target();
     if (target == nullptr) {
