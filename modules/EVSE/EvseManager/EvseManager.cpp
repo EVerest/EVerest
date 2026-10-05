@@ -276,6 +276,14 @@ void EvseManager::init() {
     });
 }
 
+void EvseManager::shutdown() {
+    invoke_shutdown(*p_evse);
+    invoke_shutdown(*p_energy_grid);
+    invoke_shutdown(*p_token_provider);
+    invoke_shutdown(*p_random_delay);
+    invoke_shutdown(*p_dc_external_derate);
+}
+
 void EvseManager::ready() {
     bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized);
 
@@ -1879,7 +1887,7 @@ void EvseManager::send_supported_energy_transfers(const std::vector<types::iso15
 std::vector<types::iso15118::EnergyTransferMode> EvseManager::ac_energy_transfers() {
     const auto caps = hw_capabilities.get();
     const auto der = der_available.load();
-    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der);
+    return get_supported_ac_energy_transfers(caps, config.supported_iso_ac_bpt, der, config.iso15118_der_flavor);
 }
 
 std::vector<types::iso15118::EnergyTransferMode> EvseManager::dc_energy_transfers() {
@@ -1954,10 +1962,14 @@ void EvseManager::update_hlc_ac_parameters() {
     if (hw_caps.max_phase_count_import == 3) {
         ac_connectors.push_back(types::iso15118::Connector::ThreePhase);
     }
-    r_hlc[0]->call_update_ac_parameters(
-        {50, static_cast<float>(config.ac_nominal_voltage), ac_connectors, std::nullopt, std::nullopt,
-         config.ac_max_reactive_power > 0 ? std::make_optional(static_cast<float>(config.ac_max_reactive_power))
-                                          : std::nullopt}); // TODO(sl): Getting nominal frequency
+    types::iso15118::AcParameters ac_parameters{};
+    ac_parameters.nominal_frequency = static_cast<float>(config.ac_nominal_frequency);
+    ac_parameters.nominal_voltage = static_cast<float>(config.ac_nominal_voltage);
+    ac_parameters.connectors = ac_connectors;
+    if (config.ac_max_reactive_power > 0) {
+        ac_parameters.evse_max_reactive_power = static_cast<float>(config.ac_max_reactive_power);
+    }
+    r_hlc[0]->call_update_ac_parameters(ac_parameters);
 }
 
 void EvseManager::log_v2g_message(types::iso15118::V2gMessages const& v2g_messages) {
