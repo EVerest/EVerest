@@ -205,8 +205,6 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
         return;
     }
 
-    exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
-
     VariantAccess va{
         get_exi_input_stream(buffer_view),
         this->data,
@@ -235,6 +233,10 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
         assert(type != Type::None);
     } else {
         logf_error("Failed due to: %s\n", error.c_str());
+    }
+
+    if (type == Type::AuthorizationReq or type == Type::CertificateInstallationReq) {
+        exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
     }
 }
 

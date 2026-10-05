@@ -30,8 +30,9 @@ public:
     [[nodiscard]] Type get_type() const;
     [[nodiscard]] const std::string& get_error() const;
 
-    // Empty for a variant built directly from a C++ message. The PnC signature verification re-decodes
-    // the request from it to rebuild the signed EXI fragment; the certificate relay forwards it verbatim.
+    // The raw EXI of an AuthorizationReq or CertificateInstallationReq, empty for every other message and
+    // for a variant built directly from a C++ message. The PnC signature verification re-decodes the request
+    // from it to rebuild the signed EXI fragment; the certificate relay forwards it verbatim.
     [[nodiscard]] const std::vector<uint8_t>& get_exi_payload() const {
         return exi_payload;
     }
