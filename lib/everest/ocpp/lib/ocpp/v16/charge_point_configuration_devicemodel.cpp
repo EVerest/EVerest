@@ -437,6 +437,9 @@ int32_t get_active_network_slot(DeviceModelInterface& storage) {
     return 1;
 }
 
+// TODO(piet): the mutability of a known key is defined twice, in known_keys.cpp and in the component config. Derived
+// keys only honour known_keys.cpp, so a ReadOnly NetworkConfiguration slot variable does not make SecurityProfile or
+// AuthorizationKey ReadOnly for the CSMS. Make the component config the only source.
 std::optional<v16::KeyValue> get_derived_key_value_optional(DeviceModelInterface& storage, v16::keys::valid_keys key) {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     namespace CC = ocpp::v2::ControllerComponentVariables;
