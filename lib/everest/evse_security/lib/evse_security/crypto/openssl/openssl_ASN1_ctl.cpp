@@ -132,7 +132,10 @@ std::uint16_t read_bounded_u16(const ASN1_INTEGER* in, const char* field) {
 using ValidityPtr = std::unique_ptr<Asn1CtlValidity,  decltype(&Asn1CtlValidity_free)>;
 using RootPtr     = std::unique_ptr<Asn1CtlRootEntry, decltype(&Asn1CtlRootEntry_free)>;
 using CtlPtr      = std::unique_ptr<Asn1CtlEvpkiCtl,  decltype(&Asn1CtlEvpkiCtl_free)>;
-
+struct OpenSSLFree {
+    void operator()(unsigned char* p) const noexcept { OPENSSL_free(p); }
+};
+using OpenSSLBufferPtr = std::unique_ptr<unsigned char, OpenSSLFree>;
 CtlPtr to_asn1(const TrustList& src) {
     CtlPtr a(Asn1CtlEvpkiCtl_new(), &Asn1CtlEvpkiCtl_free);
     if (!a) {
@@ -231,15 +234,15 @@ TrustList from_asn1(const Asn1CtlEvpkiCtl& a) {
 std::vector<std::uint8_t> encode_der(const TrustList& ctl) {
     CtlPtr a = to_asn1(ctl);
 
-    unsigned char* raw = nullptr;
-    const int len = i2d_Asn1CtlEvpkiCtl(a.get(), &raw);
-    if (len <= 0 || raw == nullptr) {
+    unsigned char* raw_ptr = nullptr;
+    const int len = i2d_Asn1CtlEvpkiCtl(a.get(), &raw_ptr);
+    if (len <= 0 || raw_ptr == nullptr) {
         throw std::runtime_error("i2d_Asn1CtlEvpkiCtl failed");
     }
 
-    std::vector<std::uint8_t> out(raw, raw + len);
-    OPENSSL_free(raw);
-    return out;
+    OpenSSLBufferPtr raw(raw_ptr);
+    
+    return std::vector<std::uint8_t>(raw.get(), raw.get() + len);
 }
 
 TrustList decode_der(const std::uint8_t* der, std::size_t len) {
