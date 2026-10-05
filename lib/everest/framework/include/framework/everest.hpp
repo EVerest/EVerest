@@ -311,6 +311,11 @@ private:
 ///
 /// \returns the 3 tier model mapping from a \p module_tier_mapping for the given \p impl_id
 ///
+/// \brief The mapping errors of \p impl of \p module_id carry as origin: the module mapping, partially overridden by
+/// the implementation mapping
+std::optional<Mapping> resolve_error_origin_mapping(const Config& config, const std::string& module_id,
+                                                    const std::string& module_name, const std::string& impl);
+
 std::optional<Mapping> get_impl_mapping(std::optional<ModuleTierMappings> module_tier_mappings,
                                         const std::string& impl_id);
 

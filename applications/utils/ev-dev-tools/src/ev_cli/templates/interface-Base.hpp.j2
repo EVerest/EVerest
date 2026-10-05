@@ -1,9 +1,9 @@
-{% from "helper_macros.j2" import handle_cmd_signature, publish_var_signature, list_json_types, var_to_cpp, var_to_any, print_template_info, print_spdx_line, string_to_enum, enum_to_string, enum_to_string_view %}
+{% from "helper_macros.j2" import handle_cmd_signature, publish_var_signature, list_json_types, var_to_cpp, var_to_any, print_template_info, print_spdx_line, string_to_enum, enum_to_string, enum_to_string_view, cpp_type, result_type %}
 {{ print_spdx_line('Apache-2.0') }}
 #ifndef {{ info.hpp_guard }}
 #define {{ info.hpp_guard }}
 
-{{ print_template_info('6') }}
+{{ print_template_info('7') }}
 
 #include <framework/ModuleAdapter.hpp>
 #include <utils/types.hpp>
@@ -59,6 +59,10 @@ public:
         {{- 'const '}} {{-  var.cpp_type }}&
     {%- endif -%}
     {{ ' value) {' }}
+        if (_ev->local) {
+            _ev->local->publish<{{ cpp_type(var) }}>(_ev->module_id, _name, "{{ var.name }}", std::make_shared<const {{ cpp_type(var) }}>(value));
+            return;
+        }
     {% if 'object_type' in var %}
         _ev->publish(_name, "{{ var.name }}", value);
     {% elif 'enum_type' in var %}
@@ -182,6 +186,16 @@ private:
         {% if cmd.result %}
         {{ cmd.name }}_cmd.return_type = {{ list_json_types(cmd.result.json_type) }};
         {% endif %}
+        if (_ev->local) {
+            _ev->local->provide(
+                _ev->module_id, _name, "{{ cmd.name }}",
+                Everest::LocalBus::CmdFn<{{ result_type(cmd.result) }}{% for arg in cmd.args %}, {{ cpp_type(arg) }}{% endfor %}>([this]({% for arg in cmd.args %}const {{ cpp_type(arg) }}& {{ arg.name }}{{ ', ' if not loop.last }}{% endfor %}) -> {{ result_type(cmd.result) }} {
+                {% for arg in cmd.args %}
+                    auto {{ arg.name }}_copy = {{ arg.name }};
+                {% endfor %}
+                    {{ 'return ' if cmd.result }}this->handle_{{ cmd.name }}({% for arg in cmd.args %}{{ arg.name }}_copy{{ ', ' if not loop.last }}{% endfor %});
+                }));
+        }
         cmds.emplace_back(std::move({{ cmd.name }}_cmd));
         {% if not loop.last %}
 

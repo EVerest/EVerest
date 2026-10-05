@@ -698,12 +698,38 @@ function (ev_add_cpp_module MODULE_NAME)
 
             add_dependencies(generate_cpp_files ld-ev_${MODULE_NAME})
 
-            add_executable(${MODULE_NAME})
+            if(EVEREST_LINK_MODULE_PLUGINS_STATIC)
+                add_library(${MODULE_NAME} STATIC)
 
-            set_target_properties(${MODULE_NAME}
-                PROPERTIES
-                    RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
-            )
+                set_target_properties(${MODULE_NAME}
+                    PROPERTIES
+                        ARCHIVE_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
+                )
+
+                target_compile_definitions(${MODULE_NAME}
+                    PRIVATE
+                        LD_EV_EXCLUDE_MAIN
+                        everest_module_entry=everest_module_entry_${MODULE_NAME}
+                )
+            elseif(EVEREST_BUILD_MODULE_PLUGINS)
+                add_library(${MODULE_NAME} MODULE)
+
+                set_target_properties(${MODULE_NAME}
+                    PROPERTIES
+                        LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
+                        PREFIX ""
+                        OUTPUT_NAME ${MODULE_NAME}
+                )
+
+                target_compile_definitions(${MODULE_NAME} PRIVATE LD_EV_EXCLUDE_MAIN)
+            else()
+                add_executable(${MODULE_NAME})
+
+                set_target_properties(${MODULE_NAME}
+                    PROPERTIES
+                        RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}"
+                )
+            endif()
 
             target_include_directories(${MODULE_NAME}
                 PRIVATE
@@ -736,9 +762,17 @@ function (ev_add_cpp_module MODULE_NAME)
 
             ev_register_module_target(${MODULE_NAME})
 
-            install(TARGETS ${MODULE_NAME}
-                DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
-            )
+            if(EVEREST_LINK_MODULE_PLUGINS_STATIC)
+                # linked into everest-neo, nothing to install besides the manifest
+            elseif(EVEREST_BUILD_MODULE_PLUGINS)
+                install(TARGETS ${MODULE_NAME}
+                    LIBRARY DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+                )
+            else()
+                install(TARGETS ${MODULE_NAME}
+                    DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
+                )
+            endif()
 
             install(FILES ${MODULE_PATH}/manifest.yaml
                 DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
@@ -746,6 +780,10 @@ function (ev_add_cpp_module MODULE_NAME)
 
             list(APPEND EVEREST_MODULES ${MODULE_NAME})
             add_subdirectory(${MODULE_PATH})
+
+            if(EVEREST_LINK_MODULE_PLUGINS_STATIC)
+                _ev_isolate_static_module(${MODULE_NAME} ${MODULE_PATH})
+            endif()
         endif()
     else()
         message(WARNING "C++ module ${MODULE_NAME} does not exist at ${MODULE_PATH}")
@@ -759,6 +797,163 @@ function (ev_add_cpp_module MODULE_NAME)
         GLOBAL
         PROPERTY EVEREST_MODULES ${EVEREST_MODULES}
     )
+endfunction()
+
+function (_ev_collect_directory_targets DIRECTORY OUT)
+    get_property(TARGETS DIRECTORY ${DIRECTORY} PROPERTY BUILDSYSTEM_TARGETS)
+    get_property(SUBDIRECTORIES DIRECTORY ${DIRECTORY} PROPERTY SUBDIRECTORIES)
+    foreach(SUBDIRECTORY ${SUBDIRECTORIES})
+        _ev_collect_directory_targets(${SUBDIRECTORY} SUBDIRECTORY_TARGETS)
+        list(APPEND TARGETS ${SUBDIRECTORY_TARGETS})
+    endforeach()
+    set(${OUT} ${TARGETS} PARENT_SCOPE)
+endfunction()
+
+# Isolates a module linked into one binary with all others, as a shared object loaded with RTLD_LOCAL would be:
+# the module and the libraries defined in its directory get a namespace of their own for namespace module, and
+# their strong symbols are made local to one relocatable object, so that weak symbols of shared code remain the only
+# ones the modules share.
+function (_ev_isolate_static_module MODULE_NAME MODULE_PATH)
+    _ev_collect_directory_targets(${MODULE_PATH} DIRECTORY_TARGETS)
+    list(APPEND DIRECTORY_TARGETS ${MODULE_NAME})
+
+    set(PRIVATE_LIBRARIES "")
+    foreach(DIRECTORY_TARGET ${DIRECTORY_TARGETS})
+        get_target_property(TYPE ${DIRECTORY_TARGET} TYPE)
+        if(TYPE STREQUAL "STATIC_LIBRARY" OR TYPE STREQUAL "OBJECT_LIBRARY")
+            target_compile_definitions(${DIRECTORY_TARGET}
+                PRIVATE $<$<COMPILE_LANGUAGE:CXX>:module=everest_module_${MODULE_NAME}>
+            )
+        endif()
+        if(TYPE STREQUAL "STATIC_LIBRARY" AND NOT DIRECTORY_TARGET STREQUAL MODULE_NAME)
+            list(APPEND PRIVATE_LIBRARIES ${DIRECTORY_TARGET})
+        endif()
+    endforeach()
+
+    # the private libraries the module links, directly or through each other
+    set(MERGED "")
+    set(PENDING ${MODULE_NAME})
+    while(PENDING)
+        list(POP_FRONT PENDING CURRENT)
+        get_target_property(LINKED ${CURRENT} LINK_LIBRARIES)
+        get_target_property(INTERFACE_LINKED ${CURRENT} INTERFACE_LINK_LIBRARIES)
+        foreach(LIBRARY ${LINKED} ${INTERFACE_LINKED})
+            string(REGEX REPLACE "^\\$<LINK_ONLY:(.*)>$" "\\1" LIBRARY "${LIBRARY}")
+            if(NOT TARGET "${LIBRARY}")
+                continue()
+            endif()
+            get_target_property(ALIASED ${LIBRARY} ALIASED_TARGET)
+            if(ALIASED)
+                set(LIBRARY ${ALIASED})
+            endif()
+            if(LIBRARY IN_LIST PRIVATE_LIBRARIES AND NOT LIBRARY IN_LIST MERGED)
+                list(APPEND MERGED ${LIBRARY})
+                list(APPEND PENDING ${LIBRARY})
+            endif()
+        endforeach()
+    endwhile()
+
+    set(MERGED_ARCHIVES "")
+    foreach(LIBRARY ${MERGED})
+        list(APPEND MERGED_ARCHIVES "$<TARGET_FILE:${LIBRARY}>")
+    endforeach()
+    list(JOIN MERGED_ARCHIVES "|" MERGED_ARCHIVES)
+
+    add_custom_command(TARGET ${MODULE_NAME} POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            -DARCHIVE=$<TARGET_FILE:${MODULE_NAME}>
+            "-DPRIVATE_ARCHIVES=${MERGED_ARCHIVES}"
+            -DKEEP_SYMBOL=everest_module_entry_${MODULE_NAME}
+            -DWORK_DIR=${CMAKE_CURRENT_BINARY_DIR}/${MODULE_NAME}/isolate
+            -DLINKER=${CMAKE_LINKER}
+            -DNM=${CMAKE_NM}
+            -DOBJCOPY=${CMAKE_OBJCOPY}
+            -DAR=${CMAKE_AR}
+            -P ${PROJECT_SOURCE_DIR}/cmake/assets/isolate_module_archive.cmake
+        VERBATIM
+    )
+endfunction()
+
+# Links every registered C++ module into TARGET and generates the table everest-neo looks modules up in.
+function (_ev_linked_static_libraries TARGET OUT)
+    set(FOUND "")
+    set(PENDING ${TARGET})
+    while(PENDING)
+        list(POP_FRONT PENDING CURRENT)
+        get_target_property(LINKED ${CURRENT} LINK_LIBRARIES)
+        get_target_property(INTERFACE_LINKED ${CURRENT} INTERFACE_LINK_LIBRARIES)
+        foreach(LIBRARY ${LINKED} ${INTERFACE_LINKED})
+            string(REGEX REPLACE "^\\$<LINK_ONLY:(.*)>$" "\\1" LIBRARY "${LIBRARY}")
+            if(NOT TARGET "${LIBRARY}")
+                continue()
+            endif()
+            get_target_property(ALIASED ${LIBRARY} ALIASED_TARGET)
+            if(ALIASED)
+                set(LIBRARY ${ALIASED})
+            endif()
+            get_target_property(IMPORTED ${LIBRARY} IMPORTED)
+            get_target_property(TYPE ${LIBRARY} TYPE)
+            if(IMPORTED OR NOT TYPE STREQUAL "STATIC_LIBRARY" OR LIBRARY IN_LIST FOUND)
+                continue()
+            endif()
+            list(APPEND FOUND ${LIBRARY})
+            list(APPEND PENDING ${LIBRARY})
+        endforeach()
+    endwhile()
+    set(${OUT} ${FOUND} PARENT_SCOPE)
+endfunction()
+
+function (ev_link_static_modules TARGET)
+    ev_get_targets(MODULE_TARGETS MODULES)
+
+    # a library only one module links may declare namespace module as part of that module
+    set(LIBRARIES "")
+    foreach(MODULE_NAME ${MODULE_TARGETS})
+        _ev_linked_static_libraries(${MODULE_NAME} MODULE_LIBRARIES)
+        foreach(LIBRARY ${MODULE_LIBRARIES})
+            if(NOT LIBRARY IN_LIST MODULE_TARGETS)
+                list(APPEND LIBRARIES ${LIBRARY})
+                set(USER_OF_${LIBRARY} ${USER_OF_${LIBRARY}} ${MODULE_NAME})
+            endif()
+        endforeach()
+    endforeach()
+    list(REMOVE_DUPLICATES LIBRARIES)
+    foreach(LIBRARY ${LIBRARIES})
+        list(LENGTH USER_OF_${LIBRARY} USERS)
+        get_target_property(COMPILE_DEFINITIONS ${LIBRARY} COMPILE_DEFINITIONS)
+        if(USERS EQUAL 1 AND NOT COMPILE_DEFINITIONS MATCHES "module=everest_module_")
+            target_compile_definitions(${LIBRARY}
+                PRIVATE $<$<COMPILE_LANGUAGE:CXX>:module=everest_module_${USER_OF_${LIBRARY}}>
+            )
+        endif()
+    endforeach()
+
+    set(DECLARATIONS "")
+    set(ENTRIES "")
+    foreach(MODULE_NAME ${MODULE_TARGETS})
+        string(APPEND DECLARATIONS "extern \"C\" const Everest::ModulePluginEntry* everest_module_entry_${MODULE_NAME}();\n")
+        string(APPEND ENTRIES "    {\"${MODULE_NAME}\", everest_module_entry_${MODULE_NAME}},\n")
+    endforeach()
+
+    set(TABLE_FILE "${CMAKE_BINARY_DIR}/generated/neo/static_modules.cpp")
+    file(CONFIGURE
+        OUTPUT ${TABLE_FILE}
+        CONTENT "// generated by ev_link_static_modules
+#include <framework/module_plugin.hpp>
+
+${DECLARATIONS}
+extern \"C\" const Everest::StaticModulePlugin* everest_static_module_plugins() {
+    static const Everest::StaticModulePlugin plugins[] = {
+${ENTRIES}    {nullptr, nullptr},
+    };
+    return plugins;
+}
+"
+        @ONLY
+    )
+
+    target_sources(${TARGET} PRIVATE ${TABLE_FILE})
+    target_link_libraries(${TARGET} PRIVATE ${MODULE_TARGETS})
 endfunction()
 
 function (ev_add_js_module MODULE_NAME)

@@ -40,6 +40,52 @@ const auto remote_cmd_res_timeout_step = std::chrono::seconds(1);
 const std::array<std::string_view, 3> TELEMETRY_RESERVED_KEYS = {{"connector_id"}};
 constexpr auto ensure_ready_timeout_ms = 100;
 
+std::optional<Mapping> resolve_error_origin_mapping(const Config& config, const std::string& module_id,
+                                                    const std::string& module_name, const std::string& impl) {
+    std::optional<Mapping> mapping;
+    const auto module_tier_mappings = config.get_module_3_tier_model_mappings(module_id);
+    if (module_tier_mappings.has_value()) {
+        const auto& module_tier_mapping = module_tier_mappings.value();
+        // start with the module mapping and overwrite it (partially) with the implementation mapping
+        mapping = module_tier_mapping.module;
+        const auto impl_mapping = config.get_3_tier_model_mapping(module_id, impl);
+        if (impl_mapping.has_value()) {
+            if (mapping.has_value()) {
+                auto& mapping_value = mapping.value();
+                const auto& impl_mapping_value = impl_mapping.value();
+                if (mapping_value.evse != impl_mapping_value.evse) {
+                    EVLOG_warning << fmt::format("Mapping value mismatch. {} ({}) evse ({}) != {} mapping evse "
+                                                 "({}). Setting evse={}, please fix this in the config.",
+                                                 module_id, module_name, mapping_value.evse, impl,
+                                                 impl_mapping_value.evse, impl_mapping_value.evse);
+                    mapping_value.evse = impl_mapping_value.evse;
+                }
+
+                if (not mapping_value.connector.has_value() and impl_mapping_value.connector.has_value()) {
+                    mapping_value.connector = impl_mapping_value.connector;
+                }
+                if (mapping_value.connector.has_value() and impl_mapping_value.connector.has_value()) {
+                    const auto& mapping_value_connector_value = mapping_value.connector.value();
+                    const auto& impl_mapping_value_connector_value = impl_mapping_value.connector.value();
+                    if (mapping_value_connector_value != impl_mapping_value_connector_value) {
+                        EVLOG_warning << fmt::format(
+                            "Mapping value mismatch. {} ({}) connector ({}) != {} mapping connector "
+                            "({}). Setting connector={}, please fix this in the config.",
+                            module_id, module_name, mapping_value_connector_value, impl,
+                            impl_mapping_value_connector_value, impl_mapping_value_connector_value);
+                    }
+                    mapping_value.connector = impl_mapping_value_connector_value;
+                }
+
+            } else {
+                EVLOG_info << "No module mapping, so using impl mapping here";
+                mapping = impl_mapping;
+            }
+        }
+    }
+    return mapping;
+}
+
 Everest::Everest(std::string module_id_, const Config& config_, bool validate_data_with_schema,
                  std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
                  bool telemetry_enabled, bool forward_exceptions) :
@@ -117,46 +163,7 @@ Everest::Everest(std::string module_id_, const Config& config_, bool validate_da
         // setup error state monitor
         this->impl_error_state_monitors[impl] = std::make_shared<error::ErrorStateMonitor>(error_database);
 
-        std::optional<Mapping> mapping;
-        if (this->module_tier_mappings.has_value()) {
-            const auto& module_tier_mapping = this->module_tier_mappings.value();
-            // start with the module mapping and overwrite it (partially) with the implementation mapping
-            mapping = module_tier_mapping.module;
-            const auto impl_mapping = config.get_3_tier_model_mapping(this->module_id, impl);
-            if (impl_mapping.has_value()) {
-                if (mapping.has_value()) {
-                    auto& mapping_value = mapping.value();
-                    const auto& impl_mapping_value = impl_mapping.value();
-                    if (mapping_value.evse != impl_mapping_value.evse) {
-                        EVLOG_warning << fmt::format("Mapping value mismatch. {} ({}) evse ({}) != {} mapping evse "
-                                                     "({}). Setting evse={}, please fix this in the config.",
-                                                     this->module_id, this->module_name, mapping_value.evse, impl,
-                                                     impl_mapping_value.evse, impl_mapping_value.evse);
-                        mapping_value.evse = impl_mapping_value.evse;
-                    }
-
-                    if (not mapping_value.connector.has_value() and impl_mapping_value.connector.has_value()) {
-                        mapping_value.connector = impl_mapping_value.connector;
-                    }
-                    if (mapping_value.connector.has_value() and impl_mapping_value.connector.has_value()) {
-                        const auto& mapping_value_connector_value = mapping_value.connector.value();
-                        const auto& impl_mapping_value_connector_value = impl_mapping_value.connector.value();
-                        if (mapping_value_connector_value != impl_mapping_value_connector_value) {
-                            EVLOG_warning
-                                << fmt::format("Mapping value mismatch. {} ({}) connector ({}) != {} mapping connector "
-                                               "({}). Setting connector={}, please fix this in the config.",
-                                               this->module_id, this->module_name, mapping_value_connector_value, impl,
-                                               impl_mapping_value_connector_value, impl_mapping_value_connector_value);
-                        }
-                        mapping_value.connector = impl_mapping_value_connector_value;
-                    }
-
-                } else {
-                    EVLOG_info << "No module mapping, so using impl mapping here";
-                    mapping = impl_mapping;
-                }
-            }
-        }
+        const auto mapping = resolve_error_origin_mapping(config, this->module_id, this->module_name, impl);
 
         // setup error factory
         const ImplementationIdentifier default_origin(this->module_id, impl, mapping);
