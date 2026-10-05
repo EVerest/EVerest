@@ -26,6 +26,8 @@
 
 #include <iso15118/detail/x509_helper.hpp>
 
+#include <evse_security/crypto/openssl/openssl_iso20.hpp>
+
 namespace iso15118::d20::crypto {
 
 using x509::cert_to_pem;
@@ -33,6 +35,8 @@ using x509::der_to_x509;
 using x509::PKEY_ptr;
 using x509::strip_dashes;
 using x509::X509_ptr;
+
+using evse_security::iso20::KeyType;
 
 namespace {
 
@@ -55,32 +59,6 @@ template <typename CbStringField> std::string cb_string(const CbStringField& fie
 template <typename CbStringField> void set_cb_string(CbStringField& field, const std::string& value) {
     std::memcpy(field.characters, value.data(), value.size());
     field.charactersLen = static_cast<uint16_t>(value.size());
-}
-
-enum class KeyAlgorithm {
-    Secp521r1,
-    Ed448,
-    Other,
-};
-
-KeyAlgorithm key_algorithm(EVP_PKEY* pkey) {
-    if (pkey == nullptr) {
-        return KeyAlgorithm::Other;
-    }
-    const int base = EVP_PKEY_base_id(pkey);
-    if (base == EVP_PKEY_ED448) {
-        return KeyAlgorithm::Ed448;
-    }
-    if (base != EVP_PKEY_EC) {
-        return KeyAlgorithm::Other;
-    }
-    char name[64] = {0};
-    std::size_t len = 0;
-    if (EVP_PKEY_get_group_name(pkey, name, sizeof(name), &len) != 1) {
-        return KeyAlgorithm::Other;
-    }
-    const std::string group(name, len);
-    return (group == "secp521r1" or group == "P-521") ? KeyAlgorithm::Secp521r1 : KeyAlgorithm::Other;
 }
 
 bool sha512(const uint8_t* data, std::size_t len, std::vector<uint8_t>& out) {
@@ -194,20 +172,6 @@ std::vector<uint8_t> ed448_sign(EVP_PKEY* pkey, const uint8_t* msg, std::size_t 
     return out;
 }
 
-PKEY_ptr load_private_key(const PrivateKey& key) {
-    BIO* bio = BIO_new_mem_buf(key.pem.data(), static_cast<int>(key.pem.size()));
-    if (bio == nullptr) {
-        return PKEY_ptr(nullptr, &EVP_PKEY_free);
-    }
-    void* pw = key.password ? const_cast<char*>(key.password->c_str()) : nullptr;
-    PKEY_ptr pkey(PEM_read_bio_PrivateKey(bio, nullptr, nullptr, pw), &EVP_PKEY_free);
-    BIO_free(bio);
-    if (pkey == nullptr) {
-        logf_error("PnC: failed to load the private key from PEM");
-    }
-    return pkey;
-}
-
 struct Fragment {
     std::array<uint8_t, MAX_EXI_SIZE> buffer{};
     std::size_t length{0};
@@ -316,13 +280,13 @@ std::string profile_fault(X509* cert, ChainRole role, int sub_ca_index) {
     if (X509_get_version(cert) != 2) {
         return "not an X.509v3 certificate";
     }
-    const auto algorithm = key_algorithm(X509_get0_pubkey(cert));
+    const auto algorithm = evse_security::iso20::key_type(X509_get0_pubkey(cert));
     const int signature_nid = X509_get_signature_nid(cert);
-    if (algorithm == KeyAlgorithm::Secp521r1) {
+    if (algorithm == KeyType::Secp521r1) {
         if (signature_nid != NID_ecdsa_with_SHA512) {
             return "signature algorithm is not ecdsa-with-SHA512";
         }
-    } else if (algorithm == KeyAlgorithm::Ed448) {
+    } else if (algorithm == KeyType::Ed448) {
         if (signature_nid != NID_ED448) {
             return "signature algorithm is not Ed448";
         }
@@ -403,38 +367,6 @@ std::string profile_fault(X509* cert, ChainRole role, int sub_ca_index) {
         }
     }
     return {};
-}
-
-// Annex B marks the key identifiers and revocation pointers critical, which IETF RFC 5280 does not, so
-// OpenSSL rejects a conforming contract certificate. Accept those, keep anything else fatal.
-int verify_annex_b_extensions(int preverified, X509_STORE_CTX* ctx) {
-    if (preverified or X509_STORE_CTX_get_error(ctx) != X509_V_ERR_UNHANDLED_CRITICAL_EXTENSION) {
-        return preverified;
-    }
-    X509* cert = X509_STORE_CTX_get_current_cert(ctx);
-    for (int i = 0; i < X509_get_ext_count(cert); ++i) {
-        X509_EXTENSION* ext = X509_get_ext(cert, i);
-        if (not X509_EXTENSION_get_critical(ext) or X509_supported_extension(ext)) {
-            continue;
-        }
-        const int nid = OBJ_obj2nid(X509_EXTENSION_get_object(ext));
-        if (nid != NID_authority_key_identifier and nid != NID_subject_key_identifier and nid != NID_info_access and
-            nid != NID_crl_distribution_points and nid != NID_sinfo_access) {
-            return 0;
-        }
-        const X509V3_EXT_METHOD* method = X509V3_EXT_get(ext);
-        void* decoded = X509V3_EXT_d2i(ext);
-        if (decoded == nullptr or method == nullptr) {
-            return 0;
-        }
-        if (method->it) {
-            ASN1_item_free(static_cast<ASN1_VALUE*>(decoded), ASN1_ITEM_ptr(method->it));
-        } else {
-            method->ext_free(decoded);
-        }
-    }
-    X509_STORE_CTX_set_error(ctx, X509_V_OK);
-    return 1;
 }
 
 enum class Validity {
@@ -525,16 +457,6 @@ bool chain_matches_profile(const ParsedChain& chain, ChainRole leaf_role) {
     return true;
 }
 
-void log_verified_chain(X509_STORE_CTX* ctx) {
-    const auto* chain = X509_STORE_CTX_get0_chain(ctx);
-    const int depth = sk_X509_num(chain);
-    char anchor[256] = {};
-    if (depth > 0) {
-        X509_NAME_oneline(X509_get_subject_name(sk_X509_value(chain, depth - 1)), anchor, sizeof(anchor));
-    }
-    logf_info("PnC: contract chain verified locally, %d certificates, trust anchor %s", depth, anchor);
-}
-
 } // namespace
 
 ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& leaf_der,
@@ -589,10 +511,10 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         X509_STORE_CTX* ctx = X509_STORE_CTX_new();
         result.response_code = dt::ResponseCode::WARNING_CertificateValidationError;
         if (ctx != nullptr and X509_STORE_CTX_init(ctx, store, chain.leaf.get(), untrusted) == 1) {
-            X509_STORE_CTX_set_verify_cb(ctx, verify_annex_b_extensions);
+            X509_STORE_CTX_set_verify_cb(ctx, evse_security::iso20::verify_annex_b_extensions);
             if (X509_verify_cert(ctx) == 1) {
                 result.response_code = dt::ResponseCode::OK;
-                log_verified_chain(ctx);
+                x509::log_verified_chain(ctx);
             } else {
                 const int err = X509_STORE_CTX_get_error(ctx);
                 logf_error("PnC: contract chain verification failed at depth %d: %s",
@@ -753,7 +675,7 @@ std::vector<uint8_t> sign_document(const std::vector<uint8_t>& unsigned_request_
     if (header == nullptr) {
         return {};
     }
-    auto pkey = load_private_key(key);
+    auto pkey = x509::load_private_key(key.pem, key.password);
     if (pkey == nullptr) {
         ERR_clear_error();
         return {};

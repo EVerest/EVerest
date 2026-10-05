@@ -4,46 +4,24 @@
 
 #include <algorithm>
 
-#include <openssl/bio.h>
 #include <openssl/err.h>
-#include <openssl/pem.h>
+
+#include <iso15118/detail/helper.hpp>
 
 namespace iso15118::x509 {
 
 X509_ptr der_to_x509(const std::vector<uint8_t>& der) {
-    const unsigned char* p = der.data();
-    return X509_ptr(d2i_X509(nullptr, &p, static_cast<long>(der.size())), &X509_free);
+    return openssl::der_to_certificate(der.data(), der.size());
 }
 
 std::string cert_to_pem(X509* cert) {
-    BIO* bio = BIO_new(BIO_s_mem());
-    if (bio == nullptr) {
-        return {};
-    }
-    std::string pem;
-    if (PEM_write_bio_X509(bio, cert) == 1) {
-        char* data = nullptr;
-        const long n = BIO_get_mem_data(bio, &data);
-        if (n > 0 and data != nullptr) {
-            pem.assign(data, static_cast<std::size_t>(n));
-        }
-    }
-    BIO_free(bio);
-    return pem;
+    return openssl::certificate_to_pem(cert);
 }
 
 std::string subject_common_name(X509* cert) {
-    std::string cn;
-    X509_NAME* name = X509_get_subject_name(cert);
-    if (name == nullptr) {
-        return cn;
-    }
-    char buf[256] = {0};
-    const int len = X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf) - 1);
-    if (len > 0) {
-        cn.assign(buf, static_cast<std::size_t>(len));
-    }
-    return cn;
+    const auto subject = openssl::certificate_subject(cert);
+    const auto cn = subject.find("CN");
+    return cn != subject.end() ? cn->second : std::string{};
 }
 
 std::string strip_dashes(std::string in) {
@@ -51,40 +29,23 @@ std::string strip_dashes(std::string in) {
     return in;
 }
 
-std::string der_chain_to_pem(const std::vector<uint8_t>& leaf_der, const std::vector<std::vector<uint8_t>>& subs_der) {
-    std::string pem;
-    auto append = [&pem](const std::vector<uint8_t>& der) {
-        auto x = der_to_x509(der);
-        if (x != nullptr) {
-            pem += cert_to_pem(x.get());
-        }
-    };
-    append(leaf_der);
-    for (const auto& sub : subs_der) {
-        append(sub);
+PKEY_ptr load_private_key(const std::string& pem, const std::optional<std::string>& password) {
+    auto pkey = openssl::pem_to_private_key(pem, password ? password->c_str() : nullptr);
+    if (pkey == nullptr) {
+        logf_error("PnC: failed to load the private key from PEM");
+        ERR_clear_error();
     }
-    return pem;
+    return pkey;
 }
 
-std::vector<std::vector<uint8_t>> pem_chain_to_der(const std::string& pem) {
-    std::vector<std::vector<uint8_t>> out;
-    BIO* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
-    if (bio == nullptr) {
-        return out;
+void log_verified_chain(X509_STORE_CTX* ctx) {
+    const auto* chain = X509_STORE_CTX_get0_chain(ctx);
+    const int depth = sk_X509_num(chain);
+    char anchor[256] = {};
+    if (depth > 0) {
+        X509_NAME_oneline(X509_get_subject_name(sk_X509_value(chain, depth - 1)), anchor, sizeof(anchor));
     }
-    X509* cert = nullptr;
-    while ((cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr)) != nullptr) {
-        unsigned char* der = nullptr;
-        const int len = i2d_X509(cert, &der);
-        if (len > 0 and der != nullptr) {
-            out.emplace_back(der, der + len);
-        }
-        OPENSSL_free(der);
-        X509_free(cert);
-    }
-    BIO_free(bio);
-    ERR_clear_error(); // the loop terminates on a benign "no start line" PEM error
-    return out;
+    logf_info("PnC: contract chain verified locally, %d certificates, trust anchor %s", depth, anchor);
 }
 
 } // namespace iso15118::x509

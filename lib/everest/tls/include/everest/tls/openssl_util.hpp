@@ -319,6 +319,14 @@ template <typename T> constexpr void zero(T& mem) {
 pkey_ptr load_private_key(const char* filename, const char* password);
 
 /**
+ * \brief load a private key from a PEM string
+ * \param[in] pem the PEM encoded key
+ * \param[in] password the key's password, nullptr when it is not encrypted
+ * \return the key or empty unique_ptr on error
+ */
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password);
+
+/**
  * \brief convert R, S BIGNUM to DER signature
  * \param[in] r the BIGNUM R component of the signature
  * \param[in] s the BIGNUM S component of the signature
