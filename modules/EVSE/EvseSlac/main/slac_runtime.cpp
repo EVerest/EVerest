@@ -297,8 +297,11 @@ void SlacRuntime::configure_fsm_context() {
 
 bool SlacRuntime::create_fsm_controller() {
     fsm_ctrl = std::make_unique<FSMController>(*fsm_ctx);
-    // A posted command that throws out of the state machine ends the loop the same way a throw on
-    // the receive path does; the controller has stopped itself before this runs (loop thread).
+    // A posted command or timer step that fails ends the loop the same way a throw on the receive
+    // path does, through abort_event_loop: directly from here, since those paths run without the
+    // lifecycle monitor, while the receive path propagates to the loop's catch handler so the
+    // dispatch has released the monitor first. The controller is still active when this runs; the
+    // teardown in abort_event_loop stops it (loop thread).
     fsm_ctrl->set_fatal_handler([this](std::string const& reason) { abort_event_loop(reason); });
     {
         auto lifecycle = lifecycle_state.handle();
@@ -319,7 +322,9 @@ void SlacRuntime::configure_slac_io_callbacks() {
             return;
         }
         // Loop thread; runs the state machine in place under the lifecycle monitor, like every
-        // other dispatch (see dispatch_to_controller for the invariant that makes that safe).
+        // other dispatch (see dispatch_to_controller for the invariant that makes that safe). A
+        // failure propagates: the unwind releases the monitor and run_event_loop's catch handler
+        // aborts the loop.
         if (not dispatch_to_controller(lifecycle_state,
                                        [&msg](FSMController& target) { target.signal_new_slac_message(msg); })) {
             log(LogLevel::Warning, "Ignoring SLAC message because SLAC controller or PLC I/O is not available.");

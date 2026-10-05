@@ -73,7 +73,9 @@ template <typename ControllerT> IoBringUpResult bring_up_result(LifecycleStateT<
 // controller under this same monitor, so it cannot get in between the lookup and the call. That
 // requires one invariant of everything reachable from \p work, the state machine included: nothing
 // in there takes the lifecycle monitor. send_raw_slac reads only the I/O object, the publish and
-// log callbacks go to the framework, and the count_bc path is an atomic store.
+// log callbacks go to the framework, and the count_bc path is an atomic store. The fatal handler
+// (abort_event_loop) does take it, so the controller must not call it from inside a dispatch; a
+// failure in \p work propagates as an exception and the loop's catch handler aborts the loop.
 //
 // Returns false if there is no live controller or the PLC I/O is not ready; \p work did not run.
 template <typename StateT, typename MTX, typename WorkT>

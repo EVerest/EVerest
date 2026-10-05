@@ -19,8 +19,12 @@ public:
 
     explicit FSMController(slac::fsm::evse::Context& ctx);
 
-    // Loop thread only: the SLAC I/O receive callback already runs there.
-    void signal_new_slac_message(slac::messages::HomeplugMessage const&);
+    // Loop thread only: the SLAC I/O receive callback already runs there, with the lifecycle monitor
+    // held. Unlike the posted commands this does not report through the fatal handler, which takes
+    // that monitor: a throw out of the machine's publishers or a timer that cannot be armed
+    // propagates to the caller, and the loop's catch handler aborts the loop once the dispatch has
+    // released the monitor.
+    void signal_new_slac_message(slac::messages::HomeplugMessage const& msg);
 
     // Any thread. The FSM is not thread-safe and the event loop drives it from socket receives and
     // its deadline timer, so these hand the event to the loop through fd_event_handler::add_action,
@@ -35,10 +39,11 @@ public:
     // FSM context for CM_VALIDATE BCB-toggle detection. Thread-safe atomic write, no event-loop hop.
     void signal_count_bc(int count);
 
-    // Called on the loop thread when a step threw out of the machine or its timer could not be armed.
-    // (A throw inside a transition never leaves Boost.MSM; what arrives here comes from the
-    // publishers that run after it.) The event handler swallows exceptions from posted actions, so
-    // without this the failure would be invisible.
+    // Called on the loop thread when a posted command or the deadline timer threw out of the machine
+    // or the timer could not be re-armed afterwards. (A throw inside a transition never leaves
+    // Boost.MSM; what arrives here comes from the publishers that run after it.) The event handler
+    // swallows exceptions from posted actions, so without this the failure would be invisible. The
+    // receive path is not covered: it runs under the lifecycle monitor and propagates instead.
     // The controller is still active when the handler runs: the handler owns the teardown (reset path
     // for the consumer, then stop()). Without a handler the controller stops itself and logs.
     void set_fatal_handler(FatalHandler handler);
@@ -58,7 +63,10 @@ private:
     // Queue \p task on the loop thread; false if not registered with a handler or not active.
     bool post(char const* command, std::function<void()> task);
     // Loop thread: run \p task on the machine, then arm the timer for the machine's next deadline.
-    // A throw or a timer failure reports through the fatal handler, naming \p command.
+    // Throws if either fails.
+    void step(std::function<void()> const& task);
+    // Loop thread, no lifecycle monitor held: step(), with a throw or a timer failure reported
+    // through the fatal handler, naming \p command.
     void run_guarded(char const* command, std::function<void()> const& task);
     bool schedule();
     void handle_retrigger();
