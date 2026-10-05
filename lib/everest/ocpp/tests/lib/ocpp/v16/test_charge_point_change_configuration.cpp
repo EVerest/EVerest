@@ -98,6 +98,8 @@ protected:
         this->charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{},
                                                    ocpp::OcppProtocolVersion::v16);
         std::unique_lock<std::mutex> lock(this->mtx);
+        this->websocket_connected = true;
+        this->cv.notify_all();
         EXPECT_TRUE(this->cv.wait_for(lock, WAIT_TIMEOUT, [this]() { return this->boot_accepted; }));
     }
 
@@ -144,12 +146,15 @@ protected:
     }
 
     /// \brief Delivers incoming frames one at a time, like the websocket, and off the message-queue worker thread
+    /// \note Frames are held back until on_websocket_connected(), because the charge point drops earlier messages
     void run_responder() {
         while (true) {
             nlohmann::json frame;
             {
                 std::unique_lock<std::mutex> lock(this->mtx);
-                this->cv.wait(lock, [this]() { return this->stop_responder or not this->incoming.empty(); });
+                this->cv.wait(lock, [this]() {
+                    return this->stop_responder or (this->websocket_connected and not this->incoming.empty());
+                });
                 if (this->stop_responder) {
                     return;
                 }
@@ -178,6 +183,7 @@ protected:
     std::condition_variable cv;
     std::deque<nlohmann::json> incoming;
     std::vector<nlohmann::json> call_results;
+    bool websocket_connected{false};
     bool boot_accepted{false};
     bool stop_responder{false};
     std::thread responder;
