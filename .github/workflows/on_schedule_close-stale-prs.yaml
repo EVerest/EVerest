@@ -1,4 +1,4 @@
-name: On Schedule - Close Stale PRs
+name: Schedule
 
 on:
   schedule:
@@ -18,7 +18,7 @@ jobs:
       issues: write
       pull-requests: write
     steps:
-      - name: Warn and close stale PRs
+      - name: Warn and close stale PRs and Issues
         uses: actions/stale@v9
         with:
           debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
