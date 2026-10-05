@@ -469,8 +469,9 @@ void MQTTAbstractionImpl::on_mqtt_connect() {
         this->mqtt_is_connected = true;
         to_publish = std::move(*handle);
     }
+    // publish() already updated retained_topics, so do not set record_retained here again
     for (auto& message : to_publish) {
-        this->publish(message->topic, message->payload, message->qos, message->retain);
+        this->publish(message->topic, message->payload, message->qos, message->retain, false);
     }
 }
 
