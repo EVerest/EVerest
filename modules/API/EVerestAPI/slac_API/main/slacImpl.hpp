@@ -36,10 +36,10 @@ protected:
     virtual void handle_reset(bool& enable) override;
     virtual void handle_enter_bcd() override;
     virtual void handle_leave_bcd() override;
+    virtual void handle_count_bc(int& count) override;
     virtual void handle_dlink_terminate() override;
     virtual void handle_dlink_error() override;
     virtual void handle_dlink_pause() override;
-    virtual void handle_count_bc(int& count) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
