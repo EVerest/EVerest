@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 /*
  * Charger.cpp
  *
@@ -1822,7 +1822,7 @@ bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
                              "(state: "
                           << evse_state_to_string(shared_context.current_state)
                           << "). Ignoring this stale authorization.";
-            return;
+            return false;
         }
         shared_context.id_token = token;
         shared_context.validation_result = result;
