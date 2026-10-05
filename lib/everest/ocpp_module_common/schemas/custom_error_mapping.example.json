@@ -1,0 +1,59 @@
+{
+  "$schema": "custom_error_mapping.schema.json",
+  "generic/VendorError#YourCustomErrorType": {
+    "v16": {
+      "error_code": "OtherError",
+      "vendor_id": "com.example",
+      "vendor_error_code": "T-210",
+      "info": "Temperature error raised at ${actual_value} deg"
+    },
+    "v2": {
+      "tech_code": "T-210",
+      "component_name": "Connector",
+      "variable_name": "Temperature",
+      "severity": 5,
+      "techInfo": "Failed at connector temperature ${actual_value} deg"
+    }
+  },
+  "evse_board_support/MREC3HighTemperature": {
+    "v16": {
+      "error_code": "HighTemperature",
+      "vendor_id": "com.example",
+      "vendor_error_code": "T-210",
+      "info": "Temperature error raised at ${actual_value} deg"
+    },
+    "v2": {
+      "tech_code": "T-210",
+      "component_name": "Connector",
+      "variable_name": "Temperature",
+      "severity": 3,
+      "techInfo": "The Connector temperature is high"
+    }
+  },
+  "generic/VendorError#SurgeProtectionDevice1": {
+    "tier_mapping": { "evse": 1 },
+    "v2": {
+      "tech_code": "SPD-1"
+    }
+  },
+  "generic/VendorError#SurgeProtectionDevice2": {
+    "tier_mapping": { "evse": 2 },
+    "v2": {
+      "tech_code": "SPD-2"
+    }
+  },
+  "connector_lock/MREC1ConnectorLockFailure": {
+    "tier_mapping": { "evse": 1, "connector": 2 },
+    "v16": {
+      "error_code": "ConnectorLockFailure",
+      "vendor_id": "com.example",
+      "vendor_error_code": "L-110"
+    },
+    "v2": {
+      "tech_code": "L-110",
+      "component_name": "Connector",
+      "component_instance": "2",
+      "variable_name": "Problem"
+    }
+  }
+}

@@ -1,0 +1,154 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://everest.github.io/schemas/ocpp_module_common/custom_error_mapping.schema.json",
+  "title": "Custom OCPP error mapping",
+  "description": "Maps EVerest errors to their OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Optional reference to this schema, for editors.",
+      "type": "string"
+    }
+  },
+  "propertyNames": {
+    "pattern": "^(\\$schema|[A-Za-z0-9_]+/[A-Z][A-Za-z0-9]*(#.+)?)$"
+  },
+  "patternProperties": {
+    "^[A-Za-z0-9_]+/[A-Z][A-Za-z0-9]*(#.+)?$": {
+      "$ref": "#/definitions/entry"
+    }
+  },
+  "definitions": {
+    "entry": {
+      "description": "Static identity of one EVerest error.",
+      "type": "object",
+      "properties": {
+        "tier_mapping": {
+          "$ref": "#/definitions/tier_mapping"
+        },
+        "v16": {
+          "$ref": "#/definitions/v16"
+        },
+        "v2": {
+          "$ref": "#/definitions/v2"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["v16"]
+        },
+        {
+          "required": ["v2"]
+        },
+        {
+          "required": ["tier_mapping"]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "tier_mapping": {
+      "description": "EVSE and connector the error is reported on. Overrides the mapping of the raising module in the EVerest configuration. EVSE 0 is the charging station.",
+      "type": "object",
+      "properties": {
+        "evse": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "connector": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "required": ["evse"],
+      "additionalProperties": false
+    },
+    "v16": {
+      "description": "OCPP 1.6 StatusNotification.req fields.",
+      "type": "object",
+      "properties": {
+        "error_code": {
+          "description": "errorCode. Defaults to OtherError.",
+          "type": "string",
+          "enum": [
+            "ConnectorLockFailure",
+            "EVCommunicationError",
+            "GroundFailure",
+            "HighTemperature",
+            "InternalError",
+            "LocalListConflict",
+            "OtherError",
+            "OverCurrentFailure",
+            "PowerMeterFailure",
+            "PowerSwitchFailure",
+            "ReaderFailure",
+            "ResetFailure",
+            "UnderVoltage",
+            "OverVoltage",
+            "WeakSignal"
+          ]
+        },
+        "vendor_id": {
+          "description": "vendorId.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 255
+        },
+        "vendor_error_code": {
+          "description": "vendorErrorCode.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "info": {
+          "description": "info, replacing the error message. May contain ${actual_value}. Truncated to 50 characters.",
+          "type": "string"
+        }
+      },
+      "additionalProperties": false
+    },
+    "v2": {
+      "description": "OCPP 2.x NotifyEvent.req fields.",
+      "type": "object",
+      "properties": {
+        "tech_code": {
+          "description": "techCode. Defaults to the EVerest error type.",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 50
+        },
+        "techInfo": {
+          "description": "techInfo, replacing the error message. May contain ${actual_value}. Truncated to 500 characters.",
+          "type": "string"
+        },
+        "component_name": {
+          "description": "Component name. Defaults to EVSE.",
+          "$ref": "#/definitions/identifier"
+        },
+        "component_instance": {
+          "description": "Component instance.",
+          "$ref": "#/definitions/identifier"
+        },
+        "variable_name": {
+          "description": "Variable name. Defaults to Problem.",
+          "$ref": "#/definitions/identifier"
+        },
+        "variable_instance": {
+          "description": "Variable instance.",
+          "$ref": "#/definitions/identifier"
+        },
+        "severity": {
+          "description": "severity, reported for every occurrence of the error. Only OCPP 2.1 reports it. Without this field no severity is reported.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        }
+      },
+      "additionalProperties": false
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    }
+  }
+}

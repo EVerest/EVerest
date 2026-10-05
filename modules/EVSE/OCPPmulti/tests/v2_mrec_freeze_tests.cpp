@@ -5,7 +5,7 @@
 // mrec_fixture.hpp, never from the production mapping tables.
 //
 // The chain under test is the production one: ChargePointV2::on_event builds the EventData and
-// asks the real GenericOcpp::map_error (default MREC map, loaded by init()) for the techCode;
+// asks the real GenericOcpp (no custom error mapping file configured) for the techCode;
 // the EventData handed to libocpp is captured and compared as a whole.
 
 #include "mrec_fixture.hpp"
@@ -83,7 +83,7 @@ ocpp::v2::EventData expected_event_data(const Everest::error::Error& error, cons
 class ChargePointV2MrecFreeze : public testing::Test {
 protected:
     stubs::ChargePointStub generic_chargepoint;
-    stubs::ConfigStub config; // CustomMrecErrorMapPath empty: built-in defaults only
+    stubs::ConfigStub config; // CustomErrorMappingPath empty: built-in mappings only
     stubs::ModuleInterfaces interfaces;
     std::unique_ptr<stubs::GenericOcppTester> generic_ocpp;
     std::unique_ptr<TestChargePointV2> chargepoint;
