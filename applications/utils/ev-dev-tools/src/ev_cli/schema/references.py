@@ -22,7 +22,7 @@ import re
 from dataclasses import dataclass
 from enum import Enum
 
-from ..errors import ReferenceError as EvReferenceError
+from ..errors import MalformedReference
 from ..ir.types import TypeRef
 
 #: A single JSON pointer segment naming a type.
@@ -91,7 +91,7 @@ def parse_type_reference(raw: str, *, from_unit: str | None) -> ParsedReference:
     read relative to the types root and must name a file.
     """
     if not isinstance(raw, str):
-        raise EvReferenceError(f'reference must be a string, got {type(raw).__name__}')
+        raise MalformedReference(f'reference must be a string, got {type(raw).__name__}')
 
     legacy = _LEGACY.match(raw)
     if legacy:
@@ -111,7 +111,7 @@ def parse_type_reference(raw: str, *, from_unit: str | None) -> ParsedReference:
             raw=raw,
         )
 
-    raise EvReferenceError(
+    raise MalformedReference(
         f'cannot parse type reference {raw!r}; expected either '
         f'"/<unit>#/<TypeName>" or "[<file>.yaml]#/types/<TypeName>"'
     )
@@ -121,14 +121,14 @@ def _resolve_relative_unit(path: str, *, from_unit: str | None, raw: str) -> str
     """Turn the file part of a conformant reference into a unit name."""
     if not path:
         if from_unit is None:
-            raise EvReferenceError(
+            raise MalformedReference(
                 f'reference {raw!r} has no file part, but the referring '
                 f'document is not a type unit and so declares no types of its own'
             )
         return from_unit
 
     if not path.endswith(YAML_SUFFIXES):
-        raise EvReferenceError(
+        raise MalformedReference(
             f'reference {raw!r} must point at a .yaml file so that standard '
             f'tools can resolve it'
         )
@@ -145,7 +145,7 @@ def _resolve_relative_unit(path: str, *, from_unit: str | None, raw: str) -> str
     base = posixpath.dirname(from_unit) if from_unit is not None else ''
     unit = posixpath.normpath(posixpath.join(base, stem))
     if unit.startswith('..'):
-        raise EvReferenceError(
+        raise MalformedReference(
             f'reference {raw!r} points outside the types directory'
         )
     return unit
@@ -171,7 +171,7 @@ def conformant_form(target: TypeRef, *, from_unit: str | None) -> str:
 def parse_error_reference(raw: str) -> ParsedErrorReference:
     match = _ERROR_REFERENCE.match(raw) if isinstance(raw, str) else None
     if not match:
-        raise EvReferenceError(
+        raise MalformedReference(
             f'cannot parse error reference {raw!r}; expected '
             f'"/errors/<namespace>" or "/errors/<namespace>#/<ErrorName>"'
         )

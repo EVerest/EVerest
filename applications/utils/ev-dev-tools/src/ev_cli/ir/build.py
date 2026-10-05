@@ -14,7 +14,6 @@ from pathlib import Path
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..errors import DefinitionNotFound, EvCliError, UnsupportedDefinition
-from ..errors import ReferenceError as EvReferenceError
 from ..schema import normalize
 from ..schema.diagnostics import Category, Diagnostic, Severity, Sink
 from ..schema.loader import DefinitionLoader
@@ -82,11 +81,11 @@ def target_json_type(
     try:
         document = loader.type_document(target.unit)
     except DefinitionNotFound as err:
-        raise EvReferenceError(f'{source}: {err}') from err
+        raise DefinitionNotFound(f'{source}: {err}') from err
 
     declared = (document.data.get('types') or {}).get(target.name)
     if declared is None:
-        raise EvReferenceError(
+        raise DefinitionNotFound(
             f'{source}: reference to {target} names a type that unit '
             f'"{target.unit}" does not declare'
         )
@@ -526,7 +525,7 @@ class _InterfaceBuild:
         try:
             document = self.loader.error_document(reference.namespace)
         except DefinitionNotFound as err:
-            raise EvReferenceError(f'{source}: {err}') from err
+            raise DefinitionNotFound(f'{source}: {err}') from err
 
         declared = document.data.get('errors') or []
         if reference.is_whole_namespace:
@@ -549,7 +548,7 @@ class _InterfaceBuild:
                     source=document.source.child('errors', index),
                 )]
 
-        raise EvReferenceError(
+        raise DefinitionNotFound(
             f'{source}: error namespace "{reference.namespace}" declares no '
             f'error named "{reference.name}"'
         )

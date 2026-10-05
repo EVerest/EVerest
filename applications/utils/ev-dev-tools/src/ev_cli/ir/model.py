@@ -14,7 +14,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Mapping, Union
 
-from ..errors import ReferenceError as EvReferenceError
+from ..errors import DefinitionNotFound
 from .interfaces import InterfaceDef
 from .modules import ModuleDef
 from .types import EnumDef, StructDef, TypeRef, TypeUnit
@@ -36,12 +36,12 @@ class Model:
         """The struct or enum a reference points at."""
         unit = self.types.get(ref.unit)
         if unit is None:
-            raise EvReferenceError(
+            raise DefinitionNotFound(
                 f'reference {ref} points at type unit "{ref.unit}", which was not loaded'
             )
         declaration = unit.struct(ref.name) or unit.enum(ref.name)
         if declaration is None:
-            raise EvReferenceError(
+            raise DefinitionNotFound(
                 f'reference {ref} names a type that "{ref.unit}" does not declare'
             )
         return declaration
