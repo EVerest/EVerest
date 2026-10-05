@@ -335,6 +335,13 @@ Together with ``OcppCsmsUrl`` and ``SecurityProfile``, the last three are
 mandatory for a usable profile; a slot missing any of them is silently
 skipped by the failover.
 
+At runtime, a 2.x CSMS can change a slot with ``SetNetworkProfile``. A 1.6
+CSMS cannot: OCPP 1.6 has no ``SetNetworkProfile``, and
+``ChangeConfiguration.req`` rejects ``CentralSystemURI`` because it is
+``ReadOnly``. In OCPP 1.6 mode, the CSMS URL changes only through this
+component config or a local ``set_variables`` on a slot that is not in use (see
+the :ref:`OCPPmulti module documentation <everest_modules_OCPPmulti>`).
+
 Each slot can optionally override the charging station's identity and
 authentication credentials:
 

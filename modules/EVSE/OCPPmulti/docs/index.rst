@@ -776,6 +776,11 @@ through ``NetworkConfiguration``/``OcppCsmsUrl`` of a slot that is not in use, a
 OCPP 2.x. Most ``ReadOnly`` values are only read at boot or on (re)connect, so an
 accepted write takes effect then.
 
+The CSMS remains bound by ``ReadOnly``: a ``ChangeConfiguration.req`` for a
+``ReadOnly`` key is ``Rejected``. ``CentralSystemURI`` is always ``ReadOnly`` in
+OCPP 1.6 mode, and OCPP 1.6 has no ``SetNetworkProfile``, so a 1.6 CSMS cannot
+change the CSMS URL.
+
 Addressing rules:
 
 - Standard OCPP 2.x variables: their standard component (``OCPPCommCtrlr``,
