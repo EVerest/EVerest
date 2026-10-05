@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstddef>
@@ -35,8 +35,10 @@ public:
 
     const datatypes::SessionId& get_session_id() const;
 
-    // Empty for a variant built directly from a C++ message. Used by the PnC signature verification,
-    // which must re-decode the request to rebuild the signed EXI fragment.
+    // The raw EXI of the signed requests (AuthorizationReq, MeteringReceiptReq) and of the relayed
+    // certificate requests, empty for every other message and for a variant built directly from a C++
+    // message. The PnC signature verification re-decodes the request from it to rebuild the signed EXI
+    // fragment; the certificate relay forwards it verbatim.
     const std::vector<uint8_t>& get_exi_payload() const {
         return exi_payload;
     }
