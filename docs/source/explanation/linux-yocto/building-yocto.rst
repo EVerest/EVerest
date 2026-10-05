@@ -32,7 +32,7 @@ https://docs.yoctoproject.org/dev/dev-manual/layers.html
 You can find *meta-everest* in a subdirectory of EVerest:
 *EVerest/yocto/<yocto-release>/meta-everest*
 
-Currently this includes support for the yocto *scarthgap* and *kirkstone* releases.
+Currently this includes support for the yocto *scarthgap* release.
 
 Then - in case you have not done it yet - create a custom image file
 for your board that installs EVerest as well as all other tools you may
