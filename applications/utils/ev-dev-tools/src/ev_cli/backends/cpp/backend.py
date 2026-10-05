@@ -20,7 +20,6 @@ from ...ir.model import Model
 from ..base import GeneratedFile, UpdatePolicy
 from . import naming
 from .view import (
-    TEMPLATE_VERSION,
     ImplementationView,
     InterfaceView,
     ModuleView,

@@ -2,10 +2,8 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """Everything a command needs, assembled once from the parsed arguments.
 
-The previous implementation kept this in module-level globals that ``main()``
-filled in, which meant every function could reach anything and the order of
-operations was part of the contract.  Here a command is handed a context and
-can only use what it was given.
+A command is handed a context and can use only what it was given, so nothing
+depends on the order in which commands run.
 """
 
 from __future__ import annotations
@@ -144,7 +142,7 @@ class Context:
     def strategy(force: bool) -> Strategy:
         return Strategy.FORCE_UPDATE if force else Strategy.UPDATE
 
-    # -- resolving what the user asked for ----------------------------------
+    # -- resolving what was asked for on the command line --------------------
 
     def requested_units(self, values) -> list[str]:
         """Type units named on the command line, or all of them."""
