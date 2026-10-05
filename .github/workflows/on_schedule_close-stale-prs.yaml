@@ -22,18 +22,12 @@ jobs:
         uses: actions/stale@v9
         with:
           debug-only: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run }}
-          # Issues idle far longer than PRs by nature, so they get a longer
-          # window than PRs plus a longer reaction window for reporters who are
-          # not watching the tracker.
           days-before-issue-stale: 180
           days-before-issue-close: 30
 
           days-before-pr-stale: 90
           days-before-pr-close: 14
 
-          # Each already-stale item costs ~2 API ops per run just to re-check it,
-          # and ~2 more to close it; the ~140 item backlog needs headroom well
-          # above the default budget of 30.
           operations-per-run: 600
           # Oldest first: the default sorts newest-created first, putting the
           # actually-stale PRs at the tail of the list.
