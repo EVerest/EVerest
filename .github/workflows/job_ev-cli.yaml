@@ -1,4 +1,4 @@
-name: ev-cli Module Update Check
+name: ev-cli
 
 on:
   workflow_call:
@@ -24,7 +24,7 @@ on:
 
 jobs:
   ev-cli-mod-update:
-    name: check
+    name: mod update
     runs-on: ${{ inputs.runner }}
     # Not mandatory yet: the job fails when a module would lose hand-written code, but it must
     # not block a merge.
@@ -90,3 +90,21 @@ jobs:
               exit 1
               ;;
           esac
+
+  ev-cli-tests:
+    name: tests
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+      - name: Set up Python
+        # the floor ev-dev-tools declares in requires-python, so a break that
+        # only shows on the oldest supported interpreter is caught here
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.10'
+      - name: Install ev-cli with its test dependencies
+        run: pip install './applications/utils/ev-dev-tools[test]'
+      - name: Run the tests
+        working-directory: applications/utils/ev-dev-tools
+        run: pytest tests
