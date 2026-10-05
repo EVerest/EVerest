@@ -1234,12 +1234,15 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
     this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
     this->message_queue->resume(this->message_queue_resume_delay);
     this->ocpp_version = ocpp_version;
+    const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
+    if (this->smart_charging != nullptr && time_disconnected.time_since_epoch() != 0s) {
+        this->smart_charging->on_connection_restored(std::chrono::steady_clock::now() - time_disconnected);
+    }
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
         this->connectivity_manager->confirm_successful_connection();
 
         // check if we are disconnected and offline theshold has been defined
-        if (const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
-            time_disconnected.time_since_epoch() != 0s &&
+        if (time_disconnected.time_since_epoch() != 0s &&
             this->device_model->get_value<int>(ControllerComponentVariables::OfflineThreshold) != 0) {
             // handle offline threshold
             //  Get the current time point using steady_clock
@@ -1279,6 +1282,9 @@ void ChargePoint::on_websocket_disconnected(const int configuration_slot,
     this->message_queue->pause();
 
     this->security->stop_certificate_expiration_check_timers();
+    if (this->smart_charging != nullptr) {
+        this->smart_charging->on_connection_lost();
+    }
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(false, configuration_slot, network_connection_profile,
                                                                   this->ocpp_version);

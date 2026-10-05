@@ -451,6 +451,23 @@
       ],
       "description": "When reported as true the Charging Station supports the evseSleep flag in a ChargingSchedulePeriodType, which requests the EVSE electronics to go to sleep during operationMode = 'Idle'. When absent or false this option is not supported.",
       "type": "boolean"
+    },
+    "SupportsMaxOfflineDuration": {
+      "variable_name": "SupportsFeature",
+      "instance": "MaxOfflineDuration",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly",
+          "value": "true"
+        }
+      ],
+      "description": "When reported as true the Charging Station supports maxOfflineDuration and invalidAfterOfflineDuration in ChargingProfileType. When absent or false these fields are not supported.",
+      "type": "boolean"
     }
   },
   "required": [
