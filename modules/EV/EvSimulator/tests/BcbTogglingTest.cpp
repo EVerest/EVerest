@@ -346,7 +346,7 @@ TEST_CASE("EvSimulator DC resume closes contactor at IsoPowerReady, charges on I
 // AC EV-initiated resume must re-establish SLAC before re-negotiating. On AC the
 // pause produces a D-LINK_TERMINATE (SLAC UNMATCHED); the resume path
 // Paused -> BcbToggling -> V2GNegotiating then bypasses SlacMatching, so
-// dlink_ready stays false on the SECC side and josev discards the EV's SDP
+// dlink_ready stays false on the SECC side and the SECC discards the EV's SDP
 // requests -- the session hangs at PrepareCharging. EvManager re-matched SLAC on
 // resume (car_simulation.cpp iso_wait_slac_matched: on UNMATCHED, reset +
 // trigger_matching). EvSimulator must mirror that: when the SLAC link was torn
@@ -439,7 +439,7 @@ TEST_CASE("EvSimulator DC resume with intact SLAC goes straight to V2GNegotiatin
     CHECK_FALSE(contains_substr(fx.mocks.iso.records, "start_charging"));
 }
 
-// Josev runs exactly one V2G comm session per start_charging and publishes
+// The ISO15118_ev module runs one V2G comm session per start_charging and publishes
 // v2g_session_finished (-> IsoV2GFinished) when each session's loop returns,
 // including on a pause. If the EV begins its resume (BCB wake-up + re-SLAC)
 // while the paused session is still tearing down, the previous session's
@@ -453,7 +453,7 @@ TEST_CASE("EvSimulator resume defers BCB toggle until prior V2G session finished
     auto ctx = fx.make_ctx();
     set_mode(*ctx, api::ChargeMode::DcIso2);
     ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
-    // A live Josev session is in progress (start_charging was issued, no
+    // A live V2G session is in progress (start_charging was issued, no
     // IsoV2GFinished yet).
     ctx->vars.iso_session_active = true;
 
@@ -510,7 +510,7 @@ TEST_CASE("EvSimulator Paused holds CP at C until the live V2G session finishes"
     auto ctx = fx.make_ctx();
     set_mode(*ctx, api::ChargeMode::DcIso2);
     ensure_session(*ctx).payment = api::PaymentOption::ExternalPayment;
-    ctx->vars.iso_session_active = true; // live Josev session in progress
+    ctx->vars.iso_session_active = true; // live V2G session in progress
 
     Paused p{*ctx};
     p.enter();

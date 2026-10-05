@@ -71,7 +71,7 @@ libcurl:
       "USE_NGHTTP2 OFF",
     ]
 
-# Josev
+# Josev, Python package used by the OCPP integration tests
 Josev:
   git: https://github.com/EVerest/ext-switchev-iso15118.git
   git_tag: 7de81803704ec12df92394b12ad637d24c36e3c5

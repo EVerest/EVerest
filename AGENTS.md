@@ -8,7 +8,8 @@ CI also builds with Bazel.
 Libraries that once lived in separate `lib*` repositories are now in-tree under
 `lib/everest/` and are edited in place; there is no upstream repository to mirror them
 to. A few EVerest components are still external dependencies in `dependencies.yaml`,
-notably the Python Josev stack (`ext-switchev-iso15118`).
+notably the Python Josev stack (`ext-switchev-iso15118`), which only the OCPP
+integration tests use.
 
 Contributor policy (licensing, DCO, review, and the project's position on AI-generated
 contributions) is in `docs/source/project/contributing.rst`. This file covers mechanics

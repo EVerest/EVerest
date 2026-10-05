@@ -83,7 +83,7 @@ TEST_CASE("EvSimulator deferred ResumeSession releases 6 edges on IsoV2GFinished
     CHECK_FALSE(ctx->vars.resume_pending);
 }
 
-// If Josev never publishes v2g_session_finished (abnormal teardown), a deferred
+// If the ISO15118_ev module never publishes v2g_session_finished (abnormal teardown), a deferred
 // resume cannot wait forever for IsoV2GFinished: the short fallback timer armed
 // on defer fires a StateDeadline, and with resume_pending set the EV does a
 // best-effort resume into BcbToggling rather than giving up into Stopping.

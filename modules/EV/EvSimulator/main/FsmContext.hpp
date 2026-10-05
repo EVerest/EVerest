@@ -187,7 +187,7 @@ struct SimVars {
     // unstable resume. The first-session path (SlacMatching -> V2GNegotiating)
     // leaves this false and starts immediately.
     bool resume_awaiting_pwm{false};
-    // Tracks whether a Josev V2G comm session is live. Josev runs exactly one
+    // Tracks whether a V2G comm session is live. The ISO15118_ev module runs one
     // session per start_charging and publishes v2g_session_finished (->
     // IsoV2GFinished) when each session's loop returns, including on a pause.
     // Set when start_charging is issued (FsmContext::iso_start_charging),

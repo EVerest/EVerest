@@ -1537,8 +1537,7 @@ TEST_CASE("EvSimulator group2 transitions", "[evsim][group2]") {
     }
 
     // This pins the RULE, not the TRIGGER. It hand-injects the V2gMessage, so
-    // it passes whether or not any peer publishes v2g_messages, and PyEvJosev
-    // did not until the Josev pin moved to ext-switchev-iso15118#65. Only
+    // it passes whether or not any peer publishes v2g_messages. Only
     // core_tests/smoke_tests.py::test_iso15118_dc_session_paused_by_ev and its
     // evsim_dc_iso2_test.py copy can see that trigger go missing.
     // Regression: an EV-initiated ISO pause must stop asserting CP=C as soon as

@@ -181,15 +181,6 @@ Also the Electric Vehicle simulations run as part of EVerest.
 Change to the directory ``EVerest/build``, which has been created during
 EVerest install.
 
-Since the EVerest config we are going to use includes ISO15118 functionality on the EV
-side, we need to source the preinstalled virtual environment and install the respective
-python requirements for ISO15118 using a make target:
-
-.. code-block:: bash
-
-  source venv/bin/activate
-  make iso15118_pip_install_dist
-
 Now we can start EVerest with a software-in-the-loop configuration via script.
 
 .. code-block:: bash

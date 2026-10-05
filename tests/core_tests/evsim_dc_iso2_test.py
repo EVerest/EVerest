@@ -40,7 +40,7 @@ async def _wait_for_session_event(mock, expected, timeout=45):
     """Wait for `expected` on an evse_manager session_event mock.
 
     Deliberately reads the CHARGER's view rather than EvSimulator's own
-    e2m/state. The EV publishes FsmState::Charging on dc_power_on, which Josev
+    e2m/state. The EV publishes FsmState::Charging on dc_power_on, which the EV module
     emits inside PreCharge BEFORE PowerDeliveryReq is queued, so an e2m/state
     assertion is satisfied one message before the SECC has had the chance to
     refuse - it cannot observe a failed resume at all. session_event

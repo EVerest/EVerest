@@ -112,7 +112,7 @@ StateBase::Result V2GNegotiating::feed(EventType ev) {
         // later V2GNegotiating.
         ctx.vars.resume_awaiting_pwm = false;
         // DC ISO splits the charge-loop entry into two milestones, mirroring
-        // EvManager. PyEvJosev publishes ev_power_ready back in
+        // EvManager. The ISO15118_ev module publishes ev_power_ready back in
         // ChargeParameterDiscovery (before CableCheck) and dc_power_on later in
         // PreCharge. EvManager gates on these separately: ev_power_ready ->
         // ISO_POWER_READY asserts CP=C and HOLDS (it does NOT start drawing

@@ -311,7 +311,7 @@ bool FsmContext::iso_start_charging(API_types::ev_simulator::ChargeMode mode,
     const bool started =
         peer_actions.iso.start_charging(etm, internal_payment, departure, e_amount, vars.force_payment_option);
     if (started) {
-        // A Josev V2G comm session is now live. The resume gate in Paused waits
+        // A V2G comm session is live. The resume gate in Paused waits
         // for this session's IsoV2GFinished before starting a new one.
         vars.iso_session_active = true;
     }

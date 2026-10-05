@@ -15,7 +15,7 @@ cmake --build build --target install --parallel -j$(nproc)
 . build/venv/bin/activate
 cmake --build build --target everestpy_pip_install_dist # install everestpy
 cmake --build build --target everest-testing_pip_install_dist # install everest-testing
-cmake --build build --target iso15118_pip_install_dist # install iso15118 for ev side simulation
+cmake --build build --target iso15118_pip_install_dist # install iso15118 (Josev) for the OCPP tests
 python3 -m pip install "aiofile>=3.7.4"
 python3 -m pip install "netifaces>=0.11.0"
 ```

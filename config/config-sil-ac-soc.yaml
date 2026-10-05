@@ -153,7 +153,7 @@ active_modules:
       supported_ISO15118_2: true
       supported_DIN70121: true
     connections: {}
-    module: PyEvJosev
+    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto

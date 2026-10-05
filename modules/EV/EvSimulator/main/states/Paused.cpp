@@ -54,7 +54,7 @@ StateBase::Result Paused::feed(EventType ev) {
         if (ctx.vars.charge_mode() == api::ChargeMode::AcIec) {
             return {false, std::make_unique<Charging>(ctx)};
         }
-        // Josev runs one V2G comm session per start_charging. If the paused
+        // The ISO15118_ev module runs one V2G comm session per start_charging. If the paused
         // session has not finished tearing down yet, defer the resume: starting
         // the BCB wake-up + re-SLAC now would let the previous session's lagging
         // SessionStop clobber the freshly re-established link (the SECC then
@@ -64,7 +64,7 @@ StateBase::Result Paused::feed(EventType ev) {
         if (ctx.vars.iso_session_active) {
             ctx.vars.resume_pending = true;
             ctx.vars.bcb_pending = 6;
-            // Arm a short fallback timer: if Josev never publishes
+            // Arm a short fallback timer: if the ISO15118_ev module never publishes
             // v2g_session_finished (abnormal teardown), IsoV2GFinished never
             // arrives and the deferred resume would otherwise hang on the 1h
             // pause timer. When this fires with resume_pending still set,
@@ -150,7 +150,7 @@ StateBase::Result Paused::feed(EventType ev) {
     case EK::StateDeadline:
         // A deferred resume armed a short fallback timer. If it fires while the
         // resume is still pending, IsoV2GFinished was never observed (abnormal
-        // Josev teardown): do a best-effort resume into BcbToggling rather than
+        // V2G teardown): do a best-effort resume into BcbToggling rather than
         // hanging to the test timeout. Release the carried edge count the same
         // way IsoV2GFinished would have.
         if (ctx.vars.resume_pending) {

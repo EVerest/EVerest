@@ -78,13 +78,16 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config = deepcopy(everest_config)
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_DIN70121"] = False
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_2"] = not self.ev_d20_only
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20_DC"] = self.ev_d20_only
+        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20"] = self.ev_d20_only
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
+        if self.force_payment_option:
+            # Ev15118 offers Contract only over TLS
+            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls_active"] = True
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
         return adjusted_config
