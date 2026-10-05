@@ -321,6 +321,22 @@ def test_module_update_preserves_code_inside_ev_blocks(scratch_module):
     assert sentinel in header.read_text()
 
 
+@pytest.mark.parametrize('action', ['create', 'update'])
+def test_module_create_and_update_accept_a_backend(scratch_module, action):
+    """They emit code, so they pick a target like every other emitting command."""
+    work_dir, _, _ = scratch_module
+    run('module', action, 'Example', *common_args(work_dir), '--backend', 'cpp')
+
+
+def test_module_create_can_target_another_backend(scratch_module):
+    """The backend seam has to hold for the scaffolding commands too."""
+    work_dir, module_dir, _ = scratch_module
+    run('module', 'create', 'Example', *common_args(work_dir), '--backend', 'ir-dump')
+
+    produced = relative_files(module_dir)
+    assert any(name.endswith('.ir.json') for name in produced), produced
+
+
 def test_module_update_does_not_overwrite_the_module_cpp(scratch_module):
     work_dir, module_dir, _ = scratch_module
     run('module', 'create', 'Example', *common_args(work_dir))

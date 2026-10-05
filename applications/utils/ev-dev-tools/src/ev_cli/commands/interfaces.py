@@ -7,7 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..backends.base import registry
-from ..files import clang_format
 from .context import Context
 
 DEFAULT_OUTPUT = 'build/generated/include/generated/interfaces'
@@ -26,16 +25,16 @@ def generate_headers(args) -> int:
     # caller wanted them and gets the error.
     model = context.interface_model(requested, skip_unparsable=everything)
 
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     writer = context.writer(diff_only=args.diff)
     strategy = context.strategy(args.force)
 
     for interface in requested:
         if interface not in model.interfaces:
             continue
-        for generated in backend.emit_interface(model, interface, output_dir):
-            if not context.disable_clang_format:
-                clang_format(context.clang_format_dir, generated)
+        files = backend.emit_interface(model, interface, output_dir)
+        backend.postprocess(files)
+        for generated in files:
             writer.write_checking_templates(generated, strategy)
 
     context.report_diagnostics_summary()
@@ -43,6 +42,6 @@ def generate_headers(args) -> int:
 
 
 def get_templates(args) -> int:
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     print(args.separator.join(str(path) for path in backend.templates('interface')))
     return 0

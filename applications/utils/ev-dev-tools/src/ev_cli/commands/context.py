@@ -35,8 +35,6 @@ class Context:
     schemas_dir: Path
     licenses_dir: Path
     build_dir: Path
-    clang_format_dir: Path
-    disable_clang_format: bool
     everest_projects: tuple[str, ...] = ()
     #: Collects what the loader has to say, so a command can report on it.
     diagnostics: CollectingSink = field(default_factory=CollectingSink)
@@ -60,8 +58,6 @@ class Context:
             schemas_dir=schemas_dir,
             licenses_dir=Path(args.licenses),
             build_dir=Path(args.build_dir),
-            clang_format_dir=Path(args.clang_format_file),
-            disable_clang_format=args.disable_clang_format,
             everest_projects=tuple(getattr(args, 'everest_projects', ()) or ()),
         )
 

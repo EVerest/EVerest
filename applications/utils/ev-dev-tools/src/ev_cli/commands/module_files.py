@@ -16,7 +16,8 @@ from pathlib import Path
 from .. import blocks, license_headers
 from ..backends.base import registry
 from ..errors import EvCliError
-from ..files import Strategy, clang_format
+from ..backends.base import UpdatePolicy
+from ..files import Strategy
 from .context import Context, detect_everest_projects
 
 #: The order categories are reported in by ``--only which``.
@@ -33,7 +34,8 @@ def write_module_files(args, *, updating: bool) -> int:
         model.modules[args.module].metadata.license,
     )
 
-    generated = registry.create('cpp').emit_module_files(
+    backend = registry.create(args.backend, args)
+    generated = backend.emit_module_files(
         model, args.module, module_dir,
         license_header=license_header,
         read_blocks=lambda block_set, path: blocks.load(
@@ -52,11 +54,9 @@ def write_module_files(args, *, updating: bool) -> int:
         print(f'ev-cli: {err}')
         return 0
 
-    writer = context.writer(diff_only=args.diff)
-    for file in generated:
-        if not context.disable_clang_format:
-            clang_format(context.clang_format_dir, file)
+    backend.postprocess(generated)
 
+    writer = context.writer(diff_only=args.diff)
     if updating:
         _update(generated, writer, force=args.force)
     else:
@@ -131,27 +131,21 @@ def _create(generated, writer, *, force: bool) -> None:
 
 
 def _update(generated, writer, *, force: bool) -> None:
-    """Replace what is generated, keep what is written by hand.
+    """Replace what the generator owns, keep what a human owns.
 
-    The ``.cpp`` files are where a module's actual behaviour lives, so they are
-    only ever created, never replaced -- not even with ``--force``.  Recreating
-    one is a deliberate ``module create --force --only <id>.cpp``.  The docs
-    placeholder is likewise left alone once it exists.
+    Which is which comes from the backend: for C++ the ``.cpp`` files are where
+    a module's behaviour lives and are only ever created, never replaced -- not
+    even with ``--force``, for which the deliberate escape is
+    ``module create --force --only <id>.cpp``.  The command does not need to
+    know that, and with another target it would not be true.
     """
     primary = Strategy.FORCE_UPDATE if force else Strategy.UPDATE
-    core = {
-        'cmakelists': primary,
-        'module.hpp': primary,
-        'module.cpp': Strategy.UPDATE_IF_MISSING,
-    }
 
     for file in generated:
-        if file.category == 'core':
-            strategy = core[file.abbr]
-        elif file.category == 'interfaces':
-            strategy = primary if file.abbr.endswith('.hpp') else Strategy.UPDATE_IF_MISSING
-        else:
-            # Documentation is a placeholder for a human to fill in; updating
-            # would overwrite it with the placeholder again.
+        if file.update_policy is UpdatePolicy.LEAVE_ALONE:
             continue
+        strategy = (
+            primary if file.update_policy is UpdatePolicy.REGENERATE
+            else Strategy.UPDATE_IF_MISSING
+        )
         writer.write(file, strategy, preserve_license_header=True)

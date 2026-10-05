@@ -7,7 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..backends.base import registry
-from ..files import clang_format
 from ..schema.diagnostics import format_report, format_summary
 from .context import Context
 
@@ -22,14 +21,14 @@ def generate_headers(args) -> int:
     )
 
     model = context.model()
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     writer = context.writer(diff_only=args.diff)
     strategy = context.strategy(args.force)
 
     for unit in context.requested_units(args.types):
-        for generated in backend.emit_type_unit(model, unit, output_dir):
-            if not context.disable_clang_format:
-                clang_format(context.clang_format_dir, generated)
+        files = backend.emit_type_unit(model, unit, output_dir)
+        backend.postprocess(files)
+        for generated in files:
             writer.write_checking_templates(generated, strategy)
 
     context.report_diagnostics_summary()
@@ -37,7 +36,7 @@ def generate_headers(args) -> int:
 
 
 def get_templates(args) -> int:
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     print(args.separator.join(str(path) for path in backend.templates('types')))
     return 0
 
