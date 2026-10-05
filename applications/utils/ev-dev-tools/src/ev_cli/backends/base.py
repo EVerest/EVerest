@@ -10,11 +10,31 @@ OpenAPI, documentation -- an addition rather than a second parser.
 
 from __future__ import annotations
 
+import argparse
 from dataclasses import dataclass, field
+from enum import Enum
 from pathlib import Path
-from typing import Protocol, runtime_checkable
+from typing import Callable, Protocol, runtime_checkable
 
 from ..ir.model import Model
+
+
+class UpdatePolicy(Enum):
+    """What ``module update`` may do to one of a backend's outputs.
+
+    Declared by the backend rather than the command, because which outputs are
+    safe to regenerate is a property of the target: for C++ the ``.cpp`` files
+    are where a module's behaviour lives, and no command should have to know
+    that.
+    """
+
+    #: Regenerate it, carrying any protected regions across.
+    REGENERATE = 'regenerate'
+    #: Only ever create it, never replace it.  This is what protects the
+    #: sources a human owns.
+    CREATE_IF_MISSING = 'create-if-missing'
+    #: Leave it alone entirely, not even recreating it when absent.
+    LEAVE_ALONE = 'leave-alone'
 
 
 @dataclass
@@ -42,6 +62,8 @@ class GeneratedFile:
     license_header: str | None = None
     #: Which group this file belongs to for ``--only which`` output.
     category: str = 'core'
+    #: What ``module update`` may do to it if it already exists.
+    update_policy: UpdatePolicy = UpdatePolicy.REGENERATE
 
 
 @runtime_checkable
@@ -50,11 +72,40 @@ class Backend(Protocol):
 
     name: str
 
-    def templates(self) -> list[Path]:
+    @staticmethod
+    def options() -> argparse.ArgumentParser:
+        """The command line options that belong to this target alone.
+
+        Returned as an ``add_help=False`` parser so that it can be handed to
+        ``add_parser(parents=...)``.  Every backend's options are attached to
+        every emitting command, because the selected backend is only known
+        once ``--backend`` has been parsed; an option belonging to a target
+        that was not selected is simply inert, which is already true of
+        ``--disable-clang-format`` today.
+
+        New options should be prefixed with the backend's name.  The two C++
+        ones are not, because the build passes them and their spelling is
+        frozen.
+        """
+        ...
+
+    def postprocess(self, files: list[GeneratedFile]) -> None:
+        """Adjust generated content in place before anything is written.
+
+        This is where a target does whatever only it understands -- running
+        clang-format over C++, for instance.  Keeping it here rather than in
+        the commands means a command never has to know what kind of files it
+        is dealing with.
+        """
+        ...
+
+    def templates(self, scope: str = 'all') -> list[Path]:
         """Template files whose modification should force regeneration.
 
         This is what ``get-templates`` prints, and what EVerest's CMake stores
-        as a target property to use as a dependency.
+        as a target property to use as a dependency.  ``scope`` selects the
+        group a command asks about -- ``types``, ``interface``, ``module`` --
+        or ``all``.
         """
         ...
 
@@ -65,6 +116,23 @@ class Backend(Protocol):
         ...
 
     def emit_module_loader(self, model: Model, module: str, output_dir: Path) -> list[GeneratedFile]:
+        ...
+
+    def emit_module_files(
+        self,
+        model: Model,
+        module: str,
+        module_dir: Path,
+        *,
+        license_header: str,
+        read_blocks: Callable[..., dict],
+    ) -> list[GeneratedFile]:
+        """The scaffolding ``module create`` and ``module update`` manage.
+
+        ``read_blocks`` is passed in rather than looked up: which regions a
+        file protects is the backend's business, but whether an existing file
+        should be read back is the command's.
+        """
         ...
 
 
@@ -80,14 +148,32 @@ class BackendRegistry:
     def names(self) -> tuple[str, ...]:
         return tuple(sorted(self._factories))
 
-    def create(self, name: str) -> Backend:
+    def backend_class(self, name: str) -> type:
+        """The backend's class, imported on demand.
+
+        Needed as well as :meth:`create` because a backend's options have to
+        be collected before anything has been parsed, and therefore before any
+        instance can be built.
+        """
         try:
-            factory = self._factories[name]
+            importer = self._factories[name]
         except KeyError:
             raise KeyError(
                 f'unknown backend {name!r}; available: {", ".join(self.names())}'
             ) from None
-        return factory()
+        return importer()
+
+    def create(self, name: str, args=None) -> Backend:
+        """Build a backend, handing it the parsed arguments.
+
+        A backend that declares its own options has to be able to read them,
+        so construction takes the namespace rather than nothing.
+        """
+        return self.backend_class(name)(args)
+
+    def options(self) -> list[argparse.ArgumentParser]:
+        """Every backend's own option group, for ``add_parser(parents=...)``."""
+        return [self.backend_class(name).options() for name in self.names()]
 
 
 registry = BackendRegistry()
@@ -95,12 +181,12 @@ registry = BackendRegistry()
 
 def _cpp_backend():
     from .cpp.backend import CppBackend
-    return CppBackend()
+    return CppBackend
 
 
 def _ir_dump_backend():
     from .ir_dump.backend import IrDumpBackend
-    return IrDumpBackend()
+    return IrDumpBackend
 
 
 registry.register('cpp', _cpp_backend)
