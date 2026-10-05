@@ -151,8 +151,7 @@ std::optional<fs::path> get_private_key_path_of_certificate(const X509Wrapper& c
     }
 
     EVLOG_error << "Could not find private key for given certificate: " << certificate.get_file().value_or("N/A") << "("
-                << certificate.get_common_name() << ")"
-                << " key path: " << key_path_directory;
+                << certificate.get_common_name() << ")" << " key path: " << key_path_directory;
 
     return std::nullopt;
 }
@@ -589,7 +588,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
 
             return true;
         }); // End for each chain
-    }       // End for each leaf directory
+    } // End for each leaf directory
 
     if (!found_certificate) {
         response.result = DeleteCertificateResult::NotFound;
@@ -1464,8 +1463,7 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                             subType = "intermediate";
 
                         if (enforce_certificate_rules(chain.at(i)) != 1) {
-                            EVLOG_error << "Certificate chain invalid at " << subType
-                                        << ", skipping to next candidate";
+                            EVLOG_error << "Certificate chain invalid at " << subType << ", skipping to next candidate";
                             return true;
                         }
                     }
@@ -1490,10 +1488,10 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                     // Filter the already added certificates, since we can have a case
                     // when a leaf is present in 2 files (single/chain) that causes it
                     // to be added to the list twice by the bundle parser
-                    auto it = std::find_if(valid_leafs.begin(), valid_leafs.end(),
-                                           [&key_pair](const auto& in_key_pair) {
-                                               return in_key_pair.certificate == key_pair.certificate;
-                                           });
+                    auto it =
+                        std::find_if(valid_leafs.begin(), valid_leafs.end(), [&key_pair](const auto& in_key_pair) {
+                            return in_key_pair.certificate == key_pair.certificate;
+                        });
 
                     // None found
                     if (it == valid_leafs.end()) {

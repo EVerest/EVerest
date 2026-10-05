@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
 
+#include "evse_security/utils/enforce_certificate_rules.hpp"
 #include <fstream>
 #include <gtest/gtest.h>
 #include <openssl/crypto.h>
@@ -8,8 +9,6 @@
 #include <sstream>
 #include <string>
 #include <thread>
-#include "evse_security/utils/enforce_certificate_rules.hpp"
-
 
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
@@ -34,7 +33,6 @@ typedef OpenSSLProvider TPMScopedProvider;
 } // namespace evse_security
 #endif // USING_TPM2
 
-
 std::string read_file_to_string(const fs::path filepath) {
     fsstd::ifstream t(filepath.string());
     std::stringstream buffer;
@@ -46,20 +44,22 @@ bool equal_certificate_strings(const std::string& cert1, const std::string& cert
     for (int i = 0; i < cert1.length(); ++i) {
         if (i < cert1.length() && i < cert2.length()) {
             if (isalnum(cert1[i]) && isalnum(cert2[i]) && cert1[i] != cert2[i])
-            return false;
+                return false;
+        }
     }
-}
 
-return true;
+    return true;
 }
 
 namespace evse_security {
-    
+
 class EvseSecurityTests : public ::testing::Test {
 protected:
     std::unique_ptr<EvseSecurity> evse_security;
 
-    virtual bool enforce_cert_profiles() const { return false; }
+    virtual bool enforce_cert_profiles() const {
+        return false;
+    }
 
     void SetUp() override {
         fs::remove_all("certs");
@@ -80,10 +80,8 @@ protected:
         file_paths.directories.secc_leaf_cert_directory = fs::path("certs/client/cso/");
         file_paths.directories.secc_leaf_key_directory = fs::path("certs/client/cso/");
 
-        this->evse_security = std::make_unique<EvseSecurity>(
-            file_paths, "123456",
-            std::nullopt, std::nullopt, std::nullopt, std::nullopt,
-            enforce_cert_profiles());
+        this->evse_security = std::make_unique<EvseSecurity>(file_paths, "123456", std::nullopt, std::nullopt,
+                                                             std::nullopt, std::nullopt, enforce_cert_profiles());
     }
 
     void TearDown() override {
@@ -112,7 +110,9 @@ protected:
 
 class EvseSecurityTestsWithRules : public EvseSecurityTests {
 protected:
-    bool enforce_cert_profiles() const override { return true; }
+    bool enforce_cert_profiles() const override {
+        return true;
+    }
 };
 
 class EvseSecurityTestsExpired : public EvseSecurityTests {
@@ -912,15 +912,15 @@ TEST_F(EvseSecurityTests, get_installed_certificates_and_delete_secc_leaf) {
     certificate_types.push_back(CertificateType::CSMSRootCertificate);
     certificate_types.push_back(CertificateType::V2GCertificateChain);
     certificate_types.push_back(CertificateType::MFRootCertificate);
-    
+
     const auto r = this->evse_security->get_installed_certificates(certificate_types);
-    
+
     ASSERT_EQ(r.status, GetInstalledCertificatesStatus::Accepted);
     ASSERT_EQ(r.certificate_hash_data_chain.size(), 5);
     bool found_v2g_chain = false;
-    
+
     CertificateHashData secc_leaf_data;
-    
+
     for (const auto& certificate_hash_data_chain : r.certificate_hash_data_chain) {
         if (certificate_hash_data_chain.certificate_type == CertificateType::V2GCertificateChain) {
             found_v2g_chain = true;
@@ -929,7 +929,7 @@ TEST_F(EvseSecurityTests, get_installed_certificates_and_delete_secc_leaf) {
         }
     }
     ASSERT_TRUE(found_v2g_chain);
-    
+
     // Do not allow the SECC delete since it's the ChargingStationCertificate
     auto delete_response = this->evse_security->delete_certificate(secc_leaf_data);
     ASSERT_EQ(delete_response.result, DeleteCertificateResult::Failed);
@@ -937,28 +937,27 @@ TEST_F(EvseSecurityTests, get_installed_certificates_and_delete_secc_leaf) {
 
 TEST_F(EvseSecurityTests, leaf_cert_starts_in_future_accepted) {
     const auto v2g_keypair_before =
-    this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM);
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM);
 
     const auto new_root_ca = read_file_to_string(std::filesystem::path("future_leaf/V2G_ROOT_CA.pem"));
     const auto result_ca = this->evse_security->install_ca_certificate(new_root_ca, CaCertificateType::V2G);
     ASSERT_TRUE(result_ca == InstallCertificateResult::Accepted);
-    
+
     std::filesystem::copy("future_leaf/SECC_LEAF_FUTURE.key", "certs/client/cso/SECC_LEAF_FUTURE.key");
 
     const auto client_certificate = read_file_to_string(fs::path("future_leaf/SECC_LEAF_FUTURE.pem"));
     std::cout << client_certificate << std::endl;
     const auto result_client =
-    this->evse_security->update_leaf_certificate(client_certificate, LeafCertificateType::V2G);
+        this->evse_security->update_leaf_certificate(client_certificate, LeafCertificateType::V2G);
     ASSERT_TRUE(result_client == InstallCertificateResult::Accepted);
-    
+
     // Check: The certificate is installed, but it isn't actually used
     const auto v2g_keypair_after =
-    this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM);
+        this->evse_security->get_leaf_certificate_info(LeafCertificateType::V2G, EncodingFormat::PEM);
     ASSERT_EQ(v2g_keypair_after.info.value().certificate, v2g_keypair_before.info.value().certificate);
     ASSERT_EQ(v2g_keypair_after.info.value().key, v2g_keypair_before.info.value().key);
     ASSERT_EQ(v2g_keypair_after.info.value().password, v2g_keypair_before.info.value().password);
 }
-
 
 TEST_F(EvseSecurityTests, expired_leaf_cert_rejected) {
     const auto new_root_ca = read_file_to_string(std::filesystem::path("expired_leaf/V2G_ROOT_CA.pem"));
@@ -1273,7 +1272,7 @@ TEST_F(EvseSecurityTests, verify_ocsp_garbage_collect) {
 
     ASSERT_EQ(existing, 0);
 }
- 
+
 TEST_F(EvseSecurityTestsExpired, verify_expired_leaf_deletion) {
     // Check that the FS is not full
     ASSERT_FALSE(evse_security->is_filesystem_full());
@@ -1456,7 +1455,8 @@ TEST_F(EvseSecurityTestsMulti, verify_with_invalid_cert_fails) {
 // ============================================================
 TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/CSO-CPOSub-CA1__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA1__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1468,19 +1468,21 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca1_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/CSO-CPOSub-CA2__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA2__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     X509Wrapper wrapper(pem, EncodingFormat::PEM);
 
-    int result = enforce_certificate_rules(wrapper,"CSO-CPOSub-CA2");
+    int result = enforce_certificate_rules(wrapper, "CSO-CPOSub-CA2");
     EXPECT_EQ(result, 1) << "Valid CSO-CPO Sub-CA 2 should pass rules";
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_missing_ski_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID82... not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID82... not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1491,8 +1493,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_missing_ski_fails) {
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_unexpected_aki_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID90... not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID90... not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1504,7 +1508,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_unexpected_aki_fails) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPRootCA__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPRootCA__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1516,7 +1521,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_root_ca_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPSub-CA1__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA1__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1528,7 +1534,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca1_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPSub-CA2__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA2__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1540,7 +1547,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_mo_subca2_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_ocsp_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OCSP__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OCSP__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OCSP__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1552,7 +1560,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_ocsp_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMRootCA__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMRootCA__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1564,7 +1573,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_root_ca_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_oem_subca1_missing_ski_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__BAD_NID82... not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA1__BAD_NID82... not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1576,7 +1586,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_oem_subca1_missing_ski_fails) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca1_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA1__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA1__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1588,7 +1599,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca1_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca2_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA2__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA2__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1600,7 +1612,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_subca2_passes_rules) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_valid_v2g_root_ca_passes_rules) {
     fs::path path = fs::path("eonti_addon_test_certs/valid/V2GRootCA__GOOD.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__GOOD.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "V2GRootCA__GOOD.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1611,8 +1624,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_v2g_root_ca_passes_rules) {
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "ContractLeaf__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1624,7 +1639,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_crl_dist
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/ContractLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "ContractLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "ContractLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1635,8 +1651,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_contract_leaf_missing_subject_
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_unexpected_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1647,8 +1665,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_unexpected_crl_
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_missing_subject_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1659,8 +1679,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca1_missing_subject
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_unexpected_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1671,8 +1693,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_unexpected_crl_
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_missing_subject_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "CSO-CPOSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1683,8 +1707,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_cso_cpo_subca2_missing_subject
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1695,8 +1721,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_crl_dis
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_subject_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1707,8 +1735,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca1_missing_subject
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1719,8 +1749,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_crl_dis
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_subject_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "MO-EMSPSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1732,7 +1764,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_mo_emsp_subca2_missing_subject
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OCSP__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OCSP__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OCSP__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1744,7 +1777,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_unexpected_crl_distributi
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OCSP__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OCSP__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OCSP__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1755,8 +1789,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_ocsp_missing_subject_key_ident
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_crl_distribution_points_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMProvisional__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1767,8 +1803,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_crl_di
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_subject_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMProvisional__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1780,7 +1818,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_provisional_missing_subjec
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1791,8 +1830,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_missing_subject_ke
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_unexpected_authority_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1804,7 +1845,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_root_ca_unexpected_authori
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca1_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA1__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1816,7 +1858,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca1_missing_crl_distrib
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA2__BAD_NID103_MissingCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1828,7 +1871,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_crl_distrib
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "OEMSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "OEMSub-CA2__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1840,7 +1884,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_oem_subca2_missing_subject_key
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_unexpected_crl_distribution_points_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/SECCLeaf__BAD_NID103_UnexpectedCRLDistributionPoints.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "SECCLeaf__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "SECCLeaf__BAD_NID103_UnexpectedCRLDistributionPoints.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1852,7 +1897,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_unexpected_crl_distr
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/SECCLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "SECCLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "SECCLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1864,7 +1910,8 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_missing_subject_key_
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_v2g_root_ca_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/V2GRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
+    if (!fs::exists(path))
+        GTEST_SKIP() << "V2GRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
@@ -1875,8 +1922,10 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_v2g_root_ca_missing_subject_ke
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_invalid_v2g_root_ca_unexpected_authority_key_identifier_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/invalid/V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
-    if (!fs::exists(path)) GTEST_SKIP() << "V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
+    fs::path path =
+        fs::path("eonti_addon_test_certs/invalid/V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
+    if (!fs::exists(path))
+        GTEST_SKIP() << "V2GRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem not found, skipping";
 
     std::ifstream f(path);
     std::string pem((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());

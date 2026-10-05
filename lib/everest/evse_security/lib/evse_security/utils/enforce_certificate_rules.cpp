@@ -19,41 +19,57 @@ namespace {
 // find_child() returns an invalid node if the key is absent; has_val()/has_key()
 // assert on such nodes, so guard with readable() first.
 inline std::string node_val(ryml::ConstNodeRef n) {
-    if (!n.readable()) return {};
-    if (!n.has_val() || n.val().str == nullptr) return {};
+    if (!n.readable())
+        return {};
+    if (!n.has_val() || n.val().str == nullptr)
+        return {};
     return std::string(n.val().str, n.val().len);
 }
 
 inline std::string node_key(ryml::ConstNodeRef n) {
-    if (!n.readable()) return {};
-    if (!n.has_key() || n.key().str == nullptr) return {};
+    if (!n.readable())
+        return {};
+    if (!n.has_key() || n.key().str == nullptr)
+        return {};
     return std::string(n.key().str, n.key().len);
 }
 
 inline std::string to_lower(std::string s) {
-    std::transform(s.begin(), s.end(), s.begin(),
-                   [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
+    std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return static_cast<char>(std::tolower(c)); });
     return s;
 }
 
 inline bool parse_bool(const std::string& s, bool default_v) {
-    if (s.empty()) return default_v;
+    if (s.empty())
+        return default_v;
     std::string v = to_lower(s);
-    if (v == "true"  || v == "1" || v == "yes" || v == "on")  return true;
-    if (v == "false" || v == "0" || v == "no"  || v == "off") return false;
+    if (v == "true" || v == "1" || v == "yes" || v == "on")
+        return true;
+    if (v == "false" || v == "0" || v == "no" || v == "off")
+        return false;
     return default_v;
 }
 
-enum class Presence { Required, Optional, Forbidden };
+enum class Presence {
+    Required,
+    Optional,
+    Forbidden
+};
 
 inline std::optional<Presence> parse_presence(const std::string& s) {
-    if (s.empty()) return std::nullopt;
+    if (s.empty())
+        return std::nullopt;
     std::string v = to_lower(s);
-    if (v == "required"  || v == "must")       return Presence::Required;
-    if (v == "optional"  || v == "may")        return Presence::Optional;
-    if (v == "forbidden" || v == "must_not")   return Presence::Forbidden;
-    if (v == "true"  || v == "1" || v == "yes") return Presence::Required;
-    if (v == "false" || v == "0" || v == "no")  return Presence::Forbidden;
+    if (v == "required" || v == "must")
+        return Presence::Required;
+    if (v == "optional" || v == "may")
+        return Presence::Optional;
+    if (v == "forbidden" || v == "must_not")
+        return Presence::Forbidden;
+    if (v == "true" || v == "1" || v == "yes")
+        return Presence::Required;
+    if (v == "false" || v == "0" || v == "no")
+        return Presence::Forbidden;
     return std::nullopt;
 }
 
@@ -63,24 +79,19 @@ inline bool is_issuer_target(const std::string& t) {
 }
 
 inline bool is_extension_field(const std::string& field) {
-    return field == "basicConstraints"          ||
-           field == "keyUsage"                  ||
-           field == "extendedKeyUsage"          ||
-           field == "subjectKeyIdentifier"      ||
-           field == "authorityKeyIdentifier"    ||
-           field == "crlDistributionPointName"  ||
-           field == "crlDistributionPoints"     ||
-           field == "certificatePolicies"       ||
+    return field == "basicConstraints" || field == "keyUsage" || field == "extendedKeyUsage" ||
+           field == "subjectKeyIdentifier" || field == "authorityKeyIdentifier" ||
+           field == "crlDistributionPointName" || field == "crlDistributionPoints" || field == "certificatePolicies" ||
            field == "authorityInfoAccessMethod";
 }
 
-inline void parse_stand_rule(ryml::ConstNodeRef ruleNode,
-                             std::string& field,
-                             std::string& mustExist,
-                             std::string& critical,
-                             std::string& val,
-                             std::string& target) {
-    field.clear(); mustExist.clear(); critical.clear(); val.clear(); target.clear();
+inline void parse_stand_rule(ryml::ConstNodeRef ruleNode, std::string& field, std::string& mustExist,
+                             std::string& critical, std::string& val, std::string& target) {
+    field.clear();
+    mustExist.clear();
+    critical.clear();
+    val.clear();
+    target.clear();
 
     for (auto child : ruleNode.children()) {
         std::string k = node_key(child);
@@ -122,16 +133,21 @@ inline void parse_stand_rule(ryml::ConstNodeRef ruleNode,
 std::optional<int> parse_pathlen(const std::string& bc) {
     const std::string lower = to_lower(bc);
     const size_t pos = lower.find("pathlen");
-    if (pos == std::string::npos) return std::nullopt;
+    if (pos == std::string::npos)
+        return std::nullopt;
 
     const size_t colon = bc.find(':', pos);
-    if (colon == std::string::npos) return std::nullopt;
+    if (colon == std::string::npos)
+        return std::nullopt;
 
     size_t i = colon + 1;
-    while (i < bc.size() && std::isspace(static_cast<unsigned char>(bc[i]))) ++i;
+    while (i < bc.size() && std::isspace(static_cast<unsigned char>(bc[i])))
+        ++i;
     const size_t start = i;
-    while (i < bc.size() && std::isdigit(static_cast<unsigned char>(bc[i]))) ++i;
-    if (i == start) return std::nullopt;
+    while (i < bc.size() && std::isdigit(static_cast<unsigned char>(bc[i])))
+        ++i;
+    if (i == start)
+        return std::nullopt;
 
     if (i < bc.size()) {
         const char c = bc[i];
@@ -156,10 +172,7 @@ struct ProfileHeader {
     std::string usage;
 };
 
-bool load_profile_header(const std::filesystem::path& p,
-                         ProfileHeader& out,
-                         bool& is_profile,
-                         std::string& err) {
+bool load_profile_header(const std::filesystem::path& p, ProfileHeader& out, bool& is_profile, std::string& err) {
     is_profile = false;
     out = ProfileHeader{};
     err.clear();
@@ -169,8 +182,7 @@ bool load_profile_header(const std::filesystem::path& p,
         err = "cannot open file";
         return false;
     }
-    std::string content((std::istreambuf_iterator<char>(f)),
-                         std::istreambuf_iterator<char>());
+    std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
     if (f.bad()) {
         err = "I/O error while reading profile";
         return false;
@@ -195,10 +207,10 @@ bool load_profile_header(const std::filesystem::path& p,
 
         out.path = p;
         out.domain_component = node_val(header.find_child("domain_component"));
-        out.role             = node_val(header.find_child("role"));
-        out.standard         = node_val(header.find_child("standard"));
-        out.version          = node_val(header.find_child("version"));
-        out.usage            = node_val(header.find_child("usage"));
+        out.role = node_val(header.find_child("role"));
+        out.standard = node_val(header.find_child("standard"));
+        out.version = node_val(header.find_child("version"));
+        out.usage = node_val(header.find_child("usage"));
 
         ryml::NodeRef path_node = header.find_child("path_length");
         if (path_node.readable()) {
@@ -219,8 +231,14 @@ bool load_profile_header(const std::filesystem::path& p,
             out.path_length = std::nullopt;
         }
 
-        if (out.domain_component.empty()) { err = "header.domain_component missing"; return false; }
-        if (out.role.empty())             { err = "header.role missing";             return false; }
+        if (out.domain_component.empty()) {
+            err = "header.domain_component missing";
+            return false;
+        }
+        if (out.role.empty()) {
+            err = "header.role missing";
+            return false;
+        }
         if (out.role != "root" && out.role != "sub_ca" && out.role != "leaf") {
             err = "header.role '" + out.role + "' is not one of root|sub_ca|leaf";
             return false;
@@ -261,9 +279,7 @@ enum class FieldResolve {
     Unknown,
 };
 
-FieldResolve resolve_field(const evse_security::X509Wrapper& w,
-                           const std::string& field,
-                           bool is_issuer,
+FieldResolve resolve_field(const evse_security::X509Wrapper& w, const std::string& field, bool is_issuer,
                            std::string& out) {
     if (field == "commonName") {
         out = is_issuer ? w.get_issuer_common_name() : w.get_common_name();
@@ -294,7 +310,8 @@ FieldResolve resolve_field(const evse_security::X509Wrapper& w,
         return FieldResolve::Value;
     }
     if (field == "serialNumber") {
-        if (is_issuer) return FieldResolve::SkipIssuer;
+        if (is_issuer)
+            return FieldResolve::SkipIssuer;
         out = w.get_serial_number();
         return FieldResolve::Value;
     }
@@ -303,37 +320,75 @@ FieldResolve resolve_field(const evse_security::X509Wrapper& w,
         return FieldResolve::Value;
     }
 
-    if (field == "issuerNameHash") { out = w.get_issuer_name_hash(); return FieldResolve::Value; }
-    if (field == "keyHash")        { out = w.get_key_hash();        return FieldResolve::Value; }
+    if (field == "issuerNameHash") {
+        out = w.get_issuer_name_hash();
+        return FieldResolve::Value;
+    }
+    if (field == "keyHash") {
+        out = w.get_key_hash();
+        return FieldResolve::Value;
+    }
 
-    if (is_issuer) return FieldResolve::SkipIssuer;
+    if (is_issuer)
+        return FieldResolve::SkipIssuer;
 
-    if (field == "keyUsage")               { out = w.get_key_usage();               return FieldResolve::Value; }
-    if (field == "basicConstraints")       { out = w.get_basic_constraints();       return FieldResolve::Value; }
-    if (field == "subjectKeyIdentifier")   { out = w.get_subject_key_identifier();  return FieldResolve::Value; }
-    if (field == "authorityKeyIdentifier") { out = w.get_authority_key_identifier(); return FieldResolve::Value; }
+    if (field == "keyUsage") {
+        out = w.get_key_usage();
+        return FieldResolve::Value;
+    }
+    if (field == "basicConstraints") {
+        out = w.get_basic_constraints();
+        return FieldResolve::Value;
+    }
+    if (field == "subjectKeyIdentifier") {
+        out = w.get_subject_key_identifier();
+        return FieldResolve::Value;
+    }
+    if (field == "authorityKeyIdentifier") {
+        out = w.get_authority_key_identifier();
+        return FieldResolve::Value;
+    }
 
-    if (field == "notBefore")                 { out = w.get_not_before();             return FieldResolve::Value; }
-    if (field == "notAfter")                  { out = w.get_not_after();              return FieldResolve::Value; }
-    if (field == "subjectPublicKeyAlgorithm") { out = w.get_public_key_algorithm();   return FieldResolve::Value; }
-    if (field == "subjectPublicKey")          { out = w.get_public_key_bits();        return FieldResolve::Value; }
-    if (field == "extendedKeyUsage")          { out = w.get_extended_key_usage();     return FieldResolve::Value; }
-    if (field == "certificatePolicies")       { out = w.get_certificate_policies();   return FieldResolve::Value; }
-    if (field == "authorityInfoAccessMethod") { out = w.get_authority_info_access();  return FieldResolve::Value; }
+    if (field == "notBefore") {
+        out = w.get_not_before();
+        return FieldResolve::Value;
+    }
+    if (field == "notAfter") {
+        out = w.get_not_after();
+        return FieldResolve::Value;
+    }
+    if (field == "subjectPublicKeyAlgorithm") {
+        out = w.get_public_key_algorithm();
+        return FieldResolve::Value;
+    }
+    if (field == "subjectPublicKey") {
+        out = w.get_public_key_bits();
+        return FieldResolve::Value;
+    }
+    if (field == "extendedKeyUsage") {
+        out = w.get_extended_key_usage();
+        return FieldResolve::Value;
+    }
+    if (field == "certificatePolicies") {
+        out = w.get_certificate_policies();
+        return FieldResolve::Value;
+    }
+    if (field == "authorityInfoAccessMethod") {
+        out = w.get_authority_info_access();
+        return FieldResolve::Value;
+    }
 
     return FieldResolve::Unknown;
 }
 
 } // namespace
 
-
 int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const std::string& manualCertProfile) {
     const std::string dc = wrapper.get_domain_component();
     const std::string basicConstraints = wrapper.get_basic_constraints();
     std::string certType;
 
-    EVLOG_info << "rules: bc.size()=" << basicConstraints.size()
-           << " dc.size()=" << dc.size();
+    EVLOG_info << "rules: bc.size()=" << basicConstraints.size() << " dc.size()=" << dc.size();
 
     const bool isCA = (basicConstraints.find("CA:TRUE") != std::string::npos);
     if (isCA) {
@@ -362,7 +417,8 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     } else {
         std::vector<ProfileHeader> candidates;
         for (const auto& entry : std::filesystem::directory_iterator(profiles_dir)) {
-            if (entry.path().extension() != ".yaml") continue;
+            if (entry.path().extension() != ".yaml")
+                continue;
 
             ProfileHeader h;
             bool is_profile = false;
@@ -372,35 +428,37 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                 EVLOG_error << "Skipping invalid profile " << entry.path() << ": " << err;
                 continue;
             }
-            if (!is_profile) continue;
+            if (!is_profile)
+                continue;
 
-            if (h.domain_component != dc) continue;
-            if (h.role != certType)       continue;
+            if (h.domain_component != dc)
+                continue;
+            if (h.role != certType)
+                continue;
 
             // path_length is a sub_ca-only selector. Root and leaf profiles
             // are matched on domain_component + role alone.
             if (certType == "sub_ca") {
-                if (cert_pathlen.has_value() != h.path_length.has_value()) continue;
-                if (cert_pathlen.has_value() && *cert_pathlen != *h.path_length) continue;
+                if (cert_pathlen.has_value() != h.path_length.has_value())
+                    continue;
+                if (cert_pathlen.has_value() && *cert_pathlen != *h.path_length)
+                    continue;
             }
 
             candidates.push_back(std::move(h));
         }
 
         if (candidates.empty()) {
-            EVLOG_info << "No matching security profile found for DC=" << dc
-                       << ", role=" << certType
-                       << (cert_pathlen.has_value()
-                               ? ", path_length=" + std::to_string(*cert_pathlen)
-                               : ", path_length=<absent>");
+            EVLOG_info << "No matching security profile found for DC=" << dc << ", role=" << certType
+                       << (cert_pathlen.has_value() ? ", path_length=" + std::to_string(*cert_pathlen)
+                                                    : ", path_length=<absent>");
             return 0;
         }
         if (candidates.size() > 1) {
-            EVLOG_error << "Ambiguous profile selection: " << candidates.size()
-                        << " profiles match DC=" << dc << ", role=" << certType
-                        << (cert_pathlen.has_value()
-                                ? ", path_length=" + std::to_string(*cert_pathlen)
-                                : ", path_length=<absent>");
+            EVLOG_error << "Ambiguous profile selection: " << candidates.size() << " profiles match DC=" << dc
+                        << ", role=" << certType
+                        << (cert_pathlen.has_value() ? ", path_length=" + std::to_string(*cert_pathlen)
+                                                     : ", path_length=<absent>");
             for (const auto& c : candidates) {
                 EVLOG_error << "  candidate: " << c.path;
             }
@@ -410,8 +468,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     }
 
     if (profile.empty()) {
-        EVLOG_info << "No matching security profile found for DC=" << dc
-                   << ", role=" << certType;
+        EVLOG_info << "No matching security profile found for DC=" << dc << ", role=" << certType;
         return 0;
     }
 
@@ -420,8 +477,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         EVLOG_warning << "Failed to open: " << profile;
         return -1;
     }
-    std::string profile_content((std::istreambuf_iterator<char>(profile_file)),
-                                 std::istreambuf_iterator<char>());
+    std::string profile_content((std::istreambuf_iterator<char>(profile_file)), std::istreambuf_iterator<char>());
     profile_file.close();
 
     ryml::Tree tree = ryml::parse_in_arena(ryml::to_csubstr(profile_content));
@@ -434,8 +490,12 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
 
     ryml::NodeRef profileNode;
     for (auto child : root.children()) {
-        if (node_key(child) == "header") continue;
-        if (child.has_child("stand")) { profileNode = child; break; }
+        if (node_key(child) == "header")
+            continue;
+        if (child.has_child("stand")) {
+            profileNode = child;
+            break;
+        }
     }
     if (!profileNode.readable()) {
         EVLOG_warning << "No profile section with 'stand' found in: " << profile;
@@ -452,8 +512,10 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     for (auto rule : standNode.children()) {
         std::string f, m, c, v, t;
         parse_stand_rule(rule, f, m, c, v, t);
-        if (f.empty()) continue;
-        if (parse_presence(m).has_value() || !v.empty() || !c.empty()) ++effective_rule_count;
+        if (f.empty())
+            continue;
+        if (parse_presence(m).has_value() || !v.empty() || !c.empty())
+            ++effective_rule_count;
     }
     if (effective_rule_count == 0) {
         EVLOG_error << "Profile contains no effective rules: " << profile;
@@ -466,7 +528,8 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         std::string field_str, mustExist_str, critical_str, expected_val, target_str;
         parse_stand_rule(ruleNode, field_str, mustExist_str, critical_str, expected_val, target_str);
 
-        if (field_str.empty()) continue;
+        if (field_str.empty())
+            continue;
 
         const bool is_issuer = is_issuer_target(target_str);
 
@@ -485,18 +548,15 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
 
         if (!critical_str.empty()) {
             if (!is_extension_field(field_str)) {
-                EVLOG_warning << "Field '" << field_str
-                              << "' is not an extension; 'critical' has no meaning";
+                EVLOG_warning << "Field '" << field_str << "' is not an extension; 'critical' has no meaning";
                 is_valid = 0;
             } else {
                 const bool expected_critical = parse_bool(critical_str, false);
                 if (!wrapper.has_extension(field_str)) {
-                    EVLOG_warning << "Extension " << field_str
-                                  << " required for criticality check but missing";
+                    EVLOG_warning << "Extension " << field_str << " required for criticality check but missing";
                     is_valid = 0;
                 } else if (wrapper.is_extension_critical(field_str) != expected_critical) {
-                    EVLOG_warning << "Extension " << field_str
-                                  << " critical flag mismatch (expected "
+                    EVLOG_warning << "Extension " << field_str << " critical flag mismatch (expected "
                                   << (expected_critical ? "true" : "false") << ")";
                     is_valid = 0;
                 }
@@ -515,41 +575,38 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         const bool present = !cert_value.empty();
 
         switch (presence) {
-            case Presence::Required:
-                if (!present) {
-                    EVLOG_warning << "Field " << field_str << " required but missing";
-                    is_valid = 0;
-                } else if (!expected_val.empty() && cert_value != expected_val) {
-                    EVLOG_warning << "Field " << field_str << " value mismatch: expected "
-                                  << expected_val << ", got " << cert_value;
-                    is_valid = 0;
-                }
-                break;
+        case Presence::Required:
+            if (!present) {
+                EVLOG_warning << "Field " << field_str << " required but missing";
+                is_valid = 0;
+            } else if (!expected_val.empty() && cert_value != expected_val) {
+                EVLOG_warning << "Field " << field_str << " value mismatch: expected " << expected_val << ", got "
+                              << cert_value;
+                is_valid = 0;
+            }
+            break;
 
-            case Presence::Optional:
-                if (present && !expected_val.empty() && cert_value != expected_val) {
-                    EVLOG_warning << "Field " << field_str << " value mismatch: expected "
-                                  << expected_val << ", got " << cert_value;
-                    is_valid = 0;
-                }
-                break;
+        case Presence::Optional:
+            if (present && !expected_val.empty() && cert_value != expected_val) {
+                EVLOG_warning << "Field " << field_str << " value mismatch: expected " << expected_val << ", got "
+                              << cert_value;
+                is_valid = 0;
+            }
+            break;
 
-            case Presence::Forbidden:
-                if (present) {
-                    EVLOG_warning << "Field " << field_str << " forbidden but present: "
-                                  << cert_value;
-                    is_valid = 0;
-                }
-                break;
+        case Presence::Forbidden:
+            if (present) {
+                EVLOG_warning << "Field " << field_str << " forbidden but present: " << cert_value;
+                is_valid = 0;
+            }
+            break;
         }
     }
 
     {
-        static const char* ku_names[] = {
-            "digitalSignature", "nonRepudiation", "keyEncipherment",
-            "dataEncipherment", "keyAgreement", "keyCertSign",
-            "cRLSign", "encipherOnly", "decipherOnly"
-        };
+        static const char* ku_names[] = {"digitalSignature", "nonRepudiation", "keyEncipherment",
+                                         "dataEncipherment", "keyAgreement",   "keyCertSign",
+                                         "cRLSign",          "encipherOnly",   "decipherOnly"};
         ryml::NodeRef kuNode = profileNode.find_child("key_usage");
         if (kuNode.readable()) {
             const std::string ku_value = wrapper.get_key_usage();
@@ -558,17 +615,22 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
             {
                 std::string cur;
                 for (char ch : ku_value) {
-                    if (ch == ',' || ch == ' ' || ch == '\t' || ch == '\n' ||
-                        ch == '\r' || ch == ';' || ch == '|') {
-                        if (!cur.empty()) { ku_tokens.push_back(cur); cur.clear(); }
+                    if (ch == ',' || ch == ' ' || ch == '\t' || ch == '\n' || ch == '\r' || ch == ';' || ch == '|') {
+                        if (!cur.empty()) {
+                            ku_tokens.push_back(cur);
+                            cur.clear();
+                        }
                     } else {
                         cur.push_back(ch);
                     }
                 }
-                if (!cur.empty()) ku_tokens.push_back(cur);
+                if (!cur.empty())
+                    ku_tokens.push_back(cur);
             }
             auto ku_has = [&](const char* name) {
-                for (const auto& tok : ku_tokens) if (tok == name) return true;
+                for (const auto& tok : ku_tokens)
+                    if (tok == name)
+                        return true;
                 return false;
             };
 
@@ -580,15 +642,20 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                     std::string k = node_key(child);
                     std::string v = node_val(child);
                     if (k == "keyUsageBit" || k == "bit" || k == "index" || k == "usage_bit") {
-                        try { bit = std::stoi(v); } catch (...) { bit = -1; }
-                    } else if (k == "value" || k == "mustExist" || k == "must"
-                               || k == "required" || k == "present" || k == "data") {
+                        try {
+                            bit = std::stoi(v);
+                        } catch (...) {
+                            bit = -1;
+                        }
+                    } else if (k == "value" || k == "mustExist" || k == "must" || k == "required" || k == "present" ||
+                               k == "data") {
                         must_str = v;
                     } else if (k == "target") {
                         target = v;
                     }
                 }
-                if (bit < 0 || bit > 8) continue;
+                if (bit < 0 || bit > 8)
+                    continue;
 
                 if (is_issuer_target(target)) {
                     continue;
@@ -602,20 +669,20 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                 const bool present = ku_has(ku_names[bit]);
 
                 switch (presence) {
-                    case Presence::Required:
-                        if (!present) {
-                            EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") missing";
-                            is_valid = 0;
-                        }
-                        break;
-                    case Presence::Optional:
-                        break;
-                    case Presence::Forbidden:
-                        if (present) {
-                            EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") unexpected";
-                            is_valid = 0;
-                        }
-                        break;
+                case Presence::Required:
+                    if (!present) {
+                        EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") missing";
+                        is_valid = 0;
+                    }
+                    break;
+                case Presence::Optional:
+                    break;
+                case Presence::Forbidden:
+                    if (present) {
+                        EVLOG_warning << "keyUsage bit " << bit << " (" << ku_names[bit] << ") unexpected";
+                        is_valid = 0;
+                    }
+                    break;
                 }
             }
         }
@@ -630,10 +697,14 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                 for (auto child : bcRule.children()) {
                     std::string k = node_key(child);
                     std::string v = node_val(child);
-                    if      (k == "value" || k == "name")                    value_str = v;
-                    else if (k == "mustExist" || k == "must")                must_str  = v;
-                    else if (k == "data" || k == "val" || k == "expected")   data_str  = v;
-                    else if (k == "target")                                  target    = v;
+                    if (k == "value" || k == "name")
+                        value_str = v;
+                    else if (k == "mustExist" || k == "must")
+                        must_str = v;
+                    else if (k == "data" || k == "val" || k == "expected")
+                        data_str = v;
+                    else if (k == "target")
+                        target = v;
                 }
 
                 if (is_issuer_target(target)) {
@@ -647,23 +718,23 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                 const Presence presence = *presence_opt;
 
                 if (value_str == "CA") {
-                    const bool has_ca      = bc_value.find("CA:TRUE") != std::string::npos;
+                    const bool has_ca = bc_value.find("CA:TRUE") != std::string::npos;
                     const bool expected_ca = parse_bool(data_str, false);
 
                     switch (presence) {
-                        case Presence::Required:
-                        case Presence::Optional:
-                            if (has_ca != expected_ca) {
-                                EVLOG_warning << "basicConstraints CA mismatch: expected "
-                                              << (expected_ca ? "TRUE" : "FALSE")
-                                              << ", got " << (has_ca ? "TRUE" : "FALSE");
-                                is_valid = 0;
-                            }
-                            break;
-                        case Presence::Forbidden:
-                            EVLOG_warning << "basicConstraints CA: 'forbidden' is not meaningful";
+                    case Presence::Required:
+                    case Presence::Optional:
+                        if (has_ca != expected_ca) {
+                            EVLOG_warning << "basicConstraints CA mismatch: expected "
+                                          << (expected_ca ? "TRUE" : "FALSE") << ", got "
+                                          << (has_ca ? "TRUE" : "FALSE");
                             is_valid = 0;
-                            break;
+                        }
+                        break;
+                    case Presence::Forbidden:
+                        EVLOG_warning << "basicConstraints CA: 'forbidden' is not meaningful";
+                        is_valid = 0;
+                        break;
                     }
                 } else if (value_str == "path_length" || value_str == "pathlen") {
                     const std::optional<int> actual_opt = parse_pathlen(bc_value);
@@ -671,55 +742,57 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                     const int actual = actual_opt.value_or(-1);
 
                     switch (presence) {
-                        case Presence::Required:
-                            if (!present) {
-                                EVLOG_warning << "basicConstraints path_length missing";
+                    case Presence::Required:
+                        if (!present) {
+                            EVLOG_warning << "basicConstraints path_length missing";
+                            is_valid = 0;
+                        } else if (!data_str.empty()) {
+                            int expected = -1;
+                            try {
+                                size_t consumed = 0;
+                                expected = std::stoi(data_str, &consumed);
+                                if (consumed != data_str.size())
+                                    throw std::invalid_argument("trailing");
+                            } catch (...) {
+                                EVLOG_error << "basicConstraints path_length rule has non-numeric value '" << data_str
+                                            << "'";
                                 is_valid = 0;
-                            } else if (!data_str.empty()) {
-                                int expected = -1;
-                                try {
-                                    size_t consumed = 0;
-                                    expected = std::stoi(data_str, &consumed);
-                                    if (consumed != data_str.size()) throw std::invalid_argument("trailing");
-                                } catch (...) {
-                                    EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
-                                                << data_str << "'";
-                                    is_valid = 0;
-                                    break;
-                                }
-                                if (actual != expected) {
-                                    EVLOG_warning << "basicConstraints path_length mismatch: expected "
-                                                  << expected << ", got " << actual;
-                                    is_valid = 0;
-                                }
+                                break;
                             }
-                            break;
-                        case Presence::Optional:
-                            if (present && !data_str.empty()) {
-                                int expected = -1;
-                                try {
-                                    size_t consumed = 0;
-                                    expected = std::stoi(data_str, &consumed);
-                                    if (consumed != data_str.size()) throw std::invalid_argument("trailing");
-                                } catch (...) {
-                                    EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
-                                                << data_str << "'";
-                                    is_valid = 0;
-                                    break;
-                                }
-                                if (actual != expected) {
-                                    EVLOG_warning << "basicConstraints path_length mismatch: expected "
-                                                  << expected << ", got " << actual;
-                                    is_valid = 0;
-                                }
-                            }
-                            break;
-                        case Presence::Forbidden:
-                            if (present) {
-                                EVLOG_warning << "basicConstraints path_length unexpected";
+                            if (actual != expected) {
+                                EVLOG_warning << "basicConstraints path_length mismatch: expected " << expected
+                                              << ", got " << actual;
                                 is_valid = 0;
                             }
-                            break;
+                        }
+                        break;
+                    case Presence::Optional:
+                        if (present && !data_str.empty()) {
+                            int expected = -1;
+                            try {
+                                size_t consumed = 0;
+                                expected = std::stoi(data_str, &consumed);
+                                if (consumed != data_str.size())
+                                    throw std::invalid_argument("trailing");
+                            } catch (...) {
+                                EVLOG_error << "basicConstraints path_length rule has non-numeric value '" << data_str
+                                            << "'";
+                                is_valid = 0;
+                                break;
+                            }
+                            if (actual != expected) {
+                                EVLOG_warning << "basicConstraints path_length mismatch: expected " << expected
+                                              << ", got " << actual;
+                                is_valid = 0;
+                            }
+                        }
+                        break;
+                    case Presence::Forbidden:
+                        if (present) {
+                            EVLOG_warning << "basicConstraints path_length unexpected";
+                            is_valid = 0;
+                        }
+                        break;
                     }
                 }
             }
