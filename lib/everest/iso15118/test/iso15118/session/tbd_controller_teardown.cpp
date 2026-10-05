@@ -48,7 +48,7 @@ iso15118::TbdController make_controller(const iso15118::session::feedback::Callb
     return iso15118::TbdController{iso15118::TbdConfig{std::move(ssl), "lo",
                                                        iso15118::config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER,
                                                        /*enable_sdp_server=*/false},
-                                   callbacks, iso15118::d20::EvseSetupConfig{}, factory.fn()};
+                                   callbacks, iso15118::session::EvseSetupConfig{}, factory.fn()};
 }
 
 // Captured SupportedAppProtocolReq offering the -20:AC namespace.

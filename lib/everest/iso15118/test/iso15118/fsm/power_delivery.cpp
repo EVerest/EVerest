@@ -26,7 +26,7 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
     session::feedback::Callbacks callbacks{};
     callbacks.signal = [&signals](session::feedback::Signal signal) { signals.push_back(signal); };
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(create_default_evse_setup()), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(create_default_evse_setup()), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
     ctx.session = d20::Session(
         d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
@@ -81,7 +81,7 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
             // Drive the timeouts the way Session::loop does: the contactor timeout is cancelled, so
             // it never fires a second, failing response at the EV.
             std::this_thread::sleep_for(WAIT_OUT_CONTACTOR_TIMEOUT);
-            REQUIRE(state_helper.get_timeouts().check().has_value() == false);
+            REQUIRE(state_helper.get_timeouts().check().empty());
         }
     }
 }

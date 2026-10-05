@@ -25,12 +25,28 @@ void Feedback::dc_max_limits(const feedback::DcMaximumLimits& max_limits) const 
     call_if_available(callbacks.dc_max_limits, max_limits);
 }
 
+void Feedback::dc_ev_status(const feedback::DcEvStatus& ev_status) const {
+    call_if_available(callbacks.dc_ev_status, ev_status);
+}
+
+void Feedback::ev_charge_parameters(const feedback::EvChargeParameters& parameters) const {
+    call_if_available(callbacks.ev_charge_parameters, parameters);
+}
+
+void Feedback::dc_ev_charge_progress(const feedback::DcEvChargeProgress& progress) const {
+    call_if_available(callbacks.dc_ev_charge_progress, progress);
+}
+
 void Feedback::ac_charge_loop_req(const feedback::AcChargeLoopReq& req_values) const {
     call_if_available(callbacks.ac_charge_loop_req, req_values);
 }
 
-void Feedback::v2g_message(const message_20::Type& v2g_message) const {
-    call_if_available(callbacks.v2g_message, v2g_message);
+void Feedback::v2g_message(const V2gMessageType& v2g_message, const io::StreamInputView& exi_frame) const {
+    call_if_available(callbacks.v2g_message, v2g_message, exi_frame);
+}
+
+void Feedback::ev_app_protocols(const message_20::SupportedAppProtocolRequest& req) const {
+    call_if_available(callbacks.ev_app_protocols, req);
 }
 
 void Feedback::evcc_id(const std::string& evccid) const {
@@ -39,6 +55,10 @@ void Feedback::evcc_id(const std::string& evccid) const {
 
 void Feedback::selected_protocol(const std::string& selected_protocol) const {
     call_if_available(callbacks.selected_protocol, selected_protocol);
+}
+
+void Feedback::selected_payment_option(shared_datatypes::PaymentOption payment_option) const {
+    call_if_available(callbacks.selected_payment_option, payment_option);
 }
 
 void Feedback::notify_ev_charging_needs(
@@ -64,6 +84,10 @@ void Feedback::ev_termination(const std::string& ev_termination_code,
     call_if_available(callbacks.ev_termination, ev_termination_code, ev_termination_explanation);
 }
 
+void Feedback::session_stop_res_sent(feedback::SessionStopAction action) const {
+    call_if_available(callbacks.session_stop_res_sent, action);
+}
+
 std::optional<dt::ServiceParameterList> Feedback::get_vas_parameters(uint16_t vas_id) const {
 
     logf_warning("Caution: This feedback call can block the entire state machine");
@@ -80,6 +104,15 @@ void Feedback::selected_vas_services(const dt::VasSelectedServiceList& vas_servi
 
 void Feedback::ac_limits(const feedback::AcLimits& limits) const {
     call_if_available(callbacks.ac_limits, limits);
+}
+
+void Feedback::require_auth_pnc(const std::string& emaid, const std::string& contract_chain_pem) const {
+    call_if_available(callbacks.require_auth_pnc, emaid, contract_chain_pem);
+}
+
+void Feedback::certificate_request(const std::string& exi_request_base64,
+                                   feedback::CertificateExchangeAction action) const {
+    call_if_available(callbacks.certificate_request, exi_request_base64, action);
 }
 
 } // namespace iso15118::session
