@@ -462,7 +462,6 @@ private:
     // Publishes modes and sends them to the HLC. Takes no lock.
     void send_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes);
     std::vector<types::iso15118::EnergyTransferMode> ac_energy_transfers();
-    std::vector<types::iso15118::EnergyTransferMode> ac_core_energy_transfers();
     std::vector<types::iso15118::EnergyTransferMode> dc_energy_transfers();
     void recompute_and_publish_supported_dc_energy_transfers();
     std::mutex hlc_ac_parameters_mutex;
