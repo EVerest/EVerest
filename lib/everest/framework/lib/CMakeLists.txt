@@ -97,6 +97,11 @@ target_link_libraries(framework
         ${ATOMIC_LIBS}
 )
 
+# hide symbols of statically linked dependencies
+# this prevents consumers from resolving them through libframework.so
+# and forces them to link those libraries themselves.
+target_link_options(framework PRIVATE "LINKER:--exclude-libs,ALL")
+
 collect_migration_files(
      LOCATION ${PROJECT_SOURCE_DIR}/schemas/migrations
      INSTALL_DESTINATION "${CMAKE_INSTALL_DATADIR}/everest/migrations"
