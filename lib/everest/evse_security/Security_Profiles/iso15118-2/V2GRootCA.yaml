@@ -69,6 +69,7 @@ V2GRootCA:
       mustExist: true
       target: Subject
 
+
   key_usage:
     - keyUsageBit: 0 # Digital Signature
       mustExist: "false"

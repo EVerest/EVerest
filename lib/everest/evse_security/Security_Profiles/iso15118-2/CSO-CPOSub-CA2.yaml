@@ -1,7 +1,7 @@
 header:
   domain_component: CPO
   role: sub_ca
-  path_length: 2
+  path_length: 0
 
 
 CSO-CPOSub-CA2:
@@ -65,8 +65,15 @@ CSO-CPOSub-CA2:
       target: Subject
       mustExist: "true"
       critical: "true"
-
-
+      
+    - field: subjectKeyIdentifier # Subject Key Identifier
+      target: Subject
+      mustExist: "true"
+      
+    - field: crlDistributionPointName
+      target: Subject
+      mustExist: false
+      
   key_usage:
     - keyUsageBit: 0 # Digital Signature
       mustExist: "false"
@@ -95,5 +102,5 @@ CSO-CPOSub-CA2:
       data: true
 
     - value: path_length
-      mustExist: false
+      mustExist: true
       data: 0

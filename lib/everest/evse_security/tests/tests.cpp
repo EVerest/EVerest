@@ -1850,7 +1850,7 @@ TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_unexpected_crl_distr
     EXPECT_EQ(result, 0) << "SECC Leaf with unexpected CRL Distribution Points should fail";
 }
 
-TEST_F(EvseSecurityTests, verify_invalid_secc_leaf_missing_subject_key_identifier_fails) {
+TEST_F(EvseSecurityTestsWithRules, verify_invalid_secc_leaf_missing_subject_key_identifier_fails) {
     fs::path path = fs::path("eonti_addon_test_certs/invalid/SECCLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path)) GTEST_SKIP() << "SECCLeaf__BAD_NID82_MissingSubjectKeyIdentifier.pem not found, skipping";
 

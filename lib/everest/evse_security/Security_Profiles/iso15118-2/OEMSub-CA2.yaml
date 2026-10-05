@@ -1,7 +1,7 @@
 header:
   domain_component: OEM
   role: sub_ca
-  path_length: 2
+  path_length: 0
 
 
 OEMSub-CA2:
@@ -106,5 +106,5 @@ OEMSub-CA2:
       data: true
 
     - value: path_length
-      mustExist: false
+      mustExist: true
       data: 0

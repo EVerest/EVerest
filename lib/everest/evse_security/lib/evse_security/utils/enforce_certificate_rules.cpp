@@ -115,6 +115,142 @@ inline void parse_stand_rule(ryml::ConstNodeRef ruleNode,
     }
 }
 
+std::optional<int> parse_pathlen(const std::string& bc) {
+    const std::string lower = to_lower(bc);
+    const size_t pos = lower.find("pathlen");
+    if (pos == std::string::npos) return std::nullopt;
+
+    const size_t colon = bc.find(':', pos);
+    if (colon == std::string::npos) return std::nullopt;
+
+    size_t i = colon + 1;
+    while (i < bc.size() && std::isspace(static_cast<unsigned char>(bc[i]))) ++i;
+    const size_t start = i;
+    while (i < bc.size() && std::isdigit(static_cast<unsigned char>(bc[i]))) ++i;
+    if (i == start) return std::nullopt;
+
+    if (i < bc.size()) {
+        const char c = bc[i];
+        if (!(std::isspace(static_cast<unsigned char>(c)) || c == ',' || c == ')' || c == ';')) {
+            return std::nullopt;
+        }
+    }
+    try {
+        return std::stoi(bc.substr(start, i - start));
+    } catch (...) {
+        return std::nullopt;
+    }
+}
+
+struct ProfileHeader {
+    std::filesystem::path path;
+    std::string domain_component;
+    std::string role;
+    std::optional<int> path_length;
+    std::string standard;
+    std::string version;
+    std::string usage;
+};
+
+bool load_profile_header(const std::filesystem::path& p,
+                         ProfileHeader& out,
+                         bool& is_profile,
+                         std::string& err) {
+    is_profile = false;
+    out = ProfileHeader{};
+    err.clear();
+
+    std::ifstream f(p, std::ios::binary);
+    if (!f.is_open()) {
+        err = "cannot open file";
+        return false;
+    }
+    std::string content((std::istreambuf_iterator<char>(f)),
+                         std::istreambuf_iterator<char>());
+    if (f.bad()) {
+        err = "I/O error while reading profile";
+        return false;
+    }
+
+    try {
+        ryml::Tree t = ryml::parse_in_arena(ryml::to_csubstr(content));
+
+        if (!t.rootref().readable()) {
+            err = "invalid YAML root";
+            return false;
+        }
+
+        ryml::NodeRef header = t.rootref().find_child("header");
+        if (!header.readable()) {
+            return true;
+        }
+        if (!header.is_map()) {
+            err = "header is not a mapping";
+            return false;
+        }
+
+        out.path = p;
+        out.domain_component = node_val(header.find_child("domain_component"));
+        out.role             = node_val(header.find_child("role"));
+        out.standard         = node_val(header.find_child("standard"));
+        out.version          = node_val(header.find_child("version"));
+        out.usage            = node_val(header.find_child("usage"));
+
+        ryml::NodeRef path_node = header.find_child("path_length");
+        if (path_node.readable()) {
+            const std::string raw = node_val(path_node);
+            try {
+                size_t consumed = 0;
+                const int v = std::stoi(raw, &consumed);
+                if (consumed != raw.size()) {
+                    err = "header.path_length '" + raw + "' is not a plain integer";
+                    return false;
+                }
+                out.path_length = v;
+            } catch (...) {
+                err = "header.path_length '" + raw + "' is not an integer";
+                return false;
+            }
+        } else {
+            out.path_length = std::nullopt;
+        }
+
+        if (out.domain_component.empty()) { err = "header.domain_component missing"; return false; }
+        if (out.role.empty())             { err = "header.role missing";             return false; }
+        if (out.role != "root" && out.role != "sub_ca" && out.role != "leaf") {
+            err = "header.role '" + out.role + "' is not one of root|sub_ca|leaf";
+            return false;
+        }
+        if (out.role == "sub_ca" && !out.path_length.has_value()) {
+            err = "sub_ca profile must specify header.path_length";
+            return false;
+        }
+        if (out.role != "sub_ca" && out.path_length.has_value()) {
+            err = "header.path_length is only valid for role: sub_ca";
+            return false;
+        }
+
+        is_profile = true;
+
+        if (out.standard.empty()) {
+            EVLOG_warning << "Profile " << p << " has no header.standard";
+        }
+        if (out.version.empty()) {
+            EVLOG_warning << "Profile " << p << " has no header.version";
+        }
+        if (out.usage.empty()) {
+            EVLOG_warning << "Profile " << p << " has no header.usage";
+        }
+        return true;
+    } catch (const std::exception& e) {
+        err = std::string("YAML parse error: ") + e.what();
+        return false;
+    } catch (...) {
+        err = "YAML parse aborted";
+        return false;
+    }
+}
+
 enum class FieldResolve {
     Value,
     SkipIssuer,
@@ -192,6 +328,9 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     const std::string basicConstraints = wrapper.get_basic_constraints();
     std::string certType;
 
+    EVLOG_info << "rules: bc.size()=" << basicConstraints.size()
+           << " dc.size()=" << dc.size();
+
     const bool isCA = (basicConstraints.find("CA:TRUE") != std::string::npos);
     if (isCA) {
         certType = wrapper.is_selfsigned() ? "root" : "sub_ca";
@@ -199,17 +338,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         certType = "leaf";
     }
 
-    int pathLength = -1;
-    const std::string marker = "pathlen:";
-    size_t pos = basicConstraints.find(marker);
-    if (pos != std::string::npos) {
-        std::string lenStr = basicConstraints.substr(pos + marker.length());
-        try {
-            pathLength = std::stoi(lenStr);
-        } catch (...) {
-            pathLength = -1;
-        }
-    }
+    const std::optional<int> cert_pathlen = parse_pathlen(basicConstraints);
 
     if (dc.empty() && manualCertProfile.empty()) {
         EVLOG_warning << "No Domain Component (DC) found in the certificate, "
@@ -227,49 +356,59 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     if (!manualCertProfile.empty()) {
         profile = profiles_dir + "/" + manualCertProfile + ".yaml";
     } else {
+        std::vector<ProfileHeader> candidates;
         for (const auto& entry : std::filesystem::directory_iterator(profiles_dir)) {
             if (entry.path().extension() != ".yaml") continue;
 
-            try {
-                std::ifstream f(entry.path());
-                std::string content((std::istreambuf_iterator<char>(f)),
-                                     std::istreambuf_iterator<char>());
-                ryml::Tree t = ryml::parse_in_arena(ryml::to_csubstr(content));
-                ryml::NodeRef header = t.rootref().find_child("header");
-                if (!header.readable()) continue;
-
-                ryml::NodeRef dc_node = header.find_child("domain_component");
-                if (dc_node.readable()) {
-                    if (node_val(dc_node) != dc) continue;
-                }
-
-                ryml::NodeRef role_node = header.find_child("role");
-                if (role_node.readable()) {
-                    if (node_val(role_node) != certType) continue;
-                }
-
-                if (certType == "sub_ca" && pathLength >= 0) {
-                    ryml::NodeRef path_node = header.find_child("path_length");
-                    if (path_node.readable()) {
-                        int path_val = -1;
-                        try { path_val = std::stoi(node_val(path_node)); } catch (...) {}
-                        if (path_val != pathLength) continue;
-                    }
-                }
-
-                profile = entry.path().string();
-                break;
-            } catch (const std::exception& e) {
-                EVLOG_warning << "Error parsing " << entry.path() << ": " << e.what();
+            ProfileHeader h;
+            bool is_profile = false;
+            std::string err;
+            if (!load_profile_header(entry.path(), h, is_profile, err)) {
+                // A malformed profile is not a reason to fail verification of
+                // every other certificate: exclude it and continue.
+                EVLOG_error << "Skipping invalid profile " << entry.path() << ": " << err;
                 continue;
             }
+            if (!is_profile) continue;
+
+            if (h.domain_component != dc) continue;
+            if (h.role != certType)       continue;
+
+            // path_length is a sub_ca-only selector. Root and leaf profiles
+            // are matched on domain_component + role alone.
+            if (certType == "sub_ca") {
+                if (cert_pathlen.has_value() != h.path_length.has_value()) continue;
+                if (cert_pathlen.has_value() && *cert_pathlen != *h.path_length) continue;
+            }
+
+            candidates.push_back(std::move(h));
         }
+
+        if (candidates.empty()) {
+            EVLOG_info << "No matching security profile found for DC=" << dc
+                       << ", role=" << certType
+                       << (cert_pathlen.has_value()
+                               ? ", path_length=" + std::to_string(*cert_pathlen)
+                               : ", path_length=<absent>");
+            return 0;
+        }
+        if (candidates.size() > 1) {
+            EVLOG_error << "Ambiguous profile selection: " << candidates.size()
+                        << " profiles match DC=" << dc << ", role=" << certType
+                        << (cert_pathlen.has_value()
+                                ? ", path_length=" + std::to_string(*cert_pathlen)
+                                : ", path_length=<absent>");
+            for (const auto& c : candidates) {
+                EVLOG_error << "  candidate: " << c.path;
+            }
+            return -1;
+        }
+        profile = candidates.front().path.string();
     }
 
     if (profile.empty()) {
         EVLOG_info << "No matching security profile found for DC=" << dc
-                   << ", role=" << certType
-                   << (pathLength >= 0 ? ", path_length=" + std::to_string(pathLength) : "");
+                   << ", role=" << certType;
         return 0;
     }
 
@@ -282,13 +421,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                                  std::istreambuf_iterator<char>());
     profile_file.close();
 
-    ryml::Tree tree;
-    try {
-        tree = ryml::parse_in_arena(ryml::to_csubstr(profile_content));
-    } catch (const std::exception& e) {
-        EVLOG_error << "YAML parsing failed: " << e.what();
-        return -1;
-    }
+    ryml::Tree tree = ryml::parse_in_arena(ryml::to_csubstr(profile_content));
 
     ryml::NodeRef root = tree.rootref();
     if (!root.readable()) {
@@ -316,7 +449,8 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     for (auto rule : standNode.children()) {
         std::string f, m, c, v, t;
         parse_stand_rule(rule, f, m, c, v, t);
-        if (!f.empty()) ++effective_rule_count;
+        if (f.empty()) continue;
+        if (parse_presence(m).has_value() || !v.empty() || !c.empty()) ++effective_rule_count;
     }
     if (effective_rule_count == 0) {
         EVLOG_error << "Profile contains no effective rules: " << profile;
@@ -366,11 +500,14 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
             }
         }
 
-        auto presence_opt = parse_presence(mustExist_str);
-        if (!presence_opt.has_value()) {
+        Presence presence;
+        if (auto p = parse_presence(mustExist_str); p.has_value()) {
+            presence = *p;
+        } else if (!expected_val.empty()) {
+            presence = Presence::Required;
+        } else {
             continue;
         }
-        const Presence presence = *presence_opt;
 
         const bool present = !cert_value.empty();
 
@@ -413,6 +550,25 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
         ryml::NodeRef kuNode = profileNode.find_child("key_usage");
         if (kuNode.readable()) {
             const std::string ku_value = wrapper.get_key_usage();
+
+            std::vector<std::string> ku_tokens;
+            {
+                std::string cur;
+                for (char ch : ku_value) {
+                    if (ch == ',' || ch == ' ' || ch == '\t' || ch == '\n' ||
+                        ch == '\r' || ch == ';' || ch == '|') {
+                        if (!cur.empty()) { ku_tokens.push_back(cur); cur.clear(); }
+                    } else {
+                        cur.push_back(ch);
+                    }
+                }
+                if (!cur.empty()) ku_tokens.push_back(cur);
+            }
+            auto ku_has = [&](const char* name) {
+                for (const auto& tok : ku_tokens) if (tok == name) return true;
+                return false;
+            };
+
             for (auto kuRule : kuNode.children()) {
                 int bit = -1;
                 std::string must_str;
@@ -440,7 +596,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                     continue;
                 }
                 const Presence presence = *presence_opt;
-                const bool present = ku_value.find(ku_names[bit]) != std::string::npos;
+                const bool present = ku_has(ku_names[bit]);
 
                 switch (presence) {
                     case Presence::Required:
@@ -507,17 +663,9 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                             break;
                     }
                 } else if (value_str == "path_length" || value_str == "pathlen") {
-                    int actual = -1;
-                    const std::string path_marker = "pathlen:";
-                    auto ppos = bc_value.find(path_marker);
-                    const bool present = (ppos != std::string::npos);
-                    if (present) {
-                        try {
-                            actual = std::stoi(bc_value.substr(ppos + path_marker.length()));
-                        } catch (...) {
-                            actual = -1;
-                        }
-                    }
+                    const std::optional<int> actual_opt = parse_pathlen(bc_value);
+                    const bool present = actual_opt.has_value();
+                    const int actual = actual_opt.value_or(-1);
 
                     switch (presence) {
                         case Presence::Required:
@@ -527,7 +675,9 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                             } else if (!data_str.empty()) {
                                 int expected = -1;
                                 try {
-                                    expected = std::stoi(data_str);
+                                    size_t consumed = 0;
+                                    expected = std::stoi(data_str, &consumed);
+                                    if (consumed != data_str.size()) throw std::invalid_argument("trailing");
                                 } catch (...) {
                                     EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
                                                 << data_str << "'";
@@ -545,7 +695,9 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
                             if (present && !data_str.empty()) {
                                 int expected = -1;
                                 try {
-                                    expected = std::stoi(data_str);
+                                    size_t consumed = 0;
+                                    expected = std::stoi(data_str, &consumed);
+                                    if (consumed != data_str.size()) throw std::invalid_argument("trailing");
                                 } catch (...) {
                                     EVLOG_error << "basicConstraints path_length rule has non-numeric value '"
                                                 << data_str << "'";

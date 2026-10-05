@@ -1,7 +1,7 @@
 header:
   domain_component: CPO
   role: sub_ca
-  path_length: 2
+  path_length: 0
 
 
 CSO-CPOSub-CA2:
@@ -117,5 +117,5 @@ CSO-CPOSub-CA2:
       data: true
 
     - value: path_length
-      mustExist: false
-      data: 0
+      mustExist: true
+      data: 1

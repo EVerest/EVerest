@@ -122,5 +122,5 @@ MO-EMSPSub-CA2:
       data: true
 
     - value: path_length
-      mustExist: false
+      mustExist: true
       data: 0

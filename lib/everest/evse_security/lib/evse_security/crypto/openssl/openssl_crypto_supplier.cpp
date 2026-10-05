@@ -729,6 +729,7 @@ std::string OpenSSLSupplier::x509_get_serial_number(X509Handle* handle) {
     char* hex_serial = BN_bn2hex(bn_serial);
 
     if (hex_serial == nullptr) {
+        BN_free(bn_serial);
         ERR_print_errors_fp(stderr);
         return {};
     }
@@ -1122,8 +1123,16 @@ std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
 
     const auto ocsp = X509_get1_ocsp(x509);
     std::string responder_url;
-    for (int i = 0; i < sk_OPENSSL_STRING_num(ocsp); i++) {
-        responder_url.append(sk_OPENSSL_STRING_value(ocsp, i));
+
+    if (ocsp != nullptr) {
+        for (int i = 0; i < sk_OPENSSL_STRING_num(ocsp); i++) {
+            const char* url = sk_OPENSSL_STRING_value(ocsp, i);
+            if (url != nullptr) {
+                responder_url.append(url);
+            }
+        }
+
+        X509_email_free(ocsp);
     }
 
     if (responder_url.empty()) {
