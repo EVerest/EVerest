@@ -25,6 +25,7 @@ struct RuntimeSettings {
     fs::path etc_dir;     ///< Directory that contains configs, certificates
     fs::path data_dir;    ///< Directory for general data, definitions for EVerest interfaces, types, errors an schemas
     fs::path modules_dir; ///< Directory that contains EVerest modules
+    fs::path errors_dir;  ///< Directory that contains error definitions
     fs::path logging_config_file;   ///< Path to the logging configuration file
     std::string telemetry_prefix;   ///< MQTT prefix for telemetry
     bool telemetry_enabled{false};  ///< If telemetry is enabled
@@ -34,12 +35,12 @@ struct RuntimeSettings {
 
 /// \brief Creates and returns a RuntimeSettings populated from the provided values
 RuntimeSettings create_runtime_settings(const fs::path& prefix, const fs::path& etc_dir, const fs::path& data_dir,
-                                        const fs::path& modules_dir, const fs::path& logging_config_file,
-                                        const std::string& telemetry_prefix, bool telemetry_enabled,
-                                        bool validate_schema, bool forward_exceptions);
+                                        const fs::path& modules_dir, const fs::path& errors_dir,
+                                        const fs::path& logging_config_file, const std::string& telemetry_prefix,
+                                        bool telemetry_enabled, bool validate_schema, bool forward_exceptions);
 /// \brief Populates the given \p runtime_settings in place with the provided values
 void populate_runtime_settings(RuntimeSettings& runtime_settings, const fs::path& prefix, const fs::path& etc_dir,
-                               const fs::path& data_dir, const fs::path& modules_dir,
+                               const fs::path& data_dir, const fs::path& modules_dir, const fs::path& errors_dir,
                                const fs::path& logging_config_file, const std::string& telemetry_prefix,
                                bool telemetry_enabled, bool validate_schema, bool forward_exceptions);
 

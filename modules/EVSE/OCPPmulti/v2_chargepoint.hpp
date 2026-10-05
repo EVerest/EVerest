@@ -159,6 +159,9 @@ public:
 
 protected:
     // Access for unit tests
+    /// \param event must carry an error
+    /// \returns the EventData to report, or std::nullopt when no mapping converted the error
+    std::optional<ocpp::v2::EventData> convert_error(const EventInfo& event);
     ocpp::v2::Callbacks configure_callbacks();
     void set_charge_point(std::unique_ptr<ocpp::v2::ChargePointInterface> charge_point) {
         m_charge_point = std::move(charge_point);

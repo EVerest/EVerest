@@ -60,6 +60,7 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
     mi.paths.etc = rs.etc_dir;
     mi.paths.libexec = rs.modules_dir / mi.name;
     mi.paths.share = rs.data_dir / defaults::MODULES_DIR / mi.name;
+    mi.paths.errors = rs.errors_dir;
 }
 
 BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
@@ -509,7 +510,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         forward_exceptions = defaults::FORWARD_EXCEPTIONS;
     }
 
-    populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
+    populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, errors_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
     this->modules_dir = modules_dir;
     this->validate_schema = validate_schema;
