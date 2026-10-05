@@ -887,4 +887,187 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
     EXPECT_TRUE(boot_sent) << "BootNotification was dropped from the queue!";
 }
 
+// \brief Test that a transactional CALL in flight when the connection ends is retried with a new message ID after the
+// reconnect, without waiting for its timeout
+TEST_F(MessageQueueTest, test_transactional_in_flight_at_pause_is_retried_after_resume) {
+    config.transaction_message_attempts = 2;
+    config.transaction_message_retry_interval = 0;
+    config.message_timeout_seconds = 10;
+    restart_message_queue();
+
+    std::vector<json::array_t> sent;
+    std::mutex sent_mutex;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Invoke([&, this](const json::array_t& msg) -> bool {
+            {
+                std::lock_guard<std::mutex> lk(sent_mutex);
+                sent.push_back(msg);
+            }
+            this->mark_call_sent();
+            return true;
+        }));
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(0);
+
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    wait_for_calls(1);
+
+    message_queue->pause();
+    message_queue->resume(std::chrono::seconds(0));
+
+    wait_for_calls(2);
+
+    std::lock_guard<std::mutex> lk(sent_mutex);
+    ASSERT_EQ(sent.size(), 2u);
+    EXPECT_EQ(sent[1].at(2), "transactional");
+    EXPECT_EQ(sent[1].at(3), sent[0].at(3));
+    EXPECT_NE(sent[1].at(1), sent[0].at(1));
+}
+
+// \brief Test that a CALL that is not queued offline and is in flight when the connection ends is dropped and answered
+// as offline by pause()
+TEST_F(MessageQueueTest, test_non_queued_in_flight_at_pause_is_dropped_offline) {
+    config.message_timeout_seconds = 10;
+    restart_message_queue();
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(1).WillOnce(MarkAndReturn(true));
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::NON_TRANSACTIONAL;
+    call.uniqueId = "0";
+    auto future = message_queue->push_call_async(call);
+    wait_for_calls(1);
+
+    message_queue->pause();
+
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_TRUE(future.get().offline);
+}
+
+// \brief Test that a BootNotification in flight when the connection ends is rescheduled instead of answered
+TEST_F(MessageQueueTest, test_boot_notification_in_flight_at_pause_is_rescheduled) {
+    config.message_timeout_seconds = 10;
+    config.boot_notification_retry_interval_seconds = 0;
+    restart_message_queue();
+
+    std::vector<json::array_t> sent;
+    std::mutex sent_mutex;
+    EXPECT_CALL(send_callback_mock, Call(testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Invoke([&, this](const json::array_t& msg) -> bool {
+            {
+                std::lock_guard<std::mutex> lk(sent_mutex);
+                sent.push_back(msg);
+            }
+            this->mark_call_sent();
+            return true;
+        }));
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::BootNotification;
+    call.uniqueId = "0";
+    auto future = message_queue->push_call_async(call);
+    wait_for_calls(1);
+
+    message_queue->pause();
+    EXPECT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::timeout);
+
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(2);
+
+    std::lock_guard<std::mutex> lk(sent_mutex);
+    ASSERT_EQ(sent.size(), 2u);
+    EXPECT_EQ(sent[1].at(2), "boot_notification");
+    EXPECT_NE(sent[1].at(1), sent[0].at(1));
+}
+
+// \brief Test that a CALL queued behind the one in flight when the connection ends is sent after the reconnect without
+// waiting for the timeout of the one in flight
+TEST_F(MessageQueueTest, test_next_message_sent_after_resume_when_in_flight_was_settled) {
+    config.message_timeout_seconds = 10;
+    restart_message_queue();
+
+    testing::Sequence s;
+    EXPECT_CALL(send_callback_mock, Call(json{2, "first", "non_transactional", json{{"data", "first"}}}))
+        .InSequence(s)
+        .WillOnce(MarkAndReturn(true));
+    EXPECT_CALL(send_callback_mock, Call(json{2, "second", "non_transactional", json{{"data", "second"}}}))
+        .InSequence(s)
+        .WillOnce(MarkAndReturn(true));
+
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    wait_for_calls(1);
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "second");
+
+    message_queue->pause();
+    message_queue->resume(std::chrono::seconds(0));
+
+    wait_for_calls(2);
+}
+
+// \brief Test that the timeout of a CALL settled by pause() has no effect once it would have fired
+TEST_F(MessageQueueTest, test_settled_in_flight_timer_does_nothing_later) {
+    config.transaction_message_retry_interval = 0;
+    config.message_timeout_seconds = 1;
+    restart_message_queue();
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(1).WillOnce(MarkAndReturn(true));
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
+
+    Call<TestRequest> call;
+    call.msg.type = TestMessageType::TRANSACTIONAL;
+    call.uniqueId = "0";
+    auto future = message_queue->push_call_async(call);
+    wait_for_calls(1);
+
+    message_queue->pause();
+    ASSERT_EQ(future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+    EXPECT_TRUE(future.get().offline);
+
+    message_queue->resume(std::chrono::seconds(0));
+    std::this_thread::sleep_for(std::chrono::seconds(2));
+
+    EXPECT_EQ(1, get_call_count());
+}
+
+TEST_F(MessageQueueTest, test_old_timeout_cannot_settle_new_in_flight_after_pause) {
+    constexpr int iterations = 200;
+    config.transaction_message_retry_interval = 0;
+    config.message_timeout_seconds = 0;
+    restart_message_queue();
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(2 * iterations).WillRepeatedly(MarkAndReturn(true));
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(iterations);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(iterations);
+
+    for (int i = 0; i < iterations; ++i) {
+        message_queue->update_message_timeout(0);
+
+        Call<TestRequest> first;
+        first.msg.type = TestMessageType::NON_TRANSACTIONAL;
+        first.uniqueId = "first_" + std::to_string(i);
+        auto first_future = message_queue->push_call_async(first);
+        wait_for_calls(2 * i + 1);
+
+        message_queue->pause();
+        ASSERT_EQ(first_future.wait_for(std::chrono::seconds(0)), std::future_status::ready);
+        EXPECT_TRUE(first_future.get().offline);
+
+        message_queue->update_message_timeout(10);
+        Call<TestRequest> second;
+        second.msg.type = TestMessageType::TRANSACTIONAL;
+        second.uniqueId = "second_" + std::to_string(i);
+        auto second_future = message_queue->push_call_async(second);
+        message_queue->resume(std::chrono::seconds(0));
+        wait_for_calls(2 * i + 2);
+
+        EXPECT_EQ(second_future.wait_for(std::chrono::milliseconds(2)), std::future_status::timeout);
+        message_queue->receive(json{3, second.uniqueId, json::object()}.dump());
+        ASSERT_EQ(second_future.wait_for(std::chrono::milliseconds(100)), std::future_status::ready);
+        EXPECT_FALSE(second_future.get().offline);
+    }
+}
+
 } // namespace ocpp

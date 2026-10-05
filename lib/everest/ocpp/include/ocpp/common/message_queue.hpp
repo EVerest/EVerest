@@ -665,8 +665,16 @@ public:
                     this->handle_timeout_or_callerror(std::nullopt);
                 } else {
                     EVLOG_debug << "Successfully sent message. UID: " << this->in_flight->uniqueId();
-                    this->in_flight_timeout_timer.timeout([this]() { this->handle_timeout_or_callerror(std::nullopt); },
-                                                          this->current_message_timeout(message->message_attempts));
+                    const auto message_id = message->uniqueId();
+                    this->in_flight_timeout_timer.timeout(
+                        [this, message, message_id]() {
+                            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+                            if (this->in_flight != message || this->in_flight->uniqueId() != message_id) {
+                                return;
+                            }
+                            this->handle_timeout_or_callerror(std::nullopt);
+                        },
+                        this->current_message_timeout(message->message_attempts));
                 }
                 if (this->transaction_message_queue.empty() && this->normal_message_queue.empty()) {
                     this->new_message = false;
@@ -960,6 +968,10 @@ public:
         this->resume_timer.stop();
         this->paused = true;
         this->resuming = false;
+        // A CALL sent on the lost connection is never answered, so settle it as a timeout
+        if (this->in_flight != nullptr) {
+            this->handle_timeout_or_callerror(std::nullopt);
+        }
         this->cv.notify_one();
         EVLOG_debug << "pause() notified message queue";
     }

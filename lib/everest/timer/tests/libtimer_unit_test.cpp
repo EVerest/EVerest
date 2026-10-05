@@ -4,6 +4,7 @@
 #include <atomic>
 #include <chrono>
 #include <thread>
+#include <vector>
 
 #include <gtest/gtest.h>
 
@@ -62,5 +63,24 @@ TEST_F(LibTimerUnitTest, destructor_does_not_deadlock_on_reentrant_callback) {
     finished.store(true);
     watchdog.join();
     EXPECT_GE(fire_count.load(), 1);
+}
+
+TEST_F(LibTimerUnitTest, dispatched_wait_keeps_its_callback_after_rearm) {
+    boost::asio::io_context io_context;
+    Everest::SteadyTimer timer(&io_context);
+    boost::asio::basic_waitable_timer<date::utc_clock> first_handler(io_context);
+    std::vector<int> callbacks;
+
+    first_handler.expires_after(std::chrono::milliseconds(0));
+    first_handler.async_wait([&](const boost::system::error_code& error) {
+        ASSERT_FALSE(error);
+        timer.timeout([&] { callbacks.push_back(2); }, std::chrono::hours(1));
+    });
+    timer.timeout([&] { callbacks.push_back(1); }, std::chrono::milliseconds(1));
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    io_context.poll();
+
+    EXPECT_EQ(callbacks, std::vector<int>{1});
 }
 } // namespace libtimer
