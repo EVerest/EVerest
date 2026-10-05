@@ -429,6 +429,27 @@ pkey_ptr load_private_key(const char* filename, const char* password) {
     return private_key;
 }
 
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password) {
+    {
+        OpenSSLProvider provider; // ensure providers are loaded
+    }
+
+    pkey_ptr private_key{nullptr, nullptr};
+    auto* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+    if (bio != nullptr) {
+        // password is passed to password_cb() as parameter u which is never
+        // written to, hence const_cast is okay
+        auto* pkey = PEM_read_bio_PrivateKey(bio, nullptr, &password_cb, const_cast<char*>(password));
+        if (pkey != nullptr) {
+            private_key = pkey_ptr{pkey, &EVP_PKEY_free};
+        } else {
+            log_error("PEM_read_bio_PrivateKey");
+        }
+        BIO_free(bio);
+    }
+    return private_key;
+}
+
 DER bn_to_signature(const bn_t& r, const bn_t& s) {
     return bn_to_signature(r.data(), s.data());
 };
