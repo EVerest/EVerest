@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+#include <chrono>
 #include <everest/slac/EvseSlacConfig.hpp>
 #include <limits>
 #include <random>
@@ -22,8 +23,17 @@ void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
     }
 
     static constexpr std::string_view kLegacyPrintableCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    std::random_device rd;
-    std::mt19937 generator(rd());
+    // Called from Reset's on_entry on every key regeneration, inside a transition: nothing here
+    // may throw (see msm_helpers.hpp). std::random_device can, when no entropy source opens; the
+    // clock then seeds the key, which keeps the keys apart between runs.
+    auto const seed = []() -> std::mt19937::result_type {
+        try {
+            return std::random_device{}();
+        } catch (...) {
+            return static_cast<std::mt19937::result_type>(std::chrono::steady_clock::now().time_since_epoch().count());
+        }
+    }();
+    std::mt19937 generator(seed);
 
     std::size_t generated = 0;
     if (nmk_generation_mode == NmkGenerationMode::legacy_printable) {

@@ -72,6 +72,9 @@ struct Init_def : public state_machine_def<Init_def> {
         //    +------------+---------+------------+------------------+-----------------+
         >{};
     // clang-format on
+    // No try/catch around the event: the callbacks the machine calls never throw (the context parks
+    // their failures, see rethrow_recorded), so a throw here is a bug and must not be swallowed.
+    typedef int no_exception_thrown;
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 

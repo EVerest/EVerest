@@ -7,7 +7,6 @@
 
 #include <algorithm>
 #include <endian.h>
-#include <random>
 
 #include <boost/mpl/vector.hpp>
 #include <boost/msm/back/state_machine.hpp>
@@ -199,12 +198,9 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
                 fsm.mnbc_sound_count = 0;
                 fsm.pending_nmk.fill(0);
 
-                std::random_device rnd_dev;
-                std::mt19937 rng(rnd_dev());
-                std::uniform_int_distribution<int> byte_distribution(0, 0xFF);
                 fsm.active_session = fsm::ev::SessionParameters{};
                 for (auto& octet : fsm.active_session.run_id) {
-                    octet = static_cast<std::uint8_t>(byte_distribution(rng));
+                    octet = fsm.ctx->random_byte();
                 }
                 send_slac_parm_req::send(fsm);
                 fsm.ctx->log_info("EV MSM start matching");
@@ -262,11 +258,8 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
                 copy_to_wire(msg.run_id, fsm.active_session.run_id);
                 std::fill(std::begin(msg._reserved), std::end(msg._reserved), std::uint8_t{0});
 
-                std::random_device rnd_dev;
-                std::mt19937 rng(rnd_dev());
-                std::uniform_int_distribution<int> byte_distribution(0, 0xFF);
                 for (auto& octet : msg.random) {
-                    octet = static_cast<std::uint8_t>(byte_distribution(rng));
+                    octet = fsm.ctx->random_byte();
                 }
 
                 if (not fsm.ctx->send_slac_message(fsm::ev::Context::BROADCAST_MAC, msg)) {
@@ -510,6 +503,9 @@ struct SlacEVFSM_def : state_machine_def<SlacEVFSM_def> {
         > {};
     // clang-format on
 
+    // No try/catch around the event: the callbacks the machine calls never throw (the context parks
+    // their failures, see rethrow_recorded), so a throw here is a bug and must not be swallowed.
+    typedef int no_exception_thrown;
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 

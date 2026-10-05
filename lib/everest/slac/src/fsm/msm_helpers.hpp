@@ -22,11 +22,33 @@
 
 #include <chrono>
 #include <cstdint>
+#include <exception>
 #include <type_traits>
 #include <utility>
 
 namespace everest::lib::slac::msm {
 using namespace boost::msm::front;
+
+// How a throw gets out of the machines. Boost.MSM wraps process_event in a try/catch by default
+// and hands a std::exception to the def's exception_caught hook, whose default asserts: abort in
+// Debug, silent in Release with the machine continuing from the interrupted transition. Catching
+// and continuing cannot be made safe here either: an anonymous row whose action keeps throwing is
+// re-fired by the completion event until the stack is gone. So the contexts never let a consumer
+// callback throw into the machine: a publisher, sender or logger that throws is parked in
+// Context::caught_exception, the call counts as "not done", the transition completes, and the
+// wrapper calls rethrow_recorded as soon as process_event has returned, so the failure surfaces
+// from message()/update()/reset() on a machine that is still consistent and still takes the
+// teardown's reset. Every def declares no_exception_thrown on top, so anything else that throws
+// inside a guard or action (a bug) propagates instead of being swallowed; after that the back-end's
+// "processing" flag may stay set and the machine is only good for being stopped, which is what the
+// modules do.
+template <class FSM> void rethrow_recorded(FSM& fsm) {
+    if (fsm.ctx != nullptr && fsm.ctx->caught_exception) {
+        std::exception_ptr caught;
+        std::swap(caught, fsm.ctx->caught_exception);
+        std::rethrow_exception(caught);
+    }
+}
 
 template <class Guard> struct Not_ {
     template <class Evt, class Fsm, class SourceState, class TargetState>

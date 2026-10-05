@@ -122,6 +122,18 @@ target_compile_features(evse_slac_amp_map_test PRIVATE cxx_std_17)
 
 add_test(NAME evse_slac_amp_map_test COMMAND evse_slac_amp_map_test)
 
+add_executable(slac_fsm_exception_test slac_fsm_exception_test.cpp)
+
+target_link_libraries(slac_fsm_exception_test
+    PRIVATE
+        slac
+        nlohmann_json::nlohmann_json
+)
+
+target_compile_features(slac_fsm_exception_test PRIVATE cxx_std_17)
+
+add_test(NAME slac_fsm_exception_test COMMAND slac_fsm_exception_test)
+
 add_executable(ev_slac_matching_test
     ev_slac_matching_test.cpp
 )

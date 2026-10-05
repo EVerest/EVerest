@@ -33,13 +33,17 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
     // clang-format on
 
     // Transitions
+    // Rows sharing Init and the completion event must be mutually exclusive (msm_helpers.hpp); a
+    // vendor without a link status query fails at once.
+    using no_link_status = And_<Not_<is_lumissil>, Not_<is_qualcomm>>;
+
     using initial_state = Init;
     // clang-format off
     struct transition_table : boost::mpl::vector<
         //    +----------+---------+----------+-----------------+-----------------+
         //    | Source   | Event   | Target   | Action          | Guard           |
         //    +----------+---------+----------+-----------------+-----------------+
-        Row   < Init     , none    , Failed   , none            , none            >,
+        Row   < Init     , none    , Failed   , none            , no_link_status  >,
         Row   < Init     , none    , Lumissil , link_status_req , is_lumissil     >,
         Row   < Init     , none    , Qualcomm , link_status_req , is_qualcomm     >,
         //    +----------+---------+----------+-----------------+-----------------+
@@ -54,6 +58,9 @@ struct WaitForLink_def : public state_machine_def<WaitForLink_def> {
         >{};
     // clang-format on
 
+    // No try/catch around the event: the callbacks the machine calls never throw (the context parks
+    // their failures, see rethrow_recorded), so a throw here is a bug and must not be swallowed.
+    typedef int no_exception_thrown;
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 

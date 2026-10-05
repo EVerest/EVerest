@@ -86,12 +86,18 @@ private:
     [[nodiscard]] bool post_command(char const* command, std::function<bool(FSMController&)> const& post);
     void raise_communication_fault(const std::string& message);
     void clear_communication_fault();
+    /// After a teardown that may have failed to publish: stop the controller and hand the consumer
+    /// UNMATCHED and dlink_ready(false) by hand if it may still believe otherwise.
+    void stop_and_publish_unmatched_by_hand(FSMController& target);
     /// Fatal for the event loop: makes it return, tears the FSM down and (unless shutting down)
     /// raises a CommunicationFault. Commands are dropped from then on.
     void abort_event_loop(const std::string& reason);
 
     /// Loop-exit flag for fd_event_handler::run.
     std::atomic<bool> online{true};
+    /// What the consumer last heard from us, kept on the loop thread for the by-hand fallback.
+    bool consumer_may_be_matched{false};
+    bool consumer_may_have_link{false};
     /// Wakes the loop out of poll() so it can observe `online`.
     everest::lib::io::event::event_fd exit_event;
     /// Runs on the framework's ready thread inside ready(); see run_event_loop().

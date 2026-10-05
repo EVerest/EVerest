@@ -31,8 +31,15 @@ void FSMController::stop() {
 }
 
 void FSMController::teardown() {
+    // The reset publishes UNMATCHED and may throw out of a publisher; the controller must end
+    // stopped either way, or its timer keeps waking a machine the module has given up on.
     if (active.load()) {
-        fsm.reset();
+        try {
+            fsm.reset();
+        } catch (...) {
+            stop();
+            throw;
+        }
     }
     stop();
 }
@@ -51,7 +58,8 @@ void FSMController::signal_new_slac_message(slac::messages::HomeplugMessage cons
 void FSMController::step(std::function<void()> const& task) {
     task();
     if (not schedule()) {
-        throw std::runtime_error(std::string("could not arm the timer: ") + std::strerror(errno));
+        auto const error = errno; // before anything below can clobber it
+        throw std::runtime_error(std::string("could not arm the timer: ") + std::strerror(error));
     }
 }
 

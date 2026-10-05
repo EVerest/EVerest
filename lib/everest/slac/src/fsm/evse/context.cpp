@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <everest/slac/fsm/evse/context.hpp>
 
 #include "../misc.hpp"
@@ -11,38 +11,29 @@ void Context::sample_time() {
 }
 
 void Context::signal_cm_slac_parm_req(const uint8_t* mac) {
-    if (callbacks.signal_ev_mac_address_parm_req) {
-        const auto mac_string = format_mac_addr(mac);
-        callbacks.signal_ev_mac_address_parm_req(mac_string);
-    }
+    invoke_callback(callbacks.signal_ev_mac_address_parm_req, format_mac_addr(mac));
 }
 
 void Context::signal_cm_slac_match_cnf(const uint8_t* mac) {
-    if (callbacks.signal_ev_mac_address_match_cnf) {
-        const auto mac_string = format_mac_addr(mac);
-        callbacks.signal_ev_mac_address_match_cnf(mac_string);
-    }
+    invoke_callback(callbacks.signal_ev_mac_address_match_cnf, format_mac_addr(mac));
 }
 
 void Context::signal_dlink_ready(bool value) {
-    if (callbacks.signal_dlink_ready) {
-        callbacks.signal_dlink_ready(value);
-    }
+    invoke_callback(callbacks.signal_dlink_ready, value);
 }
 
 void Context::signal_error_routine_request() {
-    if (callbacks.signal_error_routine_request) {
-        callbacks.signal_error_routine_request();
-    }
+    invoke_callback(callbacks.signal_error_routine_request);
 }
 
 void Context::publish_slac_state() {
     if (last_published_d3_state.has_value() && *last_published_d3_state == status.d3_state) {
         return;
     }
-    last_published_d3_state = status.d3_state;
-    if (callbacks.signal_state) {
-        callbacks.signal_state(status.d3_state);
+    // Remembered only once delivered: a publish that threw is retried on the next event, so the
+    // consumer is not left one state behind after a transient publisher failure.
+    if (invoke_callback(callbacks.signal_state, status.d3_state)) {
+        last_published_d3_state = status.d3_state;
     }
 }
 
@@ -74,33 +65,23 @@ void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& mat
 }
 
 void Context::log_debug(const std::string& text) {
-    if (callbacks.log_debug) {
-        callbacks.log_debug(text);
-    }
+    invoke_callback(callbacks.log_debug, text);
 }
 
 void Context::log_info(const std::string& text) {
-    if (callbacks.log_info) {
-        callbacks.log_info(text);
-    }
+    invoke_callback(callbacks.log_info, text);
 }
 
 void Context::log_warn(const std::string& text) {
-    if (callbacks.log_warn) {
-        callbacks.log_warn(text);
-    }
+    invoke_callback(callbacks.log_warn, text);
 }
 
 void Context::log_error(const std::string& text) {
-    if (callbacks.log_error) {
-        callbacks.log_error(text);
-    }
+    invoke_callback(callbacks.log_error, text);
 }
 
 void Context::telemetry(const std::string& block, const std::string& key, const std::string& value) {
-    if (callbacks.pub_telemetry) {
-        callbacks.pub_telemetry(block, key, value);
-    }
+    invoke_callback(callbacks.pub_telemetry, block, key, value);
 }
 
 } // namespace everest::lib::slac::fsm::evse

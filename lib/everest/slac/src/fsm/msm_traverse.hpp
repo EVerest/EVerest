@@ -119,6 +119,9 @@ template <class FSM> void settle(FSM& fsm) {
     auto before = signature_of(fsm);
     for (int round = 0; round < 32; ++round) {
         fsm.process_event(update{});
+        // A callback failure parked during that update surfaces now, before another round runs and
+        // before a machine that then fails to settle could mask it with its own logic_error.
+        rethrow_recorded(fsm);
         auto after = signature_of(fsm);
         if (after == before) {
             return;

@@ -1,13 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef EVSE_SLAC_CONTEXT_HPP
 #define EVSE_SLAC_CONTEXT_HPP
 
 #include "everest/slac/slac_messages.hpp"
 #include <atomic>
+#include <exception>
 #include <functional>
 #include <optional>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include <everest/slac/EvseSlacConfig.hpp>
@@ -182,10 +184,7 @@ struct Context {
         hp_message.setup_payload(&message, sizeof(message), _context_detail::MMTYPE<SlacMessageType>::value,
                                  _context_detail::MMV<SlacMessageType>::value);
         hp_message.set_destination(mac);
-        if (not callbacks.send_raw_slac) {
-            return false;
-        }
-        return callbacks.send_raw_slac(hp_message);
+        return invoke_send(callbacks.send_raw_slac, hp_message);
     }
     template <typename SlacMessageType> bool send_slac_message(uint8_t const* mac, SlacMessageType const& message) {
         return send_slac_message(byte_array_from_wire<MacAddress>(mac), message);
@@ -206,10 +205,7 @@ struct Context {
         hp_message.setup_payload(payload.data(), payload.size(), defs::MMTYPE_CM_AMP_MAP | defs::MMTYPE_MODE_REQ,
                                  defs::MMV::AV_2_0);
         hp_message.set_destination(mac);
-        if (not callbacks.send_raw_slac) {
-            return false;
-        }
-        return callbacks.send_raw_slac(hp_message);
+        return invoke_send(callbacks.send_raw_slac, hp_message);
     }
 
     // signal handlers
@@ -252,16 +248,55 @@ struct Context {
     // validation is performed. validation_match_window bounds that post-validation match window.
     bool validation_done{false};
     everest::lib::slac::timer validation_match_window;
+    // The EV whose validation armed the window; only its session is held to it.
+    MacAddress validation_ev_mac{};
 
     // "Now" as seen by every timer during the current event. slac_fsm samples it once per event
     // from callbacks.now, so all deadlines evaluated in one event agree on the time.
     timer::tp current_time{};
     void sample_time();
 
+    // The first throw from a consumer callback during the last event, parked here so the transition
+    // completes and the wrapper rethrows it once process_event has returned (see rethrow_recorded in
+    // msm_helpers.hpp). The call that threw counts as not done (nothing published, nothing sent).
+    std::exception_ptr caught_exception;
+
     SlacTelemetry status;
 
 private:
     const ContextCallbacks& callbacks;
+
+    // Every consumer callback goes through one of these: a throw is parked in caught_exception and
+    // reported as "not done" (false) so the machine finishes its transition and the wrapper
+    // rethrows it. An unset callback is "not done" as well.
+    template <class Callback, class... Args> bool invoke_callback(Callback const& callback, Args&&... args) {
+        if (not callback) {
+            return false;
+        }
+        try {
+            callback(std::forward<Args>(args)...);
+            return true;
+        } catch (...) {
+            park_exception();
+            return false;
+        }
+    }
+    template <class Callback, class... Args> bool invoke_send(Callback const& callback, Args&&... args) {
+        if (not callback) {
+            return false;
+        }
+        try {
+            return callback(std::forward<Args>(args)...);
+        } catch (...) {
+            park_exception();
+            return false;
+        }
+    }
+    void park_exception() {
+        if (not caught_exception) {
+            caught_exception = std::current_exception();
+        }
+    }
     // Last D3State handed to signal_state, used to suppress duplicate publications.
     std::optional<D3State> last_published_d3_state{};
 };

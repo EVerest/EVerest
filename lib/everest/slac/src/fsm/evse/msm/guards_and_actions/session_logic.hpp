@@ -78,9 +78,12 @@ struct sound_completes_count {
 // shorter than the overall TT_EVSE_match_session that bounds WaitSlacMatch otherwise). When that
 // shorter window elapses the matching has FAILED (ISO 15118-5 CmSlacMatch_003/004 cmValidate
 // variant); a late CM_SLAC_MATCH.REQ must then get no CM_SLAC_MATCH.CNF.
+// Only the validated EV's session is held to the post-validation window; a parallel session of
+// another EV keeps the full match session timeout.
 struct validation_window_expired {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        return fsm.ctx->validation_done and fsm.ctx->validation_match_window.expired(fsm.ctx->current_time);
+        return fsm.ctx->validation_done and fsm.session_data.ev_mac == fsm.ctx->validation_ev_mac and
+               fsm.ctx->validation_match_window.expired(fsm.ctx->current_time);
     }
 };
 struct retry_limit {

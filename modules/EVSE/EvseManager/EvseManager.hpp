@@ -439,7 +439,7 @@ private:
 
     std::atomic_bool current_demand_active{false};
     std::atomic_bool slac_unmatched{false};
-    // Running count of Control-Pilot B/C transitions in the current session. Incremented on every B<->C
+    // Running count of Control-Pilot B->C transitions in the current session. Incremented on every B->C
     // edge and pushed to the SLAC module via count_bc() so EvseSlac can detect BCB toggles for
     // CM_VALIDATE. Reset to 0 on plug-in.
     int bc_transition_count{0};

@@ -69,8 +69,9 @@ template <typename ControllerT> IoBringUpResult bring_up_result(LifecycleStateT<
 
 // Run \p work on the live controller with the lifecycle monitor held for the whole call.
 //
-// Holding it is what makes the pointer safe: shutdown() clears the worker and destroys the
-// controller under this same monitor, so it cannot get in between the lookup and the call. That
+// Holding it is what makes the pointer safe: shutdown() clears the worker under this same monitor
+// and destroys the controller only after that, so it cannot get in between the lookup and the call.
+// That
 // requires one invariant of everything reachable from \p work, the state machine included: nothing
 // in there takes the lifecycle monitor. send_raw_slac reads only the I/O object, the publish and
 // log callbacks go to the framework, and the count_bc path is an atomic store. The fatal handler

@@ -158,50 +158,82 @@ slac_fsm::slac_fsm(fsm::evse::Context& ctx) : impl(std::make_unique<Impl>(ctx)),
 slac_fsm::~slac_fsm() {
 }
 
-void slac_fsm::reset() {
+// Every event starts here: the time is sampled once for all its deadlines, and a callback failure
+// parked outside an event (the controllers log through the context between events) surfaces before
+// this event runs instead of being blamed on it afterwards. Each event then checks that the machine
+// was started: a failure surfacing from restart_fsm() before start() leaves a machine whose
+// sub-machines were never entered, and feeding it events would settle them without a context.
+void slac_fsm::begin_event() {
     ctx.sample_time();
+    msm::rethrow_recorded(impl->fsm);
+}
+
+void slac_fsm::reset() {
+    begin_event();
+    if (not impl->started) {
+        return; // never started: its sub-machines were never entered and hold no context
+    }
     impl->fsm.process_event(msm::reset{});
+    msm::rethrow_recorded(impl->fsm);
     settle();
 }
 
 void slac_fsm::enter_bcd() {
-    ctx.sample_time();
+    begin_event();
+    if (not impl->started) {
+        return; // never started: its sub-machines were never entered and hold no context
+    }
     impl->fsm.process_event(msm::enter_bcd{});
+    msm::rethrow_recorded(impl->fsm);
     settle();
 }
 
 void slac_fsm::leave_bcd() {
-    ctx.sample_time();
+    begin_event();
+    if (not impl->started) {
+        return; // never started: its sub-machines were never entered and hold no context
+    }
     impl->fsm.process_event(msm::leave_bcd{});
+    msm::rethrow_recorded(impl->fsm);
     settle();
 }
 
 void slac_fsm::message(messages::HomeplugMessage msg) {
     msm::message event;
     event.payload = std::move(msg);
-    ctx.sample_time();
+    begin_event();
+    if (not impl->started) {
+        return; // never started: its sub-machines were never entered and hold no context
+    }
     impl->fsm.process_event(event);
+    msm::rethrow_recorded(impl->fsm);
     settle();
 }
 
 void slac_fsm::update() {
-    ctx.sample_time();
+    begin_event();
+    if (not impl->started) {
+        return; // never started: its sub-machines were never entered and hold no context
+    }
     settle();
 }
 
 void slac_fsm::restart_fsm() {
-    ctx.sample_time();
+    begin_event();
     if (impl->started) {
         impl->fsm.stop();
     }
     impl->started = true;
     impl->fsm.start();
+    msm::rethrow_recorded(impl->fsm);
     settle();
 }
 
 void slac_fsm::settle() {
     msm::settle(impl->fsm);
     event_post_processing();
+    // The publishers above park a throw like the ones inside the machine; surface it from this event.
+    msm::rethrow_recorded(impl->fsm);
 }
 
 std::optional<timer::tick> slac_fsm::next_wakeup() const {
