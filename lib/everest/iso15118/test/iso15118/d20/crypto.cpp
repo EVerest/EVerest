@@ -3,13 +3,16 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <string>
+#include <variant>
 #include <vector>
 
 #include <iso15118/detail/d20/crypto.hpp>
 #include <iso15118/message/authorization.hpp>
+#include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/certificate_installation.hpp>
 #include <iso15118/message/variant.hpp>
 
+#include "../captured_messages.hpp"
 #include "../test_pki.hpp"
 
 using namespace iso15118;
@@ -331,6 +334,85 @@ SCENARIO("ISO 15118-20 CertificateInstallationReq signature") {
             REQUIRE(crypto::verify_signature(signed_req, other.leaf_der(),
                                              crypto::SignedElement::CertificateInstallationReq) ==
                     crypto::SignatureVerdict::SignatureInvalid);
+        }
+    }
+}
+
+SCENARIO("ISO 15118-20 PnC AuthorizationReq captured from an EV conformance tester") {
+
+    GIVEN("The captured AuthorizationReq and the AuthorizationSetupRes it answers") {
+        const auto& req_exi = captured::ISO20_PNC_AUTHORIZATION_REQ;
+        const io::StreamInputView req_view{req_exi.data(), req_exi.size()};
+        const message_20::Variant req_variant(io::v2gtp::PayloadType::Part20Main, req_view);
+        REQUIRE(req_variant.get_type() == message_20::Type::AuthorizationReq);
+        const auto& req = req_variant.get<message_20::AuthorizationRequest>();
+        const auto* pnc = std::get_if<dt::PnC_ASReqAuthorizationMode>(&req.authorization_mode);
+        REQUIRE(pnc != nullptr);
+        const auto& leaf = pnc->contract_certificate_chain.certificate;
+
+        THEN("The header signature verifies with the contract leaf carried in the message") {
+            REQUIRE(crypto::verify_signature(req_exi, leaf, crypto::SignedElement::PnC_AReqAuthorizationMode) ==
+                    crypto::SignatureVerdict::Ok);
+        }
+
+        THEN("The GenChallenge is the one the SECC sent") {
+            const auto& res_exi = captured::ISO20_AUTHORIZATION_SETUP_RES;
+            const io::StreamInputView res_view{res_exi.data(), res_exi.size()};
+            const message_20::Variant res_variant(io::v2gtp::PayloadType::Part20Main, res_view);
+            REQUIRE(res_variant.get_type() == message_20::Type::AuthorizationSetupRes);
+            const auto& res = res_variant.get<message_20::AuthorizationSetupResponse>();
+            const auto* offered = std::get_if<dt::PnC_ASResAuthorizationMode>(&res.authorization_mode);
+            REQUIRE(offered != nullptr);
+            REQUIRE(pnc->gen_challenge == offered->gen_challenge);
+        }
+
+        THEN("The Variant keeps the wire payload for the verification") {
+            REQUIRE(req_variant.get_exi_payload() == req_exi);
+        }
+
+        THEN("The key of another chain does not verify it") {
+            const auto other = make_pki("secp521r1");
+            REQUIRE(
+                crypto::verify_signature(req_exi, other.leaf_der(), crypto::SignedElement::PnC_AReqAuthorizationMode) ==
+                crypto::SignatureVerdict::SignatureInvalid);
+        }
+
+        THEN("A flipped bit in the signed element fails") {
+            auto tampered = req_exi;
+            tampered[tampered.size() / 2] ^= 0x01;
+            REQUIRE(crypto::verify_signature(tampered, leaf, crypto::SignedElement::PnC_AReqAuthorizationMode) !=
+                    crypto::SignatureVerdict::Ok);
+        }
+
+        THEN("The repeated request differs only in timestamp and signature") {
+            const auto& repeat = captured::ISO20_PNC_AUTHORIZATION_REQ_REPEAT;
+            REQUIRE(repeat != req_exi);
+            REQUIRE(crypto::verify_signature(repeat, leaf, crypto::SignedElement::PnC_AReqAuthorizationMode) ==
+                    crypto::SignatureVerdict::Ok);
+            const auto first = crypto::authorization_request_without_timestamp_and_signature(req_exi);
+            REQUIRE_FALSE(first.empty());
+            REQUIRE(first == crypto::authorization_request_without_timestamp_and_signature(repeat));
+        }
+
+        THEN("The chain reads as the Hubject QA eMSP chain whose leaf validity has ended") {
+            // The leaf ran from 2026-09-11 to 2026-10-02, the sub-CAs run until 2036: the validity check answers
+            // before any trust anchor is consulted ([V2G20-2212]), and the eMAID and chain are still reported so
+            // the backend could be told.
+            const std::vector<std::vector<uint8_t>> subs(pnc->contract_certificate_chain.sub_certificates.begin(),
+                                                         pnc->contract_certificate_chain.sub_certificates.end());
+            REQUIRE(subs.size() == 2);
+            REQUIRE(crypto::chain_validity_fault(leaf, subs) == dt::ResponseCode::WARNING_CertificateExpired);
+
+            const auto result = crypto::validate_contract_chain(leaf, subs, "", "");
+            REQUIRE(result.response_code == dt::ResponseCode::WARNING_CertificateExpired);
+            REQUIRE_FALSE(result.forwardable);
+            REQUIRE(result.emaid == "DEHUBC20TSTVL19");
+            std::size_t certificates = 0;
+            for (std::size_t pos = result.chain_pem.find("-----BEGIN CERTIFICATE-----"); pos != std::string::npos;
+                 pos = result.chain_pem.find("-----BEGIN CERTIFICATE-----", pos + 1)) {
+                ++certificates;
+            }
+            REQUIRE(certificates == 3);
         }
     }
 }
