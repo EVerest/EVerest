@@ -2,7 +2,7 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """How a JSON Schema type becomes a C++ type.
 
-This table is the generated ABI.  everest-core's 118 modules and the
+This table is the generated ABI.  Every module in everest-core and the
 hand-written mirror in ``lib/everest/everest_api_types`` compile against these
 choices, and a change here compiles cleanly while altering struct layout,
 precision, or both.  It is therefore reproduced exactly as it was -- including
@@ -70,8 +70,8 @@ PAYLOAD_SCALARS: Final[dict[JsonType, str]] = {
 
 #: ``format`` values that map to a dedicated C++ type.
 #:
-#: Deliberately empty.  35 properties across the type files carry
-#: ``format: date-time`` and every one of them is generated as a plain
+#: Deliberately empty.  Properties across the type files do carry
+#: ``format: date-time``, and every one of them is generated as a plain
 #: ``std::string``; the templates still carry a ``DateTime`` branch that
 #: nothing reaches.  Honouring the format would change those members' type,
 #: so it is its own change.

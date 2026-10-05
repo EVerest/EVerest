@@ -11,9 +11,9 @@ outside tools.  Keeping the search here, in one place, means the reference
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Iterable, Sequence
+from typing import Any, Sequence
 
 import yaml
 
@@ -97,10 +97,8 @@ class SourceTree:
 class DefinitionLoader:
     """Reads and validates definition documents, caching by resolved path.
 
-    The cache is what replaces the previous implementation's module-level
-    dictionaries: everything is loaded once and then queried, instead of
-    interface and module generation prompting the type parser to fill a global
-    cache as a side effect.
+    Every document is read at most once per run, however many references reach
+    it.
     """
 
     def __init__(self, tree: SourceTree, validators: Validators, sink: Sink) -> None:

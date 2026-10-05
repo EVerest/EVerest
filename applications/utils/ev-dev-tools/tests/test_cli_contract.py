@@ -167,7 +167,7 @@ def test_module_generate_loader_produces_ld_ev_pair(tmp_path):
 
 
 def test_module_generate_loader_works_for_every_module(tmp_path):
-    """118 modules; a manifest the generator cannot read breaks the whole build."""
+    """A manifest the generator cannot read would break the whole build."""
     out_dir = tmp_path / 'modules'
     failures = []
     for rel in module_paths():

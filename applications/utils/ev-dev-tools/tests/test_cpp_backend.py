@@ -22,7 +22,7 @@ from ev_cli.backends.cpp.mapping import CppMapping, Flavour
 from ev_cli.backends.cpp.view import InterfaceView, PayloadKind
 from ev_cli.errors import UnsupportedDefinition
 from ev_cli.ir.types import Array, JsonType, LocalEnum, Opaque, Primitive, Ref, TypeRef, Variant
-from conftest import FIXTURE_TREE, GOLDEN_DIR
+from conftest import GOLDEN_DIR
 
 
 class TestSnakeCase:
@@ -145,7 +145,7 @@ class TestTypeMapping:
                     != payload_mapping.spell(Primitive(json_type)).text)
 
     def test_format_is_not_honoured_yet(self, fixture_model):
-        """35 properties say ``format: date-time`` and all are std::string."""
+        """Properties saying ``format: date-time`` are all plain std::string."""
         from ev_cli.backends.cpp.mapping import FORMAT_TYPES
         assert FORMAT_TYPES == {}
 
