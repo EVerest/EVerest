@@ -118,6 +118,9 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     // clang-format on
     // An event no row handles in the current state is dropped. Frames and commands that arrive in
     // the wrong state are worth a debug line; an idle update is not.
+    // No try/catch around the event: the callbacks the machine calls never throw (the context parks
+    // their failures, see rethrow_recorded), so a throw here is a bug and must not be swallowed.
+    typedef int no_exception_thrown;
     template <class FSM, class Event> void no_transition(Event const& e, FSM&, int state) {
         if constexpr (std::is_same_v<Event, message>) {
             std::ostringstream ss;

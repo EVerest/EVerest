@@ -245,7 +245,7 @@ The reason is how the argument is actually used: ``EvseManager`` only ever calls
 is commented out (``EvseManager.cpp:409``, ``:1088``, ``:1097``). A module that
 treated ``reset(false)`` as a latch would serve exactly one EV after startup and
 then ignore every ``enter_bcd`` forever. ``SlacSimulator`` ignores the flag
-outright and ``EvseSlacNeo`` treats ``reset(false)`` as "reset the state machine"
+outright and ``EvseSlac`` treats ``reset(false)`` as "reset the state machine"
 for the same reason; only the ``BUSlac`` bring-up tool uses the flag as
 start/stop.
 

@@ -80,7 +80,7 @@ provides:
         type: boolean
         default: false
       do_chip_reset:
-        description: Perform a chip reset after setting NMK using the RS_DEV.REQ Vendor MME Extension (Only works on Qualcomm chips)
+        description: Perform a chip reset after setting the NMK (Qualcomm RS_DEV.REQ or Lumissil NSCM RESET_DEVICE vendor MME; other vendors skip the step)
         type: boolean
         default: false
       chip_reset_delay_ms:
@@ -144,7 +144,7 @@ provides:
       startup_delay_ms:
         description: >-
           Delay initialization of SLAC I/O by the given amount.
-          On some hardware platforms with multiple EvseSlac  modules loaded this can be necessary to ensure that the initial query of the device information does not happen at the same time.
+          On some hardware platforms with multiple EvseSlac modules loaded this can be necessary to ensure that the initial query of the device information does not happen at the same time.
         type: integer
         minimum: 0
         default: 0

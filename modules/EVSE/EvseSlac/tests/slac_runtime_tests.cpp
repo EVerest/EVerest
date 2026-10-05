@@ -12,6 +12,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <cstdio>
+#include <deque>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -122,8 +123,10 @@ messages::HomeplugMessage create_cm_slac_match_req(EvMac const& ev_mac, RunId co
 }
 
 // The PLC link as a fake: records what the runtime sends, and lets the test raise ready / error /
-// received-frame events. Like the real socket client, the events are delivered on the loop thread
-// (queued as an action and the loop woken through an eventfd).
+// received-frame events, all delivered on the loop thread. Ready and error go through the handler's
+// action queue, as the real link's transmit-fault report does. Received frames are delivered from
+// the wake eventfd's callback, inside poll(), as the real socket delivers them: a throw out of the
+// receive path then reaches the loop's catch handler instead of being swallowed by run_actions.
 class FakeIo final : public SlacIo {
 public:
     struct Control {
@@ -174,7 +177,7 @@ public:
         ready = std::move(handler);
     }
     bool register_events(everest::lib::io::event::fd_event_handler& handler) override {
-        if (not handler.register_event_handler(&wake, [](auto&) {})) {
+        if (not handler.register_event_handler(&wake, [this](auto&) { deliver_pending_frames(); })) {
             return false;
         }
         loop.store(&handler);
@@ -204,14 +207,35 @@ public:
         });
     }
     bool inject(Frame frame) {
-        return post([this, frame = std::move(frame)] {
-            if (rx) {
-                rx(frame);
-            }
-        });
+        if (loop.load() == nullptr) {
+            return false;
+        }
+        {
+            std::lock_guard<std::mutex> guard(frames_mutex);
+            pending_frames.push_back(std::move(frame));
+        }
+        wake.notify();
+        return true;
     }
 
 private:
+    // Loop thread, from the wake fd's callback. One frame per take so a throw leaves the rest queued.
+    void deliver_pending_frames() {
+        while (true) {
+            Frame frame;
+            {
+                std::lock_guard<std::mutex> guard(frames_mutex);
+                if (pending_frames.empty()) {
+                    return;
+                }
+                frame = std::move(pending_frames.front());
+                pending_frames.pop_front();
+            }
+            if (rx) {
+                rx(frame);
+            }
+        }
+    }
     bool post(std::function<void()> fn) {
         auto* handler = loop.load();
         if (handler == nullptr) {
@@ -225,6 +249,8 @@ private:
     Control& control;
     std::atomic<everest::lib::io::event::fd_event_handler*> loop{nullptr};
     everest::lib::io::event::event_fd wake;
+    std::mutex frames_mutex;
+    std::deque<Frame> pending_frames;
     RxHandler rx;
     ErrorHandler error;
     ReadyHandler ready;
@@ -594,10 +620,13 @@ TEST(SlacRuntime, APersistentlyThrowingPublisherIsRetriedByHandAndLogged) {
     ASSERT_TRUE(h.runtime->enter_bcd());
     ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "enter_bcd"); }));
     EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal command";
-    EXPECT_TRUE(h.sink.has_log(LogLevel::Error, "teardown failed"));
+    // The failed MATCHING does not count as delivered, so the consumer's last state is still the
+    // UNMATCHED from Reset and the machine's reset has nothing new to publish: no second throw, no
+    // "teardown failed". The runtime cannot know whether the sink delivered before it threw, so it
+    // still tries UNMATCHED by hand, survives that throw and says so.
+    EXPECT_FALSE(h.sink.has_log(LogLevel::Error, "teardown failed"));
     EXPECT_TRUE(h.sink.has_log(LogLevel::Error, "could not publish UNMATCHED"));
-    // Once through the machine's reset, once by hand.
-    EXPECT_EQ(h.sink.count_attempted(D3State::Unmatched), unmatched_attempts_before + 2);
+    EXPECT_EQ(h.sink.count_attempted(D3State::Unmatched), unmatched_attempts_before + 1);
     EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"));
 }
 
@@ -634,6 +663,103 @@ TEST(SlacRuntime, ATransmitFaultIsTornDownAndReadyAloneRestartsTheMachine) {
     ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_cleared(COMMUNICATION_FAULT); }));
     EXPECT_TRUE(h.wait_for_set_key_requests(requests_before + 1)) << "machine did not restart on the new connection";
     EXPECT_TRUE(h.runtime->enter_bcd());
+}
+
+// The deadlock the receive-path fix removed, on the real std::mutex: a publisher that throws for a
+// state reached through a received frame. The frame is dispatched with the lifecycle monitor held,
+// so the failure must unwind out of the dispatch to the loop's catch handler, which takes the
+// monitor again to abort. On the code before the fix the fatal handler ran inside the dispatch and
+// the loop hung on its own monitor (this test then times out and the harness never joins).
+TEST(SlacRuntime, AThrowingPublisherOnAReceivedFrameEndsTheLoopInsteadOfDeadlockingIt) {
+    Harness h;
+    h.sink.on_state = [](D3State state) {
+        if (state == D3State::Matched) {
+            throw std::runtime_error("publisher exploded");
+        }
+    };
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread_tracked();
+    ASSERT_TRUE(h.reach_idle());
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x05};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x51 + i);
+    }
+    auto* link = h.io.instance.load();
+    ASSERT_TRUE(h.runtime->enter_bcd());
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }));
+    ASSERT_TRUE(link->inject(create_cm_slac_parm_req(ev_mac, run_id)));
+    ASSERT_TRUE(h.wait_for_frames(SLAC_PARM_CNF, 1));
+    ASSERT_TRUE(link->inject(create_cm_start_atten_char_ind(ev_mac, run_id)));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        ASSERT_TRUE(link->inject(create_cm_atten_profile_ind(ev_mac, static_cast<std::uint8_t>(0xA0 + i))));
+    }
+    ASSERT_TRUE(h.wait_for_frames(ATTEN_CHAR_IND, 1, 3000ms));
+    ASSERT_TRUE(link->inject(create_cm_atten_char_rsp(ev_mac, run_id)));
+    // The MATCH.REQ completes the session; MATCHED is published on the receive path and throws.
+    ASSERT_TRUE(link->inject(create_cm_slac_match_req(ev_mac, run_id, h.io.mac)));
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"); }))
+        << "no fault: the loop is hanging on its own monitor";
+    EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "event loop stopped unexpectedly"));
+    EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the failed publication";
+    EXPECT_EQ(h.sink.last_state(), D3State::Unmatched) << "the consumer was left believing MATCHED";
+    ASSERT_FALSE(h.sink.dlink.empty());
+    EXPECT_FALSE(h.sink.dlink.back()) << "the link was left up";
+    EXPECT_FALSE(h.runtime->enter_bcd()) << "commands must be refused after the fault";
+}
+
+// After a fatal failure nothing may clear the fault or mark the I/O ready again. A ready action
+// queued right behind the fatal command runs in the same drain of the handler's action queue, after
+// abort_event_loop and before the loop exits; it used to clear the abort's CommunicationFault and
+// leave a dead loop looking healthy. (If the two actions ever land in different drains the ready
+// never runs, so the test cannot fail for the wrong reason.)
+TEST(SlacRuntime, AReadyQueuedBehindAFatalCommandDoesNotClearTheFault) {
+    Harness h;
+    h.sink.on_state = [](D3State state) {
+        if (state == D3State::Matching) {
+            throw std::runtime_error("publisher exploded");
+        }
+    };
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread_tracked();
+    ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.runtime->enter_bcd());
+    ASSERT_TRUE(h.io.instance.load()->fire_ready());
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"); }));
+    EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal command";
+    EXPECT_FALSE(h.sink.has_cleared(COMMUNICATION_FAULT)) << "the ready behind the fatal command cleared the fault";
+    EXPECT_FALSE(h.runtime->enter_bcd()) << "commands must be refused after the fault";
+}
+
+// The transmit-fault report reaches the error handler through the handler's action queue, which
+// swallows exceptions. A publisher that fails during the teardown's reset must still end in a fault,
+// a stopped controller and UNMATCHED, not vanish with the machine left running.
+TEST(SlacRuntime, AThrowingPublisherDuringTheTransmitFaultTeardownStillEndsInAFault) {
+    Harness h;
+    std::atomic<int> explosions_left{0};
+    h.sink.on_state = [&explosions_left](D3State state) {
+        if (state == D3State::Unmatched and explosions_left.load() > 0 and explosions_left.fetch_sub(1) > 0) {
+            throw std::runtime_error("publisher exploded");
+        }
+    };
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread_tracked();
+    ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.reach_matched());
+    explosions_left.store(1);
+    ASSERT_TRUE(h.io.instance.load()->fire_error(true, "PLC frame transmission failing"));
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "teardown on I/O error"); }))
+        << "the teardown's throw was swallowed";
+    EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"));
+    EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "transmission failing")) << "the I/O detail was lost";
+    EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal teardown";
+    EXPECT_EQ(h.sink.last_state(), D3State::Unmatched) << "the consumer was left believing MATCHED";
+    ASSERT_FALSE(h.sink.dlink.empty());
+    EXPECT_FALSE(h.sink.dlink.back()) << "the link was left up";
+    EXPECT_FALSE(h.runtime->enter_bcd()) << "commands must be refused after the fault";
 }
 
 TEST(SlacRuntime, ShutdownDuringTheLoopStopsItAndIsIdempotent) {

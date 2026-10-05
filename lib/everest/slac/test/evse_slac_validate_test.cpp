@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 //
 // Unit tests for the CM_VALIDATE BCB-toggle validation handler (src/fsm/evse/validate_handler.hpp),
 // driven directly instead of through the whole Matching sub-machine. The end-to-end path is covered

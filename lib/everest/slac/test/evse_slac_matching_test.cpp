@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 #include <array>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <net/ethernet.h>
+#include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -2820,8 +2822,303 @@ bool test_matched_poll_and_amp_map_retransmit_run_in_the_same_tick() {
                        "CM_AMP_MAP.REQ retransmission did not go out in the same tick as the poll");
 }
 
+// The wait reported for a deadline measured from the last event: one tick past it (timer::expired
+// is strictly after).
+std::optional<timer::tick> just_after(std::chrono::milliseconds deadline) {
+    return std::chrono::ceil<timer::tick>(deadline) + timer::tick{1};
+}
+
+// Shared setup for the validation-window and failure tests: a machine with send_raw_slac recording
+// into `sent`, a send or the dlink publisher failing on demand.
+struct MachineRig {
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent;
+    std::optional<std::uint16_t> throw_on_send_mmtype;
+    bool throw_on_dlink{false};
+    Context ctx;
+    slac_fsm machine;
+    MachineRig() : ctx(callbacks), machine(ctx) {
+        callbacks.send_raw_slac = [this](messages::HomeplugMessage& hp_message) {
+            if (throw_on_send_mmtype and hp_message.get_mmtype() == *throw_on_send_mmtype) {
+                throw std::runtime_error("send exploded");
+            }
+            sent.push_back({sent.size(), hp_message});
+            return true;
+        };
+        callbacks.signal_dlink_ready = [this](bool) {
+            if (throw_on_dlink) {
+                throw std::runtime_error("dlink exploded");
+            }
+        };
+        callbacks.now = test_clock.source();
+        configure_common(ctx);
+        EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+        std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+    }
+    // Drive one EV through CM_SLAC_PARM.REQ, sounding and CM_ATTEN_CHAR.RSP into WaitSlacMatch.
+    bool reach_wait_slac_match(EvMac const& ev_mac, RunId const& run_id, char const* test_name) {
+        auto const parm_before = count_slac_parm_cnf(sent);
+        auto const ind_before = count_cm_atten_char_ind(sent);
+        machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+        if (!wait_for_parm_cnf_count(sent, parm_before + 1, machine, 200)) {
+            return assert_true(false, test_name, "no CM_SLAC_PARM.CNF");
+        }
+        machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+        for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+            machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+        }
+        if (!wait_for_atten_char_ind_count(sent, ind_before + 1, machine, 2000)) {
+            return assert_true(false, test_name, "no CM_ATTEN_CHAR.IND");
+        }
+        machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
+        return true;
+    }
+    // CM_VALIDATE step 1 and step 2 (pilot timer 1 = 200 ms) for ev_mac, waited out to the SUCCESS CNF.
+    bool validate(EvMac const& ev_mac, char const* test_name) {
+        auto expected = count_cm_validate_cnf(sent) + 1;
+        machine.message(create_cm_validate_req(ev_mac));
+        if (!wait_for(200ms, machine, [&] { return count_cm_validate_cnf(sent) == expected; })) {
+            return assert_true(false, test_name, "no step-1 CM_VALIDATE.CNF");
+        }
+        expected = count_cm_validate_cnf(sent) + 1;
+        machine.message(create_cm_validate_req(ev_mac, /*pilot_timer=*/1));
+        if (!wait_for(600ms, machine, [&] { return count_cm_validate_cnf(sent) == expected; })) {
+            return assert_true(false, test_name, "no step-2 CM_VALIDATE.CNF");
+        }
+        return assert_true(ctx.validation_done, test_name, "validation_done not set after the SUCCESS CNF") and
+               assert_true(machine.next_wakeup() == just_after(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS)),
+                           test_name, "the post-validation match window is not reported as the next deadline");
+    }
+    bool match(EvMac const& ev_mac, RunId const& run_id, char const* test_name) {
+        EvMac evse_mac{};
+        std::copy(std::begin(ctx.evse_mac), std::end(ctx.evse_mac), evse_mac.begin());
+        machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
+        return assert_true(wait_for_match_state(ctx, SlacState::Matched, machine, 2000), test_name,
+                           "the CM_SLAC_MATCH.REQ did not lead to Matched");
+    }
+};
+
+// A validated session that gets no CM_SLAC_MATCH.REQ fails after TT_match_sequence; with
+// reset_instead_of_fail the Matching sub-machine resets once. The validation must go with the
+// sessions it belonged to: left armed, its expired window would fail the EV's retry the moment it
+// reached WaitSlacMatch, so a CM_VALIDATE-using EV could never complete a retry on that plug-in.
+bool test_validation_window_is_dropped_by_the_matching_reset() {
+    const char* test_name = "test_validation_window_is_dropped_by_the_matching_reset";
+    MachineRig rig;
+    rig.ctx.slac_config.reset_instead_of_fail = true;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x11};
+    RunId first_run{};
+    RunId second_run{};
+    for (std::size_t i = 0; i < first_run.size(); ++i) {
+        first_run[i] = static_cast<std::uint8_t>(0x10 + i);
+        second_run[i] = static_cast<std::uint8_t>(0x20 + i);
+    }
+    if (!rig.reach_wait_slac_match(ev_mac, first_run, test_name) or !rig.validate(ev_mac, test_name)) {
+        return false;
+    }
+    // No CM_SLAC_MATCH.REQ: the window expires, the session fails, Matching resets once.
+    if (!wait_for(1000ms, rig.machine, [&] { return rig.ctx.status.session_count == 0; })) {
+        return assert_true(false, test_name, "the validated session did not fail and reset Matching");
+    }
+    bool ok = assert_true(rig.ctx.status.match_state == SlacState::Matching, test_name,
+                          "the Matching reset did not keep the machine in Matching");
+    ok &= assert_true(not rig.ctx.validation_done, test_name, "the Matching reset kept the validation window armed");
+    // The EV's retry, this time without CM_VALIDATE, must run to Matched.
+    return ok and rig.reach_wait_slac_match(ev_mac, second_run, test_name) and rig.match(ev_mac, second_run, test_name);
+}
+
+// Two EVs in parallel sessions. Only the EV that was validated is held to the post-validation
+// match window; the other keeps the full match session timeout and must still complete.
+bool test_validation_window_binds_only_the_validated_ev() {
+    const char* test_name = "test_validation_window_binds_only_the_validated_ev";
+    MachineRig rig;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const validated_ev = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x21};
+    EvMac const other_ev = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x22};
+    RunId validated_run{};
+    RunId other_run{};
+    for (std::size_t i = 0; i < validated_run.size(); ++i) {
+        validated_run[i] = static_cast<std::uint8_t>(0x30 + i);
+        other_run[i] = static_cast<std::uint8_t>(0x40 + i);
+    }
+    if (!rig.reach_wait_slac_match(validated_ev, validated_run, test_name) or !rig.validate(validated_ev, test_name) or
+        !rig.reach_wait_slac_match(other_ev, other_run, test_name)) {
+        return false;
+    }
+    if (!assert_true(rig.ctx.status.session_count == 2, test_name, "expected two parallel sessions")) {
+        return false;
+    }
+    // The validated EV's window has run out by now (the other EV's sounding alone took longer);
+    // give it a further TT_match_sequence to be sure. Its session fails, the other one must
+    // survive: a failed session stays in the vector, so the state and the match tell the story.
+    (void)wait_for(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS + 1), rig.machine, [] { return false; });
+    bool ok = assert_true(rig.ctx.status.match_state == SlacState::Matching, test_name,
+                          "the other EV's session was failed along with the validated one");
+    return ok and rig.match(other_ev, other_run, test_name);
+}
+
+// With link detection on, a vendor the machine cannot query for its link status has no way out of
+// WaitForLink but Failed, and takes it in the event that enters WaitForLink. The three Init rows
+// share source and completion event, so this row must be chosen by its guard, not by MSM's row order.
+bool test_wait_for_link_fails_at_once_for_a_vendor_without_link_status() {
+    const char* test_name = "test_wait_for_link_fails_at_once_for_a_vendor_without_link_status";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.now = test_clock.source();
+    Context ctx(callbacks);
+    configure_common(ctx);
+    configure_wait_for_link(ctx);
+    ctx.modem_vendor = defs::ModemVendor::Unknown;
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x31};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x50 + i);
+    }
+    auto const link_requests_before = count_qualcomm_link_status_req(sent_messages);
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::Failed, 700)) {
+        return false;
+    }
+    return assert_true(count_qualcomm_link_status_req(sent_messages) == link_requests_before, test_name,
+                       "a link status request went out for a vendor that has none");
+}
+
+// A publisher that throws inside a transition, on the receive path: dlink_ready(true) is published
+// from Matched's on_entry, which the CM_SLAC_MATCH.REQ reaches. The failure surfaces from message(),
+// the transition has completed (Matched), and a reset still runs the machine into Reset.
+bool test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req() {
+    const char* test_name = "test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req";
+    MachineRig rig;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x41};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x60 + i);
+    }
+    if (!rig.reach_wait_slac_match(ev_mac, run_id, test_name)) {
+        return false;
+    }
+    rig.throw_on_dlink = true;
+    EvMac evse_mac{};
+    std::copy(std::begin(rig.ctx.evse_mac), std::end(rig.ctx.evse_mac), evse_mac.begin());
+    bool threw = false;
+    try {
+        rig.machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
+    } catch (std::runtime_error const& e) {
+        threw = std::string(e.what()) == "dlink exploded";
+    }
+    bool ok = assert_true(threw, test_name, "the dlink_ready throw from Matched's on_entry did not surface");
+    ok &= assert_true(rig.ctx.status.match_state == SlacState::Matched, test_name,
+                      "the transition whose publisher threw did not complete");
+    ok &= assert_true(not rig.ctx.caught_exception, test_name, "the exception stayed parked");
+    rig.throw_on_dlink = false;
+    try {
+        rig.machine.reset();
+    } catch (...) {
+        return assert_true(false, test_name, "the reset after the failure threw");
+    }
+    return ok and assert_true(rig.ctx.status.match_state == SlacState::Reset, test_name,
+                              "the reset after the failure did not reach Reset");
+}
+
+// A send that throws inside a Session back-end (the dynamic sub-machine): CM_ATTEN_CHAR.IND goes out
+// from a session action on the update that closes the sounding window. The failure surfaces from
+// update(), the session has moved on as if the frame were lost, and its retry sends the IND.
+bool test_throwing_send_inside_a_session_surfaces_and_the_session_retries() {
+    const char* test_name = "test_throwing_send_inside_a_session_surfaces_and_the_session_retries";
+    MachineRig rig;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x42};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x70 + i);
+    }
+    rig.machine.message(create_cm_slac_parm_req(ev_mac, run_id));
+    if (!wait_for_parm_cnf_count(rig.sent, 1, rig.machine, 200)) {
+        return assert_true(false, test_name, "no CM_SLAC_PARM.CNF");
+    }
+    rig.machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        rig.machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
+    }
+    rig.throw_on_send_mmtype = defs::MMTYPE_CM_ATTEN_CHAR | defs::MMTYPE_MODE_IND;
+    bool threw = false;
+    for (int round = 0; round < 2000 and not threw; ++round) {
+        test_clock.advance_ms(1);
+        try {
+            rig.machine.update();
+        } catch (std::runtime_error const& e) {
+            threw = std::string(e.what()) == "send exploded";
+        }
+    }
+    bool ok = assert_true(threw, test_name, "the send throw from inside the session did not surface from update()");
+    ok &= assert_true(not rig.ctx.caught_exception, test_name, "the exception stayed parked");
+    ok &= assert_true(count_cm_atten_char_ind(rig.sent) == 0, test_name, "an IND was recorded although the send threw");
+    rig.throw_on_send_mmtype.reset();
+    return ok and assert_true(wait_for_atten_char_ind_count(rig.sent, 1, rig.machine, 1000), test_name,
+                              "the session did not retry the CM_ATTEN_CHAR.IND after the failed send");
+}
+
+// WaitForLink's own timeout is a hand-written deadline hook. With the link poll slower than the
+// timeout, the timeout is the earliest deadline and must be the reported wake-up.
+bool test_wait_for_link_timeout_is_reported_as_the_next_deadline() {
+    const char* test_name = "test_wait_for_link_timeout_is_reported_as_the_next_deadline";
+    ContextCallbacks callbacks{};
+    std::vector<SentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    callbacks.now = test_clock.source();
+    Context ctx(callbacks);
+    configure_common(ctx);
+    configure_wait_for_link(ctx);
+    ctx.slac_config.link_status.retry = 500ms;
+    ctx.slac_config.link_status.timeout = 300ms;
+    EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
+    std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    if (!enter_matching_state(ctx, machine)) {
+        return false;
+    }
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x43};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x80 + i);
+    }
+    if (!perform_full_match_sequence(ctx, sent_messages, machine, ev_mac, run_id, SlacState::WaitForLink, 700)) {
+        return false;
+    }
+    return assert_true(machine.next_wakeup() == just_after(ctx.slac_config.link_status.timeout), test_name,
+                       "WaitForLink's timeout is not reported as the next deadline");
+}
+
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 41>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 47>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -2895,6 +3192,18 @@ int main() {
                        test_atten_char_rsp_retransmitted_twice_then_session_fails),
         std::make_pair("test_matched_poll_and_amp_map_retransmit_run_in_the_same_tick",
                        test_matched_poll_and_amp_map_retransmit_run_in_the_same_tick),
+        std::make_pair("test_validation_window_is_dropped_by_the_matching_reset",
+                       test_validation_window_is_dropped_by_the_matching_reset),
+        std::make_pair("test_validation_window_binds_only_the_validated_ev",
+                       test_validation_window_binds_only_the_validated_ev),
+        std::make_pair("test_wait_for_link_fails_at_once_for_a_vendor_without_link_status",
+                       test_wait_for_link_fails_at_once_for_a_vendor_without_link_status),
+        std::make_pair("test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req",
+                       test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req),
+        std::make_pair("test_throwing_send_inside_a_session_surfaces_and_the_session_retries",
+                       test_throwing_send_inside_a_session_surfaces_and_the_session_retries),
+        std::make_pair("test_wait_for_link_timeout_is_reported_as_the_next_deadline",
+                       test_wait_for_link_timeout_is_reported_as_the_next_deadline),
     };
 
     int failed_count = 0;

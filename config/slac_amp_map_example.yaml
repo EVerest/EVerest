@@ -20,8 +20,10 @@ carriers: 1155
 default_amplitude: 15
 
 # Optional per-carrier amplitude overrides, keyed by carrier index (0-based).
-# Example (commented out): attenuate a small band around an amateur-radio segment.
+# To attenuate a band, replace the empty mapping with entries, for example around
+# an amateur-radio segment:
+#   overrides:
+#     720: 4
+#     721: 4
+#     722: 2
 overrides: {}
-  # 720: 4
-  # 721: 4
-  # 722: 2

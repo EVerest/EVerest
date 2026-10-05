@@ -6,6 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <memory>
+#include <optional>
 
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/logging.hpp>
@@ -143,14 +144,34 @@ void ev_slacImpl::configure_callbacks() {
         return true;
     };
 
-    callbacks.signal_dlink_ready = [this](bool value) { publish_dlink_ready(value); };
+    callbacks.signal_dlink_ready = [this](bool value) {
+        if (value) {
+            consumer_may_have_link = true;
+        }
+        publish_dlink_ready(value);
+        if (not value) {
+            consumer_may_have_link = false;
+        }
+    };
 
     callbacks.signal_state = [this](const std::string& value) {
+        // Only the conversion is caught here: the machine must not be able to name a state the
+        // interface lacks. A failed publish is not swallowed; the machine surfaces it through the
+        // controller like any other publisher failure.
+        std::optional<types::slac::State> state;
         try {
-            publish_state(types::slac::string_to_state(value));
+            state = types::slac::string_to_state(value);
         } catch (const std::exception& e) {
             EVLOG_error << kModuleLogPrefix
                         << fmt::format("Tried to publish unknown SLAC state '{}'. Error: {}", value, e.what());
+            return;
+        }
+        if (*state != types::slac::State::UNMATCHED) {
+            consumer_may_be_matched = true;
+        }
+        publish_state(*state);
+        if (*state == types::slac::State::UNMATCHED) {
+            consumer_may_be_matched = false;
         }
     };
 
@@ -188,7 +209,7 @@ void ev_slacImpl::configure_slac_io_callbacks() {
         // Loop thread; runs the state machine in place under the lifecycle monitor like every other
         // dispatch. Nothing reachable from the machine takes the monitor (send_raw_slac reads only
         // the I/O object), which is what makes holding it safe. A failure propagates: the unwind
-        // releases the monitor and the loop's catch handler in ready() aborts the loop.
+        // releases the monitor and the loop's catch handler in run_event_loop() aborts the loop.
         // A dropped frame is logged by post_command; there is no one to hand the result to.
         (void)post_command("SLAC frame", [&msg](FSMController& target) {
             target.signal_new_slac_message(msg);
@@ -244,6 +265,12 @@ void ev_slacImpl::run_event_loop() {
 }
 
 void ev_slacImpl::handle_slac_io_ready() {
+    // After abort_event_loop nothing may mark the I/O ready or clear the fault again: a ready or an
+    // error-clear queued in the same loop pass as the fatal failure would otherwise hide a dead loop
+    // behind a cleared CommunicationFault.
+    if (not online.load()) {
+        return;
+    }
     FSMController* local_fsm_ctrl{nullptr};
     bool should_start_fsm{false};
     {
@@ -280,15 +307,37 @@ void ev_slacImpl::handle_slac_io_ready() {
 }
 
 void ev_slacImpl::handle_slac_io_error(bool on_error, const std::string& detail) {
+    // After abort_event_loop nothing may mark the I/O ready or clear the fault again: a ready or an
+    // error-clear queued in the same loop pass as the fatal failure would otherwise hide a dead loop
+    // behind a cleared CommunicationFault.
+    if (not online.load()) {
+        return;
+    }
     if (on_error) {
+        auto const detail_message = detail.empty() ? "unknown error" : detail;
         // Loop thread. Run the reset path so the consumer sees UNMATCHED / dlink_ready(false)
         // instead of a frozen MATCHED until the socket recovers.
         // Without a live controller there is nothing to tear down; the fault below still goes out.
-        (void)post_command("I/O error teardown", [](FSMController& target) {
-            target.teardown();
-            return true;
-        });
-        auto const detail_message = detail.empty() ? "unknown error" : detail;
+        // The transmit-fault report arrives through the handler's action queue, which swallows
+        // exceptions, so a throw out of the teardown (a publisher failing during the reset) is caught
+        // here and ends the loop like every other fatal failure, once post_command has released the
+        // lifecycle monitor.
+        std::optional<std::string> teardown_failure;
+        try {
+            (void)post_command("I/O error teardown", [](FSMController& target) {
+                target.teardown();
+                return true;
+            });
+        } catch (const std::exception& e) {
+            teardown_failure = e.what();
+        } catch (...) {
+            teardown_failure = "unknown error";
+        }
+        if (teardown_failure) {
+            abort_event_loop(fmt::format("SLAC state machine teardown on I/O error ({}) failed: {}", detail_message,
+                                         *teardown_failure));
+            return;
+        }
         auto const fault_message =
             fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message);
         EVLOG_error << kModuleLogPrefix << "SLAC I/O is in error. Waiting for hardware recovery: " << detail_message;
@@ -301,9 +350,10 @@ void ev_slacImpl::handle_slac_io_error(bool on_error, const std::string& detail)
 
 bool ev_slacImpl::post_command(char const* command, std::function<bool(FSMController&)> const& post) {
     // The lifecycle monitor is held across the call, not just across the lookup: shutdown() waits
-    // for the event loop, not for in-flight command handlers, and destroys the controller
-    // afterwards under this monitor. Nothing reachable from the state machine takes the monitor, so
-    // frames and the I/O error teardown go through here as well. The fatal handler (abort_event_loop)
+    // for the event loop, not for in-flight command handlers, clears the worker under this monitor
+    // and destroys the controller afterwards. Nothing reachable from the state machine takes the
+    // monitor, so frames and the I/O error teardown go through here as well. The fatal handler
+    // (abort_event_loop)
     // does take it, so the controller must not call it from inside \p post; a failure in there
     // propagates as an exception and the loop's catch handler aborts the loop.
     auto lifecycle = lifecycle_state.handle();
@@ -381,20 +431,49 @@ void ev_slacImpl::abort_event_loop(const std::string& reason) {
         // Loop thread only (all callers run on the thread driving the loop). Tear down through the
         // machine's reset path so the consumer sees the terminal state, as the I/O error path does;
         // a publisher may just have thrown, so a second throw must not leave the loop's catch
-        // handler. Either way the controller ends stopped.
+        // handler. The reset may also not run at all: after a throw that propagated out of the
+        // machine (not a callback failure, see msm_helpers.hpp) Boost.MSM queues every later event.
+        // Whatever it managed, the consumer must end up with UNMATCHED and no link, so the rest is
+        // published by hand.
         try {
             local_fsm_ctrl->teardown();
         } catch (const std::exception& e) {
             EVLOG_error << kModuleLogPrefix << "SLAC state machine teardown failed: " << e.what();
-            local_fsm_ctrl->stop();
         } catch (...) {
             EVLOG_error << kModuleLogPrefix << "SLAC state machine teardown failed: unknown error";
-            local_fsm_ctrl->stop();
         }
+        stop_and_publish_unmatched_by_hand(*local_fsm_ctrl);
     }
 
     if (should_raise_fault) {
         raise_communication_fault(reason);
+    }
+}
+
+void ev_slacImpl::stop_and_publish_unmatched_by_hand(FSMController& target) {
+    target.stop();
+    // Each publication on its own: a publisher that threw once may throw again, and a second throw
+    // here would leave the loop's catch handler and terminate the process.
+    auto publish = [](char const* what, auto&& fn) {
+        try {
+            fn();
+        } catch (const std::exception& e) {
+            EVLOG_error << kModuleLogPrefix << "SLAC could not publish " << what << " after the fault: " << e.what();
+        } catch (...) {
+            EVLOG_error << kModuleLogPrefix << "SLAC could not publish " << what << " after the fault: unknown error";
+        }
+    };
+    if (consumer_may_have_link) {
+        publish("dlink_ready(false)", [this] {
+            publish_dlink_ready(false);
+            consumer_may_have_link = false;
+        });
+    }
+    if (consumer_may_be_matched) {
+        publish("UNMATCHED", [this] {
+            publish_state(types::slac::State::UNMATCHED);
+            consumer_may_be_matched = false;
+        });
     }
 }
 

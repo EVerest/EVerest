@@ -2,7 +2,8 @@
 // Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
 
 // Matched sub-machine: the AVLN is up. Polls the modem link status (vendor specific), debounces
-// link loss and runs the CM_AMP_MAP exchange. Exits to Failed when the link is lost.
+// link loss and runs the CM_AMP_MAP exchange. Leaves through Matched_Fail when the link is lost;
+// the top-level machine takes that to Reset.
 
 #pragma once
 #include "../../misc.hpp"
@@ -73,6 +74,9 @@ struct Matched_def : public state_machine_def<Matched_def> {
         >{};
     // clang-format on
 
+    // No try/catch around the event: the callbacks the machine calls never throw (the context parks
+    // their failures, see rethrow_recorded), so a throw here is a bug and must not be swallowed.
+    typedef int no_exception_thrown;
     template <class FSM, class Event> void no_transition(Event const&, FSM&, int) {
     }
 

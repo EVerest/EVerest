@@ -40,9 +40,10 @@ public:
     void signal_count_bc(int count);
 
     // Called on the loop thread when a posted command or the deadline timer threw out of the machine
-    // or the timer could not be re-armed afterwards. (A throw inside a transition never leaves
-    // Boost.MSM; what arrives here comes from the publishers that run after it.) The event handler
-    // swallows exceptions from posted actions, so without this the failure would be invisible. The
+    // or the timer could not be re-armed afterwards. (Any callback the machine calls that throws,
+    // publisher, send or logger, is parked by the machine's context and rethrown by its wrapper once
+    // the event is done, so it arrives here as the event's failure.) The event handler swallows
+    // exceptions from posted actions, so without this the failure would be invisible. The
     // receive path is not covered: it runs under the lifecycle monitor and propagates instead.
     // The controller is still active when the handler runs: the handler owns the teardown (reset path
     // for the consumer, then stop()). Without a handler the controller stops itself and logs.
