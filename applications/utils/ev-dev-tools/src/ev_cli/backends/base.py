@@ -11,7 +11,7 @@ OpenAPI, documentation -- an addition rather than a second parser.
 from __future__ import annotations
 
 import argparse
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from enum import Enum
 from pathlib import Path
 from typing import Callable, Protocol, runtime_checkable

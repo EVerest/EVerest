@@ -2,11 +2,9 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """The whole world, loaded once and then queried.
 
-This is what replaces the previous implementation's module-level caches.  There,
-interface and module generation each looped over every type calling the type
-parser and discarding the result, purely so that a global dictionary would be
-populated as a side effect.  Here the units are loaded into a :class:`Model` and
-everything else asks it questions.
+Definitions are loaded into a :class:`Model` and everything else asks it
+questions, so no part of the generator has to populate a cache for another part
+to find.
 """
 
 from __future__ import annotations

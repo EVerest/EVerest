@@ -3,9 +3,7 @@
 """Turning validated definition documents into the IR.
 
 Each unit is built by its own short-lived :class:`_UnitBuild`, so no state
-survives between units.  That is the point: the previous implementation kept
-the parse results in module-level dictionaries and cleared them at the start of
-every call, which made the order of operations part of the contract.
+survives between units and the order units are built in cannot matter.
 """
 
 from __future__ import annotations
@@ -620,9 +618,8 @@ class ModuleBuilder:
     def _mutability(self, schema: Mapping[str, Any], source: SourceRef) -> Mutability:
         """Read the declared mutability, defaulting as the meta-schema does.
 
-        A plain field rather than the previous implementation's
-        ``try: ... except Exception: pass``, which swallowed a missing key and
-        a misspelled value alike.
+        A value the manifest spells wrongly is an error rather than silently
+        the default.
         """
         declared = schema.get('mutability', Mutability.READ_ONLY.value)
         try:
