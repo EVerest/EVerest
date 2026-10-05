@@ -69,6 +69,10 @@ constexpr types::iso15118::V2gMessageId convert_v2g_message_type(iso15118::messa
         return Id::AuthorizationReq;
     case Type::AuthorizationRes:
         return Id::AuthorizationRes;
+    case Type::CertificateInstallationReq:
+        return Id::CertificateInstallationReq;
+    case Type::CertificateInstallationRes:
+        return Id::CertificateInstallationRes;
     case Type::ServiceDiscoveryReq:
         return Id::ServiceDiscoveryReq;
     case Type::ServiceDiscoveryRes:
@@ -305,6 +309,8 @@ map_v2g_message_to_hlc_failed_reason(iso15118::message_20::Type type) {
     case Type::AuthorizationSetupRes:
     case Type::AuthorizationReq:
     case Type::AuthorizationRes:
+    case Type::CertificateInstallationReq:
+    case Type::CertificateInstallationRes:
         return Reason::AuthorizationFailed;
     case Type::ServiceDiscoveryReq:
     case Type::ServiceDiscoveryRes:
