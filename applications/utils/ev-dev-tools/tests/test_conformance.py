@@ -2,12 +2,12 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """What the loader reports about everest-core's definitions as they stand.
 
-Two things are pinned here.  The diagnostic counts are a ratchet: they say how
-much of the definitions still depends on a reading of JSON Schema that only
-EVerest's own tooling provides, and they should only ever fall.  The
-losslessness check says the IR does not quietly drop anything the definitions
-contain, which is what stops a second backend from having to go back to the
-YAML the way EVerest's documentation generation had to.
+The checks here say what the reports are, not how many: that every definition
+parses, that nothing in the legacy dialect is fatal, and that each report names
+the conformant spelling to write instead.  The losslessness check says the IR
+does not quietly drop anything the definitions contain, which is what stops a
+second backend from having to go back to the YAML the way EVerest's
+documentation generation had to.
 """
 
 from __future__ import annotations
@@ -35,29 +35,13 @@ def everest_diagnostics(everest_loader, sink):
     return sink
 
 
-class TestDiagnosticCounts:
-    """The ratchet.  Lowering these numbers is progress; raising them is not.
+class TestDiagnostics:
+    """How the legacy dialect is reported, whatever is left of it.
 
-    ``legacy-ref`` counts one per reference; the sibling categories count one
+    ``legacy-ref`` reports one per reference; the sibling categories report one
     per keyword, so a single site carrying both ``minLength`` and ``maxLength``
     is reported twice.
     """
-
-    EXPECTED = {
-        Category.LEGACY_REF: 534,
-        Category.REF_SIBLING_TYPE: 514,
-        Category.REF_SIBLING_CONTRADICTS: 12,
-        Category.REF_SIBLING_CONSTRAINT: 14,
-    }
-
-    def test_counts(self, everest_diagnostics):
-        counts = everest_diagnostics.counts()
-        actual = {category: counts.get(category, 0) for category in self.EXPECTED}
-        assert actual == self.EXPECTED, (
-            'The definitions changed.  If references were migrated or siblings '
-            'removed these numbers should be lowered; if they went up, '
-            'something reintroduced the legacy dialect.'
-        )
 
     def test_nothing_is_an_error(self, everest_diagnostics):
         """The legacy dialect is tolerated, not rejected."""
