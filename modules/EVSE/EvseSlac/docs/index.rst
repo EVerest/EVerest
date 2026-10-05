@@ -1,4 +1,4 @@
-.. _everest_modules_handwritten_EvseSlac :
+.. _everest_modules_handwritten_EvseSlac:
 
 .. ===================
 .. EvseSlac
@@ -39,7 +39,7 @@ key.
    |  | PLC modem |<--+--> ~~ HF signals ~~ <------+-->| PLC modem |      |
    |  +-----------+   |   ======================   |   +-----+-----+      |
    |                  |                            |         |            |
-   +------------------+                            |   EvseSlac        |
+   +------------------+                            |   EvseSlac           |
                                                    |   EvseManager        |
                                                    |   ISO 15118 stack    |
                                                    +----------------------+
@@ -84,9 +84,10 @@ the whole procedure takes well under a second on a good connection.
    dlink_ready(true) is published:
    high level communication starts
 
-When the car is unplugged, EvseManager calls ``leave_bcd`` and the module
-leaves the logical network, generates a new key and re-arms itself — from
-*any* state, so a failed or aborted session can never get the charger stuck.
+When the car is unplugged, EvseManager calls ``leave_bcd``. From a matched or
+failed session the module leaves the logical network, generates a new key and
+re-arms itself; while still matching it just returns to idle, since no network
+was joined. Either way a failed or aborted session never gets the charger stuck.
 
 Features
 ========
@@ -225,7 +226,8 @@ extensions are used:
 +=====================+======================================================+
 | Qualcomm            | Link status detection and supervision. Optional      |
 | QCA7000 / QCA7005   | chip reset after key setup (``do_chip_reset``, via   |
-| (QCA700x family)    | the RS_DEV vendor extension — Qualcomm only). Note   |
+| (QCA700x family)    | the RS_DEV vendor extension; Lumissil uses NSCM      |
+|                     | RESET_DEVICE for the same step). Note                |
 |                     | that these chips confirm CM_SET_KEY with result      |
 |                     | ``0x01``; the default configuration expects this.    |
 +---------------------+------------------------------------------------------+

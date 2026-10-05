@@ -88,6 +88,7 @@ void ValidateHandler::tick(Context& ctx) {
         // Validation done: the CM_SLAC_MATCH.REQ must now arrive within TT_match_sequence
         // (ISO 15118-5 CmSlacMatch_003/004 cmValidate variant), not the full match session.
         ctx.validation_done = true;
+        ctx.validation_ev_mac = owner_mac_;
         ctx.validation_match_window.arm(ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
     } else if (armed_) {
         if (step1_retries_ < defs::C_EV_MATCH_RETRY) {

@@ -87,6 +87,10 @@ struct reset_matching_subfsm {
         fsm.sessions.clear();
         fsm.to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.slac_init_timeout);
         fsm.failed_matching_reset_once = true;
+        // A validation belongs to the sessions just dropped. Left armed, its expired window would
+        // fail every new session the moment it reaches WaitSlacMatch.
+        fsm.validate.reset();
+        fsm.ctx->validation_done = false;
     }
 };
 
@@ -119,6 +123,14 @@ struct add_session {
         auto& session = *session_iter;
         session.session_data = data;
         session.ctx = fsm.ctx;
+        // A new CM_SLAC_PARM.REQ starts this EV's SLAC run over; a validation from its previous
+        // run, in progress or completed, does not carry into it.
+        if (fsm.validate.owner_mac() == data.ev_mac) {
+            fsm.validate.reset();
+        }
+        if (fsm.ctx->validation_done and fsm.ctx->validation_ev_mac == data.ev_mac) {
+            fsm.ctx->validation_done = false;
+        }
         session.start();
         // send reply
         ctx.log_info(session_log_prefix(data) + "Received CM_SLAC_PARM.REQ, sending CM_SLAC_PARM.CNF");

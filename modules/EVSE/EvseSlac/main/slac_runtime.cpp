@@ -453,6 +453,12 @@ void SlacRuntime::run_event_loop() {
 }
 
 void SlacRuntime::handle_slac_io_ready() {
+    // After abort_event_loop nothing may mark the I/O ready or clear the fault again: a ready or an
+    // error-clear queued in the same loop pass as the fatal failure would otherwise hide a dead loop
+    // behind a cleared CommunicationFault.
+    if (not online.load()) {
+        return;
+    }
     {
         auto lifecycle = lifecycle_state.handle();
         if (lifecycle->shutting_down) {
@@ -505,11 +511,32 @@ void SlacRuntime::start_fsm_if_ready() {
 }
 
 void SlacRuntime::handle_slac_io_error(bool on_error, std::string const& detail) {
+    // After abort_event_loop nothing may mark the I/O ready or clear the fault again: a ready or an
+    // error-clear queued in the same loop pass as the fatal failure would otherwise hide a dead loop
+    // behind a cleared CommunicationFault.
+    if (not online.load()) {
+        return;
+    }
     if (on_error) {
-        // Loop thread: teardown() runs the FSM's reset path in place instead of freezing it, so the
-        // consumer sees UNMATCHED / dlink_ready(false) right away.
-        (void)dispatch_to_controller(lifecycle_state, [](FSMController& target) { target.teardown(); });
         auto const detail_message = detail.empty() ? std::string("unknown error") : detail;
+        // Loop thread: teardown() runs the FSM's reset path in place instead of freezing it, so the
+        // consumer sees UNMATCHED / dlink_ready(false) right away. The transmit-fault report arrives
+        // through the handler's action queue, which swallows exceptions, so a throw out of the
+        // teardown (a publisher failing during the reset) is caught here and ends the loop like every
+        // other fatal failure, once the dispatch has released the lifecycle monitor.
+        std::optional<std::string> teardown_failure;
+        try {
+            (void)dispatch_to_controller(lifecycle_state, [](FSMController& target) { target.teardown(); });
+        } catch (const std::exception& e) {
+            teardown_failure = e.what();
+        } catch (...) {
+            teardown_failure = "unknown error";
+        }
+        if (teardown_failure) {
+            abort_event_loop(fmt::format("SLAC state machine teardown on I/O error ({}) failed: {}", detail_message,
+                                         *teardown_failure));
+            return;
+        }
         log(LogLevel::Error, "SLAC I/O is in error. Waiting for hardware recovery: " + detail_message);
         raise_communication_fault(
             fmt::format("SLAC PLC communication unavailable on device {}: {}", config.device, detail_message));
@@ -521,10 +548,11 @@ void SlacRuntime::handle_slac_io_error(bool on_error, std::string const& detail)
 
 bool SlacRuntime::post_command(char const* command, std::function<bool(FSMController&)> const& post) {
     // The lifecycle monitor is held across the call, not just across the lookup: shutdown() waits
-    // for the event loop, not for in-flight command handlers, and destroys the controller
-    // afterwards under this monitor, so a framework thread cannot come back from a preemption into
-    // a destroyed controller. Nothing reachable from the state machine takes the monitor (see
-    // dispatch_to_controller), so this is also how frames and the I/O error teardown are dispatched.
+    // for the event loop, not for in-flight command handlers, clears the worker under this monitor
+    // and destroys the controller afterwards, so a framework thread cannot come back from a
+    // preemption into a destroyed controller. Nothing reachable from the state machine takes the
+    // monitor (see dispatch_to_controller), so this is also how frames and the I/O error teardown
+    // are dispatched.
     auto lifecycle = lifecycle_state.handle();
     auto* const target = lifecycle->dispatch_target();
     if (target == nullptr) {

@@ -31,6 +31,7 @@ public:
     [[nodiscard]] std::optional<timer::tick> next_wakeup() const;
 
 private:
+    void begin_event();
     void settle();
     void event_post_processing();
     struct Impl;

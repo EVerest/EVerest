@@ -29,6 +29,7 @@ public:
     [[nodiscard]] std::optional<timer::tick> next_wakeup() const;
 
 private:
+    void begin_event();
     struct Impl;
     std::unique_ptr<Impl> impl;
     fsm::ev::Context& ctx;

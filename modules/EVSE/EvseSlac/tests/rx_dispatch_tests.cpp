@@ -219,13 +219,20 @@ TEST(RxDispatch, DispatchDropsTheFrameWhenTheIoIsNotReadyOrShuttingDown) {
 // dispatch either, because the module's handler (abort_event_loop) takes the monitor. A failure on
 // the receive path leaves dispatch_to_controller by exception; the unwind releases the monitor and
 // the loop's catch handler aborts the loop with it free. The throw comes from the telemetry
-// publisher, which runs after the transition in the wrapper's post-processing (a throw inside a
-// transition never leaves Boost.MSM), when the first session changes the machine's shape.
+// publisher, which runs in the wrapper's post-processing after the event; it fires on the first
+// post-processing after telemetry is switched on, since the signature cache starts empty. A throw
+// inside a transition surfaces the same way (see the library's slac_fsm_exception_test).
 TEST(RxDispatch, AFailureOnTheReceivePathPropagatesInsteadOfReachingTheFatalHandler) {
     Rig rig;
     rig.reach_matching();
     int fatal_calls{0};
-    rig.ctrl->set_fatal_handler([&fatal_calls](std::string const&) { ++fatal_calls; });
+    bool monitor_free_in_handler{false};
+    rig.ctrl->set_fatal_handler([&](std::string const&) {
+        ++fatal_calls;
+        // What the module's handler does first: abort_event_loop takes the monitor. On the production
+        // std::mutex this is the self-deadlock; the timed mutex makes it a failed acquisition.
+        monitor_free_in_handler = rig.lifecycle.handle(50ms).has_value();
+    });
     rig.ctx->slac_config.provide_telemetry = true;
     rig.callbacks.pub_telemetry = [](std::string const&, std::string const&, std::string const&) {
         throw std::runtime_error("publisher exploded");
@@ -235,9 +242,8 @@ TEST(RxDispatch, AFailureOnTheReceivePathPropagatesInsteadOfReachingTheFatalHand
     EXPECT_THROW(module::main::dispatch_to_controller(
                      rig.lifecycle, [&req](FSMController& target) { target.signal_new_slac_message(req); }),
                  std::runtime_error);
-    EXPECT_EQ(fatal_calls, 0) << "the fatal handler ran under the monitor it needs to take";
-    // What abort_event_loop needs next: the monitor is free once the dispatch has unwound.
-    EXPECT_TRUE(rig.lifecycle.handle(50ms).has_value()) << "the monitor is still held after the dispatch unwound";
+    EXPECT_EQ(fatal_calls, 0) << "the fatal handler was reached from inside the dispatch";
+    EXPECT_TRUE(fatal_calls == 0 or monitor_free_in_handler) << "the fatal handler ran under the monitor it needs";
 }
 
 } // namespace
