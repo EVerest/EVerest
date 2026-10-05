@@ -186,7 +186,9 @@ would touch.
 Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
 
 - clang-format, LLVM base, 4-space indent, 120 columns (`.clang-format`). CI enforces it
-  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`. Format changed files with
+  over `.hpp` and `.cpp` via `.github/workflows/job_lint.yml`, which excludes the ev-cli
+  golden fixtures under `applications/utils/ev-dev-tools/tests/fixtures/golden`: those are
+  compared byte for byte against unformatted generator output. Format changed files with
   the version CI uses:
 
   ```bash
