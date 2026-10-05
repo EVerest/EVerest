@@ -16,12 +16,16 @@
 
 namespace {
 
+// find_child() returns an invalid node if the key is absent; has_val()/has_key()
+// assert on such nodes, so guard with readable() first.
 inline std::string node_val(ryml::ConstNodeRef n) {
+    if (!n.readable()) return {};
     if (!n.has_val() || n.val().str == nullptr) return {};
     return std::string(n.val().str, n.val().len);
 }
 
 inline std::string node_key(ryml::ConstNodeRef n) {
+    if (!n.readable()) return {};
     if (!n.has_key() || n.key().str == nullptr) return {};
     return std::string(n.key().str, n.key().len);
 }
@@ -363,9 +367,8 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
             ProfileHeader h;
             bool is_profile = false;
             std::string err;
+            // Skip malformed profiles rather than failing every certificate.
             if (!load_profile_header(entry.path(), h, is_profile, err)) {
-                // A malformed profile is not a reason to fail verification of
-                // every other certificate: exclude it and continue.
                 EVLOG_error << "Skipping invalid profile " << entry.path() << ": " << err;
                 continue;
             }
