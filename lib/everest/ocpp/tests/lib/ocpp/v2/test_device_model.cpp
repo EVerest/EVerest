@@ -73,6 +73,40 @@ TEST_F(DeviceModelTest, test_min_limit_and_allow_zero) {
     ASSERT_EQ(r, 0);
 }
 
+/// \brief SecurityProfile 0 must be settable although databases and component configs created from earlier schemas
+/// still carry a minLimit of 1
+TEST_F(DeviceModelTest, test_security_profile_zero_with_legacy_min_limit) {
+    VariableCharacteristics c;
+    c.minLimit = 1;
+    c.maxLimit = 3;
+    c.dataType = DataEnum::integer;
+    c.supportsMonitoring = true;
+
+    device_model_test_helper.update_variable_characteristics(c, "SecurityCtrlr", std::nullopt, std::nullopt,
+                                                             std::nullopt, "SecurityProfile", std::nullopt);
+
+    dm = device_model_test_helper.get_device_model();
+    const auto& security_profile = ControllerComponentVariables::SecurityProfile;
+
+    auto sv_result = dm->set_read_only_value(security_profile.component, security_profile.variable.value(),
+                                             AttributeEnum::Actual, "0", "test");
+    EXPECT_EQ(sv_result, SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<int>(security_profile), 0);
+
+    dm->set_active_security_profile(2, "test");
+    EXPECT_EQ(dm->get_value<int>(security_profile), 2);
+    dm->set_security_ctrl_security_profile(0, "test");
+    EXPECT_EQ(dm->get_value<int>(security_profile), 0);
+    dm->set_active_security_profile(2, "test");
+    dm->set_active_security_profile(0, "test");
+    EXPECT_EQ(dm->get_value<int>(security_profile), 0);
+
+    sv_result = dm->set_read_only_value(security_profile.component, security_profile.variable.value(),
+                                        AttributeEnum::Actual, "4", "test");
+    EXPECT_EQ(sv_result, SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(dm->get_value<int>(security_profile), 0);
+}
+
 TEST_F(DeviceModelTest, test_component_as_key_in_map) {
     std::map<Component, std::int32_t> components_to_ints;
 

@@ -19,14 +19,17 @@ namespace ocpp {
 namespace v2 {
 
 namespace {
-/// \brief For AlignedDataInterval, SampledDataTxUpdatedInterval and SampledDataTxEndedInterval, zero is allowed
+/// \brief For AlignedDataInterval, SampledDataTxUpdatedInterval, SampledDataTxEndedInterval and SecurityProfile, zero
+/// is allowed. SecurityProfile had a minLimit of 1 in earlier component schemas, which persists in existing databases
+/// and component configs.
 bool allow_zero(const Component& component, const Variable& variable) {
     ComponentVariable component_variable;
     component_variable.component = component;
     component_variable.variable = variable;
     return component_variable == ControllerComponentVariables::AlignedDataInterval or
            component_variable == ControllerComponentVariables::SampledDataTxUpdatedInterval or
-           component_variable == ControllerComponentVariables::SampledDataTxEndedInterval;
+           component_variable == ControllerComponentVariables::SampledDataTxEndedInterval or
+           component_variable == ControllerComponentVariables::SecurityProfile;
 }
 
 bool allow_set_read_only_value(const Component& component, const Variable& variable,
@@ -1237,9 +1240,13 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
 
 void DeviceModel::set_active_security_profile(int32_t security_profile, const std::string& source) {
     const auto& cv = ControllerComponentVariables::SecurityProfile;
-    if (cv.variable.has_value()) {
-        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(security_profile),
-                            source);
+    if (!cv.variable.has_value()) {
+        return;
+    }
+    const auto result = set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                            std::to_string(security_profile), source);
+    if (result != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set SecurityCtrlr.SecurityProfile to " << security_profile << ": " << result;
     }
 }
 
@@ -1271,8 +1278,12 @@ void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& ver
 }
 
 void DeviceModel::set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) {
-    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::SecurityProfile,
-                        AttributeEnum::Actual, std::to_string(security_profile), source);
+    const auto result = set_read_only_value(ControllerComponents::SecurityCtrlr,
+                                            NetworkConfigurationComponentVariables::SecurityProfile,
+                                            AttributeEnum::Actual, std::to_string(security_profile), source);
+    if (result != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set SecurityCtrlr.SecurityProfile to " << security_profile << ": " << result;
+    }
 }
 
 void DeviceModel::set_security_ctrl_identity(const std::string& identity, const std::string& source) {
