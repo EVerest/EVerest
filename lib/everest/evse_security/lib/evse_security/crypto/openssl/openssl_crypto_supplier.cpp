@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
-#include <evse_security/crypto/openssl/openssl_ASN1_ctl.hpp>
 #include <everest/logging.hpp>
+#include <evse_security/crypto/openssl/openssl_ASN1_ctl.hpp>
+#include <evse_security/crypto/openssl/openssl_crypto_supplier.hpp>
 
 #include <algorithm>
 #include <chrono>
@@ -283,9 +283,7 @@ std::vector<X509Handle_ptr> OpenSSLSupplier::load_certificates(const std::string
 
 bool OpenSSLSupplier::decode_ctl(const std::string& data, ctl::TrustList& out) {
     try {
-        out = ctl::decode_der(
-            reinterpret_cast<const std::uint8_t*>(data.data()),
-            data.size());
+        out = ctl::decode_der(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
         return true;
     } catch (const std::exception& e) {
         EVLOG_error << "CTL decode failed: " << e.what();

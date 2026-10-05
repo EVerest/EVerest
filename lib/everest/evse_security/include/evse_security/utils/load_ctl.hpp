@@ -12,31 +12,33 @@
 
 namespace ctl {
 
-using evse_security::X509Wrapper;
 using evse_security::CaCertificateType;
+using evse_security::X509Wrapper;
 
 enum class Status : long {
-    Active     = 0,
-    Warning    = 1,
+    Active = 0,
+    Warning = 1,
     Deprecated = 2,
 };
 
 struct GeneralizedTime {
-    std::string value;   // always "YYYYMMDDHHMMSSZ", 15 chars
+    std::string value; // always "YYYYMMDDHHMMSSZ", 15 chars
 
     static std::optional<GeneralizedTime> parse(std::string_view s);
-    bool operator<(const GeneralizedTime& other) const noexcept { return value < other.value; }
+    bool operator<(const GeneralizedTime& other) const noexcept {
+        return value < other.value;
+    }
 };
 
 struct RootCertificate {
     CaCertificateType type;
-    Status            status;
-    X509Wrapper       cert;
+    Status status;
+    X509Wrapper cert;
 };
 
 struct TrustList {
-    std::uint8_t    ctl_version     = 0;
-    std::uint16_t   sequence_number = 0;
+    std::uint8_t ctl_version = 0;
+    std::uint16_t sequence_number = 0;
     GeneralizedTime not_before;
     GeneralizedTime not_after;
     std::vector<RootCertificate> roots;

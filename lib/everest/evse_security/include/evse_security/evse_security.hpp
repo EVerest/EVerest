@@ -16,7 +16,9 @@
 #include <gtest/gtest_prod.h>
 #endif
 
-namespace ctl { struct TrustList; }
+namespace ctl {
+struct TrustList;
+}
 namespace evse_security {
 
 struct LinkPaths {
@@ -30,7 +32,7 @@ struct DirectoryPaths {
     fs::path csms_leaf_key_directory;  /**< csms leaf key shall be located in this directory */
     fs::path secc_leaf_cert_directory; /**< secc leaf certificate for ISO15118 shall be located in this directory */
     fs::path secc_leaf_key_directory;  /**< secc leaf key shall be located in this directory */
-	fs::path ctl_directory; /**< CTL files shall be pulled from this directory */
+    fs::path ctl_directory;            /**< CTL files shall be pulled from this directory */
 };
 struct FilePaths {
     // bundle paths

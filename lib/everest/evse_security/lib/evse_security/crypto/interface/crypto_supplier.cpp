@@ -85,8 +85,7 @@ CertificateValidationResult AbstractCryptoSupplier::x509_verify_certificate_chai
 }
 
 bool AbstractCryptoSupplier::decode_ctl(const std::string& /*data*/, ctl::TrustList& /*out*/) {
-    default_crypto_supplier_usage_error()
-    return false;
+    default_crypto_supplier_usage_error() return false;
 }
 
 bool AbstractCryptoSupplier::x509_to_der(X509Handle* /*handle*/, std::vector<std::uint8_t>& /*out_der*/) {

@@ -36,7 +36,7 @@ public:
                                   const std::vector<X509Handle*>& untrusted_subcas, bool allow_future_certificates,
                                   const std::optional<fs::path> dir_path, const std::optional<fs::path> file_path);
     static bool x509_to_der(X509Handle* handle, std::vector<std::uint8_t>& out_der);
-                                  static KeyValidationResult x509_check_private_key(X509Handle* handle, std::string private_key,
+    static KeyValidationResult x509_check_private_key(X509Handle* handle, std::string private_key,
                                                       std::optional<std::string> password);
     static bool x509_verify_signature(X509Handle* handle, const std::vector<std::uint8_t>& signature,
                                       const std::vector<std::uint8_t>& data);
@@ -51,7 +51,7 @@ public:
 
     static bool base64_encode_from_bytes(const std::vector<std::uint8_t>& bytes, std::string& out_encoded);
     static bool base64_encode_from_string(const std::string& string, std::string& out_encoded);
-    
+
     static bool decode_ctl(const std::string& data, ctl::TrustList& out);
 };
 

@@ -18,18 +18,25 @@ std::optional<GeneralizedTime> GeneralizedTime::parse(std::string_view s) {
 }
 
 ValidationError validate(const TrustList& ctl) noexcept {
-    if (ctl.ctl_version > 255)       return ValidationError::VersionOutOfRange;
-    if (ctl.sequence_number > 65535) return ValidationError::SequenceOutOfRange;
-    if (!GeneralizedTime::parse(ctl.not_before.value)) return ValidationError::BadNotBefore;
-    if (!GeneralizedTime::parse(ctl.not_after.value))  return ValidationError::BadNotAfter;
-    if (!(ctl.not_before < ctl.not_after))             return ValidationError::ValidityInverted;
+    if (ctl.ctl_version > 255)
+        return ValidationError::VersionOutOfRange;
+    if (ctl.sequence_number > 65535)
+        return ValidationError::SequenceOutOfRange;
+    if (!GeneralizedTime::parse(ctl.not_before.value))
+        return ValidationError::BadNotBefore;
+    if (!GeneralizedTime::parse(ctl.not_after.value))
+        return ValidationError::BadNotAfter;
+    if (!(ctl.not_before < ctl.not_after))
+        return ValidationError::ValidityInverted;
 
     for (const auto& r : ctl.roots) {
         switch (r.status) {
         case Status::Active:
         case Status::Warning:
-        case Status::Deprecated: break;
-        default: return ValidationError::BadStatus;
+        case Status::Deprecated:
+            break;
+        default:
+            return ValidationError::BadStatus;
         }
     }
     return ValidationError::None;
@@ -41,13 +48,20 @@ bool is_newer(std::uint16_t previous, std::uint16_t candidate) noexcept {
 
 const char* to_string(ValidationError e) noexcept {
     switch (e) {
-        case ValidationError::None:              return "ok";
-        case ValidationError::VersionOutOfRange: return "ctlVersion out of range (0..255)";
-        case ValidationError::SequenceOutOfRange:return "sequenceNumber out of range (0..65535)";
-        case ValidationError::BadNotBefore:      return "notBefore is not YYYYMMDDHHMMSSZ";
-        case ValidationError::BadNotAfter:       return "notAfter is not YYYYMMDDHHMMSSZ";
-        case ValidationError::ValidityInverted:  return "notBefore >= notAfter";
-        case ValidationError::BadStatus:         return "unknown ctlStatus";
+    case ValidationError::None:
+        return "ok";
+    case ValidationError::VersionOutOfRange:
+        return "ctlVersion out of range (0..255)";
+    case ValidationError::SequenceOutOfRange:
+        return "sequenceNumber out of range (0..65535)";
+    case ValidationError::BadNotBefore:
+        return "notBefore is not YYYYMMDDHHMMSSZ";
+    case ValidationError::BadNotAfter:
+        return "notAfter is not YYYYMMDDHHMMSSZ";
+    case ValidationError::ValidityInverted:
+        return "notBefore >= notAfter";
+    case ValidationError::BadStatus:
+        return "unknown ctlStatus";
     }
     return "unknown";
 }
