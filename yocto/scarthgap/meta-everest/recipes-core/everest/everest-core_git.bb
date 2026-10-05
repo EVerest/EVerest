@@ -9,7 +9,7 @@ SRC_URI:append = " file://everest.service \
 
 do_compile[network] = "0"
 
-inherit cmake pkgconfig systemd python3native python3targetconfig
+inherit cmake pkgconfig systemd python3native python3targetconfig everest_file_capabilities
 
 DEPENDS = " \
     boost \
@@ -20,7 +20,6 @@ DEPENDS = " \
     fmt \
     ftxui \
     json-schema-validator \
-    libcap \
     libevent \
     libnfc-nci \
     libpcap \
