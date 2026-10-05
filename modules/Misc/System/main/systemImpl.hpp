@@ -65,6 +65,8 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
 
+    std::string create_logs_filename(const std::string& type);
+
     std::filesystem::path scripts_path;
 
     std::shared_ptr<std::atomic_bool> interrupt_firmware_download = std::make_shared<std::atomic_bool>(false);

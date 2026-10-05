@@ -4,7 +4,7 @@ description: >-
 config:
   device:
     description: >-
-      The ethernet device on which the messages are to be captured
+      The libpcap device on which the messages are to be captured
     type: string
     default: eth1
   session_logging_path:

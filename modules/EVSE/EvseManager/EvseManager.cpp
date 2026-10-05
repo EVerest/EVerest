@@ -1511,8 +1511,11 @@ types::evse_board_support::HardwareCapabilities EvseManager::get_hw_capabilities
     return hw_capabilities.get();
 }
 
-int32_t EvseManager::get_reservation_id() {
-    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_get_reservation_id);
+std::optional<int32_t> EvseManager::get_reservation_id_to_report() {
+    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_get_reservation_id_to_report);
+    if (not reserved or reservation_id < 0) {
+        return std::nullopt;
+    }
     return reservation_id;
 }
 
@@ -1722,6 +1725,27 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
     return false;
 }
 
+bool EvseManager::use_reservation(int32_t id) {
+    if (id < 0) {
+        return false;
+    }
+
+    if (charger->get_current_state() == Charger::EvseState::Disabled) {
+        EVLOG_info << "Not using reservation because charger is disabled.";
+        return false;
+    }
+
+    if (charger->stop_charging_on_fatal_error()) {
+        EVLOG_info << "Not using reservation because of a fatal error.";
+        return false;
+    }
+
+    Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_use_reservation);
+    reserved = true;
+    reservation_id = id;
+    return true;
+}
+
 void EvseManager::cancel_reservation(bool signal_event) {
 
     Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_cancel_reservation);
@@ -1818,6 +1842,11 @@ void EvseManager::recompute_and_publish_supported_ac_energy_transfers() {
 
 void EvseManager::recompute_and_publish_supported_dc_energy_transfers() {
     set_supported_energy_transfers([this] { return dc_energy_transfers(); }, SendEnergyTransfers::OnChange);
+}
+
+void EvseManager::apply_allowed_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes) {
+    const auto handle = supported_energy_transfers.handle();
+    send_supported_energy_transfers(modes);
 }
 
 void EvseManager::update_hlc_ac_parameters() {

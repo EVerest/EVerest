@@ -4,9 +4,11 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <optional>
 #include <vector>
 
 #include <generated/types/evse_board_support.hpp>
+#include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
 
 #include "energy_transfer_modes.hpp"
@@ -118,4 +120,53 @@ TEST(EnergyTransferModesTest, ac_der_iec_not_added_when_der_unavailable) {
                                                                   /*der_available=*/false);
 
     EXPECT_FALSE(contains(result, EnergyTransferMode::AC_DER_IEC));
+}
+
+TEST(EnergyTransferModesTest, filter_allowed_empty_input_is_empty) {
+    const auto result = module::filter_allowed_energy_transfers({}, types::evse_manager::ConnectorTypeEnum::cMCS);
+
+    EXPECT_TRUE(result.empty());
+}
+
+TEST(EnergyTransferModesTest, filter_allowed_without_connector_type_is_unchanged) {
+    const std::vector<EnergyTransferMode> allowed{
+        EnergyTransferMode::DC_BPT,
+        EnergyTransferMode::AC_single_phase_core,
+        EnergyTransferMode::DC,
+    };
+
+    const auto result = module::filter_allowed_energy_transfers(allowed, std::nullopt);
+
+    EXPECT_EQ(result, allowed);
+}
+
+TEST(EnergyTransferModesTest, filter_allowed_non_mcs_connector_is_unchanged) {
+    const std::vector<EnergyTransferMode> allowed{
+        EnergyTransferMode::DC,
+        EnergyTransferMode::DC_BPT,
+        EnergyTransferMode::AC_three_phase_core,
+    };
+
+    const auto result = module::filter_allowed_energy_transfers(allowed, types::evse_manager::ConnectorTypeEnum::cCCS2);
+
+    EXPECT_EQ(result, allowed);
+}
+
+TEST(EnergyTransferModesTest, filter_allowed_mcs_replaces_dc_modes) {
+    const std::vector<EnergyTransferMode> allowed{
+        EnergyTransferMode::AC_single_phase_core,
+        EnergyTransferMode::DC,
+        EnergyTransferMode::MCS,
+        EnergyTransferMode::DC_BPT,
+    };
+
+    const auto result = module::filter_allowed_energy_transfers(allowed, types::evse_manager::ConnectorTypeEnum::cMCS);
+
+    const std::vector<EnergyTransferMode> expected{
+        EnergyTransferMode::AC_single_phase_core,
+        EnergyTransferMode::MCS,
+        EnergyTransferMode::MCS,
+        EnergyTransferMode::MCS_BPT,
+    };
+    EXPECT_EQ(result, expected);
 }
