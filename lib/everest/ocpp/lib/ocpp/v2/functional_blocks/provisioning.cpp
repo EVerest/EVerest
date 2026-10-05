@@ -581,7 +581,10 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
 
     if (component_variable == ControllerComponentVariables::BasicAuthPassword) {
         if (this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile) < 3) {
-            this->context.connectivity_manager.set_websocket_authorization_key(set_variable_data.attributeValue.get());
+            this->message_queue.run_when_idle([this, key = set_variable_data.attributeValue.get()]() {
+                this->context.connectivity_manager.set_websocket_authorization_key(key);
+                return this->context.connectivity_manager.is_websocket_connected();
+            });
         }
         // A01.FR.11: log the change of BasicAuthPassword via a SecurityEventNotification.
         // The event payload must not contain the new password value.
