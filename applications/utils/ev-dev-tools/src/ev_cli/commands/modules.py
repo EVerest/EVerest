@@ -7,7 +7,6 @@ from __future__ import annotations
 from pathlib import Path
 
 from ..backends.base import registry
-from ..files import clang_format
 from .context import Context
 
 DEFAULT_LOADER_OUTPUT = 'build/generated/generated/modules'
@@ -21,13 +20,13 @@ def generate_loader(args) -> int:
     )
 
     model = context.module_model([args.module])
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     writer = context.writer()
     strategy = context.strategy(args.force)
 
-    for generated in backend.emit_module_loader(model, args.module, output_dir):
-        if not context.disable_clang_format:
-            clang_format(context.clang_format_dir, generated)
+    files = backend.emit_module_loader(model, args.module, output_dir)
+    backend.postprocess(files)
+    for generated in files:
         writer.write_checking_templates(generated, strategy)
 
     context.report_diagnostics_summary()
@@ -35,7 +34,7 @@ def generate_loader(args) -> int:
 
 
 def get_templates(args) -> int:
-    backend = registry.create(args.backend)
+    backend = registry.create(args.backend, args)
     print(args.separator.join(str(path) for path in backend.templates('module')))
     return 0
 

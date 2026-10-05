@@ -9,13 +9,15 @@ directly, through the view in :mod:`.view`.
 
 from __future__ import annotations
 
+import argparse
 from pathlib import Path
 
 import jinja2
 
 from ... import blocks
+from ...files import clang_format
 from ...ir.model import Model
-from ..base import GeneratedFile
+from ..base import GeneratedFile, UpdatePolicy
 from . import naming
 from .view import (
     TEMPLATE_VERSION,
@@ -57,7 +59,26 @@ class CppBackend:
 
     name = 'cpp'
 
-    def __init__(self) -> None:
+    @staticmethod
+    def options() -> argparse.ArgumentParser:
+        """Formatting the generated sources is this target's business alone.
+
+        Both options keep their historical names: EVerest's build passes
+        ``--disable-clang-format`` and the spelling is part of the contract.
+        """
+        parser = argparse.ArgumentParser(add_help=False)
+        group = parser.add_argument_group('cpp backend')
+        group.add_argument(
+            '--clang-format-file', type=str, default=str(Path.cwd()),
+            help='directory containing the .clang-format file (default: .)')
+        group.add_argument(
+            '--disable-clang-format', action='store_true', default=False,
+            help='do not run clang-format over generated sources')
+        return parser
+
+    def __init__(self, args=None) -> None:
+        self._clang_format_dir = Path(getattr(args, 'clang_format_file', None) or Path.cwd())
+        self._disable_clang_format = bool(getattr(args, 'disable_clang_format', False))
         self._env = jinja2.Environment(
             loader=jinja2.FileSystemLoader(TEMPLATE_DIR),
             lstrip_blocks=True,
@@ -66,6 +87,20 @@ class CppBackend:
             undefined=jinja2.StrictUndefined,
         )
         self._env.filters['snake_case'] = naming.snake_case
+
+    # -- post-processing ----------------------------------------------------
+
+    def postprocess(self, files: list[GeneratedFile]) -> None:
+        """Format the generated sources.
+
+        The commands do not know that C++ needs formatting, or which of a
+        target's outputs are even C++; clang_format itself skips anything that
+        is not a .hpp or a .cpp.
+        """
+        if self._disable_clang_format:
+            return
+        for file in files:
+            clang_format(self._clang_format_dir, file)
 
     # -- templates ----------------------------------------------------------
 
@@ -177,6 +212,7 @@ class CppBackend:
         templates = self._template_paths('module_files')
 
         def rendered(template: str, view, path: Path, abbr: str, category: str,
+                     policy: UpdatePolicy = UpdatePolicy.REGENERATE,
                      with_license: bool = True) -> GeneratedFile:
             return GeneratedFile(
                 path=path,
@@ -186,6 +222,7 @@ class CppBackend:
                 template_paths=templates,
                 abbr=abbr,
                 category=category,
+                update_policy=policy,
                 license_header=license_header if with_license else None,
             )
 
@@ -211,6 +248,7 @@ class CppBackend:
             'module.cpp.j2',
             ModuleView(module=definition, model=model, license_header=license_header),
             module_dir / f'{definition.name}.cpp', 'module.cpp', 'core',
+            UpdatePolicy.CREATE_IF_MISSING,
         ))
 
         # -- one implementation per provided interface ----------------------
@@ -230,6 +268,7 @@ class CppBackend:
                 'implementation.cpp.j2', view,
                 module_dir / f'{provided.id}/{provided.interface}Impl.cpp',
                 f'{provided.id}.cpp', 'interfaces',
+                UpdatePolicy.CREATE_IF_MISSING,
             ))
 
         # -- docs -----------------------------------------------------------
@@ -237,7 +276,7 @@ class CppBackend:
             'docs-index.rst.j2',
             ModuleView(module=definition, model=model),
             module_dir / 'docs' / 'index.rst', 'index.rst', 'docs',
-            with_license=False,
+            UpdatePolicy.LEAVE_ALONE, with_license=False,
         ))
 
         return files
