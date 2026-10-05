@@ -7,7 +7,7 @@ import asyncio
 from datetime import datetime, timezone
 from unittest.mock import Mock
 from copy import deepcopy
-from typing import Dict
+from typing import Dict, Optional
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
@@ -37,14 +37,18 @@ class AcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, ac_hlc_use_5percent: bool = True, hlc_charge_loop_without_energy_timeout_s: int = 300):
+    def __init__(self, ac_hlc_use_5percent: bool = True, hlc_charge_loop_without_energy_timeout_s: int = 300,
+                 switch_3ph1ph_time_hysteresis_s: Optional[int] = None):
         self.ac_hlc_use_5percent = ac_hlc_use_5percent
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
+        self.switch_3ph1ph_time_hysteresis_s = switch_3ph1ph_time_hysteresis_s
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
         adjusted_config["active_modules"]["connector_1"]["config_module"]["ac_hlc_use_5percent"] = self.ac_hlc_use_5percent
         adjusted_config["active_modules"]["connector_1"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
+        if self.switch_3ph1ph_time_hysteresis_s is not None:
+            adjusted_config["active_modules"]["energy_manager"]["config_module"]["switch_3ph1ph_time_hysteresis_s"] = self.switch_3ph1ph_time_hysteresis_s
         return adjusted_config
 
 class RequestZeroPowerInIdleAdjustmentStrategy(EverestConfigAdjustmentStrategy):
@@ -808,7 +812,8 @@ async def test_pwm_ac_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
+# The 0 W limit makes 1ph optimal; with the time hysteresis the 3ph switch after the raise depends on session timing.
+@pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy(switch_3ph1ph_time_hysteresis_s=0))
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_no_energy_before_session(
     test_controller: TestController, everest_core: EverestCore
