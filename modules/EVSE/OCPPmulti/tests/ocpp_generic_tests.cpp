@@ -803,6 +803,220 @@ TEST_F(GenericOcppProvidesTester, monitorVariablesDuplicateFormStoredOnce) {
     EXPECT_EQ(ocpp->get_monitor_list().size(), 1);
 }
 
+TEST_F(GenericOcppProvidesTester, monitorAndGetVariables) {
+    // registers the monitor and returns the current value in one call
+    using module::conversions::to_ocpp_get_variable_data_vector;
+    using types::ocpp::ComponentVariable;
+    using types::ocpp::GetVariableRequest;
+    using types::ocpp::GetVariableStatusEnumType;
+
+    const ocpp::v2::Component component{"Component1"};
+    const ocpp::v2::Variable variable{"Variable1"};
+
+    EXPECT_CALL(chargepoint, resolve_to_canonical(component, variable)).Times(1);
+    EXPECT_CALL(chargepoint, register_variable_listener(component, variable, _)).Times(1);
+
+    // the synthesized get request carries the requested CV and no attribute_type
+    const GetVariableRequest expected_req{{{"Component1"}, {"Variable1"}}, std::nullopt};
+    const auto request_input = to_ocpp_get_variable_data_vector({expected_req});
+    std::vector<ocpp::v2::GetVariableResult> request_output;
+    const ocpp::v2::GetVariableResult res{ocpp::v2::GetVariableStatusEnum::Accepted,
+                                          component,
+                                          variable,
+                                          std::nullopt,
+                                          std::nullopt,
+                                          "Value1",
+                                          std::nullopt};
+    request_output.push_back(res);
+    EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
+
+    std::vector<ComponentVariable> req{{{"Component1"}, {"Variable1"}}};
+    const auto result = ocpp->handle_monitor_and_get_variables(req);
+
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0].status, GetVariableStatusEnumType::Accepted);
+    EXPECT_EQ(result[0].component_variable, req[0]);
+    EXPECT_EQ(result[0].value.value_or(""), "Value1");
+
+    EXPECT_EQ(ocpp->get_monitor_list().size(), 1);
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component1", "Variable1"));
+}
+
+TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesOrderPreserved) {
+    using module::conversions::to_ocpp_get_variable_data_vector;
+    using types::ocpp::ComponentVariable;
+    using types::ocpp::GetVariableRequest;
+    using types::ocpp::GetVariableStatusEnumType;
+
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component1"}, ocpp::v2::Variable{"Variable1"}, _))
+        .Times(1);
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component2"}, ocpp::v2::Variable{"Variable2"}, _))
+        .Times(1);
+
+    std::vector<GetVariableRequest> expected_reqs{{{{"Component1"}, {"Variable1"}}, std::nullopt},
+                                                  {{{"Component2"}, {"Variable2"}}, std::nullopt}};
+    const auto request_input = to_ocpp_get_variable_data_vector(expected_reqs);
+    std::vector<ocpp::v2::GetVariableResult> request_output;
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted,
+                              {"Component1"},
+                              {"Variable1"},
+                              std::nullopt,
+                              std::nullopt,
+                              "Value1",
+                              std::nullopt});
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted,
+                              {"Component2"},
+                              {"Variable2"},
+                              std::nullopt,
+                              std::nullopt,
+                              "Value2",
+                              std::nullopt});
+    EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
+
+    std::vector<ComponentVariable> req{{{"Component1"}, {"Variable1"}}, {{"Component2"}, {"Variable2"}}};
+    const auto result = ocpp->handle_monitor_and_get_variables(req);
+
+    ASSERT_EQ(result.size(), 2);
+    EXPECT_EQ(result[0].component_variable, req[0]);
+    EXPECT_EQ(result[0].value.value_or(""), "Value1");
+    EXPECT_EQ(result[1].component_variable, req[1]);
+    EXPECT_EQ(result[1].value.value_or(""), "Value2");
+    EXPECT_EQ(ocpp->get_monitor_list().size(), 2);
+}
+
+TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesUnresolvableStillReturnsResult) {
+    // an unresolvable CV is skipped for monitoring but still gets a get result:
+    // the result list length always equals the request length
+    using module::conversions::to_ocpp_get_variable_data_vector;
+    using types::ocpp::ComponentVariable;
+    using types::ocpp::GetVariableRequest;
+    using types::ocpp::GetVariableStatusEnumType;
+
+    EXPECT_CALL(chargepoint, resolve_to_canonical(ocpp::v2::Component{""}, ocpp::v2::Variable{"NoSuchKey"}))
+        .WillOnce(Return(std::nullopt));
+    EXPECT_CALL(chargepoint, register_variable_listener(_, _, _)).Times(0);
+
+    const GetVariableRequest expected_req{{{""}, {"NoSuchKey"}}, std::nullopt};
+    const auto request_input = to_ocpp_get_variable_data_vector({expected_req});
+    std::vector<ocpp::v2::GetVariableResult> request_output;
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::UnknownVariable,
+                              {""},
+                              {"NoSuchKey"},
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt,
+                              std::nullopt});
+    EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
+
+    std::vector<ComponentVariable> req{{{""}, {"NoSuchKey"}}};
+    const auto result = ocpp->handle_monitor_and_get_variables(req);
+
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0].status, GetVariableStatusEnumType::UnknownVariable);
+    EXPECT_TRUE(ocpp->get_monitor_list().empty());
+}
+
+TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesEventFires) {
+    // a monitor registered via monitor_and_get_variables publishes event_data on change
+    using module::conversions::to_ocpp_get_variable_data_vector;
+    using ocpp::v2::Component;
+    using ocpp::v2::Variable;
+    using types::ocpp::ComponentVariable;
+    using types::ocpp::GetVariableRequest;
+
+    std::vector<json> received;
+    interfaces->subscribe_var("ocpp_generic", "event_data",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    const Component component{"Component"};
+    const Variable variable{"Variable"};
+
+    EXPECT_CALL(chargepoint, register_variable_listener(component, variable, _)).Times(1);
+
+    const GetVariableRequest expected_req{{{"Component"}, {"Variable"}}, std::nullopt};
+    const auto request_input = to_ocpp_get_variable_data_vector({expected_req});
+    std::vector<ocpp::v2::GetVariableResult> request_output;
+    request_output.push_back({ocpp::v2::GetVariableStatusEnum::Accepted, component, variable, std::nullopt,
+                              std::nullopt, "value", std::nullopt});
+    EXPECT_CALL(chargepoint, get_variables(request_input)).WillOnce(Return(request_output));
+
+    std::vector<ComponentVariable> req{{{"Component"}, {"Variable"}}};
+    ocpp->handle_monitor_and_get_variables(req);
+    EXPECT_TRUE(received.empty());
+
+    ocpp->cb_variable_monitor(component, variable, "value");
+
+    ASSERT_EQ(received.size(), 1);
+    json expected =
+        R"({"actual_value":"value","component_variable":{"component":{"name":"Component"},"variable":{"name":"Variable"}},"event_id":0,"event_notification_type":"CustomMonitor","timestamp":"x","trigger":"Alerting"})"_json;
+    expected["timestamp"] = received[0]["timestamp"];
+    EXPECT_EQ(received[0], expected);
+}
+
+TEST_F(GenericOcppProvidesTester, monitorAndGetVariablesExtends) {
+    // consecutive calls extend the existing monitors
+    using types::ocpp::ComponentVariable;
+
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component1"}, ocpp::v2::Variable{"Variable1"}, _))
+        .Times(1);
+    EXPECT_CALL(chargepoint,
+                register_variable_listener(ocpp::v2::Component{"Component2"}, ocpp::v2::Variable{"Variable2"}, _))
+        .Times(1);
+    EXPECT_CALL(chargepoint, get_variables(_)).Times(2);
+
+    std::vector<ComponentVariable> req1{{{"Component1"}, {"Variable1"}}};
+    std::vector<ComponentVariable> req2{{{"Component2"}, {"Variable2"}}};
+    ocpp->handle_monitor_and_get_variables(req1);
+    ocpp->handle_monitor_and_get_variables(req2);
+
+    EXPECT_EQ(ocpp->get_monitor_list().size(), 2);
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component1", "Variable1"));
+    EXPECT_TRUE(contains(ocpp->get_monitor_list(), "Component2", "Variable2"));
+}
+
+TEST(GenericOcppProvides, monitorAndGetVariablesOffline) {
+    // called before run - no monitor is registered and all results are rejected
+
+    stubs::ChargePointStub chargepoint;
+    stubs::ConfigStub config;
+    stubs::ModuleInterfaces interfaces;
+
+    // connect required interfaces
+    interfaces.add_charger_information("info");
+    interfaces.add_data_transfer("data_transfer");
+    interfaces.add_display_message("display");
+    interfaces.add_evse_energy_sink("energy_node", 1);
+    interfaces.add_evse_manager("evse_manager_1");
+    interfaces.add_evse_manager("evse_manager_2");
+    interfaces.add_extensions_15118("evsev2g");
+    interfaces.add_reservation("reservation");
+
+    chargepoint.load_store("default_store.json");
+
+    // GenericOcpp object
+    stubs::GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
+                                  interfaces.get_requires());
+
+    ocpp.init();
+
+    using types::ocpp::ComponentVariable;
+    using types::ocpp::GetVariableStatusEnumType;
+
+    EXPECT_CALL(chargepoint, register_variable_listener(_, _, _)).Times(0);
+    EXPECT_CALL(chargepoint, get_variables(_)).Times(0);
+
+    std::vector<ComponentVariable> req{{{"Component1"}, {"Variable1"}}};
+    const auto result = ocpp.handle_monitor_and_get_variables(req);
+
+    ASSERT_EQ(result.size(), 1);
+    EXPECT_EQ(result[0].status, GetVariableStatusEnumType::Rejected);
+    EXPECT_EQ(result[0].component_variable, req[0]);
+    EXPECT_TRUE(ocpp.get_monitor_list().empty());
+}
+
 // ----------------------------------------------------------------------------
 // Vars
 
@@ -817,7 +1031,7 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
 
     TransactionEventRequest request;
     request.eventType = TransactionEventEnum::Updated;
-    request.timestamp = DateTime{};
+    request.timestamp = DateTime{"2026-06-05T13:37:36.409Z"};
     request.triggerReason = TriggerReasonEnum::ChargingRateChanged;
     request.seqNo = 99587;
     request.transactionInfo = Transaction{"TransactionId"};
@@ -837,21 +1051,25 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEvent) {
     interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_transaction_event(request, "TransactionId");
+    ocpp->cb_transaction_event(request, "TransactionId", request.timestamp);
     ASSERT_EQ(received.size(), 1);
-    EXPECT_EQ(received[0],
-              R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
+    EXPECT_EQ(
+        received[0],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Updated","transaction_id":"TransactionId"})"_json);
 
-    // OCPP1.6: numeric transaction id differs from the session id
-    ocpp->cb_transaction_event(request, "42");
+    // OCPP1.6: numeric transaction id differs from the session id and the timestamp comes from the 1.6 message
+    ocpp->cb_transaction_event(request, "42", DateTime{"2026-06-05T14:02:11.000Z"});
     ASSERT_EQ(received.size(), 2);
-    EXPECT_EQ(received[1],
-              R"({"session_id":"TransactionId","transaction_event":"Updated","transaction_id":"42"})"_json);
+    EXPECT_EQ(
+        received[1],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated","transaction_id":"42"})"_json);
 
     // OCPP1.6: transaction id not assigned yet (Started)
-    ocpp->cb_transaction_event(request, std::nullopt);
+    ocpp->cb_transaction_event(request, std::nullopt, DateTime{"2026-06-05T14:02:11.000Z"});
     ASSERT_EQ(received.size(), 3);
-    EXPECT_EQ(received[2], R"({"session_id":"TransactionId","transaction_event":"Updated"})"_json);
+    EXPECT_EQ(
+        received[2],
+        R"({"session_id":"TransactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated"})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
@@ -869,7 +1087,7 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
 
     TransactionEventRequest transaction_event;
     transaction_event.eventType = TransactionEventEnum::Started;
-    transaction_event.timestamp = DateTime();
+    transaction_event.timestamp = DateTime{"2026-06-05T13:37:36.409Z"};
     transaction_event.triggerReason = TriggerReasonEnum::CablePluggedIn;
     transaction_event.seqNo = 10;
     transaction_event.transactionInfo = Transaction{"transactionId"};
@@ -898,22 +1116,24 @@ TEST_F(GenericOcppProvidesTester, publishOcppTransactionEventRespose) {
     interfaces->subscribe_var("ocpp_generic", "ocpp_transaction_event_response",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId");
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "transactionId",
+                                        transaction_event.timestamp);
 
     transaction_event.eventType = TransactionEventEnum::Updated;
     transaction_event.triggerReason = TriggerReasonEnum::ChargingStateChanged;
     transaction_event.evse = EVSE{1, 0};
     transaction_event_response.idTokenInfo = IdTokenInfo{AuthorizationStatusEnum::Accepted};
-    // OCPP1.6: numeric transaction id differs from the session id
-    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42");
+    // OCPP1.6: numeric transaction id differs from the session id and the timestamp comes from the 1.6 message
+    ocpp->cb_transaction_event_response(transaction_event, transaction_event_response, "42",
+                                        DateTime{"2026-06-05T14:02:11.000Z"});
 
     EXPECT_EQ(received.size(), 2);
     EXPECT_EQ(
         received[0],
-        R"({"original_transaction_event":{"session_id":"transactionId","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
+        R"({"original_transaction_event":{"session_id":"transactionId","timestamp":"2026-06-05T13:37:36.409Z","transaction_event":"Started","transaction_id":"transactionId"}})"_json);
     EXPECT_EQ(
         received[1],
-        R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","transaction_event":"Updated","transaction_id":"42"}})"_json);
+        R"({"original_transaction_event":{"evse":{"connector_id":0,"id":1},"session_id":"transactionId","timestamp":"2026-06-05T14:02:11.000Z","transaction_event":"Updated","transaction_id":"42"}})"_json);
 }
 
 TEST_F(GenericOcppProvidesTester, publishChargingSchedules) {

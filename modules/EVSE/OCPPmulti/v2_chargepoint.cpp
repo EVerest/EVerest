@@ -300,9 +300,12 @@ void ChargePointV2::cb_variable_listener(
     const std::string& value_previous, const std::string& value_current) {
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
-    if (listener != nullptr) {
-        listener(component, variable, value_current);
+    if (listener == nullptr) {
+        return;
     }
+    const bool write_only =
+        attribute.mutability.value_or(ocpp::v2::MutabilityEnum::ReadWrite) == ocpp::v2::MutabilityEnum::WriteOnly;
+    listener(component, variable, write_only ? std::string{} : value_current);
 }
 
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
@@ -407,13 +410,15 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     callbacks.all_connectors_unavailable_callback = [this]() { m_callbacks_ptr->cb_all_connectors_unavailable(); };
     callbacks.transaction_event_callback = [this](const ocpp::v2::TransactionEventRequest& transaction_event) {
         // in 2.x the session id doubles as the transaction id
-        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get());
+        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get(),
+                                              transaction_event.timestamp);
     };
     callbacks.transaction_event_response_callback =
         [this](const ocpp::v2::TransactionEventRequest& transaction_event,
                const ocpp::v2::TransactionEventResponse& transaction_event_response) {
             m_callbacks_ptr->cb_transaction_event_response(transaction_event, transaction_event_response,
-                                                           transaction_event.transactionInfo.transactionId.get());
+                                                           transaction_event.transactionInfo.transactionId.get(),
+                                                           transaction_event.timestamp);
         };
     callbacks.boot_notification_callback = [this](auto&&... args) { m_callbacks_ptr->cb_boot_notification(args...); };
     callbacks.set_display_message_callback = [this](auto&&... args) {
@@ -759,6 +764,9 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
         if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
             m_charge_point->on_session_started(evse_id, connector_id);
+        } else if (reservation_id.has_value()) {
+            // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+            m_charge_point->on_reservation_cleared(evse_id, connector_id);
         }
         result = tx_event == module::TxEvent::EV_CONNECTED;
     } else {
@@ -891,6 +899,10 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             transaction_data->trigger_reason = trigger_reason;
             const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
+            if (transaction_started.reservation_id.has_value()) {
+                // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+                m_charge_point->on_reservation_cleared(evse_id, connector_id);
+            }
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
     } else {

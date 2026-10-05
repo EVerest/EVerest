@@ -71,14 +71,16 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
     message_20::AC_ChargeParameterDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto selected_energy_service = session.get_selected_services().selected_energy_service;
 
     if (std::holds_alternative<AC_ModeReq>(req.transfer_mode)) {
         if (selected_energy_service != message_20::datatypes::ServiceCategory::AC) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<AC_ModeRes>();
@@ -86,17 +88,20 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
 
     } else if (std::holds_alternative<BPT_AC_ModeReq>(req.transfer_mode)) {
         if (selected_energy_service != message_20::datatypes::ServiceCategory::AC_BPT) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<BPT_AC_ModeRes>();
         convert(mode, limits, powers);
 
     } else {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    set_response_code(res, message_20::datatypes::ResponseCode::OK);
+    return res;
 }
 
 void AC_ChargeParameterDiscovery::enter() {

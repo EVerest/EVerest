@@ -6,6 +6,8 @@
 #include <everest/util/async/monitor.hpp>
 
 #include <atomic>
+#include <chrono>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 #include <string>
@@ -134,9 +136,23 @@ private:
     std::string m_buffer;
 };
 
+// Wall clock with milliseconds, so lines from unattended runs can be placed in time and lined up
+// with the MCU's debug output and with the other bridges.
+static std::string timestamp_prefix() {
+    auto const now = std::chrono::system_clock::now();
+    auto const secs = std::chrono::system_clock::to_time_t(now);
+    auto const ms = std::chrono::duration_cast<std::chrono::milliseconds>(now.time_since_epoch()).count() % 1000;
+    std::tm tm{};
+    localtime_r(&secs, &tm);
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%d %H:%M:%S") << '.' << std::setfill('0') << std::setw(3) << ms << ' ';
+    return oss.str();
+}
+
 std::string print_error_prefix_plain(std::string const& device, std::string const& unit, int status) {
     std::ostringstream oss;
-    oss << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20) << device << " ";
+    oss << timestamp_prefix() << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20)
+        << device << " ";
     if (status == -1) {
         oss << "WARNING ";
     } else if (status != 0) {
@@ -149,8 +165,8 @@ std::string print_error_prefix_plain(std::string const& device, std::string cons
 
 std::string print_error_prefix_ansi(std::string const& device, std::string const& unit, color level, int status) {
     std::ostringstream oss;
-    oss << "[ " << level << std::setw(13) << std::left << unit << color::terminal << " ] " << color::unit
-        << std::setw(20) << device << color::terminal << " ";
+    oss << timestamp_prefix() << "[ " << level << std::setw(13) << std::left << unit << color::terminal << " ] "
+        << color::unit << std::setw(20) << device << color::terminal << " ";
     if (status == -1) {
         oss << color::standard << "WARNING ";
     } else if (status != 0) {
@@ -163,14 +179,15 @@ std::string print_error_prefix_ansi(std::string const& device, std::string const
 
 std::string print_info_prefix_plain(std::string const& device, std::string const& unit) {
     std::ostringstream oss;
-    oss << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20) << device << " ";
+    oss << timestamp_prefix() << "[ " << std::left << std::setw(13) << unit << " ] " << std::left << std::setw(20)
+        << device << " ";
     return oss.str();
 }
 
 std::string print_info_prefix_ansi(std::string const& device, std::string const& unit) {
     std::ostringstream oss;
-    oss << "[ " << color::message << std::setw(13) << std::left << unit << color::terminal << " ] " << color::unit
-        << std::setw(20) << std::left << device << color::terminal << " ";
+    oss << timestamp_prefix() << "[ " << color::message << std::setw(13) << std::left << unit << color::terminal
+        << " ] " << color::unit << std::setw(20) << std::left << device << color::terminal << " ";
     return oss.str();
 }
 

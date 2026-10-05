@@ -376,6 +376,23 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
 
         X509CertificateBundle existing_certs(ca_bundle_path, EncodingFormat::PEM);
 
+        std::uintmax_t total_v2g_mo_ca_count = 0;
+        for (const auto ca_type : {CaCertificateType::V2G, CaCertificateType::MO}) {
+            const auto ca_path = this->ca_bundle_path_map.at(ca_type);
+            if (!fs::is_directory(ca_path)) {
+                filesystem_utils::create_file_if_nonexistent(ca_path);
+            }
+
+            X509CertificateBundle ca_certs(ca_path, EncodingFormat::PEM);
+            total_v2g_mo_ca_count += ca_certs.get_certificate_count();
+        }
+
+        if (total_v2g_mo_ca_count > max_fs_certificate_store_entries) {
+            EVLOG_error << "Max number of certificates " << max_fs_certificate_store_entries
+                        << " reached, install not possible!";
+            return InstallCertificateResult::CertificateStoreMaxLengthExceeded;
+        }
+
         if (existing_certs.is_using_directory()) {
             const std::string filename = conversions::ca_certificate_type_to_string(certificate_type) + "_ROOT_" +
                                          filesystem_utils::get_random_file_name(PEM_EXTENSION.string());
@@ -412,7 +429,7 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
 DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certificate_hash_data) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
 
-    EVLOG_info << "Deleteing certificate: " << certificate_hash_data.serial_number;
+    EVLOG_info << "Deleting certificate: " << certificate_hash_data.serial_number;
 
     DeleteResult response;
     response.result = DeleteCertificateResult::NotFound;
@@ -512,7 +529,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
             std::move(X509CertificateHierarchy::build_hierarchy(base_roots, leaf_bundle.split()));
 
         // Collect all the leafs that we have to delete
-        auto leafs_to_delete = hierarchy.find_certificates_multi(certificate_hash_data);
+        auto leafs_to_delete = hierarchy.find_certificates_multi(certificate_hash_data, true);
 
         leaf_bundle.for_each_chain([&](const fs::path& path, const std::vector<X509Wrapper>& chain) {
             // If any chain element is contained in the leafs to delete, then delete the whole chain
@@ -1092,7 +1109,8 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
         // If we already have the hash, over-write, else create a new one
         try {
             // Find the certificates, can me multiple if we have SUBcas in multiple bundles
-            const std::vector<X509Wrapper> certs = certificate_hierarchy.find_certificates_multi(certificate_hash_data);
+            const std::vector<X509Wrapper> certs =
+                certificate_hierarchy.find_certificates_multi(certificate_hash_data, true);
 
             for (auto& cert : certs) {
                 EVLOG_debug << "Writing OCSP Response to filesystem";

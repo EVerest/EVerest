@@ -2,11 +2,16 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/ac_charge_loop.hpp>
 
 #include <iso15118/d20/config.hpp>
 
 using namespace iso15118;
+
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 namespace dt = message_20::datatypes;
 
@@ -325,7 +330,8 @@ SCENARIO("AC charge loop state handling") {
         auto ac_present_power = d20::AcPresentPower{};
         ac_present_power.present_active_power = {11, 3};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res = d20::state::handle_request(req, session, false, false, 50, ac_target_power, ac_present_power,
                                                     dynamic_parameters);
@@ -374,7 +380,8 @@ SCENARIO("AC charge loop state handling") {
         auto ac_present_power = d20::AcPresentPower{};
         ac_present_power.present_active_power = {11, 3};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res = d20::state::handle_request(req, session, false, false, 50, ac_target_power, ac_present_power,
                                                     dynamic_parameters);

@@ -199,7 +199,7 @@ def probe_module(
         skip_implementation,
         "ProbeModuleConnectorA",
         "get_evse",
-        lambda arg: {"id": 1, "connectors": [{"id": 1}]},
+        lambda arg: {"id": 1, "connectors": [{"id": 1, "charge_mode": "AC", "hlc_capable": False}]},
     )
     implement_command(
         module,
@@ -304,7 +304,7 @@ def probe_module(
         skip_implementation,
         "ProbeModuleConnectorB",
         "get_evse",
-        lambda arg: {"id": 2, "connectors": [{"id": 1}]},
+        lambda arg: {"id": 2, "connectors": [{"id": 1, "charge_mode": "AC", "hlc_capable": False}]},
     )
     implement_command(
         module,

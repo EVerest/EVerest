@@ -21,15 +21,17 @@ to the corresponding migration guide.
      - Earliest removal
      - Migration guide
    * - :ref:`OCPP module <everest_modules_OCPP>` (OCPP 1.6), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0).
      - 2026.10.0
      - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
+       The module logs a deprecation warning at startup.
    * - :ref:`OCPP201 module <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>`
+       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0)
      - 2026.10.0
      - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`
+     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
+       The module logs a deprecation warning at startup.
    * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
      - 2026.10.0
      - 2027.04.0
@@ -88,3 +90,24 @@ to the corresponding migration guide.
        Both options violate IEC 61851-1:2019 D.6.5 Table D.9 line 4 and must
        not be used in public environments; the module logs a warning at
        startup for either.
+   * - :ref:`API module <everest_modules_API>` (``everest_api/<connector>/cmd/*`` and
+       ``everest_api/<connector>/var/*`` topics), superseded by the
+       :ref:`EVerest API modules <everest_apis>`
+     - 2026.10.0
+     - 2027.04.0
+     - Replace the module with the EVerest API modules covering the topics in use:
+       ``evse_manager_consumer_API`` for charging control (``enable_disable``,
+       ``pause_charging``, ``resume_charging``, ``stop_charging``,
+       ``force_unlock``, ``uk_random_delay``) and EVSE state (``session_info``,
+       ``ev_info``, ``hardware_capabilities``, ``powermeter``, ``limits``,
+       ``selected_protocol``), ``external_energy_limits_consumer_API`` for
+       ``set_limit_amps``, ``set_limit_amps_phases`` and ``set_limit_watts``,
+       ``ocpp_consumer_API`` for ``ocpp/var/connection_status`` and
+       ``ocpp/var/charging_schedules``, and ``error_history_consumer_API`` for
+       ``errors/var/active_errors``. ``info/var/info`` (charger information) has
+       no replacement. The module logs a deprecation warning at startup.
+   * - :ref:`EvAPI module <everest_modules_EvAPI>` (``everest_api/ev_connectors``
+       and ``everest_api/<connector>/var/*`` topics)
+     - 2026.10.0
+     - 2027.04.0
+     - No replacement. The module logs a deprecation warning at startup.

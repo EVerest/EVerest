@@ -322,6 +322,10 @@ to_everest_allowed_energy_transfer_mode(const ocpp::v2::EnergyTransferModeEnum& 
 std::vector<types::iso15118::EnergyTransferMode> to_everest_allowed_energy_transfer_modes(
     const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes);
 
+/// \brief Converts a given types::iso15118::EnergyTransferMode \p transfer_mode to an
+/// ocpp::v2::EnergyTransferModeEnum
+ocpp::v2::EnergyTransferModeEnum to_ocpp_energy_transfer_mode(types::iso15118::EnergyTransferMode transfer_mode);
+
 ocpp::v2::OperationalStatusEnum to_ocpp_operational_status(types::ocpp::OperationalStatusEnumType value);
 types::ocpp::ChangeAvailabilityStatusEnumType
 to_everest_change_availability_status(ocpp::v2::ChangeAvailabilityStatusEnum value);

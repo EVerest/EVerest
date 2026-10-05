@@ -128,7 +128,9 @@ public:
     void set_supports_cp_state_E(bool value);
 
     // call when in state WaitingForAuthentication
-    void authorize(bool a, const types::authorization::ProvidedIdToken& token,
+    // Returns false if the authorization was ignored because the session was externally cancelled or a disable is
+    // pending.
+    bool authorize(bool a, const types::authorization::ProvidedIdToken& token,
                    const types::authorization::ValidationResult& result);
     bool deauthorize();
 
@@ -202,6 +204,7 @@ public:
 
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
+    void dc_open_contactor_request();
 
     void set_hlc_d20_active();
 

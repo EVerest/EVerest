@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_OCSP_UPDATER_HPP
 #define OCPP_OCSP_UPDATER_HPP
@@ -36,10 +36,6 @@ private:
 };
 
 using cert_status_func = std::function<GetCertificateStatusResponse(GetCertificateStatusRequest)>;
-
-// Forward declarations to avoid include loops
-class ChargePoint;
-class UnexpectedMessageTypeFromCSMS;
 
 class OcspUpdaterInterface {
 public:

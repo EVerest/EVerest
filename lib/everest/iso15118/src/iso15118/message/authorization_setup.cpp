@@ -45,6 +45,7 @@ template <> void convert(const AuthorizationSetupRequest& in, iso20_Authorizatio
     convert(in.header, out.Header);
 }
 
+namespace {
 struct AuthorizationModeVisitor {
     AuthorizationModeVisitor(iso20_AuthorizationSetupResType& out_) : out(out_){};
     void operator()([[maybe_unused]] const datatypes::EIM_ASResAuthorizationMode& in) {
@@ -61,6 +62,7 @@ struct AuthorizationModeVisitor {
 private:
     iso20_AuthorizationSetupResType& out;
 };
+} // namespace
 
 template <> void convert(const AuthorizationSetupResponse& in, iso20_AuthorizationSetupResType& out) {
     init_iso20_AuthorizationSetupResType(&out);

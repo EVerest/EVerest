@@ -29,6 +29,12 @@ using StartSessionReason_External = StartSessionReason;
 StartSessionReason_Internal to_internal_api(StartSessionReason_External const& val);
 StartSessionReason_External to_external_api(StartSessionReason_Internal const& val);
 
+using ChargeMode_Internal = ::types::evse_manager::ChargeMode;
+using ChargeMode_External = ChargeMode;
+
+ChargeMode_Internal to_internal_api(ChargeMode_External const& val);
+ChargeMode_External to_external_api(ChargeMode_Internal const& val);
+
 using SessionEventEnum_Internal = ::types::evse_manager::SessionEventEnum;
 using SessionEventEnum_External = SessionEventEnum;
 

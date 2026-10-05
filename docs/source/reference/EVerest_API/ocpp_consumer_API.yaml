@@ -76,6 +76,16 @@ channels:
     messages:
       send_request_monitor_variables:
         $ref: '#/components/messages/send_request_monitor_variables'
+  send_request_monitor_and_get_variables:
+    address: 'm2e/monitor_and_get_variables'
+    messages:
+      send_request_monitor_and_get_variables:
+        $ref: '#/components/messages/send_request_monitor_and_get_variables'
+  receive_reply_monitor_and_get_variables:
+    address: null
+    messages:
+      receive_reply_monitor_and_get_variables:
+        $ref: '#/components/messages/receive_reply_monitor_and_get_variables'
   send_request_change_availability:
     address: 'm2e/change_availability'
     messages:
@@ -318,6 +328,22 @@ operations:
     channel:
       $ref: '#/channels/send_request_monitor_variables'
     description: 'Direction: Module to EVerest'
+  send_request_monitor_and_get_variables:
+    title: 'Send request to monitor the requested variables and read their current values'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_monitor_and_get_variables'
+    description: 'Direction: Module to EVerest'
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_monitor_and_get_variables'
+  receive_reply_monitor_and_get_variables:
+    title: 'Receive the current values of the variables now being monitored'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_monitor_and_get_variables'
   send_request_change_availability:
     title: 'Send request to change the availability'
     action: send
@@ -793,6 +819,70 @@ components:
               variable:
                 name: string
                 instance: string
+    send_request_monitor_and_get_variables:
+      title: 'Monitor variables and read their current values'
+      summary: 'Monitor the variables and receive their current values in the reply.'
+      description: |
+        Combination of monitor_variables and get_variables in one call: starts
+        monitoring the given ComponentVariable(s) exactly like monitor_variables,
+        using the same canonical component/variable addressing as get_variables,
+        identical for OCPP 1.6 and 2.x; the empty-component OCPP 1.6 legacy key
+        form is deprecated. Changes to monitored variables are published on the
+        event_data channel and echo the addressing form used at registration.
+        Consecutive calls of this operation will not override but extend the
+        existing monitors. Additionally the reply contains the current (Actual)
+        value of every requested variable, with the same order, addressing echo
+        and status semantics as get_variables. The monitors are registered
+        before the values are read, so no update can be lost: every change from
+        registration on is published on the event_data channel, and the reply
+        reflects each variable's state at some point after registration. The
+        reply is not ordered against the event stream, however: a change around
+        the call may be reported both in the reply and as an event, and an
+        event may arrive before the reply does. Treat event_data as
+        authoritative for a variable once its first event arrived; use the
+        reply value only until then. This allows registering monitors at
+        startup and obtaining the initial values in a single call without
+        losing an update between the first read and the monitor registration.
+
+        See the OCPPmulti module documentation ("Configuration access" and
+        "Migration from OCPP 1.6 key addressing") for examples and the migration guide.
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - payload
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+          payload:
+            $ref: '#/components/schemas/MonitorVariableRequestList'
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+            payload:
+              items:
+              - component:
+                  name: string
+                  instance: string
+                  evse:
+                    id: 1
+                    connector_id: 1
+                variable:
+                  name: string
+                  instance: string
+    receive_reply_monitor_and_get_variables:
+      name: receive_reply_monitor_and_get_variables
+      title: 'Reply monitor and get variables'
+      summary: 'Reply with the current values of the variables now being monitored'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/GetVariableResultList'
     send_request_change_availability:
       title: 'Request change availability'
       summary: 'Request to change the availability of the Charging Station / an EVSE / a Connector.'
@@ -1907,6 +1997,7 @@ components:
       required:
         - transaction_event
         - session_id
+        - timestamp
       properties:
         transaction_event:
           description: >-
@@ -1927,6 +2018,15 @@ components:
             The CSMS assigned transaction ID. A string is used to support OCPP 2.0.1.
             For OCPP 1.6 the integer is converted to a string
           type: string
+        timestamp:
+          description: >-
+            Time of the transaction event in RFC3339 format. For OCPP 2.x this is the timestamp of the
+            TransactionEventRequest, for OCPP 1.6 the timestamp reported in the corresponding
+            StartTransaction.req or StopTransaction.req. For Updated events in OCPP 1.6 it is the time the
+            StartTransaction.conf that triggers them was processed, because that message carries no
+            timestamp of its own.
+          type: string
+          format: date-time
     RegistrationStatus:
       description: Indicates whether the Charging Station has been registered within the OCPP CSMS
       type: string

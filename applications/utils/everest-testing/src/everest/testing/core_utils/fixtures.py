@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+# Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 from pathlib import Path
 from typing import Optional
 
@@ -14,6 +14,7 @@ from ._configuration.everest_environment_setup import \
     EverestEnvironmentProbeModuleConfiguration, \
     EverestTestEnvironmentSetup, EverestEnvironmentOCPPConfiguration, EverestEnvironmentCoreConfiguration, \
     EverestEnvironmentEvseSecurityConfiguration, EverestEnvironmentPersistentStoreConfiguration
+from everest.testing.core_utils.common import close_mqtt_client
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.network_isolation import (
@@ -188,4 +189,4 @@ def connected_mqtt_client(everest_core: EverestCore) -> mqtt.Client:
 
     yield client
 
-    client.loop_stop()
+    close_mqtt_client(client)

@@ -125,6 +125,25 @@ class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
         return adjusted
 
 
+class OCPPMultiModuleConfigStrategy(EverestConfigAdjustmentStrategy):
+    """Sets additional `config_module` keys on the OCPP module, for OCPPmulti-only options such as
+    `DelegateNetworkConfigurationToSystem`. Use together with `ocpp_multi_only`: the keys are applied before the
+    rename to `OCPPmulti` and survive it because the framework strategies merge `config_module`."""
+
+    def __init__(self, config_module: dict, ocpp_module_id: str = "ocpp"):
+        self._config_module = config_module
+        self._ocpp_module_id = ocpp_module_id
+
+    def adjust_everest_configuration(self, everest_config: dict) -> dict:
+        adjusted = deepcopy(everest_config)
+        assert "active_modules" in adjusted and self._ocpp_module_id in adjusted["active_modules"], \
+            f"OCPP module id '{self._ocpp_module_id}' missing from EVerest config"
+        module_config = adjusted["active_modules"][self._ocpp_module_id]
+        module_config.setdefault("config_module", {})
+        module_config["config_module"].update(self._config_module)
+        return adjusted
+
+
 class EXIGenerator:
 
     def __init__(self, certs_path):

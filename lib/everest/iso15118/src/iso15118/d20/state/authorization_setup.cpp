@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
+#include <cinttypes>
 #include <random>
 
 #include <iso15118/d20/state/authorization.hpp>
@@ -22,7 +23,8 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     auto res = message_20::AuthorizationSetupResponse(); // default mandatory values [V2G20-736]
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     res.certificate_installation_service = cert_install_service;
@@ -50,7 +52,8 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void AuthorizationSetup::enter() {
@@ -69,7 +72,7 @@ Result AuthorizationSetup::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.cert_install_service,
                                         m_ctx.session_config.authorization_services);
 
-        logf_info("Timestamp: %d", req->header.timestamp);
+        logf_info("Timestamp: %" PRIu64, req->header.timestamp);
 
         m_ctx.respond(res);
 

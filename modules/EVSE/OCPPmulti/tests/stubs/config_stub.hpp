@@ -14,6 +14,7 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string CustomMrecErrorMapPath{};
     std::string DatabasePath{};
     int DelayOcppStart{1};
+    bool DelegateNetworkConfigurationToSystem{false};
     std::string DeviceModelConfigMappings{};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
@@ -47,6 +48,9 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     }
     [[nodiscard]] std::string getDatabasePath() const override {
         return DeviceModelConfigPath;
+    }
+    [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override {
+        return DelegateNetworkConfigurationToSystem;
     }
     [[nodiscard]] std::string getDeviceModelConfigMappings() const override {
         return DeviceModelConfigMappings;

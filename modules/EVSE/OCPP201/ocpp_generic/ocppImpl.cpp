@@ -24,6 +24,10 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 bool ocppImpl::handle_stop() {
     // Disconnects the websocket connection and stops the OCPP communication.
     // No OCPP messages will be stored and sent after a restart.
@@ -163,6 +167,21 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
             (void)monitor_list.insert(convert(cv));
         }
     }
+}
+
+std::vector<types::ocpp::GetVariableResult>
+ocppImpl::handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    // register the monitors first so that no change between reading the values and the registration is lost
+    handle_monitor_variables(component_variables);
+
+    std::vector<types::ocpp::GetVariableRequest> requests;
+    requests.reserve(component_variables.size());
+    for (const auto& cv : component_variables) {
+        types::ocpp::GetVariableRequest request;
+        request.component_variable = cv; // no attribute_type: Actual is the default
+        requests.push_back(request);
+    }
+    return handle_get_variables(requests);
 }
 
 void ocppImpl::variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

@@ -78,7 +78,6 @@ using ocpp::v16::keys::valid_keys;
     key(CertificateStoreMaxLength) \
     key(LocalAuthListMaxLength) \
     key(SendLocalListMaxLength) \
-    key(CustomDisplayCostAndPrice) \
     key(NumberOfDecimalsForCostValues) \
     key(CustomMultiLanguageMessages) \
     key(SupportedLanguages) \

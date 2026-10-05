@@ -17,6 +17,7 @@ namespace ocpp::v16 {
 
 constexpr std::size_t AUTHORIZATION_KEY_MIN_LENGTH = 8;
 constexpr std::size_t OCSP_REQUEST_INTERVAL_MIN = 86400;
+constexpr std::int32_t OCSP_REQUEST_INTERVAL_DEFAULT = 604800; // 7 days, Internal.json schema default
 constexpr std::size_t SECC_LEAF_SUBJECT_COMMON_NAME_MIN_LENGTH = 7;
 constexpr std::size_t SECC_LEAF_SUBJECT_COMMON_NAME_MAX_LENGTH = 64;
 constexpr std::size_t SECC_LEAF_SUBJECT_COUNTRY_LENGTH = 2;

@@ -1,7 +1,12 @@
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/matchers/catch_matchers_exception.hpp>
+
+#include <stdexcept>
 
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/variant.hpp>
+
+#include <cbv2g/iso_20/iso20_CommonMessages_Datatypes.h>
 
 #include "helper.hpp"
 
@@ -87,6 +92,49 @@ SCENARIO("Se/Deserialize authorization messages") {
 
         THEN("It should be serialized successfully") {
             REQUIRE(serialize_helper(req) == expected);
+        }
+    }
+
+    GIVEN("Convert authorization_req into the encoder struct") {
+
+        message_20::AuthorizationRequest req;
+
+        req.header = message_20::Header{{0xF2, 0x19, 0x15, 0xB9, 0xDD, 0xDC, 0x12, 0xD1}, 1691411798};
+        // Deliberately EIM in both cases, so the authorization mode variant is the only thing
+        // that can steer which mode the encoder struct carries.
+        req.selected_authorization_service = message_20::datatypes::Authorization::EIM;
+
+        THEN("An eim mode marks eim used and pnc unused") {
+            req.authorization_mode = message_20::datatypes::EIM_ASReqAuthorizationMode{};
+
+            iso20_AuthorizationReqType out{};
+            message_20::convert(req, out);
+
+            CHECK(out.EIM_AReqAuthorizationMode_isUsed);
+            CHECK_FALSE(out.PnC_AReqAuthorizationMode_isUsed);
+        }
+
+        THEN("A pnc mode is rejected rather than encoded as eim") {
+            req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
+
+            iso20_AuthorizationReqType out{};
+
+            REQUIRE_THROWS_MATCHES(message_20::convert(req, out), std::runtime_error,
+                                   Catch::Matchers::Message("PnC authorization mode not implemented"));
+        }
+    }
+
+    GIVEN("Serialize authorization_req pnc") {
+
+        message_20::AuthorizationRequest req;
+
+        req.header = message_20::Header{{0xF2, 0x19, 0x15, 0xB9, 0xDD, 0xDC, 0x12, 0xD1}, 1691411798};
+        req.selected_authorization_service = message_20::datatypes::Authorization::EIM;
+        req.authorization_mode = message_20::datatypes::PnC_ASReqAuthorizationMode{};
+
+        THEN("The rejection reaches the caller instead of a well formed eim document") {
+            REQUIRE_THROWS_MATCHES(serialize_helper(req), std::runtime_error,
+                                   Catch::Matchers::Message("PnC authorization mode not implemented"));
         }
     }
 }

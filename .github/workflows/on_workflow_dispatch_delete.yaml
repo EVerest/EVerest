@@ -1,4 +1,4 @@
-name: On Workflow Dispatch - Delete Deployed Documentation Instance
+name: Dispatch / Documentation / Delete Deployed Instance
 on:
   workflow_dispatch:
     inputs:
@@ -29,7 +29,7 @@ on:
 
 jobs:
   delete-instance:
-    name: Delete Deployed Documentation Instance
+    name: delete instance
     runs-on: ubuntu-24.04
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -81,7 +81,7 @@ jobs:
           git config --global user.email "compiler@pionix.de"
 
       - name: Checkout source repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
 

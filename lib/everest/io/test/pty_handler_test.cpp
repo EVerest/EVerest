@@ -39,10 +39,10 @@ TEST(pty_handler_test, a_write_the_slave_has_not_drained_is_a_retry_not_an_error
     EXPECT_GT(attempts, 0U);
     EXPECT_EQ(handler.get_error(), 0);
 
-    // Retry stalls again, still no error.
-    pty_handler::PayloadT payload(1400, 0x55);
-    EXPECT_FALSE(handler.tx(payload));
-    EXPECT_FALSE(payload.empty());
+    // The kernel moves the pty flip buffer into the slave's line discipline buffer asynchronously,
+    // so a single retry can still fit. Stall again instead of asserting on one write.
+    std::size_t retries = 0;
+    EXPECT_TRUE(write_until_would_block(handler, retries)) << "the retry never stalled";
     EXPECT_EQ(handler.get_error(), 0);
 }
 

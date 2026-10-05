@@ -6,12 +6,15 @@
 #include <linux/netlink.h>
 #include <cstring>
 #include <exception>
+#include <functional>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 #include <utility>
 #include <net/if.h>
+#include <linux/can.h>
 #include <linux/if_arp.h>
+#include <linux/pkt_sched.h>
 #include <linux/rtnetlink.h>
 #include <sys/ioctl.h>
 #include <sys/socket.h>
@@ -135,7 +138,28 @@ void vcan_netlink_manager::send_netlink_request_impl(int msg_type, int flags, cb
 
     callback(&req.header, ifi, sizeof(req.buffer));
     send_message(req);
+    await_ack(req, msg_type);
+}
 
+namespace {
+// NLMSG_ERROR with the errno kept apart from the text.
+class netlink_error : public std::runtime_error {
+public:
+    explicit netlink_error(int negative_errno) :
+        std::runtime_error(std::string(strerror(-negative_errno)) + " (error code: " + std::to_string(negative_errno) +
+                           ")"),
+        m_errnum(-negative_errno) {
+    }
+    int errnum() const {
+        return m_errnum;
+    }
+
+private:
+    int m_errnum;
+};
+} // namespace
+
+void vcan_netlink_manager::await_ack(NetlinkMessage const& req, int msg_type) {
     NetlinkMessage response;
     bool ack_received = false;
     int max_recv_attempts = 10;
@@ -162,8 +186,7 @@ void vcan_netlink_manager::send_netlink_request_impl(int msg_type, int flags, cb
                     ack_received = true;
                     return;
                 } else {
-                    throw std::runtime_error(std::string(strerror(-err->error)) +
-                                             " (error code: " + std::to_string(err->error) + ")");
+                    throw netlink_error(err->error);
                 }
             } else if (nlh->nlmsg_type == msg_type) {
                 ack_received = true;
@@ -251,6 +274,202 @@ bool vcan_netlink_manager::bring_down(std::string const& interface_name) {
             ifi->ifi_change = IFF_UP;
         },
         interface_name, "bringDown");
+}
+
+namespace {
+// Qdisc tree installed on a shaped vcan (see set_transmit_rate_limit):
+//   1:  prio, 2 bands, priomap: skb->priority 6/7 -> band 0, everything else -> band 1
+//   1:1 pfifo, explicit limit (a vcan has tx_queue_len 0, the default pfifo would drop all)
+//   1:2 tbf, the rate limit
+// SO_PRIORITY 6 (unshaped_priority) bypasses the shaper, the default priority 0 is shaped.
+constexpr std::uint32_t prio_handle = 0x00010000U;    // 1:
+constexpr std::uint32_t band_unshaped = 0x00010001U;  // 1:1
+constexpr std::uint32_t band_shaped = 0x00010002U;    // 1:2
+constexpr std::uint32_t unshaped_pfifo_limit = 4096U; // frames
+constexpr std::uint8_t unshaped_priority = 6;         // skb->priority mapped to band 0
+} // namespace
+
+std::uint8_t vcan_netlink_manager::unshaped_socket_priority() {
+    return unshaped_priority;
+}
+
+void vcan_netlink_manager::send_qdisc(int msg_type, unsigned int ifindex, std::uint32_t parent, std::uint32_t handle,
+                                      char const* kind, std::function<void(NetlinkMessage&)> const& fill_options) {
+    // NLM_F_CREATE | NLM_F_REPLACE with handle 0 is `tc qdisc replace`: create, change parameters of
+    // the same kind, or swap a different kind.
+    NetlinkMessage req;
+    memset(&req, 0, sizeof(req));
+    req.header.nlmsg_len = NLMSG_LENGTH(sizeof(struct tcmsg));
+    req.header.nlmsg_type = msg_type;
+    req.header.nlmsg_flags = NLM_F_REQUEST | NLM_F_ACK;
+    if (msg_type == RTM_NEWQDISC) {
+        req.header.nlmsg_flags |= NLM_F_CREATE | NLM_F_REPLACE;
+    }
+    req.header.nlmsg_seq = ++s_netlink_seq_counter;
+    req.header.nlmsg_pid = getpid();
+    struct tcmsg* tcm = (struct tcmsg*)NLMSG_DATA(&req.header);
+    tcm->tcm_family = AF_UNSPEC;
+    tcm->tcm_ifindex = static_cast<int>(ifindex);
+    tcm->tcm_handle = handle;
+    tcm->tcm_parent = parent;
+    if (kind != nullptr) {
+        add_attribute(&req.header, sizeof(req.buffer), TCA_KIND, kind, strlen(kind) + 1);
+    }
+    if (fill_options) {
+        fill_options(req);
+    }
+    send_message(req);
+    await_ack(req, msg_type);
+}
+
+void vcan_netlink_manager::remove_root_qdisc(unsigned int ifindex) {
+    try {
+        send_qdisc(RTM_DELQDISC, ifindex, TC_H_ROOT, 0, nullptr, {});
+    } catch (netlink_error const& e) {
+        // The kernel's default queue has handle 0 and is refused with ENOENT: nothing installed.
+        if (e.errnum() != ENOENT) {
+            throw;
+        }
+    }
+}
+
+bool vcan_netlink_manager::set_transmit_rate_limit(std::string const& interface_name, std::uint64_t rate_bps,
+                                                   std::uint32_t burst_bytes, std::uint32_t limit_bytes) {
+    static constexpr char const* caller = "setTransmitRateLimit";
+    if (rate_bps == 0 or burst_bytes == 0 or limit_bytes == 0) {
+        report_error(interface_name, caller, "rate, burst and limit must be non-zero");
+        return false;
+    }
+    if (burst_bytes < CANFD_MTU) {
+        // tbf refuses a bucket below the MTU, or on kernels that only warn, stalls FD frames.
+        report_error(interface_name, caller,
+                     "burst must be at least the CAN FD MTU of " + std::to_string(CANFD_MTU) + " bytes");
+        return false;
+    }
+    unsigned int const ifindex = ::if_nametoindex(interface_name.c_str());
+    if (ifindex == 0) {
+        report_error(interface_name, caller, std::string("if_nametoindex failed: ") + std::strerror(errno));
+        return false;
+    }
+
+    // Only the tbf carries the arguments. With the tree in place this is the whole update; ENOENT
+    // (no parent) installs the tree below.
+    auto const send_tbf = [&]() {
+        send_qdisc(
+            RTM_NEWQDISC, ifindex, band_shaped, 0, "tbf",
+            [this, rate_bps, burst_bytes, limit_bytes](NetlinkMessage& req) {
+                // TCA_OPTIONS is a nest: open it, append the tbf attributes, then fix up its length.
+                struct rtattr* options = (struct rtattr*)(((char*)&req.header) + NLMSG_ALIGN(req.header.nlmsg_len));
+                options->rta_type = TCA_OPTIONS;
+                options->rta_len = RTA_LENGTH(0);
+                req.header.nlmsg_len = NLMSG_ALIGN(req.header.nlmsg_len) + RTA_ALIGN(RTA_LENGTH(0));
+
+                // rate in bytes/s; linklayer ETHERNET = plain byte accounting, no rate table. buffer is the
+                // bucket in psched ticks (64 ns) for kernels without TCA_TBF_BURST (since 3.13, in bytes).
+                struct tc_tbf_qopt qopt;
+                memset(&qopt, 0, sizeof(qopt));
+                std::uint64_t const rate_bytes = rate_bps / 8U;
+                qopt.rate.rate = rate_bytes > 0xFFFFFFFFULL ? 0xFFFFFFFFU : static_cast<std::uint32_t>(rate_bytes);
+                qopt.rate.linklayer = TC_LINKLAYER_ETHERNET;
+                qopt.limit = limit_bytes;
+                // bytes * 8e9 / rate / 64 = bytes * 125e6 / rate; below 2^59 for any argument.
+                std::uint64_t const burst_ticks = (static_cast<std::uint64_t>(burst_bytes) * 125000000ULL) / rate_bps;
+                qopt.buffer = burst_ticks > 0xFFFFFFFFULL ? 0xFFFFFFFFU : static_cast<std::uint32_t>(burst_ticks);
+                add_attribute(&req.header, sizeof(req.buffer), TCA_TBF_PARMS, &qopt, sizeof(qopt));
+                std::uint32_t const burst = burst_bytes;
+                add_attribute(&req.header, sizeof(req.buffer), TCA_TBF_BURST, &burst, sizeof(burst));
+
+                options->rta_len = (char*)&req.header + req.header.nlmsg_len - (char*)options;
+            });
+    };
+    try {
+        send_tbf();
+        return true;
+    } catch (netlink_error const& e) {
+        if (e.errnum() != ENOENT) {
+            report_error(interface_name, caller, e.what());
+            return false;
+        }
+        // No parent 1: to hang the tbf under: install the tree.
+    } catch (std::exception& e) {
+        report_error(interface_name, caller, e.what());
+        return false;
+    } catch (...) {
+        report_error(interface_name, caller, "Unexpected exception");
+        return false;
+    }
+
+    // prio root with an explicit handle so its bands can be parents. TCA_OPTIONS is the bare
+    // tc_prio_qopt.
+    try {
+        send_qdisc(RTM_NEWQDISC, ifindex, TC_H_ROOT, prio_handle, "prio", [this](NetlinkMessage& req) {
+            struct tc_prio_qopt qopt;
+            memset(&qopt, 0, sizeof(qopt));
+            qopt.bands = 2;
+            for (auto& band : qopt.priomap) {
+                band = 1;
+            }
+            qopt.priomap[6] = 0;
+            qopt.priomap[7] = 0;
+            add_attribute(&req.header, sizeof(req.buffer), TCA_OPTIONS, &qopt, sizeof(qopt));
+        });
+    } catch (std::exception& e) {
+        report_error(interface_name, caller, e.what());
+        return false;
+    } catch (...) {
+        report_error(interface_name, caller, "Unexpected exception");
+        return false;
+    }
+
+    // Past the root, a failure would leave the shaped band with the kernel's default child (a
+    // limit 0 pfifo on a vcan, dropping everything). Remove the root so false always means unshaped.
+    auto const fail_unshaped = [&](std::string const& reason) {
+        std::string outcome;
+        try {
+            remove_root_qdisc(ifindex);
+            outcome = "; the interface is left unshaped";
+        } catch (std::exception& e) {
+            outcome = std::string("; removing the half installed tree failed as well: ") + e.what();
+        } catch (...) {
+            outcome = "; removing the half installed tree failed as well";
+        }
+        report_error(interface_name, caller, reason + outcome);
+        return false;
+    };
+    try {
+        // 1:1 unshaped band: pfifo with an explicit packet limit.
+        send_qdisc(RTM_NEWQDISC, ifindex, band_unshaped, 0, "pfifo", [this](NetlinkMessage& req) {
+            struct tc_fifo_qopt qopt;
+            memset(&qopt, 0, sizeof(qopt));
+            qopt.limit = unshaped_pfifo_limit;
+            add_attribute(&req.header, sizeof(req.buffer), TCA_OPTIONS, &qopt, sizeof(qopt));
+        });
+        // 1:2 shaped band: the token bucket.
+        send_tbf();
+        return true;
+    } catch (std::exception& e) {
+        return fail_unshaped(e.what());
+    } catch (...) {
+        return fail_unshaped("Unexpected exception");
+    }
+}
+
+bool vcan_netlink_manager::clear_transmit_rate_limit(std::string const& interface_name) {
+    static constexpr char const* caller = "clearTransmitRateLimit";
+    unsigned int const ifindex = ::if_nametoindex(interface_name.c_str());
+    if (ifindex == 0) {
+        report_error(interface_name, caller, std::string("if_nametoindex failed: ") + std::strerror(errno));
+        return false;
+    }
+    try {
+        remove_root_qdisc(ifindex);
+        return true;
+    } catch (std::exception& e) {
+        report_error(interface_name, caller, e.what());
+    } catch (...) {
+        report_error(interface_name, caller, "Unexpected exception");
+    }
+    return false;
 }
 
 bool vcan_netlink_manager::destroy(std::string const& interface_name) {

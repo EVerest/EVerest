@@ -3,6 +3,7 @@
 #ifndef OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,7 @@ private:
     json config;
     json custom_schema;
     json internal_schema;
+    json cost_and_price_schema;
     bool core_schema_unlock_connector_on_ev_side_disconnect_ro_value;
     fs::path user_config_path;
 
@@ -495,7 +497,8 @@ public:
 
     // California Pricing Requirements
     bool getCustomDisplayCostAndPriceEnabled() override;
-    KeyValue getCustomDisplayCostAndPriceEnabledKeyValue() override;
+    std::optional<KeyValue> getCustomDisplayCostAndPriceEnabledKeyValue();
+    ConfigurationStatus setCustomDisplayCostAndPrice(const bool& value);
 
     std::optional<std::uint32_t> getPriceNumberOfDecimalsForCostValues() override;
     std::optional<KeyValue> getPriceNumberOfDecimalsForCostValuesKeyValue() override;
@@ -554,6 +557,8 @@ public:
     std::vector<KeyValue> get_all_key_value() override;
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
+
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) override;
 };
 
 } // namespace v16

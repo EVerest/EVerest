@@ -942,6 +942,13 @@ void Charger::run_state_machine() {
                 // This is for HLC charging (both AC and DC)
 
                 if (bcb_toggle_detected()) {
+                    // The EV restarts the session. If the previous one ended with dlink_terminate the
+                    // slac provider was reset and sits in Idle, where only enter_bcd starts matching
+                    // again (the EV's own SLAC request is ignored there), and a B->C->B toggle raises
+                    // none of the CP events that issue it. After a dlink_pause the provider is still
+                    // Matched and ignores enter_bcd, so the call is harmless there - same as the
+                    // ChargingPausedEVSE resume path below.
+                    signal_slac_start();
                     shared_context.current_state = EvseState::PrepareCharging;
                 }
 
@@ -1753,7 +1760,7 @@ std::string Charger::get_session_id() const {
     return shared_context.session_uuid;
 }
 
-void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& token,
+bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& token,
                         const types::authorization::ValidationResult& result) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_authorize);
     if (a) {
@@ -1763,7 +1770,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
             // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
             // Without this guard, a delayed auth could restore flag_authorized and prevent the state machine
             // from routing to EvseState::Finished
-            return;
+            return false;
         }
         shared_context.id_token = token;
         shared_context.validation_result = result;
@@ -1781,6 +1788,7 @@ void Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
         }
         shared_context.flag_authorized = false;
     }
+    return true;
 }
 
 bool Charger::deauthorize() {
@@ -2284,6 +2292,20 @@ void Charger::set_hlc_allow_close_contactor(bool on) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_set_hlc_allow_close_contactor);
     shared_context.hlc_allow_close_contactor = on;
+}
+
+void Charger::dc_open_contactor_request() {
+    // PowerDelivery(stop): the EV asked for the contactors to open, and welding detection
+    // (which follows immediately in DIN/-2/-20) measures against open contactors. The
+    // permissive must be withdrawn BEFORE the EV opens its readiness switch (IEC 61851-23-3
+    // Table CC.111: t103 before t105): an MCS board support treats a CE C-exit under a
+    // standing permissive as an unintended loss of power-transfer readiness (CC.4.3) and
+    // latches an emergency that only an unplug clears. The later C->B CP event still runs
+    // the regular session-stop path in the IEC state machine; cable check re-enables the
+    // hlc contactor permission on resume from pause.
+    session_log.car(true, "DC HLC Open contactor");
+    set_hlc_allow_close_contactor(false);
+    bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
 }
 
 std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop_transaction_reason() {

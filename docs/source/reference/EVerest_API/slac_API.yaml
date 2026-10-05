@@ -229,7 +229,7 @@ components:
       summary: Provides the state enum.
       contentType: application/json
       payload:
-        $ref: '#/components/schemas/SLACState'
+        $ref: '#/components/schemas/State'
       examples:
         - summary: "Example state MATCHED"
           payload: "MATCHED"
@@ -322,7 +322,7 @@ components:
     Enabled:
       type: boolean
       description: 'true: start SLAC after reset, false: stop SLAC'
-    SLACState:
+    State:
       description: Provides the state enum.
       type: string
       enum:

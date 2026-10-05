@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #include "module.hpp"
 
 #include <pybind11/pybind11.h>
@@ -69,6 +69,13 @@ Module::~Module() {
     if (handle) {
         handle->disconnect();
     }
+}
+
+void Module::close() {
+    // The handler threads call back into Python, so they are joined with the GIL released.
+    const pybind11::gil_scoped_release release;
+    this->handle.reset();
+    this->mqtt_abstraction.reset();
 }
 
 ModuleSetup Module::say_hello() {

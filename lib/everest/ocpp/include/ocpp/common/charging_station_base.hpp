@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_COMMON_CHARGE_POINT_HPP
 #define OCPP_COMMON_CHARGE_POINT_HPP
 
@@ -19,8 +19,8 @@ protected:
     std::shared_ptr<EvseSecurity> evse_security;
     std::shared_ptr<MessageLogging> logging;
 
-    boost::shared_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work;
     boost::asio::io_context io_context;
+    boost::shared_ptr<boost::asio::executor_work_guard<boost::asio::io_context::executor_type>> work;
     std::thread io_context_thread;
 
 public:

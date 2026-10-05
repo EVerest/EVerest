@@ -12,6 +12,10 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 bool ocppImpl::handle_stop() {
     return mod->m_ocpp.handle_stop();
 }
@@ -41,6 +45,11 @@ ocppImpl::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& req
 
 void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
     mod->m_ocpp.handle_monitor_variables(component_variables);
+}
+
+std::vector<types::ocpp::GetVariableResult>
+ocppImpl::handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    return mod->m_ocpp.handle_monitor_and_get_variables(component_variables);
 }
 
 } // namespace ocpp_generic

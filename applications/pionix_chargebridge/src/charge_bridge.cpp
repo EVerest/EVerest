@@ -484,8 +484,29 @@ std::future<bool> charge_bridge::start_internal_runtime() {
 // host-local device does not suppress the others, and is retried on the next call.
 void charge_bridge::create_internal_runtime() {
     if (m_config.can0.has_value()) {
-        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported,
-                      [this]() { return std::make_unique<can_bridge>(m_config.can0.value(), m_ready_notify); });
+        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported, [this]() {
+            auto cfg = m_config.can0.value();
+            // Bus-rate pacing needs the CB's CAN bitrate; the heartbeat config carries it.
+            if (m_config.heartbeat.has_value()) {
+                switch (m_config.heartbeat->cb_config.can.baudrate) {
+                case CBCBR_125000:
+                    cfg.can_bitrate_bps = 125000;
+                    break;
+                case CBCBR_250000:
+                    cfg.can_bitrate_bps = 250000;
+                    break;
+                case CBCBR_500000:
+                    cfg.can_bitrate_bps = 500000;
+                    break;
+                case CBCBR_1000000:
+                    cfg.can_bitrate_bps = 1000000;
+                    break;
+                default:
+                    break;
+                }
+            }
+            return std::make_unique<can_bridge>(cfg, m_ready_notify);
+        });
     }
     if (m_config.serial1.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 1", m_pty_1, m_bridge_create_failures_reported,

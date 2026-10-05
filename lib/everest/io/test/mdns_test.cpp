@@ -63,6 +63,29 @@ std::vector<std::uint8_t> make_aaaa_packet(std::vector<std::uint8_t> const& rdat
     return make_record_packet(0x1C, rdata, static_cast<std::uint16_t>(rdata.size()));
 }
 
+void append_labels(std::vector<std::uint8_t>& packet, std::vector<std::uint8_t> const& lengths) {
+    for (auto const len : lengths) {
+        packet.push_back(len);
+        packet.insert(packet.end(), len, 'a');
+    }
+}
+
+std::vector<std::uint8_t> make_compression_chain_packet(int hops) {
+    std::vector<std::uint8_t> packet = {0, 0, 0x84, 0, 0, 0, 0, 2, 0, 0, 0, 0};
+    packet.push_back(0);
+    int const rdlen = 2 * (hops - 1);
+    packet.insert(packet.end(),
+                  {0, 0x10, 0, 1, 0, 0, 0, 0, static_cast<std::uint8_t>(rdlen >> 8), static_cast<std::uint8_t>(rdlen)});
+
+    for (int i = 0; i < hops; ++i) {
+        int const target = i == 0 ? 12 : static_cast<int>(packet.size()) - 2;
+        packet.push_back(static_cast<std::uint8_t>(0xC0 | (target >> 8)));
+        packet.push_back(static_cast<std::uint8_t>(target));
+    }
+    packet.insert(packet.end(), {0, 0xFF, 0, 1, 0, 0, 0, 0, 0, 0});
+    return packet;
+}
+
 } // namespace
 
 TEST(mdns_test, response_roundtrip_v4_only) {
@@ -144,13 +167,9 @@ TEST(mdns_test, parse_aaaa_record_malformed_rdlen_ignored) {
     EXPECT_TRUE(parsed->ipv6.empty());
 }
 
-TEST(mdns_test, parse_truncated_rdata_ignored) {
-    // The record header declares 16 bytes of rdata but the packet carries only 4;
-    // the parser must not read past the buffer (would leak adjacent heap into ipv6).
+TEST(mdns_test, parse_rejects_truncated_rdata) {
     std::vector<std::uint8_t> const rdata(4, 0xfd);
-    auto const parsed = parse_mdns_packet(make_record_packet(0x1C, rdata, 16));
-    ASSERT_TRUE(parsed.has_value());
-    EXPECT_TRUE(parsed->ipv6.empty());
+    EXPECT_FALSE(parse_mdns_packet(make_record_packet(0x1C, rdata, 16)).has_value());
 }
 
 TEST(mdns_test, parse_legacy_zero_a_record_treated_as_absent) {
@@ -160,6 +179,137 @@ TEST(mdns_test, parse_legacy_zero_a_record_treated_as_absent) {
     auto const parsed = parse_mdns_packet(make_record_packet(0x01, rdata, 4));
     ASSERT_TRUE(parsed.has_value());
     EXPECT_TRUE(parsed->ip.empty());
+}
+
+TEST(mdns_test, parse_rejects_self_referencing_compression_pointer) {
+    std::vector<std::uint8_t> question(18, 0);
+    question[2] = 0x80;
+    question[5] = 1;
+    question[12] = 0xC0;
+    question[13] = 12;
+    EXPECT_FALSE(parse_mdns_packet(question).has_value());
+
+    question[2] = 0;
+    EXPECT_FALSE(is_query_for(question, "_chargebridge._udp"));
+
+    std::vector<std::uint8_t> record(14, 0);
+    record[2] = 0x80;
+    record[7] = 1;
+    record[12] = 0xC0;
+    record[13] = 12;
+    EXPECT_FALSE(parse_mdns_packet(record).has_value());
+}
+
+TEST(mdns_test, parse_rejects_compression_pointer_cycles_in_record_data) {
+    auto ptr = make_record_packet(0x0C, {0xC0, 0}, 2);
+    ptr.back() = static_cast<std::uint8_t>(ptr.size() - 2);
+    EXPECT_FALSE(parse_mdns_packet(ptr).has_value());
+
+    std::vector<std::uint8_t> srv_data(8, 0);
+    srv_data[6] = 0xC0;
+    auto srv = make_record_packet(0x21, srv_data, 8);
+    srv.back() = static_cast<std::uint8_t>(srv.size() - 2);
+    EXPECT_FALSE(parse_mdns_packet(srv).has_value());
+}
+
+TEST(mdns_test, parse_rejects_truncated_compression_pointer) {
+    std::vector<std::uint8_t> packet(13, 0);
+    packet[2] = 0x80;
+    packet[5] = 1;
+    packet[12] = 0xC0;
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_rejects_truncated_question_fields) {
+    std::vector<std::uint8_t> packet(14, 0);
+    packet[2] = 0x80;
+    packet[5] = 1;
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_rejects_name_extending_past_record_data) {
+    auto packet = make_record_packet(0x0C, {1, 'x'}, 2);
+    packet[7] = 2;
+    // The second record supplies a terminator beyond the PTR record's data.
+    packet.insert(packet.end(), 11, 0);
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_rejects_forward_compression_pointer) {
+    std::vector<std::uint8_t> packet(18, 0);
+    packet[2] = 0x80;
+    packet[5] = 1;
+    packet[12] = 0xC0;
+    packet[13] = 14;
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_rejects_compression_pointer_into_header) {
+    std::vector<std::uint8_t> packet(18, 0);
+    packet[2] = 0x80;
+    packet[5] = 1;
+    packet[12] = 0xC0;
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_rejects_backward_pointer_cycle_through_label) {
+    std::vector<std::uint8_t> packet(20, 0);
+    packet[2] = 0x80;
+    packet[5] = 1;
+    packet[12] = 1;
+    packet[13] = 'x';
+    packet[14] = 0xC0;
+    packet[15] = 12;
+    EXPECT_FALSE(parse_mdns_packet(packet).has_value());
+}
+
+TEST(mdns_test, parse_limits_name_length) {
+    auto make_packet = [](std::uint8_t last_label_length) {
+        std::vector<std::uint8_t> packet = {0, 0, 0x84, 0, 0, 1, 0, 0, 0, 0, 0, 0};
+        append_labels(packet, {63, 63, 63, last_label_length});
+        packet.push_back(0);
+        packet.insert(packet.end(), {0, 0x0C, 0, 1});
+        return packet;
+    };
+    EXPECT_TRUE(parse_mdns_packet(make_packet(61)).has_value());
+    EXPECT_FALSE(parse_mdns_packet(make_packet(62)).has_value());
+}
+
+TEST(mdns_test, parse_limits_name_length_across_compression_pointer) {
+    auto make_packet = [](std::uint8_t first_label_length) {
+        std::vector<std::uint8_t> packet = {0, 0, 0x84, 0, 0, 2, 0, 0, 0, 0, 0, 0};
+        append_labels(packet, {63, 63, 63});
+        packet.push_back(0);
+        packet.insert(packet.end(), {0, 0x0C, 0, 1});
+        append_labels(packet, {first_label_length});
+        packet.insert(packet.end(), {0xC0, 12, 0, 0x0C, 0, 1});
+        return packet;
+    };
+    EXPECT_TRUE(parse_mdns_packet(make_packet(61)).has_value());
+    EXPECT_FALSE(parse_mdns_packet(make_packet(62)).has_value());
+}
+
+TEST(mdns_test, parse_limits_compression_pointer_hops) {
+    EXPECT_TRUE(parse_mdns_packet(make_compression_chain_packet(128)).has_value());
+    EXPECT_FALSE(parse_mdns_packet(make_compression_chain_packet(129)).has_value());
+}
+
+TEST(mdns_test, parse_accepts_compressed_ptr_name) {
+    std::vector<std::uint8_t> packet = {0, 0, 0x84, 0, 0, 0, 0, 1, 0, 0, 0, 0};
+    append_name(packet, {"_x", "_udp", "local"});
+    packet.insert(packet.end(), {0, 0x0C, 0, 1, 0, 0, 0, 120, 0, 7, 4, 'i', 'n', 's', 't', 0xC0, 12});
+    auto const parsed = parse_mdns_packet(packet);
+    ASSERT_TRUE(parsed.has_value());
+    EXPECT_EQ(parsed->service_instance, "inst._x._udp.local");
+}
+
+TEST(mdns_test, query_matches_compressed_name) {
+    auto packet = create_mdns_query("_x._udp.local");
+    packet[5] = 2;
+    // The first question is type A, so only the compressed second question can match.
+    packet[packet.size() - 3] = 1;
+    packet.insert(packet.end(), {0xC0, 12, 0, 0x0C, 0, 1});
+    EXPECT_TRUE(is_query_for(packet, "_x._udp"));
 }
 
 TEST(mdns_test, registry_merges_a_and_aaaa) {

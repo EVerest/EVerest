@@ -337,6 +337,7 @@ void convert(const datatypes::BPT_Dynamic_AC_CLResControlMode& in,
     convert(static_cast<const datatypes::Dynamic_AC_CLResControlMode&>(in), out);
 }
 
+namespace {
 struct ControlModeVisitor {
     using ScheduledCM = datatypes::Scheduled_AC_CLResControlMode;
     using BPT_ScheduledCM = datatypes::BPT_Scheduled_AC_CLResControlMode;
@@ -376,6 +377,7 @@ struct ControlModeVisitor {
 private:
     iso20_ac_AC_ChargeLoopResType& res;
 };
+} // namespace
 
 template <> void convert(const AC_ChargeLoopResponse& in, struct iso20_ac_AC_ChargeLoopResType& out) {
     init_iso20_ac_AC_ChargeLoopResType(&out);
@@ -426,6 +428,7 @@ template <> void convert(const datatypes::DisplayParameters& in, struct iso20_ac
     CPP2CB_ASSIGN_IF_USED(in.inlet_hot, out.InletHot);
 }
 
+namespace {
 struct ModeRequestVisitor {
     using ScheduledCM = datatypes::Scheduled_AC_CLReqControlMode;
     using BPT_ScheduledCM = datatypes::BPT_Scheduled_AC_CLReqControlMode;
@@ -515,6 +518,7 @@ public:
 private:
     iso20_ac_AC_ChargeLoopReqType& req;
 };
+} // namespace
 
 template <> void convert(const AC_ChargeLoopRequest& in, struct iso20_ac_AC_ChargeLoopReqType& out) {
     init_iso20_ac_AC_ChargeLoopReqType(&out);

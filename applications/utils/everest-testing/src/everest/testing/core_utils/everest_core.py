@@ -8,6 +8,7 @@ from threading import Thread
 import threading
 import time
 import subprocess
+import sys
 from pathlib import Path
 import tempfile
 from typing import List, Optional, Union, Dict
@@ -63,7 +64,7 @@ class StatusFifoListener:
         # read() before the manager opens its write end. With O_RDONLY|
         # O_NONBLOCK, a read with no writers returns 0 immediately, which
         # made start() abort and then hang in a blocking stderr readline.
-        self._fd = os.open(status_fifo_path, flags=(os.O_RDWR | os.O_NONBLOCK))
+        self._fd: Optional[int] = os.open(status_fifo_path, flags=(os.O_RDWR | os.O_NONBLOCK))
         self._lock = threading.Lock()
         self._condition = threading.Condition(self._lock)
         self._pending_lines: list[str] = []
@@ -89,7 +90,7 @@ class StatusFifoListener:
             None when no bytes were available (or a spurious empty read).
         """
         read_any = False
-        while True:
+        while self._fd is not None:
             try:
                 chunk = os.read(self._fd, 4096)
             except BlockingIOError:
@@ -124,13 +125,20 @@ class StatusFifoListener:
             self._pending_lines.clear()
             self._read_buffer = b""
 
+    @property
+    def closed(self) -> bool:
+        return self._fd is None
+
     def close(self) -> None:
-        """Release the fifo read end."""
+        """Release the fifo read end, keeping what was buffered readable.
+
+        Idempotent, since the descriptor number may already belong to another file.
+        """
         with self._condition:
-            try:
-                os.close(self._fd)
-            except OSError:
-                pass
+            self._read_available()
+            fd, self._fd = self._fd, None
+            if fd is not None:
+                os.close(fd)
             self._condition.notify_all()
 
     def wait_for_status(self, timeout: float, match_status: list[str]) -> Optional[list[str]]:
@@ -320,10 +328,10 @@ class EverestCore:
         logging.info('Starting EVerest...')
         logging.info('  '.join(args))
 
-        # Reopen the fifo only when restarting after a previous manager run.
-        # Resetting on every start() breaks lifecycle tests that call start() in a
-        # background thread while the main thread waits on the same listener.
-        if self.process is not None:
+        # Reopen the fifo only when restarting after a previous manager run or a
+        # stop(). Resetting on every start() breaks lifecycle tests that call start()
+        # in a background thread while the main thread waits on the same listener.
+        if self.process is not None or self.status_listener.closed:
             self._reset_status_listener()
 
         self.process = subprocess.Popen(
@@ -396,7 +404,9 @@ class EverestCore:
         logging.debug("EVerest output stopped")
 
     def stop(self):
-        """Stops execution of EVerest by signaling SIGINT
+        """Stops execution of EVerest by signaling SIGINT and releases the
+        process pipes and the status fifo. Status lines the manager wrote stay
+        readable until start() reopens the fifo.
         """
         logging.debug("CONTROLLER stop() function called...")
         if self.process:
@@ -406,6 +416,17 @@ class EverestCore:
 
         if self.log_reader_thread:
             self.log_reader_thread.join()
+
+        # A probe module keeps its own MQTT connection and threads, and a test
+        # that creates one never closes it. Probes are imported only when used.
+        probe_module = sys.modules.get("everest.testing.core_utils.probe_module")
+        if probe_module is not None:
+            probe_module.close_all()
+
+        if self.process:
+            self.process.stdout.close()
+            self.process.stderr.close()
+        self.status_listener.close()
 
     def _create_testing_user_config(self):
         """Creates a user-config file to include the PyTestControlModule in the current SIL simulation.

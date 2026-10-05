@@ -361,19 +361,19 @@ void ChargePoint::register_get_15118_ev_certificate_response_callback(
 }
 
 void ChargePoint::register_transaction_started_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback) {
     this->charge_point->register_transaction_started_callback(callback);
 }
 
 void ChargePoint::register_transaction_stopped_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id)>& callback) {
+    const std::function<void(const std::string& session_id, const std::int32_t connector,
+                             const StopTransactionRequest& request)>& callback) {
     this->charge_point->register_transaction_stopped_callback(callback);
 }
 
 void ChargePoint::register_transaction_updated_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                             const StartTransactionResponse& response)>& callback) {
     this->charge_point->register_transaction_updated_callback(callback);
 }
 
@@ -385,6 +385,15 @@ void ChargePoint::register_configuration_key_changed_callback(
 void ChargePoint::register_generic_configuration_key_changed_callback(
     const std::function<void(const KeyValue& key_value)>& callback) {
     this->charge_point->register_generic_configuration_key_changed_callback(callback);
+}
+
+void ChargePoint::register_custom_key_validation_callback(
+    const std::function<bool(const std::string& key, const std::string& value)>& callback) {
+    this->charge_point->register_custom_key_validation_callback(callback);
+}
+
+ConfigurationStatus ChargePoint::set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) {
+    return this->charge_point->set_custom_key_forced(key, value);
 }
 
 void ChargePoint::register_security_event_callback(

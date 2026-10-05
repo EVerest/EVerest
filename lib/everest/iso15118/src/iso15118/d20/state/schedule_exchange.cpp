@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <ctime>
-
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_cable_check.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
+
+#include <optional>
+#include <variant>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/schedule_exchange.hpp>
@@ -22,34 +23,32 @@ using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
 using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
-auto create_default_scheduled_control_mode(const dt::RationalNumber& max_power) {
-    dt::ScheduleTuple schedule;
+constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
+
+void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt::RationalNumber& max_power) {
+    auto& schedule = mode.schedule_tuple.emplace_back();
     schedule.schedule_tuple_id = 1;
-    schedule.charging_schedule.power_schedule.time_anchor =
-        static_cast<uint64_t>(std::time(nullptr)); // PowerSchedule is now active
+    // [V2G20-1016] TimeAnchor marks when the first PowerScheduleEntry becomes active, i.e. now.
+    // Unit: Table 112 (PowerScheduleType) is the only TimeAnchor in ISO 15118-20 specified at "ms resolution"
+    // and it cross-references a subclause (8.3.3.2) that no longer exists. Every other TimeAnchor
+    // (EVPowerSchedule, EVPowerProfile, AbsolutePriceSchedule, PriceLevelSchedule, Receipt), MeterTimeStamp,
+    // the header TimeStamp [V2G20-1534] and the Annex J examples use microseconds. Milliseconds follows the
+    // literal text of Table 112; if a price schedule is added to this tuple its anchor must be microseconds.
+    schedule.charging_schedule.power_schedule.time_anchor = now_in_secc_time() / MICROSECONDS_PER_MILLISECOND;
 
     dt::PowerScheduleEntry power_schedule;
     power_schedule.power = max_power;
     power_schedule.duration = dt::SCHEDULED_POWER_DURATION_S;
     schedule.charging_schedule.power_schedule.entries.push_back(power_schedule);
 
-    ScheduledResControlMode scheduled_mode{};
-
     // Providing no price schedule!
     // NOTE: Agreement on iso15118.elaad.io: [V2G20-2176] is not required and should be ignored.
-    scheduled_mode.schedule_tuple = {schedule};
-    return scheduled_mode;
 }
 
 namespace {
 void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
-        }
-    }
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
     res_mode.minimum_soc = parameters.min_soc;
 }
@@ -66,11 +65,13 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
     message_20::ScheduleExchangeResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (timeout_reached) {
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     const auto selected_services = session.get_selected_services();
@@ -82,7 +83,8 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
     if (selected_control_mode == dt::ControlMode::Scheduled &&
         std::holds_alternative<dt::Scheduled_SEReqControlMode>(req.control_mode)) {
 
-        res.control_mode.emplace<ScheduledResControlMode>(create_default_scheduled_control_mode(max_power));
+        auto& mode = res.control_mode.emplace<ScheduledResControlMode>();
+        set_default_scheduled_control_mode(mode, max_power);
 
         // TODO(sl): Adding price schedule
         // TODO(sl): Adding discharging schedule
@@ -99,12 +101,14 @@ message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleEx
 
     } else {
         logf_error("The control mode of the req message does not match the previously agreed contol mode.");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     res.processing = dt::Processing::Finished;
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ScheduleExchange::enter() {

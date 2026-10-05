@@ -150,6 +150,16 @@ inline std::optional<bool> isReadOnly(DeviceModelInterface& storage, const v2::R
     return isReadOnly(storage, component, variable, attribute);
 }
 
+/// readonly when the device model mutability is ReadOnly (or unknown)
+bool isReadOnly(DeviceModelInterface& storage, v16::keys::valid_keys key) {
+    const auto cv = v16::keys::convert_v2(key);
+    if (cv) {
+        const auto mutability = storage.get_mutability(cv->first, cv->second, v2::AttributeEnum::Actual);
+        return mutability.value_or(v2::MutabilityEnum::ReadOnly) == v2::MutabilityEnum::ReadOnly;
+    }
+    return true;
+}
+
 inline bool is_same(const ocpp::v2::RequiredComponentVariable& var, const ocpp::v2::Component& component,
                     const ocpp::v2::Variable& variable) {
     return ((var.component == component) && (var.variable == variable));
@@ -280,7 +290,7 @@ std::optional<v16::KeyValue> get_key_value_optional(DeviceModelInterface& storag
     if (get_result) {
         v16::KeyValue kv;
         kv.key = std::move(std::string{v16::keys::convert(key)});
-        kv.readonly = v16::keys::is_readonly(key);
+        kv.readonly = v16::keys::is_readonly(key) || isReadOnly(storage, key);
         kv.value = std::move(get_result.value());
         result = kv;
     }
@@ -563,6 +573,15 @@ ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutCon
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalReportSuspendedEVSEReasonChange(const std::string& value) {
     return set_value(isBool, *storage, keys::valid_keys::ReportSuspendedEVSEReasonChange, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalCustomDisplayCostAndPrice(const std::string& value) {
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    // the configured device model mutability is enforced by set_value()
+    return set_value_check(*storage, keys::valid_keys::CustomDisplayCostAndPrice, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -1212,6 +1231,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
 
 void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_number_of_connectors) {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    namespace CC = ocpp::v2::ControllerComponentVariables;
     std::vector<std::string> errors;
 
     // Helper: check a key is present in storage.
@@ -1225,10 +1245,19 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
 
     // Helper: check a NetworkConfiguration slot-backed key is non-empty
     const auto slot = get_active_network_slot(*storage);
-    const auto require_nc = [&](std::string_view name, const v2::Variable& nc_var) {
-        const auto cv = NC::get_component_variable(slot, nc_var);
+    const auto has_non_empty = [&](const v2::ComponentVariable& cv) {
         const auto val = get_optional<std::string>(*storage, cv, v2::AttributeEnum::Actual);
-        if (!val.has_value() || val->empty()) {
+        return val.has_value() && !val->empty();
+    };
+    const auto require_nc = [&](std::string_view name, const v2::Variable& nc_var) {
+        if (!has_non_empty(NC::get_component_variable(slot, nc_var))) {
+            errors.emplace_back(std::string(name));
+        }
+    };
+    // B09.FR.16: an empty per-slot value falls back to the SecurityCtrlr global
+    const auto require_nc_with_fallback = [&](std::string_view name, const v2::Variable& nc_var,
+                                              const v2::ComponentVariable& fallback_cv) {
+        if (!has_non_empty(NC::get_component_variable(slot, nc_var)) && !has_non_empty(fallback_cv)) {
             errors.emplace_back(std::string(name));
         }
     };
@@ -1265,7 +1294,7 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
 
     // Internal profile required keys: identity/connectivity are NC slot-backed
     require_nc("CentralSystemURI", NC::OcppCsmsUrl);
-    require_nc("ChargePointId", NC::Identity);
+    require_nc_with_fallback("ChargePointId", NC::Identity, CC::SecurityCtrlrIdentity);
     require(keys::valid_keys::ChargeBoxSerialNumber);
     require(keys::valid_keys::ChargePointModel);
     require(keys::valid_keys::ChargePointVendor);
@@ -3313,8 +3342,8 @@ std::optional<std::uint32_t> ChargePointConfigurationDeviceModel::getPriceNumber
     return get_optional<std::int32_t>(*storage, keys::valid_keys::NumberOfDecimalsForCostValues);
 }
 
-KeyValue ChargePointConfigurationDeviceModel::getCustomDisplayCostAndPriceEnabledKeyValue() {
-    return get_key_value(*storage, keys::valid_keys::CustomDisplayCostAndPrice);
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomDisplayCostAndPriceEnabledKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::CustomDisplayCostAndPrice);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getDefaultPriceTextKeyValue(const std::string& language) {
@@ -3582,6 +3611,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::ConnectorEvseIds:
             result = convert(setInternalConnectorEvseIds(value_str));
             break;
+        case keys::valid_keys::CustomDisplayCostAndPrice:
+            result = convert(setInternalCustomDisplayCostAndPrice(value_str));
+            break;
         case keys::valid_keys::IgnoredProfilePurposesOffline:
             result = convert(setInternalIgnoredProfilePurposesOffline(value_str));
             break;
@@ -3797,7 +3829,6 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::StopTxnSampledDataMaxLength:
         case keys::valid_keys::SupportedFeatureProfiles:
         case keys::valid_keys::SupportedFeatureProfilesMaxLength:
-        case keys::valid_keys::CustomDisplayCostAndPrice:
         case keys::valid_keys::CustomMultiLanguageMessages:
         case keys::valid_keys::NumberOfDecimalsForCostValues:
         case keys::valid_keys::SupportedLanguages:

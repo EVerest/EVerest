@@ -64,8 +64,9 @@ public:
     bool exists(int slot_id);
     /// \brief Returns the next available slot ID (MAX(ID) + 1, or 0 if no slots exist).
     int next_slot_id();
-    /// \brief Writes a new configuration slot
-    /// \param slot_id Id of the new slot; must not exist yet
+    /// \brief Writes a configuration slot: creates it, or overwrites the metadata of an existing one (upsert).
+    /// The module data of an existing slot is untouched.
+    /// \param slot_id Id of the slot
     /// \param config_dump JSON dump of the config file that was used to create the configuration
     /// \param config_file_path Path to the config file that was used to create the configuration
     /// \param description Arbitrary text

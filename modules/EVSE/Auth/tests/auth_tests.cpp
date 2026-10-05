@@ -15,14 +15,15 @@
 
 #include <AuthHandler.hpp>
 #include <FakeAuthReceiver.hpp>
+#include <generated/interfaces/kvs/Interface.hpp>
 
 using ::testing::_;
 using ::testing::Field;
 using ::testing::Invoke;
 using ::testing::MockFunction;
+using ::testing::Return;
 using ::testing::StrictMock;
 
-class kvsIntf;
 namespace module {
 
 const static std::string VALID_TOKEN_1 = "VALID_RFID_1"; // SAME PARENT_ID
@@ -389,6 +390,54 @@ TEST_F(AuthTest, test_stop_transaction) {
     ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
     ASSERT_FALSE(this->auth_receiver->get_authorization(0));
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Test that a BankCard token that started a transaction stops it when presented again, without invoking the
+/// validators a second time (a second validation would reserve money from the card again)
+TEST_F(AuthTest, test_stop_transaction_with_bank_card) {
+    int validate_calls = 0;
+    this->auth_handler->register_validate_token_callback([&validate_calls](const ProvidedIdToken&) {
+        validate_calls++;
+        ValidationResult result;
+        result.authorization_status = AuthorizationStatus::Accepted;
+        return std::vector<ValidationResult>{result};
+    });
+
+    std::vector<int32_t> connectors{1};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, connectors);
+    provided_token.authorization_type = types::authorization::AuthorizationType::BankCard;
+
+    SessionEvent session_event1 = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    SessionEvent session_event2 = get_transaction_started_event(provided_token);
+
+    this->auth_handler->handle_session_event(1, session_event1);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart))
+        .Times(1);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStop))
+        .Times(1);
+    EXPECT_CALL(mock_stop_transaction_callback, Call(0, _)).Times(1);
+
+    auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_EQ(validate_calls, 1);
+
+    this->auth_handler->handle_session_event(1, session_event2);
+
+    // second presentation of the same bank card stops the transaction without another validation
+    result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_EQ(validate_calls, 1);
 }
 
 /// \brief Test that a transaction is not stopped when an id_token is swiped twice and stop_transaction_on_reswipe is
@@ -2472,6 +2521,117 @@ TEST_F(AuthTest, test_case_insensitive_reservation_matching) {
     ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
     ASSERT_TRUE(this->auth_receiver->get_authorization(0));
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Reservations restored from the store at startup (B11.FR.05)
+class AuthRestoredReservationTest : public ::testing::Test {
+protected:
+    static constexpr int32_t RESERVATION_ID = 7;
+
+    kvsIntf kvs;
+    std::unique_ptr<AuthHandler> auth_handler;
+    StrictMock<MockFunction<bool(const std::optional<int>& evse_id, const int& reservation_id)>> mock_reserved_callback;
+    StrictMock<MockFunction<void(const std::optional<int32_t>& evse_id, const int32_t reservation_id,
+                                 const ReservationEndReason reason, const bool send_reservation_update)>>
+        mock_reservation_cancelled_callback;
+
+    void SetUp() override {
+        Reservation reservation;
+        reservation.evse_id = 1;
+        reservation.id_token = VALID_TOKEN_1;
+        reservation.reservation_id = RESERVATION_ID;
+        reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+        reservation.expiry_time = Everest::Date::to_rfc3339(date::utc_clock::now() + std::chrono::hours(1));
+        this->kvs.call_store("reservation_auth_handler_test_id",
+                             Array{json::object({{"evse_id", 1}, {"reservation", reservation}})});
+
+        this->auth_handler = std::make_unique<AuthHandler>(SelectionAlgorithm::PlugEvents, CONNECTION_TIMEOUT, true,
+                                                           false, false, true, "auth_handler_test_id", &this->kvs);
+        this->auth_handler->register_reserved_callback(this->mock_reserved_callback.AsStdFunction());
+        this->auth_handler->register_reservation_cancelled_callback(
+            [](const std::optional<int32_t>, const int32_t, const ReservationEndReason, const bool) {});
+        this->auth_handler->init_evse(1, 0, {Connector(1, types::evse_manager::ConnectorTypeEnum::cCCS2)});
+        this->auth_handler->init_evse(2, 1, {Connector(1, types::evse_manager::ConnectorTypeEnum::cCCS2)});
+    }
+
+    void submit(const int evse_id, const SessionEventEnum event_type) {
+        SessionEvent event;
+        event.event = event_type;
+        this->auth_handler->handle_session_event(evse_id, event);
+    }
+
+    void watch_reservation_cancelled() {
+        this->auth_handler->register_reservation_cancelled_callback(
+            this->mock_reservation_cancelled_callback.AsStdFunction());
+    }
+};
+
+TEST_F(AuthRestoredReservationTest, applied_once_on_enabled) {
+    // No Enabled reported yet, so nothing is applied at load.
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(true));
+    this->submit(1, SessionEventEnum::Enabled);
+    this->submit(1, SessionEventEnum::Enabled);
+    this->submit(2, SessionEventEnum::Enabled);
+}
+
+TEST_F(AuthRestoredReservationTest, applied_at_load_when_already_enabled) {
+    this->submit(1, SessionEventEnum::Enabled);
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(true));
+    this->auth_handler->initialize();
+    this->submit(1, SessionEventEnum::Enabled);
+}
+
+TEST_F(AuthRestoredReservationTest, refused_by_evse_manager_is_cancelled) {
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(false));
+    this->submit(1, SessionEventEnum::Enabled);
+
+    EXPECT_FALSE(this->auth_handler->handle_cancel_reservation(RESERVATION_ID).first);
+}
+
+TEST_F(AuthRestoredReservationTest, refused_by_evse_manager_is_announced) {
+    this->watch_reservation_cancelled();
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(false));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, true));
+    this->submit(1, SessionEventEnum::Enabled);
+}
+
+TEST_F(AuthRestoredReservationTest, refused_after_cancel_is_not_announced_again) {
+    this->watch_reservation_cancelled();
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID))
+        .WillOnce(Invoke([this](const std::optional<int>&, const int& reservation_id) {
+            // Cancelled by the CSMS while the EvseManager is being called, as reservationImpl does.
+            const auto cancelled = this->auth_handler->handle_cancel_reservation(reservation_id);
+            this->auth_handler->call_reservation_cancelled(reservation_id, ReservationEndReason::Cancelled,
+                                                           cancelled.second, false);
+            return false;
+        }));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, false));
+    this->submit(1, SessionEventEnum::Enabled);
+}
+
+TEST_F(AuthRestoredReservationTest, cancelled_while_applying_is_cancelled_at_evse_manager) {
+    this->watch_reservation_cancelled();
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID))
+        .WillOnce(Invoke([this](const std::optional<int>&, const int& reservation_id) {
+            this->auth_handler->handle_cancel_reservation(reservation_id);
+            return true;
+        }));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, false));
+    this->submit(1, SessionEventEnum::Enabled);
 }
 
 } // namespace module

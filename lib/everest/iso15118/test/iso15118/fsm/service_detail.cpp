@@ -54,7 +54,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"Service1", 40});
-            parameter_set.parameter.push_back({"Service2", "house"});
+            parameter_set.parameter.push_back({"Service2", std::string{"house"}});
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
@@ -63,7 +63,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 3;
-            parameter_set.parameter.push_back({"Protocol", "http"});
+            parameter_set.parameter.push_back({"Protocol", std::string{"http"}});
             parameter_set.parameter.push_back({"Port", 80});
         }
 
@@ -494,7 +494,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -559,7 +559,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -637,7 +637,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_0.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters_0.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[1].value));
@@ -662,7 +662,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_1.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 2);
             // ControlMode == Dynamic
             REQUIRE(parameters_1.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[1].value));
@@ -721,7 +721,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));

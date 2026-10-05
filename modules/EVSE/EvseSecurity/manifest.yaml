@@ -38,6 +38,38 @@ config:
     description: Password for encrypted private keys.
     type: string
     default: ""
+  max_fs_usage_bytes:
+    description: >-
+      Maximum filesystem usage in bytes of all certificates and keys in the configured bundles and directories.
+      While exceeded, the periodic garbage collection deletes expired leaf certificates, keys without a matching
+      certificate and expired CSR keys.
+    type: integer
+    minimum: 1
+    default: 52428800
+  max_fs_certificate_store_entries:
+    description: >-
+      Maximum number of certificate and key files in the configured bundles and directories. While exceeded, the
+      periodic garbage collection deletes expired leaf certificates, keys without a matching certificate and
+      expired CSR keys. Installing a V2G or MO CA certificate is rejected if the V2G and MO CA bundles together
+      already hold more certificates than this value.
+    type: integer
+    minimum: 1
+    default: 2000
+  csr_expiry_s:
+    description: >-
+      Time in seconds after which the private key of a CSR without a signed certificate counts as expired. Expired
+      CSR keys are deleted by the garbage collection, which only acts while max_fs_usage_bytes or
+      max_fs_certificate_store_entries is exceeded.
+    type: integer
+    minimum: 1
+    default: 3600
+  garbage_collect_time_s:
+    description: >-
+      Interval in seconds in which the garbage collection checks max_fs_usage_bytes and
+      max_fs_certificate_store_entries and cleans up if either is exceeded.
+    type: integer
+    minimum: 1
+    default: 1200
 provides:
   main:
     description: Implementation of the evse_security interface

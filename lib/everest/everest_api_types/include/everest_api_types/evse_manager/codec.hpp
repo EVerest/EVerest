@@ -12,6 +12,7 @@ namespace everest::lib::API::V1_0::types::evse_manager {
 std::string serialize(StopTransactionReason val) noexcept;
 std::string serialize(StopTransactionRequest const& val) noexcept;
 std::string serialize(StartSessionReason val) noexcept;
+std::string serialize(ChargeMode val) noexcept;
 std::string serialize(SessionEventEnum val) noexcept;
 std::string serialize(SessionEvent const& val) noexcept;
 std::string serialize(Limits const& val) noexcept;
@@ -46,6 +47,7 @@ std::string serialize(HlcSessionFailedEvent const& val) noexcept;
 std::ostream& operator<<(std::ostream& os, StopTransactionReason const& val);
 std::ostream& operator<<(std::ostream& os, StopTransactionRequest const& val);
 std::ostream& operator<<(std::ostream& os, StartSessionReason const& val);
+std::ostream& operator<<(std::ostream& os, ChargeMode const& val);
 std::ostream& operator<<(std::ostream& os, SessionEventEnum const& val);
 std::ostream& operator<<(std::ostream& os, SessionEvent const& val);
 std::ostream& operator<<(std::ostream& os, HlcSessionFailedEvent const& val);

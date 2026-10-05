@@ -285,6 +285,9 @@ void ChargePoint::on_meter_value(const std::int32_t evse_id, const MeterValue& m
 
 void ChargePoint::configure_message_logging_format(const std::string& message_log_path) {
     auto log_formats = this->device_model->get_value<std::string>(ControllerComponentVariables::LogMessagesFormat);
+    const bool log_messages =
+        this->device_model->get_optional_value<bool>(ControllerComponentVariables::LogMessages).value_or(true) &&
+        !log_formats.empty();
     const bool log_to_console = log_formats.find("console") != std::string::npos;
     const bool detailed_log_to_console = log_formats.find("console_detailed") != std::string::npos;
     const bool log_to_file = log_formats.find("log") != std::string::npos;
@@ -313,7 +316,7 @@ void ChargePoint::configure_message_logging_format(const std::string& message_lo
 
     if (log_rotation) {
         this->logging = std::make_shared<ocpp::MessageLogging>(
-            !log_formats.empty(), message_log_path, "libocpp_201", log_to_console, detailed_log_to_console, log_to_file,
+            log_messages, message_log_path, "libocpp_201", log_to_console, detailed_log_to_console, log_to_file,
             log_to_html, log_raw, log_security, session_logging, logging_callback,
             ocpp::LogRotationConfig(log_rotation_date_suffix, log_rotation_maximum_file_size,
                                     log_rotation_maximum_file_count),
@@ -328,7 +331,7 @@ void ChargePoint::configure_message_logging_format(const std::string& message_lo
             });
     } else {
         this->logging = std::make_shared<ocpp::MessageLogging>(
-            !log_formats.empty(), message_log_path, DateTime().to_rfc3339(), log_to_console, detailed_log_to_console,
+            log_messages, message_log_path, DateTime().to_rfc3339(), log_to_console, detailed_log_to_console,
             log_to_file, log_to_html, log_raw, log_security, session_logging, logging_callback);
     }
 }
@@ -761,17 +764,23 @@ void ChargePoint::build_der_control_if_enabled() {
 }
 
 OcspUpdater ChargePoint::make_ocsp_updater() {
-    return OcspUpdater(this->evse_security, [this](GetCertificateStatusRequest req) -> GetCertificateStatusResponse {
-        try {
-            return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
-                MessageType::GetCertificateStatusResponse)(req);
-        } catch (const UnexpectedMessageTypeFromCSMS& e) {
-            EVLOG_warning << e.what();
-        }
-        GetCertificateStatusResponse response;
-        response.status = GetCertificateStatusEnum::Failed;
-        return response;
+    return OcspUpdater(this->evse_security, [this](const GetCertificateStatusRequest& request) {
+        return this->get_certificate_status_from_csms(request);
     });
+}
+
+GetCertificateStatusResponse ChargePoint::get_certificate_status_from_csms(const GetCertificateStatusRequest& request) {
+    try {
+        return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
+            MessageType::GetCertificateStatusResponse)(request);
+    } catch (const UnexpectedMessageTypeFromCSMS& e) {
+        EVLOG_warning << e.what();
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Malformed GetCertificateStatusResponse from CSMS: " << e.what();
+    }
+    GetCertificateStatusResponse response;
+    response.status = GetCertificateStatusEnum::Failed;
+    return response;
 }
 
 void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message) {

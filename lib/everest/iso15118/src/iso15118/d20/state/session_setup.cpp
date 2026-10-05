@@ -68,9 +68,11 @@ message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_2
     res.evseid = evse_id;
 
     if (new_session) {
-        return response_with_code(res, dt::ResponseCode::OK_NewSessionEstablished);
+        set_response_code(res, dt::ResponseCode::OK_NewSessionEstablished);
+        return res;
     } else {
-        return response_with_code(res, dt::ResponseCode::OK_OldSessionJoined);
+        set_response_code(res, dt::ResponseCode::OK_OldSessionJoined);
+        return res;
     }
 }
 

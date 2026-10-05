@@ -23,14 +23,8 @@ void PacketSniffer::init() {
         return;
     }
 
-    if (config.device != "any" && pcap_datalink(p_handle) != DLT_EN10MB) {
-        EVLOG_error << fmt::format("Device \"{}\" doesn't provide Ethernet headers - not supported. Sniffing disabled.",
-                                   config.device);
-        pcap_close(p_handle);
-        return;
-    }
-
-    EVLOG_info << fmt::format("Sniffing on device \"{}\"", config.device);
+    EVLOG_info << fmt::format("Sniffing on device \"{}\" with data link type {}", config.device,
+                              pcap_datalink_val_to_name(pcap_datalink(p_handle)));
 
     r_evse_manager->subscribe_session_event([this](types::evse_manager::SessionEvent session_event) {
         if (session_event.event == types::evse_manager::SessionEventEnum::SessionStarted) {
@@ -71,14 +65,14 @@ void PacketSniffer::ready() {
 void PacketSniffer::capture(const std::string& logpath, const std::string& session_id) {
     already_started = true;
 
-    std::string fn = fmt::format("{}/ethernet-traffic.pcap", logpath);
+    std::string fn = fmt::format("{}/{}-traffic.pcap", logpath, config.device);
     if (not config.session_logging_path.empty()) {
         const auto now = std::chrono::system_clock::now();
         const auto time_t_now = std::chrono::system_clock::to_time_t(now);
         std::tm local_tm{};
         localtime_r(&time_t_now, &local_tm);
         const auto timestamp = fmt::format("{:%Y-%m-%d_%H-%M-%S%z}", local_tm);
-        fn = fmt::format("{}/{}_{}.pcap", logpath, timestamp, session_id);
+        fn = fmt::format("{}/{}_{}_{}.pcap", logpath, timestamp, session_id, config.device);
     }
 
     EVLOG_info << fmt::format("Starting capturing to {}", fn);

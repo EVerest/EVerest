@@ -35,6 +35,7 @@ public:
 private:
     void create_tcp_client(std::string const& remote, uint16_t remote_port);
     void handle_ready();
+    void resume_pty();
 
     everest::lib::io::serial::event_pty m_pty;
     std::unique_ptr<everest::lib::io::tcp::tcp_client> m_tcp;
@@ -42,6 +43,7 @@ private:
     std::string m_identifier;
     int m_tcp_last_error_id = -1;
     bool m_tcp_tx_rejected{false};
+    bool m_pty_paused{false};
     std::uint16_t m_tcp_port{0};
     std::string m_tcp_remote;
     bool m_tcp_ready{false};

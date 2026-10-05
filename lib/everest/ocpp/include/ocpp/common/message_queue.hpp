@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_COMMON_MESSAGE_QUEUE_HPP
 #define OCPP_COMMON_MESSAGE_QUEUE_HPP
 
@@ -99,12 +99,13 @@ class MalformedRpcMessage : public std::runtime_error {
 inline MessageTransmissionPriority get_message_transmission_priority(bool is_boot_notification_message, bool triggered,
                                                                      bool registration_already_accepted,
                                                                      bool is_transaction_related,
-                                                                     bool queue_all_message) {
+                                                                     bool queue_all_message,
+                                                                     bool queue_until_accepted = false) {
     if (registration_already_accepted || is_boot_notification_message || triggered) {
         return MessageTransmissionPriority::SendImmediately;
     }
 
-    if (is_transaction_related || queue_all_message) {
+    if (is_transaction_related || queue_all_message || queue_until_accepted) {
         return MessageTransmissionPriority::SendAfterRegistrationStatusAccepted;
     }
 
@@ -753,7 +754,8 @@ public:
         } else {
             // all other messages are allowed to "jump the queue" to improve user experience
             // TODO: decide if we only want to allow this for a subset of messages
-            if (!this->paused || this->resuming || this->config.check_queue(control_message->messageType) ||
+            if (!this->paused || this->resuming || control_message->stall_until_accepted ||
+                this->config.check_queue(control_message->messageType) ||
                 control_message->messageType == M::BootNotification) {
                 this->add_to_normal_message_queue(control_message);
             }
@@ -855,6 +857,15 @@ public:
             {
                 const std::lock_guard<std::recursive_mutex> lk(this->next_message_mutex);
                 next_message_to_send.reset();
+            }
+            // The CALLRESULT payload must be an object.
+            // Anything else must not count as an answer to the message in flight and take the CALLERROR path instead.
+            if (enhanced_message.messageTypeId == MessageTypeId::CALLRESULT and
+                not(enhanced_message.message.size() > CALLRESULT_PAYLOAD and
+                    enhanced_message.message.at(CALLRESULT_PAYLOAD).is_object())) {
+                EVLOG_error << "Received a CALLRESULT without an object payload for message with UID: "
+                            << enhanced_message.uniqueId << ", treating it as CALLERROR";
+                enhanced_message.messageTypeId = MessageTypeId::CALLERROR;
             }
             // we need to remove Call messages from in_flight if we receive a CallResult OR a CallError
 
@@ -977,6 +988,7 @@ public:
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
             this->is_registration_status_accepted = true;
+            this->new_message = true;
         }
         this->cv.notify_all();
     }

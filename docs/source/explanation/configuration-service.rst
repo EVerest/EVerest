@@ -98,22 +98,53 @@ options. There are three cases.
   ``user-config/<config-name>.yaml`` merge, and seeded into a process-private
   **in-memory** database on every start. Nothing is persisted to disk except
   runtime configuration writes, which go to the user-config YAML.
+  The default config file ``<prefix>/etc/everest/default.yaml`` is optional: if
+  neither ``--config`` is given nor that file exists, the manager starts with an
+  empty configuration on built-in defaults (and exits with no modules unless
+  ``--into-idle`` or ``--idle-on-failure`` is given). Runtime writes are then
+  kept in memory only.
 
 ``--db`` **only**
-  The database file is the only configuration source; manager settings come from
-  built-in defaults.
+  The database file is the only configuration source for module
+  configurations. The database never holds the manager ``settings:`` block, so
+  the settings come from built-in defaults: installation paths (``prefix``,
+  ``modules_dir``, ``interfaces_dir``, ``types_dir``, ``errors_dir``,
+  ``schemas_dir``, ``configs_dir``, ``www_dir``, ``logging_config_file``), MQTT
+  broker and prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
+  ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
+  ``mqtt_external_prefix``), ``controller_port``,
+  ``controller_rpc_timeout_ms``, ``run_as_user``, ``telemetry_enabled``,
+  ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
+  Deployments that need any non-default setting pass ``--config`` alongside
+  ``--db``.
+
+  Databases created before the multi-configuration schema stored these
+  settings in a ``SETTING`` table. Schema migration 4 drops that table without
+  carrying the values over; a database upgraded from such a release therefore
+  needs ``--config`` alongside ``--db`` to keep a non-default broker, prefix or
+  user.
 
 ``--config`` **and** ``--db``
-  The database wins when it holds a valid boot slot, and the YAML is then
-  ignored. Otherwise the database is seeded from the YAML config.
+  The database wins when its boot slot holds at least one module, and the YAML
+  is then ignored. Otherwise (no boot slot yet, or a boot slot without modules)
+  the boot slot is seeded from the YAML config. If the YAML fails to load or
+  validate, the boot slot is still written, as an empty placeholder: its
+  ``config_file_path`` points at the YAML and its ``description`` records the
+  error. The manager then behaves as for a configuration without modules (exit,
+  or ``Idle`` with ``--into-idle``/``--idle-on-failure``), and the next start
+  re-seeds the slot once the YAML is fixed.
+
+In every case the boot slot exists after the bootstrap, so the slot reported as
+active by the Configuration API is always present in the database.
 
 Related options:
 
-- ``--reset-from-yaml`` (experimental) discards the existing database slot and
-  re-seeds from the YAML config file. Intended for development use, when you
+- ``--reset-from-yaml`` (experimental) replaces the contents of the boot slot
+  from the YAML config file, even if it holds modules; with an invalid YAML it
+  aborts without touching the database. Intended for development use, when you
   want to reset to a known YAML state. Requires ``--config``.
 - ``--db-init`` is deprecated and has no effect. Seeding the database from YAML
-  when it holds no valid configuration is now the default; use
+  when its boot slot holds no modules is now the default; use
   ``--reset-from-yaml`` to force re-seeding.
 - ``--conf`` is a deprecated alias for ``--config``. Passing both at once is
   rejected as ambiguous.
@@ -250,7 +281,7 @@ No special tooling is required for production or development deployments:
     # YAML is authoritative; in-memory database, re-seeded on every start
     ./manager --config my_config.yaml
 
-    # Database-backed: used once it holds a valid configuration,
+    # Database-backed: used once its boot slot holds modules,
     # seeded from YAML otherwise
     ./manager --config my_config.yaml --db everest.db
 

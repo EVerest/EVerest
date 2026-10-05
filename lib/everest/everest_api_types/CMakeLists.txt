@@ -31,6 +31,9 @@ target_sources(everest_api_types
   src/everest_api_types/auth/codec.cpp
   src/everest_api_types/auth/json_codec.cpp
 
+  src/everest_api_types/charger_information/codec.cpp
+  src/everest_api_types/charger_information/json_codec.cpp
+
   src/everest_api_types/configuration/codec.cpp
   src/everest_api_types/configuration/json_codec.cpp
 
@@ -88,6 +91,9 @@ target_sources(everest_api_types
   src/everest_api_types/session_cost/codec.cpp
   src/everest_api_types/session_cost/json_codec.cpp
 
+  src/everest_api_types/session_storage/codec.cpp
+  src/everest_api_types/session_storage/json_codec.cpp
+
   src/everest_api_types/slac/codec.cpp
   src/everest_api_types/slac/json_codec.cpp
 
@@ -126,6 +132,7 @@ if(TARGET generate_cpp_files)
     PRIVATE
 
     src/everest_api_types/auth/wrapper.cpp
+    src/everest_api_types/charger_information/wrapper.cpp
     src/everest_api_types/dc_external_derate/wrapper.cpp
     src/everest_api_types/display_message/wrapper.cpp
     src/everest_api_types/energy/wrapper.cpp
@@ -141,6 +148,7 @@ if(TARGET generate_cpp_files)
     src/everest_api_types/power_supply_DC/wrapper.cpp
     src/everest_api_types/powermeter/wrapper.cpp
     src/everest_api_types/session_cost/wrapper.cpp
+    src/everest_api_types/session_storage/wrapper.cpp
     src/everest_api_types/slac/wrapper.cpp
     src/everest_api_types/system/wrapper.cpp
     src/everest_api_types/text_message/wrapper.cpp

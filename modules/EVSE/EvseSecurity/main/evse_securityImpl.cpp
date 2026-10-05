@@ -25,11 +25,22 @@ void evse_securityImpl::init() {
         private_key_password = this->mod->config.private_key_password;
     }
 
-    this->evse_security = std::make_unique<evse_security::EvseSecurity>(file_paths, private_key_password);
+    const auto max_fs_usage_bytes = static_cast<std::uintmax_t>(this->mod->config.max_fs_usage_bytes);
+    const auto max_fs_certificate_store_entries =
+        static_cast<std::uintmax_t>(this->mod->config.max_fs_certificate_store_entries);
+    const std::chrono::seconds csr_expiry(this->mod->config.csr_expiry_s);
+    const std::chrono::seconds garbage_collect_time(this->mod->config.garbage_collect_time_s);
+
+    this->evse_security = std::make_unique<evse_security::EvseSecurity>(
+        file_paths, private_key_password, max_fs_usage_bytes, max_fs_certificate_store_entries, csr_expiry,
+        garbage_collect_time);
 }
 
 void evse_securityImpl::ready() {
     publish_cert_telemetry();
+}
+
+void evse_securityImpl::shutdown() {
 }
 
 types::evse_security::InstallCertificateResult

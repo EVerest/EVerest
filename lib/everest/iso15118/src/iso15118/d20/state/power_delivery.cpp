@@ -28,11 +28,13 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
     message_20::PowerDeliveryResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (contactor_error) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ContactorError);
+        set_response_code(res, dt::ResponseCode::FAILED_ContactorError);
+        return res;
     }
 
     if (shutdown_requested) {
@@ -45,10 +47,12 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 
     // Todo(sl): Add standby feature and define as everest module config
     if (req.charge_progress == dt::Progress::Standby) {
-        return response_with_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        set_response_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        return res;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void PowerDelivery::enter() {
@@ -66,8 +70,17 @@ Result PowerDelivery::feed(Event ev) {
             ac_connector_closed = *control_data;
 
             if (not ac_connector_closed) {
-                logf_warning(
-                    "Got ClosedContactor event, but contactor is not closed.  Waiting until the contactor is closed");
+                if (not m_ctx.shutdown_requested()) {
+                    logf_warning("Got ClosedContactor event, but contactor is not closed.  Waiting until the "
+                                 "contactor is closed");
+                } else if (previous_req.has_value()) {
+                    // The contactor will never close now, and the timeout is what answers the saved
+                    // PowerDeliveryReq. Cancel it and answer here, terminating rather than failing.
+                    m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                    m_ctx.respond(handle_request(previous_req.value(), m_ctx.session, /*contactor_error=*/false,
+                                                 /*shutdown_requested=*/true));
+                    m_ctx.session_stopped = true;
+                }
                 return {};
             }
 

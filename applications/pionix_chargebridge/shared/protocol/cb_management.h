@@ -177,8 +177,38 @@ struct CB_COMPILER_ATTR_PACK CbIoPacket {
 	CbTelemetry telemetry; // Generic unstructured telemetry; variable length, rides along, never triggers sends
 };
 
+// --- Session ownership (cb-session-v1, protocol v5) -------------------------
+// The management heartbeat defines a host "session". The MCU serves exactly one
+// session at a time; every other connection's liveness (UDP slots, UART TCP)
+// derives from it. A heartbeat carrying an unknown session_id is a takeover
+// request, decided by the MCU as follows:
+//   - no current owner, or same source IP as the owner  -> take over immediately
+//     (the tool-restart case: the old process on that PC is provably gone)
+//   - owner silent longer than the takeover grace       -> take over
+//   - owner healthy, different IP, FORCE flag set       -> take over (operator
+//     override, log loudly)
+//   - owner healthy, different IP, no FORCE             -> reject: the reply
+//     carries CBSS_RejectedBusy plus the owner's identity so the second host
+//     can report *who* has the device instead of timing out.
+// On an accepted takeover the MCU resets all UDP connection slots and closes
+// all UART TCP connections, so the new session connects instantly.
+// This is cooperative ownership on a trusted management LAN, not authentication.
+
+#define CB_SESSION_FLAG_FORCE_TAKEOVER 0x01
+
+// Grace: a different-IP takeover without FORCE is only accepted once the current
+// owner has been silent this long (default heartbeat interval is 1 s).
+#define CB_SESSION_TAKEOVER_GRACE_MS 2500
+
+enum class CbSessionStatus : uint8_t {
+	CBSS_Accepted = 0,     // sender owns the session; reply data is valid
+	CBSS_RejectedBusy = 1, // another session owns the MCU; only the session/owner fields are valid
+};
+
 struct CB_COMPILER_ATTR_PACK CbHeartbeatPacket {
     CbConfig module_config;
+    uint32_t session_id;   // random per tool instance, != 0 (0 = legacy, always accepted like v4)
+    uint8_t session_flags; // CB_SESSION_FLAG_*
 };
 
 struct CB_COMPILER_ATTR_PACK CbHeartbeatReplyPacket {
@@ -197,6 +227,9 @@ struct CB_COMPILER_ATTR_PACK CbHeartbeatReplyPacket {
 	int16_t temperature_modem_C;
 	int16_t temperature_PT1000_C[2];
 	int32_t uptime_ms;
+	uint8_t session_status;    // CbSessionStatus
+	uint32_t owner_session_id; // session currently served by the MCU
+	uint32_t owner_ip_v4;      // owner IPv4 (host byte order) when rejected; 0 if none or IPv6
 };
 
 struct CB_COMPILER_ATTR_PACK CbFirmwareStart {

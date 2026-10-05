@@ -213,9 +213,16 @@ enum class ConnectorTypeEnum {
     Unknown,
 };
 
+enum class ChargeMode {
+    AC,
+    DC,
+};
+
 struct Connector {
     int32_t id;
     std::optional<ConnectorTypeEnum> type;
+    std::optional<ChargeMode> charge_mode;
+    std::optional<bool> hlc_capable;
 };
 
 struct Evse {

@@ -212,6 +212,11 @@ void warn_if_comm_retry_delay_exceeds_reboot_budget(int retry_count, int retry_d
 } // namespace
 
 powermeterImpl::~powermeterImpl() {
+    shutdown();
+}
+
+void powermeterImpl::shutdown() {
+    // idempotent, so it does not matter whether the framework got here first or the destructor did
     stop_requested_.store(true);
     stop_cv_.notify_all();
     if (live_measure_thread_.joinable()) {

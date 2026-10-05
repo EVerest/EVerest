@@ -1,12 +1,23 @@
 import asyncio
 import logging
 import threading
+import weakref
 
 from queue import Queue
 from typing import Any, Callable, Optional
 
 from everest.framework import Module, RuntimeSession
 from everest.framework import error
+
+# Probe modules whose MQTT connection is still open; EverestCore.stop() closes them.
+_open_probes = weakref.WeakSet()
+
+
+def close_all():
+    """Close every probe module that is still connected."""
+    for probe in list(_open_probes):
+        probe.close()
+
 
 class ProbeModule:
     """
@@ -29,6 +40,17 @@ class ProbeModule:
         self._ready_event = threading.Event()
         self._started = False
         self._mod.shutdown_handler(self._shutdown)
+        _open_probes.add(self)
+
+    def close(self):
+        """
+        Disconnect from EVerest and release the module's MQTT connection and threads.
+        The probe cannot be used afterwards. Calling it again does nothing.
+        """
+        _open_probes.discard(self)
+        mod, self._mod = self._mod, None
+        if mod is not None:
+            mod.close()
 
     def _shutdown(self):
         """

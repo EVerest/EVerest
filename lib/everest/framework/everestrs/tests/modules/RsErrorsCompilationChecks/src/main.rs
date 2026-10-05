@@ -83,4 +83,20 @@ mod tests {
             let _ = MoreErrorsError::SnakeCaseError;
         }
     }
+
+    /// In this test we check that we can deserialize/serialize errors from groups with
+    /// capitalized names.
+    #[test]
+    fn test_capitalized() {
+        use crate::generated::errors::errors_capitalized::{ErrorsCapitalizedError, Error};
+
+        let error = Error::ErrorsCapitalized(ErrorsCapitalizedError::ExampleErrorA);
+        let error_str = "errors_CAPITALIZED/ExampleErrorA";
+
+        assert_eq!(serde_yaml::from_str::<Error>(error_str).unwrap(), error);
+        assert_eq!(
+            serde_yaml::to_string(&error).unwrap(),
+            format!("{error_str}\n")
+        );
+    }
 }

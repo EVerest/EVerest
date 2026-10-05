@@ -1,0 +1,11 @@
+active_modules:
+  session_storage_api:
+    module: session_storage_consumer_API
+    config_module:
+      cfg_communication_check_to_s: 0
+    connections:
+      session_storage:
+        - module_id: probe
+          implementation_id: ProbeModuleSessionStorage
+  probe:
+    module: ProbeModule

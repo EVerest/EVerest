@@ -3,6 +3,9 @@
 #include <iso15118/d20/state/dc_charge_loop.hpp>
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 
+#include <optional>
+#include <variant>
+
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/dc_charge_loop.hpp>
 #include <iso15118/detail/d20/state/power_delivery.hpp>
@@ -72,12 +75,7 @@ namespace {
 template <typename T>
 void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
-        }
-    }
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
 
     // [V2G20-1290]
@@ -99,7 +97,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
     message_20::DC_ChargeLoopResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -114,7 +113,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Scheduled or
             not(selected_energy_service == dt::ServiceCategory::DC or
                 selected_energy_service == dt::ServiceCategory::MCS)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DC_Res>();
@@ -127,12 +127,14 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Scheduled or
             not(selected_energy_service == dt::ServiceCategory::DC_BPT or
                 selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         if (not dc_limits.discharge_limits.has_value()) {
             logf_error("Transfer mode is BPT, but only dc limits without discharge limits are provided!");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_BPT_DC_Res>();
@@ -145,7 +147,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Dynamic or
             not(selected_energy_service == dt::ServiceCategory::DC or
                 selected_energy_service == dt::ServiceCategory::MCS)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DC_Res>();
@@ -162,12 +165,14 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Dynamic or
             not(selected_energy_service == dt::ServiceCategory::DC_BPT or
                 selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         if (not dc_limits.discharge_limits.has_value()) {
             logf_error("Transfer mode is BPT, but only dc limits without discharge limits are provided!");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_BPT_DC_Res>();
@@ -193,7 +198,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_ChargeLoop::enter() {

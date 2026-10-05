@@ -25,6 +25,10 @@ std::string serialize(StartSessionReason val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(ChargeMode val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(SessionEventEnum val) noexcept {
     return utilities::dump_json(val);
 }
@@ -155,6 +159,11 @@ std::ostream& operator<<(std::ostream& os, StopTransactionRequest const& val) {
 }
 
 std::ostream& operator<<(std::ostream& os, StartSessionReason const& val) {
+    os << serialize(val);
+    return os;
+}
+
+std::ostream& operator<<(std::ostream& os, ChargeMode const& val) {
     os << serialize(val);
     return os;
 }
@@ -318,6 +327,10 @@ template <> StopTransactionRequest deserialize(std::string_view val) {
 
 template <> StartSessionReason deserialize(std::string_view val) {
     return utilities::parse_json<StartSessionReason>(val);
+}
+
+template <> ChargeMode deserialize(std::string_view val) {
+    return utilities::parse_json<ChargeMode>(val);
 }
 
 template <> SessionEventEnum deserialize(std::string_view val) {
