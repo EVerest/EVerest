@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import pytest
 
-from ev_cli.errors import ReferenceError as EvReferenceError
+from ev_cli.errors import MalformedReference
 from ev_cli.ir.types import TypeRef
 from ev_cli.schema.references import (
     Dialect,
@@ -52,11 +52,11 @@ class TestLegacyDialect:
         '',
     ])
     def test_rejects_nonsense(self, raw):
-        with pytest.raises(EvReferenceError):
+        with pytest.raises(MalformedReference):
             parse_type_reference(raw, from_unit='energy')
 
     def test_rejects_a_non_string(self):
-        with pytest.raises(EvReferenceError):
+        with pytest.raises(MalformedReference):
             parse_type_reference(None, from_unit='energy')
 
 
@@ -87,16 +87,16 @@ class TestConformantDialect:
         assert parsed.target == TypeRef('units', 'Power')
 
     def test_a_non_type_document_cannot_refer_to_itself(self):
-        with pytest.raises(EvReferenceError, match='not a type unit'):
+        with pytest.raises(MalformedReference, match='not a type unit'):
             parse_type_reference('#/types/Power', from_unit=None)
 
     def test_rejects_a_path_without_a_suffix(self):
         """Without the extension no standard tool could follow it."""
-        with pytest.raises(EvReferenceError, match=r'\.yaml'):
+        with pytest.raises(MalformedReference, match=r'\.yaml'):
             parse_type_reference('units#/types/Power', from_unit='energy')
 
     def test_rejects_escaping_the_types_directory(self):
-        with pytest.raises(EvReferenceError, match='outside'):
+        with pytest.raises(MalformedReference, match='outside'):
             parse_type_reference('../../elsewhere.yaml#/types/Power', from_unit='energy')
 
 
@@ -157,5 +157,5 @@ class TestErrorReferences:
         '/errors/example#/',
     ])
     def test_rejects_nonsense(self, raw):
-        with pytest.raises(EvReferenceError):
+        with pytest.raises(MalformedReference):
             parse_error_reference(raw)

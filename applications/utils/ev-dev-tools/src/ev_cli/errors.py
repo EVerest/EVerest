@@ -18,8 +18,13 @@ class DefinitionNotFound(EvCliError):
     """A definition file could not be found in any of the everest directories."""
 
 
-class ReferenceError(EvCliError):  # noqa: A001 - deliberately shadows the builtin
-    """A ``$ref`` or error reference could not be parsed or resolved."""
+class MalformedReference(EvCliError):
+    """A ``$ref`` or error reference could not be parsed.
+
+    Only about the shape of the string: nothing was looked up.  A reference
+    that parses but names something that does not exist is a
+    :class:`DefinitionNotFound` instead.
+    """
 
 
 class SchemaError(EvCliError):
