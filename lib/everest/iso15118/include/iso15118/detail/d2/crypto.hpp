@@ -65,7 +65,7 @@ std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar);
 // CommonName with '-' removed, so it matches the leaf CN the SECC cross-checks.
 std::string emaid_from_contract_der(const std::vector<uint8_t>& leaf_der);
 
-// The serial is truncated to int64 -- a known simplification, matching the ISO 15118-20 layer.
+// The serial is the big-endian magnitude; it stays empty when negative or too wide to encode.
 message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der);
 
 } // namespace iso15118::d2::crypto

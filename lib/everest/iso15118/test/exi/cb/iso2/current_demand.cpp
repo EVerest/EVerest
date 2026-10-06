@@ -35,6 +35,15 @@ SCENARIO("Se/Deserialize ISO-2 current demand messages") {
             REQUIRE(msg.ev_maximum_current_limit.has_value());
             REQUIRE(from_physical_value(msg.ev_maximum_current_limit.value()) == 200);
         }
+
+        THEN("The wire carries the right units, which from_physical_value does not read") {
+            const auto& raw = decode_helper(serialized).V2G_Message.Body.CurrentDemandReq;
+
+            REQUIRE(raw.EVTargetCurrent.Unit == iso2_unitSymbolType_A);
+            REQUIRE(raw.EVTargetVoltage.Unit == iso2_unitSymbolType_V);
+            REQUIRE(raw.EVMaximumCurrentLimit_isUsed);
+            REQUIRE(raw.EVMaximumCurrentLimit.Unit == iso2_unitSymbolType_A);
+        }
     }
 
     GIVEN("Round-trip current_demand_res") {

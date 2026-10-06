@@ -73,11 +73,11 @@ if (ISO15118_INSTALL)
         EXPORT iso15118-targets
     )
 
-    # ev/ declares symbols that are only in the library when the EV side was built, so a
-    # charger-only install must not ship those headers.
+    # ev/ and the response variants declare symbols that are only in the library when the EV
+    # side was built, so a charger-only install must not ship those headers.
     set(ISO15118_HEADER_EXCLUDES PATTERN "detail" EXCLUDE)
     if(NOT ISO15118_BUILD_EV_SIDE)
-        list(APPEND ISO15118_HEADER_EXCLUDES PATTERN "ev" EXCLUDE)
+        list(APPEND ISO15118_HEADER_EXCLUDES PATTERN "ev" EXCLUDE PATTERN "response_variant.hpp" EXCLUDE)
     endif()
 
     install(
