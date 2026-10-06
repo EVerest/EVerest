@@ -40,6 +40,9 @@ cd ~/checkout/everest-workspace/EVerest/tests
 
 The script automatically sets up network isolation for parallel ISO 15118 tests
 (requires sudo or CAP_NET_ADMIN) and falls back to sequential execution otherwise.
+ISO 15118 tests are CPU-heavy, so on a small machine limit how many of them run at
+the same time with `--iso15118-parallel N`, for example `./run-tests.sh -j8
+--iso15118-parallel 4 integration`.
 
 After execution `result.xml` and `report.html` are written to the `tests/` directory.
 

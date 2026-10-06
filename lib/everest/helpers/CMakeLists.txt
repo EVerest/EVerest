@@ -52,6 +52,12 @@ install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/
 )
 
 if (BUILD_TESTING)
+    # LD_PRELOAD shim that lets integration tests advance a module's monotonic clock
+    add_library(everest_clockshift SHARED src/clockshift.cpp)
+    target_compile_features(everest_clockshift PRIVATE cxx_std_17)
+    target_link_libraries(everest_clockshift PRIVATE ${CMAKE_DL_LIBS})
+    install(TARGETS everest_clockshift LIBRARY DESTINATION ${CMAKE_INSTALL_LIBEXECDIR}/everest/testing)
+
     add_subdirectory(tests)
 endif()
 

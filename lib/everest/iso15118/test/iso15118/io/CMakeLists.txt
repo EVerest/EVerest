@@ -25,8 +25,7 @@ catch_discover_tests(test_socket_keepalive)
 add_executable(test_connection_plain connection_plain.cpp)
 target_link_libraries(test_connection_plain PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_connection_plain
-    # ConnectionPlain listens on port 50000, like the TLS tests
-    PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
+    PROPERTIES RUN_SERIAL TRUE
 )
 
 add_executable(test_sdp_server sdp_server_test.cpp)
@@ -63,7 +62,7 @@ target_link_libraries(connection_openssl_test
 )
 catch_discover_tests(connection_openssl_test
     WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-    PROPERTIES RESOURCE_LOCK iso15118_tls_port_50000
+    PROPERTIES RUN_SERIAL TRUE
 )
 
 add_executable(test_sdp_packet sdp_packet_test.cpp)

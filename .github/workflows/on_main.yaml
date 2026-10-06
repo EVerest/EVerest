@@ -43,6 +43,15 @@ jobs:
       artifact_deploy_target_repo: ${{ github.repository_owner }}/everest.github.io
 
 
+  # Refreshes the Bazel disk cache that PRs and the merge queue restore. The cross builds are only
+  # refreshed by the scheduled runs of on_pr.yaml, their caches are too large to save on every push.
+  bazel-build-and-test:
+    name: Bazel
+    uses: ./.github/workflows/job_bazel-build-test.yaml
+    with:
+      runner: ubuntu-24.04
+
+
   # create-coverage-badge:
   #   uses: ./.github/workflows/job_create-coverage-badge.yml
   #   needs:

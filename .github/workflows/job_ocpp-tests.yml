@@ -83,11 +83,17 @@ jobs:
         id: run_ocpp_tests
         continue-on-error: true
         run: |
+          # The OCPP tests mostly wait on protocol timers, so they run with two workers per core. At
+          # four per core a 4-vCPU GitHub runner is CPU-bound: the tests take about twice as long and
+          # timing-sensitive ones fail. The cap of 64 bounds the memory use on large runners.
+          workers=$(( $(nproc) * 2 ))
+          workers=$(( workers > 64 ? 64 : workers ))
           docker compose \
           -f source/.ci/e2e/docker-compose.yaml \
           run \
           e2e-test-server \
           tests/run-tests.sh ocpp \
+          -j "$workers" \
           --everest-prefix /ext/dist \
           --junitxml /ext/ocpp-tests-result.xml \
           --html /ext/ocpp-tests-report.html

@@ -104,6 +104,15 @@ in case and spelling. List with `ctest -N` first. Coverage needs
 `-DEVEREST_ENABLE_COVERAGE=ON`; the `everest-core_create_coverage` target writes
 `build/everest-core_create_coverage/index.html`.
 
+CI runs the unit tests in parallel (`ctest -j "$(nproc)"` in
+`.ci/build-kit/scripts/run_unit_tests.sh`), so a test must not depend on running alone.
+Prefer port 0 and per-test temporary directories. Tests that share a fixed resource (a
+port, a file path, a PKI or database directory) get a common `RESOURCE_LOCK`, as the libtls
+and io TLS tests do with `tls_pki`; a test that must not run next to any other gets
+`RUN_SERIAL`, as the iso15118 tests on the fixed port 50000 do. With
+`catch_discover_tests` or `gtest_discover_tests`, set them through `PROPERTIES` so they
+apply to every discovered test. Check new tests with `ctest -j` locally.
+
 Integration tests use pytest through the unified runner `tests/run-tests.sh`, against a
 built and installed prefix. The runner installs the OCPP certificate and component-config
 fixtures itself but not the venv, so activate `build/venv` first:

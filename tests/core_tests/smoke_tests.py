@@ -800,6 +800,7 @@ async def test_pwm_ac_session_no_energy_before_session(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("connector_1", "evse")],
@@ -1309,6 +1310,7 @@ async def test_iso15118_dc_session_paused_by_evse(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1330,6 +1332,7 @@ async def test_iso15118_protocol_negotiation_failed(
     test_controller.plug_out()
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1353,6 +1356,7 @@ async def test_iso15118_tls_handshake_failed_ev_reason(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1378,6 +1382,7 @@ async def test_iso15118_dc_charging_parameters_not_accepted_ac_ev(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1403,6 +1408,7 @@ async def test_iso15118_pnc_only_ev_authorization_failed(
     test_controller.plug_out()
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1437,6 +1443,7 @@ async def test_iso15118_dc_cable_check_failed(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("evse_manager", "evse")],
