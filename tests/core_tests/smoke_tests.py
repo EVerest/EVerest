@@ -83,7 +83,8 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
-        adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract
+        # PyEvJosev signs ISO 15118-20 PnC with P-256, which the Annex B profile check rejects
+        adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract and not self.ev_d20_only
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements

@@ -21,6 +21,7 @@
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
+#include <evse_security/crypto/openssl/openssl_iso20.hpp>
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
@@ -503,6 +504,10 @@ bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
         X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_PARTIAL_CHAIN);
     }
 
+    if (iso20::key_type(X509_get0_pubkey(x509_child)) != iso20::KeyType::None) {
+        X509_STORE_CTX_set_verify_cb(ctx.get(), iso20::verify_annex_b_extensions);
+    }
+
     if (X509_verify_cert(ctx.get()) != 1) {
         const int ec = X509_STORE_CTX_get_error(ctx.get());
         const char* error = X509_verify_cert_error_string(ec);
@@ -578,6 +583,10 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
     if (1 != X509_STORE_CTX_init(store_ctx_ptr.get(), store_ptr.get(), get(target), untrusted.get())) {
         EVLOG_error << "X509 could not init x509 store ctx!";
         return CertificateValidationResult::Unknown;
+    }
+
+    if (iso20::key_type(X509_get0_pubkey(get(target))) != iso20::KeyType::None) {
+        X509_STORE_CTX_set_verify_cb(store_ctx_ptr.get(), iso20::verify_annex_b_extensions);
     }
 
     if (allow_future_certificates) {

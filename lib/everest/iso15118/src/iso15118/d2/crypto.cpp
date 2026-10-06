@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/d2/crypto.hpp>
 
 #include <algorithm>
@@ -28,23 +28,23 @@
 #include <openssl/x509.h>
 #include <openssl/x509_vfy.h>
 
+#include <iso15118/detail/x509_helper.hpp>
+
 #include <iso15118/detail/cb_exi.hpp>
 
 namespace iso15118::d2::crypto {
+
+using x509::cert_to_pem;
+using x509::der_to_x509;
+using x509::PKEY_ptr;
+using x509::strip_dashes;
+using x509::X509_ptr;
 
 namespace {
 
 constexpr std::size_t MAX_EXI_SIZE = 8192;
 constexpr std::size_t SHA256_LEN = 32;
 constexpr std::size_t ECDSA_SIG_LEN = 64; // r (32) || s (32)
-
-using X509_ptr = std::unique_ptr<X509, decltype(&X509_free)>;
-using PKEY_ptr = std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)>;
-
-X509_ptr der_to_x509(const std::vector<uint8_t>& der) {
-    const unsigned char* p = der.data();
-    return X509_ptr(d2i_X509(nullptr, &p, static_cast<long>(der.size())), &X509_free);
-}
 
 bool sha256(const uint8_t* data, std::size_t len, std::array<uint8_t, SHA256_LEN>& out) {
     unsigned int md_len = 0;
@@ -91,42 +91,6 @@ bool ecdsa_verify(EVP_PKEY* pkey, const uint8_t* sig_rs, std::size_t sig_len,
     return ok;
 }
 
-std::string emaid_from_cert(X509* cert) {
-    std::string cn;
-    X509_NAME* name = X509_get_subject_name(cert);
-    if (name == nullptr) {
-        return cn;
-    }
-    char buf[256] = {0};
-    const int len = X509_NAME_get_text_by_NID(name, NID_commonName, buf, sizeof(buf) - 1);
-    if (len > 0) {
-        cn.assign(buf, static_cast<std::size_t>(len));
-    }
-    return cn;
-}
-
-std::string cert_to_pem(X509* cert) {
-    BIO* bio = BIO_new(BIO_s_mem());
-    if (bio == nullptr) {
-        return {};
-    }
-    std::string pem;
-    if (PEM_write_bio_X509(bio, cert) == 1) {
-        char* data = nullptr;
-        const long n = BIO_get_mem_data(bio, &data);
-        if (n > 0 and data != nullptr) {
-            pem.assign(data, static_cast<std::size_t>(n));
-        }
-    }
-    BIO_free(bio);
-    return pem;
-}
-
-std::string strip_dashes(std::string in) {
-    in.erase(std::remove(in.begin(), in.end(), '-'), in.end());
-    return in;
-}
-
 // xmldsig algorithm identifiers (ISO 15118-2 uses EXI canonicalization).
 constexpr char ALGO_CANONICAL_EXI[] = "http://www.w3.org/TR/canonical-exi/";
 constexpr char ALGO_ECDSA_SHA256[] = "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256";
@@ -136,21 +100,6 @@ template <typename CbStringField> void set_cb_string(CbStringField& field, const
     const std::size_t len = std::strlen(value);
     std::memcpy(field.characters, value, len);
     field.charactersLen = static_cast<uint16_t>(len);
-}
-
-PKEY_ptr load_private_key(const PrivateKey& key) {
-    BIO* bio = BIO_new_mem_buf(key.pem.data(), static_cast<int>(key.pem.size()));
-    if (bio == nullptr) {
-        return PKEY_ptr(nullptr, &EVP_PKEY_free);
-    }
-    void* pw = key.password ? const_cast<char*>(key.password->c_str()) : nullptr;
-    PKEY_ptr pkey(PEM_read_bio_PrivateKey(bio, nullptr, nullptr, pw), &EVP_PKEY_free);
-    BIO_free(bio);
-    if (pkey == nullptr) {
-        logf_error("PnC: failed to load EC private key from PEM");
-        ERR_clear_error();
-    }
-    return pkey;
 }
 
 std::vector<uint8_t> ecdsa_sign(EVP_PKEY* pkey, const std::array<uint8_t, SHA256_LEN>& digest) {
@@ -236,7 +185,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
     }
 
     // Cross-check the requested eMAID against the leaf CommonName (case-insensitive, '-' removed).
-    const auto cert_emaid = emaid_from_cert(leaf.get());
+    const auto cert_emaid = x509::subject_common_name(leaf.get());
     {
         const auto cert_e = strip_dashes(cert_emaid);
         const auto req_e = strip_dashes(req_emaid);
@@ -303,6 +252,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         const int rc = X509_verify_cert(ctx);
         if (rc == 1) {
             result.response_code = dt::ResponseCode::OK;
+            x509::log_verified_chain(ctx);
         } else {
             const int err = X509_STORE_CTX_get_error(ctx);
             const int err_depth = X509_STORE_CTX_get_error_depth(ctx);
@@ -634,7 +584,7 @@ std::vector<uint8_t> finalize_signed(iso2_exiDocument& doc, const std::string& e
         }
     }
 
-    auto pkey = load_private_key(key);
+    auto pkey = x509::load_private_key(key.pem, key.password);
     if (pkey == nullptr) {
         return {};
     }
@@ -817,7 +767,7 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
         return {};
     }
 
-    auto oem_key = load_private_key(oem_priv_key);
+    auto oem_key = x509::load_private_key(oem_priv_key.pem, oem_priv_key.password);
     if (oem_key == nullptr) {
         return {};
     }
@@ -918,28 +868,7 @@ std::string emaid_from_contract_der(const std::vector<uint8_t>& leaf_der) {
     if (leaf == nullptr) {
         return {};
     }
-    return strip_dashes(emaid_from_cert(leaf.get()));
-}
-
-std::vector<std::vector<uint8_t>> pem_chain_to_der(const std::string& pem) {
-    std::vector<std::vector<uint8_t>> out;
-    BIO* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
-    if (bio == nullptr) {
-        return out;
-    }
-    X509* cert = nullptr;
-    while ((cert = PEM_read_bio_X509(bio, nullptr, nullptr, nullptr)) != nullptr) {
-        unsigned char* der = nullptr;
-        const int len = i2d_X509(cert, &der);
-        if (len > 0 and der != nullptr) {
-            out.emplace_back(der, der + len);
-        }
-        OPENSSL_free(der);
-        X509_free(cert);
-    }
-    BIO_free(bio);
-    ERR_clear_error(); // the loop terminates on a benign "no start line" PEM error
-    return out;
+    return strip_dashes(x509::subject_common_name(leaf.get()));
 }
 
 message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der) {
@@ -961,21 +890,6 @@ message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& r
         }
     }
     return id;
-}
-
-std::string der_chain_to_pem(const std::vector<uint8_t>& leaf_der, const std::vector<std::vector<uint8_t>>& subs_der) {
-    std::string pem;
-    auto append = [&pem](const std::vector<uint8_t>& der) {
-        auto x = der_to_x509(der);
-        if (x != nullptr) {
-            pem += cert_to_pem(x.get());
-        }
-    };
-    append(leaf_der);
-    for (const auto& sub : subs_der) {
-        append(sub);
-    }
-    return pem;
 }
 
 std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar) {
