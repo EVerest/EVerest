@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -18,6 +18,9 @@ void from_json(const json& j, SeverityFilter& k);
 
 void to_json(json& j, Severity const& k) noexcept;
 void from_json(const json& j, Severity& k);
+
+void to_json(json& j, Mapping const& k) noexcept;
+void from_json(const json& j, Mapping& k);
 
 void to_json(json& j, ImplementationIdentifier const& k) noexcept;
 void from_json(const json& j, ImplementationIdentifier& k);

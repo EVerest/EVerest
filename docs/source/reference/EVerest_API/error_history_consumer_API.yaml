@@ -7,6 +7,11 @@ info:
   description: >-
     API for EVerest API clients for error status and history.
 
+    The EVSE and connector an error's origin is mapped to (origin.mapping) is only reported on the
+    live events error_raised and error_cleared, including the replies to their latched value
+    requests. Errors read from the error history database (get_errors, active_errors) never carry
+    origin.mapping.
+
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
@@ -215,7 +220,9 @@ components:
     receive_reply_get_errors:
       name: receive_reply_get_errors
       title: 'List of filtered errors'
-      summary: 'Reply to the request to send the list of filtered errors'
+      summary: >-
+        Reply to the request to send the list of filtered errors. The errors are read from the error
+        history database and never carry origin.mapping.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorList'
@@ -240,14 +247,18 @@ components:
     receive_reply_active_errors:
       name: receive_reply_active_errors
       title: 'The list of active errors'
-      summary: 'Reply to the request to send the list of active errors'
+      summary: >-
+        Reply to the request to send the list of active errors. The errors are read from the error
+        history database and never carry origin.mapping.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorList'
     receive_error_raised:
       name: receive_error_raised
       title: 'Receive newly raised error'
-      summary: 'Notifies on every raised error'
+      summary: >-
+        Notifies on every raised error. origin.mapping is set if the origin is mapped to an EVSE or
+        connector.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorObject'
@@ -287,7 +298,9 @@ components:
     receive_error_cleared:
       name: receive_error_cleared
       title: 'Receive cleared error'
-      summary: 'Notifies when an error is cleared'
+      summary: >-
+        Notifies when an error is cleared. origin.mapping is set if the origin is mapped to an EVSE
+        or connector.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ErrorObject'
@@ -407,6 +420,7 @@ components:
         state_filter:
           $ref: '#/components/schemas/State'
         origin_filter:
+          description: Matches module_id and implementation_id. A mapping in the filter is ignored.
           $ref: '#/components/schemas/ImplementationIdentifier'
         type_filter:
           type: string
@@ -431,6 +445,24 @@ components:
         implementation_id:
           type: string
           minLength: 2
+        mapping:
+          description: >-
+            EVSE and connector the origin is mapped to. Only set on live error events: error_raised,
+            error_cleared and the replies to their latched value requests. Never set on errors read
+            from the error history database, that is the replies to get_errors and active_errors.
+            Absent if the origin has no mapping configured. Ignored in origin_filter.
+          $ref: '#/components/schemas/Mapping'
+    Mapping:
+      description: EVSE and connector an origin is mapped to.
+      type: object
+      additionalProperties: true
+      required:
+        - evse
+      properties:
+        evse:
+          type: integer
+        connector:
+          type: integer
     Severity:
       description: Severity of an error
       type: string
