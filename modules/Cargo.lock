@@ -1600,7 +1600,7 @@ dependencies = [
 [[package]]
 name = "zvt"
 version = "1.0.1"
-source = "git+https://github.com/Everest/zvt.git?rev=720bdea50d328a12acf805acc70426916f279d86#720bdea50d328a12acf805acc70426916f279d86"
+source = "git+https://github.com/Everest/zvt.git?rev=c784c20401764978fd6287a55e50bc65d083d68c#c784c20401764978fd6287a55e50bc65d083d68c"
 dependencies = [
  "anyhow",
  "async-stream",
@@ -1620,7 +1620,7 @@ dependencies = [
 [[package]]
 name = "zvt_builder"
 version = "1.0.1"
-source = "git+https://github.com/Everest/zvt.git?rev=720bdea50d328a12acf805acc70426916f279d86#720bdea50d328a12acf805acc70426916f279d86"
+source = "git+https://github.com/Everest/zvt.git?rev=c784c20401764978fd6287a55e50bc65d083d68c#c784c20401764978fd6287a55e50bc65d083d68c"
 dependencies = [
  "chrono",
  "hex",
@@ -1633,7 +1633,7 @@ dependencies = [
 [[package]]
 name = "zvt_derive"
 version = "1.0.1"
-source = "git+https://github.com/Everest/zvt.git?rev=720bdea50d328a12acf805acc70426916f279d86#720bdea50d328a12acf805acc70426916f279d86"
+source = "git+https://github.com/Everest/zvt.git?rev=c784c20401764978fd6287a55e50bc65d083d68c#c784c20401764978fd6287a55e50bc65d083d68c"
 dependencies = [
  "proc-macro2",
  "quote",
@@ -1643,7 +1643,7 @@ dependencies = [
 [[package]]
 name = "zvt_feig_terminal"
 version = "1.0.1"
-source = "git+https://github.com/Everest/zvt.git?rev=720bdea50d328a12acf805acc70426916f279d86#720bdea50d328a12acf805acc70426916f279d86"
+source = "git+https://github.com/Everest/zvt.git?rev=c784c20401764978fd6287a55e50bc65d083d68c#c784c20401764978fd6287a55e50bc65d083d68c"
 dependencies = [
  "anyhow",
  "async-stream",

@@ -8,6 +8,8 @@ _check_dependency_versions.py_ parses a snapshot.yaml file and checks if there a
 
 _check_mod_update.py_ runs `ev-cli mod update --force` on every module and reports modules whose generated files do not regenerate cleanly
 
+_check_rust_pins.py_ checks that the git crates of the Rust modules are fetched by the Yocto recipe at the revision Cargo.toml or Cargo.lock pins them to
+
 _config2cmake.py_ parses a EVerest yaml config and prints a CMake command line to only include the modules needed by this config
 
 _create_snapshot.py_ uses EDM to create an snapshot in a temporary subdirectory and postprocesses it to fix common problems
