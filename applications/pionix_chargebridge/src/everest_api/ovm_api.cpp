@@ -109,6 +109,12 @@ void ovm_api::clear_comm_fault() {
     send_clear_error(API_OVM::ErrorEnum::CommunicationFault, comm_fault_subtype);
 }
 
+void ovm_api::clear_raised_errors() {
+    clear_comm_fault();
+    send_clear_error(API_OVM::ErrorEnum::MREC5OverVoltage, "Emergency");
+    send_clear_error(API_OVM::ErrorEnum::MREC5OverVoltage, "Error");
+}
+
 void ovm_api::handle_dc_hv_ov_emergency(bool high) {
     static const std::string subtype = "Emergency";
     if (high) {

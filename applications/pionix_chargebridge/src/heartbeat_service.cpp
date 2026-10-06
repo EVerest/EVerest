@@ -66,6 +66,10 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
     m_ready.setCallback([this](auto&, auto&) { m_ready_notify.notify(); });
 }
 
+void heartbeat_service::set_station_id(std::int8_t station_id) {
+    m_config_message.data.module_config.station_id = station_id;
+}
+
 void heartbeat_service::create_udp_client(std::string const& remote, uint16_t remote_port) {
     m_udp = std::make_unique<everest::lib::io::udp::udp_client>(remote, remote_port);
     m_udp_on_error = false;

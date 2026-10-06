@@ -28,6 +28,8 @@ struct heartbeat_config {
     // dead or same-IP owners are taken over.
     bool force_takeover{false};
     CbConfig cb_config;
+    // cb_config.station_id came from the role, not from plc.station_id.
+    bool station_id_derived{false};
 };
 
 class heartbeat_service : public everest::lib::io::event::fd_event_register_interface {
@@ -43,6 +45,7 @@ public:
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
     void disconnect_cb_endpoint();
     void connect_cb_endpoint(std::string const& remote);
+    void set_station_id(std::int8_t station_id);
     bool available() const;
     int mcu_reset_count() const;
     // The role the MCU reports it has latched, as it came off the wire (cb_type_not_latched until

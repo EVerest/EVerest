@@ -16,7 +16,8 @@ namespace charge_bridge {
 
 enum class discovery_device_type {
     CB_EVSE,
-    CB_EV
+    CB_EV,
+    CB_ANY
 };
 
 class discovery : public everest::lib::io::event::fd_event_register_interface {

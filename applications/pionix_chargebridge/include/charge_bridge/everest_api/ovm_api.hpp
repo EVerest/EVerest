@@ -40,6 +40,7 @@ public:
 
     void raise_comm_fault();
     void clear_comm_fault();
+    void clear_raised_errors();
     void sync(bool cb_connected);
 
 private:

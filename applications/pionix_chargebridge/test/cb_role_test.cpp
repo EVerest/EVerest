@@ -11,6 +11,7 @@
 
 namespace {
 
+using charge_bridge::board_type_role;
 using charge_bridge::cb_role;
 using charge_bridge::cb_type_ev;
 using charge_bridge::cb_type_evse;
@@ -25,6 +26,24 @@ using charge_bridge::role_latch_state;
 using charge_bridge::role_mismatch_remedy;
 using charge_bridge::station_id_issue;
 using charge_bridge::to_wire;
+
+// --- board_type TXT record -------------------------------------------------------------------
+
+TEST(cb_role, board_type_announces_the_role_of_every_known_variant) {
+    EXPECT_EQ(board_type_role("CB-CCS-EV-LU"), cb_role::ev);
+    EXPECT_EQ(board_type_role("CB-MCS-EV"), cb_role::ev);
+    EXPECT_EQ(board_type_role("CB-CCS-EVSE-LU"), cb_role::evse);
+    EXPECT_EQ(board_type_role("CB-CCS-EVSE-QCA"), cb_role::evse);
+    EXPECT_EQ(board_type_role("CB-MCS-EVSE"), cb_role::evse);
+}
+
+TEST(cb_role, board_type_without_a_role_announces_none) {
+    // The neutral name of a never provisioned MCS board, a board without a BSP, and the unknown.
+    EXPECT_FALSE(board_type_role("CB-MCS").has_value());
+    EXPECT_FALSE(board_type_role("CB-CAN").has_value());
+    EXPECT_FALSE(board_type_role("").has_value());
+    EXPECT_FALSE(board_type_role("CB-CCS-EV").has_value());
+}
 
 // --- wire encoding ---------------------------------------------------------------------------
 

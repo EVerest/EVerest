@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <protocol/cb_management.h>
+#include <string_view>
 
 namespace charge_bridge {
 
@@ -83,6 +84,22 @@ constexpr char const* cb_type_name(std::uint8_t wire) {
     default:
         return "unknown";
     }
+}
+
+// --- board_type TXT record ---------------------------------------------------------------------
+
+// The role a board announces in the board_type TXT record of its mDNS service. On CCS boards the
+// name is derived from the strap pins (board_type_name() in the firmware's NonSecure main.c); on
+// MCS boards it is the role the firmware booted with. The neutral CB-MCS of a never provisioned
+// board, CB-CAN and anything unknown announce no role.
+inline std::optional<cb_role> board_type_role(std::string_view board_type) {
+    if (board_type == "CB-CCS-EV-LU" or board_type == "CB-MCS-EV") {
+        return cb_role::ev;
+    }
+    if (board_type == "CB-CCS-EVSE-LU" or board_type == "CB-CCS-EVSE-QCA" or board_type == "CB-MCS-EVSE") {
+        return cb_role::evse;
+    }
+    return std::nullopt;
 }
 
 // --- role latch cross-check ------------------------------------------------------------------

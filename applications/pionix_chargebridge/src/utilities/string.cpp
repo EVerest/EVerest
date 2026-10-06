@@ -56,6 +56,18 @@ std::string format_host_port(std::string const& host, std::uint16_t port) {
     return host + ":" + std::to_string(port);
 }
 
+std::optional<std::string_view> discovery_sentinel(std::string_view const& endpoint) {
+    for (std::string_view const sentinel : {"ANY_EVSE", "ANY_EV"}) {
+        if (string_starts_with(endpoint, sentinel)) {
+            return sentinel;
+        }
+    }
+    if (endpoint == "ANY" or string_starts_with(endpoint, "ANY(")) {
+        return "ANY";
+    }
+    return std::nullopt;
+}
+
 std::set<std::string> csv_to_set(std::string const& str) {
     std::set<std::string> result;
     std::stringstream ss(str);

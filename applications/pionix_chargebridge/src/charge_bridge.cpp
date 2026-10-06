@@ -42,7 +42,7 @@ constexpr int liveness_probe_failure_limit = 2;
 constexpr std::uint16_t liveness_probe_timeout_ms = 200;
 constexpr std::uint16_t liveness_probe_retries = 3;
 
-std::pair<bool, std::set<std::string>> make_interface_list(std::string const& str, std::string const& pattern) {
+std::pair<bool, std::set<std::string>> make_interface_list(std::string const& str, std::string_view const& pattern) {
     auto const raw = utilities::string_after_pattern(str, pattern);
     if (raw.size() < 3 || raw.front() != '(' || raw.back() != ')') {
         return {false, {}};
@@ -169,17 +169,20 @@ void activate_late_bridge(everest::lib::io::event::fd_event_handler& handler, st
 endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
     endpoint_intent_info result;
 
-    if (utilities::string_starts_with(cb_remote, "ANY_EVSE")) {
-        auto params = make_interface_list(cb_remote, "ANY_EVSE");
-        result.value = endpoint_intent::any_evse_mdns;
-        result.excluding_interfaces = params.first;
-        result.interfaces = params.second;
-    } else if (utilities::string_starts_with(cb_remote, "ANY_EV")) {
-        auto params = make_interface_list(cb_remote, "ANY_EV");
-        result.value = endpoint_intent::any_ev_mdns;
-        result.excluding_interfaces = params.first;
-        result.interfaces = params.second;
+    auto const sentinel = utilities::discovery_sentinel(cb_remote);
+    if (not sentinel.has_value()) {
+        return result;
     }
+    if (*sentinel == "ANY_EVSE") {
+        result.value = endpoint_intent::any_evse_mdns;
+    } else if (*sentinel == "ANY_EV") {
+        result.value = endpoint_intent::any_ev_mdns;
+    } else {
+        result.value = endpoint_intent::any_mdns;
+    }
+    auto params = make_interface_list(cb_remote, *sentinel);
+    result.excluding_interfaces = params.first;
+    result.interfaces = params.second;
 
     return result;
 }
@@ -209,8 +212,14 @@ bool charge_bridge::is_mdns_endpoint() const {
 }
 
 discovery_device_type charge_bridge::mdns_device_type() const {
-    if (m_endpoint_intent.value == endpoint_intent::any_evse_mdns) {
+    switch (m_endpoint_intent.value) {
+    case endpoint_intent::any_evse_mdns:
         return discovery_device_type::CB_EVSE;
+    case endpoint_intent::any_mdns:
+        return discovery_device_type::CB_ANY;
+    case endpoint_intent::any_ev_mdns:
+    case endpoint_intent::fixed_ip:
+        break;
     }
     return discovery_device_type::CB_EV;
 }
@@ -322,6 +331,9 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     if (m_config.bsp) {
         m_config.bsp->cb_remote = ip;
     }
+    if (m_config.bsp_alternate) {
+        m_config.bsp_alternate->cb_remote = ip;
+    }
     if (m_config.heartbeat) {
         m_config.heartbeat->cb_remote = ip;
     }
@@ -330,6 +342,7 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     }
 
     m_config.firmware.cb_remote = ip;
+    select_bsp_for_board(info);
 
     m_event_handler->add_action([this]() {
         std::unique_ptr<discovery> tmp;
@@ -553,21 +566,7 @@ void charge_bridge::create_internal_runtime() {
                       [this]() { return std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify); });
     }
     if (m_config.bsp.has_value()) {
-        create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
-                      m_bridge_permanently_disabled, [this]() {
-                          auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
-                          // The CE state arrives on the BSP connection but the plc bridge owns the
-                          // carrier it gates (plc.carrier_gate: ce_mated). Same pattern as the
-                          // heartbeat's link-status routing above: both run on the event loop
-                          // thread, the same thread that owns m_plc, and the guard tolerates the
-                          // bridges (re)appearing in any order.
-                          bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
-                              if (m_plc) {
-                                  m_plc->set_ce_state(ce_state);
-                              }
-                          });
-                          return bsp;
-                      });
+        create_bsp_bridge();
     }
     if (m_config.io.has_value()) {
         create_bridge(m_config.cb_name, "io bridge", m_io, m_bridge_create_failures_reported,
@@ -610,6 +609,77 @@ void charge_bridge::create_internal_runtime() {
 }
 
 // True if the config asks for at least one bridge, i.e. if an empty runtime means something failed.
+void charge_bridge::create_bsp_bridge() {
+    create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
+                  m_bridge_permanently_disabled, [this]() {
+                      auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
+                      bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
+                          if (m_plc) {
+                              m_plc->set_ce_state(ce_state);
+                          }
+                      });
+                      bsp->publish_once_everest_connected(std::move(m_retired_bsp_clears));
+                      m_retired_bsp_clears.clear();
+                      return bsp;
+                  });
+}
+
+void charge_bridge::select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery const& info) {
+    auto const txt = info.txt.find("board_type");
+    auto role = txt == info.txt.end() ? std::nullopt : board_type_role(txt->second);
+    // A configured charge_bridge.type decides everything this instance does with the board: the BSP
+    // flavour here and the role the heartbeat provisions. An MCS board adopts that role from the first
+    // config heartbeat whatever it announced; a strapped CCS board of the other role cannot, and
+    // shows up as a role mismatch with the strapping remedy, exactly as it does on a fixed address.
+    if (m_config.type != cb_role::unspecified) {
+        role = m_config.type;
+    }
+    // Only a config with both BSP flavours has a choice to make (see charge_bridge_config::bsp_alternate).
+    auto const can_switch_bsp = m_config.bsp_alternate.has_value() and m_config.bsp.has_value();
+    if (not role.has_value()) {
+        if (can_switch_bsp) {
+            utilities::print_error(m_config.cb_name, "DISCOVERY", 1)
+                << "board_type '" << (txt == info.txt.end() ? std::string{} : txt->second)
+                << "' does not decide the role, keeping the " << (m_config.bsp->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+                << std::endl;
+        }
+        return;
+    }
+    auto const want_ev = role.value() == cb_role::ev;
+    // charge_bridge.type is absent, so the station_id default follows the board: an EV left on
+    // station 0 would claim the EVSE's PLCA coordinator slot.
+    if (m_config.type == cb_role::unspecified and m_config.heartbeat.has_value() and
+        m_config.heartbeat->station_id_derived) {
+        auto const station_id = static_cast<std::int8_t>(decide_station_id(role.value(), std::nullopt).station_id);
+        m_config.heartbeat->cb_config.station_id = station_id;
+        if (m_heartbeat) {
+            m_heartbeat->set_station_id(station_id);
+        }
+    }
+    if (not can_switch_bsp or m_config.bsp->api.ev.enabled == want_ev) {
+        return;
+    }
+    utilities::print_error(m_config.cb_name, "DISCOVERY", 0)
+        << (m_config.type != cb_role::unspecified ? "charge_bridge.type is " : "Board is an ")
+        << (want_ev ? "EV" : "EVSE") << ": activating the " << (want_ev ? "ev_bsp" : "evse_bsp") << " (module "
+        << (want_ev ? m_config.bsp_alternate->api.ev.module_id : m_config.bsp_alternate->api.evse.module_id) << ")"
+        << std::endl;
+    // The replaced BSP's EVerest module stays in the system, so its errors must not outlive the
+    // bridge that raised them. That bridge is not registered with the event loop (discovery only runs
+    // while the runtime is stopped), so the replacing bridge sends the clears once it is.
+    if (m_bsp) {
+        m_retired_bsp_clears = m_bsp->render_clear_messages();
+    }
+    std::swap(m_config.bsp, m_config.bsp_alternate);
+    m_bsp.reset();
+    create_bsp_bridge();
+    // Same state as after create_internal_runtime_eagerly(): connecting is the manager loop's
+    // business, once the firmware probe has approved the device.
+    if (m_bsp) {
+        m_bsp->disconnect_cb_endpoint();
+    }
+}
+
 bool charge_bridge::has_configured_bridge() const {
     return m_config.can0.has_value() or m_config.serial1.has_value() or m_config.serial2.has_value() or
            m_config.serial3.has_value() or m_config.plc.has_value() or m_config.bsp.has_value() or
@@ -1437,11 +1507,13 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
     }
 
     bool result = true;
-    auto publish = [this](std::string_view component, std::string_view item, bool status) {
+    auto publish_str = [this](std::string_view component, std::string_view item, std::string_view payload) {
         std::stringstream topic;
         topic << m_config.telemetry->telemetry_topic << "/" << m_config.cb_name << "/" << component << "/" << item;
-        std::string_view payload = status ? "true" : "false";
         m_mqtt->publish(topic.str(), payload);
+    };
+    auto publish = [publish_str](std::string_view component, std::string_view item, bool status) {
+        publish_str(component, item, status ? "true" : "false");
     };
 
     publish("chargebridge", "connected", status.connected);
@@ -1449,6 +1521,24 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
         auto discovered = status.discovered.value();
         publish("chargebridge", "discovered", discovered);
         result = result && discovered;
+    }
+    // The board_type follows discovery, not the connection: the record describes the board that was
+    // found, including one whose firmware probe is still running, and reads empty while discovery is
+    // pending so a swapped board can never be mistaken for its predecessor.
+    if (status.discovered.has_value() and status.network.has_value()) {
+        std::string board_type;
+        if (status.discovered.value()) {
+            for (auto const& [key, value] : status.network->mdns_txt) {
+                if (key == "board_type") {
+                    board_type = value;
+                    break;
+                }
+            }
+        }
+        publish_str("chargebridge", "board_type", board_type);
+    }
+    if (status.role.has_value()) {
+        publish_str("chargebridge", "role", status.role->latched);
     }
 
     auto publish_status = [publish](std::string_view component, bool status) { publish(component, "status", status); };
@@ -1660,6 +1750,10 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
             std::cout << " * evse_bsp:  ";
         } else if (c.bsp->api.ev.enabled) {
             std::cout << " * ev_bsp:    ";
+        }
+        if (c.bsp_alternate) {
+            std::cout << "(" << (c.bsp_alternate->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+                      << " configured too, the discovered board selects the flavour) ";
         }
         std::cout << format_host_port(c.bsp->cb_remote, c.bsp->cb_port);
         std::cout << " module " << c.bsp->api.evse.module_id;

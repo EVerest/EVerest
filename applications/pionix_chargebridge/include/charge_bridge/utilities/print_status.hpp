@@ -29,9 +29,6 @@ struct chargebridge_telemetry {
     int vdd_3v3_mV{};
 };
 
-// Read-only network identity of an instance, surfaced by the interactive terminal UI only (not part
-// of the key=value log output). mDNS fields are empty for fixed-IP configs. (No MAC: the MCU does
-// not report one anywhere in the protocol.)
 struct chargebridge_network_info {
     std::string ip;
     std::string mdns_hostname;
@@ -109,7 +106,7 @@ struct chargebridge_status {
     std::optional<chargebridge_telemetry> telemetry;
     // From the plc bridge; used by the interactive terminal UI only.
     std::optional<chargebridge_link_status> link_status;
-    // Configured vs latched role; used by the interactive terminal UI only.
+    // Configured vs latched role. The latched value is also published as chargebridge/role.
     std::optional<chargebridge_role_status> role;
     // From the BSP bridge / IO packet; used by the interactive terminal UI only.
     std::optional<std::string> cp_state;
