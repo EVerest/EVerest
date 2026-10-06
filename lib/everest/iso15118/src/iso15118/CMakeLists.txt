@@ -175,6 +175,9 @@ target_sources(iso15118
 if(ISO15118_BUILD_EV_SIDE)
     target_sources(iso15118
         PRIVATE
+        message_din/response_variant.cpp
+        message_2/response_variant.cpp
+
         ev/crypto.cpp
         ev/fsm_base.cpp
         ev/session/feedback.cpp
