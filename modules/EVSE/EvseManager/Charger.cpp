@@ -769,8 +769,17 @@ void Charger::run_state_machine() {
 
             // make sure we are enabling PWM
             if (config_context.charge_mode == ChargeMode::AC and (not hlc_use_5percent_current_session or hlc_failed)) {
-                update_pwm_now_if_changed_ampere(get_max_current_internal());
+                const auto max_current = get_max_current_internal();
+                // Below 6 A the duty cycle maps to 100 % (X1). Enabling PWM again afterwards has to respect the
+                // minimum time in X1 (IEC 61851-1 Table A.6 seq. 9.2).
+                if (ampere_to_duty_cycle(max_current) < 1. and must_wait_in_x1_before_pwm()) {
+                    break;
+                }
+                update_pwm_now_if_changed_ampere(max_current);
             } else {
+                if (must_wait_in_x1_before_pwm()) {
+                    break;
+                }
                 update_pwm_now_if_changed(PWM_5_PERCENT);
             }
 
@@ -1064,6 +1073,11 @@ void Charger::run_state_machine() {
                         shared_context.current_state = EvseState::ChargingPausedEV;
                         break;
                     }
+                    // Basic charging switched PWM off when the pause started: stay in X1 for at least 3 s before
+                    // PWM is enabled again (IEC 61851-1 Table A.6 seq. 9.2 followed by 3.1).
+                    if (must_wait_in_x1_before_pwm()) {
+                        break;
+                    }
                     // resume charging
                     if (shared_context.hlc_charging_terminate_pause != HlcTerminatePause::Pause) {
                         signal_slac_start(); // wake up SLAC as well
@@ -1315,6 +1329,10 @@ void Charger::update_pwm_max_every_5seconds_ampere(float ampere) {
 
 void Charger::update_pwm_now(float duty_cycle) {
     auto start = std::chrono::steady_clock::now();
+    if (duty_cycle >= 1.) {
+        // 100 % duty cycle is state X1 (no current available)
+        note_pwm_switched_off();
+    }
     internal_context.update_pwm_last_duty_cycle = duty_cycle;
     shared_context.pwm_running = true;
 
@@ -1342,7 +1360,41 @@ void Charger::update_pwm_now_if_changed_ampere(float ampere) {
     }
 }
 
+bool Charger::pwm_signal_off() const {
+    return not shared_context.pwm_running or internal_context.update_pwm_last_duty_cycle >= 1.;
+}
+
+// Remember when a running PWM is switched off. Repeated X1 while already off keeps the original time.
+void Charger::note_pwm_switched_off() {
+    if (not pwm_signal_off()) {
+        internal_context.pwm_switched_off_at = std::chrono::steady_clock::now();
+        internal_context.min_x1_wait_logged = false;
+    }
+}
+
+// IEC 61851-1:2017 Table A.6 sequence 9.2: the EVSE may switch PWM off at any time, but when it enables PWM again
+// (sequence 3.1) it shall have stayed in X1 for at least 3 s. Returns true while PWM must stay off.
+bool Charger::must_wait_in_x1_before_pwm() {
+    if (not pwm_signal_off() or not internal_context.pwm_switched_off_at.has_value()) {
+        return false;
+    }
+    const auto in_x1_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - internal_context.pwm_switched_off_at.value())
+                              .count();
+    if (in_x1_ms >= IEC_MIN_X1_BEFORE_PWM_MS) {
+        return false;
+    }
+    if (not internal_context.min_x1_wait_logged) {
+        internal_context.min_x1_wait_logged = true;
+        session_log.evse(false, fmt::format("Stay in X1 for another {} ms before enabling PWM again (IEC 61851-1 "
+                                            "Table A.6 seq. 9.2)",
+                                            IEC_MIN_X1_BEFORE_PWM_MS - in_x1_ms));
+    }
+    return true;
+}
+
 void Charger::cp_state_X1() {
+    note_pwm_switched_off();
     session_log.evse(false, "Set PWM Off");
     shared_context.pwm_running = false;
     internal_context.update_pwm_last_duty_cycle = 1.;

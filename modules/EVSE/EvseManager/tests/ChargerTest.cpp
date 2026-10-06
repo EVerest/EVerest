@@ -24,6 +24,7 @@ struct ChargerDerived : public Charger {
     using Charger::Charger;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
+    using Charger::get_internal_context;
     using Charger::get_shared_context;
     using Charger::run_state_machine;
 
@@ -955,6 +956,135 @@ void request_backtrace(pthread_t id) {
 } // namespace Everest
 
 namespace module {
+
+// ----------------------------------------------------------------------------
+// Minimum time in X1 before PWM is enabled again (basic AC charging)
+// IEC 61851-1:2017 Table A.6 sequence 9.2: the EVSE may stop the PWM at any
+// time, but if it enables it again (sequence 3.1) it shall have waited at
+// least 3 s in X1. Energy management toggling around the 6 A minimum must not
+// make the PWM flicker faster than that.
+
+struct ChargerMinX1Test : public ChargerTest {
+    // never dereferenced: the IECStateMachine used here is the no-op stub below
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false);
+        ChargerTest::SetUp();
+        // basic AC session, EV plugged in and authorized, 32 A cable
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        ctx.flag_ev_plugged_in = true;
+        ctx.max_current_cable = 32.;
+        ctx.hlc_charging_active = false;
+        set_power(16.);
+    }
+
+    void set_power(float ampere) {
+        charger->set_max_current(ampere, std::chrono::steady_clock::now() + std::chrono::hours(1));
+    }
+
+    // pretend the PWM has been off for the given time
+    void pwm_off_since(std::chrono::milliseconds ago) {
+        charger->get_internal_context().pwm_switched_off_at = std::chrono::steady_clock::now() - ago;
+    }
+
+    bool pwm_on() {
+        auto& ctx = charger->get_shared_context();
+        return ctx.pwm_running and charger->get_internal_context().update_pwm_last_duty_cycle < 1.;
+    }
+};
+
+TEST_F(ChargerMinX1Test, ResumeFromPausedEvseWaitsInX1) {
+    // Charging with PWM on; the energy manager drops below 6 A: pause by EVSE
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.1;
+    set_power(0.);
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+
+    // Energy is back right away: still no PWM, we have to stay in X1 for 3 s
+    set_power(16.);
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+
+    // Just before the 3 s are over: still waiting
+    pwm_off_since(std::chrono::milliseconds(2900));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+
+    // 3 s in X1: resume, PrepareCharging enables the PWM
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, ResumeFromPausedEvseIsImmediateWhenPwmWasOffLongEnough) {
+    // PWM already off for a long time (e.g. pause started minutes ago)
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = false;
+    pwm_off_since(std::chrono::minutes(5));
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, RepeatedX1DoesNotRestartTheTimer) {
+    // The pause switches to X1 once; a later X1 while PWM is already off (as StoppingCharging does on entry)
+    // must not restart the 3 s
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.1;
+    set_power(0.);
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+    EXPECT_FALSE(pwm_on());
+
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->current_state(Charger::EvseState::StoppingCharging);
+    charger->run_state_machine();
+    EXPECT_GE(observed_cp_state_commands.size(), 2u);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+}
+
+TEST_F(ChargerMinX1Test, PrepareChargingPowerToggleWaitsInX1) {
+    // EV in state B waiting in PrepareCharging, PWM on with 16 A
+    auto& ctx = charger->get_shared_context();
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    ASSERT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // Energy drops below 6 A: duty cycle goes to 100 % (X1) immediately, that is allowed
+    set_power(0.);
+    charger->run_state_machine();
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // Energy is back 1 s later: PWM must stay off
+    pwm_off_since(std::chrono::milliseconds(1000));
+    set_power(16.);
+    charger->run_state_machine();
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // After 3 s in X1 the PWM comes back
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
 
 // ----------------------------------------------------------------------------
 // IECStateMachine stub
