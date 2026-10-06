@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "evse_manager/json_codec.hpp"
 #include "auth/API.hpp"
@@ -1482,6 +1482,7 @@ void to_json(json& j, SessionInfo const& k) noexcept {
         {"session_duration_s", k.session_duration_s},
         {"latest_total_w", k.latest_total_w},
         {"timestamp", k.timestamp},
+        {"reserved", k.reserved},
     };
 
     if (k.selected_protocol.has_value()) {
@@ -1511,6 +1512,7 @@ void from_json(json const& j, SessionInfo& k) {
     k.session_duration_s = j.at("session_duration_s");
     k.latest_total_w = j.at("latest_total_w");
     k.timestamp = j.at("timestamp");
+    k.reserved = j.value("reserved", false);
 
     if (j.contains("selected_protocol")) {
         k.selected_protocol = j.at("selected_protocol");
