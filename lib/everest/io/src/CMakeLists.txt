@@ -56,10 +56,6 @@ if(EVEREST_IO_WITH_MQTT)
             mqtt/mosquitto_cpp.cpp
             mqtt/mqtt_client.cpp
     )
-    target_include_directories(everest_io
-        PUBLIC
-            $<BUILD_INTERFACE:${mosquitto_SOURCE_DIR}/include>
-    )
 endif()
 
 target_link_libraries(everest_io
@@ -103,11 +99,17 @@ set_target_properties(everest_io
 
 if(EVEREST_IO_WITH_MQTT)
   if(DISABLE_EDM)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(mosquitto REQUIRED IMPORTED_TARGET libmosquitto)
     target_link_libraries(everest_io
       PRIVATE
-      mosquitto
+      PkgConfig::mosquitto
     )
   else()
+    target_include_directories(everest_io
+      PRIVATE
+      ${mosquitto_SOURCE_DIR}/include
+    )
     target_link_libraries(everest_io
       PRIVATE
       libmosquitto
