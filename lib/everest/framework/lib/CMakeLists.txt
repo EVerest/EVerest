@@ -79,7 +79,7 @@ target_link_libraries(framework
     PUBLIC
         date::date-tz
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         fmt::fmt
 
         everest::log
