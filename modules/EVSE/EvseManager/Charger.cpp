@@ -1121,12 +1121,34 @@ void Charger::run_state_machine() {
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
             }
 
-            // If unplugged or a disable is pending, end the session.
-            // When disabled, do not wait for unplug. cp_state_F (set in the Disabled
-            // state handler) is signaled to the EV.
-            if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
-                stop_session();
-                set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+            if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
+                not shared_context.max_current_cable.has_value()) {
+                // retry if the value is not yet available. Some BSPs may take some time to measure the PP.
+                shared_context.max_current_cable = bsp->read_pp_ampacity();
+                if (not shared_context.max_current_cable.has_value()) {
+                    if (not internal_context.pp_warning_printed) {
+                        EVLOG_warning << "PP ampacity is zero, still waiting for BSP to report it...";
+                        internal_context.pp_warning_printed = true;
+                    }
+                    break;
+                }
+            }
+
+            bool should_stay_in_finished = false;
+            if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
+                config_context.wait_cable_removed_before_going_idle) {
+                auto pp_ampacity = bsp->read_pp_ampacity();
+                should_stay_in_finished = pp_ampacity.value_or(0.0) > 0.0;
+            }
+
+            if (not should_stay_in_finished) {
+                // If unplugged or a disable is pending, end the session.
+                // When disabled, do not wait for unplug. cp_state_F (set in the Disabled
+                // state handler) is signaled to the EV.
+                if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    stop_session();
+                    set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+                }
             }
             break;
         }
@@ -1681,7 +1703,8 @@ void Charger::setup(bool has_ventilation, const ChargeMode _charge_mode, bool _a
                     const int reinit_duration_ms, const std::string& reinit_method,
                     const bool fail_on_powermeter_errors, const bool raise_mrec9,
                     const int sleep_before_enabling_pwm_hlc_mode_ms, const utils::SessionIdType session_id_type,
-                    const int hlc_charge_loop_without_energy_timeout_s, const bool wait_cable_removed_before_going_idle) {
+                    const int hlc_charge_loop_without_energy_timeout_s,
+                    const bool wait_cable_removed_before_going_idle) {
     // set up board support package
     bsp->setup(has_ventilation);
 
