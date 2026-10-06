@@ -14,9 +14,13 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
     energy_manager_tests.cpp
+    measurement_tracking_tests.cpp
+    optimizer_loop_tests.cpp
+    power_redistribution_tests.cpp
     JsonDefinedEnergyManagerTest.cpp
     ../Broker.cpp
     ../BrokerFastCharging.cpp
+    ../BrokerPowerRedistribution.cpp
     ../EnergyManagerImpl.cpp
     ../Market.cpp
     ../Offer.cpp
@@ -34,6 +38,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     GTest::gtest_main
     everest::log
     everest::framework
+    everest::util
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})

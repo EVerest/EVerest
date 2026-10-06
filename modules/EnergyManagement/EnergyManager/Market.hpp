@@ -27,6 +27,7 @@ public:
     float slice_ampere;                     // ampere_slices for trades
     float slice_watt;                       // ampere_slices for trades
     bool debug{false};
+    int active_slot{0}; // slot of every schedule that covers start_time
     ScheduleReq zero_schedule_req, empty_schedule_req;
     ScheduleRes zero_schedule_res, empty_schedule_res;
     ScheduleSetpoints empty_schedule_setpoints;
@@ -35,6 +36,7 @@ private:
     void create_timestamps(const types::energy::EnergyFlowRequest& energy_flow_request);
     void add_timestamps(const types::energy::EnergyFlowRequest& energy_flow_request);
     template <typename T> void create_empty_schedule(T& s);
+    int find_active_slot() const;
     std::vector<date::utc_clock::time_point> timestamps;
 };
 
