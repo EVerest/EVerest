@@ -123,11 +123,22 @@ config:
       timestamp) for the PowerRedistribution broker to trust it. EnergyNode and EvseManager
       republish the last reading they received, so without this check a meter that stopped
       updating would pin the allocation at whatever it last reported. A reading older than
-      this, or without a usable timestamp, limits the connector to its minimum current plus
+      this, timestamped further than this in the future, or without a usable timestamp, limits the connector to its minimum current plus
       the margin. Set to 0 to accept any age. Only used with broker_strategy
       PowerRedistribution.
     type: integer
     default: 10
+  power_meter_aggregation_window_s:
+    description: >-
+      Validity window for power meter readings when aggregating multiple meters [s].
+      Power meters in the energy tree report at different times; a reading whose own
+      measurement timestamp is older than this window, or further than this window in the
+      future, is excluded from the aggregated sum instead of contributing a stale value. A meter that publishes slowly needs a
+      larger window, not none: this is the only guard between a meter that has stopped
+      updating and a limit computed from its last reading, so it cannot be switched off.
+    type: integer
+    default: 5
+    minimum: 1
 provides:
   main:
     description: Main interface of the energy manager

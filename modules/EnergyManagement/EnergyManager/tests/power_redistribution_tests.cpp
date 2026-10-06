@@ -171,15 +171,27 @@ TEST(RedistributionCap, ReadingOlderThanMaxAgeCannotLimit) {
     EXPECT_FALSE(measurement_can_limit(m, AT + std::chrono::seconds(11), std::chrono::seconds(10)));
 }
 
+TEST(RedistributionCap, ReadingExactlyAtMaxAgeCannotLimit) {
+    // Must match what is_fresh() tells the aggregator about the same meter.
+    const auto m = make_measurement_with_current(10.0f, std::nullopt, std::nullopt);
+    const auto now = AT + std::chrono::seconds(10);
+    EXPECT_FALSE(measurement_can_limit(m, now, std::chrono::seconds(10)));
+    EXPECT_FALSE(is_fresh(m.measured_at, now, std::chrono::seconds(10)));
+}
+
 TEST(RedistributionCap, MaxAgeZeroAcceptsAnyAge) {
     const auto m = make_measurement_with_current(10.0f, std::nullopt, std::nullopt);
     EXPECT_TRUE(measurement_can_limit(m, AT + std::chrono::hours(5), std::chrono::seconds(0)));
 }
 
-TEST(RedistributionCap, FutureTimestampIsAccepted) {
-    // Clock skew is not staleness.
+TEST(RedistributionCap, FutureTimestampWithinMaxAgeIsAccepted) {
     const auto m = make_measurement_with_current(10.0f, std::nullopt, std::nullopt);
-    EXPECT_TRUE(measurement_can_limit(m, AT - std::chrono::seconds(30), std::chrono::seconds(10)));
+    EXPECT_TRUE(measurement_can_limit(m, AT - std::chrono::seconds(5), std::chrono::seconds(10)));
+}
+
+TEST(RedistributionCap, FutureTimestampBeyondMaxAgeIsRejected) {
+    const auto m = make_measurement_with_current(10.0f, std::nullopt, std::nullopt);
+    EXPECT_FALSE(measurement_can_limit(m, AT - std::chrono::seconds(30), std::chrono::seconds(10)));
 }
 
 // ---------------------------------------------------------------- per session context

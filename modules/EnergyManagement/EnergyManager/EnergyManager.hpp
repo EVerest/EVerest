@@ -41,6 +41,7 @@ struct Conf {
     bool redistribution_start_with_lower_limit;
     int redistribution_reduction_hold_s;
     int redistribution_measurement_max_age_s;
+    int power_meter_aggregation_window_s;
 };
 
 class EnergyManager : public Everest::ModuleBase {

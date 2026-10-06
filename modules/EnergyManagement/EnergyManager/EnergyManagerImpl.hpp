@@ -12,28 +12,35 @@
 #include <thread>
 
 #include <Broker.hpp>
+#include <PowerMeterAggregator.hpp>
 #include <everest/util/async/monitor.hpp>
+
+#include <memory>
+#include <set>
 
 namespace module {
 
+/// \brief The module's manifest options, each defaulted to its manifest default so a test
+/// that does not set an option gets a defined value.
 struct EnergyManagerConfig {
-    double nominal_ac_voltage;
-    int update_interval;
-    int schedule_interval_duration;
-    int schedule_total_duration;
-    double slice_ampere;
-    double slice_watt;
-    bool debug;
-    std::string switch_3ph1ph_while_charging_mode;
-    int switch_3ph1ph_max_nr_of_switches_per_session;
-    std::string switch_3ph1ph_switch_limit_stickyness;
-    int switch_3ph1ph_power_hysteresis_W;
-    int switch_3ph1ph_time_hysteresis_s;
-    std::string broker_strategy;
-    double redistribution_margin_A;
-    bool redistribution_start_with_lower_limit;
-    int redistribution_reduction_hold_s;
-    int redistribution_measurement_max_age_s;
+    double nominal_ac_voltage{230.0};
+    int update_interval{1};
+    int schedule_interval_duration{60};
+    int schedule_total_duration{1};
+    double slice_ampere{0.5};
+    double slice_watt{500};
+    bool debug{false};
+    std::string switch_3ph1ph_while_charging_mode{"Never"};
+    int switch_3ph1ph_max_nr_of_switches_per_session{0};
+    std::string switch_3ph1ph_switch_limit_stickyness{"DontChange"};
+    int switch_3ph1ph_power_hysteresis_W{200};
+    int switch_3ph1ph_time_hysteresis_s{600};
+    std::string broker_strategy{"FastCharging"};
+    double redistribution_margin_A{2.0};
+    bool redistribution_start_with_lower_limit{true};
+    int redistribution_reduction_hold_s{30};
+    int redistribution_measurement_max_age_s{10};
+    int power_meter_aggregation_window_s{5};
 };
 
 /// \brief Broker selected by the broker_strategy config option (see manifest.yaml).
@@ -78,12 +85,18 @@ public:
     ObservedMeasurement get_observed_measurement(const std::string& uuid);
 #endif
 
+    /// \brief The aggregated leaf power meter reading of the most recent run_optimizer()
+    /// call, by value: the worker thread may be running the next one.
+    PowerMeterAggregator::AggregateResult get_leaf_aggregate() const;
+
 private:
+    void warn_about_meter_timestamps(const PowerMeterAggregator::AggregateResult& aggregate);
+
     EnergyManagerConfig config;
     BrokerStrategy broker_strategy;
     std::function<void(const std::vector<types::energy::EnforcedLimits>& limits)> enforced_limits_callback;
 
-    std::mutex energy_mutex;
+    mutable std::mutex energy_mutex;
 
     struct LoopState {
         bool running{false};
@@ -98,6 +111,13 @@ private:
     types::energy::EnergyFlowRequest energy_flow_request;
 
     std::map<std::string, BrokerContext> contexts;
+
+    PowerMeterAggregator::AggregateResult m_leaf_aggregate;
+
+    // Meters already warned about, so each fault is logged once until the meter recovers.
+    std::set<std::string> m_warned_unparsable_meters;
+    std::set<std::string> m_warned_future_meters;
+    std::set<std::string> m_warned_far_past_meters;
 };
 
 } // namespace module
