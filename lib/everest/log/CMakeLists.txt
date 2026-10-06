@@ -6,16 +6,11 @@ project(everest-log
     LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.5 REQUIRED
-    PATHS ../everest-cmake
-)
-
 # options
 option(BUILD_BACKTRACE_SUPPORT "Build with backtrace support from libbacktrace" OFF)
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Run unit tests" OFF)
 option(BUILD_EXAMPLES "Build liblog example binaries." OFF)
-option(LOG_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(LIBLOG_USE_BOOST_FILESYSTEM "Usage of boost/filesystem.hpp instead of std::filesystem" OFF)
 
@@ -27,20 +22,13 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     endif()
 endif()
 
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(LOG_INSTALL OFF)
-else()
-    if (EVEREST_LIBLOG_BUILD_TESTING)
-        include(FetchContent)
-        FetchContent_Declare(
-            googletest
-            URL https://github.com/google/googletest/archive/release-1.12.1.zip
-        )
-        FetchContent_MakeAvailable(googletest)
-    endif()
+if (DISABLE_EDM AND EVEREST_LIBLOG_BUILD_TESTING)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/release-1.12.1.zip
+    )
+    FetchContent_MakeAvailable(googletest)
 endif()
 
 # this policy allows us to continue using the removed FindBoost module for now
@@ -71,37 +59,20 @@ install(
     RENAME example-config.ini
 )
 
-if (LOG_INSTALL)
-    set_target_properties(everest_log PROPERTIES EXPORT_NAME log)
+set_target_properties(everest_log PROPERTIES EXPORT_NAME log)
 
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(LOG_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(LOG_EXPORT_TARGETS log-targets)
-    endif()
-    install(
-        TARGETS everest_log
-        EXPORT ${LOG_EXPORT_TARGETS}
-    )
+install(
+    TARGETS everest_log
+    EXPORT ${EVEREST_EXPORT_SET}
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-    )
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
 
-    if (BUILD_BACKTRACE_SUPPORT)
-    #   FIXME (aw): if statically build, we would need to install libbacktrace too
-    endif()
-
-    if (NOT EVEREST_CORE_BUILD)
-        evc_setup_package(
-            NAME everest-log
-            NAMESPACE everest
-            EXPORT log-targets
-            ADDITIONAL_CONTENT
-                "find_dependency(Boost COMPONENTS log_setup log)"
-        )
-    endif()
+if (BUILD_BACKTRACE_SUPPORT)
+#   FIXME (aw): if statically build, we would need to install libbacktrace too
 endif()
 
 

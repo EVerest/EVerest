@@ -61,29 +61,9 @@ if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-if(DISABLE_EDM)
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(HELPERS_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(HELPERS_EXPORT_TARGETS everest-helpers-targets)
-    endif()
-    install(
-        TARGETS
-            everest_helpers
-        EXPORT ${HELPERS_EXPORT_TARGETS}
-        LIBRARY
-    )
-
-    if (NOT EVEREST_CORE_BUILD)
-        evc_setup_package(
-            NAME everest-helpers
-            EXPORT everest-helpers-targets
-            NAMESPACE everest
-            ADDITIONAL_CONTENT
-                "find_dependency(everest-tls)"
-                "find_dependency(nlohmann_json)"
-                "find_dependency(nlohmann_json_schema_validator)"
-                "find_dependency(fmt)"
-        )
-    endif()
-endif()
+install(
+    TARGETS
+        everest_helpers
+    EXPORT ${EVEREST_EXPORT_SET}
+    LIBRARY
+)

@@ -6,40 +6,9 @@ project(iee2030
 	  LANGUAGES CXX
 )
 
-find_package(everest-cmake 0.5
-    PATHS ../everest-cmake
-    NO_DEFAULT_PATH
-)
-find_package(everest-cmake 0.5)
-
-if (NOT everest-cmake_FOUND)
-    message(STATUS "Retrieving everest-cmake using FetchContent")
-    include(FetchContent)
-    FetchContent_Declare(
-        everest-cmake
-        GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        v0.5.4
-    )
-    FetchContent_MakeAvailable(everest-cmake)
-    set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
-    include("${everest-cmake_SOURCE_DIR}/everest-cmake-config.cmake")
-endif()
-
 # options
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
-
-option(IEEE2030_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
-option(DISABLE_IEEE2030_LOCAL_DEPENDENCIES "Disable local dependency lookup for libieee2030_1_1" OFF)
-option(IEEE2030_USE_EXPORTED_BUILD "Use (experimental) exported build of libieee2030_1_1" OFF)
-
-if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    if(IEEE2030_USE_EXPORTED_BUILD)
-        include(cmake/exported-build.cmake)
-    else()
-        include(cmake/local-build.cmake)
-    endif()
-endif()
 
 # list of compile options
 set(IEEE2030_COMPILE_OPTIONS_WARNING "-Wall;-Wextra;-Wno-unused-function;-Werror" CACHE STRING "A list of compile options used")
@@ -49,13 +18,6 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     set(IEEE2030_BUILD_TESTING ON)
 endif()
 
-# dependencies
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(IEEE2030_INSTALL OFF)
-endif()
-
 add_subdirectory(src)
 
 if (IEEE2030_BUILD_TESTING)
@@ -63,27 +25,14 @@ if (IEEE2030_BUILD_TESTING)
     add_subdirectory(test)
 endif()
 
-if (IEEE2030_INSTALL)
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(IEEE2030_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(IEEE2030_EXPORT_TARGETS ieee2030-targets)
-    endif()
-    install(
-        TARGETS
-            ieee2030
-        EXPORT ${IEEE2030_EXPORT_TARGETS}
-    )
+install(
+    TARGETS
+        ieee2030
+    EXPORT ${EVEREST_EXPORT_SET}
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-        PATTERN "detail" EXCLUDE
-    )
-
-    evc_setup_package(
-        NAME ieee2030
-        EXPORT ieee2030-targets
-        NAMESPACE ieee2030
-    )
-endif()
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+    PATTERN "detail" EXCLUDE
+)

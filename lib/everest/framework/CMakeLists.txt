@@ -12,14 +12,9 @@ if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
             "(e.g. via EVEREST_EXCLUDE_LIBS=framework).")
 endif()
 
-find_package(everest-cmake 0.5 REQUIRED
-    PATHS ../everest-cmake
-)
-
 # options
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
-option(FRAMEWORK_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(EVEREST_ENABLE_JS_SUPPORT "Enable everestjs for JavaScript modules" OFF)
 option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
@@ -160,11 +155,6 @@ else()
 endif()
 
 if(NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(FRAMEWORK_INSTALL OFF)
-
     if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
         # FIXME (aw): libwebsockets/ninja clean doesn't delete recursivly ..
         set_property(
@@ -237,48 +227,21 @@ if (EVEREST_ENABLE_RS_SUPPORT)
   add_subdirectory(everestrs)
 endif()
 
-# FIXME (aw): should this be installed or not?  Right now it is needed for the
-#             current packaging approach
-if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-    set(FRAMEWORK_EXPORT_TARGETS everest-core-targets)
-else()
-    set(FRAMEWORK_EXPORT_TARGETS framework-targets)
-endif()
+# packaging
 install(TARGETS framework
-    EXPORT ${FRAMEWORK_EXPORT_TARGETS}
+    EXPORT ${EVEREST_EXPORT_SET}
     LIBRARY
 )
 
-# packaging
-if (FRAMEWORK_INSTALL)
-    install(
-        DIRECTORY include/
-        DESTINATION include/everest
-    )
+install(
+    DIRECTORY include/
+    DESTINATION include/everest
+)
 
-    install(
-        FILES ${EVEREST_FRAMEWORK_GENERATED_INC_DIR}/everest/compile_time_settings.hpp
-        DESTINATION include/everest
-    )
-
-    if (NOT EVEREST_CORE_BUILD)
-        evc_setup_package(
-            NAME everest-framework
-            EXPORT framework-targets
-            NAMESPACE everest
-            ADDITIONAL_CONTENT
-                "find_dependency(everest-helpers)"
-                "find_dependency(everest-util)"
-                "find_dependency(nlohmann_json)"
-                "find_dependency(nlohmann_json_schema_validator)"
-                "find_dependency(fmt)"
-                "find_dependency(date)"
-                "set(EVEREST_SCHEMA_DIR \"@PACKAGE_EVEREST_SCHEMA_DIR@\")"
-            PATH_VARS
-                EVEREST_SCHEMA_DIR "${CMAKE_INSTALL_DATADIR}/everest/schemas"
-        )
-    endif()
-endif ()
+install(
+    FILES ${EVEREST_FRAMEWORK_GENERATED_INC_DIR}/everest/compile_time_settings.hpp
+    DESTINATION include/everest
+)
 
 # testing
 if(EVEREST_FRAMEWORK_BUILD_TESTING)

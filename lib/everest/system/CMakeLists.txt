@@ -35,29 +35,14 @@ target_compile_definitions(everest_system
 
 set_target_properties(everest_system PROPERTIES EXPORT_NAME system)
 
-if (DISABLE_EDM)
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(SYSTEM_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(SYSTEM_EXPORT_TARGETS everest_system-targets)
-    endif()
-    install(
-        TARGETS everest_system
-        EXPORT ${SYSTEM_EXPORT_TARGETS}
-    )
+install(
+    TARGETS everest_system
+    EXPORT ${EVEREST_EXPORT_SET}
+)
 
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-        TYPE INCLUDE
-    )
-
-    evc_setup_package(
-        NAME everest-everest_system
-        NAMESPACE everest
-        EXPORT everest_system-targets
-        ADDITIONAL_CONTENT
-            "find_dependency(sdbus-c++)"
-    )
-endif()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
+    TYPE INCLUDE
+)
 
 if (BUILD_TESTING)
     target_compile_definitions(everest_system PUBLIC EVEREST_COVERAGE_ENABLED)

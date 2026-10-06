@@ -5,11 +5,8 @@ project(everest-sqlite VERSION 0.1.5
         LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.5 REQUIRED)
-
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
-option(EVEREST_SQLITE_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 
 if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
     set(EVEREST_SQLITE_BUILD_TESTING ON)
@@ -25,20 +22,13 @@ if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
   add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif()
 
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(EVEREST_SQLITE_INSTALL OFF)
-else()
-    if (EVEREST_SQLITE_BUILD_TESTING)
-        include(FetchContent)
-        FetchContent_Declare(
-            googletest
-            URL https://github.com/google/googletest/archive/release-1.12.1.zip
-        )
-        FetchContent_MakeAvailable(googletest)
-    endif()
+if (DISABLE_EDM AND EVEREST_SQLITE_BUILD_TESTING)
+    include(FetchContent)
+    FetchContent_Declare(
+        googletest
+        URL https://github.com/google/googletest/archive/release-1.12.1.zip
+    )
+    FetchContent_MakeAvailable(googletest)
 endif()
 
 
@@ -52,42 +42,24 @@ add_subdirectory(lib)
 list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 
 # packaging
-if (EVEREST_SQLITE_INSTALL)
-    set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
+set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
 
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(SQLITE_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(SQLITE_EXPORT_TARGETS everest_sqlite-targets)
-    endif()
-    install(
-        TARGETS everest_sqlite
-        EXPORT ${SQLITE_EXPORT_TARGETS}
-        LIBRARY
-    )
+install(
+    TARGETS everest_sqlite
+    EXPORT ${EVEREST_EXPORT_SET}
+    LIBRARY
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-    )
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
 
-    install(
-        FILES cmake/CollectMigrationFiles.cmake
-        DESTINATION
-            ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/cmake
-    )
-
-    if (NOT EVEREST_CORE_BUILD)
-        evc_setup_package(
-            NAME everest-sqlite
-            NAMESPACE everest
-            EXPORT everest_sqlite-targets
-            ADDITIONAL_CONTENT
-                "find_dependency(SQLite3)"
-                "include($\{CMAKE_CURRENT_LIST_DIR\}/cmake/CollectMigrationFiles.cmake)"
-        )
-    endif()
-endif()
+install(
+    FILES cmake/CollectMigrationFiles.cmake
+    DESTINATION
+        ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/cmake
+)
 
 if(EVEREST_SQLITE_BUILD_TESTING)
     include(CTest)

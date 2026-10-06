@@ -6,9 +6,6 @@ project(everest-core
 	LANGUAGES CXX C
 )
 
-# The aggregate package is the only export owner when the complete core is built.
-set(EVEREST_CORE_BUILD ON)
-
 find_package(everest-cmake 0.7
     COMPONENTS bundling
     PATHS ../everest-cmake
@@ -231,6 +228,13 @@ else()
     endif()
 endif()
 
+# every in-tree library exports into this one set; the EDM-built dependencies do not
+# install their exports, so in EDM mode the set is populated but never installed
+if(DISABLE_EDM)
+    set(EVEREST_EXPORT_SET everest-core-targets)
+else()
+    set(EVEREST_EXPORT_SET everest-core-build-only)
+endif()
 add_subdirectory(lib)
 
 if(NOT EVEREST_LIBS_ONLY)

@@ -25,13 +25,8 @@ target_link_libraries(everest_api_module_helpers
     everest::framework
 )
 
-if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-  set(API_MODULE_HELPERS_EXPORT_TARGETS everest-core-targets)
-else()
-  set(API_MODULE_HELPERS_EXPORT_TARGETS everest_api_module_helpers-targets)
-endif()
 install(TARGETS everest_api_module_helpers
-  EXPORT ${API_MODULE_HELPERS_EXPORT_TARGETS}
+  EXPORT ${EVEREST_EXPORT_SET}
   LIBRARY
 )
 

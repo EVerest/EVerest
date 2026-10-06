@@ -6,15 +6,10 @@ project(everest-timer
     LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.1 REQUIRED
-    PATHS ../everest-cmake
-)
-
 # options
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
-option(TIMER_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 
 if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
@@ -38,12 +33,7 @@ if(Boost_VERSION_STRING VERSION_LESS "1.69.0")
     )
 endif()
 
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(TIMER_INSTALL OFF)
-else()
+if (DISABLE_EDM)
     find_package(date REQUIRED)
 endif()
 
@@ -56,29 +46,12 @@ if(BUILD_EXAMPLES)
 endif()
 
 # packaging
-if (TIMER_INSTALL)
-    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
-        set(TIMER_EXPORT_TARGETS everest-core-targets)
-    else()
-        set(TIMER_EXPORT_TARGETS timer-targets)
-    endif()
-    install(
-        TARGETS timer
-        EXPORT ${TIMER_EXPORT_TARGETS}
-    )
+install(
+    TARGETS timer
+    EXPORT ${EVEREST_EXPORT_SET}
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-    )
-
-    if (NOT EVEREST_CORE_BUILD)
-        evc_setup_package(
-            NAME everest-timer
-            EXPORT timer-targets
-            NAMESPACE everest
-            ADDITIONAL_CONTENT
-                "find_dependency(Boost COMPONENTS system)"
-        )
-    endif()
-endif()
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
