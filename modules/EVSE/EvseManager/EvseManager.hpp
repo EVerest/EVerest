@@ -393,6 +393,15 @@ private:
 
     void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
+    Charger::SetupConfig get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_hlc_enabled,
+                                                  bool ac_with_soc_timeout) const;
+    struct HlcSessionSetupConfig {
+        bool include_contract_payment{false};
+        bool supported_certificate_service{false};
+        bool central_contract_validation{false};
+        bool force_external_payment{false};
+    };
+    void update_hlc_session_setup(const HlcSessionSetupConfig& session_setup);
 
     // special funtion to switch mode while session is active
     void switch_AC_mode();
