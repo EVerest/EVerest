@@ -10,6 +10,7 @@
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"
 #include "Timeout.hpp"
+#include "dc_setpoint.hpp"
 #include "powermeter_limits.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "utils.hpp"
@@ -594,6 +595,8 @@ void EvseManager::ready() {
 
             // Cable check for DC charging
             r_hlc[0]->subscribe_start_cable_check([this] {
+                // current_demand_finished may be missing if the previous session was aborted
+                current_demand_active = false;
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::CableCheck;
                 cable_check();
             });
@@ -605,6 +608,7 @@ void EvseManager::ready() {
             // Notification that current demand has started
             r_hlc[0]->subscribe_current_demand_started([this] {
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Charging;
+                current_demand_target_received = false;
                 current_demand_active = true;
                 apply_new_target_voltage_current();
                 charger->notify_currentdemand_started();
@@ -763,8 +767,7 @@ void EvseManager::ready() {
             // (signal_dc_enforce_target_limits) in case the EV doesnt respect the
             // limits or does not change the target values for some time.
             r_hlc[0]->subscribe_dc_ev_target_voltage_current([this](types::iso15118::DcEvTargetValues v) {
-                raw_ev_target_voltage = v.dc_ev_target_voltage;
-                raw_ev_target_current = v.dc_ev_target_current;
+                set_raw_ev_target(v.dc_ev_target_voltage, v.dc_ev_target_current);
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
@@ -845,8 +848,7 @@ void EvseManager::ready() {
                                      ? max_charge_current
                                      : std::min((max_charge_power / actual_voltage), max_charge_current);
 
-                raw_ev_target_voltage = target_voltage;
-                raw_ev_target_current = target_current;
+                set_raw_ev_target(target_voltage, target_current);
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
@@ -2304,9 +2306,27 @@ void EvseManager::powersupply_DC_on() {
 // input voltage/current is what the evse/car would like to set.
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
-    if (last_power_supply_voltage == _voltage and last_power_supply_current == _current) {
-        return true;
+    // Read once so that a transition during this call cannot mix the rule sets
+    const bool demand_active = current_demand_active.load();
+    // The offered minimum and the 0 A rule apply to the current the EV requests during current demand. Until the
+    // first request arrives, the precharge target is still in effect.
+    const bool current_demand = demand_active and current_demand_target_received;
+    const DcSetpointInputs inputs{_voltage,
+                                  _current,
+                                  std::abs(raw_ev_target_current.load()),
+                                  latest_evse_max_current.load(),
+                                  latest_evse_max_discharge_current.load(),
+                                  current_demand};
+    {
+        std::lock_guard<std::mutex> lock(last_dc_setpoint_inputs_mutex);
+        if (last_dc_setpoint_inputs == inputs) {
+            return true;
+        }
     }
+    const auto store_inputs = [this, &inputs] {
+        std::lock_guard<std::mutex> lock(last_dc_setpoint_inputs_mutex);
+        last_dc_setpoint_inputs = inputs;
+    };
 
     double voltage = _voltage;
     double current = _current;
@@ -2320,19 +2340,19 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // this option will deliver the offered ampere value in those cases
 
     if (config.hack_fix_hlc_integer_current_requests) {
-        auto hlc_limits = charger->get_evse_max_hlc_limits();
-        if (hlc_limits.evse_maximum_current_limit - (int)current < 1.)
-            current = hlc_limits.evse_maximum_current_limit;
+        if (inputs.evse_max_current - (int)current < 1.)
+            current = inputs.evse_max_current;
     }
 
     if (config.sae_j2847_2_bpt_enabled) {
         current = std::abs(current);
     }
 
-    auto caps = get_powersupply_capabilities();
+    const auto caps = get_powersupply_capabilities();
+    // The offered minimum only applies during current demand, see dc_export_setpoint_current().
+    const auto hlc_caps = current_demand ? apply_powermeter_limits(caps) : caps;
 
-    if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and
-         current_demand_active) and
+    if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and demand_active) and
         is_actually_exporting_to_grid) {
         if (not last_is_actually_exporting_to_grid and powersupply_dc_is_on) {
             // switching from import from grid to export to grid
@@ -2345,13 +2365,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
         if (caps.min_import_voltage_V.has_value() and caps.max_import_voltage_V.has_value() and
             voltage >= caps.min_import_voltage_V.value() and voltage <= caps.max_import_voltage_V.value()) {
 
-            if (caps.max_import_current_A.has_value() and current > caps.max_import_current_A.value()) {
-                current = caps.max_import_current_A.value();
-            }
-
-            if (caps.min_import_current_A.has_value() and current < caps.min_import_current_A.value()) {
-                current = 0.0;
-            }
+            current = dc_import_setpoint_current(std::abs(current), inputs.ev_target_current,
+                                                 inputs.evse_max_discharge_current, caps, hlc_caps);
 
             // Now it is within limits of DC power supply.
             // now also limit with the limits given by the energymanager.
@@ -2362,8 +2377,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
             // set the new limits for the DC output
             r_powersupply_DC[0]->call_setImportVoltageCurrent(voltage, current);
-            last_power_supply_voltage = voltage;
-            last_power_supply_current = current;
+            store_inputs();
             return true;
         }
         EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.",
@@ -2373,7 +2387,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     if (powersupply_dc_is_on and (charging_phase_changed or (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or
                                                                session_is_iso_d20_dc_bpt()) and
                                                               last_is_actually_exporting_to_grid) and
-                                                             current_demand_active))) {
+                                                             demand_active))) {
         // switching from export to grid to import from grid
         session_log.evse(false, "DC power supply: switch ON in export mode");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Export, power_supply_DC_charging_phase);
@@ -2383,11 +2397,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // check limits of supply
     if (voltage >= caps.min_export_voltage_V and voltage <= caps.max_export_voltage_V) {
 
-        if (current > caps.max_export_current_A)
-            current = caps.max_export_current_A;
-
-        if (current < caps.min_export_current_A)
-            current = 0.0;
+        current = dc_export_setpoint_current(current, inputs.ev_target_current, inputs.evse_max_current, current_demand,
+                                             caps, hlc_caps);
 
         // Now it is within limits of DC power supply.
         // now also limit with the limits given by the energymanager.
@@ -2398,8 +2409,7 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
 
         // set the new limits for the DC output
         r_powersupply_DC[0]->call_setExportVoltageCurrent(voltage, current);
-        last_power_supply_voltage = voltage;
-        last_power_supply_current = current;
+        store_inputs();
         return true;
     }
     EVLOG_critical << fmt::format("DC voltage/current out of limits requested: Voltage {:.2f} Current {:.2f}.", voltage,
@@ -2414,8 +2424,8 @@ void EvseManager::powersupply_DC_off() {
         powersupply_dc_is_on = false;
         // Invalidate the powersupply_DC_set() cache: the power supply resets its
         // internal targets on the Off transition, so the cached values are stale now.
-        last_power_supply_voltage = 0.;
-        last_power_supply_current = 0.;
+        std::lock_guard<std::mutex> lock(last_dc_setpoint_inputs_mutex);
+        last_dc_setpoint_inputs.reset();
     }
     power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Other;
 }
@@ -2555,7 +2565,15 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
     return ev_info;
 }
 
+void EvseManager::set_raw_ev_target(double voltage, double current) {
+    raw_ev_target_voltage = voltage;
+    raw_ev_target_current = current;
+    current_demand_target_received = current_demand_active.load();
+}
+
 void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {
+    latest_evse_max_current = hlc_limits.evse_maximum_current_limit;
+    latest_evse_max_discharge_current = hlc_limits.evse_maximum_discharge_current_limit.value_or(0.0f);
     double clamped_voltage = raw_ev_target_voltage.load();
     double clamped_current = raw_ev_target_current.load();
 
@@ -2748,7 +2766,7 @@ void EvseManager::push_powersupply_capabilities_to_hlc() {
     r_hlc[0]->call_set_charging_parameters(setup_physical_values);
 
     types::iso15118::DcEvseMinimumLimits evse_min_limits;
-    evse_min_limits.evse_minimum_current_limit = caps.min_export_current_A;
+    evse_min_limits.evse_minimum_current_limit = offered_min_export_current_A(caps);
     evse_min_limits.evse_minimum_voltage_limit = caps.min_export_voltage_V;
     evse_min_limits.evse_minimum_power_limit =
         evse_min_limits.evse_minimum_current_limit * evse_min_limits.evse_minimum_voltage_limit;

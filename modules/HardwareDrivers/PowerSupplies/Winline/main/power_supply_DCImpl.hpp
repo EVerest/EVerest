@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWER_SUPPLY_DC_IMPL_HPP
 #define MAIN_POWER_SUPPLY_DC_IMPL_HPP
 
@@ -59,6 +59,11 @@ private:
     std::atomic<double> minImportVoltage{0.};
     std::atomic<double> importCurrentLimit{0.};
     types::power_supply_DC::Capabilities caps;
+
+    // Output switched off while a current below the minimum is requested, see power_supply_DC guideline 5
+    std::atomic<bool> below_minimum{false};
+    bool output_enabled(types::power_supply_DC::Mode mode) const;
+    void set_below_minimum(bool below);
 
     bool firsttime{true};
     uint8_t last_module_count{0};

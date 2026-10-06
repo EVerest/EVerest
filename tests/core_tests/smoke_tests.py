@@ -65,13 +65,15 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False):
+    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, meter_min_import_current_A: float = 0, fuse_limit_A: float = None):
         self.zero_power_ignore_pause = zero_power_ignore_pause
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
         self.ev_d20_only = ev_d20_only
         self.payment_enable_contract = payment_enable_contract
         self.force_payment_option = force_payment_option
         self.fail_cable_check = fail_cable_check
+        self.meter_min_import_current_A = meter_min_import_current_A
+        self.fuse_limit_A = fuse_limit_A
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
@@ -79,12 +81,17 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_2"] = not self.ev_d20_only
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20_DC"] = self.ev_d20_only
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
-        adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
+        adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {
+            "main": {"min_current": 0},
+            "powermeter": {"min_import_current_A": self.meter_min_import_current_A},
+        }
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
+        if self.fuse_limit_A is not None:
+            adjusted_config["active_modules"]["grid_connection_point"]["config_module"]["fuse_limit_A"] = self.fuse_limit_A
         return adjusted_config
 
 
@@ -543,6 +550,68 @@ async def test_iso15118_dc_session(
     )
     
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+
+async def _wait_for_energy_wh(powermeter_mock, timeout=10):
+    """Return the most recently published imported energy, waiting for the first publication."""
+    start_time = asyncio.get_event_loop().time()
+    while asyncio.get_event_loop().time() - start_time < timeout:
+        energy_wh = None
+        for call in powermeter_mock.call_args_list:
+            energy_wh = call[0][0].get("energy_Wh_import").get("total")
+        if energy_wh is not None:
+            return energy_wh
+        await asyncio.sleep(0.1)
+    raise TimeoutError("Timeout waiting for a powermeter publication")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
+@pytest.mark.parametrize(
+    "delivers_energy",
+    [
+        pytest.param(
+            False,
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(meter_min_import_current_A=25)),
+            id="target_below_meter_min",
+        ),
+        pytest.param(
+            True,
+            marks=pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(meter_min_import_current_A=15)),
+            id="target_above_meter_min",
+        ),
+        pytest.param(
+            False,
+            marks=pytest.mark.everest_config_adaptions(
+                DcConfigAdjustmentStrategy(meter_min_import_current_A=15, fuse_limit_A=8)
+            ),
+            id="energy_limit_below_meter_min",
+        ),
+    ],
+)
+async def test_iso15118_dc_target_below_offered_minimum_delivers_zero(
+    delivers_energy, test_controller: TestController, everest_core: EverestCore
+):
+    """EV target current (20 A) or the energy management limit (8 A fuse, 3 phases: 13.8 A at 400 V) below the
+    offered minimum (power meter minimum) delivers 0 A, IEC 61851-23 CC.5.5.7."""
+    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(test_controller, everest_core)
+
+    await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
+    await asyncio.sleep(2)
+    energy_start_wh = await _wait_for_energy_wh(powermeter_mock)
+    await asyncio.sleep(10)
+    energy_delivered_wh = await _wait_for_energy_wh(powermeter_mock) - energy_start_wh
+
+    if delivers_energy:
+        assert energy_delivered_wh > 5
+    else:
+        assert energy_delivered_wh < 0.5
+
+    await end_session(test_controller, session_event_mock)
 
 @pytest.mark.asyncio
 @pytest.mark.probe_module(
