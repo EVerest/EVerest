@@ -316,6 +316,9 @@ CertificateHashDataChain to_ocpp(evse_security::CertificateHashDataChain other) 
         v.push_back(to_ocpp(certificate_hash_data));
     }
     lhs.childCertificateHashData = v;
+    if (!other.public_key_algorithm.empty()) {
+        lhs.publicKeyAlgorithm = other.public_key_algorithm;
+    }
 
     return lhs;
 }
@@ -385,6 +388,8 @@ evse_security::LeafCertificateType from_ocpp(LeafCertificateType other) {
         return evse_security::LeafCertificateType::CSMS;
     case LeafCertificateType::MF:
         return evse_security::LeafCertificateType::MF;
+    case LeafCertificateType::V2G20:
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw EnumConversionException("Could not convert evse_security::CaCertificateType to CaCertificateType");
 }
@@ -398,9 +403,7 @@ evse_security::LeafCertificateType from_ocpp(CertificateSigningUseEnum other) {
     case CertificateSigningUseEnum::ManufacturerCertificate:
         return evse_security::LeafCertificateType::MF;
     case CertificateSigningUseEnum::V2G20Certificate:
-        // FIXME: Add V2G20Certificate to evse_security::LeafCertificateType
-        throw EnumConversionException(
-            "Could not convert CertificateSigningUseEnum::V2G20Certificate to evse_security::LeafCertificateType");
+        return evse_security::LeafCertificateType::V2G20;
     }
     throw EnumConversionException("Could not convert CertificateSigningUseEnum to evse_security::LeafCertificateType");
 }
@@ -494,6 +497,7 @@ evse_security::CertificateHashDataChain from_ocpp(CertificateHashDataChain other
         }
         lhs.child_certificate_hash_data = v;
     }
+    lhs.public_key_algorithm = other.publicKeyAlgorithm.value_or("");
     return lhs;
 }
 
