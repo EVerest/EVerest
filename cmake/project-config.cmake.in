@@ -4,7 +4,9 @@ set(@LIBRARY_PACKAGE_NAME@_VERSION @PROJECT_VERSION@)
 
 include(CMakeFindDependencyMacro)
 
-set(EVEREST_SCHEMA_DIR "@PACKAGE_EVEREST_DATADIR@/schemas")
+set(EVEREST_CORE_DATADIR "@PACKAGE_EVEREST_DATADIR@")
+set(EVEREST_SCHEMA_DIR "${EVEREST_CORE_DATADIR}/schemas")
+set(EV_PROJECT_INFO_SOURCE_DIR "${EVEREST_CORE_DATADIR}/project_info")
 find_dependency(Boost REQUIRED COMPONENTS filesystem program_options thread log_setup log headers)
 find_dependency(SQLite3 REQUIRED)
 find_dependency(OpenSSL 3 REQUIRED)
@@ -17,14 +19,12 @@ find_dependency(libwebsockets REQUIRED)
 find_dependency(Threads REQUIRED)
 find_dependency(sdbus-c++ REQUIRED)
 
-set(EV_PROJECT_INFO_SOURCE_DIR "@PACKAGE_EVEREST_DATADIR@/project_info")
-
 include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
 
 include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
 
 ev_add_project(
-    EV_PROJECT_DIRECTORY @PACKAGE_EVEREST_DATADIR@
+    EV_PROJECT_DIRECTORY ${EVEREST_CORE_DATADIR}
     EV_PROJECT_NAME everest-core
     SKIP_DOC_GENERATION
 )
