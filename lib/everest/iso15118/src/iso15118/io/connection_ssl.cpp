@@ -195,6 +195,12 @@ ReadResult ConnectionSSL::read(uint8_t* buf, size_t len) {
     assert(handshake_complete);
     assert(ssl->connection != nullptr);
 
+    if (half_closed) {
+        // TLS read requires connected state, which shutdown can end; drain the raw socket for EOF
+        // without feeding the finished V2G packet parser.
+        return drain_until_peer_close(ssl->connection->socket());
+    }
+
     std::size_t readbytes = 0;
     const auto result = ssl->connection->read(reinterpret_cast<std::byte*>(buf), len, readbytes, /*timeout_ms=*/0);
 
@@ -314,6 +320,25 @@ void ConnectionSSL::handle_data() {
     call_if_available(event_callback, ConnectionEvent::NEW_DATA);
 }
 
+void ConnectionSSL::half_close() {
+    if (closed or not handshake_complete or ssl->connection == nullptr or half_closed) {
+        return;
+    }
+    half_closed = true;
+
+    const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
+    if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
+        logf_error("TLS shutdown returned non-success result");
+    }
+
+    // Not close(): it would drop our receive side, hiding the EV's close, and the TLS connection owns the fd.
+    if (::shutdown(ssl->connection->socket(), SHUT_WR) == -1) {
+        logf_error("shutdown(SHUT_WR) failed");
+    }
+
+    logf_info("Sent our TLS and TCP close, waiting for the peer's");
+}
+
 void ConnectionSSL::close() {
     // Idempotent: whichever teardown path runs first delivers CLOSED exactly once.
     if (closed) {
@@ -332,9 +357,12 @@ void ConnectionSSL::close() {
     if (ssl->connection != nullptr) {
         logf_info("Closing TLS connection");
 
-        const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
-        if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
-            logf_error("TLS shutdown returned non-success result");
+        // After half_close() the close_notify is already out, and a second shutdown reports a failure.
+        if (not half_closed) {
+            const auto result = ssl->connection->shutdown(/*timeout_ms=*/0);
+            if (result != tls::Connection::result_t::success && result != tls::Connection::result_t::closed) {
+                logf_error("TLS shutdown returned non-success result");
+            }
         }
 
         // Safe from within the accept fd's own poll callback only because listen_fd was already dropped in

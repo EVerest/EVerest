@@ -21,11 +21,16 @@
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
-// After the session ended (SessionStopRes sent), wait this long for the EVCC to close the TCP
-// connection first (DIN [V2G-DC-937/938], ISO 15118-20 [V2G20-1633]). Must stay below the -4 ATS
+// After a clean end (SessionStopRes sent), wait this long for the EVCC to close the TCP connection
+// first, then close our side. ISO 15118-20 [V2G20-1776] wants D-LINK_TERMINATE 2 s after the
+// SessionStopRes and EVs close as soon as they receive it ([V2G20-717]), so this knowingly cuts the
+// 5 s of [V2G20-1633]; DIN [V2G-DC-937/938] and -2 share the value. Must stay below the -4 ATS
 // par_CMN_TCP_Connection_Termination_Timeout of 5 s. Poll-driven: blocking here would stall the
 // shared SDP server. Negotiation failures and plug-out bypass it entirely ([V2G-DC-940]).
-static constexpr auto CONNECTION_CLOSE_LINGER_MS = 4000;
+static constexpr auto CONNECTION_CLOSE_LINGER_MS = 2000;
+// After our close, wait this long for the EV's close before the D-LINK signal, which makes SLAC
+// leave the logical network: our FIN has to cross the AVLN first.
+static constexpr auto PEER_CLOSE_WAIT_MS = 500;
 // The TCP connection is closed immediately on an error end, but DLINK_TERMINATE is held back this
 // long: it makes SLAC leave the logical network, and the FIN must traverse the AVLN first or the
 // peer never observes the close.
@@ -476,13 +481,21 @@ TimePoint const& Session::poll() {
             if (not connection_close_deadline.has_value()) {
                 connection_close_deadline = offset_time_point_by_ms(now, CONNECTION_CLOSE_LINGER_MS);
             }
-            if (now >= connection_close_deadline.value()) {
-                logf_info(
-                    "The EV did not close the TCP connection within %d ms after the session ended; closing it now",
-                    CONNECTION_CLOSE_LINGER_MS);
-                finish_session();
-            } else {
+            if (now < connection_close_deadline.value()) {
                 next_session_event = std::min(next_session_event, connection_close_deadline.value());
+            } else if (not peer_close_deadline.has_value()) {
+                // Half-close only: the EV's close then arrives as EOF and finishes via the not-connected path.
+                logf_info("The EV did not close the TCP connection within %d ms after the session ended; closing "
+                          "our side",
+                          CONNECTION_CLOSE_LINGER_MS);
+                connection->half_close();
+                peer_close_deadline = offset_time_point_by_ms(now, PEER_CLOSE_WAIT_MS);
+                next_session_event = std::min(next_session_event, peer_close_deadline.value());
+            } else if (now < peer_close_deadline.value()) {
+                next_session_event = std::min(next_session_event, peer_close_deadline.value());
+            } else {
+                logf_info("The EV did not close the TCP connection within %d ms of ours", PEER_CLOSE_WAIT_MS);
+                finish_session();
             }
         }
     }
