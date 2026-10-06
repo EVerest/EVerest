@@ -57,6 +57,7 @@ target_link_libraries(connection_openssl_test
     PRIVATE
         iso15118::iso15118
         Catch2::Catch2WithMain
+        everest::tls
         OpenSSL::SSL
         OpenSSL::Crypto
 )
