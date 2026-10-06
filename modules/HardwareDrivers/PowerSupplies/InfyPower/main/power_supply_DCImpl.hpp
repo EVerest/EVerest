@@ -63,14 +63,17 @@ private:
     // caps is written only on the CAN rx thread (sigslot callbacks) and read on the
     // command thread (handle_setExport/ImportVoltageCurrent), so it must be guarded.
     mutable std::mutex caps_mutex;
+    // Output switched off while a current below the minimum is requested, see power_supply_DC guideline 5
+    std::atomic<bool> below_minimum{false};
+    bool output_enabled(types::power_supply_DC::Mode mode) const;
+    void set_below_minimum(bool below);
+
     types::power_supply_DC::Capabilities caps;
 
     // Serializes the command handlers (setMode/setExport/setImportVoltageCurrent) so a
     // single "compute + push to modules" sequence cannot interleave when the same handler
     // runs concurrently on the command thread and the CAN rx thread (settings restore).
     std::mutex command_mutex;
-    // The modules do not regulate to 0 A, so a 0 A export request switches the DC side off instead.
-    bool off_for_zero_current{false};
 
     bool firsttime{true};
     // last_module_count has a single writer (CAN rx thread) and is read on the command
