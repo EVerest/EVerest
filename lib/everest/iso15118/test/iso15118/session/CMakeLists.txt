@@ -69,3 +69,23 @@ target_link_libraries(test_secc_engine_config
 )
 
 catch_discover_tests(test_secc_engine_config)
+
+add_executable(test_v2gtp_frame_drop v2gtp_frame_drop.cpp)
+
+target_link_libraries(test_v2gtp_frame_drop
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_v2gtp_frame_drop)
+
+add_executable(test_communication_setup_anchor communication_setup_anchor.cpp)
+
+target_link_libraries(test_communication_setup_anchor
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_communication_setup_anchor)
