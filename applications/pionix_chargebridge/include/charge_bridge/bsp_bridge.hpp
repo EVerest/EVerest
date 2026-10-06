@@ -7,6 +7,7 @@
 #include <everest/io/udp/udp_client.hpp>
 #include <everest/util/misc/observable.hpp>
 #include <everest_api_types/evse_board_support/API.hpp>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -30,9 +31,22 @@ public:
     bool unregister_events(everest::lib::io::event::fd_event_handler& handler) override;
     void disconnect_cb_endpoint();
     void connect_cb_endpoint(std::string const& remote);
+    // Heartbeat-verified connection state, see api_connector::notify_cb_connection. The bridge's own
+    // availability keeps following the BSP packets.
+    void set_cb_connection_status(bool connected);
     bool available() const;
     // Latest CP state reported by the MCU ("A".."F", "DF", "INVALID"); empty until the first packet.
     std::optional<std::string> cp_state() const;
+    // MCS basic-signalling diagnostics, for the dashboard. Empty on a CCS board, which reports both
+    // as NotApplicable.
+    std::optional<std::string> ce_state() const;
+    std::optional<std::string> id_state() const;
+    std::optional<std::string> lock_state() const;
+    void set_link_technology(std::uint8_t technology);
+    // Raw CE state of every BSP status packet, for the plc bridge's carrier gate (wired by
+    // charge_bridge; same event loop thread). Fires CeState_NotApplicable on disconnect/retarget so
+    // a stale mate can never outlive the board that reported it.
+    void set_ce_state_listener(std::function<void(std::uint8_t)> listener);
 
 private:
     void handle_timer_event();
@@ -49,6 +63,10 @@ private:
     everest::lib::io::event::timer_fd m_timer;
     bool m_udp_on_error{false};
     std::optional<std::string> m_cp_state;
+    std::optional<std::string> m_ce_state;
+    std::optional<std::string> m_id_state;
+    std::optional<std::string> m_lock_state;
+    std::function<void(std::uint8_t)> m_ce_state_listener;
     everest::lib::util::observable<bool> m_ready{false};
     everest::lib::io::event::event_fd& m_ready_notify;
 };
