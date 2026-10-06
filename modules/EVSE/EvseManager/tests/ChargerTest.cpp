@@ -1086,6 +1086,101 @@ TEST_F(ChargerMinX1Test, PrepareChargingPowerToggleWaitsInX1) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 }
 
+TEST_F(ChargerMinX1Test, EvPauseKeepsPwmOffForThreeSeconds) {
+    // Charging with PWM on and the relays closed
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.contactor_open = false;
+    ctx.iec_allow_close_contactor = true;
+    charger->current_state(Charger::EvseState::Charging);
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    ASSERT_TRUE(pwm_on());
+    // charging has been running for a while, the last duty cycle update is long ago
+    charger->get_internal_context().last_pwm_update = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+
+    // EV goes C->B (CPEvent::CarRequestedStopPower): stop via StoppingCharging, which switches to X1
+    ctx.iec_allow_close_contactor = false;
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(pwm_on());
+
+    // Relays are open (CPEvent::PowerOff): the pause was initiated by the EV
+    ctx.contactor_open = true;
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // The next tick must not enable the PWM again: the 5 s update throttle only knows the last duty cycle update
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // Just before the 3 s are over: still waiting
+    pwm_off_since(std::chrono::milliseconds(2900));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // 3 s in X1: nominal PWM comes back so the EV can resume
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_TRUE(pwm_on());
+}
+
+// CP states E and F switch the PWM off as well. cp_state_E()/cp_state_F() are private, so they are reached through
+// the Reinit state, whose configured method is in shared_context. Reinit ends with cp_state_X1(), which must not
+// restart the timer: the time in E/F counts towards the 3 s.
+TEST_F(ChargerMinX1Test, CpStateFArmsTheTimer) {
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.reinit_config = Charger::ReinitConfiguration{"CPStateF", 3000};
+    charger->current_state(Charger::EvseState::Reinit);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"F"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Reinit ends 2 s later with X1: the original switch-off time is kept
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->get_internal_context().reinit_deadline = std::chrono::steady_clock::now();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, (std::vector<std::string>{"F", "X1"}));
+    EXPECT_NE(charger->current_state(), Charger::EvseState::Reinit);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+    EXPECT_FALSE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, CpStateEArmsTheTimer) {
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    charger->set_supports_cp_state_E(true);
+    ctx.reinit_config = Charger::ReinitConfiguration{"CPStateE", 3000};
+    charger->current_state(Charger::EvseState::Reinit);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"E"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Reinit ends 2 s later with X1: the original switch-off time is kept
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->get_internal_context().reinit_deadline = std::chrono::steady_clock::now();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, (std::vector<std::string>{"E", "X1"}));
+    EXPECT_NE(charger->current_state(), Charger::EvseState::Reinit);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+    EXPECT_FALSE(pwm_on());
+}
+
 // ----------------------------------------------------------------------------
 // IECStateMachine stub
 IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,

@@ -1013,6 +1013,12 @@ void Charger::run_state_machine() {
                     break;
                 }
 
+                // The EV pause switched PWM off in StoppingCharging: stay in X1 for at least 3 s before PWM is
+                // enabled again (IEC 61851-1 Table A.6 seq. 9.2 followed by 3.1).
+                if (must_wait_in_x1_before_pwm()) {
+                    break;
+                }
+
                 // update PWM if it has changed and 5 seconds have passed since last update
                 update_pwm_max_every_5seconds_ampere(get_max_current_internal());
             }
@@ -1404,6 +1410,8 @@ void Charger::cp_state_X1() {
 }
 
 void Charger::cp_state_F() {
+    // PWM is off in state F as well: time spent here counts towards the minimum time in X1
+    note_pwm_switched_off();
     session_log.evse(false, "Set PWM F");
     shared_context.pwm_running = false;
     internal_context.update_pwm_last_duty_cycle = 0.;
@@ -1413,6 +1421,8 @@ void Charger::cp_state_F() {
 }
 
 void Charger::cp_state_E() {
+    // PWM is off in state E as well: time spent here counts towards the minimum time in X1
+    note_pwm_switched_off();
     if (!supports_cp_state_E) {
         EVLOG_warning << "CP state E requested but not supported by hardware. Falling back to CP state X1.";
         cp_state_X1();
