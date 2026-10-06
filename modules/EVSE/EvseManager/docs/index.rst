@@ -125,7 +125,7 @@ Charging State Machine
        Finished --> Idle : EV unplugged
 
        %% Early exit / Errors
-       WaitingForAuthentication --> Finished : Fatal error or EV unplugged
+       WaitingForAuthentication --> Finished : Fatal error, stop requested, or EV unplugged
        PrepareCharging --> StoppingCharging : Fatal error, deauth, or EV unplugged
 
        %% Pauses
@@ -147,6 +147,8 @@ State Transitions
 
 * ``Idle`` -> ``WaitingForAuthentication``: EV plugged in.
 * ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
+* ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
+  ``request_stop_transaction`` or ``disable``), or EV unplugged.
 * ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
@@ -159,12 +161,30 @@ State Transitions
 * ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
 * ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
 
+**ISO 15118-20 EVSE pause**
+
+An EVSE pause of an ISO 15118-20 session follows the control mode the EV selected:
+
+* Dynamic control mode: the SECC may only ask for a pause at 0 kW ([V2G20-2115]).
+  ``StoppingCharging`` ramps the DC setpoint down at 100 A/s while the charge loop
+  continues, requests the pause once the measured output current is below 1 A and keeps
+  the setpoint at 0 A until the EV has paused. A ramp that does not reach 0 A within
+  35 s ends in the hard stop.
+* Scheduled control mode: a pause may only be notified while the applied entry of the
+  EV's power profile is 0 kW ([V2G20-1198]). The pause is requested from ``Charging``,
+  the HLC stack holds the notification back and publishes ``pause_notified`` once it
+  has gone out; charging continues until then. A resume in between withdraws the
+  request.
+
+Once notified the EV has ``NotificationMaxDelay``, fixed at 60 s ([V2G20-1850]), to
+pause; ``StoppingCharging`` waits 65 s before the hard stop.
+
 **Stop Conditions**
 
 The transition ``Charging`` -> ``StoppingCharging`` occurs if:
     * Fatal error
     * Deauthorization
-    * EVSE pause requested
+    * EVSE pause requested (ISO 15118-20 scheduled control mode: once notified to the EV)
     * EV unplugged
     * IEC contactor opened
     * No power available (Immediate for AC BASIC; timeout for HLC).
@@ -402,6 +422,38 @@ from ``50`` to ``60`` moves no frequency threshold; the default grid code carrie
 
 It is also load-bearing: the SAE DER limits are only derived once a positive nominal frequency and a positive
 nominal voltage have arrived, as described above.
+
+CP state in packet captures
+===========================
+
+``debug_emit_cp_state_hpav_frames`` is a debugging aid, off by default. When set to ``true``, the
+EvseManager sends a HomePlug AV ``STP_CPSTATE.IND`` vendor MME (ethertype 0x88E1, ST/IoTecha OUI
+00:80:E1) on ``debug_cp_state_hpav_device`` each time the CP state reported by the board support
+module or the PWM duty cycle commanded to it changes. Wireshark decodes the frame natively as
+``CP State Change: B, 5%``. The dsV2Gshark plugin additionally derives the X1/X2 sub-state and the
+AC current limit from it and plots the CP state in its I/O graph. Capturing on the PLC modem
+interface therefore shows CP transitions interleaved with the SLAC and ISO 15118 traffic.
+
+The frame carries the CP state, the duty cycle in percent (100 while no PWM is generated, i.e. in
+X1 and in states E and F), 1000 Hz while PWM is active and a nominal CP voltage for the state
+(12, 9, 6 and 3 V for A to D, 0 V for E and F). It is sent unicast from the interface's own MAC address to the local
+modem address ``00:b0:52:00:00:01``, the destination used by the dSPACE reference captures shipped
+with dsV2Gshark.
+
+Sending raw Ethernet frames requires the ``CAP_NET_RAW`` capability. Without it the module logs a
+warning at startup and charges normally, but no frames are sent. Grant it in the configuration:
+
+.. code-block:: yaml
+
+   evse_manager:
+     module: EvseManager
+     capabilities:
+       - CAP_NET_RAW
+     config_module:
+       debug_emit_cp_state_hpav_frames: true
+       debug_cp_state_hpav_device: eth1
+
+Do not enable this option in production.
 
 Error Handling
 ==============

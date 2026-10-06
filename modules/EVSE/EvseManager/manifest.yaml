@@ -518,6 +518,21 @@ config:
       - 'STR'
       - 'TRS'
     default: 'RST'
+  debug_emit_cp_state_hpav_frames:
+    description: >-
+      Debugging aid. Emit a HomePlug AV STP_CPSTATE.IND frame (ethertype 0x88E1, ST/IoTecha vendor MME)
+      on debug_cp_state_hpav_device whenever the measured CP state or the commanded PWM duty cycle changes.
+      Wireshark and the dsV2Gshark plugin decode these frames, so a packet capture of the PLC interface
+      shows the CP state next to SLAC and ISO 15118 traffic. Sending raw Ethernet frames needs the
+      CAP_NET_RAW capability for this module. Do not enable in production.
+    type: boolean
+    default: false
+  debug_cp_state_hpav_device:
+    description: >-
+      Network interface the CP state frames are sent on when debug_emit_cp_state_hpav_frames is true,
+      typically the PLC modem interface also used by the SLAC module.
+    type: string
+    default: ''
 provides:
   evse:
     interface: evse_manager

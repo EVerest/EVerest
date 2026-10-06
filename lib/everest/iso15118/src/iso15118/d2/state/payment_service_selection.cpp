@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/d2/state/service_selection.hpp>
 
 #include <algorithm>
@@ -81,7 +81,7 @@ Result ServiceSelection::process_payment_selection(const message_2::PaymentServi
     std::optional<dt::PaymentOption> resumed_payment_option;
     if (m_ctx.session().session_resumed and m_ctx.pause_ctx.has_value()) {
         const auto stored_option = m_ctx.pause_ctx->selected_payment_option;
-        if (stored_option != dt::PaymentOption::Contract or allow_contract) {
+        if (stored_option != dt::PaymentOption::Contract or m_ctx.session_config.tls_active) {
             resumed_payment_option = stored_option;
         }
     }

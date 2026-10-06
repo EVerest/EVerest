@@ -43,11 +43,14 @@ enum class Signal {
     CHARGE_LOOP_STARTED,
     CHARGE_LOOP_FINISHED,
     DC_OPEN_CONTACTOR,
+    DC_RENEGOTIATION_STARTED,
     AC_CLOSE_CONTACTOR,
     AC_OPEN_CONTACTOR,
     DLINK_TERMINATE,
     DLINK_ERROR,
     DLINK_PAUSE,
+    // EVSENotification=Pause has gone out to the EV (held back in scheduled control mode until 0 kW).
+    PAUSE_NOTIFIED,
 };
 
 struct DcMaximumLimits {

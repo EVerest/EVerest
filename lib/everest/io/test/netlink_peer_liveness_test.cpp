@@ -143,6 +143,7 @@ TEST(NetlinkPeerLiveness, RemovingTheLastFailedEntryKeepsTheLossVerdict) {
 
 TEST(NetlinkPeerLiveness, APeerRecoveringAfterItsFailedEntryWasRemovedCancelsTheGrace) {
     peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
     ASSERT_TRUE(tracker.peer_is_lost());
@@ -155,6 +156,7 @@ TEST(NetlinkPeerLiveness, APeerRecoveringAfterItsFailedEntryWasRemovedCancelsThe
 
 TEST(NetlinkPeerLiveness, RemovingAHealthyEntryAfterARememberedLossClearsIt) {
     peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
     (void)tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
     (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
@@ -162,6 +164,36 @@ TEST(NetlinkPeerLiveness, RemovingAHealthyEntryAfterARememberedLossClearsIt) {
     (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, {}, true));
 
     EXPECT_TRUE(tracker.empty());
+    EXPECT_FALSE(tracker.peer_is_lost());
+}
+
+// Bench-found with an MCS truck: it ignored neighbour solicitations for ~6 s after link up, the entry went
+// NUD_FAILED twice and the session was torn down ~1 s before the truck answered.
+TEST(NetlinkPeerLiveness, APeerThatNeverAnsweredIsNotLost) {
+    peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_INCOMPLETE));
+
+    auto const failed = tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
+    EXPECT_FALSE(failed.arm_grace);
+    EXPECT_FALSE(tracker.peer_is_lost());
+
+    auto const collected = tracker.apply(make_neighbor("fe80::1", NUD_FAILED, {}, true));
+    EXPECT_FALSE(collected.arm_grace) << "garbage collection of a never-answered entry is no loss either";
+    EXPECT_FALSE(tracker.peer_is_lost());
+
+    auto const answered = tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
+    EXPECT_TRUE(answered.cancel_grace);
+    EXPECT_EQ("0A:1B:2C:D3:E4:F5", answered.reachable_mac);
+}
+
+TEST(NetlinkPeerLiveness, ClearForgetsThatThePeerWasAlive) {
+    peer_liveness tracker;
+    (void)tracker.apply(make_neighbor("fe80::1", NUD_REACHABLE, "0A:1B:2C:D3:E4:F5"));
+    tracker.clear();
+
+    auto const verdict = tracker.apply(make_neighbor("fe80::1", NUD_FAILED));
+
+    EXPECT_FALSE(verdict.arm_grace) << "a new link starts without a peer to lose";
     EXPECT_FALSE(tracker.peer_is_lost());
 }
 
