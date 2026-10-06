@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
@@ -32,6 +32,8 @@ struct VasService {
 
 struct EvseSetupConfig {
     std::string evse_id;
+    // DIN SPEC 70121 EVSEID as hexBinary (DIN SPEC 91286 digits, '*' as 0xA); empty packs evse_id instead.
+    std::string evse_id_din;
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
     std::vector<message_20::datatypes::Authorization> authorization_services;
     std::vector<uint16_t> supported_vas_services;
@@ -76,7 +78,7 @@ struct EvseSetupConfig {
 
     // In SECONDS; 0 waits indefinitely. EIM gets far more than the 55 s V2G_SECC_Ongoing_Performance_Time
     // of [V2G2-712/713] on purpose: the bottleneck is a human presenting a card, not SECC processing.
-    // ISO 15118-20 is deliberately not covered -- it keeps its own fixed d20::TIMEOUT_EIM_ONGOING.
+    // -20 EIM stops the session at the fixed d20::TIMEOUT_ONGOING ([V2G20-2102]); -20 PnC uses auth_timeout_pnc_s.
     uint32_t auth_timeout_eim_s{300};
     uint32_t auth_timeout_pnc_s{55};
 };
@@ -91,6 +93,7 @@ struct SessionConfig {
     void set_supported_energy_transfer_services(std::vector<message_20::datatypes::ServiceCategory> services);
 
     std::string evse_id;
+    std::string evse_id_din;
 
     bool cert_install_service;
     std::vector<message_20::datatypes::Authorization> authorization_services;

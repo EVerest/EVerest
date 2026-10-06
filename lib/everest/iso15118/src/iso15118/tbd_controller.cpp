@@ -92,21 +92,46 @@ bool TbdController::poll_once() {
     return true;
 }
 
-void TbdController::service_active_session() {
-    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
-
+void TbdController::update_communication_setup_timeout() {
     // The loop thread owns communication_setup_timeout; the command thread only publishes its request
     // via the generation counter / flag pair, so the std::optional<Timeout> is never touched across threads.
     const auto dlink_generation = dlink_ready_generation.load();
     if (dlink_generation != dlink_ready_applied) {
         dlink_ready_applied = dlink_generation;
+        communication_setup_uses_tcp_anchor = false;
         if (dlink_ready_requested.load()) {
             communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+            communication_setup_dlink_deadline = communication_setup_timeout->get_timeout_point();
             logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
         } else {
             communication_setup_timeout.reset();
+            communication_setup_dlink_deadline.reset();
         }
     }
+
+    if (not session or not communication_setup_timeout or not communication_setup_dlink_deadline) {
+        return;
+    }
+
+    const auto tcp_anchor = session->get_tcp_setup_timer_anchor();
+    if (tcp_anchor.has_value() == communication_setup_uses_tcp_anchor) {
+        return;
+    }
+
+    communication_setup_uses_tcp_anchor = tcp_anchor.has_value();
+    const auto deadline = tcp_anchor.has_value()
+                              ? offset_time_point_by_ms(*tcp_anchor, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)
+                              : *communication_setup_dlink_deadline;
+    communication_setup_timeout.emplace(
+        static_cast<uint32_t>(get_timeout_ms_until(deadline, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)));
+    logf_info("V2G communication setup timeout anchored at %s",
+              communication_setup_uses_tcp_anchor ? "TCP/TLS establishment" : "D-LINK ready");
+}
+
+void TbdController::service_active_session() {
+    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
+
+    update_communication_setup_timeout();
 
     if (session and shutdown_active.load() and not shutdown_signaled) {
         session->request_shutdown(); // Stopping the session
@@ -362,6 +387,10 @@ void TbdController::update_pre20_energy_transfer_modes(const std::vector<shared_
     evse_setup.handle()->pre20_energy_transfer_modes = modes;
 }
 
+void TbdController::update_ac_setup_config(const d20::AcSetupConfig& ac_setup_config) {
+    evse_setup.handle()->ac_setup_config = ac_setup_config;
+}
+
 void TbdController::update_pre20_vas_services(const std::vector<session::VasService>& services) {
     evse_setup.handle()->pre20_vas_services = services;
 }
@@ -444,10 +473,21 @@ void TbdController::update_der_iec_limits(const std::optional<d20::IecDerTransfe
 
 void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>& limits,
                                           const std::optional<d20::DerSaeSetupConfig>& setup_config) {
-    // Applies to the next session, as update_der_iec_limits does.
-    auto s = evse_setup.handle();
-    s->der_sae_limits = limits;
-    s->der_sae_setup_config = setup_config;
+    // The limits apply to the next session. A setup config also reaches a running session, which validates it
+    // against its own limits before installing it; a withdrawn config does not.
+    bool withdrawn = false;
+    {
+        auto s = evse_setup.handle();
+        withdrawn = s->der_sae_setup_config.has_value() and not setup_config.has_value();
+        s->der_sae_limits = limits;
+        s->der_sae_setup_config = setup_config;
+    }
+
+    if (session and setup_config.has_value()) {
+        session->push_control_event(setup_config.value());
+    } else if (session and withdrawn) {
+        logf_info("SAE grid code withdrawn; the running session keeps its grid code until it ends");
+    }
 }
 
 void TbdController::set_dlink_ready(bool ready) {
@@ -495,14 +535,6 @@ void TbdController::handle_sdp_server_input() {
         return;
     }
 
-    if (session) {
-        // A reconnect SDP arriving in the same poll cycle as a pending teardown
-        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
-        // recovers.
-        logf_warning("Ignoring sdp request message because a session is already created and running");
-        return;
-    }
-
     if (not request) {
         return;
     }
@@ -518,6 +550,26 @@ void TbdController::handle_sdp_server_input() {
         request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
         break;
     }
+
+    if (session) {
+        // The EV repeats its SDP request until it gets a response. As long as it has not connected, the
+        // previous response may have been lost (e.g. the EV did not answer neighbour discovery for the
+        // unicast reply in time), so announce the same endpoint again instead of going silent until the
+        // communication setup timeout.
+        if (sdp_offer and session->awaiting_connection() and request.security == sdp_offer->requested) {
+            logf_info("Repeated SDP request before the EV connected; sending the SDP response again");
+            request.security = sdp_offer->offered;
+            sdp_server->send_response(request, sdp_offer->endpoint);
+            return;
+        }
+        // A reconnect SDP arriving in the same poll cycle as a pending teardown
+        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
+        // recovers.
+        logf_warning("Ignoring sdp request message because a session is already created and running");
+        return;
+    }
+
+    const auto requested_security = request.security;
 
     auto make_connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
@@ -550,6 +602,7 @@ void TbdController::handle_sdp_server_input() {
     }
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
+    sdp_offer = SdpOffer{requested_security, request.security, ipv6_endpoint};
 
     // One-shot: handing it to this session and clearing it keeps it from silently pausing every later
     // session too. Built before taking session_mutex so the two locks are never held at once.

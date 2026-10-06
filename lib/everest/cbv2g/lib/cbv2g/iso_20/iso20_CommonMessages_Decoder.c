@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright (C) 2022 - 2026 Contributors to EVerest
  */
 
 /*****************************************************
@@ -20080,6 +20080,8 @@ int decode_iso20_exiFragment(exi_bitstream_t* stream, struct iso20_exiFragment* 
                 break;
             case 128:
                 // OEMProvisioningCertificateChain (urn:iso:std:iso:15118:-20:CommonMessages)
+                error = decode_iso20_SignedCertificateChainType(stream, &exiFrag->OEMProvisioningCertificateChain);
+                exiFrag->OEMProvisioningCertificateChain_isUsed = 1u;
                 break;
             case 129:
                 // Object (http://www.w3.org/2000/09/xmldsig#)

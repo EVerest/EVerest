@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 /*
  * Charger.h
  *
@@ -187,6 +187,7 @@ public:
 
     sigslot::signal<> signal_hlc_stop_charging;
     sigslot::signal<> signal_hlc_pause_charging;
+    sigslot::signal<> signal_hlc_resume_charging;
     sigslot::signal<types::iso15118::EvseError> signal_hlc_error;
     sigslot::signal<> signal_hlc_plug_in_timeout;
 
@@ -215,7 +216,9 @@ public:
 
     void dlink_pause();
     void dlink_error();
-    void dlink_terminate();
+    // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
+    // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
+    bool dlink_terminate();
 
     // A positive SessionStopRes was sent to the EV: remember terminate/pause and arm the
     // CP-oscillator retain timer [V2G-DC-968] (PWM off V2G_SECC_CP_OSCILLATOR_RETAIN after the Res,
@@ -223,11 +226,26 @@ public:
     // today and applies a harmless second X1.
     void notify_session_stop_res_sent(types::iso15118::SessionStopAction action);
 
+    // The EV opened a new V2G session (application protocol negotiated).
+    void notify_hlc_session_started_by_ev();
+
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
     void dc_open_contactor_request();
+    void dc_renegotiation_started();
 
-    void set_hlc_d20_active();
+    void set_hlc_d20_active(bool dynamic_control_mode);
+
+    // The HLC stack notified the requested ISO 15118-20 pause to the EV.
+    void notify_hlc_pause_notified();
+
+    // Measured DC output current, for the zero-current check before an ISO 15118-20 pause.
+    void update_dc_present_current(float current_A);
+    // While StoppingCharging handles an ISO 15118-20 pause in dynamic control mode: when the ramp of the DC output
+    // to 0 A started. The caller caps the current setpoint accordingly, down to 0 A for the rest of the state.
+    std::optional<std::chrono::steady_clock::time_point> get_dc_pause_ramp_start();
+    // Rate of that ramp: the normal shutdown rate (IEC 61851-23 CC.3.3, at most 100 A/s).
+    static constexpr double D20_PAUSE_RAMP_AMPERE_PER_SECOND = 100.;
 
     bool stop_charging_on_fatal_error();
     bool entered_fatal_error_state();
@@ -277,6 +295,8 @@ private:
     void bcb_toggle_detect_start_pulse();
     void bcb_toggle_detect_stop_pulse();
     bool bcb_toggle_detected();
+    bool evse_pause_resumable() const;
+    void resume_evse_pause_marker();
 
     void clear_errors_on_unplug();
 
@@ -310,8 +330,6 @@ private:
 
     bool start_transaction();
     void stop_transaction();
-
-    void process_event(CPEvent event);
 
     void set_state(EvseState s);
 
@@ -352,6 +370,13 @@ private:
         bool contactor_open{true};
         bool hlc_charging_active{false};
         HlcTerminatePause hlc_charging_terminate_pause;
+        // The HLC session was stopped by the EVSE for a pause (StoppingCharging -> ChargingPausedEVSE: user
+        // pause, no energy or error). The EV ends the session with SessionStop(Pause) on -20 or SessionStop
+        // (Terminate) on -2/DIN, which sets hlc_charging_terminate_pause. Unlike an EV-initiated stop, the EVSE
+        // resumes such a session itself via PrepareCharging once the pause reasons are gone.
+        bool hlc_session_paused_by_evse{false};
+        // ISO 15118-2 DC renegotiation (IEC 61851-23:2023 CC.3.6): the EV's C->B is not a stop.
+        bool hlc_dc_renegotiation{false};
         types::iso15118::DcEvseMaximumLimits current_evse_max_limits{0, 0, 0, std::nullopt, std::nullopt};
         types::iso15118::DcEvseMinimumLimits current_evse_min_limits{0, 0, 0, std::nullopt, std::nullopt};
         bool pwm_running{false};
@@ -398,6 +423,8 @@ private:
         std::optional<types::units_signed::SignedMeterValue> start_signed_meter_value;
 
         std::atomic_bool hlc_d20_active{false};
+        // ISO 15118-20 dynamic control mode: the EVSE sets the power, not the EV.
+        std::atomic_bool hlc_d20_dynamic_mode{false};
     } shared_context;
 
     struct ConfigContext {
@@ -437,6 +464,7 @@ private:
     // Used by different threads, but requires no complete state machine locking
     std::atomic<float> soft_over_current_tolerance_percent{10.};
     std::atomic<float> soft_over_current_measurement_noise_A{0.5};
+    std::atomic<float> dc_present_current_A{0.};
     std::atomic_bool supports_cp_state_E{false};
     // HLC uses 5 percent signalling. Used both for AC and DC modes.
     std::atomic_bool hlc_use_5percent_current_session;
@@ -494,6 +522,25 @@ private:
         // Armed by notify_session_stop_res_sent(); when it expires, the state machine switches the
         // CP oscillator off (X1), whatever state it is in ([V2G-DC-968] retain time).
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> session_stop_pwm_off_deadline{};
+
+        // StoppingCharging was entered for a user pause (flag_paused_by_evse), even if resume_charging() has
+        // cleared that flag since.
+        bool stopping_for_evse_pause{false};
+        // How long StoppingCharging waits for the EV before the hard stop; chosen when the state is entered.
+        int stopping_charging_timeout_ms{STOPPING_CHARGING_TIMEOUT_MS};
+
+        // The EV reconnected to resume a session it had ended with a SessionStop; consumed by ChargingPausedEV.
+        bool hlc_session_restarted_by_ev{false};
+
+        // [V2G20-2115]: an ISO 15118-20 pause in dynamic control mode is only notified at 0 kW. Set while
+        // StoppingCharging ramps the output down; pause_notified once EVSENotification=Pause was requested.
+        std::optional<std::chrono::steady_clock::time_point> d20_pause_ramp_start;
+        bool d20_pause_notified{false};
+        // Scheduled control mode: the pause was requested from Charging and is held back by the HLC stack until the
+        // EV's power profile is at 0 kW [V2G20-1198]; confirmed once it has gone out.
+        bool d20_pause_requested{false};
+        bool d20_pause_confirmed{false};
+
     } internal_context;
 
     // main Charger thread
@@ -501,6 +548,9 @@ private:
     Everest::Thread error_thread_handle;
 
     std::atomic<std::chrono::steady_clock::time_point> last_dc_enforce_target_limits{};
+    // Snapshot of the -20 pause ramp start, updated by the state machine and read by get_dc_pause_ramp_start().
+    static constexpr auto NO_DC_PAUSE_RAMP = std::chrono::steady_clock::time_point::min();
+    std::atomic<std::chrono::steady_clock::time_point> dc_pause_ramp_start{NO_DC_PAUSE_RAMP};
 
     const std::unique_ptr<IECStateMachine>& bsp;
     const std::unique_ptr<ErrorHandling>& error_handling;
@@ -543,6 +593,13 @@ private:
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
+    // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the
+    // EVSE may act on its own. Plus a margin for the EV's last charge loop round trip.
+    static constexpr int STOPPING_CHARGING_D20_PAUSE_TIMEOUT_MS = 65000;
+    // "No current drawn" [V2G20-2115] is taken as below 1 A. The timeout covers a ramp from 3000 A at
+    // D20_PAUSE_RAMP_AMPERE_PER_SECOND with a margin; a ramp that does not get there ends in the hard stop.
+    static constexpr float D20_PAUSE_ZERO_CURRENT_A = 1.0f;
+    static constexpr int D20_PAUSE_RAMP_TIMEOUT_MS = 35000;
     // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
@@ -559,6 +616,7 @@ private:
 protected:
     // provide access for unit tests
     void run_state_machine();
+    void process_event(CPEvent event);
     constexpr auto& get_shared_context() {
         return shared_context;
     }

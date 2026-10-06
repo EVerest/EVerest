@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls.hpp>
+#include <fstream>
 #include <gtest/gtest.h>
 #include <iterator>
 #include <openssl/ssl.h>
@@ -145,6 +146,31 @@ TEST(OcspCache, init) {
     // std::cout << "digest: " << to_string(digest) << std::endl;
     auto res = cache.lookup(digest);
     EXPECT_NE(res.get(), nullptr);
+}
+
+TEST(OcspCache, loadKeepsTheResponsesThatParse) {
+    // a stale or corrupt cache file must not drop the responses that do parse
+    {
+        std::ofstream garbage("garbage_ocsp_response.der");
+        garbage << "not a DER encoded OCSP response";
+    }
+
+    auto chain = openssl::load_certificates("client_chain.pem");
+    ASSERT_GE(chain.size(), 2);
+
+    tls::OcspCache::digest_t garbage_digest{};
+    tls::OcspCache::digest_t good_digest{};
+    ASSERT_TRUE(tls::OcspCache::digest(garbage_digest, chain[0].get()));
+    ASSERT_TRUE(tls::OcspCache::digest(good_digest, chain[1].get()));
+
+    std::vector<tls::OcspCache::ocsp_entry_t> entries;
+    entries.emplace_back(garbage_digest, "garbage_ocsp_response.der");
+    entries.emplace_back(good_digest, "ocsp_response.der");
+
+    tls::OcspCache cache;
+    EXPECT_FALSE(cache.load(entries));
+    EXPECT_EQ(cache.lookup(garbage_digest).get(), nullptr);
+    EXPECT_NE(cache.lookup(good_digest).get(), nullptr);
 }
 
 TEST(TrustedCaKeys, parseAudi) {
@@ -344,6 +370,51 @@ TEST(TrustedCaKeys, matchName) {
     EXPECT_TRUE(certificate_subject_public_key_sha_1(digest, root_cert));
     keys.key_sha1_hash.push_back(digest);
     EXPECT_TRUE(match(keys, chain));
+}
+
+namespace {
+
+// Hubject V2G Root CA G2, a production EC P-256 root
+const char hubject_v2g_root_ca_g2_pem[] = "-----BEGIN CERTIFICATE-----\n"
+                                          "MIICTTCCAfOgAwIBAgIQALu7vBrEWtLf5bHYc8NchDAKBggqhkjOPQQDAjBSMQsw\n"
+                                          "CQYDVQQGEwJERTEVMBMGA1UEChMMSHViamVjdCBHbWJIMRMwEQYKCZImiZPyLGQB\n"
+                                          "GRYDVjJHMRcwFQYDVQQDEw5WMkcgUm9vdCBDQSBHMjAgFw0xOTAxMTAxMjU0MjZa\n"
+                                          "GA8yMDU5MDEwOTE5MDAwMFowUjELMAkGA1UEBhMCREUxFTATBgNVBAoTDEh1Ympl\n"
+                                          "Y3QgR21iSDETMBEGCgmSJomT8ixkARkWA1YyRzEXMBUGA1UEAxMOVjJHIFJvb3Qg\n"
+                                          "Q0EgRzIwWTATBgcqhkjOPQIBBggqhkjOPQMBBwNCAAQI+uelZzJzESGTP2ZkDfA+\n"
+                                          "W0+7O9y0a8gVl0nZnS0Ko5H71VG2aacoUc+GHRWmXhXiutfDwauh4MtMp32zj5/R\n"
+                                          "o4GoMIGlMBMGA1UdJQQMMAoGCCsGAQUFBwMJMA8GA1UdEwEB/wQFMAMBAf8wEQYD\n"
+                                          "VR0OBAoECEW4QJ7hOPi/MEUGA1UdIAQ+MDwwOgYMKwYBBAGCxDUBAgEAMCowKAYI\n"
+                                          "KwYBBQUHAgEWHGh0dHBzOi8vd3d3Lmh1YmplY3QuY29tL3BraS8wEwYDVR0jBAww\n"
+                                          "CoAIRbhAnuE4+L8wDgYDVR0PAQH/BAQDAgEGMAoGCCqGSM49BAMCA0gAMEUCIAQl\n"
+                                          "k+aOKUGJk7KoZs2ASAYv1D0w/BqN9Dpg82X0bFb8AiEAi1dL21fLl/wbYs7LYYzp\n"
+                                          "i4ELaXBzZxy4tAVwBy9pia4=\n"
+                                          "-----END CERTIFICATE-----\n";
+
+} // namespace
+
+TEST(TrustedCaKeys, matchProductionRootKeyHash) {
+    // two key_sha1_hash entries: the Hubject V2G Root CA G2 key and an unknown key
+    using trusted_authority = tls::trusted_ca_keys::trusted_authority;
+
+    std::uint8_t extension[] = {
+        0x00, 0x2a, 0x01, 0x00, 0xfa, 0xe3, 0x90, 0x07, 0x95, 0xc8, 0x88, 0xa4, 0xd4, 0xd7, 0xbd,
+        0x9f, 0xdf, 0xfa, 0x60, 0x41, 0x8a, 0xc1, 0x9f, 0x01, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06,
+        0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0x0f, 0x10, 0x11, 0x12, 0x13, 0x14,
+    };
+
+    trusted_authority ext{&extension[0], sizeof(extension)};
+    auto keys = tls::trusted_ca_keys::convert(ext);
+    ASSERT_EQ(keys.key_sha1_hash.size(), 2);
+    EXPECT_EQ(keys.cert_sha1_hash.size(), 0);
+
+    chain_t chain;
+    chain.chain.trust_anchors.emplace_back(pem_to_certificate(hubject_v2g_root_ca_g2_pem));
+    ASSERT_TRUE(chain.chain.trust_anchors[0]);
+    EXPECT_TRUE(match(keys, chain));
+
+    keys.key_sha1_hash.erase(keys.key_sha1_hash.begin());
+    EXPECT_FALSE(match(keys, chain));
 }
 
 TEST(TrustedCaKeys, matchCertHash) {
@@ -731,6 +802,76 @@ TEST_F(ServerTrustedCaKeysApply, noMatchKeepsDefaultAndWarns) {
     // the SSL_CTX is kept.
     EXPECT_EQ(SSL_get_certificate(ssl), nullptr);
     EXPECT_TRUE(LogCapture::contains(openssl::log_level_t::warning, "no configured chain matched"));
+}
+
+TEST(TrustedCaKeys, compatible) {
+    chain_t chain;
+    EXPECT_TRUE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_TRUE(compatible(chain, TLS1_3_VERSION));
+    chain.tls_version = TLS1_2_VERSION;
+    EXPECT_TRUE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_FALSE(compatible(chain, TLS1_3_VERSION));
+    chain.tls_version = TLS1_3_VERSION;
+    EXPECT_FALSE(compatible(chain, TLS1_2_VERSION));
+    EXPECT_TRUE(compatible(chain, TLS1_3_VERSION));
+}
+
+TEST(TrustedCaKeys, selectByVersion) {
+    chain_list chains;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), nullptr);
+
+    // nothing tagged: leave the SSL_CTX default alone
+    chains.emplace_back();
+    chains.emplace_back();
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), nullptr);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), nullptr);
+
+    // ISO 15118-2 leaf for TLS 1.2, ISO 15118-20 leaf for TLS 1.3
+    chains[0].tls_version = TLS1_2_VERSION;
+    chains[1].tls_version = TLS1_3_VERSION;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), &chains[0]);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), &chains[1]);
+
+    // no exact match: untagged chain is the fallback
+    chains.emplace_back();
+    chains[1].tls_version = TLS1_2_VERSION;
+    EXPECT_EQ(select_by_version(chains, TLS1_2_VERSION), &chains[0]);
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), &chains[2]);
+
+    // no exact match and nothing untagged
+    chains.pop_back();
+    EXPECT_EQ(select_by_version(chains, TLS1_3_VERSION), nullptr);
+}
+
+TEST(TrustedCaKeys, selectWithVersion) {
+    trusted_ca_keys_t keys;
+    chain_list chains;
+
+    sha_1_digest_t digest;
+    auto root = load_certificates("client_root_cert.pem");
+    auto* client_root_cert = root[0].get();
+    EXPECT_TRUE(certificate_sha_1(digest, client_root_cert));
+    keys.cert_sha1_hash.push_back(digest);
+
+    // two chains under the same trust anchor, one per TLS version
+    chains.emplace_back();
+    chains[0].chain.trust_anchors.emplace_back(std::move(root[0]));
+    chains[0].tls_version = TLS1_3_VERSION;
+    chains.emplace_back();
+    root = load_certificates("client_root_cert.pem");
+    chains[1].chain.trust_anchors.emplace_back(std::move(root[0]));
+    chains[1].tls_version = TLS1_2_VERSION;
+
+    EXPECT_EQ(select(keys, chains), &chains[0]);
+    EXPECT_EQ(select(keys, chains, TLS1_2_VERSION), &chains[1]);
+    EXPECT_EQ(select(keys, chains, TLS1_3_VERSION), &chains[0]);
+
+    // trust anchor unknown to the client: no match at all
+    trusted_ca_keys_t other_keys;
+    root = load_certificates("server_root_cert.pem");
+    EXPECT_TRUE(certificate_sha_1(digest, root[0].get()));
+    other_keys.cert_sha1_hash.push_back(digest);
+    EXPECT_EQ(select(other_keys, chains, TLS1_2_VERSION), nullptr);
 }
 
 } // namespace

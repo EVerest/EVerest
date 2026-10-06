@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 //
 // EvseManager keeps pushing DC limits and physical values for the whole session, so building the
 // session config and applying a mid-session control event must land on the same fields.
@@ -40,6 +40,49 @@ session::SessionConfig make_session_config(std::vector<shared_datatypes::EnergyT
     return session::SessionConfig(setup);
 }
 } // namespace
+
+SCENARIO("DIN SPEC 70121 SECC EVSEID") {
+    const std::vector<uint8_t> packed{0x49, 0xA8, 0x07, 0x37, 0xA4, 0x56, 0x78};
+
+    GIVEN("A DIN EVSEID configured as hexBinary") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "DE*PNX*E12345*1";
+        setup.evse_id_din = "49A80737A45678";
+        THEN("The bytes go out as configured") {
+            REQUIRE(make_din_config(session::SessionConfig(setup)).evse_id == packed);
+        }
+    }
+
+    GIVEN("A DIN EVSEID configured in lower case with an odd nibble count") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id_din = "49a";
+        THEN("The trailing nibble is padded with 0xF") {
+            REQUIRE(make_din_config(session::SessionConfig(setup)).evse_id == std::vector<uint8_t>{0x49, 0xAF});
+        }
+    }
+
+    GIVEN("No DIN EVSEID and a DIN SPEC 91286 evse_id") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "49*80737*45678";
+        THEN("evse_id is packed with '*' as 0xA") {
+            REQUIRE(make_din_config(session::SessionConfig(setup)).evse_id == packed);
+        }
+    }
+
+    GIVEN("No DIN EVSEID and an eMI3 evse_id") {
+        THEN("The single zero byte is sent") {
+            REQUIRE(make_din_config(make_session_config({})).evse_id == std::vector<uint8_t>{0x00});
+        }
+    }
+
+    GIVEN("A DIN EVSEID that is not hexBinary") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id_din = "49*80737*45678";
+        THEN("The single zero byte is sent") {
+            REQUIRE(make_din_config(session::SessionConfig(setup)).evse_id == std::vector<uint8_t>{0x00});
+        }
+    }
+}
 
 SCENARIO("DIN SPEC 70121 SECC offered energy transfer mode") {
     using Mode = shared_datatypes::EnergyTransferMode;

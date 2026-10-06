@@ -65,8 +65,10 @@ SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
         req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:DC", 1, 2));
         req.app_protocol.push_back(make_app_protocol("urn:iso:std:iso:15118:-20:AC", 3, 1));
 
-        const auto result = session::secc_sap::handle_request(req, supported_protocols, supported_energy_services,
-                                                              false, custom_namespace, /*tls_active=*/false);
+        // Both energy families offered, so only the EV's priority decides.
+        const std::vector<dt::ServiceCategory> ac_and_dc = {dt::ServiceCategory::AC, dt::ServiceCategory::DC};
+        const auto result = session::secc_sap::handle_request(req, supported_protocols, ac_and_dc, false,
+                                                              custom_namespace, /*tls_active=*/false);
 
         THEN("The highest-priority match wins") {
             REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);

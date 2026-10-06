@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 
 #ifndef OPENSSL_UTIL_HPP_
 #define OPENSSL_UTIL_HPP_
@@ -165,6 +165,9 @@ using chain_info_list_t = std::vector<chain_info_t>;
 struct chain_t {
     chain_info_t chain{{nullptr, nullptr}, {}, {}};
     pkey_ptr private_key{nullptr, nullptr};
+    /// negotiated TLS version this chain is meant for: 0 = any version,
+    /// otherwise TLS1_2_VERSION or TLS1_3_VERSION (see tls::Server::certificate_config_t::tls_version)
+    int tls_version{0};
 };
 
 using chain_list = std::vector<chain_t>;
@@ -314,6 +317,14 @@ template <typename T> constexpr void zero(T& mem) {
  * \param mem the structure to zero
  */
 pkey_ptr load_private_key(const char* filename, const char* password);
+
+/**
+ * \brief load a private key from a PEM string
+ * \param[in] pem the PEM encoded key
+ * \param[in] password the key's password, nullptr when it is not encrypted
+ * \return the key or empty unique_ptr on error
+ */
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password);
 
 /**
  * \brief convert R, S BIGNUM to DER signature
@@ -496,10 +507,15 @@ pkey_ptr certificate_public_key(x509_st* cert);
 bool certificate_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 
 /**
- * \brief calculate SHA1 hash over the DER certificate's subject public key
+ * \brief calculate the RFC 6066 key_sha1_hash of the certificate's subject public key
  * \param[out] digest the SHA1 digest of the public key
  * \param[in] cert the certificate
  * \return true on success
+ * \note RFC 6066 6: for DSA and ECDSA keys the hash covers the subjectPublicKey
+ *       BIT STRING contents, for RSA keys the big-endian modulus without leading
+ *       zero bytes. The SubjectPublicKeyInfo wrapper (algorithm and curve OIDs) is
+ *       not included, so for EC keys the result equals an RFC 5280 4.2.1.2 (1)
+ *       Subject Key Identifier.
  */
 bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 

@@ -30,7 +30,10 @@ config:
       tls_negotiation_strategy: it pins the min/max protocol version, the cipher list and the
       client_hello certificate-verify elevation. Set to true for ISO 15118-20 (mandates TLS 1.3 mTLS).
       Set to false to offer TLS 1.2 (cipher ECDHE-ECDSA-AES128-SHA256, no client-certificate request),
-      which is required for ISO 15118-2 / DIN SPEC 70121.
+      which is required for ISO 15118-2 / DIN SPEC 70121. With it unset the TLS version follows the EV's
+      offer, and the SECC leaf is chosen per connection to match: a prime256v1 leaf (ISO 15118-2) is
+      presented on TLS 1.2, a secp521r1 / Ed448 leaf (ISO 15118-20) on TLS 1.3, so install both leaves
+      in the security module's SECC leaf directory when offering both protocols.
       Multi-chain selection works on both TLS 1.2 (driven by the trusted_ca_keys extension)
       and TLS 1.3 (driven by the native certificate_authorities extension), so multiple V2G
       leaf chains can be installed concurrently regardless of this flag.
@@ -64,7 +67,8 @@ config:
     description: >-
       Defines how many seconds the EVSE should wait for authorization in EIM (External Payment) case,
       before the charging session is aborted. Write 0 if the EVSE should wait indefinitely for EIM
-      authorization. Applies to ISO 15118-2 and DIN SPEC 70121; ISO 15118-20 uses a fixed 3 min window.
+      authorization. Applies to ISO 15118-2 and DIN SPEC 70121; ISO 15118-20 EIM stops the session after the
+      55 s V2G_SECC_Ongoing_Performance_Time ([V2G20-2102]).
     type: integer
     minimum: 0
     default: 300
@@ -72,8 +76,8 @@ config:
     description: >-
       Defines how many seconds the EVSE should wait for authorization in PnC (Contract) case, before the
       charging session is aborted. Write 0 if the EVSE should wait indefinitely for PnC authorization.
-      Applies to ISO 15118-2 only: DIN SPEC 70121 has no Plug-and-Charge and ISO 15118-20 uses a fixed
-      3 min window. The default is the 55 s V2G_SECC_Ongoing_Performance_Time of [V2G2-712/713].
+      Applies to ISO 15118-2 and ISO 15118-20; DIN SPEC 70121 has no Plug-and-Charge. The default is the
+      55 s V2G_SECC_Ongoing_Performance_Time of [V2G2-712/713] and [V2G20-2102].
     type: integer
     minimum: 0
     default: 55
@@ -122,14 +126,14 @@ config:
       whether the discharge limits should be negative. Until this is clarified, the positive limits
       can be converted using this option.
     type: boolean
-    default: false
+    default: true
   selecting_sap_based_on_energy_service:
     description: >-
-      Based on ISO15118-20 AMD1, selecting the SAP namespace does not imply a final selection.
-      The final decision on which service to select is made later in the D20 service states.
-      However, since AMD1 is relatively new, it is possible that EVs will only support certain energy services
-      after the SAP namespace has been selected. If this is the case, this option should be set to true
-      so that libiso15118 will select the sap namespace based on the supported energy services.
+      The SAP namespace matching the supported energy services is always preferred: a DC charger selects
+      -20:DC (or -2 / DIN) and an AC charger -20:AC, even if the EV ranks the other -20 namespace higher.
+      Based on ISO15118-20 AMD1, selecting the SAP namespace does not imply a final selection, so by default
+      an EV offering only non-matching namespaces still gets one and selects its service later in the D20
+      service states. Set this option to true to refuse such namespaces instead (Failed_NoNegotiation).
     type: boolean
     default: false
 provides:

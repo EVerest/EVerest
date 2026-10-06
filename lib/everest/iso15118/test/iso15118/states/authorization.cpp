@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/d20/state/authorization.hpp>
@@ -112,13 +112,86 @@ SCENARIO("Authorization state handling") {
         }
     }
 
-    // GIVEN("Bad Case - Ongoing timeout reached") {}
+    GIVEN("Bad Case - Ongoing timeout reached") {
+
+        d20::Session session = d20::Session();
+        session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
+
+        message_20::AuthorizationRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+        req.selected_authorization_service = dt::Authorization::EIM;
+        req.authorization_mode.emplace<dt::EIM_ASReqAuthorizationMode>();
+
+        const auto res = d20::state::handle_request(req, session, AuthStatus::Pending, true);
+
+        THEN("ResponseCode: FAILED") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED);
+        }
+    }
 
     // PnC test cases
 
-    // GIVEN("Bad Case - sequence error") {} // TODO(sl): not here
+    GIVEN("PnC - the outcome of the checks drives the response") {
 
-    // GIVEN("Performance Timeout") {} // TODO(sl): not here
+        d20::Session session = d20::Session();
+        session.offered_services.auth_services = {dt::Authorization::EIM, dt::Authorization::PnC};
 
-    // GIVEN("Sequence Timeout") {} // TODO(sl): not here
+        message_20::AuthorizationRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+        req.selected_authorization_service = dt::Authorization::PnC;
+        req.authorization_mode.emplace<dt::PnC_ASReqAuthorizationMode>();
+
+        THEN("Pending backend: OK, Ongoing") {
+            const auto res =
+                d20::state::handle_request(req, session, AuthStatus::Pending, false,
+                                           d20::state::PncOutcome{dt::ResponseCode::OK, dt::Processing::Ongoing});
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.evse_processing == dt::Processing::Ongoing);
+        }
+
+        THEN("Expiring soon: OK_CertificateExpiresSoon, Finished") {
+            const auto res = d20::state::handle_request(
+                req, session, AuthStatus::Accepted, false,
+                d20::state::PncOutcome{dt::ResponseCode::OK_CertificateExpiresSoon, dt::Processing::Finished});
+            REQUIRE(res.response_code == dt::ResponseCode::OK_CertificateExpiresSoon);
+            REQUIRE(res.evse_processing == dt::Processing::Finished);
+        }
+
+        THEN("Challenge mismatch: WARNING_ChallengeInvalid, Finished") {
+            const auto res = d20::state::handle_request(
+                req, session, AuthStatus::Pending, false,
+                d20::state::PncOutcome{dt::ResponseCode::WARNING_ChallengeInvalid, dt::Processing::Finished});
+            REQUIRE(res.response_code == dt::ResponseCode::WARNING_ChallengeInvalid);
+            REQUIRE(res.evse_processing == dt::Processing::Finished);
+        }
+
+        THEN("Without an outcome the request is not authorized") {
+            const auto res = d20::state::handle_request(req, session, AuthStatus::Pending, false);
+            REQUIRE(res.response_code == dt::ResponseCode::WARNING_GeneralPnCAuthorizationError);
+            REQUIRE(res.evse_processing == dt::Processing::Finished);
+        }
+    }
+
+    GIVEN("PnC - backend rejections map onto the -20 WARNING codes") { // [V2G20-2210..2217]
+        using d20::CertificateStatus;
+        const auto code = [](CertificateStatus status, bool token_unknown = false) {
+            return d20::state::pnc_rejection_code(d20::AuthorizationResponse{false, status, token_unknown});
+        };
+
+        THEN("Certificate status and unknown token are distinguished") {
+            REQUIRE(code(CertificateStatus::CertificateExpired) == dt::ResponseCode::WARNING_CertificateExpired);
+            REQUIRE(code(CertificateStatus::CertificateRevoked) == dt::ResponseCode::WARNING_CertificateRevoked);
+            REQUIRE(code(CertificateStatus::CertChainError) == dt::ResponseCode::WARNING_CertificateValidationError);
+            REQUIRE(code(CertificateStatus::SignatureError) == dt::ResponseCode::WARNING_CertificateValidationError);
+            REQUIRE(code(CertificateStatus::NoCertificateAvailable) ==
+                    dt::ResponseCode::WARNING_CertificateValidationError);
+            REQUIRE(code(CertificateStatus::ContractCancelled) ==
+                    dt::ResponseCode::WARNING_GeneralPnCAuthorizationError);
+            REQUIRE(code(CertificateStatus::Accepted) == dt::ResponseCode::WARNING_GeneralPnCAuthorizationError);
+            REQUIRE(code(CertificateStatus::Accepted, true) == dt::ResponseCode::WARNING_eMSPUnknown);
+            REQUIRE(d20::AuthorizationResponse{false, true}.is_certificate_revoked());
+        }
+    }
 }

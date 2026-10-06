@@ -4,12 +4,14 @@
 #include "protocol/cb_common.h"
 #include "protocol/evse_bsp_cb_to_host.h"
 #include <charge_bridge/everest_api/ev_bsp_api.hpp>
+#include <charge_bridge/mcs_bsp.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <charge_bridge/utilities/string.hpp>
 #include <chrono>
 #include <cstring>
 #include <everest_api_types/ev_board_support/codec.hpp>
 #include <everest_api_types/evse_board_support/codec.hpp>
+#include <everest_api_types/evse_manager/codec.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
@@ -94,6 +96,18 @@ void ev_bsp_api::handle_event_relay(std::uint8_t relay) {
     }
 }
 
+void ev_bsp_api::handle_stop_button(std::uint8_t data) {
+    // Pressed edge only, like the EVSE API.
+    if (data == 0) {
+        return;
+    }
+    utilities::print_error(m_cb_identifier, "EV/EVEREST", 0)
+        << "Stop charging button pressed -> requesting local stop transaction." << std::endl;
+    API_EVM::StopTransactionRequest request;
+    request.reason = API_EVM::StopTransactionReason::Local;
+    send_mqtt("request_stop_transaction", serialize(request));
+}
+
 void ev_bsp_api::handle_event_cp(std::uint8_t cp) {
     using bc_event = API_EVSE_BSP::Event;
     bc_event cp_event;
@@ -135,6 +149,15 @@ void ev_bsp_api::handle_event_cp(std::uint8_t cp) {
 void ev_bsp_api::handle_bsp_measurement(uint16_t cp, [[maybe_unused]] uint8_t pp_1, [[maybe_unused]] uint8_t pp2) {
     // FIXME implement PP correctly
     API_EV_BSP::BspMeasurement data;
+    // The MCU reports the duty as a 16-bit fraction; EVerest wants percent. In EV role on MCS the
+    // MCU synthesizes a fixed 3276 -> 4.9988 %, the 5 % HLC marker of IEC 61851-23-3 Annex CC, rather
+    // than an ampacity code.
+    //
+    // That clears the gate that matters for a DC session: EvManager's iso_wait_pwm_is_running
+    // requires > 4.0 % (car_simulation.cpp:187). It does NOT clear the two 7 % gates in the same file
+    // (:42 CHARGING_REGULATED, :182 iec_wait_pwr_ready) - and must not be read as a contradiction,
+    // because those are IEC AC basic-signalling paths where the duty encodes an available current.
+    // An MCS session is DC and HLC-only, so it never runs them.
     data.cp_pwm_duty_cycle = cp / 65536. * 100.;
     API_EVSE_BSP::ProximityPilot pp;
     API_EVSE_BSP::Ampacity amp;
@@ -170,72 +193,85 @@ void ev_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
         handle_error(msg.error_flags);
     }
 
-    // This is not supported in EVerest yet but should be added at some point
-    /*
-    if (cb_status.stop_charging not_eq msg.stop_charging) {
+    // EVerest's ev_board_support has no stop-button surface yet; the press is still published with
+    // the EVSE API's message so a host (the production tester checks the STOP_CHARGING input on EV
+    // boards too) can observe it. Unknown topics are ignored by the EVerest side.
+    if (m_cb_status.stop_charging not_eq msg.stop_charging) {
         handle_stop_button(msg.stop_charging);
-    }*/
-
-    // The ev_board_support interface in EVerest does not yet have proper errors defined, so we do not handle errors
-    // here yet
-    /*
-    if (m_cb_status.error_flags not_eq msg.error_flags) {
-        handle_error(msg.error_flags);
-    }*/
+    }
 
     m_cb_status = msg;
 }
 
-enum class SafetyErrorMask : std::uint32_t {
-    cp_not_state_c = (1 << 0),
-    pwm_not_enabled = (1 << 1),
-    pp_invalid = (1 << 2),
-    plug_temperature_too_high = (1 << 3),
-    internal_temperature_too_high = (1 << 4),
-    emergency_input_latched = (1 << 5),
-    relay_health_latched = (1 << 6),
-    vdd_3v3_out_of_range = (1 << 7),
-    vdd_core_out_of_range = (1 << 8),
-    vdd_12V_out_of_range = (1 << 9),
-    vdd_N12V_out_of_range = (1 << 10),
-    vdd_refint_out_of_range = (1 << 11),
-    external_allow_power_on = (1 << 12),
-    config_mem_error = (1 << 13),
-    dc_hv_ov = (1 << 14),
-    rcd_error = (1 << 16),
-};
+// The bit positions live in charge_bridge/mcs_bsp.hpp, shared with evse_bsp_api.cpp. Every flag in
+// error_specs goes into the relay log line; only those in published_error_specs also reach EVerest,
+// as a VendorError, because ev_board_support has no error types of its own for them.
+using safety_error_mask = charge_bridge::safety_error_mask;
 
-// Table that maps a mask to our API error + message
 struct FlagSpec {
-    SafetyErrorMask mask;
+    safety_error_mask mask;
     const char* message;
 };
 
 static constexpr FlagSpec error_specs[] = {
-    {SafetyErrorMask::pp_invalid, "PP invalid"},
-    {SafetyErrorMask::plug_temperature_too_high, "Plug temperature too high"},
-    {SafetyErrorMask::internal_temperature_too_high, "ChargeBridge internal over temperature"},
-    {SafetyErrorMask::emergency_input_latched, "Emergency input latched"},
-    {SafetyErrorMask::relay_health_latched, "Relay welded error"},
-    {SafetyErrorMask::vdd_3v3_out_of_range, "Supply voltage 3.3V out of range"},
-    {SafetyErrorMask::vdd_core_out_of_range, "Internal supply core voltage out of range"},
-    {SafetyErrorMask::vdd_12V_out_of_range, "Internal supply 12V voltage out of range"},
-    {SafetyErrorMask::vdd_N12V_out_of_range, "Internal supply -12V voltage out of range"},
-    {SafetyErrorMask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
-    {SafetyErrorMask::config_mem_error, "Internal config memory error"},
-    {SafetyErrorMask::dc_hv_ov, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
-    {SafetyErrorMask::rcd_error, "RCD error detected"},
+    {safety_error_mask::pp_invalid, "PP invalid"},
+    {safety_error_mask::plug_temperature_too_high, "Plug temperature too high"},
+    {safety_error_mask::internal_temperature_too_high, "ChargeBridge internal over temperature"},
+    {safety_error_mask::emergency_input_latched, "Emergency input latched"},
+    {safety_error_mask::relay_health_latched, "Relay welded error"},
+    {safety_error_mask::vdd_3v3_out_of_range, "Supply voltage 3.3V out of range"},
+    {safety_error_mask::vdd_core_out_of_range, "Internal supply core voltage out of range"},
+    {safety_error_mask::vdd_12V_out_of_range, "Supply 12V (CCS) / 5V front end (MCS) voltage out of range"},
+    {safety_error_mask::vdd_N12V_out_of_range, "Internal supply -12V voltage out of range"},
+    {safety_error_mask::vdd_refint_out_of_range, "Internal supply VREF voltage out of range"},
+    {safety_error_mask::config_mem_error, "Internal config memory error"},
+    {safety_error_mask::dc_hv_ov_emergency, "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {safety_error_mask::rcd_error, "RCD error detected"},
+    // MCS basic signalling. Without these two the log line for a CE or ID emergency came out empty,
+    // and an empty line is read below as "nothing wrong" - so an MCS emergency printed "Relays can be
+    // switched on." while the MCU had just opened S V3.
+    {safety_error_mask::ce_fault, "MCS Charge Enable signal integrity lost"},
+    {safety_error_mask::id_fault, "MCS Insertion Detection lost"},
+};
+
+struct PublishedFlagSpec {
+    safety_error_mask mask;
+    API_GENERIC::ErrorEnum error;
+    const char* subtype;
+    const char* message;
+};
+
+static constexpr PublishedFlagSpec published_error_specs[] = {
+    {safety_error_mask::emergency_input_latched, API_GENERIC::ErrorEnum::VendorError, "EMGINPUT",
+     "Emergency input latched"},
+    {safety_error_mask::relay_health_latched, API_GENERIC::ErrorEnum::VendorError, "RELAYS", "Relay welded error"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
-    {SafetyErrorMask::cp_not_state_c, "CP is not state C"},
-    {SafetyErrorMask::pwm_not_enabled, "PWM not enabled"},
-    {SafetyErrorMask::external_allow_power_on, "Allow power on from EVerest missing"},
+    {safety_error_mask::cp_not_state_c, "CP is not state C"},
+    {safety_error_mask::pwm_not_enabled, "PWM not enabled"},
+    {safety_error_mask::external_allow_power_on, "Allow power on from EVerest missing"},
 };
+
+// prev = 0 re-raises every active error without clearing any.
+void ev_bsp_api::publish_error_flag_edges(std::uint32_t prev, std::uint32_t next) {
+    for (const auto& s : published_error_specs) {
+        auto const bit = static_cast<std::uint32_t>(s.mask);
+        if ((next & bit) and not(prev & bit)) {
+            send_raise_error(s.error, s.subtype, s.message);
+        }
+        if ((prev & bit) and not(next & bit)) {
+            send_clear_error(s.error, s.subtype);
+        }
+    }
+}
 
 void ev_bsp_api::handle_error(const SafetyErrorFlags& data) {
     std::uint32_t next = data.raw; // current raw value
     std::stringstream log;
+
+    // m_cb_status still holds the previous frame here (set_cb_message assigns it last).
+    publish_error_flag_edges(m_cb_status.error_flags.raw, next);
 
     for (const auto& s : print_warning_specs) {
         if (next & static_cast<std::uint32_t>(s.mask)) {
@@ -287,6 +323,11 @@ void ev_bsp_api::raise_comm_fault() {
 
 void ev_bsp_api::clear_comm_fault() {
     send_clear_error(API_GENERIC::ErrorEnum::CommunicationFault, comm_fault_subtype);
+}
+
+void ev_bsp_api::clear_raised_errors() {
+    clear_comm_fault();
+    publish_error_flag_edges(m_cb_status.error_flags.raw, 0);
 }
 
 void ev_bsp_api::receive_enable([[maybe_unused]] std::string const& payload) {
@@ -404,6 +445,7 @@ void ev_bsp_api::handle_everest_connection_state() {
                 // happens to open them. Replayed through the same handler set_cb_message() uses,
                 // which does not latch on a previous state (and ignores an invalid relay value).
                 handle_event_relay(m_cb_status.relay_state);
+                publish_error_flag_edges(0, m_cb_status.error_flags.raw);
             } else {
                 // The communication fault is edge triggered on the ChargeBridge connection, so a
                 // freshly (re)started EVerest does not know about it. Re-assert it here,

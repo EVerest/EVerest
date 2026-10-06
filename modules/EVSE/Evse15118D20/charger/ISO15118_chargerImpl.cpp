@@ -11,13 +11,18 @@
 
 #include <algorithm>
 #include <cstdint>
+#include <iterator>
 #include <string>
+#include <string_view>
+#include <utility>
+#include <vector>
 
 #include <utils/date.hpp>
 
 #include <everest/util/misc/container.hpp>
 
 #include <iso15118/config.hpp>
+#include <iso15118/detail/d20/config_validation.hpp>
 
 #include <iso15118/io/logging.hpp>
 
@@ -303,16 +308,21 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
         return;
     }
 
-    // Snapshot the GEL-protected setup_config fields under the lock, then release it before touching the
-    // controller: update_*_der_functions reach into the evse_setup monitor (a second lock), and holding GEL
-    // across that would risk lock inversion. controller is set once in ready() and lives for the impl lifetime,
-    // so the snapshotted pointer stays valid after the lock is released.
+    // Snapshot the GEL-protected setup_config fields so the mapping runs outside GEL, not because a
+    // controller call would need GEL released; for the lock rank see der_apply_mutex in the header.
+    // controller is set once in ready() and outlives the impl, so the snapshotted pointer stays valid.
     iso15118::TbdController* controller_ptr = nullptr;
     float volt_base = 0.0f;
     float watt_base = 0.0f;
     std::optional<float> var_base;
     bool sae_advertised = false;
     bool iec_advertised = false;
+    float nominal_voltage_v = 0.0f;
+    float nominal_frequency_hz = 0.0f;
+    std::optional<iso15118::d20::DerSaeSetupConfig> current_sae;
+    std::optional<iso15118::d20::SaeDerTransferLimits> der_sae_limits;
+    std::uint32_t applied_revision = 0;
+    std::optional<module::SaeRelayInput> applied_input;
     {
         std::scoped_lock lock(GEL);
         controller_ptr = controller.get();
@@ -328,6 +338,16 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
         };
         sae_advertised = advertised(dt::ServiceCategory::AC_DER_SAE);
         iec_advertised = advertised(dt::ServiceCategory::AC_DER_IEC);
+
+        der_sae_limits = setup_config.der_sae_limits;
+        if (der_sae_limits.has_value()) {
+            nominal_voltage_v = dt::from_RationalNumber(der_sae_limits->grid_limits.nominal_voltage);
+            nominal_frequency_hz = dt::from_RationalNumber(der_sae_limits->grid_limits.nominal_frequency);
+        }
+        current_sae = setup_config.der_sae_setup_config.value_or(
+            iso15118::d20::make_inert_default_sae_setup_config(nominal_voltage_v));
+        applied_revision = sae_grid_code_revision;
+        applied_input = sae_applied_input;
     }
 
     if (controller_ptr == nullptr) {
@@ -337,8 +357,13 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 
     if (sae_advertised) {
-        EVLOG_warning << "grid_support DER directives are applied to the AC_DER_IEC control functions only. An "
-                         "AC_DER_SAE session keeps its configured grid code unchanged.";
+        if (not der_sae_limits.has_value()) {
+            EVLOG_info << "AC_DER_SAE is advertised but no SAE DER limits are derived yet; grid_support directives "
+                          "will be relayed once the grid parameters are known.";
+        } else {
+            relay_sae_grid_code(directives.value(), *controller_ptr, nominal_voltage_v, nominal_frequency_hz,
+                                current_sae.value(), applied_revision, applied_input);
+        }
     }
 
     if (not sae_advertised and not iec_advertised) {
@@ -360,32 +385,69 @@ void ISO15118_chargerImpl::apply_active_der_directives() {
     }
 }
 
-std::optional<ISO15118_chargerImpl::TlsChain> ISO15118_chargerImpl::acquire_tls_chain() {
-    // include_ocsp=true so the leaf's cached OCSP responses come back and can be stapled during the TLS
-    // handshake (as EvseV2G does). Returns nullopt when the security module has no usable V2G leaf --
-    // the caller decides whether that is fatal (see ready()).
-    auto response = mod->r_security->call_get_leaf_certificate_info(types::evse_security::LeafCertificateType::V2G,
-                                                                    types::evse_security::EncodingFormat::PEM, true);
-
-    if (response.status != types::evse_security::GetCertificateInfoStatus::Accepted or not response.info.has_value()) {
-        return std::nullopt;
+void ISO15118_chargerImpl::relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
+                                               iso15118::TbdController& controller_ref, float nominal_voltage_v,
+                                               float nominal_frequency_hz,
+                                               const iso15118::d20::DerSaeSetupConfig& current_sae,
+                                               std::uint32_t applied_revision,
+                                               const std::optional<module::SaeRelayInput>& applied_input) {
+    const auto input = module::sae_relay_input(directives, nominal_voltage_v, nominal_frequency_hz);
+    if (applied_input == input) {
+        EVLOG_debug << "grid_support directive set unchanged; SAE grid code revision " << applied_revision
+                    << " stays in effect.";
+        return;
     }
 
-    auto& info = response.info.value();
-    std::string path_chain;
-    if (info.certificate.has_value()) {
-        path_chain = info.certificate.value();
-    } else if (info.certificate_single.has_value()) {
-        path_chain = info.certificate_single.value();
-    } else {
-        return std::nullopt;
+    const auto relay =
+        module::map_active_directives_to_sae_der_control(directives, nominal_voltage_v, nominal_frequency_hz);
+    iso15118::d20::DerSaeSetupConfig next{relay.der_control, current_sae.required_der_operating_mode,
+                                          current_sae.grid_connection_mode};
+    next.revision = applied_revision + 1;
+
+    std::vector<std::string> directive_ids;
+    directive_ids.reserve(directives.directives.size());
+    for (const auto& d : directives.directives) {
+        directive_ids.push_back(d.id);
     }
 
-    return TlsChain{std::move(path_chain), std::move(info)};
+    // Validate and push against the limits held now, not the caller's snapshot: an AC-limit handler may have
+    // re-derived them in between, and the next session sees whatever the last push carried. The controller push
+    // stays inside the same hold as the commit so no re-derivation can interleave between the two.
+    {
+        std::scoped_lock lock(GEL);
+        const auto violation = [&]() -> std::optional<std::string> {
+            if (not setup_config.der_sae_limits.has_value()) {
+                return "SAE DER limits were withdrawn while mapping";
+            }
+            return iso15118::d20::validate_sae_der_setup(next, *setup_config.der_sae_limits, setup_config.ac_limits);
+        }();
+        if (violation.has_value()) {
+            EVLOG_warning << "Rejecting SAE grid code from grid_support directives on EVSE " << setup_config.evse_id
+                          << " (" << fmt::format("{}", fmt::join(directive_ids, ", ")) << "): " << *violation
+                          << "; revision " << applied_revision << " remains dictated.";
+            return;
+        }
+        setup_config.der_sae_setup_config = next;
+        sae_grid_code_revision = next.revision;
+        sae_applied_input = input;
+        controller_ref.update_der_sae_limits(setup_config.der_sae_limits, next);
+    }
+
+    std::vector<std::string_view> unmapped;
+    unmapped.reserve(relay.unmapped.size());
+    for (const auto type : relay.unmapped) {
+        unmapped.push_back(types::grid_support::directive_type_to_string_view(type));
+    }
+    EVLOG_info << "SAE grid code revision " << next.revision << " dictated; inert functions: "
+               << fmt::format("{}", fmt::join(module::inert_sae_der_functions(next.der_control), ", "))
+               << "; shadowed directives: " << fmt::format("{}", fmt::join(relay.shadowed_ids, ", "))
+               << "; unmapped types: " << fmt::format("{}", fmt::join(unmapped, ", "));
 }
 
 void ISO15118_chargerImpl::update_der_limits_locked() {
-    // DER control directives reach the EV through the control-function relay, not here.
+    // DER control directives reach the EV through the IEC control-function relay and the SAE grid code relay,
+    // not here. A relayed SAE setup config (revision > 0) is kept across re-derivations and re-pushed on the
+    // SAE branch below unchanged; the seed (revision 0) is rebuilt from the freshly derived nominals.
     const auto derived = derive_der_limits(
         setup_config.supported_energy_services, setup_config.ac_limits, evse_max_reactive_power,
         setup_config.ac_setup_config.has_value() ? std::optional<std::uint32_t>{setup_config.ac_setup_config->voltage}
@@ -400,6 +462,17 @@ void ISO15118_chargerImpl::update_der_limits_locked() {
     setup_config.der_iec_limits = applied.iec_limits;
     setup_config.der_sae_limits = applied.sae_limits;
     setup_config.der_sae_setup_config = applied.sae_setup_config;
+
+    if (transitions.sae == DerSaeApplyTransition::Assigned and setup_config.der_sae_limits.has_value() and
+        setup_config.der_sae_setup_config.has_value() and setup_config.der_sae_setup_config->revision == 0) {
+        // The seed nobody dictated. Record it as the relayed input so a first apply of an empty directive set
+        // maps to the same default and stays quiet instead of dictating revision 1. The nominals come off the
+        // limits just assigned, through the same conversion the relay's compare side uses, so the two agree.
+        const auto& grid_limits = setup_config.der_sae_limits->grid_limits;
+        sae_applied_input = module::sae_relay_input(types::grid_support::ActiveDirectiveSet{},
+                                                    dt::from_RationalNumber(grid_limits.nominal_voltage),
+                                                    dt::from_RationalNumber(grid_limits.nominal_frequency));
+    }
 
     const auto status_changed = derived.sae_status != logged_sae_der_status;
     logged_sae_der_status = derived.sae_status;
@@ -484,9 +557,13 @@ void ISO15118_chargerImpl::ready() {
     // connection) -- so the SECC still comes up for those. Determined before the protocol offer is built
     // because ISO 15118-20 depends on it.
     auto tls_strategy = convert_tls_negotiation_strategy(mod->config.tls_negotiation_strategy);
-    const auto tls_available = acquire_tls_chain();
+    // Built by the same path the certificate_store_update subscriber uses for live rotation (see
+    // build_current_ssl_config / map_valid_chains): every valid SECC leaf chain, each tagged with the TLS
+    // version it is presented on (ISO 15118-2 secp256r1 -> TLS 1.2, ISO 15118-20 secp521r1 / Ed448 -> TLS 1.3).
+    auto ssl_for_controller = build_current_ssl_config();
+    const bool tls_available = not ssl_for_controller.chains.empty();
 
-    if (not tls_available.has_value()) {
+    if (not tls_available) {
         if (tls_strategy == iso15118::config::TlsNegotiationStrategy::ENFORCE_TLS) {
             EVLOG_error << "Evse15118D20: no V2G leaf certificate is available, but tls_negotiation_strategy is "
                            "ENFORCE_TLS, so every session would have to be refused. The SECC will not start";
@@ -506,7 +583,7 @@ void ISO15118_chargerImpl::ready() {
     // ISO 15118-20 mandates TLS -- [V2G20-2677]: "Only full-handshake TLS shall be used for V2G
     // communication between EVCC and SECC" -- so without a certificate it cannot be offered at all. ISO
     // 15118-2 and DIN SPEC 70121 are offered either way and simply run unsecured.
-    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available.has_value();
+    const bool offer_iso15118_20 = mod->config.supported_ISO15118_20 and tls_available;
     iso15118_20_offerable = offer_iso15118_20;
     if (mod->config.supported_ISO15118_20 and not offer_iso15118_20) {
         EVLOG_warning << "Evse15118D20: supported_ISO15118_20 is set but no V2G leaf certificate is available; "
@@ -526,6 +603,29 @@ void ISO15118_chargerImpl::ready() {
                          "tls_negotiation_strategy ENFORCE_NO_TLS. ISO 15118-20 mandates TLS [V2G20-2677], so any "
                          "negotiated -20 session will not be standard-conformant. Set supported_ISO15118_20 to false "
                          "to offer only ISO 15118-2 / DIN SPEC 70121 on unsecured connections";
+    }
+    // Each protocol generation needs its own SECC leaf: ISO 15118-2 a secp256r1 leaf on TLS 1.2, ISO
+    // 15118-20 a secp521r1 / Ed448 leaf on TLS 1.3. Without a leaf for a version the TLS server falls
+    // back to whatever is installed, which works with lenient EVs but is not standard-conformant, so
+    // say so once at startup.
+    if (tls_available and tls_strategy != iso15118::config::TlsNegotiationStrategy::ENFORCE_NO_TLS) {
+        const auto has_leaf_for = [&ssl_for_controller](iso15118::config::ChainTlsVersion version) {
+            return std::any_of(ssl_for_controller.chains.begin(), ssl_for_controller.chains.end(),
+                               [version](const iso15118::config::ChainConfig& chain) {
+                                   return chain.tls_version == version or
+                                          chain.tls_version == iso15118::config::ChainTlsVersion::ANY;
+                               });
+        };
+        if (offer_iso15118_20 and not has_leaf_for(iso15118::config::ChainTlsVersion::TLS_1_3)) {
+            EVLOG_warning << "Evse15118D20: ISO 15118-20 is offered but no secp521r1 / Ed448 SECC leaf certificate is "
+                             "installed; TLS 1.3 sessions will be presented the ISO 15118-2 (secp256r1) leaf, which "
+                             "ISO 15118-20 EVs may reject";
+        }
+        if (mod->config.supported_ISO15118_2 and not has_leaf_for(iso15118::config::ChainTlsVersion::TLS_1_2)) {
+            EVLOG_warning << "Evse15118D20: ISO 15118-2 is offered but no secp256r1 SECC leaf certificate is "
+                             "installed; TLS 1.2 sessions will be presented the ISO 15118-20 leaf, which ISO "
+                             "15118-2 EVs may reject";
+        }
     }
 
     std::vector<iso15118::ProtocolId> supported_protocols;
@@ -574,15 +674,9 @@ void ISO15118_chargerImpl::ready() {
     // TODO(mlitre): Should be updated once libiso supports service renegotiation
     this->mod->p_extensions->publish_service_renegotiation_supported(false);
 
-    // The SSL config (roots, logging flags, and every valid V2G leaf chain from the security module) is
-    // built by the same path the certificate_store_update subscriber uses for live rotation below. Without
-    // a leaf certificate no chain is configured and the controller only ever brings up plain endpoints
-    // (tls_strategy was forced to ENFORCE_NO_TLS above; ENFORCE_TLS already refused to start).
-    auto ssl_for_controller = build_current_ssl_config();
-    if (ssl_for_controller.chains.empty() and tls_available.has_value()) {
-        EVLOG_warning << "Evse15118D20: a V2G leaf certificate exists but no usable chain could be mapped; TLS "
-                         "connection attempts will fail until certificates are provisioned";
-    }
+    // ssl_for_controller was built above; without a leaf certificate it carries no chain and the controller
+    // only ever brings up plain endpoints (tls_strategy was forced to ENFORCE_NO_TLS above; ENFORCE_TLS
+    // already refused to start). The roots in it still gate contract-certificate validation.
 
     iso15118::TbdConfig tbd_config = {
         std::move(ssl_for_controller),
@@ -688,9 +782,16 @@ iso15118::config::SSLConfig ISO15118_chargerImpl::build_base_ssl_config() {
 
 iso15118::config::SSLConfig ISO15118_chargerImpl::build_current_ssl_config() {
     auto cfg = build_base_ssl_config();
-    const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
-        types::evse_security::LeafCertificateType::V2G, types::evse_security::EncodingFormat::PEM, true);
-    cfg.chains = map_valid_chains(certs_result);
+    // Both SECC leaf types: V2G is the ISO 15118-2 leaf (prime256v1, TLS 1.2), V2G20 the ISO 15118-20 leaf
+    // (secp521r1 / Ed448, TLS 1.3). Each query returns the newest valid leaf per issuing root of that profile,
+    // so a renewed leaf of either type is picked up by the same rebuild.
+    for (const auto leaf_type :
+         {types::evse_security::LeafCertificateType::V2G, types::evse_security::LeafCertificateType::V2G20}) {
+        const auto certs_result = mod->r_security->call_get_all_valid_certificates_info(
+            leaf_type, types::evse_security::EncodingFormat::PEM, true);
+        auto chains = map_valid_chains(certs_result);
+        std::move(chains.begin(), chains.end(), std::back_inserter(cfg.chains));
+    }
     return cfg;
 }
 
@@ -1176,6 +1277,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         case Signal::DC_OPEN_CONTACTOR:
             publish_dc_open_contactor(nullptr);
             break;
+        case Signal::DC_RENEGOTIATION_STARTED:
+            publish_dc_renegotiation_started(nullptr);
+            break;
         case Signal::AC_CLOSE_CONTACTOR:
             publish_ac_close_contactor(nullptr);
             break;
@@ -1196,6 +1300,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         case Signal::DLINK_ERROR:
             report_hlc_session_failed();
             publish_dlink_error(nullptr);
+            break;
+        case Signal::PAUSE_NOTIFIED:
+            publish_pause_notified(nullptr);
             break;
         }
     };
@@ -1428,18 +1535,20 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         this->mod->p_charger->publish_require_auth_pnc(token);
     };
 
-    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay: libiso15118 forwards the raw
+    // Plug-and-Charge CertificateInstallation relay: libiso15118 forwards the raw
     // CertificateInstallationReq EXI (base64). Republish it verbatim on the iso15118_extensions
     // interface (iso15118_certificate_request) so the CSMS/CPS backend can build the response. The
     // response is delivered async via handle_set_get_certificate_response (see on_certificate_response).
-    callbacks.certificate_request = [this](const std::string& exi_request_base64,
-                                           iso15118::session::feedback::CertificateExchangeAction action) {
+    callbacks.certificate_request = [this](const iso15118::session::feedback::CertificateRequest& forwarded) {
         types::iso15118::RequestExiStreamSchema request;
-        request.exi_request = exi_request_base64;
-        request.iso15118_schema_version = "urn:iso:15118:2:2013:MsgDef";
-        request.certificate_action = (action == iso15118::session::feedback::CertificateExchangeAction::Update)
-                                         ? types::iso15118::CertificateActionEnum::Update
-                                         : types::iso15118::CertificateActionEnum::Install;
+        request.exi_request = forwarded.exi_request_base64;
+        request.iso15118_schema_version = (forwarded.protocol == iso15118::ProtocolId::ISO15118_20)
+                                              ? iso15118::ISO20_COMMON_MESSAGES_NAMESPACE
+                                              : "urn:iso:15118:2:2013:MsgDef";
+        request.certificate_action =
+            (forwarded.action == iso15118::session::feedback::CertificateExchangeAction::Update)
+                ? types::iso15118::CertificateActionEnum::Update
+                : types::iso15118::CertificateActionEnum::Install;
         this->mod->p_extensions->publish_iso15118_certificate_request(request);
     };
 
@@ -1489,6 +1598,7 @@ void ISO15118_chargerImpl::handle_setup(types::iso15118::EVSEID& evse_id,
 
     std::scoped_lock lock(GEL);
     setup_config.evse_id = evse_id.evse_id; // TODO(SL): Check format for d20
+    setup_config.evse_id_din = evse_id.evse_id_din.value_or("");
 
     setup_steps_done.set(SetupStep::SETUP);
 }
@@ -1525,8 +1635,9 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
         if (option == types::iso15118::PaymentOption::ExternalPayment) {
             auth_services.push_back(dt::Authorization::EIM);
         } else if (option == types::iso15118::PaymentOption::Contract) {
-            // ISO 15118-20 PnC is not yet wired; the ISO 15118-2 SECC engine does support Plug-and-Charge
-            // (Contract payment) and is enabled via setup_config.iso2_pnc_enabled below.
+            // Contract payment is ISO 15118-20 PnC in AuthorizationSetupRes and, for the ISO 15118-2 engine,
+            // the Contract payment option enabled via setup_config.iso2_pnc_enabled below.
+            auth_services.push_back(dt::Authorization::PnC);
             contract_offered = true;
         }
     }
@@ -1534,8 +1645,8 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     setup_config.authorization_services = auth_services;
     setup_config.iso2_pnc_enabled = contract_offered;
     setup_config.enable_certificate_install_service = supported_certificate_service;
-    // ISO 15118-2 PnC: accept a contract without a local MO root and forward it for central validation
-    // (OCPP CentralContractValidationAllowed, via EvseManager).
+    // PnC: accept a contract without a local MO root and forward it for central validation (OCPP
+    // CentralContractValidationAllowed, via EvseManager).
     setup_config.central_contract_validation_allowed = central_contract_validation_allowed;
 
     // session_setup is (re)sent by EvseManager for every session: push the updated auth/PnC setup into
@@ -1633,19 +1744,46 @@ void ISO15118_chargerImpl::handle_set_powersupply_capabilities(types::power_supp
     setup_steps_done.set(SetupStep::MIN_LIMITS);
 }
 
+namespace {
+
+iso15118::d20::CertificateStatus to_iso15118_certificate_status(types::authorization::CertificateStatus status) {
+    using Everest = types::authorization::CertificateStatus;
+    using Lib = iso15118::d20::CertificateStatus;
+    switch (status) {
+    case Everest::Accepted:
+        return Lib::Accepted;
+    case Everest::SignatureError:
+        return Lib::SignatureError;
+    case Everest::CertificateExpired:
+        return Lib::CertificateExpired;
+    case Everest::CertificateRevoked:
+        return Lib::CertificateRevoked;
+    case Everest::NoCertificateAvailable:
+        return Lib::NoCertificateAvailable;
+    case Everest::CertChainError:
+        return Lib::CertChainError;
+    case Everest::ContractCancelled:
+        return Lib::ContractCancelled;
+    }
+    return Lib::Accepted;
+}
+
+} // namespace
+
 void ISO15118_chargerImpl::handle_authorization_response(
     types::authorization::AuthorizationStatus& authorization_status,
     types::authorization::CertificateStatus& certificate_status) {
 
     std::scoped_lock lock(GEL);
     const bool authorized = (authorization_status == types::authorization::AuthorizationStatus::Accepted);
-    // ISO 15118-2 Plug-and-Charge: a rejection because the contract certificate is revoked is named as
-    // such in the AuthorizationRes (FAILED_CertificateRevoked). Only meaningful with a rejection.
-    const bool certificate_revoked =
-        not authorized and certificate_status == types::authorization::CertificateStatus::CertificateRevoked;
+    // Only meaningful with a rejection: ISO 15118-2 names a revoked contract certificate, ISO 15118-20
+    // maps every certificate status and an unknown token onto its WARNING codes.
+    const bool token_unknown =
+        not authorized and authorization_status == types::authorization::AuthorizationStatus::Unknown;
 
     if (controller) {
-        controller->send_control_event(iso15118::d20::AuthorizationResponse{authorized, certificate_revoked});
+        controller->send_control_event(iso15118::d20::AuthorizationResponse{
+            authorized, to_iso15118_certificate_status(certificate_status), token_unknown});
     }
 }
 
@@ -2001,6 +2139,7 @@ void ISO15118_chargerImpl::handle_update_ac_parameters(types::iso15118::AcParame
 
         if (controller) {
             controller->update_ac_limits(setup_config.ac_limits);
+            controller->update_ac_setup_config(ac_setup_config);
         }
     }
 

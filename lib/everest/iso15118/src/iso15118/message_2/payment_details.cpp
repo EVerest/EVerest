@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_2/payment_details.hpp>
 
+#include <iso15118/detail/cb_sub_certificates.hpp>
 #include <iso15118/detail/message_2/variant_access.hpp>
 
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -17,10 +18,7 @@ template <> void convert(const struct iso2_PaymentDetailsReqType& in, PaymentDet
 
     out.sub_certificates.clear();
     if (in.ContractSignatureCertChain.SubCertificates_isUsed) {
-        const auto& subs = in.ContractSignatureCertChain.SubCertificates.Certificate;
-        for (uint16_t i = 0; i < subs.arrayLen; i++) {
-            out.sub_certificates.emplace_back(subs.array[i].bytes, subs.array[i].bytes + subs.array[i].bytesLen);
-        }
+        sub_certificates_from_cb(in.ContractSignatureCertChain.SubCertificates, out.sub_certificates);
     }
 }
 
@@ -38,13 +36,7 @@ template <> void convert(const PaymentDetailsRequest& in, struct iso2_PaymentDet
     CPP2CB_BYTES(in.contract_certificate, chain.Certificate);
 
     if (not in.sub_certificates.empty()) {
-        CPP2CB_ARRAY_SIZE_CHECK(in.sub_certificates.size(), chain.SubCertificates.Certificate.array);
-        uint16_t index = 0;
-        for (const auto& sub : in.sub_certificates) {
-            auto& out_sub = chain.SubCertificates.Certificate.array[index++];
-            CPP2CB_BYTES(sub, out_sub);
-        }
-        chain.SubCertificates.Certificate.arrayLen = in.sub_certificates.size();
+        sub_certificates_to_cb(in.sub_certificates, chain.SubCertificates);
         CB_SET_USED(chain.SubCertificates);
     }
 }

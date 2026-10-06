@@ -84,6 +84,21 @@ public:
         return v2g_session_established;
     }
 
+    // [V2G20-2303] anchors the communication setup budget at TCP/TLS establishment, [V2G2-714] at
+    // D-LINK ready; the later one applies until the handshake decides which protocol is in use.
+    std::optional<TimePoint> get_tcp_setup_timer_anchor() const {
+        if (dlink_setup_timer_anchor) {
+            return std::nullopt;
+        }
+        return connection_established_time;
+    }
+
+    // True until the EV has opened TCP/TLS to the endpoint announced in the SDP response. While it is,
+    // a repeated SDP request means the EV has not received the response yet.
+    bool awaiting_connection() const {
+        return not connection_established_time.has_value();
+    }
+
     void close();
 
     void request_shutdown();
@@ -126,6 +141,9 @@ private:
 
     // Only set for the duration of the on_packet() call; the packet buffer is reused afterwards.
     io::StreamInputView current_request_frame{};
+
+    std::optional<TimePoint> connection_established_time{std::nullopt};
+    bool dlink_setup_timer_anchor{false};
 
     bool driver_stopped{false};
     // The controller then drops the communication-setup timeout (is_v2g_session_established()).

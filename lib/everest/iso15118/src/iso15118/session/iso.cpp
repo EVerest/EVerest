@@ -15,6 +15,7 @@
 #include <iso15118/session/sap_engine.hpp>
 #include <iso15118/session/secc_engine.hpp>
 
+#include <iso15118/detail/d20/config_validation.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118 {
@@ -70,6 +71,7 @@ enum class V2GTPReadResult {
     complete,          //!< a full packet was read
     would_block,       //!< more data is needed to complete the packet
     connection_closed, //!< the peer closed the connection mid-read
+    invalid_header,    //!< the header was ill-formed and got discarded
 };
 } // namespace
 
@@ -77,6 +79,7 @@ enum class V2GTPReadResult {
 //            - would_block: it would block to read a complete packet
 //            - complete: the packet is complete
 //            - connection_closed: the peer closed the connection during the read
+//            - invalid_header: the header was ill-formed, the connection stays open
 V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPacket& sdp_packet) {
     // NOTE (aw): not happy with this function
     //            main problem is, that it combines too much logic of the sdp packet and io related stuff
@@ -101,6 +104,11 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     if (sdp_packet.get_state() == PacketState::COMPLETE) {
         // done
         return V2GTPReadResult::complete;
+    }
+
+    // Only the 8 header bytes are consumed: the declared length cannot be trusted to skip the payload.
+    if (sdp_packet.get_state() == PacketState::INVALID_HEADER) {
+        return V2GTPReadResult::invalid_header;
     }
 
     // packet not finished
@@ -318,6 +326,11 @@ TimePoint const& Session::poll() {
         case V2GTPReadResult::would_block:
             state.new_data = false;
             break;
+        case V2GTPReadResult::invalid_header:
+            // new_data stays set: bytes already buffered inside OpenSSL never raise poll() again.
+            logf_warning("Dropping V2GTP packet with an invalid header");
+            packet.reset();
+            break;
         case V2GTPReadResult::complete:
             break;
         }
@@ -354,6 +367,11 @@ TimePoint const& Session::poll() {
             logf_warning("Ignoring data received after the V2G session ended");
             packet.reset();
             state.new_data = false; // reset new_data flag
+        } else if (not io::v2gtp::is_known_payload_type(packet.get_payload_type())) {
+            // Dropped here, after the full frame was read, so the stream stays in sync.
+            logf_warning("Ignoring V2GTP packet with unknown payload type");
+            packet.reset();
+            state.new_data = false;
         } else if (in_sap_phase() and visit_engine([](const auto& e) { return e.has_outgoing(); })) {
             // The SupportedAppProtocolRes is staged but paced, so the handover has not happened. Keep the
             // packet for the engine that will own the protocol instead of failing it against the handshake
@@ -365,12 +383,14 @@ TimePoint const& Session::poll() {
             // Timestamp the request so -2/DIN and the handshake can pace their response after it.
             last_request_rx_time = now;
 
+            // A sequence timer is armed on accept and on every response; stop it as soon as the next request
+            // arrives, the SupportedAppProtocolReq included.
+            timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+
             if (not in_sap_phase()) {
                 // The first request to a protocol engine is the SessionSetupReq: the session is established, so
                 // V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
                 v2g_session_established = true;
-                // A sequence timer is armed on every response; stop it as soon as the next request arrives.
-                timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
             }
 
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
@@ -511,10 +531,12 @@ bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
                                           vehicle_cert_hash);
             return true;
         case ProtocolId::ISO15118_2:
+            dlink_setup_timer_anchor = true;
             engine.emplace<D2SeccEngine>(engine_output_view(), config, d2_pause_ctx, callbacks, timeouts,
                                          connection->is_secure());
             return true;
         case ProtocolId::DIN70121:
+            dlink_setup_timer_anchor = true;
             engine.emplace<DinSeccEngine>(engine_output_view(), config, callbacks, timeouts);
             return true;
         }
@@ -565,6 +587,7 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::ACCEPTED:
         assert(state.connected == false);
         state.connected = true;
+        connection_established_time = get_current_time_point();
         logf_info("Accepted connection on port %d", connection->get_public_endpoint().port);
         // Guard the wait for the first request with the sequence timeout, so an EV that connects and
         // sends nothing is closed rather than left open (EvseV2G parity).

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_2/variant.hpp>
 
 #include <cassert>
@@ -14,9 +14,6 @@
 namespace iso15118::message_2 {
 
 Variant::Variant(const io::StreamInputView& buffer_view) {
-
-    // So PnC signature verification can re-decode the request into the cbv2g iso2 structs.
-    exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
 
     auto input_stream = get_exi_input_stream(buffer_view);
 
@@ -87,6 +84,17 @@ Variant::Variant(const io::StreamInputView& buffer_view) {
         // A relay-only type carries no data but a valid type; only a genuinely unhandled message (type
         // still None) is an error.
         logf_error("Failed due to: %s\n", error.c_str());
+    }
+
+    switch (type) {
+    case Type::AuthorizationReq:
+    case Type::MeteringReceiptReq:
+    case Type::CertificateInstallationReq:
+    case Type::CertificateUpdateReq:
+        exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
+        break;
+    default:
+        break;
     }
 }
 

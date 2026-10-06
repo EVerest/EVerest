@@ -18,11 +18,14 @@
 #include <cstdint>
 #include <mutex>
 #include <optional>
+#include <string>
 #include <utility>
+#include <vector>
 
 #include <iso15118/message/v2g_message_type.hpp>
 
 #include "der_relay.hpp"
+#include "der_relay_sae.hpp"
 #include "der_setup.hpp"
 #include "grid_event.hpp"
 #include "utils.hpp"
@@ -105,15 +108,6 @@ private:
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     iso15118::session::feedback::Callbacks create_callbacks();
 
-    // The SECC leaf certificate chain backing the TLS server.
-    struct TlsChain {
-        std::string path_chain; //!< resolved chain file (multi-cert chain, or the single certificate)
-        types::evse_security::CertificateInfo info;
-    };
-    // Fetch the V2G leaf from the security module. nullopt when none is installed: TLS is then simply
-    // not offered rather than being a startup failure -- ISO 15118-2 still runs unsecured (EIM only) and
-    // DIN SPEC 70121 never uses TLS. Only ISO 15118-20 ([V2G20-2677]) and ENFORCE_TLS need it.
-    std::optional<TlsChain> acquire_tls_chain();
     // ISO 15118-20 may actually be offered: configured AND a TLS chain exists, since -20 is TLS-only
     // ([V2G20-2677]). Decided once in ready() and honoured by handle_update_supported_app_protocols too,
     // so a runtime offer update cannot switch -20 back on when there is no certificate. Atomic: written
@@ -151,9 +145,19 @@ private:
     std::bitset<12> ev_selected_der_control_functions;
 
     // Serializes apply_active_der_directives so the per-name update loop cannot interleave between two
-    // concurrent applies and leave a mixed DER-function map. Outermost lock; acquired before GEL.
+    // concurrent applies and leave a mixed DER-function map.
+    //
+    // Lock rank, outermost first: der_apply_mutex > GEL > TbdController::evse_setup (a util::monitor, not a
+    // std::mutex). Never acquired in the reverse order. Calling the controller under GEL is therefore
+    // allowed, and relay_sae_grid_code and update_der_limits_locked both do so.
     std::mutex der_apply_mutex;
     void apply_active_der_directives();
+    // SAE half of apply_active_der_directives. Maps on the caller's GEL snapshot without GEL held, then
+    // re-acquires it to validate against the current limits and commit. Called with der_apply_mutex held.
+    void relay_sae_grid_code(const types::grid_support::ActiveDirectiveSet& directives,
+                             iso15118::TbdController& controller_ref, float nominal_voltage_v,
+                             float nominal_frequency_hz, const iso15118::d20::DerSaeSetupConfig& current_sae,
+                             std::uint32_t applied_revision, const std::optional<module::SaeRelayInput>& applied_input);
 
     // hlc_session_failed derivation: the last V2G message handled this session (loop thread only, from
     // the v2g_message feedback) is mapped to a reason at teardown.
@@ -197,6 +201,14 @@ private:
     // Nominal voltage and frequency reported by the last logged Ready derivation, so a change to the
     // advertised grid values is re-logged instead of staying hidden. Guarded by GEL.
     std::optional<std::pair<std::uint32_t, float>> logged_sae_nominal;
+
+    // Revision of the SAE grid code last dictated from grid_support directives. Bumped only when the
+    // relay input changes, so an AC-limits re-derivation re-pushes the same revision and the session stays
+    // quiet. Guarded by GEL.
+    std::uint32_t sae_grid_code_revision{0};
+    // Relay input behind sae_grid_code_revision. Seeded with the empty set on every derivation that assigns
+    // SAE limits while the held config is still the seed (revision 0); nullopt until the first. Guarded by GEL.
+    std::optional<module::SaeRelayInput> sae_applied_input;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

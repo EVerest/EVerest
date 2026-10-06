@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2025 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
@@ -62,12 +62,8 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
 
 std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar);
 
-std::string der_chain_to_pem(const std::vector<uint8_t>& leaf_der, const std::vector<std::vector<uint8_t>>& subs_der);
-
 // CommonName with '-' removed, so it matches the leaf CN the SECC cross-checks.
 std::string emaid_from_contract_der(const std::vector<uint8_t>& leaf_der);
-
-std::vector<std::vector<uint8_t>> pem_chain_to_der(const std::string& pem);
 
 // The serial is truncated to int64 -- a known simplification, matching the ISO 15118-20 layer.
 message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der);
