@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
+    DcSetpointTest.cpp
     IECStateMachineTest.cpp
     PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
@@ -36,6 +37,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../SessionLog.cpp
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
+    ../dc_setpoint.cpp
     ../powermeter_limits.cpp
     ../cable_check/PowerSupplyMeasurementWaiter.cpp
     ../over_voltage/OverVoltageMonitor.cpp
