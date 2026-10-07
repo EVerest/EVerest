@@ -74,6 +74,12 @@ void Diagnostics::handle_message(const ocpp::EnhancedMessage<MessageType>& messa
 void Diagnostics::notify_event_req(const std::vector<EventData>& events) {
     NotifyEventRequest req;
     req.eventData = events;
+    if (this->context.ocpp_version != OcppProtocolVersion::v21) {
+        // severity was introduced in OCPP 2.1; OCPP 2.0.1 EventDataType allows no additional properties
+        for (auto& event : req.eventData) {
+            event.severity.reset();
+        }
+    }
     req.generatedAt = DateTime();
     req.seqNo = 0;
 
