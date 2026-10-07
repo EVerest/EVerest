@@ -200,6 +200,14 @@ TEST_F(ConnectionHandleTest, truncated_payload_is_not_forwarded) {
     EXPECT_FALSE(first_proxy_call().called);
 }
 
+TEST_F(ConnectionHandleTest, handshake_with_wrong_payload_type_is_not_forwarded) {
+    auto ev_data = supported_app_protocol_req(DIN_70121_MSG_DEF);
+    ev_data[3] = V2GTP20_MAINSTREAM_PAYLOAD_ID & 0xFF;
+    handle(ev_data);
+
+    EXPECT_FALSE(first_proxy_call().called);
+}
+
 TEST_F(ConnectionHandleTest, peer_close_before_handshake_ends_connection) {
     handle({});
 

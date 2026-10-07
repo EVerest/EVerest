@@ -51,7 +51,7 @@ static int v2g_incoming_v2gtp(struct v2g_connection* conn) {
     }
 
     rv = V2GTP_ReadHeader(conn->buffer, &conn->payload_len);
-    if (rv == -1) {
+    if (rv != V2GTP_ERROR__NO_ERROR) {
         dlog(DLOG_LEVEL_ERROR, "Invalid v2gtp header");
         return -1;
     }
