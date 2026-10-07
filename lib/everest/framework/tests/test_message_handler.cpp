@@ -701,6 +701,29 @@ TEST_CASE("MessageHandler processes ExternalMQTT messages", "[message_handler][e
     CHECK(events[0].sequence == 123);
 }
 
+TEST_CASE("MessageHandler delivers an ExternalMQTT payload that is not valid UTF-8",
+          "[message_handler][external_mqtt]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.is_string() ? 1 : 0); });
+    handler->register_handler("external/topic",
+                              std::make_shared<TypedHandler>(HandlerType::ExternalMQTT, handler_func));
+
+    ParsedMessage msg;
+    msg.topic = "external/topic";
+    msg.data = std::string("\xff\xfe");
+
+    CHECK_NOTHROW(handler->add(msg));
+
+    tracker.wait_for_count(1);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 1);
+}
+
 TEST_CASE("MessageHandler handles ExternalMQTT with wildcard topics", "[message_handler][external_mqtt]") {
     MessageHandlerFixture handler;
     ExecutionTracker tracker;

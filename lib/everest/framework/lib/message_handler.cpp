@@ -207,7 +207,8 @@ void MessageHandler::add(const ParsedMessage& message) {
         return;
     }
 
-    EVLOG_verbose << "Adding message to queue: " << message.topic << " with data: " << message.data;
+    EVLOG_verbose << "Adding message to queue: " << message.topic
+                  << " with data: " << message.data.dump(-1, ' ', false, json::error_handler_t::replace);
 
     const auto msg_type = get_msg_type(message.data);
     if (!msg_type.has_value()) {
