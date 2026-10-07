@@ -93,7 +93,7 @@ Known limitations:
 
 The wrapper is built as part of EVerest's `applications/` tree when
 `-DEVEREST_BUILD_APPLICATIONS=ON` is set (the default). It links against
-the in-tree `cbv2g::*` targets exported by `lib/everest/cbv2g`, so no
+the in-tree `everest::cbv2g::*` targets exported by `lib/everest/cbv2g`, so no
 external dependency setup is required.
 
 ## Tests

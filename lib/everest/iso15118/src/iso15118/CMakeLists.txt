@@ -1,7 +1,6 @@
 find_package(Threads REQUIRED)
 
 add_library(iso15118)
-add_library(iso15118::iso15118 ALIAS iso15118)
 add_library(everest::iso15118 ALIAS iso15118)
 target_include_directories(iso15118
     PUBLIC
@@ -174,10 +173,10 @@ target_sources(iso15118
 target_link_libraries(iso15118
     PUBLIC
         # FIXME (aw): would be nice if we could make this private!
-        everest::tp
-        everest::iso20
-        everest::iso2
-        everest::din
+        everest::cbv2g::tp
+        everest::cbv2g::iso20
+        everest::cbv2g::iso2
+        everest::cbv2g::din
         everest::util
     PRIVATE
         Threads::Threads

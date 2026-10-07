@@ -1,7 +1,6 @@
 find_package(Threads REQUIRED)
 
 add_library(ieee2030)
-add_library(ieee2030::ieee2030 ALIAS ieee2030)
 add_library(everest::ieee2030 ALIAS ieee2030)
 
 target_sources(ieee2030

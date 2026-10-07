@@ -1,9 +1,9 @@
 add_library(test_utilities OBJECT codec.cpp)
 target_link_libraries(test_utilities
     PUBLIC
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::iso20
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::iso20
 )
 
 target_include_directories(test_utilities

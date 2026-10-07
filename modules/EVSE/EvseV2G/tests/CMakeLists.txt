@@ -48,9 +48,9 @@ target_sources(${TLS_GTEST_NAME} PRIVATE
 
 target_link_libraries(${TLS_GTEST_NAME} PRIVATE
     GTest::gtest
-    everest::din
-    everest::iso2
-    everest::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::framework
     everest::evse_security
     everest::tls
@@ -84,9 +84,9 @@ target_sources(${V2G_MAIN_NAME} PRIVATE
 )
 
 target_link_libraries(${V2G_MAIN_NAME} PRIVATE
-    everest::din
-    everest::iso2
-    everest::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::log
     everest::framework
     everest::evse_security
@@ -128,9 +128,9 @@ target_link_libraries(${DIN_SERVER_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        everest::din
-        everest::iso2
-        everest::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -164,7 +164,7 @@ target_sources(${SDP_NAME} PRIVATE
 target_link_libraries(${SDP_NAME}
     PRIVATE
         GTest::gtest_main
-        everest::tp
+        everest::cbv2g::tp
         everest::framework
         everest::tls
         everest::everest_api_types
@@ -202,9 +202,9 @@ target_link_libraries(${V2GCTX_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        everest::din
-        everest::iso2
-        everest::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -245,9 +245,9 @@ target_link_libraries(${ISO_SERVER_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls

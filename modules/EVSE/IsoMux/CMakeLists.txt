@@ -30,9 +30,9 @@ target_link_libraries(${MODULE_NAME} PUBLIC -lpthread)
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
-        everest::din
-        everest::iso2
-        everest::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
 )
 
 target_sources(${MODULE_NAME}
