@@ -426,6 +426,22 @@ TEST(ConnectionSlotTest, tcp_connection_thread_releases_its_slot) {
     EXPECT_EQ(ctx.active_connections, 0);
 }
 
+TEST(ConnectionWriteTest, write_to_closed_ev_socket_fails_without_signal) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    close(fds[1]);
+
+    v2g_context ctx{};
+    v2g_connection conn{};
+    conn.ctx = &ctx;
+    conn.conn.socket_fd = fds[0];
+    std::vector<uint8_t> data{0x01, 0x02, 0x03};
+
+    EXPECT_EQ(connection_write(&conn, data.data(), data.size()), -1);
+    EXPECT_EQ(errno, EPIPE);
+    close(fds[0]);
+}
+
 TEST(ConnectionReadTest, reads_from_descriptor_above_fd_setsize) {
     constexpr int high_fd = FD_SETSIZE + 16;
     rlimit limit{};

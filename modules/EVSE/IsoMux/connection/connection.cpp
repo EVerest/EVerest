@@ -336,7 +336,8 @@ ssize_t connection_write(struct v2g_connection* conn, unsigned char* buf, size_t
     while (bytes_written < count) {
         int num_of_bytes;
 
-        num_of_bytes = (int)write(conn->conn.socket_fd, &buf[bytes_written], count - bytes_written);
+        // MSG_NOSIGNAL: an EV that closed its socket must surface as EPIPE, not kill the process
+        num_of_bytes = (int)send(conn->conn.socket_fd, &buf[bytes_written], count - bytes_written, MSG_NOSIGNAL);
 
         if (num_of_bytes == -1) {
             if (errno == EINTR)
