@@ -38,6 +38,7 @@ cc_test(
         "tests/EventQueueTest.cpp",
         "tests/ErrorHandlingTest.cpp",
         "tests/IECStateMachineTest.cpp",
+        "tests/PpAmpacityForwarderTest.cpp",
         "tests/OverVoltageMonitorTest.cpp",
         "tests/VoltagePlausibilityMonitorTest.cpp",
         # Test stub headers

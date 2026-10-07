@@ -21,6 +21,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
+    PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
     SessionLogTest.cpp
