@@ -94,7 +94,7 @@
           "minLength": 1,
           "maxLength": 50
         },
-        "techInfo": {
+        "tech_info": {
           "description": "techInfo, replacing the error message. May contain ${actual_value}. Truncated to 500 characters.",
           "type": "string"
         },

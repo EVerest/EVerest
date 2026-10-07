@@ -34,7 +34,7 @@ constexpr auto TEMPERATURE_ENTRY = R"({
         "v16": {"error_code": "HighTemperature", "vendor_id": "com.example", "vendor_error_code": "T-210",
                 "info": "Temperature error raised at ${actual_value} deg"},
         "v2": {"tech_code": "T-210", "component_name": "Connector", "variable_name": "Temperature",
-               "severity": 3, "techInfo": "The Connector temperature is high"}
+               "severity": 3, "tech_info": "The Connector temperature is high"}
     }
 })";
 

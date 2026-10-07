@@ -160,7 +160,7 @@ V16Identity to_v16(const json& v16, const std::string& entry, std::vector<Findin
 V2Identity to_v2(const json& v2) {
     V2Identity identity;
     identity.tech_code = optional_string(v2, "tech_code");
-    identity.tech_info = optional_string(v2, "techInfo");
+    identity.tech_info = optional_string(v2, "tech_info");
     identity.component_name = optional_string(v2, "component_name");
     identity.component_instance = optional_string(v2, "component_instance");
     identity.variable_name = optional_string(v2, "variable_name");

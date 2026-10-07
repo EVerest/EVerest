@@ -150,7 +150,7 @@ std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping) {
             validate_text(entry, entry.v16->info.value(), {"v16", "info"}, V16_INFO_MAX_LENGTH, findings);
         }
         if (entry.v2.has_value() && entry.v2->tech_info.has_value()) {
-            validate_text(entry, entry.v2->tech_info.value(), {"v2", "techInfo"}, V2_TECH_INFO_MAX_LENGTH, findings);
+            validate_text(entry, entry.v2->tech_info.value(), {"v2", "tech_info"}, V2_TECH_INFO_MAX_LENGTH, findings);
         }
     }
     return findings;

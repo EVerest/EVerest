@@ -147,9 +147,9 @@ TEST(ErrorMappingLoaderTest, RejectsUnknownEntryField) {
 }
 
 TEST(ErrorMappingLoaderTest, RejectsUnknownSectionField) {
-    const auto finding = single_error(R"({"generic/VendorError": {"v2": {"tech_info": "x"}}})");
+    const auto finding = single_error(R"({"generic/VendorError": {"v2": {"techInfo": "x"}}})");
     EXPECT_EQ(finding.entry, "generic/VendorError");
-    EXPECT_THAT(finding.message, HasSubstr("tech_info"));
+    EXPECT_THAT(finding.message, HasSubstr("techInfo"));
 }
 
 TEST(ErrorMappingLoaderTest, RejectsWrongType) {

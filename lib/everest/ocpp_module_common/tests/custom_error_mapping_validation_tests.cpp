@@ -81,15 +81,15 @@ TEST(ErrorMappingBuiltinTest, ListsEntriesReplacingBuiltin) {
 
 TEST(ErrorMappingValuesTest, AcceptsActualValuePlaceholder) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {
-        "v16": {"info": "at ${actual_value} deg"}, "v2": {"techInfo": "${actual_value}${actual_value}"}}})");
+        "v16": {"info": "at ${actual_value} deg"}, "v2": {"tech_info": "${actual_value}${actual_value}"}}})");
     EXPECT_TRUE(validate_values(mapping).empty());
 }
 
 TEST(ErrorMappingValuesTest, RejectsUnknownPlaceholder) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"techInfo": "at ${actualValue} deg"}}})");
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actualValue} deg"}}})");
     const auto finding = single(validate_values(mapping));
     EXPECT_EQ(finding.level, Finding::Level::Error);
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/techInfo");
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_info");
     EXPECT_THAT(finding.message, HasSubstr("${actualValue}"));
 }
 

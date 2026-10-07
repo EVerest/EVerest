@@ -12,7 +12,7 @@
       "component_name": "Connector",
       "variable_name": "Temperature",
       "severity": 5,
-      "techInfo": "Failed at connector temperature ${actual_value} deg"
+      "tech_info": "Failed at connector temperature ${actual_value} deg"
     }
   },
   "evse_board_support/MREC3HighTemperature": {
@@ -27,7 +27,7 @@
       "component_name": "Connector",
       "variable_name": "Temperature",
       "severity": 3,
-      "techInfo": "The Connector temperature is high"
+      "tech_info": "The Connector temperature is high"
     }
   },
   "generic/VendorError#SurgeProtectionDevice1": {
