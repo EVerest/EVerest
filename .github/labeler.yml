@@ -26,7 +26,7 @@ ISO15118:
           - modules/EVSE/IsoMux/**
           - modules/EVSE/Iso15118InternetVas/**
           - modules/EVSE/StaticISO15118VASProvider/**
-          - modules/EV/PyEvJosev/**
+          - modules/EV/Ev15118/**
           - lib/everest/iso15118/**
           - lib/everest/cbv2g/**
           - applications/cbv2g_json_wrapper/**

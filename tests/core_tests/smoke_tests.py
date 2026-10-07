@@ -9,7 +9,7 @@ import struct
 from datetime import datetime, timezone
 from unittest.mock import Mock
 from copy import deepcopy
-from typing import Dict
+from typing import Dict, Optional
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
@@ -39,14 +39,18 @@ class AcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, ac_hlc_use_5percent: bool = True, hlc_charge_loop_without_energy_timeout_s: int = 300):
+    def __init__(self, ac_hlc_use_5percent: bool = True, hlc_charge_loop_without_energy_timeout_s: int = 300,
+                 switch_3ph1ph_time_hysteresis_s: Optional[int] = None):
         self.ac_hlc_use_5percent = ac_hlc_use_5percent
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
+        self.switch_3ph1ph_time_hysteresis_s = switch_3ph1ph_time_hysteresis_s
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
         adjusted_config["active_modules"]["connector_1"]["config_module"]["ac_hlc_use_5percent"] = self.ac_hlc_use_5percent
         adjusted_config["active_modules"]["connector_1"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
+        if self.switch_3ph1ph_time_hysteresis_s is not None:
+            adjusted_config["active_modules"]["energy_manager"]["config_module"]["switch_3ph1ph_time_hysteresis_s"] = self.switch_3ph1ph_time_hysteresis_s
         return adjusted_config
 
 class RequestZeroPowerInIdleAdjustmentStrategy(EverestConfigAdjustmentStrategy):
@@ -80,14 +84,17 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config = deepcopy(everest_config)
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_DIN70121"] = False
         adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_2"] = not self.ev_d20_only
-        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20_DC"] = self.ev_d20_only
+        adjusted_config["active_modules"]["iso15118_car"]["config_module"]["supported_ISO15118_20"] = self.ev_d20_only
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hack_allow_bpt_with_iso2"] = False
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
-        # PyEvJosev signs ISO 15118-20 PnC with P-256, which the Annex B profile check rejects
+        # Ev15118 has no ISO 15118-20 Plug and Charge, so the SECC offers a -20 only EV EIM alone
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract and not self.ev_d20_only
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
+        if self.force_payment_option:
+            # Ev15118 offers Contract only over TLS
+            adjusted_config["active_modules"]["iso15118_car"]["config_module"]["tls_active"] = True
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
         return adjusted_config
@@ -644,7 +651,10 @@ async def test_iso15118_ac_session_stop_by_evse(
 @pytest.mark.asyncio
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
-    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "charger": [Requirement("iso_mux", "charger")],
+    }
 )
 @pytest.mark.everest_core_config("config-sil-dc-isomux.yaml")
 @pytest.mark.parametrize(
@@ -666,11 +676,17 @@ async def test_iso15118_dc_session(
     iso15118_version,test_controller: TestController, everest_core: EverestCore
 ):
     """Test session events of an ISO 15118 DC charging session."""
-    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
 
+    selected_protocol_mock = Mock()
+    probe_module.subscribe_variable("charger", "selected_protocol", selected_protocol_mock)
+
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+    expected_protocol = "ISO15118-2-2013" if iso15118_version == "iso15118_dc_d2" else "ISO15118-20:DC"
+    assert selected_protocol_mock.call_args[0][0] == expected_protocol
 
 
 @pytest.mark.asyncio
@@ -930,7 +946,8 @@ async def test_pwm_ac_session_no_energy_before_session(
         "gcp": [Requirement("grid_connection_point", "external_limits")],
     }
 )
-@pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy())
+# The 0 W limit makes 1ph optimal; with the time hysteresis the 3ph switch after the raise depends on session timing.
+@pytest.mark.everest_config_adaptions(AcConfigAdjustmentStrategy(switch_3ph1ph_time_hysteresis_s=0))
 @pytest.mark.everest_core_config("config-sil.yaml")
 async def test_iso15118_ac_session_no_energy_before_session(
     test_controller: TestController, everest_core: EverestCore
