@@ -123,9 +123,10 @@ active_modules:
   iso15118_car:
     config_module:
       device: auto
+      supported_ISO15118_20: false
       supported_ISO15118_2: true
     connections: {}
-    module: PyEvJosev
+    module: Ev15118
   iso15118_charger:
     config_module:
       device: auto

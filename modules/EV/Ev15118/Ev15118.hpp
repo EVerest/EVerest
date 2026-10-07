@@ -25,6 +25,7 @@ struct Conf {
     int response_timeout_ms;
     int authorization_timeout_ms;
     std::string d20_control_mode;
+    bool supported_ISO15118_20;
     bool supported_DIN70121;
     bool supported_ISO15118_2;
     bool tls_active;
