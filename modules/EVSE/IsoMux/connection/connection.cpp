@@ -427,7 +427,12 @@ void* connection_handle(void* data) {
 
     /* check if the v2g-session is already running in another thread, if not, handle v2g-connection */
     if (conn->ctx->state == 0) {
-        iso20 = v2g_detect_iso20_support(conn);
+        const auto handshake = v2g_detect_iso20_support(conn);
+        if (handshake == HandshakeResult::Failed) {
+            dlog(DLOG_LEVEL_ERROR, "No valid SupportedAppProtocolReq received, closing connection");
+            return nullptr;
+        }
+        iso20 = handshake == HandshakeResult::Iso20Offered;
     } else {
         rv = ERROR_SESSION_ALREADY_STARTED;
         dlog(DLOG_LEVEL_WARNING, "%s", "Closing tcp-connection. v2g-session is already running");
