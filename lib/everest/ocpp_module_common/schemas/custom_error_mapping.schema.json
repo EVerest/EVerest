@@ -100,7 +100,7 @@
           "maxLength": 50
         },
         "info": {
-          "description": "info, replacing the error message. May contain ${actual_value}. Truncated to 50 characters.",
+          "description": "info, replacing the error message. May contain ${actual_value} and the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters.",
           "type": "string"
         }
       },
@@ -117,7 +117,7 @@
           "maxLength": 50
         },
         "techInfo": {
-          "description": "techInfo, replacing the error message. May contain ${actual_value}. Truncated to 500 characters.",
+          "description": "techInfo, replacing the error message. May contain ${actual_value} and the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 500 characters.",
           "type": "string"
         },
         "component_name": {

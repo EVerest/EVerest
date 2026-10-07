@@ -98,10 +98,10 @@ TEST_F(GenericOcppErrorDispatch, FaultConnectorFromOrigin) {
     ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(1, 2)));
 }
 
-// a live fault goes to the EVSE the handler was subscribed for, whatever the origin mapping says
+// a live fault and its event go to the EVSE the handler was subscribed for, whatever the origin mapping says
 TEST_F(GenericOcppErrorDispatch, LiveFaultWithoutOriginMappingUsesSubscribedEvse) {
     InSequence seq;
-    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 0)));
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 2)));
     EXPECT_CALL(chargepoint, on_faulted(2, 1));
 
     ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
@@ -109,7 +109,7 @@ TEST_F(GenericOcppErrorDispatch, LiveFaultWithoutOriginMappingUsesSubscribedEvse
 
 TEST_F(GenericOcppErrorDispatch, LiveFaultWithMismatchedMappingUsesSubscribedEvse) {
     InSequence seq;
-    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 2)));
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 1)));
     EXPECT_CALL(chargepoint, on_faulted(1, 1));
 
     ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(2, 1)));
@@ -216,8 +216,9 @@ protected:
     }
 };
 
-// EvseManager Inoperative faults raised before ready() are queued under the EVSE of the origin
-// mapping, 0 without one, and replayed on that EVSE rather than on the subscribed one
+// EvseManager Inoperative faults raised before ready() are queued under the EVSE the handler was
+// subscribed for and replayed on it, whatever the origin mapping says. libocpp rejects EVSE 0 in
+// on_faulted/on_fault_cleared with EvseOutOfRangeException.
 using GenericOcppFaultQueue = GenericOcppNotStarted;
 
 TEST_F(GenericOcppErrorQueue, QueuedErrorsAreHeldUntilReady) {
@@ -278,35 +279,34 @@ TEST_F(GenericOcppErrorQueue, QueuedReplayCanSendDecreasingEventIds) {
     EXPECT_EQ(events[2].event_id, events[1].event_id - 1);
 }
 
-// OCPP 2.x libocpp rejects EVSE 0 in on_faulted/on_fault_cleared with EvseOutOfRangeException
-TEST_F(GenericOcppFaultQueue, QueuedFaultWithoutOriginMappingFaultsEvseZero) {
+TEST_F(GenericOcppFaultQueue, QueuedFaultWithoutOriginMappingFaultsSubscribedEvse) {
     ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
 
     InSequence seq;
     EXPECT_CALL(chargepoint, on_event(raised()));
-    EXPECT_CALL(chargepoint, on_faulted(0, 1));
+    EXPECT_CALL(chargepoint, on_faulted(2, 1));
     start();
 }
 
-TEST_F(GenericOcppFaultQueue, QueuedFaultClearWithoutOriginMappingClearsEvseZero) {
+TEST_F(GenericOcppFaultQueue, QueuedFaultClearWithoutOriginMappingClearsSubscribedEvse) {
     const auto error = make_error(INOPERATIVE, std::nullopt);
     ocpp->cb_fault_handler(2, error);
     ocpp->cb_fault_cleared_handler(2, error);
 
     InSequence seq;
     EXPECT_CALL(chargepoint, on_event(raised()));
-    EXPECT_CALL(chargepoint, on_faulted(0, 1));
+    EXPECT_CALL(chargepoint, on_faulted(2, 1));
     EXPECT_CALL(chargepoint, on_event(cleared()));
-    EXPECT_CALL(chargepoint, on_fault_cleared(0, 1));
+    EXPECT_CALL(chargepoint, on_fault_cleared(2, 1));
     start();
 }
 
-TEST_F(GenericOcppFaultQueue, QueuedFaultWithMismatchedMappingFaultsMappedEvse) {
+TEST_F(GenericOcppFaultQueue, QueuedFaultWithMismatchedMappingFaultsSubscribedEvse) {
     ocpp->cb_fault_handler(1, make_error(INOPERATIVE, Mapping(2, 1)));
 
     InSequence seq;
     EXPECT_CALL(chargepoint, on_event(_));
-    EXPECT_CALL(chargepoint, on_faulted(2, 1));
+    EXPECT_CALL(chargepoint, on_faulted(1, 1));
     start();
 }
 
@@ -319,12 +319,12 @@ TEST_F(GenericOcppFaultQueue, QueuedFaultWithMatchingMapping) {
     start();
 }
 
-// the reported event keeps the EVSE from the origin, as on the live path
-TEST_F(GenericOcppFaultQueue, QueuedFaultKeepsOriginInEvent) {
+// the reported event carries the subscribed EVSE, as on the live path
+TEST_F(GenericOcppFaultQueue, QueuedFaultCarriesSubscribedEvseInEvent) {
     ocpp->cb_fault_handler(2, make_error(INOPERATIVE, std::nullopt));
 
     InSequence seq;
-    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 0)));
+    EXPECT_CALL(chargepoint, on_event(Field(&EventInfo::evse_id, 2)));
     EXPECT_CALL(chargepoint, on_faulted(_, _));
     start();
 }

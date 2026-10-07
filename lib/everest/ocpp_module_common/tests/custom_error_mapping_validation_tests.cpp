@@ -85,6 +85,12 @@ TEST(ErrorMappingValuesTest, AcceptsActualValuePlaceholder) {
     EXPECT_TRUE(validate_values(mapping).empty());
 }
 
+TEST(ErrorMappingValuesTest, AcceptsErrorPlaceholders) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"info": "${severity} on ${evse}/${connector}"}, "v2": {"techInfo": "${type}: ${message} [${uuid}]"}}})");
+    EXPECT_TRUE(validate_values(mapping).empty());
+}
+
 TEST(ErrorMappingValuesTest, RejectsUnknownPlaceholder) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"techInfo": "at ${actualValue} deg"}}})");
     const auto finding = single(validate_values(mapping));

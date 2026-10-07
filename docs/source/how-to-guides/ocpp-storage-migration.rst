@@ -27,13 +27,18 @@ the module config keys as described below for the module you are coming from.
 Coming from OCPP201
 -------------------
 
-All ``OCPP201`` config keys exist unchanged in OCPPmulti:
+These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
 ``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
-``DelayOcppStart``, ``ResetStopDelay``, and ``CustomMrecErrorMapPath``.
+``DelayOcppStart``, and ``ResetStopDelay``.
+
+``CustomMrecErrorMapPath`` is replaced by ``CustomErrorMappingPath``, which
+takes a file in a different format. Each override ``"<error type>": "<techCode>"``
+of the old file becomes ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``;
+see :ref:`OCPPmulti error reporting <handwritten_ocppmulti_error-reporting>`.
 
 One new module config key is relevant: ``Mode`` selects the protocol
 generation. Its default ``Only2`` runs OCPP 2.x, matching the behavior of the

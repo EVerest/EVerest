@@ -67,6 +67,29 @@ TEST(CustomFileErrorMappingTest, ReportsTheFieldsOfTheEntry) {
     EXPECT_EQ(v2->cleared, false);
 }
 
+TEST(CustomFileErrorMappingTest, SubstitutesErrorPlaceholdersInTexts) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"info": "${severity}: ${message}"},
+        "v2": {"techInfo": "${type}#${sub_type} at ${actual_value} deg: ${message}"}}})");
+    auto error = error_of("generic/VendorError", "Spd");
+    error.severity = Everest::error::Severity::Medium;
+
+    const auto v16 = mapping->try_convert(error);
+    ASSERT_TRUE(v16.has_value());
+    EXPECT_EQ(v16->info.value().get(), "Medium: sensor reports fault");
+
+    const auto v2 = mapping->try_convert(error, false, 1);
+    ASSERT_TRUE(v2.has_value());
+    EXPECT_EQ(v2->techInfo.value().get(), "generic/VendorError#Spd at ${actual_value} deg: sensor reports fault");
+}
+
+TEST(CustomFileErrorMappingTest, TruncatesInfoAfterSubstitution) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "${message}"}}})");
+    const auto v16 = mapping->try_convert(error_of("generic/VendorError", "", std::string(60, 'm')));
+    ASSERT_TRUE(v16.has_value());
+    EXPECT_EQ(v16->info.value().get(), std::string(50, 'm'));
+}
+
 TEST(CustomFileErrorMappingTest, UnsetFieldsFollowFromTheError) {
     const auto mapping = mapping_of(
         R"({"generic/VendorError": {"v16": {"vendor_error_code": "X"}, "v2": {"variable_name": "Tripped"}}})");

@@ -3,6 +3,8 @@
 
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
 
+#include <everest/ocpp_module_common/error_placeholders.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -260,7 +262,8 @@ std::optional<ocpp::v16::ErrorInfo> CustomFileErrorMapping::try_convert(const Ev
         result.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v16.info.has_value()) {
-        result.info = ocpp::CiString<50>(v16.info.value(), ocpp::StringTooLarge::Truncate);
+        result.info =
+            ocpp::CiString<50>(substitute_error_placeholders(error, v16.info.value()), ocpp::StringTooLarge::Truncate);
     }
     return result;
 }
@@ -279,7 +282,8 @@ std::optional<ocpp::v2::EventData> CustomFileErrorMapping::try_convert(const Eve
         result.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.tech_info.has_value()) {
-        result.techInfo = ocpp::CiString<500>(v2.tech_info.value(), ocpp::StringTooLarge::Truncate);
+        result.techInfo = ocpp::CiString<500>(substitute_error_placeholders(error, v2.tech_info.value()),
+                                              ocpp::StringTooLarge::Truncate);
     }
     if (v2.component_name.has_value()) {
         result.component.name = ocpp::CiString<50>(v2.component_name.value(), ocpp::StringTooLarge::Truncate);

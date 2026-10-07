@@ -8,6 +8,7 @@
 #include <utility>
 
 #include <everest/ocpp_module_common/error_mapping.hpp>
+#include <everest/ocpp_module_common/error_placeholders.hpp>
 #include <nlohmann/json.hpp>
 #include <utils/error/error_type_map.hpp>
 
@@ -16,7 +17,7 @@ namespace ocpp_module_common::custom_error_mapping {
 namespace {
 
 constexpr std::string_view PLACEHOLDER_START = "${";
-constexpr std::string_view ACTUAL_VALUE_PLACEHOLDER = "${actual_value}";
+constexpr std::string_view ACTUAL_VALUE_PLACEHOLDER = "actual_value";
 constexpr std::size_t V16_INFO_MAX_LENGTH = 50;
 constexpr std::size_t V2_TECH_INFO_MAX_LENGTH = 500;
 constexpr auto DEFAULT_COMPONENT_NAME = "EVSE";
@@ -64,11 +65,11 @@ void validate_text(const Entry& entry, const std::string& text, std::initializer
                 finding(Finding::Level::Error, entry, pointer(entry, path), "unterminated placeholder, missing '}'"));
             return;
         }
-        const auto placeholder = std::string_view(text).substr(start, end - start + 1);
-        if (placeholder != ACTUAL_VALUE_PLACEHOLDER) {
+        const auto name_begin = start + PLACEHOLDER_START.size();
+        const auto name = std::string_view(text).substr(name_begin, end - name_begin);
+        if (name != ACTUAL_VALUE_PLACEHOLDER && !is_error_placeholder(name)) {
             findings.push_back(finding(Finding::Level::Error, entry, pointer(entry, path),
-                                       "unknown placeholder '" + std::string(placeholder) + "', only '" +
-                                           std::string(ACTUAL_VALUE_PLACEHOLDER) + "' is supported"));
+                                       "unknown placeholder '" + text.substr(start, end - start + 1) + "'"));
         }
         pos = end + 1;
     }
