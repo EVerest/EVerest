@@ -2541,7 +2541,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
                                   raw_ev_target_current.load(),
                                   latest_evse_max_current.load(),
                                   latest_evse_max_discharge_current.load(),
-                                  current_demand};
+                                  current_demand,
+                                  power_supply_DC_charging_phase.load()};
     if (last_dc_setpoint_inputs == inputs) {
         return true;
     }
