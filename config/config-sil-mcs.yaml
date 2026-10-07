@@ -1,3 +1,5 @@
+# MCS SIL. auto_exec is off: start the car with iso_start_v2g_session MCS, as auto_exec_commands
+# does. A DC start on the cMCS connector fails at ServiceDiscovery.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -8,15 +10,13 @@ active_modules:
         - module_id: evse_security
           implementation_id: main
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
       device: auto
       supported_DIN70121: false
       supported_ISO15118_2: false
-      supported_ISO15118_20_DC: true
       tls_active: true
       enable_tls_1_3: true
-      supported_d20_energy_services: MCS
   evse_manager:
     module: EvseManager
     config_module:
@@ -70,7 +70,7 @@ active_modules:
       connector_id: 1
       auto_enable: true
       auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
+      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session MCS;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:

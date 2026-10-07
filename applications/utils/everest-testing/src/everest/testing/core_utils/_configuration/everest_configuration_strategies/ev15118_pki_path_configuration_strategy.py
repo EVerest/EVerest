@@ -11,13 +11,14 @@ from everest.testing.core_utils._configuration.everest_configuration_strategies.
     EverestConfigAdjustmentStrategy
 
 
-class PyEvJosevPkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
-    """ Gives every PyEvJosev module a private copy of the EV certificates.
+class Ev15118PkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
+    """ Gives every Ev15118 module a private copy of the EV certificates.
 
-    PyEvJosev writes an installed contract certificate and its key into its PKI directory. Tests running in
-    parallel against one installation would otherwise share that directory, and one EV could read the key
-    another EV is writing at that moment. A pki_path already set in the configuration is kept, and without an
-    installed certs directory the modules keep their default.
+    Ev15118 reads the V2G root, the vehicle chain and key, the contract chain and key and the OEM provisioning
+    material from its PKI directory. Tests running in parallel against one installation would otherwise share
+    that directory, and one EV could read a certificate or key while another test installs or replaces it. A
+    pki_path already set in the configuration is kept, and without an installed certs directory the modules
+    keep their default.
     """
 
     def __init__(self, source_certificates_directory: Path, target_certificates_directory: Path):
@@ -29,7 +30,7 @@ class PyEvJosevPkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
         active_modules = (adjusted_config or {}).get("active_modules") or {}
 
         for module_cfg in active_modules.values():
-            if module_cfg.get("module") != "PyEvJosev":
+            if module_cfg.get("module") != "Ev15118":
                 continue
             config_module = module_cfg.setdefault("config_module", {})
             if config_module.get("pki_path"):
@@ -45,7 +46,7 @@ class PyEvJosevPkiPathConfigurationStrategy(EverestConfigAdjustmentStrategy):
             return True
         if not self._source_certificates_directory.is_dir():
             logging.warning(f"No certificates in {self._source_certificates_directory}; "
-                            "PyEvJosev keeps its default PKI directory")
+                            "Ev15118 keeps its default PKI directory")
             return False
         try:
             shutil.copytree(self._source_certificates_directory, self._target_certificates_directory)

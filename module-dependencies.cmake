@@ -22,9 +22,11 @@ ev_define_dependency(
     DEPENDENCY_NAME libocpp
     DEPENDENT_MODULES_LIST OCPP OCPP201 OCPPmulti)
 
-ev_define_dependency(
-    DEPENDENCY_NAME Josev
-    DEPENDENT_MODULES_LIST PyEvJosev)
+# the OCPP integration tests import the Josev Python package; no module needs it
+if(BUILD_TESTING AND NOT DEFINED EVEREST_DEPENDENCY_ENABLED_JOSEV
+        AND NOT "Josev" IN_LIST EVEREST_EXCLUDE_DEPENDENCIES)
+    set(EVEREST_DEPENDENCY_ENABLED_JOSEV ON)
+endif()
 
 ev_define_dependency(
     DEPENDENCY_NAME libcbv2g

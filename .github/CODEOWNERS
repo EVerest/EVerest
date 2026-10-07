@@ -39,7 +39,7 @@
 /modules/EnergyManagement/EnergyNode/ @corneliusclaussen @hikinggrass @pietfried @mlitre @djchhp
 /modules/EV/EvSlac/ @a-w50 @corneliusclaussen @SebaLukas @pietfried @hikinggrass
 /modules/EV/EvManager/ @SebaLukas @pietfried @james-ctc @mlitre @a-w50
-/modules/EV/PyEvJosev/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre @a-w50
+/modules/EV/Ev15118/ @SebaLukas @corneliusclaussen @pietfried @james-ctc @mlitre @a-w50
 /modules/EVSE/Auth/ @pietfried @corneliusclaussen @hikinggrass @mlitre @a-w50
 /modules/EVSE/Evse15118D20/ @SebaLukas @a-w50 @corneliusclaussen @pietfried @hikinggrass @james-ctc @mlitre
 /modules/EVSE/EvseManager/ @corneliusclaussen @SebaLukas @hikinggrass @pietfried @mlitre @djchhp @a-w50

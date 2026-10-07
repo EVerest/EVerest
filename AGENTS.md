@@ -8,7 +8,8 @@ CI also builds with Bazel.
 Libraries that once lived in separate `lib*` repositories are now in-tree under
 `lib/everest/` and are edited in place; there is no upstream repository to mirror them
 to. A few EVerest components are still external dependencies in `dependencies.yaml`,
-notably the Python Josev stack (`ext-switchev-iso15118`).
+notably the Python Josev stack (`ext-switchev-iso15118`), which only the OCPP
+integration tests use.
 
 Contributor policy (licensing, DCO, review, and the project's position on AI-generated
 contributions) is in `docs/source/project/contributing.rst`. This file covers mechanics
@@ -52,7 +53,11 @@ job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
 `-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
-defaults to ON, so development certificates need no extra flag.
+defaults to ON. Josev is fetched with `BUILD_TESTING=ON` and Python support
+enabled, unless explicitly disabled or excluded. When fetched, its CMake runs
+`iso15118/shared/pki/create_certs.sh` with that certificate option ON and fills
+`config/certs` for installation. A default configure without `BUILD_TESTING`
+does not fetch Josev or generate this development PKI.
 
 To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
 heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the

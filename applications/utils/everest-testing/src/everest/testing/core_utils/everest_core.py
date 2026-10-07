@@ -22,8 +22,8 @@ from ._configuration.everest_configuration_strategies.everest_configuration_stra
     EverestConfigAdjustmentStrategy
 from ._configuration.everest_configuration_strategies.probe_module_configuration_strategy import \
     ProbeModuleConfigurationStrategy
-from ._configuration.everest_configuration_strategies.pyevjosev_pki_path_configuration_strategy import \
-    PyEvJosevPkiPathConfigurationStrategy
+from ._configuration.everest_configuration_strategies.ev15118_pki_path_configuration_strategy import \
+    Ev15118PkiPathConfigurationStrategy
 
 STARTUP_TIMEOUT = 30
 
@@ -292,7 +292,7 @@ class EverestCore:
         everest_config.setdefault("active_modules", {})
         for strategy in everest_configuration_adjustment_strategies:
             everest_config = strategy.adjust_everest_configuration(everest_config)
-        everest_config = PyEvJosevPkiPathConfigurationStrategy(
+        everest_config = Ev15118PkiPathConfigurationStrategy(
             source_certificates_directory=self.etc_path / 'certs',
             target_certificates_directory=self._ev_certs_path).adjust_everest_configuration(everest_config)
         # The manager settings are passed in the settings file; the manager would ignore this block.
