@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Matching sub-machine: listens for CM_SLAC_PARM.REQ, runs one Session per EV in parallel and
 // handles CM_VALIDATE. Exits to Matched once a session completed, or to Failed.

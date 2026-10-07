@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Every dispatch into the state machine (interface commands, received frames, the I/O error
 // teardown) runs with the lifecycle monitor held: shutdown() destroys the controller under that

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Guards and actions of the WaitForLink sub-machine (link detection after CM_SLAC_MATCH.CNF; see wait_for_link.hpp).
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <ocpp/v16/charge_point_state_machine.hpp>
 #include <ocpp/v16/ocpp_enums.hpp>
 

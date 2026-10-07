@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // SlacEvent::send on a socket that never accepts a frame: after TX_FAILURE_THRESHOLD consecutive
 // rejections the error callback must report the link as failing, once, so the module raises a

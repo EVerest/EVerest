@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Commands reach the state machine through fd_event_handler::add_action, whose run_actions swallows
 // exceptions. FSMController therefore runs every posted command guarded: a throw is reported through

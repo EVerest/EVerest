@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef EVSE_SECURITY_CONSUMER_API_HPP
 #define EVSE_SECURITY_CONSUMER_API_HPP
 

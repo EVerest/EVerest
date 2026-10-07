@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "c4/yml/node.hpp"
 #include <charge_bridge/utilities/parse_config.hpp>
 #include <charge_bridge/utilities/string.hpp>

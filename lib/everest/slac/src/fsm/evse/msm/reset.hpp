@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Reset sub-machine: (re)generates the NMK and programs it into the modem with CM_SET_KEY.REQ,
 // then exits to ResetChip or Idle.

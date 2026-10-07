@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Tests for the module-readiness gate (main/lifecycle_gate.hpp): init() runs the event loop until
 // the PLC I/O bring-up settled (ready callback, error callback, shutdown or timeout), and the SLAC

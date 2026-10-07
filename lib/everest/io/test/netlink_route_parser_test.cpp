@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Tests for netlink/route_parser.cpp on hand-built rtnetlink datagrams; no socket, no privileges. Key case: carrier
 // is IFF_LOWER_UP, since a TAP created carrier-off is announced with IFF_RUNNING set until linkwatch corrects it.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Drives ConfigurationAPI through its registered MQTT handlers (as the manager's message
 // dispatcher would), backed by a FakeConfigService and the recording MockMQTTAbstraction.

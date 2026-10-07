@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Guards and actions of the Session sub-machine (one per CM_SLAC_PARM.REQ; see session.hpp).
 

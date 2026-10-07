@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Reboot detection from the MCU's uptime counter. A false positive here drops the tap carrier (the
 // reboot path synthesizes an all-zero link status), so the duplicate and wrap cases matter.

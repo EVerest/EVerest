@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Regression gate: every client alias must still resolve, instantiate, and stay on the side of
 // event_client_async_policy_v it was written for. That trait decides whether tx() buffers until the

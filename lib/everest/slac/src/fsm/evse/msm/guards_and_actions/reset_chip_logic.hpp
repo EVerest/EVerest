@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Guards and actions of the ResetChip sub-machine (modem reset after CM_SET_KEY; see reset_chip.hpp).
 

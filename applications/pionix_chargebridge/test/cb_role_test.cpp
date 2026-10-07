@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // charge_bridge.type: the station_id it derives and the cross-check against the role the MCU reports
 // it has latched. Both are pure functions, so this needs neither a config file nor a ChargeBridge.

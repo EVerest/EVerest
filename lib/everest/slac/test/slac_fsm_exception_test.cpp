@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // A consumer callback (publisher, sender, logger) that throws from inside a transition used to hit
 // Boost.MSM's default exception hook: abort in Debug, silent in Release with the machine carrying on

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // The enums in message_din/common_types.hpp hand-mirror the cbv2g generated din_* enums so
 // cb_convert_enum can static_cast between them. EXI encodes the numeric value, so a divergence (a

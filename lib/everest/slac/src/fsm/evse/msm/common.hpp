@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Shared building blocks of the EVSE SLAC state machine: includes, namespace setup, the session
 // flags and the vendor-specific link-status check states used by Matched and WaitForLink.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 // Runtime generated ISO 15118-20 test PKI (root -> sub-CA1 -> sub-CA2 -> leaf) on secp521r1, Ed448 or, for

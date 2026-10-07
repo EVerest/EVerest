@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 // Session sub-machine: one instance per CM_SLAC_PARM.REQ, driven by Matching (see matching.hpp).
 // Runs the sounding exchange for a single EV from CM_START_ATTEN_CHAR.IND to CM_SLAC_MATCH.CNF.
