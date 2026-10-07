@@ -4,6 +4,7 @@
 #include "tls_connection.hpp"
 #include "connection.hpp"
 #include "log.hpp"
+#include "proxy.hpp"
 #include "v2g.hpp"
 #include "v2g_server.hpp"
 #include <everest/tls/tls.hpp>
@@ -333,7 +334,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
     int ev_fd = conn->tls_connection->socket(); // underlying socket of TLS connection
 
     // SupportedAppProtocolReq message is still in buffer, we need to forward it to the external stack
-    write(proxy_fd, conn->buffer, conn->payload_len + 8);
+    if (not proxy_write(proxy_fd, conn->buffer, conn->payload_len + 8)) {
+        return -1;
+    }
 
     struct pollfd poll_list[2];
     poll_list[0].fd = proxy_fd;
@@ -360,7 +363,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
             break;
         } else if (r > 0) {
             // successfully read bytes, forward to proxy module
-            write(proxy_fd, buf, r);
+            if (not proxy_write(proxy_fd, buf, r)) {
+                return -1;
+            }
         }
 
         // check if SSL was actually waiting on write
@@ -390,7 +395,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
                 break;
             }
             // write data to EV
-            nrbytes = conn->write(conn, buf, nrbytes);
+            if (conn->write(conn, buf, nrbytes) != nrbytes) {
+                return -1;
+            }
         }
 
         if (poll_list[0].revents & POLLERR or poll_list[0].revents & POLLHUP or poll_list[0].revents & POLLNVAL) {

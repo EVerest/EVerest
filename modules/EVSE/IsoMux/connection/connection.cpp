@@ -481,7 +481,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
     int ev_fd = conn->conn.socket_fd;
 
     // SupportedAppProtocolReq message is still in buffer, we need to forward it to the external stack
-    write(proxy_fd, conn->buffer, conn->payload_len + 8);
+    if (not proxy_write(proxy_fd, conn->buffer, conn->payload_len + 8)) {
+        return -1;
+    }
 
     struct pollfd poll_list[2];
     poll_list[0].fd = proxy_fd;
@@ -512,7 +514,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
                 break;
             }
             // write data to EV
-            nrbytes = conn->write(conn, buf, nrbytes);
+            if (conn->write(conn, buf, nrbytes) != nrbytes) {
+                return -1;
+            }
         }
 
         if (poll_list[0].revents & POLLERR or poll_list[0].revents & POLLHUP or poll_list[0].revents & POLLNVAL) {
@@ -527,7 +531,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
                 break;
             }
             // write data to proxy
-            nrbytes = write(proxy_fd, buf, nrbytes);
+            if (not proxy_write(proxy_fd, buf, nrbytes)) {
+                return -1;
+            }
         }
 
         if (poll_list[1].revents & POLLERR or poll_list[1].revents & POLLHUP or poll_list[1].revents & POLLNVAL) {

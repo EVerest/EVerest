@@ -287,6 +287,7 @@ TEST_F(ConnectionHandleTest, peer_without_handshake_does_not_block_ev) {
 }
 
 std::vector<std::size_t> ev_write_counts;
+bool ev_write_fails{false};
 int ev_peer_fd{-1};
 
 ssize_t recording_write(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::size_t count) {
@@ -295,7 +296,7 @@ ssize_t recording_write(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::s
     if (ev_peer_fd >= 0) {
         close(std::exchange(ev_peer_fd, -1));
     }
-    return 0;
+    return ev_write_fails ? -1 : static_cast<ssize_t>(count);
 }
 
 ssize_t failing_read(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::size_t /*count*/, bool /*read_complete*/) {
@@ -310,6 +311,7 @@ class ConnectionProxyTest : public ::testing::Test {
 protected:
     void SetUp() override {
         ev_write_counts.clear();
+        ev_write_fails = false;
         int ev_fds[2];
         ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, ev_fds), 0);
         ev_fd = ev_fds[0];
@@ -362,6 +364,34 @@ TEST_F(ConnectionProxyTest, read_error_from_ev_is_not_forwarded_to_iso_stack) {
     ASSERT_EQ(received_len, static_cast<ssize_t>(handshake.size()));
     received.resize(received_len);
     EXPECT_EQ(received, handshake);
+}
+
+TEST_F(ConnectionProxyTest, failed_write_to_ev_ends_proxy) {
+    int proxy_fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, proxy_fds), 0);
+    ASSERT_EQ(write(proxy_fds[1], "res", 3), 3);
+    conn.read = &closed_read;
+    ev_write_fails = true;
+
+    const auto result = connection_proxy(&conn, proxy_fds[0]);
+    close(proxy_fds[0]);
+    close(proxy_fds[1]);
+
+    EXPECT_EQ(result, -1);
+    EXPECT_EQ(ev_write_counts.size(), 1U);
+}
+
+TEST_F(ConnectionProxyTest, failed_write_to_iso_stack_ends_proxy) {
+    int proxy_fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, proxy_fds), 0);
+    close(proxy_fds[1]);
+    conn.read = &closed_read;
+
+    const auto result = connection_proxy(&conn, proxy_fds[0]);
+    close(proxy_fds[0]);
+
+    EXPECT_EQ(result, -1);
+    EXPECT_TRUE(ev_write_counts.empty());
 }
 
 TEST(ConnectionSlotTest, slots_are_limited_and_reusable) {
