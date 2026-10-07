@@ -85,6 +85,14 @@ async def wait_for_mock_called(mock, call=None, timeout=10):
     await asyncio.wait_for(_await_called(), timeout=timeout)
 
 
+async def wait_for_mock_call_count(mock, count, timeout=10):
+    async def _await_calls():
+        while mock.call_count < count:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_calls(), timeout=timeout)
+
+
 async def wait_for_mock_call_matching(mock, predicate, timeout=10):
     """Waits for a call whose single argument satisfies predicate and returns that argument."""
 
@@ -106,6 +114,40 @@ async def wait_for_mock_call_matching(mock, predicate, timeout=10):
     return _matching_argument()
 
 
+def availability_calls(mock):
+    return [
+        entry.args[0]
+        for entry in mock.mock_calls
+        if entry.args and entry.args[0]["cmd_source"]["enable_source"] == "CSMS"
+    ]
+
+
+async def wait_for_firmware_availability_state(mock, state, count=1, timeout=10):
+    async def _await_calls():
+        while len(
+            [
+                call
+                for call in availability_calls(mock)
+                if call["cmd_source"]["enable_state"] == state
+            ]
+        ) < count:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_calls(), timeout=timeout)
+
+
+def publish_firmware_status(probe_module, status, request_id, disable_connectors=None):
+    update = {
+        "firmware_update_status": status,
+        "request_id": request_id,
+    }
+    if disable_connectors is not None:
+        update["firmware_update_metadata"] = {
+            "disable_connectors_during_install": disable_connectors
+        }
+    probe_module.publish_variable("system", "firmware_update_status", update)
+
+
 async def wait_for_connection_state(csms_connection, connected, timeout=15):
     async def _await_state():
         while csms_connection.is_connected != connected:
@@ -120,6 +162,206 @@ async def wait_for_connection_state(csms_connection, connected, timeout=15):
 @pytest.mark.probe_module(connections={"ocpp": [Requirement("ocpp", "ocpp_generic")]})
 @pytest.mark.asyncio
 class TestOCPP16GenericInterfaceIntegration:
+
+    async def test_firmware_install_scheduled_notifies_once_per_cycle(
+        self, _env
+    ):
+        availability_mocks = [
+            _env.probe_module_command_mocks[implementation]["enable_disable"]
+            for implementation in ("evse_manager", "evse_manager_b")
+        ]
+        installation_mock = _env.probe_module_command_mocks["system"][
+            "allow_firmware_installation"
+        ]
+        for mock in availability_mocks:
+            mock.reset_mock()
+        installation_mock.reset_mock()
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=41,
+            disable_connectors=True,
+        )
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+        await wait_for_mock_call_count(installation_mock, 1)
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=41,
+            disable_connectors=True,
+        )
+        publish_firmware_status(_env.probe_module, "Installed", request_id=41)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+        assert installation_mock.call_count == 1
+        for mock in availability_mocks:
+            states = [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ]
+            assert set(states[: states.index("Enable")]) == {"Disable"}
+            mock.reset_mock()
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=42,
+            disable_connectors=True,
+        )
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+            assert set(
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ) == {"Disable"}
+        await wait_for_mock_call_count(installation_mock, 2)
+
+        publish_firmware_status(_env.probe_module, "Idle", request_id=42)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=42,
+            disable_connectors=True,
+        )
+        publish_firmware_status(_env.probe_module, "Installed", request_id=42)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+        assert installation_mock.call_count == 2
+
+    async def test_firmware_install_scheduled_explicit_false_keeps_connectors_available(
+        self, _env
+    ):
+        availability_mocks = [
+            _env.probe_module_command_mocks[implementation]["enable_disable"]
+            for implementation in ("evse_manager", "evse_manager_b")
+        ]
+        for mock in availability_mocks:
+            mock.reset_mock()
+        status_mock = (
+            _env.csms_mock.on_signed_update_firmware_status_notificaion
+        )
+        status_mock.reset_mock()
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=51,
+            disable_connectors=False,
+        )
+        publish_firmware_status(
+            _env.probe_module,
+            "Installing",
+            request_id=51,
+            disable_connectors=False,
+        )
+        await wait_for_mock_call_count(status_mock, 2)
+
+        for mock in availability_mocks:
+            assert availability_calls(mock) == []
+
+    async def test_firmware_metadata_default_uses_unsigned_downloaded_phase(self, _env):
+        availability_mocks = [
+            _env.probe_module_command_mocks[implementation]["enable_disable"]
+            for implementation in ("evse_manager", "evse_manager_b")
+        ]
+        for mock in availability_mocks:
+            mock.reset_mock()
+
+        publish_firmware_status(_env.probe_module, "InstallScheduled", request_id=-1)
+        publish_firmware_status(_env.probe_module, "Downloaded", request_id=-1)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable"]
+
+        publish_firmware_status(_env.probe_module, "DownloadFailed", request_id=-1)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable", "Enable"]
+
+    async def test_firmware_metadata_default_uses_signed_verified_phase(self, _env):
+        availability_mocks = [
+            _env.probe_module_command_mocks[implementation]["enable_disable"]
+            for implementation in ("evse_manager", "evse_manager_b")
+        ]
+        for mock in availability_mocks:
+            mock.reset_mock()
+
+        publish_firmware_status(_env.probe_module, "Downloaded", request_id=61)
+        publish_firmware_status(_env.probe_module, "SignatureVerified", request_id=61)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable"]
+
+        publish_firmware_status(_env.probe_module, "InvalidSignature", request_id=61)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+            assert [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ] == ["Disable", "Enable"]
+
+    async def test_rejected_firmware_request_does_not_disturb_active_cycle(self, _env):
+        availability_mocks = [
+            _env.probe_module_command_mocks[implementation]["enable_disable"]
+            for implementation in ("evse_manager", "evse_manager_b")
+        ]
+        update_mock = _env.probe_module_command_mocks["system"]["update_firmware"]
+        for mock in availability_mocks:
+            mock.reset_mock()
+        update_mock.reset_mock()
+
+        firmware = {
+            "location": "https://example.invalid/firmware.pnx",
+            "retrieveDateTime": "2030-01-01T00:00:00Z",
+            "signingCertificate": "certificate",
+            "signature": "signature",
+        }
+        update_mock.return_value = "Accepted"
+        await _env.charge_point.signed_update_firmware_req(
+            request_id=71, firmware=firmware
+        )
+        await wait_for_mock_called(update_mock)
+
+        publish_firmware_status(
+            _env.probe_module,
+            "InstallScheduled",
+            request_id=71,
+            disable_connectors=True,
+        )
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Disable")
+
+        update_mock.reset_mock()
+        update_mock.return_value = "Rejected"
+        await _env.charge_point.signed_update_firmware_req(
+            request_id=72, firmware=firmware
+        )
+        assert update_mock.call_count == 1
+
+        publish_firmware_status(_env.probe_module, "Installed", request_id=71)
+        for mock in availability_mocks:
+            await wait_for_firmware_availability_state(mock, "Enable")
+            states = [
+                call["cmd_source"]["enable_state"]
+                for call in availability_calls(mock)
+            ]
+            assert states[-1] == "Enable"
+            assert set(states[:-1]) == {"Disable"}
 
     async def test_command_stop(self, _env):
         csms_connection = CSMSConnectionUtils(_env.central_system)
