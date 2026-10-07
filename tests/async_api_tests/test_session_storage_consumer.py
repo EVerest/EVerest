@@ -122,14 +122,14 @@ def probe_module(everest_core: EverestCore, backend: SessionStorageBackend) -> P
     return probe_module
 
 
-def _subscribe_to_queue(handler: AsyncApiMqttHandler, topic: str) -> Queue:
+async def _subscribe_to_queue(handler: AsyncApiMqttHandler, topic: str) -> Queue:
     """Collects the payloads published on an external topic."""
     queue = Queue()
 
     async def on_message(payload: str):
         queue.put(json.loads(payload))
 
-    handler.register_handler(topic, on_message)
+    await handler.register_handler(topic, on_message)
     return queue
 
 
@@ -141,7 +141,7 @@ async def _request_until_reply(handler: AsyncApiMqttHandler, prefix: str, comman
     is lost. The request is repeated until the reply topic answers.
     """
     reply_topic = f"{API_BASE}/e2m/{command}/{uuid.uuid4()}"
-    queue = _subscribe_to_queue(handler, f"{prefix}{reply_topic}")
+    queue = await _subscribe_to_queue(handler, f"{prefix}{reply_topic}")
 
     request = {"headers": {"replyTo": reply_topic}}
     if payload is not _NO_PAYLOAD:
