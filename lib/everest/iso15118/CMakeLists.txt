@@ -33,8 +33,8 @@ install(
     EXPORT everest-iso15118-targets
 )
 
+# detail headers included too: modules/EVSE/Evse15118D20 uses iso15118/detail/d20/config_validation.hpp
 install(
     DIRECTORY include/
     TYPE INCLUDE
-    PATTERN "detail" EXCLUDE
 )
