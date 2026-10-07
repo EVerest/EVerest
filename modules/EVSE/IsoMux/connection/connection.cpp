@@ -30,11 +30,10 @@
 
 #include "proxy.hpp"
 
-#define DEFAULT_SOCKET_BACKLOG        3
-#define DEFAULT_TCP_PORT              61342
-#define DEFAULT_TLS_PORT              64110
-#define ERROR_SESSION_ALREADY_STARTED 2
-#define CLIENT_FIN_TIMEOUT            3000
+#define DEFAULT_SOCKET_BACKLOG 3
+#define DEFAULT_TCP_PORT       61342
+#define DEFAULT_TLS_PORT       64110
+#define CLIENT_FIN_TIMEOUT     3000
 
 /*!
  * \brief connection_create_socket This function creates a tcp/tls socket
@@ -416,28 +415,26 @@ void* connection_handle_tcp(void* data) {
  */
 void* connection_handle(void* data) {
     struct v2g_connection* conn = static_cast<struct v2g_connection*>(data);
-    int rv = 0;
-
-    bool iso20{false};
 
     conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
     if (not conn->buffer) {
         return nullptr;
     }
 
-    /* check if the v2g-session is already running in another thread, if not, handle v2g-connection */
-    if (conn->ctx->state == 0) {
-        const auto handshake = v2g_detect_iso20_support(conn);
-        if (handshake == HandshakeResult::Failed) {
-            dlog(DLOG_LEVEL_ERROR, "No valid SupportedAppProtocolReq received, closing connection");
-            return nullptr;
-        }
-        iso20 = handshake == HandshakeResult::Iso20Offered;
-    } else {
-        rv = ERROR_SESSION_ALREADY_STARTED;
-        dlog(DLOG_LEVEL_WARNING, "%s", "Closing tcp-connection. v2g-session is already running");
+    const auto handshake = v2g_detect_iso20_support(conn);
+    if (handshake == HandshakeResult::Failed) {
+        dlog(DLOG_LEVEL_ERROR, "No valid SupportedAppProtocolReq received, closing connection");
+        return nullptr;
     }
 
+    /* claimed only after a valid handshake, so a silent peer cannot lock out the EV */
+    bool session_active{false};
+    if (not conn->ctx->session_active.compare_exchange_strong(session_active, true)) {
+        dlog(DLOG_LEVEL_WARNING, "%s", "Closing connection. v2g-session is already running");
+        return nullptr;
+    }
+
+    const bool iso20 = handshake == HandshakeResult::Iso20Offered;
     uint16_t port = conn->ctx->proxy_port_iso2;
     conn->ctx->selected_iso20 = false;
     const bool iso20_proxy_enabled = conn->ctx->iso20_proxy_enabled;
@@ -458,6 +455,7 @@ void* connection_handle(void* data) {
         conn->proxy(conn, proxy_fd);
     }
 
+    conn->ctx->session_active = false;
     return nullptr;
 }
 

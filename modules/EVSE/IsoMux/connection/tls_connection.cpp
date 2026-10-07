@@ -49,13 +49,7 @@ void process_connection_thread(std::shared_ptr<tls::ServerConnection> con, struc
 
             // TODO(james-ctc) v2g_ctx->tls_key_logging
 
-            if (ctx->state == 0) {
-                const auto rv = ::connection_handle(connection.get());
-                dlog(DLOG_LEVEL_INFO, "connection_handle exited with %d", rv);
-            } else {
-                dlog(DLOG_LEVEL_INFO, "%s", "Closing tls-connection. v2g-session is already running");
-            }
-
+            ::connection_handle(connection.get());
             con->shutdown();
             break;
         case tls::Connection::result_t::want_read:

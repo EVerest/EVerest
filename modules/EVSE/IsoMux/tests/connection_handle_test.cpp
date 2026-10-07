@@ -6,6 +6,10 @@
 #include <algorithm>
 #include <cstdlib>
 #include <cstring>
+#include <deque>
+#include <functional>
+#include <map>
+#include <utility>
 #include <vector>
 
 #include <netinet/in.h>
@@ -23,10 +27,14 @@ namespace {
 // bounds a connection handler that keeps reading after the peer is gone
 constexpr int max_reads = 100;
 
+const char* const iso20_dc_namespace = "urn:iso:std:iso:15118:-20:DC";
+
 struct FakeEv {
     std::vector<uint8_t> data;
     std::size_t pos{0};
     int reads{0};
+    std::function<void()> before_first_read;
+    std::function<void()> while_proxied;
 };
 
 struct ProxyCall {
@@ -35,25 +43,33 @@ struct ProxyCall {
     std::vector<uint8_t> forwarded;
 };
 
-FakeEv fake_ev;
-ProxyCall proxy_call;
+std::map<const v2g_connection*, FakeEv> fake_evs;
+std::map<const v2g_connection*, ProxyCall> proxy_calls;
 
 ssize_t fake_read(v2g_connection* conn, unsigned char* buf, std::size_t count, bool /*read_complete*/) {
-    if (++fake_ev.reads > max_reads) {
+    auto& ev = fake_evs[conn];
+    if (ev.before_first_read) {
+        std::exchange(ev.before_first_read, nullptr)();
+    }
+    if (++ev.reads > max_reads) {
         conn->ctx->is_connection_terminated = true;
         return -2;
     }
-    const auto n = std::min(count, fake_ev.data.size() - fake_ev.pos);
-    std::memcpy(buf, fake_ev.data.data() + fake_ev.pos, n);
-    fake_ev.pos += n;
+    const auto n = std::min(count, ev.data.size() - ev.pos);
+    std::memcpy(buf, ev.data.data() + ev.pos, n);
+    ev.pos += n;
     return static_cast<ssize_t>(n);
 }
 
 int fake_proxy(v2g_connection* conn, int proxy_fd) {
-    proxy_call.called = true;
-    proxy_call.selected_iso20 = conn->ctx->selected_iso20;
+    auto& call = proxy_calls[conn];
+    call.called = true;
+    call.selected_iso20 = conn->ctx->selected_iso20;
     const auto forwarded_len = std::min<std::size_t>(conn->payload_len + V2GTP_HEADER_LENGTH, DEFAULT_BUFFER_SIZE);
-    proxy_call.forwarded.assign(conn->buffer, conn->buffer + forwarded_len);
+    call.forwarded.assign(conn->buffer, conn->buffer + forwarded_len);
+    if (auto& while_proxied = fake_evs[conn].while_proxied) {
+        std::exchange(while_proxied, nullptr)();
+    }
     close(proxy_fd);
     return 0;
 }
@@ -96,8 +112,8 @@ std::vector<uint8_t> v2gtp_header(uint32_t payload_len) {
 class ConnectionHandleTest : public ::testing::Test {
 protected:
     void SetUp() override {
-        fake_ev = {};
-        proxy_call = {};
+        fake_evs.clear();
+        proxy_calls.clear();
 
         // stands in for the ISO-2 and ISO-20 stacks, so proxy_connect() succeeds
         listen_fd = socket(AF_INET6, SOCK_STREAM, 0);
@@ -113,45 +129,63 @@ protected:
         ctx.proxy_port_iso2 = ntohs(addr.sin6_port);
         ctx.proxy_port_iso20 = ntohs(addr.sin6_port);
         ctx.iso20_proxy_enabled = true;
-
-        conn.ctx = &ctx;
-        conn.read = &fake_read;
-        conn.proxy = &fake_proxy;
     }
 
     void TearDown() override {
         if (listen_fd >= 0) {
             close(listen_fd);
         }
-        free(conn.buffer);
+        for (auto& conn : conns) {
+            free(conn.buffer);
+        }
+    }
+
+    v2g_connection& new_connection() {
+        auto& conn = conns.emplace_back();
+        conn.ctx = &ctx;
+        conn.read = &fake_read;
+        conn.proxy = &fake_proxy;
+        return conn;
+    }
+
+    void handle(v2g_connection& conn, std::vector<uint8_t> ev_data) {
+        fake_evs[&conn].data = std::move(ev_data);
+        connection_handle(&conn);
     }
 
     void handle(std::vector<uint8_t> ev_data) {
-        fake_ev.data = std::move(ev_data);
-        connection_handle(&conn);
+        handle(new_connection(), std::move(ev_data));
+    }
+
+    const FakeEv& first_ev() {
+        return fake_evs[&conns.front()];
+    }
+
+    const ProxyCall& first_proxy_call() {
+        return proxy_calls[&conns.front()];
     }
 
     int listen_fd{-1};
     v2g_context ctx{};
-    v2g_connection conn{};
+    std::deque<v2g_connection> conns;
 };
 
 TEST_F(ConnectionHandleTest, din_handshake_is_forwarded_to_iso2_stack) {
     const auto request = supported_app_protocol_req(DIN_70121_MSG_DEF);
     handle(request);
 
-    ASSERT_TRUE(proxy_call.called);
-    EXPECT_FALSE(proxy_call.selected_iso20);
-    EXPECT_EQ(proxy_call.forwarded, request);
+    ASSERT_TRUE(first_proxy_call().called);
+    EXPECT_FALSE(first_proxy_call().selected_iso20);
+    EXPECT_EQ(first_proxy_call().forwarded, request);
 }
 
 TEST_F(ConnectionHandleTest, iso20_handshake_is_forwarded_to_iso20_stack) {
-    const auto request = supported_app_protocol_req("urn:iso:std:iso:15118:-20:DC");
+    const auto request = supported_app_protocol_req(iso20_dc_namespace);
     handle(request);
 
-    ASSERT_TRUE(proxy_call.called);
-    EXPECT_TRUE(proxy_call.selected_iso20);
-    EXPECT_EQ(proxy_call.forwarded, request);
+    ASSERT_TRUE(first_proxy_call().called);
+    EXPECT_TRUE(first_proxy_call().selected_iso20);
+    EXPECT_EQ(first_proxy_call().forwarded, request);
 }
 
 TEST_F(ConnectionHandleTest, payload_length_beyond_buffer_is_not_forwarded) {
@@ -159,7 +193,7 @@ TEST_F(ConnectionHandleTest, payload_length_beyond_buffer_is_not_forwarded) {
     ev_data.resize(ev_data.size() + 16, 0x00);
     handle(ev_data);
 
-    EXPECT_FALSE(proxy_call.called);
+    EXPECT_FALSE(first_proxy_call().called);
 }
 
 TEST_F(ConnectionHandleTest, truncated_payload_is_not_forwarded) {
@@ -167,14 +201,53 @@ TEST_F(ConnectionHandleTest, truncated_payload_is_not_forwarded) {
     ev_data.resize(ev_data.size() + 10, 0x00);
     handle(ev_data);
 
-    EXPECT_FALSE(proxy_call.called);
+    EXPECT_FALSE(first_proxy_call().called);
 }
 
 TEST_F(ConnectionHandleTest, peer_close_before_handshake_ends_connection) {
     handle({});
 
-    EXPECT_FALSE(proxy_call.called);
-    EXPECT_LT(fake_ev.reads, max_reads);
+    EXPECT_FALSE(first_proxy_call().called);
+    EXPECT_LT(first_ev().reads, max_reads);
+}
+
+TEST_F(ConnectionHandleTest, second_connection_during_session_is_rejected_and_keeps_routing) {
+    auto& session = new_connection();
+    auto& intruder = new_connection();
+    bool selected_iso20_after_intruder{true};
+    fake_evs[&session].while_proxied = [&] {
+        handle(intruder, supported_app_protocol_req(iso20_dc_namespace));
+        selected_iso20_after_intruder = ctx.selected_iso20;
+    };
+
+    handle(session, supported_app_protocol_req(DIN_70121_MSG_DEF));
+
+    EXPECT_TRUE(proxy_calls[&session].called);
+    EXPECT_FALSE(proxy_calls[&intruder].called);
+    EXPECT_FALSE(selected_iso20_after_intruder);
+}
+
+TEST_F(ConnectionHandleTest, session_is_released_when_proxy_ends) {
+    auto& first = new_connection();
+    auto& second = new_connection();
+
+    handle(first, supported_app_protocol_req(DIN_70121_MSG_DEF));
+    handle(second, supported_app_protocol_req(iso20_dc_namespace));
+
+    EXPECT_TRUE(proxy_calls[&first].called);
+    ASSERT_TRUE(proxy_calls[&second].called);
+    EXPECT_TRUE(proxy_calls[&second].selected_iso20);
+}
+
+TEST_F(ConnectionHandleTest, peer_without_handshake_does_not_block_ev) {
+    auto& silent = new_connection();
+    auto& ev = new_connection();
+    fake_evs[&silent].before_first_read = [&] { handle(ev, supported_app_protocol_req(DIN_70121_MSG_DEF)); };
+
+    handle(silent, {});
+
+    EXPECT_FALSE(proxy_calls[&silent].called);
+    EXPECT_TRUE(proxy_calls[&ev].called);
 }
 
 } // namespace
