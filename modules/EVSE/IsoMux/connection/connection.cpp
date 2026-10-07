@@ -460,6 +460,7 @@ void* connection_handle(void* data) {
     if (proxy_fd > 0) {
         EVLOG_info << "Connected to proxy module for " << (conn->ctx->selected_iso20 ? "ISO-20" : "ISO-2/DIN");
         conn->proxy(conn, proxy_fd);
+        close(proxy_fd);
     }
 
     conn->ctx->session_active = false;
@@ -528,7 +529,6 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
         }
     }
 
-    close(proxy_fd);
     return 0;
 }
 

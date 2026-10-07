@@ -402,7 +402,6 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
         }
     }
 
-    close(proxy_fd);
     return 0;
 }
 

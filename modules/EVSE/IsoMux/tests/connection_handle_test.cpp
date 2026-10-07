@@ -35,12 +35,14 @@ struct FakeEv {
     int reads{0};
     std::function<void()> before_first_read;
     std::function<void()> while_proxied;
+    int proxy_result{0};
 };
 
 struct ProxyCall {
     bool called{false};
     bool selected_iso20{false};
     std::vector<uint8_t> forwarded;
+    int proxy_fd{-1};
 };
 
 std::map<const v2g_connection*, FakeEv> fake_evs;
@@ -67,11 +69,15 @@ int fake_proxy(v2g_connection* conn, int proxy_fd) {
     call.selected_iso20 = conn->ctx->selected_iso20;
     const auto forwarded_len = std::min<std::size_t>(conn->payload_len + V2GTP_HEADER_LENGTH, DEFAULT_BUFFER_SIZE);
     call.forwarded.assign(conn->buffer, conn->buffer + forwarded_len);
+    call.proxy_fd = proxy_fd;
     if (auto& while_proxied = fake_evs[conn].while_proxied) {
         std::exchange(while_proxied, nullptr)();
     }
-    close(proxy_fd);
-    return 0;
+    return fake_evs[conn].proxy_result;
+}
+
+bool is_open(int fd) {
+    return fcntl(fd, F_GETFD) != -1;
 }
 
 std::vector<uint8_t> supported_app_protocol_req(const char* protocol_namespace) {
@@ -256,6 +262,16 @@ TEST_F(ConnectionHandleTest, buffer_is_released_when_connection_ends) {
     EXPECT_EQ(rejected.buffer, nullptr);
 }
 
+TEST_F(ConnectionHandleTest, proxy_socket_is_closed_when_proxy_fails) {
+    auto& conn = new_connection();
+    fake_evs[&conn].proxy_result = -1;
+
+    handle(conn, supported_app_protocol_req(DIN_70121_MSG_DEF));
+
+    ASSERT_TRUE(proxy_calls[&conn].called);
+    EXPECT_FALSE(is_open(proxy_calls[&conn].proxy_fd));
+}
+
 TEST_F(ConnectionHandleTest, peer_without_handshake_does_not_block_ev) {
     auto& silent = new_connection();
     auto& ev = new_connection();
@@ -323,6 +339,7 @@ TEST_F(ConnectionProxyTest, read_error_from_iso_stack_is_not_forwarded_to_ev) {
     conn.read = &closed_read;
 
     connection_proxy(&conn, proxy_fd);
+    close(proxy_fd);
 
     EXPECT_TRUE(ev_write_counts.empty());
 }
@@ -334,6 +351,7 @@ TEST_F(ConnectionProxyTest, read_error_from_ev_is_not_forwarded_to_iso_stack) {
     ASSERT_EQ(write(ev_peer_fd, "x", 1), 1);
 
     connection_proxy(&conn, proxy_fds[0]);
+    close(proxy_fds[0]);
 
     std::vector<uint8_t> received(DEFAULT_BUFFER_SIZE);
     const auto received_len = recv(proxy_fds[1], received.data(), received.size(), MSG_DONTWAIT);
