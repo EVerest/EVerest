@@ -277,17 +277,10 @@ ssize_t connection_read(struct v2g_connection* conn, unsigned char* buf, size_t 
 
             int num_of_bytes;
 
-            /* use select for timeout handling */
-            struct timeval tv;
-            fd_set read_fds;
+            /* use poll for timeout handling */
+            struct pollfd read_fd = {conn->conn.socket_fd, POLLIN, 0};
 
-            FD_ZERO(&read_fds);
-            FD_SET(conn->conn.socket_fd, &read_fds);
-
-            tv.tv_sec = conn->ctx->network_read_timeout / 1000;
-            tv.tv_usec = (conn->ctx->network_read_timeout % 1000) * 1000;
-
-            num_of_bytes = select(conn->conn.socket_fd + 1, &read_fds, nullptr, nullptr, &tv);
+            num_of_bytes = poll(&read_fd, 1, static_cast<int>(conn->ctx->network_read_timeout));
 
             if (num_of_bytes == -1) {
                 if (errno == EINTR)

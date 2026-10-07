@@ -13,6 +13,8 @@
 
 #include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/resource.h>
+#include <sys/select.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -359,6 +361,42 @@ TEST_F(ConnectionProxyTest, read_error_from_ev_is_not_forwarded_to_iso_stack) {
     ASSERT_EQ(received_len, static_cast<ssize_t>(handshake.size()));
     received.resize(received_len);
     EXPECT_EQ(received, handshake);
+}
+
+TEST(ConnectionReadTest, reads_from_descriptor_above_fd_setsize) {
+    constexpr int high_fd = FD_SETSIZE + 16;
+    rlimit limit{};
+    ASSERT_EQ(getrlimit(RLIMIT_NOFILE, &limit), 0);
+    if (limit.rlim_max != RLIM_INFINITY and limit.rlim_max <= high_fd) {
+        GTEST_SKIP() << "open file limit too low for a descriptor above FD_SETSIZE";
+    }
+    const rlimit original_limit = limit;
+    if (limit.rlim_cur != RLIM_INFINITY and limit.rlim_cur <= high_fd) {
+        limit.rlim_cur = high_fd + 1;
+        ASSERT_EQ(setrlimit(RLIMIT_NOFILE, &limit), 0);
+    }
+
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    ASSERT_EQ(dup2(fds[0], high_fd), high_fd);
+    close(fds[0]);
+
+    v2g_context ctx{};
+    ctx.network_read_timeout = 100;
+    v2g_connection conn{};
+    conn.ctx = &ctx;
+    conn.conn.socket_fd = high_fd;
+
+    const std::vector<uint8_t> sent{0x01, 0x02, 0x03, 0x04};
+    ASSERT_EQ(write(fds[1], sent.data(), sent.size()), static_cast<ssize_t>(sent.size()));
+    std::vector<uint8_t> received(sent.size());
+
+    EXPECT_EQ(connection_read(&conn, received.data(), received.size(), true), static_cast<ssize_t>(sent.size()));
+    EXPECT_EQ(received, sent);
+
+    close(high_fd);
+    close(fds[1]);
+    setrlimit(RLIMIT_NOFILE, &original_limit);
 }
 
 } // namespace
