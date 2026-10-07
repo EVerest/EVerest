@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #include <iso15118/io/connection_plain.hpp>
 
 #include <cassert>
@@ -85,6 +85,10 @@ void ConnectionPlain::write(const uint8_t* buf, size_t len) {
 
 ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
     assert(connection_open);
+
+    if (half_closed) {
+        return drain_until_peer_close(fd);
+    }
 
     const auto read_result = ::read(fd, buf, len);
     const auto did_block = (len > 0) and (not cmp_equal(read_result, len));
@@ -192,6 +196,20 @@ void ConnectionPlain::handle_bootstrap() {
 
     // The incoming v2gtp message is handled one poll cycle later
     poll_manager.register_fd(fd, [this]() { this->handle_data(); });
+}
+
+void ConnectionPlain::half_close() {
+    if (closed or not connection_open or half_closed) {
+        return;
+    }
+    half_closed = true;
+
+    // Not close(): it would drop our receive side, hiding the EV's close.
+    if (shutdown(fd, SHUT_WR) == -1) {
+        logf_error("shutdown(SHUT_WR) failed");
+    }
+
+    logf_info("Sent our TCP close, waiting for the peer's");
 }
 
 void ConnectionPlain::close() {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright 2024 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 #include "connection_abstract.hpp"
 
@@ -35,6 +35,7 @@ public:
     ReadResult read(uint8_t* buf, size_t len) final;
 
     void close() final;
+    void half_close() final;
 
     bool is_secure() const final {
         return true;
@@ -56,6 +57,7 @@ private:
     // Idempotency guard for close(): guarantees CLOSED is delivered exactly once, on whichever
     // teardown path runs first (session close, accept/handshake failure, peer EOF).
     bool closed{false};
+    bool half_closed{false};
 
     void handle_connect();
     void handle_data();

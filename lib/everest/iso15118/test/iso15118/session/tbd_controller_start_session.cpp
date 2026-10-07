@@ -16,6 +16,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <poll.h>
 #include <sys/socket.h>
 #include <thread>
 #include <unistd.h>
@@ -33,6 +34,7 @@
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
+#include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
 #include <iso15118/message/variant.hpp>
@@ -371,6 +373,147 @@ bool offers(const iso15118::message_20::datatypes::ServiceList& services, dt::Se
                        [service](const auto& offered) { return offered.service_id == service; });
 }
 
+// How the EV end of the socket behaves once it has received the SessionStopRes.
+enum class EvCloseBehavior {
+    Immediately,    // closes as soon as the SessionStopRes arrives, as most EVs do
+    AfterSeccClose, // waits for the SECC's close, then closes
+    Never,          // keeps the socket open until the session is over
+};
+
+using SteadyClock = std::chrono::steady_clock;
+
+// Records every D-LINK signal with the time it was raised; written from the controller thread.
+class DlinkRecorder {
+public:
+    explicit DlinkRecorder(int eof_probe_fd = -1) : eof_probe_fd(eof_probe_fd) {
+    }
+
+    iso15118::session::feedback::Callbacks callbacks() {
+        iso15118::session::feedback::Callbacks cb;
+        cb.signal = [this](iso15118::session::feedback::Signal signal) {
+            using Signal = iso15118::session::feedback::Signal;
+            if (signal == Signal::DLINK_TERMINATE or signal == Signal::DLINK_ERROR or signal == Signal::DLINK_PAUSE) {
+                const std::lock_guard<std::mutex> lock(mutex);
+                times.push_back(SteadyClock::now());
+                char byte{};
+                eof_visible.push_back(eof_probe_fd != -1 and
+                                      ::recv(eof_probe_fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT) == 0);
+            }
+        };
+        return cb;
+    }
+
+    std::vector<SteadyClock::time_point> signal_times() const {
+        const std::lock_guard<std::mutex> lock(mutex);
+        return times;
+    }
+
+    std::vector<bool> eof_visible_at_signal() const {
+        const std::lock_guard<std::mutex> lock(mutex);
+        return eof_visible;
+    }
+
+private:
+    int eof_probe_fd;
+    mutable std::mutex mutex;
+    std::vector<SteadyClock::time_point> times;
+    std::vector<bool> eof_visible;
+};
+
+// Discards what arrives on fd until EOF; returns when the EOF was seen, or nullopt on timeout or error.
+std::optional<SteadyClock::time_point> wait_for_eof(int fd, std::chrono::milliseconds timeout) {
+    const auto deadline = SteadyClock::now() + timeout;
+    while (SteadyClock::now() < deadline) {
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - SteadyClock::now());
+        pollfd pfd{fd, POLLIN, 0};
+        if (::poll(&pfd, 1, static_cast<int>(remaining.count()) + 1) <= 0) {
+            continue;
+        }
+        uint8_t chunk[256];
+        const auto n = ::read(fd, chunk, sizeof(chunk));
+        if (n == 0) {
+            return SteadyClock::now();
+        }
+        if (n < 0 and errno != EAGAIN and errno != EWOULDBLOCK and errno != EINTR) {
+            return std::nullopt;
+        }
+    }
+    return std::nullopt;
+}
+
+struct GracefulStopRun {
+    iso15118::StartSessionResult ok{};
+    bool timed_out{false};
+    std::optional<iso15118::message_20::SessionStopResponse> session_stop_res;
+    // Taken before the SessionStopReq is written, so no SECC deadline can start earlier.
+    SteadyClock::time_point session_stop_req_sent{};
+    SteadyClock::time_point session_stop_res_received{};
+    std::optional<SteadyClock::time_point> ev_saw_eof;
+    std::optional<SteadyClock::time_point> ev_closed;
+    std::vector<SteadyClock::time_point> dlink_signals;
+    std::vector<bool> eof_visible_at_dlink;
+};
+
+// Drives one -20 session to a positive SessionStopRes(Terminate) and lets the EV end of the socket
+// close the way \p ev_close says, recording when the EV sees the SECC's close and every D-LINK signal.
+GracefulStopRun run_graceful_stop(EvCloseBehavior ev_close) {
+    GracefulStopRun result;
+
+    auto fds = make_nonblocking_socketpair();
+    DlinkRecorder recorder(ev_close == EvCloseBehavior::Never ? fds.at(1) : -1);
+    auto controller = make_controller(false, recorder.callbacks());
+
+    auto start_options = iso15118::StartSessionOptions{};
+    start_options.skip_app_protocol_negotiation = true;
+
+    std::thread start_session_thread([&] { result.ok = controller.start_session(fds.at(0), start_options); });
+
+    SessionWatchdog watchdog(controller, std::chrono::seconds(20));
+
+    const auto exchange = [&fds](const std::vector<std::uint8_t>& frame) {
+        [[maybe_unused]] auto unused = ::write(fds.at(1), frame.data(), frame.size());
+        return read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
+    };
+
+    const auto session_setup_res = decode_response<iso15118::message_20::SessionSetupResponse>(exchange(
+        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
+
+    if (session_setup_res.has_value()) {
+        iso15118::message_20::SessionStopRequest request;
+        request.header.session_id = session_setup_res->header.session_id;
+        request.header.timestamp = static_cast<std::uint64_t>(std::time(nullptr));
+        request.charging_session = dt::ChargingSession::Terminate;
+
+        const auto session_stop_req = make_request_frame(request);
+        result.session_stop_req_sent = SteadyClock::now();
+        result.session_stop_res =
+            decode_response<iso15118::message_20::SessionStopResponse>(exchange(session_stop_req));
+        result.session_stop_res_received = SteadyClock::now();
+    }
+
+    if (ev_close != EvCloseBehavior::Immediately) {
+        result.ev_saw_eof = wait_for_eof(fds.at(1), std::chrono::seconds(5));
+    }
+
+    if (ev_close == EvCloseBehavior::Never) {
+        start_session_thread.join();
+        close(fds.at(1));
+    } else {
+        close(fds.at(1));
+        result.ev_closed = SteadyClock::now();
+        start_session_thread.join();
+    }
+
+    result.timed_out = watchdog.timed_out();
+    result.dlink_signals = recorder.signal_times();
+    result.eof_visible_at_dlink = recorder.eof_visible_at_signal();
+    return result;
+}
+
+long long ms_between(SteadyClock::time_point from, SteadyClock::time_point to) {
+    return std::chrono::duration_cast<std::chrono::milliseconds>(to - from).count();
+}
+
 } // namespace
 
 SCENARIO("session_start guard check - invalid/closed fd") {
@@ -651,4 +794,65 @@ SCENARIO("update_der_sae_limits logs the SAE grid code withdrawal only on the tr
     }
 
     REQUIRE_FALSE(watchdog.timed_out());
+}
+
+SCENARIO("A graceful stop where the EV closes TCP at once ends the session right away") {
+    WHEN("the EV closes as soon as it receives the SessionStopRes") {
+        const auto run = run_graceful_stop(EvCloseBehavior::Immediately);
+
+        THEN("exactly one D-LINK signal follows within a second") {
+            REQUIRE_FALSE(run.timed_out);
+            REQUIRE(run.ok == iso15118::StartSessionResult::SessionComplete);
+            REQUIRE(run.session_stop_res.has_value());
+            REQUIRE(run.session_stop_res->response_code == dt::ResponseCode::OK);
+
+            REQUIRE(run.dlink_signals.size() == 1);
+            REQUIRE(ms_between(run.session_stop_res_received, run.dlink_signals.front()) < 1000);
+        }
+    }
+}
+
+SCENARIO("A graceful stop where the EV waits for the SECC's close") {
+    WHEN("the EV keeps the socket open until it reads the SECC's close, then closes") {
+        const auto run = run_graceful_stop(EvCloseBehavior::AfterSeccClose);
+
+        THEN("the SECC closes after the linger and D-LINK follows the EV's close") {
+            REQUIRE_FALSE(run.timed_out);
+            REQUIRE(run.ok == iso15118::StartSessionResult::SessionComplete);
+            REQUIRE(run.session_stop_res.has_value());
+            REQUIRE(run.session_stop_res->response_code == dt::ResponseCode::OK);
+
+            REQUIRE(run.ev_saw_eof.has_value());
+            CHECK(ms_between(run.session_stop_req_sent, *run.ev_saw_eof) >= 2000);
+            CHECK(ms_between(run.session_stop_res_received, *run.ev_saw_eof) <= 3000);
+
+            REQUIRE(run.dlink_signals.size() == 1);
+            REQUIRE(run.dlink_signals.front() >= *run.ev_saw_eof);
+            REQUIRE(run.ev_closed.has_value());
+            REQUIRE(ms_between(*run.ev_closed, run.dlink_signals.front()) < 1000);
+        }
+    }
+}
+
+SCENARIO("A graceful stop where the EV never closes TCP") {
+    WHEN("the EV keeps the socket open after the SECC's close") {
+        const auto run = run_graceful_stop(EvCloseBehavior::Never);
+
+        THEN("the SECC closes after the linger and sends D-LINK once the peer-close wait expires") {
+            REQUIRE_FALSE(run.timed_out);
+            REQUIRE(run.ok == iso15118::StartSessionResult::SessionComplete);
+            REQUIRE(run.session_stop_res.has_value());
+            REQUIRE(run.session_stop_res->response_code == dt::ResponseCode::OK);
+
+            REQUIRE(run.ev_saw_eof.has_value());
+            CHECK(ms_between(run.session_stop_req_sent, *run.ev_saw_eof) >= 2000);
+            CHECK(ms_between(run.session_stop_res_received, *run.ev_saw_eof) <= 3000);
+
+            REQUIRE(run.dlink_signals.size() == 1);
+            CHECK(ms_between(run.session_stop_req_sent, run.dlink_signals.front()) >= 2500);
+            CHECK(ms_between(*run.ev_saw_eof, run.dlink_signals.front()) <= 1500);
+            REQUIRE(run.eof_visible_at_dlink.size() == 1);
+            CHECK(run.eof_visible_at_dlink.front());
+        }
+    }
 }

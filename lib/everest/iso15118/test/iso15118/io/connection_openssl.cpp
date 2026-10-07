@@ -18,6 +18,7 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <openssl/bio.h>
@@ -109,6 +110,10 @@ struct ClientResult {
     bool tls_1_3{false};
     std::string read_payload;
     std::string server_key_group; //!< EC curve of the server leaf presented in the handshake
+    // Filled in when the client waits for the server to close first.
+    int read_after_server_close{-1};
+    int ssl_error_after_server_close{SSL_ERROR_NONE};
+    ssize_t recv_after_server_close{-1};
 };
 
 struct FdGuard {
@@ -130,7 +135,7 @@ using SslPtr = std::unique_ptr<SSL, decltype(&SSL_free)>;
 // Drive a synthetic OpenSSL client over TCP/IPv6 loopback. Optionally present a client cert.
 ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_recv, bool present_client_cert,
                             bool enforce_tls_1_3, bool force_tls_1_2 = false, const char* client_chain = VEHICLE_CHAIN,
-                            const char* client_key = VEHICLE_LEAF_KEY) {
+                            const char* client_key = VEHICLE_LEAF_KEY, bool await_server_close = false) {
     ClientResult result;
 
     // Resolve [::1] manually
@@ -248,6 +253,16 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         result.read_payload.assign(buf.data(), total);
     }
 
+    if (await_server_close) {
+        // Bounded, so a server that never closes fails the test instead of hanging it.
+        timeval receive_timeout{5, 0};
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout));
+        std::array<char, 16> buf{};
+        result.read_after_server_close = SSL_read(ssl.get(), buf.data(), static_cast<int>(buf.size()));
+        result.ssl_error_after_server_close = SSL_get_error(ssl.get(), result.read_after_server_close);
+        result.recv_after_server_close = ::recv(fd, buf.data(), buf.size(), 0);
+    }
+
     SSL_shutdown(ssl.get());
     return result;
 }
@@ -362,6 +377,63 @@ SCENARIO("ConnectionSSL surfaces a peer close through read()") {
                 REQUIRE(got_close);
             }
         }
+
+        connection.close();
+    }
+}
+
+SCENARIO("ConnectionSSL::half_close sends close_notify and a FIN, then reads until the peer closes") {
+    for (const bool enforce_tls_1_3 : {false, true}) {
+        INFO((enforce_tls_1_3 ? "TLS 1.3" : "TLS 1.2"));
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", enforce_tls_1_3);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+
+        std::atomic<bool> handshake_open{false};
+        std::atomic<bool> peer_closed{false};
+        std::atomic<int> closed_count{0};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            } else if (event == iso15118::io::ConnectionEvent::NEW_DATA) {
+                std::array<uint8_t, 64> buf{};
+                if (connection.read(buf.data(), buf.size()).connection_closed) {
+                    peer_closed.store(true);
+                }
+            } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                closed_count.fetch_add(1);
+            }
+        });
+
+        auto client_future = std::async(std::launch::async, [&]() {
+            return run_tls_client({}, 0, enforce_tls_1_3, enforce_tls_1_3, not enforce_tls_1_3, VEHICLE_CHAIN,
+                                  VEHICLE_LEAF_KEY, true);
+        });
+
+        const bool got_open = poll_until(
+            poll_manager, [&]() { return handshake_open.load(); }, 5s);
+
+        connection.half_close();
+
+        const bool got_close = poll_until(
+            poll_manager, [&]() { return peer_closed.load(); }, 5s);
+
+        const auto client_result = client_future.get();
+
+        REQUIRE(client_result.error.empty());
+        REQUIRE(client_result.handshake_ok);
+        REQUIRE(client_result.tls_1_3 == enforce_tls_1_3);
+        REQUIRE(got_open);
+        REQUIRE(client_result.read_after_server_close == 0);
+        REQUIRE(client_result.ssl_error_after_server_close == SSL_ERROR_ZERO_RETURN);
+        REQUIRE(client_result.recv_after_server_close == 0);
+        REQUIRE(got_close);
+        REQUIRE(closed_count.load() == 0);
+
+        connection.close();
+        REQUIRE(closed_count.load() == 1);
 
         connection.close();
     }

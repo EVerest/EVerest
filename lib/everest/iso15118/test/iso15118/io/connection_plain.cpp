@@ -2,13 +2,16 @@
 // Copyright 2026 Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <future>
+#include <string>
 #include <thread>
+#include <vector>
 
 #include <arpa/inet.h>
 #include <netinet/in.h>
@@ -211,5 +214,93 @@ SCENARIO("ConnectionPlain::read reports a fatal errno as a closed connection") {
         if (connection_open.load()) {
             connection.close();
         }
+    }
+}
+
+SCENARIO("ConnectionPlain::half_close sends our close and reads until the peer closes") {
+
+    GIVEN("A ConnectionPlain on a connected socketpair, polled until OPEN") {
+        std::vector<std::string> log_lines;
+        iso15118::io::set_logging_callback(
+            [&log_lines](iso15118::LogLevel, const std::string& line) { log_lines.push_back(line); });
+
+        std::array<int, 2> fds{-1, -1};
+        REQUIRE(::socketpair(AF_UNIX, SOCK_STREAM | SOCK_NONBLOCK, 0, fds.data()) == 0);
+        const int peer_fd = fds[1];
+
+        iso15118::io::PollManager poll_manager;
+        iso15118::io::ConnectionPlain connection(poll_manager, fds[0], std::nullopt);
+
+        bool open{false};
+        int closed_count{0};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                open = true;
+            } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                ++closed_count;
+            }
+        });
+
+        // The connection opens on the first readable event, so the peer speaks first, as an EV does.
+        const uint8_t hello{0x01};
+        REQUIRE(::write(peer_fd, &hello, 1) == 1);
+        REQUIRE(poll_until(
+            poll_manager, [&]() { return open; }, 1s));
+        uint8_t received{};
+        REQUIRE(connection.read(&received, 1).bytes_read == 1);
+
+        connection.half_close();
+
+        WHEN("the peer reads after the half-close") {
+            std::array<uint8_t, 16> buf{};
+            const auto peer_read = ::read(peer_fd, buf.data(), buf.size());
+
+            THEN("it sees EOF while the connection stays open") {
+                REQUIRE(peer_read == 0);
+                REQUIRE(closed_count == 0);
+            }
+        }
+
+        WHEN("the peer writes after the half-close") {
+            const std::array<uint8_t, 8> payload{1, 2, 3, 4, 5, 6, 7, 8};
+            REQUIRE(::write(peer_fd, payload.data(), payload.size()) == static_cast<ssize_t>(payload.size()));
+
+            std::array<uint8_t, 16> buf{};
+            buf.fill(0xAA);
+            const auto result = connection.read(buf.data(), buf.size());
+
+            THEN("read() discards the bytes and reports would_block without touching the buffer") {
+                REQUIRE(result.would_block);
+                REQUIRE(result.bytes_read == 0);
+                REQUIRE_FALSE(result.connection_closed);
+                REQUIRE(std::all_of(buf.begin(), buf.end(), [](uint8_t byte) { return byte == 0xAA; }));
+            }
+        }
+
+        WHEN("the peer closes after the half-close") {
+            ::close(peer_fd);
+            fds[1] = -1;
+
+            std::array<uint8_t, 16> buf{};
+            const auto result = connection.read(buf.data(), buf.size());
+
+            THEN("read() reports connection_closed and close() fires CLOSED exactly once") {
+                REQUIRE(result.connection_closed);
+                REQUIRE(closed_count == 0);
+
+                connection.close();
+                REQUIRE(closed_count == 1);
+
+                const auto lines_after_close = log_lines.size();
+                connection.half_close();
+                REQUIRE(closed_count == 1);
+                REQUIRE(log_lines.size() == lines_after_close);
+            }
+        }
+
+        if (fds[1] != -1) {
+            ::close(fds[1]);
+        }
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
     }
 }

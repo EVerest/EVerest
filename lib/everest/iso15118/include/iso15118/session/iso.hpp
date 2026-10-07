@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <memory>
@@ -151,6 +151,8 @@ private:
     bool finished_reported{false};
     // Deadline for the EV-first TCP close, after which we close the connection ourselves.
     std::optional<TimePoint> connection_close_deadline{std::nullopt};
+    // Deadline for the EV's close after ours, after which the session finishes anyway.
+    std::optional<TimePoint> peer_close_deadline{std::nullopt};
     // The SECC closes the TCP connection itself without the EV-first linger ([V2G-DC-940]).
     bool error_termination{false};
     // One of the two regular ends, so the link is released with D-LINK_TERMINATE / D-LINK_PAUSE.

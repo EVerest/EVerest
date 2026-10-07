@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstddef>
@@ -37,6 +37,12 @@ struct IConnection {
     virtual ReadResult read(uint8_t* buf, size_t len) = 0;
 
     virtual void close() = 0;
+
+    /// \brief Send our close and keep receiving: a TLS close_notify first when secured, then a TCP FIN.
+    /// Later read() calls discard whatever arrives and report connection_closed once the peer closes
+    /// (EOF or a fatal socket error). Fires no event: close() still releases the socket and delivers
+    /// CLOSED. Idempotent, and a no-op once closed.
+    virtual void half_close() = 0;
 
     /// \brief True if this connection is transport-secured (TLS). Used to gate features that ISO 15118-2
     /// permits only over TLS (e.g. Plug&Charge / Contract payment).

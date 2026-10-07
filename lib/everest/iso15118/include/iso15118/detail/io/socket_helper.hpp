@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2023 - 2026 Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
@@ -7,6 +7,8 @@
 #include <string>
 
 #include <netinet/in.h>
+
+#include <iso15118/io/connection_abstract.hpp>
 
 namespace iso15118::io {
 
@@ -46,4 +48,9 @@ constexpr int WRITE_TIMEOUT_MS = 500;
 // A would-block or short write on a non-blocking socket is not an error, just backpressure. Returns
 // false on a fatal error or an exhausted budget (errno then holds the cause, ETIMEDOUT for the latter).
 bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms);
+
+/// \brief Read and discard one bounded chunk from a half-closed socket.
+/// \return {would_block=true, 0, false} until the peer's close is observed,
+///         {false, 0, true} on EOF or on any errno other than EAGAIN/EWOULDBLOCK/EINTR.
+ReadResult drain_until_peer_close(int fd);
 } // namespace iso15118::io
