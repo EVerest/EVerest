@@ -85,10 +85,8 @@ target_link_libraries(framework
         everest::log
         everest::sqlite
         everest::yaml
-        $<BUILD_INTERFACE:everest_helpers>
-        $<INSTALL_INTERFACE:everest::helpers>
-        $<BUILD_INTERFACE:everest_util>
-        $<INSTALL_INTERFACE:everest::util>
+        everest::helpers
+        everest::util
         ${STD_FILESYSTEM_COMPAT_LIB}
     PRIVATE
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}

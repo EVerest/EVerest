@@ -61,8 +61,7 @@ endif()
 target_link_libraries(everest_io
     PUBLIC
         atomic
-        $<BUILD_INTERFACE:everest_util>
-        $<INSTALL_INTERFACE:everest::util>
+        everest::util
 )
 
 include(CheckIncludeFile)
@@ -161,15 +160,8 @@ if(EVEREST_IO_ENABLE_TLS)
             tls/tls_listener.cpp
             tls/tls_client_socket.cpp
     )
-    target_link_libraries(everest_io PRIVATE $<BUILD_INTERFACE:tls>)
-    # libtls is not installed as part of everest-core's export set, so its
-    # public include directories are propagated to in-tree consumers only via
-    # BUILD_INTERFACE. Mirrors libtls's own PUBLIC include directories.
-    target_include_directories(everest_io
-        PUBLIC
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls>
-            $<BUILD_INTERFACE:${CMAKE_SOURCE_DIR}/lib/everest/tls/include>
-    )
+    # the io tls headers are not installed, so libtls is needed in-tree only
+    target_link_libraries(everest_io PUBLIC $<BUILD_INTERFACE:everest::tls>)
 
     # No everest_io link: its BUILD_INTERFACE carries the libtls includes above, which would make
     # the guard vacuous.
@@ -178,7 +170,7 @@ if(EVEREST_IO_ENABLE_TLS)
         PRIVATE
             ${CMAKE_CURRENT_SOURCE_DIR}/../include
     )
-    target_link_libraries(everest_io_tls_header_guard PRIVATE $<BUILD_INTERFACE:everest_util>)
+    target_link_libraries(everest_io_tls_header_guard PRIVATE everest::util)
     target_compile_features(everest_io_tls_header_guard PRIVATE cxx_std_17)
     add_dependencies(everest_io everest_io_tls_header_guard)
 endif()
