@@ -13,6 +13,7 @@ target_sources(${TEST_TARGET_NAME}
     custom_file_error_mapping_tests.cpp
     data_transfer_conversions_test.cpp
     error_handling_tests.cpp
+    error_placeholders_tests.cpp
     everest_device_model_storage_test.cpp
     grid_support_conversions_test.cpp
     network_conversions_test.cpp

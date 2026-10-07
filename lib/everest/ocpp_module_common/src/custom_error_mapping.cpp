@@ -3,6 +3,8 @@
 
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
 
+#include <everest/ocpp_module_common/error_placeholders.hpp>
+
 #include <algorithm>
 #include <cctype>
 #include <fstream>
@@ -284,7 +286,8 @@ ocpp::v16::ErrorInfo CustomFileErrorMapping::overlay(const Everest::error::Error
         reported.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v16.info.has_value()) {
-        reported.info = ocpp::CiString<50>(v16.info.value(), ocpp::StringTooLarge::Truncate);
+        reported.info =
+            ocpp::CiString<50>(substitute_error_placeholders(error, v16.info.value()), ocpp::StringTooLarge::Truncate);
     }
     return reported;
 }
@@ -301,7 +304,8 @@ ocpp::v2::EventData CustomFileErrorMapping::overlay(const Everest::error::Error&
         reported.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.tech_info.has_value()) {
-        reported.techInfo = ocpp::CiString<500>(v2.tech_info.value(), ocpp::StringTooLarge::Truncate);
+        reported.techInfo = ocpp::CiString<500>(substitute_error_placeholders(error, v2.tech_info.value()),
+                                                ocpp::StringTooLarge::Truncate);
     }
     if (v2.component_name.has_value()) {
         reported.component.name = ocpp::CiString<50>(v2.component_name.value(), ocpp::StringTooLarge::Truncate);

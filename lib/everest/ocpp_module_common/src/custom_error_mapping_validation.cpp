@@ -5,11 +5,11 @@
 
 #include <set>
 #include <sstream>
-#include <string_view>
 #include <utility>
 
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/error_mapping.hpp>
+#include <everest/ocpp_module_common/error_placeholders.hpp>
 #include <nlohmann/json.hpp>
 #include <utils/error/error_type_map.hpp>
 
@@ -17,8 +17,6 @@ namespace ocpp_module_common::custom_error_mapping {
 
 namespace {
 
-constexpr std::string_view PLACEHOLDER_START = "${";
-constexpr std::string_view ACTUAL_VALUE_PLACEHOLDER = "${actual_value}";
 constexpr std::size_t V16_INFO_MAX_LENGTH = 50;
 constexpr std::size_t V2_TECH_INFO_MAX_LENGTH = 500;
 constexpr auto DEFAULT_VARIABLE_NAME = "Problem";
@@ -41,32 +39,18 @@ std::string error_namespace(const std::string& error_type) {
 
 void validate_text(const Entry& entry, const std::string& text, std::initializer_list<const char*> path,
                    std::size_t max_length, std::vector<Finding>& findings) {
-    std::size_t static_length = 0;
-    std::size_t pos = 0;
-    while (pos < text.size()) {
-        const auto start = text.find(PLACEHOLDER_START, pos);
-        if (start == std::string::npos) {
-            static_length += text.size() - pos;
-            break;
-        }
-        static_length += start - pos;
-        const auto end = text.find('}', start);
-        if (end == std::string::npos) {
-            findings.push_back(
-                finding(Finding::Level::Error, entry, pointer(entry, path), "unterminated placeholder, missing '}'"));
-            return;
-        }
-        const auto placeholder = std::string_view(text).substr(start, end - start + 1);
-        if (placeholder != ACTUAL_VALUE_PLACEHOLDER) {
-            findings.push_back(finding(Finding::Level::Error, entry, pointer(entry, path),
-                                       "unknown placeholder '" + std::string(placeholder) + "', only '" +
-                                           std::string(ACTUAL_VALUE_PLACEHOLDER) + "' is supported"));
-        }
-        pos = end + 1;
-    }
-    if (static_length > max_length) {
+    const auto check = check_error_placeholders(text);
+    for (const auto& unknown : check.unknown) {
         findings.push_back(finding(Finding::Level::Warning, entry, pointer(entry, path),
-                                   "text without placeholders has " + std::to_string(static_length) +
+                                   "unknown placeholder '" + unknown + "' is sent as written"));
+    }
+    if (check.unterminated) {
+        findings.push_back(finding(Finding::Level::Warning, entry, pointer(entry, path),
+                                   "unterminated placeholder, missing '}', is sent as written"));
+    }
+    if (check.static_length > max_length) {
+        findings.push_back(finding(Finding::Level::Warning, entry, pointer(entry, path),
+                                   "text without placeholders has " + std::to_string(check.static_length) +
                                        " characters and is truncated to " + std::to_string(max_length)));
     }
 }

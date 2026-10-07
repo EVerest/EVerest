@@ -196,7 +196,7 @@ private:
 class GenericOcppMisconfiguredMapping : public GenericOcppErrorDispatch {
 protected:
     MappingFile file{config, R"({
-        "evse_board_support/MREC4OverCurrentFailure": {"v16": {"info": "${unknown}"}},
+        "evse_board_support/MREC4OverCurrentFailure": {"v16": {"error_code": "NoSuchCode"}},
         "evse_board_support/MREC5OverVoltage": {"v2": {"component_name": "NoSuchComponent"}},
         "evse_board_support/MREC6UnderVoltage": {"v2": {"component_name": "Known"}}
     })"};

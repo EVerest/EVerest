@@ -5,14 +5,14 @@
       "error_code": "OtherError",
       "vendor_id": "com.example",
       "vendor_error_code": "T-210",
-      "info": "Temperature error raised at ${actual_value} deg"
+      "info": "Temperature error: ${message}"
     },
     "v2": {
       "tech_code": "T-210",
       "component_name": "Connector",
       "variable_name": "Temperature",
       "severity": 5,
-      "tech_info": "Failed at connector temperature ${actual_value} deg"
+      "tech_info": "Connector temperature error on EVSE ${evse}: ${message}"
     }
   },
   "evse_board_support/MREC3HighTemperature": {
@@ -20,7 +20,7 @@
       "error_code": "HighTemperature",
       "vendor_id": "com.example",
       "vendor_error_code": "T-210",
-      "info": "Temperature error raised at ${actual_value} deg"
+      "info": "Temperature error: ${message}"
     },
     "v2": {
       "tech_code": "T-210",

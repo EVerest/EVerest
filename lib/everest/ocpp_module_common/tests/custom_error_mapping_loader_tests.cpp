@@ -87,13 +87,13 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
     EXPECT_EQ(api->v16->error_code, ChargePointErrorCode::OtherError);
     EXPECT_EQ(api->v16->vendor_id, "com.example");
     EXPECT_EQ(api->v16->vendor_error_code, "T-210");
-    EXPECT_EQ(api->v16->info, "Temperature error raised at ${actual_value} deg");
+    EXPECT_EQ(api->v16->info, "Temperature error: ${message}");
     ASSERT_TRUE(api->v2.has_value());
     EXPECT_EQ(api->v2->tech_code, "T-210");
     EXPECT_EQ(api->v2->component_name, "Connector");
     EXPECT_EQ(api->v2->variable_name, "Temperature");
     EXPECT_FALSE(api->v2->component_instance.has_value());
-    EXPECT_EQ(api->v2->tech_info, "Failed at connector temperature ${actual_value} deg");
+    EXPECT_EQ(api->v2->tech_info, "Connector temperature error on EVSE ${evse}: ${message}");
     ASSERT_TRUE(api->v2->severity.has_value());
     EXPECT_EQ(api->v2->severity.value(), 5);
 

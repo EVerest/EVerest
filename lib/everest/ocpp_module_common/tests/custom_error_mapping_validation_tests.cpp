@@ -79,29 +79,29 @@ TEST(ErrorMappingBuiltinTest, ListsEntriesReplacingBuiltin) {
               std::vector<std::string>{"evse_board_support/MREC3HighTemperature"});
 }
 
-TEST(ErrorMappingValuesTest, AcceptsActualValuePlaceholder) {
+TEST(ErrorMappingValuesTest, AcceptsErrorPlaceholders) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {
-        "v16": {"info": "at ${actual_value} deg"}, "v2": {"tech_info": "${actual_value}${actual_value}"}}})");
+        "v16": {"info": "${severity} on ${evse}/${connector}"}, "v2": {"tech_info": "${type}: ${message} [${uuid}]"}}})");
     EXPECT_TRUE(validate_values(mapping).empty());
 }
 
-TEST(ErrorMappingValuesTest, RejectsUnknownPlaceholder) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actualValue} deg"}}})");
+TEST(ErrorMappingValuesTest, WarnsAboutUnknownPlaceholder) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actual_value} deg"}}})");
     const auto finding = single(validate_values(mapping));
-    EXPECT_EQ(finding.level, Finding::Level::Error);
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_info");
-    EXPECT_THAT(finding.message, HasSubstr("${actualValue}"));
+    EXPECT_THAT(finding.message, HasSubstr("${actual_value}"));
 }
 
-TEST(ErrorMappingValuesTest, RejectsUnterminatedPlaceholder) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "at ${actual_value deg"}}})");
+TEST(ErrorMappingValuesTest, WarnsAboutUnterminatedPlaceholder) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "at ${message deg"}}})");
     const auto finding = single(validate_values(mapping));
-    EXPECT_EQ(finding.level, Finding::Level::Error);
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v16/info");
 }
 
 TEST(ErrorMappingValuesTest, WarnsAboutStaticTextOverOcppLimit) {
-    const auto info = std::string(50, 'x') + "${actual_value}";
+    const auto info = std::string(50, 'x') + "${message}";
     const auto too_long_info = std::string(51, 'x');
     const auto mapping = mapping_of(R"({
         "generic/VendorError": {"v16": {"info": ")" +

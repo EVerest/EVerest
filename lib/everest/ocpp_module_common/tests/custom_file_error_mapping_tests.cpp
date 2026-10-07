@@ -35,7 +35,7 @@ Everest::error::Error error_of(const std::string& type, const std::string& sub_t
 constexpr auto TEMPERATURE_ENTRY = R"({
     "evse_board_support/MREC3HighTemperature": {
         "v16": {"error_code": "HighTemperature", "vendor_id": "com.example", "vendor_error_code": "T-210",
-                "info": "Temperature error raised at ${actual_value} deg"},
+                "info": "Temperature error: ${message}"},
         "v2": {"tech_code": "T-210", "component_name": "Connector", "variable_name": "Temperature",
                "severity": 3, "tech_info": "The Connector temperature is high"}
     }
@@ -79,7 +79,7 @@ TEST(CustomFileErrorMappingTest, OverridesTheFieldsOfTheEntry) {
     EXPECT_EQ(v16.error_code, ChargePointErrorCode::HighTemperature);
     EXPECT_EQ(v16.vendor_id.value().get(), "com.example");
     EXPECT_EQ(v16.vendor_error_code.value().get(), "T-210");
-    EXPECT_EQ(v16.info.value().get(), "Temperature error raised at ${actual_value} deg");
+    EXPECT_EQ(v16.info.value().get(), "Temperature error: sensor reports fault");
 
     const auto v2 = mapping->overlay(error, built_in_v2(error, 7));
     EXPECT_EQ(v2.eventId, 7);
@@ -89,6 +89,24 @@ TEST(CustomFileErrorMappingTest, OverridesTheFieldsOfTheEntry) {
     EXPECT_EQ(v2.variable.name.get(), "Temperature");
     EXPECT_EQ(v2.severity.value(), 3);
     EXPECT_EQ(v2.cleared, false);
+}
+
+TEST(CustomFileErrorMappingTest, SubstitutesErrorPlaceholdersInTexts) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"info": "${severity}: ${message}"},
+        "v2": {"tech_info": "${type}#${sub_type}: ${message}"}}})");
+    auto error = error_of("generic/VendorError", "Spd");
+    error.severity = Everest::error::Severity::Medium;
+
+    EXPECT_EQ(mapping->overlay(error, built_in_v16(error)).info.value().get(), "Medium: sensor reports fault");
+    EXPECT_EQ(mapping->overlay(error, built_in_v2(error)).techInfo.value().get(),
+              "generic/VendorError#Spd: sensor reports fault");
+}
+
+TEST(CustomFileErrorMappingTest, TruncatesInfoAfterSubstitution) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "${message}"}}})");
+    const auto error = error_of("generic/VendorError", "", std::string(60, 'm'));
+    EXPECT_EQ(mapping->overlay(error, built_in_v16(error)).info.value().get(), std::string(50, 'm'));
 }
 
 TEST(CustomFileErrorMappingTest, FieldsTheEntryLeavesOutKeepTheBuiltInValue) {

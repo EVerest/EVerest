@@ -52,6 +52,7 @@ cc_test(
         "tests/custom_error_mapping_validation_tests.cpp",
         "tests/custom_file_error_mapping_tests.cpp",
         "tests/error_handling_tests.cpp",
+        "tests/error_placeholders_tests.cpp",
         "tests/transaction_handler_tests.cpp",
     ],
     data = glob(["tests/data/*.json"]) + ["schemas/custom_error_mapping.example.json"] + ["//errors"],
