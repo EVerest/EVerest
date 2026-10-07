@@ -230,11 +230,28 @@ void EvseManager::init() {
             [this](const types::powermeter::Capabilities& caps) { update_powermeter_capabilities(caps); });
     }
 
+    // Subscribed here rather than in ready(): a value published before ready() would be lost, and in
+    // captive cable mode a cable already in the socket at boot would then stay unlocked.
+    r_bsp->subscribe_ac_pp_ampacity(
+        [this](types::board_support_common::ProximityPilot const& pp) { pp_ampacity.publish(pp); });
+
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
 
     r_bsp->subscribe_capabilities([this](types::evse_board_support::HardwareCapabilities const& c) {
         hw_capabilities.apply_when_allowed(c);
+        {
+            // Captive cable mode waits for the connector type; bsp exists once apply_when_allowed() returned.
+            std::scoped_lock lock(keep_cable_locked_mutex);
+            const bool type_changed = bsp_connector_type != c.connector_type;
+            bsp_connector_type = c.connector_type;
+            if (type_changed and rw_config.keep_cable_locked and
+                c.connector_type == types::evse_board_support::Connector_type::IEC62196Type2Cable) {
+                EVLOG_warning << "keep_cable_locked is ignored: the BSP reports a fixed attached cable, captive cable "
+                                 "mode only applies to AC sockets.";
+            }
+            apply_keep_cable_locked();
+        }
         charger->set_supports_cp_state_E(c.supports_cp_state_E);
 
         if (ac_nr_phases_active == 0) {
@@ -285,7 +302,17 @@ void EvseManager::shutdown() {
 }
 
 void EvseManager::ready() {
-    bsp = std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized);
+    bool keep_cable_locked_at_boot{false};
+    {
+        // on_keep_cable_locked_changed() may already fire; same mutex serializes the bsp hand-over.
+        std::scoped_lock lock(keep_cable_locked_mutex);
+        keep_cable_locked_at_boot = config.keep_cable_locked;
+        // Captive cable mode starts disabled: it needs the connector type from the BSP capabilities,
+        // whose callback enables it via apply_keep_cable_locked().
+        bsp =
+            std::make_unique<IECStateMachine>(r_bsp, config.lock_connector_in_state_b, config.unlock_when_deauthorized,
+                                              false, config.keep_cable_locked_lock_delay_ms);
+    }
 
     if (config.hack_simplified_mode_limit_10A) {
         bsp->set_ev_simplified_mode_evse_limit(true);
@@ -334,17 +361,34 @@ void EvseManager::ready() {
                          "IEC61851-1:2019 D.6.5 Table D.9 line 4 and should not be used in public environments!";
     }
 
+    if (keep_cable_locked_at_boot) {
+        if (config.charge_mode not_eq "AC") {
+            EVLOG_warning << "keep_cable_locked is ignored: captive cable mode only applies to AC sockets, but "
+                             "charge_mode is "
+                          << config.charge_mode;
+        } else if (r_connector_lock.empty()) {
+            EVLOG_warning << "keep_cable_locked is ignored: captive cable mode needs a connector lock, but none is "
+                             "connected";
+        } else {
+            EVLOG_warning << "Captive cable mode (keep_cable_locked) is requested; it activates once the BSP reports "
+                             "a socket. The cable then stays locked in the socket in every CP state and is only "
+                             "released by a force unlock. Requires a BSP that publishes ac_pp_ampacity also outside "
+                             "of charging sessions. Intended for fleet/private use.";
+        }
+    }
+
     const auto hw_caps = hw_capabilities.get();
     charger = std::make_unique<Charger>(bsp, error_handling, r_powermeter_billing(), store, hw_caps.connector_type,
                                         config.evse_id);
 
-    // Now incoming hardware capabilities can be processed
-    hw_capabilities.allow_updates();
-
+    // Wired before allow_updates(): the capabilities callback may enable captive mode, which can lock at once.
     if (r_connector_lock.size() > 0) {
         bsp->signal_lock.connect([this]() { r_connector_lock[0]->call_lock(); });
         bsp->signal_unlock.connect([this]() { r_connector_lock[0]->call_unlock(); });
     }
+
+    // Now incoming hardware capabilities can be processed
+    hw_capabilities.allow_updates();
 
     if (hlc_enabled) {
 
@@ -1216,8 +1260,8 @@ void EvseManager::ready() {
     });
 
     r_bsp->subscribe_ac_nr_of_phases_available([this](int n) { signalNrOfPhasesAvailable(n); });
-    r_bsp->subscribe_ac_pp_ampacity(
-        [this](types::board_support_common::ProximityPilot const& pp) { bsp->set_pp_ampacity(pp); });
+    // Subscribed in init(); replays a value the BSP published before this point.
+    pp_ampacity.connect([this](types::board_support_common::ProximityPilot const& pp) { bsp->set_pp_ampacity(pp); });
 
     if (r_powermeter_billing().size() > 0) {
         r_powermeter_billing()[0]->subscribe_powermeter([this](types::powermeter::Powermeter const& p) {
@@ -2999,6 +3043,37 @@ void EvseManager::set_external_derating(types::dc_external_derate::ExternalDerat
     if (hlc_enabled and config.charge_mode == "DC") {
         push_powersupply_capabilities_to_hlc();
     }
+}
+
+EvseManager::ConfigChangeResult EvseManager::on_keep_cable_locked_changed(const bool& value) {
+    // Held across set_keep_cable_locked() on purpose: ordering with the bsp construction in ready()
+    // stays trivial, at the cost of blocking this config-service callback for its duration.
+    std::scoped_lock lock(keep_cable_locked_mutex);
+    if (value) {
+        if (config.charge_mode not_eq "AC") {
+            return ConfigChangeResult::Rejected("captive cable mode only applies to AC sockets, charge_mode is " +
+                                                config.charge_mode);
+        }
+        if (r_connector_lock.empty()) {
+            return ConfigChangeResult::Rejected("captive cable mode needs a connector lock, but none is connected");
+        }
+        if (bsp_connector_type == types::evse_board_support::Connector_type::IEC62196Type2Cable) {
+            return ConfigChangeResult::Rejected(
+                "captive cable mode only applies to AC sockets, the BSP reports a fixed attached cable");
+        }
+    }
+    rw_config.keep_cable_locked = value;
+    if (bsp) {
+        apply_keep_cable_locked();
+    } // else: the capabilities callback picks the value up from rw_config
+    return ConfigChangeResult::Accepted();
+}
+
+void EvseManager::apply_keep_cable_locked() {
+    // Not yet known connector type counts as unsupported; the capabilities callback re-applies.
+    const bool supported = config.charge_mode == "AC" and not r_connector_lock.empty() and
+                           bsp_connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket;
+    bsp->set_keep_cable_locked(rw_config.keep_cable_locked and supported);
 }
 
 } // namespace module
