@@ -33,8 +33,8 @@ std::set<std::string> builtin_error_types();
 std::vector<Finding> validate_error_types(const CustomFileErrorMapping& mapping,
                                           const Everest::error::ErrorTypes& declared);
 
-/// \returns the keys of the entries that replace a built-in entry. A "<type>#<sub_type>" entry refines rather than
-///          replaces one and is not listed.
+/// \returns the keys of the entries that override fields of a built-in entry for every sub_type. A
+///          "<type>#<sub_type>" entry overrides them for its sub_type only and is not listed.
 std::vector<std::string> replaced_builtin_entries(const CustomFileErrorMapping& mapping,
                                                   const std::set<std::string>& builtin);
 

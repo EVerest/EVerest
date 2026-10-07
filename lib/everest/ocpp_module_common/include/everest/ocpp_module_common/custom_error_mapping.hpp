@@ -73,27 +73,28 @@ struct Finding {
     std::string to_string() const;
 };
 
-/// \brief Reports errors as the entries of a custom error mapping file describe them.
+/// \brief Overrides single fields of the built-in error mapping, as the entries of a custom error mapping file
+/// describe.
 ///
-/// evse_manager/Inoperative is never handled: OCPP 1.6 reports a connector as Faulted only through the
+/// An error is first converted by the built-in mapping; \ref overlay then replaces the fields its entry sets and keeps
+/// every other field. Without an entry, or without a section for the protocol version, the built-in result is reported
+/// unchanged.
+///
+/// evse_manager/Inoperative is never overridden: OCPP 1.6 reports a connector as Faulted only through the
 /// built-in mapping of that error.
 ///
-/// Converts an error from its entry alone: the fields the entry sets are reported, every other field
-/// follows from the error itself. An error without an entry, or whose entry has no section for the
-/// asked protocol version, is not handled, so \ref try_convert returns std::nullopt for it.
-///
 /// \code
-/// const CustomFileErrorMapping mapping{load_error_mapping(path).error_mapping};
-/// const auto info = mapping.try_convert(error);
+/// const auto info = custom_mapping.overlay(error, built_in_mapping.try_convert(error).value());
 /// \endcode
-class CustomFileErrorMapping : public ErrorMappingV16, public ErrorMappingV2X {
+class CustomFileErrorMapping {
 public:
     CustomFileErrorMapping() = default;
     explicit CustomFileErrorMapping(std::map<ErrorKey, Entry> entries);
 
-    std::optional<ocpp::v16::ErrorInfo> try_convert(const Everest::error::Error& error) const override;
-    std::optional<ocpp::v2::EventData> try_convert(const Everest::error::Error& error, bool cleared,
-                                                   std::int32_t event_id) const override;
+    /// \returns \p reported with the fields set by the v16 section of the entry for \p error
+    ocpp::v16::ErrorInfo overlay(const Everest::error::Error& error, ocpp::v16::ErrorInfo reported) const;
+    /// \returns \p reported with the fields set by the v2 section of the entry for \p error
+    ocpp::v2::EventData overlay(const Everest::error::Error& error, ocpp::v2::EventData reported) const;
 
     /// \returns the entry for \p type and \p sub_type, else the entry for \p type alone, else nullptr;
     ///          always nullptr for evse_manager/Inoperative

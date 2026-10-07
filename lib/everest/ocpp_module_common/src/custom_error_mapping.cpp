@@ -266,59 +266,63 @@ const std::map<ErrorKey, Entry>& CustomFileErrorMapping::entries() const {
     return m_entries;
 }
 
-std::optional<ocpp::v16::ErrorInfo> CustomFileErrorMapping::try_convert(const Everest::error::Error& error) const {
+ocpp::v16::ErrorInfo CustomFileErrorMapping::overlay(const Everest::error::Error& error,
+                                                     ocpp::v16::ErrorInfo reported) const {
     const auto* entry = find(error.type, error.sub_type);
     if (entry == nullptr || !entry->v16.has_value()) {
-        return std::nullopt;
+        return reported;
     }
 
-    auto result = make_v16_error_info(error);
     const auto& v16 = entry->v16.value();
     if (v16.error_code.has_value()) {
-        result.error_code = v16.error_code.value();
+        reported.error_code = v16.error_code.value();
     }
     if (v16.vendor_id.has_value()) {
-        result.vendor_id = ocpp::CiString<255>(v16.vendor_id.value(), ocpp::StringTooLarge::Truncate);
+        reported.vendor_id = ocpp::CiString<255>(v16.vendor_id.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v16.vendor_error_code.has_value()) {
-        result.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
+        reported.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v16.info.has_value()) {
-        result.info = ocpp::CiString<50>(v16.info.value(), ocpp::StringTooLarge::Truncate);
+        reported.info = ocpp::CiString<50>(v16.info.value(), ocpp::StringTooLarge::Truncate);
     }
-    return result;
+    return reported;
 }
 
-std::optional<ocpp::v2::EventData> CustomFileErrorMapping::try_convert(const Everest::error::Error& error,
-                                                                       const bool cleared,
-                                                                       const std::int32_t event_id) const {
+ocpp::v2::EventData CustomFileErrorMapping::overlay(const Everest::error::Error& error,
+                                                    ocpp::v2::EventData reported) const {
     const auto* entry = find(error.type, error.sub_type);
     if (entry == nullptr || !entry->v2.has_value()) {
-        return std::nullopt;
+        return reported;
     }
 
-    auto result = make_v2_event_data(error, cleared, event_id);
     const auto& v2 = entry->v2.value();
     if (v2.tech_code.has_value()) {
-        result.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
+        reported.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.tech_info.has_value()) {
-        result.techInfo = ocpp::CiString<500>(v2.tech_info.value(), ocpp::StringTooLarge::Truncate);
+        reported.techInfo = ocpp::CiString<500>(v2.tech_info.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.component_name.has_value()) {
-        result.component.name = ocpp::CiString<50>(v2.component_name.value(), ocpp::StringTooLarge::Truncate);
+        reported.component.name = ocpp::CiString<50>(v2.component_name.value(), ocpp::StringTooLarge::Truncate);
+        // the charging station is the top tier of the device model and belongs to no EVSE
+        if (reported.component.name.get() == CHARGING_STATION_COMPONENT_NAME) {
+            reported.component.evse.reset();
+        }
     }
     if (v2.component_instance.has_value()) {
-        result.component.instance = ocpp::CiString<50>(v2.component_instance.value(), ocpp::StringTooLarge::Truncate);
+        reported.component.instance = ocpp::CiString<50>(v2.component_instance.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.variable_name.has_value()) {
-        result.variable.name = ocpp::CiString<50>(v2.variable_name.value(), ocpp::StringTooLarge::Truncate);
+        reported.variable.name = ocpp::CiString<50>(v2.variable_name.value(), ocpp::StringTooLarge::Truncate);
     }
     if (v2.variable_instance.has_value()) {
-        result.variable.instance = ocpp::CiString<50>(v2.variable_instance.value(), ocpp::StringTooLarge::Truncate);
+        reported.variable.instance = ocpp::CiString<50>(v2.variable_instance.value(), ocpp::StringTooLarge::Truncate);
     }
-    result.severity = v2.severity;
-    return result;
+    if (v2.severity.has_value()) {
+        reported.severity = v2.severity;
+    }
+    return reported;
 }
 
 std::string Finding::to_string() const {

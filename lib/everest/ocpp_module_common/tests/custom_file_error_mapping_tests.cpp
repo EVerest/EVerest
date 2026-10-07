@@ -4,9 +4,12 @@
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
 
 #include <gtest/gtest.h>
+#include <nlohmann/json.hpp>
 
+#include <cstdint>
 #include <memory>
 #include <string>
+#include <utility>
 
 namespace {
 
@@ -38,80 +41,126 @@ constexpr auto TEMPERATURE_ENTRY = R"({
     }
 })";
 
-TEST(CustomFileErrorMappingTest, ErrorWithoutEntryIsNotHandled) {
-    const auto mapping = mapping_of(TEMPERATURE_ENTRY);
-    const auto error = error_of("evse_board_support/MREC2GroundFailure");
-    EXPECT_FALSE(mapping->try_convert(error).has_value());
-    EXPECT_FALSE(mapping->try_convert(error, false, 1).has_value());
+// what the built-in mapping reports for an error without a custom error mapping file
+ocpp::v16::ErrorInfo built_in_v16(const Everest::error::Error& error) {
+    if (auto info = MrecErrorMapping{}.try_convert(error); info.has_value()) {
+        return std::move(info).value();
+    }
+    return DefaultErrorMappingV16{}.try_convert(error).value();
 }
 
-TEST(CustomFileErrorMappingTest, ReportsTheFieldsOfTheEntry) {
+ocpp::v2::EventData built_in_v2(const Everest::error::Error& error, const std::int32_t event_id = 1) {
+    if (auto data = MrecErrorMapping{}.try_convert(error, false, event_id); data.has_value()) {
+        return std::move(data).value();
+    }
+    return DefaultErrorMappingV2X{}.try_convert(error, false, event_id).value();
+}
+
+void expect_equal(const ocpp::v16::ErrorInfo& actual, const ocpp::v16::ErrorInfo& expected) {
+    EXPECT_EQ(actual.uuid, expected.uuid);
+    EXPECT_EQ(actual.error_code, expected.error_code);
+    EXPECT_EQ(actual.is_fault, expected.is_fault);
+    EXPECT_EQ(actual.info, expected.info);
+    EXPECT_EQ(actual.vendor_id, expected.vendor_id);
+    EXPECT_EQ(actual.vendor_error_code, expected.vendor_error_code);
+    EXPECT_EQ(actual.timestamp.to_rfc3339(), expected.timestamp.to_rfc3339());
+}
+
+void expect_equal(const ocpp::v2::EventData& actual, const ocpp::v2::EventData& expected) {
+    EXPECT_EQ(nlohmann::json(actual), nlohmann::json(expected));
+}
+
+TEST(CustomFileErrorMappingTest, ErrorWithoutEntryKeepsTheBuiltInResult) {
+    const auto mapping = mapping_of(TEMPERATURE_ENTRY);
+    const auto error = error_of("evse_board_support/MREC2GroundFailure");
+    expect_equal(mapping->overlay(error, built_in_v16(error)), built_in_v16(error));
+    expect_equal(mapping->overlay(error, built_in_v2(error)), built_in_v2(error));
+}
+
+TEST(CustomFileErrorMappingTest, OverridesTheFieldsOfTheEntry) {
     const auto mapping = mapping_of(TEMPERATURE_ENTRY);
     const auto error = error_of("evse_board_support/MREC3HighTemperature");
 
-    const auto v16 = mapping->try_convert(error);
-    ASSERT_TRUE(v16.has_value());
-    EXPECT_EQ(v16->error_code, ChargePointErrorCode::HighTemperature);
-    EXPECT_EQ(v16->vendor_id.value().get(), "com.example");
-    EXPECT_EQ(v16->vendor_error_code.value().get(), "T-210");
-    EXPECT_EQ(v16->info.value().get(), "Temperature error raised at ${actual_value} deg");
+    const auto v16 = mapping->overlay(error, built_in_v16(error));
+    EXPECT_EQ(v16.error_code, ChargePointErrorCode::HighTemperature);
+    EXPECT_EQ(v16.vendor_id.value().get(), "com.example");
+    EXPECT_EQ(v16.vendor_error_code.value().get(), "T-210");
+    EXPECT_EQ(v16.info.value().get(), "Temperature error raised at ${actual_value} deg");
 
-    const auto v2 = mapping->try_convert(error, false, 7);
-    ASSERT_TRUE(v2.has_value());
-    EXPECT_EQ(v2->eventId, 7);
-    EXPECT_EQ(v2->techCode.value().get(), "T-210");
-    EXPECT_EQ(v2->techInfo.value().get(), "The Connector temperature is high");
-    EXPECT_EQ(v2->component.name.get(), "Connector");
-    EXPECT_EQ(v2->variable.name.get(), "Temperature");
-    EXPECT_EQ(v2->severity.value(), 3);
-    EXPECT_EQ(v2->cleared, false);
+    const auto v2 = mapping->overlay(error, built_in_v2(error, 7));
+    EXPECT_EQ(v2.eventId, 7);
+    EXPECT_EQ(v2.techCode.value().get(), "T-210");
+    EXPECT_EQ(v2.techInfo.value().get(), "The Connector temperature is high");
+    EXPECT_EQ(v2.component.name.get(), "Connector");
+    EXPECT_EQ(v2.variable.name.get(), "Temperature");
+    EXPECT_EQ(v2.severity.value(), 3);
+    EXPECT_EQ(v2.cleared, false);
 }
 
-TEST(CustomFileErrorMappingTest, UnsetFieldsFollowFromTheError) {
+TEST(CustomFileErrorMappingTest, FieldsTheEntryLeavesOutKeepTheBuiltInValue) {
     const auto mapping = mapping_of(
         R"({"generic/VendorError": {"v16": {"vendor_error_code": "X"}, "v2": {"variable_name": "Tripped"}}})");
-    const auto error = error_of("generic/VendorError");
+    auto error = error_of("generic/VendorError", "Spd");
+    error.origin = ImplementationIdentifier("bsp_1", "main", Mapping(1, 2));
 
-    const auto v16 = mapping->try_convert(error);
-    ASSERT_TRUE(v16.has_value());
-    EXPECT_EQ(v16->error_code, ChargePointErrorCode::OtherError);
-    EXPECT_FALSE(v16->is_fault);
-    EXPECT_FALSE(v16->vendor_id.has_value());
-    EXPECT_FALSE(v16->info.has_value());
-    EXPECT_EQ(v16->vendor_error_code.value().get(), "X");
+    auto expected_v16 = built_in_v16(error);
+    expected_v16.vendor_error_code = ocpp::CiString<50>("X");
+    expect_equal(mapping->overlay(error, built_in_v16(error)), expected_v16);
 
-    const auto v2 = mapping->try_convert(error, false, 1);
-    ASSERT_TRUE(v2.has_value());
-    EXPECT_FALSE(v2->techCode.has_value());
-    EXPECT_EQ(v2->techInfo.value().get(), "sensor reports fault");
-    EXPECT_EQ(v2->variable.name.get(), "Tripped");
+    auto expected_v2 = built_in_v2(error);
+    expected_v2.variable.name = "Tripped";
+    expect_equal(mapping->overlay(error, built_in_v2(error)), expected_v2);
 }
 
-TEST(CustomFileErrorMappingTest, MissingSectionIsNotHandled) {
+TEST(CustomFileErrorMappingTest, KeepsTheBuiltInMrecValuesTheEntryLeavesOut) {
+    const auto mapping = mapping_of(R"({"evse_board_support/MREC3HighTemperature": {"v16": {"vendor_id": "com.example"},
+                                        "v2": {"tech_info": "too hot"}}})");
+    const auto error = error_of("evse_board_support/MREC3HighTemperature");
+
+    auto expected_v16 = built_in_v16(error);
+    expected_v16.vendor_id = ocpp::CiString<255>("com.example");
+    expect_equal(mapping->overlay(error, built_in_v16(error)), expected_v16);
+    EXPECT_EQ(expected_v16.error_code, ChargePointErrorCode::HighTemperature);
+
+    auto expected_v2 = built_in_v2(error);
+    expected_v2.techInfo = ocpp::CiString<500>("too hot");
+    expect_equal(mapping->overlay(error, built_in_v2(error)), expected_v2);
+    EXPECT_EQ(expected_v2.techCode.value().get(), "CX003");
+}
+
+TEST(CustomFileErrorMappingTest, ChargingStationComponentHasNoEvse) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"component_name": "ChargingStation"}}})");
+    auto error = error_of("generic/VendorError");
+    error.origin = ImplementationIdentifier("bsp_1", "main", Mapping(1, 2));
+    ASSERT_TRUE(built_in_v2(error).component.evse.has_value());
+
+    const auto v2 = mapping->overlay(error, built_in_v2(error));
+    EXPECT_EQ(v2.component.name.get(), "ChargingStation");
+    EXPECT_FALSE(v2.component.evse.has_value());
+}
+
+TEST(CustomFileErrorMappingTest, MissingSectionKeepsTheBuiltInResult) {
     const auto mapping = mapping_of(R"({"generic/VendorError#Spd": {"v2": {"tech_code": "SPD-1"}}})");
     const auto error = error_of("generic/VendorError", "Spd");
-    EXPECT_FALSE(mapping->try_convert(error).has_value());
-    const auto v2 = mapping->try_convert(error, false, 1);
-    ASSERT_TRUE(v2.has_value());
-    EXPECT_EQ(v2->techCode.value().get(), "SPD-1");
+    expect_equal(mapping->overlay(error, built_in_v16(error)), built_in_v16(error));
+    EXPECT_EQ(mapping->overlay(error, built_in_v2(error)).techCode.value().get(), "SPD-1");
 }
 
 TEST(CustomFileErrorMappingTest, SubTypeEntryAppliesOnlyToItsSubType) {
     const auto mapping = mapping_of(R"({"generic/VendorError#YourCustomErrorType": {
         "v16": {"error_code": "OtherError", "vendor_id": "com.example", "vendor_error_code": "T-210"}}})");
-    const auto v16 = mapping->try_convert(error_of("generic/VendorError", "YourCustomErrorType", "our message"));
-    ASSERT_TRUE(v16.has_value());
-    EXPECT_EQ(v16->vendor_id.value().get(), "com.example");
+    const auto error = error_of("generic/VendorError", "YourCustomErrorType", "our message");
+    EXPECT_EQ(mapping->overlay(error, built_in_v16(error)).vendor_id.value().get(), "com.example");
 
-    EXPECT_FALSE(mapping->try_convert(error_of("generic/VendorError", "Other")).has_value());
-    EXPECT_FALSE(mapping->try_convert(error_of("generic/VendorError")).has_value());
+    for (const auto& other : {error_of("generic/VendorError", "Other"), error_of("generic/VendorError")}) {
+        expect_equal(mapping->overlay(other, built_in_v16(other)), built_in_v16(other));
+    }
 }
 
 TEST(CustomFileErrorMappingTest, ReportsNoSeverityWithoutTheField) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_code": "A"}}})");
-    const auto v2 = mapping->try_convert(error_of("generic/VendorError"), false, 1);
-    ASSERT_TRUE(v2.has_value());
-    EXPECT_FALSE(v2->severity.has_value());
+    const auto error = error_of("generic/VendorError");
+    EXPECT_FALSE(mapping->overlay(error, built_in_v2(error)).severity.has_value());
 }
 
 TEST(CustomFileErrorMappingTest, ReportsTheSameSeverityForEveryOccurrence) {
@@ -119,34 +168,34 @@ TEST(CustomFileErrorMappingTest, ReportsTheSameSeverityForEveryOccurrence) {
     for (const auto severity : {Everest::error::Severity::Low, Everest::error::Severity::High}) {
         auto error = error_of("generic/VendorError");
         error.severity = severity;
-        const auto v2 = mapping->try_convert(error, false, 1);
-        ASSERT_TRUE(v2.has_value());
-        EXPECT_EQ(v2->severity.value(), 0);
+        EXPECT_EQ(mapping->overlay(error, built_in_v2(error)).severity.value(), 0);
     }
 }
 
 TEST(CustomFileErrorMappingTest, TruncatesTextToTheOcppLimits) {
     const auto long_info = std::string(60, 'x');
     const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": ")" + long_info + R"("}}})");
-    const auto v16 = mapping->try_convert(error_of("generic/VendorError"));
-    ASSERT_TRUE(v16.has_value());
-    EXPECT_EQ(v16->info.value().get(), std::string(50, 'x'));
+    const auto error = error_of("generic/VendorError");
+    EXPECT_EQ(mapping->overlay(error, built_in_v16(error)).info.value().get(), std::string(50, 'x'));
 }
 
-TEST(CustomFileErrorMappingTest, NeverHandlesTheInoperativeError) {
-    Entry entry{{"evse_manager/Inoperative", std::nullopt}, V16Identity{}, V2Identity{}};
+TEST(CustomFileErrorMappingTest, NeverOverridesTheInoperativeError) {
+    Entry entry{
+        {"evse_manager/Inoperative", std::nullopt}, V16Identity{ChargePointErrorCode::GroundFailure}, V2Identity{"T"}};
     const CustomFileErrorMapping mapping{{{entry.key, entry}}};
     const auto error = error_of("evse_manager/Inoperative");
     EXPECT_EQ(mapping.find(error.type, error.sub_type), nullptr);
-    EXPECT_FALSE(mapping.try_convert(error).has_value());
-    EXPECT_FALSE(mapping.try_convert(error, false, 1).has_value());
+
+    const auto v16 = InoperativeErrorMappingV16{}.try_convert(error).value();
+    expect_equal(mapping.overlay(error, v16), v16);
+    expect_equal(mapping.overlay(error, built_in_v2(error)), built_in_v2(error));
 }
 
-TEST(CustomFileErrorMappingTest, AnEmptyMappingHandlesNothing) {
+TEST(CustomFileErrorMappingTest, AnEmptyMappingOverridesNothing) {
     const CustomFileErrorMapping mapping;
     const auto error = error_of("generic/VendorError");
-    EXPECT_FALSE(mapping.try_convert(error).has_value());
-    EXPECT_FALSE(mapping.try_convert(error, false, 1).has_value());
+    expect_equal(mapping.overlay(error, built_in_v16(error)), built_in_v16(error));
+    expect_equal(mapping.overlay(error, built_in_v2(error)), built_in_v2(error));
 }
 
 } // namespace

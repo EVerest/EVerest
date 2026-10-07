@@ -194,6 +194,9 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
         std::set<std::string> component_names;
         for (const auto& evse : candidate_evses(topology)) {
             component.name = v2.component_name.value_or(built_in_component_name(evse));
+            if (component.name.get() == CHARGING_STATION_COMPONENT_NAME && evse.has_value()) {
+                continue;
+            }
             component.evse = evse;
             component_names.insert(component.name.get());
             const auto result = lookup(component, variable);

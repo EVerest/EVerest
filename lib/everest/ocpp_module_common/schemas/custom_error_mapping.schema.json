@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://everest.github.io/schemas/ocpp_module_common/custom_error_mapping.schema.json",
   "title": "Custom OCPP error mapping",
-  "description": "Maps EVerest errors to their OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone. evse_manager/Inoperative cannot be mapped.",
+  "description": "Overrides fields of the built-in OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation of EVerest errors. Every field an entry leaves out keeps its built-in value. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone. evse_manager/Inoperative cannot be mapped.",
   "type": "object",
   "properties": {
     "$schema": {
@@ -45,7 +45,7 @@
       "type": "object",
       "properties": {
         "error_code": {
-          "description": "errorCode. Defaults to OtherError.",
+          "description": "errorCode. Defaults to the built-in value.",
           "type": "string",
           "enum": [
             "ConnectorLockFailure",
@@ -66,20 +66,21 @@
           ]
         },
         "vendor_id": {
-          "description": "vendorId.",
+          "description": "vendorId. Defaults to the built-in value.",
           "type": "string",
           "minLength": 1,
           "maxLength": 255
         },
         "vendor_error_code": {
-          "description": "vendorErrorCode.",
+          "description": "vendorErrorCode. Defaults to the built-in value.",
           "type": "string",
           "minLength": 1,
           "maxLength": 50
         },
         "info": {
-          "description": "info, replacing the error message. May contain ${actual_value}. Truncated to 50 characters.",
-          "type": "string"
+          "description": "info. Defaults to the built-in value. May contain ${actual_value}. Truncated to 50 characters.",
+          "type": "string",
+          "minLength": 1
         }
       },
       "additionalProperties": false
@@ -89,17 +90,18 @@
       "type": "object",
       "properties": {
         "tech_code": {
-          "description": "techCode. Defaults to the EVerest error type.",
+          "description": "techCode. Defaults to the built-in value.",
           "type": "string",
           "minLength": 1,
           "maxLength": 50
         },
         "tech_info": {
-          "description": "techInfo, replacing the error message. May contain ${actual_value}. Truncated to 500 characters.",
-          "type": "string"
+          "description": "techInfo. Defaults to the built-in value. May contain ${actual_value}. Truncated to 500 characters.",
+          "type": "string",
+          "minLength": 1
         },
         "component_name": {
-          "description": "Component name. Defaults to EVSE, or ChargingStation for an error without an EVSE mapping.",
+          "description": "Component name. Defaults to the built-in value: EVSE, or ChargingStation for an error without an EVSE mapping. ChargingStation reports the error without an EVSE.",
           "$ref": "#/definitions/identifier"
         },
         "component_instance": {
@@ -107,7 +109,7 @@
           "$ref": "#/definitions/identifier"
         },
         "variable_name": {
-          "description": "Variable name. Defaults to Problem.",
+          "description": "Variable name. Defaults to the built-in value, Problem.",
           "$ref": "#/definitions/identifier"
         },
         "variable_instance": {

@@ -192,6 +192,22 @@ TEST(ErrorMappingLoaderTest, RejectsFieldLongerThanOcppLimit) {
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v16/vendor_error_code");
 }
 
+TEST(ErrorMappingLoaderTest, RejectsEmptyText) {
+    EXPECT_EQ(single_error(R"({"generic/VendorError": {"v16": {"info": ""}}})").pointer,
+              "/generic~1VendorError/v16/info");
+    EXPECT_EQ(single_error(R"({"generic/VendorError": {"v2": {"tech_info": ""}}})").pointer,
+              "/generic~1VendorError/v2/tech_info");
+}
+
+// the final length is known only after placeholders are expanded, so longer text is truncated rather than rejected
+TEST(ErrorMappingLoaderTest, AcceptsTextLongerThanOcppLimit) {
+    const auto result = parse_error_mapping(R"({"generic/VendorError": {"v16": {"info": ")" + std::string(51, 'x') +
+                                            R"("}, "v2": {"tech_info": ")" + std::string(501, 'x') + R"("}}})");
+    EXPECT_TRUE(errors_of(result).empty());
+    ASSERT_NE(result.error_mapping, nullptr);
+    EXPECT_EQ(result.error_mapping->entries().size(), 1U);
+}
+
 TEST(ErrorMappingLoaderTest, RejectsSeverityOutOfRange) {
     const auto finding = single_error(R"({"generic/VendorError": {"v2": {"severity": 10}}})");
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/severity");

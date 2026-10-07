@@ -186,6 +186,17 @@ TEST(ErrorMappingDeviceModelTest, AcceptsTheChargingStation) {
     EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
 }
 
+TEST(ErrorMappingDeviceModelTest, ChecksANamedChargingStationWithoutEvse) {
+    FakeDeviceModel model;
+    model.add("ChargingStation", std::nullopt, std::nullopt, {"Temperature"});
+    const auto mapping = mapping_of(
+        R"({"generic/VendorError": {"v2": {"component_name": "ChargingStation", "variable_name": "Temperature"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
+    for (const auto& lookup : model.lookups()) {
+        EXPECT_FALSE(lookup.evse.has_value());
+    }
+}
+
 TEST(ErrorMappingDeviceModelTest, WarningNamesEveryComponentChecked) {
     FakeDeviceModel model;
     const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Temperature"}}})");

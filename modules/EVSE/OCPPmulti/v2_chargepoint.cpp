@@ -613,18 +613,16 @@ std::optional<ocpp::v2::EventData> ChargePointV2::convert_error(const EventInfo&
     static const MrecErrorMapping mrec;
     static const DefaultErrorMappingV2X fallback;
 
-    // the configured mapping file describes single errors and is asked before everything built in;
-    // its slot stays empty when no file is configured
-    const auto custom = m_callbacks_ptr->custom_error_mapping();
-    const std::array<const ErrorMappingV2X*, 3> mappings{custom.get(), &mrec, &fallback};
+    const std::array<const ErrorMappingV2X*, 2> mappings{&mrec, &fallback};
 
+    // the configured mapping file only overrides single fields of the built-in result
+    const auto custom = m_callbacks_ptr->custom_error_mapping();
+    const auto& error = event.error.value();
     for (const auto* mapping : mappings) {
-        if (mapping == nullptr) {
-            continue;
-        }
-        if (auto event_data = mapping->try_convert(event.error.value(), event.event_cleared, event.event_id);
+        if (auto event_data = mapping->try_convert(error, event.event_cleared, event.event_id);
             event_data.has_value()) {
-            return event_data;
+            return custom != nullptr ? custom->overlay(error, std::move(event_data).value())
+                                     : std::move(event_data).value();
         }
     }
     return std::nullopt;

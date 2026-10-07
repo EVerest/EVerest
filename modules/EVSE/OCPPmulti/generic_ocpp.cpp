@@ -486,7 +486,7 @@ void GenericOcpp::init_custom_error_mapping() {
     mapping = without_reported(resolved, *mapping, validate_values(*mapping));
 
     for (const auto& key : replaced_builtin_entries(*mapping, builtin_error_types())) {
-        EVLOG_info << resolved.string() << ": entry '" << key << "' replaces the built-in MREC mapping";
+        EVLOG_info << resolved.string() << ": entry '" << key << "' overrides fields of the built-in MREC mapping";
     }
     mv_custom_error_mapping = std::move(mapping);
     mv_custom_error_mapping_path = resolved;

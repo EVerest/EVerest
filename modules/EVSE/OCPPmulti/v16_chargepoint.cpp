@@ -417,17 +417,13 @@ ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& 
     static const InoperativeErrorMappingV16 inoperative;
     static const DefaultErrorMappingV16 fallback;
 
-    // the configured mapping file describes single errors and is asked before everything built in;
-    // its slot stays empty when no file is configured
-    const auto custom = m_callbacks_ptr->custom_error_mapping();
-    const std::array<const ErrorMappingV16*, 5> mappings{custom.get(), &mrec, &ocpp_table, &inoperative, &fallback};
+    const std::array<const ErrorMappingV16*, 4> mappings{&mrec, &ocpp_table, &inoperative, &fallback};
 
+    // the configured mapping file only overrides single fields of the built-in result
+    const auto custom = m_callbacks_ptr->custom_error_mapping();
     for (const auto* mapping : mappings) {
-        if (mapping == nullptr) {
-            continue;
-        }
         if (auto result = mapping->try_convert(error); result.has_value()) {
-            return std::move(result).value();
+            return custom != nullptr ? custom->overlay(error, std::move(result).value()) : std::move(result).value();
         }
     }
 
