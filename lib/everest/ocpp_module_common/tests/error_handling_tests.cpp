@@ -6,6 +6,7 @@
 #include <everest/ocpp_module_common/error_handling.hpp>
 
 #include <filesystem>
+#include <optional>
 #include <stdexcept>
 #include <string_view>
 
@@ -103,6 +104,48 @@ TEST(GetEventData, NonMrecErrorWithMessageAlsoSetsTechInfo) {
     EXPECT_EQ(event_data.techInfo.value().get(), "custom diagnostic text");
     ASSERT_TRUE(event_data.techCode.has_value());
     EXPECT_EQ(event_data.techCode.value().get(), "some_module/SomeGenericError");
+}
+
+Everest::error::Error error_mapped_to(std::optional<Mapping> mapping) {
+    Everest::error::Error error{"evse_board_support/MREC2GroundFailure", "", "message", "description", "bsp", "main"};
+    error.origin.mapping = mapping;
+    return error;
+}
+
+TEST(GetComponentFromError, WithoutMappingIsTheChargingStation) {
+    const auto component = get_component_from_error(error_mapped_to(std::nullopt));
+    EXPECT_EQ(component.name.get(), CHARGING_STATION_COMPONENT_NAME);
+    EXPECT_FALSE(component.evse.has_value());
+}
+
+TEST(GetComponentFromError, EvseZeroIsTheChargingStation) {
+    for (const auto& mapping : {Mapping(0), Mapping(0, 1)}) {
+        const auto component = get_component_from_error(error_mapped_to(mapping));
+        EXPECT_EQ(component.name.get(), CHARGING_STATION_COMPONENT_NAME);
+        EXPECT_FALSE(component.evse.has_value());
+    }
+}
+
+TEST(GetComponentFromError, EvseMappingIsTheEvseComponent) {
+    const auto component = get_component_from_error(error_mapped_to(Mapping(2)));
+    EXPECT_EQ(component.name.get(), EVSE_COMPONENT_NAME);
+    ASSERT_TRUE(component.evse.has_value());
+    EXPECT_EQ(component.evse->id, 2);
+    EXPECT_FALSE(component.evse->connectorId.has_value());
+}
+
+TEST(GetComponentFromError, ConnectorMappingIsCarriedInTheEvse) {
+    const auto component = get_component_from_error(error_mapped_to(Mapping(2, 1)));
+    EXPECT_EQ(component.name.get(), EVSE_COMPONENT_NAME);
+    ASSERT_TRUE(component.evse.has_value());
+    EXPECT_EQ(component.evse->id, 2);
+    EXPECT_EQ(component.evse->connectorId, 1);
+}
+
+TEST(GetEventData, ErrorOfAModuleOnEvseZeroIsReportedOnTheChargingStation) {
+    const auto event_data = get_event_data(error_mapped_to(Mapping(0)), false, 1, MREC_ERROR_MAP);
+    EXPECT_EQ(event_data.component.name.get(), CHARGING_STATION_COMPONENT_NAME);
+    EXPECT_FALSE(event_data.component.evse.has_value());
 }
 
 TEST(LoadMrecErrorMapOverrides, OverridesAndAddsEntries) {

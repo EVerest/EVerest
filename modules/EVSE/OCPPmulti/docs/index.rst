@@ -549,8 +549,8 @@ error path. OCPP 1.6 uses a separate built-in MREC table that ``CustomMrecErrorM
 For both protocol generations, only errors of the special type **evse_manager/Inoperative** are reported as faults
 (i.e. lead to a **StatusNotification.req** with status **Faulted**); this type indicates that the EVSE is not
 available for energy transfer. The EVSE/connector an error is reported for is derived from the EVerest mapping of the
-error's origin; without a mapping, it is reported for the whole charging station (connector 0). All other errors are
-reported without changing the connector status, in a version-specific way.
+error's origin; without a mapping, or with EVSE 0, it is reported for the whole charging station (connector 0). All
+other errors are reported without changing the connector status, in a version-specific way.
 
 OCPP 1.6
 ^^^^^^^^
@@ -582,7 +582,7 @@ In contrast to OCPP 1.6, error information is not transmitted in **StatusNotific
 status **Faulted** for the Inoperative case above). All other errors are reported via **NotifyEvent.req**, whose
 **eventData** structure requires mapping each error to a component-variable combination:
 
-* **ChargingStation** if the error origin has no EVSE mapping
+* **ChargingStation**, without an EVSE, if the error origin has no mapping or is mapped to EVSE 0
 * **EVSE** otherwise; when a connector is also mapped, its id is carried in the component's ``connectorId`` (the
   component name stays **EVSE**, a dedicated **Connector** component is not used yet)
 
