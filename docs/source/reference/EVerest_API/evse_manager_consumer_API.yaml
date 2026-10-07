@@ -2139,6 +2139,17 @@ components:
             Timestamp of transaction end. Updated at each transaction end.
           type: string
           format: date-time
+        reserved:
+          description: >-
+            Indicates whether the EVSE is currently held for a reservation (true) or not (false).
+            Independent of state: an EVSE can stay reserved while an EV that does not match the
+            reservation is plugged in. Reservations that are not for a specific EVSE (e.g. only
+            for a connector type) hold an EVSE only once they use up the remaining capacity,
+            and the EVSEs they hold can change while they are pending.
+            Becomes false when the reservation ends or is used to start a transaction.
+            Treated as false when omitted.
+          type: boolean
+          default: false
     HlcSessionFailedReasonEnum:
       description: |
         Reason for a higher-level-communication (HLC) session failure event.
