@@ -439,12 +439,14 @@ void MQTTAbstractionImpl::handle_mqtt_message(const Message& message) {
                                              MAX_JSON_NESTING_DEPTH);
                 return;
             }
+            json data;
             try {
-                this->message_handler.add(ParsedMessage{std::move(topic), json::parse(payload.begin(), payload.end())});
-            } catch (nlohmann::detail::parse_error& e) {
+                data = json::parse(payload.begin(), payload.end());
+            } catch (const nlohmann::json::exception&) {
                 EVLOG_warning << fmt::format("Could not decode json for incoming topic '{}': {}", topic, payload);
                 return;
             }
+            this->message_handler.add(ParsedMessage{topic, std::move(data)});
         } else {
             EVLOG_debug << fmt::format("Message parsing for topic '{}' not implemented. Wrapping in json object.",
                                        topic);
