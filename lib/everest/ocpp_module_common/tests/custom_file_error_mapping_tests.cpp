@@ -133,11 +133,13 @@ TEST(CustomFileErrorMappingTest, TruncatesTextToTheOcppLimits) {
     EXPECT_EQ(v16->info.value().get(), std::string(50, 'x'));
 }
 
-TEST(CustomFileErrorMappingTest, DescribesTheInoperativeErrorLikeAnyOther) {
-    const auto mapping = mapping_of(R"({"evse_manager/Inoperative": {"v16": {"vendor_error_code": "X"}}})");
-    const auto v16 = mapping->try_convert(error_of("evse_manager/Inoperative"));
-    ASSERT_TRUE(v16.has_value());
-    EXPECT_EQ(v16->vendor_error_code.value().get(), "X");
+TEST(CustomFileErrorMappingTest, NeverHandlesTheInoperativeError) {
+    Entry entry{{"evse_manager/Inoperative", std::nullopt}, V16Identity{}, V2Identity{}};
+    const CustomFileErrorMapping mapping{{{entry.key, entry}}};
+    const auto error = error_of("evse_manager/Inoperative");
+    EXPECT_EQ(mapping.find(error.type, error.sub_type), nullptr);
+    EXPECT_FALSE(mapping.try_convert(error).has_value());
+    EXPECT_FALSE(mapping.try_convert(error, false, 1).has_value());
 }
 
 TEST(CustomFileErrorMappingTest, AnEmptyMappingHandlesNothing) {

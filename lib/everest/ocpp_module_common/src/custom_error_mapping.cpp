@@ -177,6 +177,12 @@ std::optional<Entry> to_entry(const std::string& key, const json& value, std::ve
         findings.push_back(make_error(key, "", INVALID_KEY_MESSAGE));
         return std::nullopt;
     }
+    if (error_key->type == EVSE_MANAGER_INOPERATIVE_ERROR) {
+        findings.push_back(make_error(key, "",
+                                      EVSE_MANAGER_INOPERATIVE_ERROR +
+                                          " is reported as a fault by the built-in mapping and cannot be mapped"));
+        return std::nullopt;
+    }
     Entry entry{std::move(error_key.value()), std::nullopt, std::nullopt};
     if (const auto it = value.find("v16"); it != value.end()) {
         entry.v16 = to_v16(*it, key, findings);
@@ -223,6 +229,9 @@ CustomFileErrorMapping::CustomFileErrorMapping(std::map<ErrorKey, Entry> entries
 }
 
 const Entry* CustomFileErrorMapping::find(const std::string& type, const std::string& sub_type) const {
+    if (type == EVSE_MANAGER_INOPERATIVE_ERROR) {
+        return nullptr;
+    }
     if (!sub_type.empty()) {
         if (const auto it = m_entries.find(ErrorKey{type, sub_type}); it != m_entries.end()) {
             return &it->second;

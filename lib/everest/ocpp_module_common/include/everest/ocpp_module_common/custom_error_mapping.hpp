@@ -60,6 +60,9 @@ struct Entry {
 
 /// \brief Reports errors as the entries of a custom error mapping file describe them.
 ///
+/// evse_manager/Inoperative is never handled: OCPP 1.6 reports a connector as Faulted only through the
+/// built-in mapping of that error.
+///
 /// Converts an error from its entry alone: the fields the entry sets are reported, every other field
 /// follows from the error itself. An error without an entry, or whose entry has no section for the
 /// asked protocol version, is not handled, so \ref try_convert returns std::nullopt for it.
@@ -77,7 +80,8 @@ public:
     std::optional<ocpp::v2::EventData> try_convert(const Everest::error::Error& error, bool cleared,
                                                    std::int32_t event_id) const override;
 
-    /// \returns the entry for \p type and \p sub_type, else the entry for \p type alone, else nullptr
+    /// \returns the entry for \p type and \p sub_type, else the entry for \p type alone, else nullptr;
+    ///          always nullptr for evse_manager/Inoperative
     const Entry* find(const std::string& type, const std::string& sub_type) const;
     const std::map<ErrorKey, Entry>& entries() const;
 
@@ -111,7 +115,8 @@ struct LoadResult {
 /// \returns the error mapping schema (JSON schema draft-07)
 const std::string& error_mapping_schema();
 
-/// \brief Parses and validates the mapping file content against the schema. Duplicate keys are errors.
+/// \brief Parses and validates the mapping file content against the schema. Duplicate keys and entries for
+///        evse_manager/Inoperative are errors.
 LoadResult parse_error_mapping(std::string_view content);
 
 /// \brief Reads \p path and parses it with parse_error_mapping

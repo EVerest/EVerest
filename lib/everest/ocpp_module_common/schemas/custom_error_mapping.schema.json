@@ -2,7 +2,7 @@
   "$schema": "http://json-schema.org/draft-07/schema#",
   "$id": "https://everest.github.io/schemas/ocpp_module_common/custom_error_mapping.schema.json",
   "title": "Custom OCPP error mapping",
-  "description": "Maps EVerest errors to their OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone.",
+  "description": "Maps EVerest errors to their OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone. evse_manager/Inoperative cannot be mapped.",
   "type": "object",
   "properties": {
     "$schema": {

@@ -140,6 +140,14 @@ TEST(ErrorMappingLoaderTest, AcceptsEmptyFileAndSchemaReference) {
     EXPECT_TRUE(with_schema.error_mapping->entries().empty());
 }
 
+TEST(ErrorMappingLoaderTest, RejectsTheInoperativeError) {
+    for (const auto* key : {"evse_manager/Inoperative", "evse_manager/Inoperative#SubType"}) {
+        const auto finding = single_error(std::string(R"({")") + key + R"(": {"v16": {"vendor_error_code": "X"}}})");
+        EXPECT_EQ(finding.entry, key);
+        EXPECT_THAT(finding.message, HasSubstr("cannot be mapped"));
+    }
+}
+
 TEST(ErrorMappingLoaderTest, RejectsUnknownEntryField) {
     const auto finding = single_error(R"({"generic/VendorError": {"v16": {}, "v3": {}}})");
     EXPECT_EQ(finding.entry, "generic/VendorError");
