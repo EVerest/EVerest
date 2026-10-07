@@ -91,7 +91,7 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
     ASSERT_TRUE(api->v2.has_value());
     EXPECT_EQ(api->v2->tech_code, "T-210");
     EXPECT_EQ(api->v2->component_name, "Connector");
-    EXPECT_EQ(api->v2->variable_name, "Temperature");
+    EXPECT_EQ(api->v2->variable_name, "Problem");
     EXPECT_FALSE(api->v2->component_instance.has_value());
     EXPECT_EQ(api->v2->tech_info, "Connector temperature error on EVSE ${evse}: ${message}");
     ASSERT_TRUE(api->v2->severity.has_value());

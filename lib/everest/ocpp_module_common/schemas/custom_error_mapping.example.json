@@ -10,7 +10,7 @@
     "v2": {
       "tech_code": "T-210",
       "component_name": "Connector",
-      "variable_name": "Temperature",
+      "variable_name": "Problem",
       "severity": 5,
       "tech_info": "Connector temperature error on EVSE ${evse}: ${message}"
     }
@@ -24,8 +24,6 @@
     },
     "v2": {
       "tech_code": "T-210",
-      "component_name": "Connector",
-      "variable_name": "Temperature",
       "severity": 3,
       "tech_info": "The Connector temperature is high"
     }

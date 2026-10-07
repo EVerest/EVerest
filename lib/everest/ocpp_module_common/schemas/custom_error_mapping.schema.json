@@ -101,7 +101,7 @@
           "minLength": 1
         },
         "component_name": {
-          "description": "Component name. Defaults to the built-in value: EVSE, or ChargingStation for an error without an EVSE mapping. ChargingStation reports the error without an EVSE.",
+          "description": "Component name. Defaults to the built-in value: EVSE, or ChargingStation for an error without an EVSE mapping. The EVSE and connector of the component always follow the EVerest mapping of the module that raised the error; ChargingStation reports the error without an EVSE.",
           "$ref": "#/definitions/identifier"
         },
         "component_instance": {
@@ -117,7 +117,7 @@
           "$ref": "#/definitions/identifier"
         },
         "severity": {
-          "description": "severity, reported for every occurrence of the error. Only OCPP 2.1 reports it. Without this field no severity is reported.",
+          "description": "severity (0 highest, 9 lowest), reported for every occurrence of the error. A static value, unrelated to the severity the EVerest error is raised with. Only OCPP 2.1 reports it. Without this field no severity is reported.",
           "type": "integer",
           "minimum": 0,
           "maximum": 9
