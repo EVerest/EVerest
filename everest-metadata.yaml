@@ -171,9 +171,6 @@ ocpp:
 websockets:
   description: "An implementation of the WebSocket Protocol (RFC 6455 & 7692)"
   license: "BSD-3-Clause"
-pyOpenSSL:
-  description: "Python wrapper module around the OpenSSL library"
-  license: "Apache-2.0"
 
 liblog:
   description: "C++ logging and exceptions library for the EVerest framework"

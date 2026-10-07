@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import OpenSSL.crypto as crypto
 import logging
 import time
 import asyncio
@@ -12,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Any, Union
 from typing import Optional
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from ocpp.messages import unpack
 from ocpp.charge_point import ChargePoint as CP
 from ocpp.charge_point import snake_to_camel_case, camel_to_snake_case, asdict, remove_nones
@@ -307,14 +308,28 @@ class MessageHistory:
             logging.info(f"{time} {message.initiator}: {message.message}")
 
 
-def create_cert(serial_no, not_before, not_after, ca_cert, csr, ca_private_key):
-    cert = crypto.X509()
-    cert.set_serial_number(serial_no)
-    cert.gmtime_adj_notBefore(0)
-    cert.gmtime_adj_notAfter(not_after)
-    cert.set_issuer(ca_cert.get_subject())
-    cert.set_subject(csr.get_subject())
-    cert.set_pubkey(csr.get_pubkey())
-    cert.sign(ca_private_key, 'SHA256')
+def load_private_key(data: bytes, passphrase: Optional[bytes] = None):
+    """Load a PEM private key. As with OpenSSL, the passphrase is ignored for unencrypted keys."""
+    try:
+        return serialization.load_pem_private_key(data, passphrase)
+    except TypeError:
+        if passphrase is None:
+            raise
+        return serialization.load_pem_private_key(data, None)
 
-    return crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+
+def create_cert(serial_no, not_before, not_after, ca_cert: x509.Certificate,
+                csr: x509.CertificateSigningRequest, ca_private_key):
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .serial_number(serial_no)
+        .not_valid_before(now)
+        .not_valid_after(now + timedelta(seconds=not_after))
+        .issuer_name(ca_cert.subject)
+        .subject_name(csr.subject)
+        .public_key(csr.public_key())
+        .sign(ca_private_key, hashes.SHA256())
+    )
+
+    return cert.public_bytes(serialization.Encoding.PEM)

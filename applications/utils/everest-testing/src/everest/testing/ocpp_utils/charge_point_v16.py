@@ -3,10 +3,11 @@
 
 import asyncio
 import json
-import OpenSSL.crypto as crypto
 import logging
 import time
 from datetime import datetime, timezone
+from pathlib import Path
+from cryptography import x509
 from websockets.exceptions import ConnectionClosedOK, ConnectionClosedError
 
 from ocpp.messages import unpack
@@ -31,7 +32,7 @@ from ocpp.v201.datatypes import IdTokenInfoType
 from ocpp.v201.enums import (
     AuthorizationStatusEnumType, GenericStatusEnumType, GetCertificateStatusEnumType)
 
-from everest.testing.ocpp_utils.charge_point_utils import MessageHistory, create_cert
+from everest.testing.ocpp_utils.charge_point_utils import MessageHistory, create_cert, load_private_key
 
 logging.basicConfig(level=logging.DEBUG)
 
@@ -311,12 +312,11 @@ class ChargePoint16(cp):
             not_before = -86400
             not_after = 86400*365
 
-            ca_cert = crypto.load_certificate(crypto.FILETYPE_PEM, open(
-                kwargs['csms_root_ca']).read())
-            csr = crypto.load_certificate_request(
-                crypto.FILETYPE_PEM, self.csr)
-            ca_private_key = crypto.load_privatekey(
-                crypto.FILETYPE_PEM, open(kwargs['csms_root_ca_key']).read(), str.encode('ocatool'))
+            ca_cert = x509.load_pem_x509_certificate(
+                Path(kwargs['csms_root_ca']).read_bytes())
+            csr = x509.load_pem_x509_csr(self.csr.encode())
+            ca_private_key = load_private_key(
+                Path(kwargs['csms_root_ca_key']).read_bytes(), b'ocatool')
 
             cert = create_cert(serial_no, not_before,
                                not_after, ca_cert, csr, ca_private_key)
