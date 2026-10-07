@@ -11,6 +11,7 @@
 #include <utility>
 #include <vector>
 
+#include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <unistd.h>
@@ -264,6 +265,82 @@ TEST_F(ConnectionHandleTest, peer_without_handshake_does_not_block_ev) {
 
     EXPECT_FALSE(proxy_calls[&silent].called);
     EXPECT_TRUE(proxy_calls[&ev].called);
+}
+
+std::vector<std::size_t> ev_write_counts;
+int ev_peer_fd{-1};
+
+ssize_t recording_write(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::size_t count) {
+    ev_write_counts.push_back(count);
+    // lets the proxy loop terminate by making the EV side report a hang-up
+    if (ev_peer_fd >= 0) {
+        close(std::exchange(ev_peer_fd, -1));
+    }
+    return 0;
+}
+
+ssize_t failing_read(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::size_t /*count*/, bool /*read_complete*/) {
+    return -1;
+}
+
+ssize_t closed_read(v2g_connection* /*conn*/, unsigned char* /*buf*/, std::size_t /*count*/, bool /*read_complete*/) {
+    return 0;
+}
+
+class ConnectionProxyTest : public ::testing::Test {
+protected:
+    void SetUp() override {
+        ev_write_counts.clear();
+        int ev_fds[2];
+        ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, ev_fds), 0);
+        ev_fd = ev_fds[0];
+        ev_peer_fd = ev_fds[1];
+
+        conn.ctx = &ctx;
+        conn.conn.socket_fd = ev_fd;
+        conn.write = &recording_write;
+        conn.buffer = handshake.data();
+        conn.payload_len = handshake.size() - V2GTP_HEADER_LENGTH;
+    }
+
+    void TearDown() override {
+        close(ev_fd);
+        if (ev_peer_fd >= 0) {
+            close(std::exchange(ev_peer_fd, -1));
+        }
+    }
+
+    std::vector<uint8_t> handshake{supported_app_protocol_req(DIN_70121_MSG_DEF)};
+    int ev_fd{-1};
+    v2g_context ctx{};
+    v2g_connection conn{};
+};
+
+TEST_F(ConnectionProxyTest, read_error_from_iso_stack_is_not_forwarded_to_ev) {
+    // poll() reports a directory as readable, read() on it fails
+    const int proxy_fd = open("/", O_RDONLY | O_DIRECTORY);
+    ASSERT_GE(proxy_fd, 0);
+    conn.read = &closed_read;
+
+    connection_proxy(&conn, proxy_fd);
+
+    EXPECT_TRUE(ev_write_counts.empty());
+}
+
+TEST_F(ConnectionProxyTest, read_error_from_ev_is_not_forwarded_to_iso_stack) {
+    int proxy_fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, proxy_fds), 0);
+    conn.read = &failing_read;
+    ASSERT_EQ(write(ev_peer_fd, "x", 1), 1);
+
+    connection_proxy(&conn, proxy_fds[0]);
+
+    std::vector<uint8_t> received(DEFAULT_BUFFER_SIZE);
+    const auto received_len = recv(proxy_fds[1], received.data(), received.size(), MSG_DONTWAIT);
+    close(proxy_fds[1]);
+    ASSERT_EQ(received_len, static_cast<ssize_t>(handshake.size()));
+    received.resize(received_len);
+    EXPECT_EQ(received, handshake);
 }
 
 } // namespace

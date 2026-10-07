@@ -378,7 +378,7 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
             // we can read from proxy (connection to local ISO module)
             int nrbytes = read(proxy_fd, buf, sizeof(buf));
 
-            if (nrbytes == 0) {
+            if (nrbytes <= 0) {
                 break;
             }
             // write data to EV
