@@ -9,10 +9,6 @@ ev_setup_cpp_module()
 
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 find_package(SQLite3 REQUIRED)
-if(NOT TARGET SQLite3::SQLite3)
-  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
-  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
-endif()
 
 if(NOT COMMAND collect_migration_files)
     include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)

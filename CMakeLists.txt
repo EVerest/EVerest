@@ -213,6 +213,12 @@ else()
     endif()
 endif()
 
+find_package(SQLite3 REQUIRED)
+if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+    set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
+    add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
+
 if(NOT DISABLE_EDM AND NOT (EVEREST_BUILD_BASE AND EVEREST_BUILD_ISO15118 AND EVEREST_BUILD_OCPP))
     message(FATAL_ERROR "Using installed everest packages (EVEREST_BUILD_*=OFF) requires DISABLE_EDM=ON")
 endif()
