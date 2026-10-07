@@ -35,6 +35,7 @@
 #define DEFAULT_TCP_PORT       61342
 #define DEFAULT_TLS_PORT       64110
 #define CLIENT_FIN_TIMEOUT     3000
+#define MAX_CONNECTIONS        4
 
 /*!
  * \brief connection_create_socket This function creates a tcp/tls socket
@@ -354,6 +355,18 @@ ssize_t connection_write(struct v2g_connection* conn, unsigned char* buf, size_t
     return (ssize_t)bytes_written;
 }
 
+bool connection_slot_acquire(struct v2g_context* ctx) {
+    if (ctx->active_connections.fetch_add(1) < MAX_CONNECTIONS) {
+        return true;
+    }
+    ctx->active_connections--;
+    return false;
+}
+
+void connection_slot_release(struct v2g_context* ctx) {
+    ctx->active_connections--;
+}
+
 static void wait_for_peer_close(int fd, int timeout_ms) {
     struct pollfd pfd = {};
     pfd.fd = fd;
@@ -400,6 +413,7 @@ void* connection_handle_tcp(void* data) {
         dlog(DLOG_LEVEL_INFO, "Multiplexer: TCP connection closed gracefully");
     }
 
+    connection_slot_release(conn->ctx);
     free(conn);
     return nullptr;
 }
@@ -579,11 +593,19 @@ static void* connection_server(void* data) {
                  strerror(errno));
         }
 
+        if (not connection_slot_acquire(ctx)) {
+            dlog(DLOG_LEVEL_WARNING, "Too many connections, closing connection");
+            close(conn->conn.socket_fd);
+            continue;
+        }
+
         // store the port to create a udp socket
         conn->ctx->udp_port = ntohs(addr.sin6_port);
 
         if (pthread_create(&conn->thread_id, &attr, connection_handle_tcp, conn) != 0) {
             dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
+            close(conn->conn.socket_fd);
+            connection_slot_release(ctx);
             continue;
         }
 

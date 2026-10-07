@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -361,6 +362,38 @@ TEST_F(ConnectionProxyTest, read_error_from_ev_is_not_forwarded_to_iso_stack) {
     ASSERT_EQ(received_len, static_cast<ssize_t>(handshake.size()));
     received.resize(received_len);
     EXPECT_EQ(received, handshake);
+}
+
+TEST(ConnectionSlotTest, slots_are_limited_and_reusable) {
+    v2g_context ctx{};
+    int acquired = 0;
+    while (acquired < 100 and connection_slot_acquire(&ctx)) {
+        acquired++;
+    }
+
+    EXPECT_EQ(acquired, 4);
+    connection_slot_release(&ctx);
+    EXPECT_TRUE(connection_slot_acquire(&ctx));
+    EXPECT_FALSE(connection_slot_acquire(&ctx));
+}
+
+TEST(ConnectionSlotTest, tcp_connection_thread_releases_its_slot) {
+    int fds[2];
+    ASSERT_EQ(socketpair(AF_UNIX, SOCK_STREAM, 0, fds), 0);
+    close(fds[1]);
+
+    v2g_context ctx{};
+    ASSERT_TRUE(connection_slot_acquire(&ctx));
+    // connection_handle_tcp() frees the connection like the accept loop expects
+    auto* conn = static_cast<v2g_connection*>(calloc(1, sizeof(v2g_connection)));
+    ASSERT_NE(conn, nullptr);
+    conn->ctx = &ctx;
+    conn->conn.socket_fd = fds[0];
+    conn->read = &closed_read;
+
+    connection_handle_tcp(conn);
+
+    EXPECT_EQ(ctx.active_connections, 0);
 }
 
 TEST(ConnectionReadTest, reads_from_descriptor_above_fd_setsize) {

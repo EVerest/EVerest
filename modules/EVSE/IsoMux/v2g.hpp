@@ -152,6 +152,7 @@ struct v2g_context {
 
     enum V2gMsgTypeId current_v2g_msg;         /* holds the last v2g msg type */
     std::atomic_bool session_active;           /* a connection is being proxied, further connections are rejected */
+    std::atomic_int active_connections;        /* connection threads of the TCP and TLS servers */
     std::atomic_bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown
                                       immediately without response message) */
 };

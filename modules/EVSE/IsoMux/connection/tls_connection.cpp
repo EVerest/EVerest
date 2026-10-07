@@ -62,21 +62,29 @@ void process_connection_thread(std::shared_ptr<tls::ServerConnection> con, struc
             break;
         }
     }
+
+    connection_slot_release(ctx);
 }
 
 void handle_new_connection_cb(tls::Server::ConnectionPtr&& con, struct v2g_context* ctx) {
     assert(con != nullptr);
     assert(ctx != nullptr);
+    if (not connection_slot_acquire(ctx)) {
+        // dropping the connection closes its socket
+        dlog(DLOG_LEVEL_WARNING, "Too many connections, closing connection");
+        return;
+    }
+    // passing unique pointers through thread parameters is problematic
+    std::shared_ptr<tls::ServerConnection> connection(con.release());
     // create a thread to process this connection
     try {
-        // passing unique pointers through thread parameters is problematic
-        std::shared_ptr<tls::ServerConnection> connection(con.release());
         std::thread connection_loop(process_connection_thread, connection, ctx);
         connection_loop.detach();
     } catch (const std::system_error&) {
         // unable to start thread
         dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
-        con->shutdown();
+        connection->shutdown();
+        connection_slot_release(ctx);
     }
 }
 
