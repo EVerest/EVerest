@@ -13,7 +13,7 @@ everestrs-build = { workspace = true }
 everestrs = { workspace = true }
 # ModDef runtime: profile loading, the Device facade, run_command and the
 # Transport trait we bridge onto the serial_communication_hub.
-moddef-core = { git = "https://github.com/ModDefOrg/moddef-rs" }
+moddef-core = "0.1.1"
 # Minimal futures executor: drives moddef-core's async Device/Transport methods
 # to completion synchronously on the calling thread (all awaits complete without
 # a reactor because the transport and delay are blocking).
