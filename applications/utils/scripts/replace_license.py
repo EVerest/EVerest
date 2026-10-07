@@ -13,7 +13,6 @@ import argparse
 import fnmatch
 import re
 import subprocess
-from datetime import date
 from pathlib import Path
 
 PIONIX_NOTICE = 'Copyright Pionix GmbH and Contributors to EVerest'
@@ -75,7 +74,8 @@ def main():
 
     parser.add_argument('--working-dir', '-wd', type=str,
                         help='Working directory (default: .)', default=str(Path.cwd()))
-    parser.add_argument('--no-year', action='store_true', help='Do not include years in license header')
+    parser.add_argument('--no-year', action='store_true',
+                        help='Deprecated, has no effect: the license header never includes years')
     parser.add_argument('--strip-years', action='store_true',
                         help='Only remove the years from existing Pionix copyright notices in all tracked files, '
                         'leaving every other header line untouched')
@@ -90,12 +90,8 @@ def main():
 
     files = [file for file in working_dir.rglob('*') if file.suffix in ['.cpp', '.hpp']]
 
-    year = ''
-    if not args.no_year:
-        year = f'2020 - {date.today().year} '
-
     license_text = f"""// SPDX-License-Identifier: Apache-2.0
-// Copyright {year}Pionix GmbH and Contributors to EVerest
+// {PIONIX_NOTICE}
 """
 
     success = 0
