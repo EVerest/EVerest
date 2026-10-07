@@ -178,6 +178,21 @@ TEST(ErrorMappingDeviceModelTest, UsesDefaultComponentAndVariable) {
     EXPECT_EQ(model.lookups().back().name.get(), "EVSE");
 }
 
+// the raising module decides where its error is reported: modules without a mapping report on the ChargingStation
+TEST(ErrorMappingDeviceModelTest, AcceptsTheChargingStation) {
+    FakeDeviceModel model;
+    model.add("ChargingStation", std::nullopt, std::nullopt, {"Temperature"});
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Temperature"}}})");
+    EXPECT_TRUE(validate_device_model(mapping, std::ref(model), TWO_EVSES, false).empty());
+}
+
+TEST(ErrorMappingDeviceModelTest, WarningNamesEveryComponentChecked) {
+    FakeDeviceModel model;
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"variable_name": "Temperature"}}})");
+    const auto finding = single(validate_device_model(mapping, std::ref(model), TWO_EVSES, false));
+    EXPECT_THAT(finding.message, HasSubstr("no component 'ChargingStation' or 'EVSE'"));
+}
+
 TEST(ErrorMappingDeviceModelTest, WarnsAboutUnknownVariable) {
     FakeDeviceModel model;
     model.add("Connector", 1, 1, {"Available"});

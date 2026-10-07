@@ -99,7 +99,7 @@
           "type": "string"
         },
         "component_name": {
-          "description": "Component name. Defaults to EVSE.",
+          "description": "Component name. Defaults to EVSE, or ChargingStation for an error without an EVSE mapping.",
           "$ref": "#/definitions/identifier"
         },
         "component_instance": {

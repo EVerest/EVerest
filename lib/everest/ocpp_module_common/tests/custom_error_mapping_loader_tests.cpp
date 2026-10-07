@@ -27,13 +27,23 @@ std::vector<Finding> errors_of(const LoadResult& result) {
     return errors;
 }
 
-/// \returns the single error of \p content; fails the test if there is not exactly one
+/// \returns the single error of \p content; fails the test if there is not exactly one. An error about an entry
+///          leaves that entry out of the mapping; an error about the file leaves no mapping.
 Finding single_error(const std::string& content) {
     const auto result = parse_error_mapping(content);
-    EXPECT_FALSE(result.error_mapping != nullptr);
     const auto errors = errors_of(result);
     EXPECT_EQ(errors.size(), 1U) << content;
-    return errors.empty() ? Finding{} : errors.front();
+    if (errors.empty()) {
+        return Finding{};
+    }
+    if (errors.front().entry.empty()) {
+        EXPECT_EQ(result.error_mapping, nullptr) << content;
+    } else if (result.error_mapping == nullptr) {
+        ADD_FAILURE() << "an error about an entry must keep the mapping: " << content;
+    } else {
+        EXPECT_TRUE(result.error_mapping->entries().empty()) << content;
+    }
+    return errors.front();
 }
 
 TEST(ErrorKeyTest, ParsesTypeOnly) {
@@ -220,13 +230,15 @@ TEST(ErrorMappingLoaderTest, RejectsMalformedKey) {
     EXPECT_THAT(finding.message, HasSubstr("invalid key"));
 }
 
-TEST(ErrorMappingLoaderTest, ReportsAllViolationsNamingTheirEntries) {
+TEST(ErrorMappingLoaderTest, ReportsAllViolationsAndKeepsTheValidEntries) {
     const auto result = parse_error_mapping(R"({
         "generic/VendorError": {"v16": {"error_code": "Bad"}},
         "generic/VendorWarning": {"v2": {"unknown": 1}},
         "generic/CommunicationFault": {"v2": {"tech_code": "OK"}}
     })");
-    EXPECT_FALSE(result.error_mapping != nullptr);
+    ASSERT_NE(result.error_mapping, nullptr);
+    EXPECT_EQ(result.error_mapping->entries().size(), 1U);
+    EXPECT_NE(result.error_mapping->find("generic/CommunicationFault", ""), nullptr);
     const auto errors = errors_of(result);
     ASSERT_EQ(errors.size(), 2U);
     std::set<std::string> entries;
@@ -276,6 +288,23 @@ TEST(ErrorMappingLoaderTest, ReportsMissingFile) {
     EXPECT_FALSE(result.error_mapping != nullptr);
     ASSERT_EQ(result.findings.size(), 1U);
     EXPECT_THAT(result.findings.front().message, HasSubstr("does/not/exist.json"));
+}
+
+TEST(ErrorMappingLoaderTest, WithoutDropsTheEntriesNamedByErrors) {
+    const auto result = parse_error_mapping(R"({
+        "generic/VendorError": {"v2": {"tech_code": "A"}},
+        "generic/VendorError#Sub": {"v2": {"tech_code": "B"}},
+        "generic/VendorWarning": {"v2": {"tech_code": "C"}}
+    })");
+    ASSERT_NE(result.error_mapping, nullptr);
+    const auto reduced = result.error_mapping->without({
+        {Finding::Level::Error, "generic/VendorError#Sub", "", "dropped"},
+        {Finding::Level::Warning, "generic/VendorWarning", "", "kept"},
+    });
+    EXPECT_EQ(reduced->entries().size(), 2U);
+    EXPECT_EQ(reduced->find("generic/VendorError", "Sub")->v2->tech_code, "A");
+    EXPECT_NE(reduced->find("generic/VendorWarning", ""), nullptr);
+    EXPECT_EQ(result.error_mapping->entries().size(), 3U);
 }
 
 TEST(ErrorMappingLoaderTest, FindingToStringNamesEntryAndPointer) {

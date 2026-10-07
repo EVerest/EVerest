@@ -58,6 +58,21 @@ struct Entry {
     std::optional<V2Identity> v2;
 };
 
+struct Finding {
+    enum class Level {
+        Error,
+        Warning,
+    };
+    Level level;
+    /// key of the entry the finding is about; empty for the file as a whole
+    std::string entry;
+    /// JSON pointer to the offending value; empty when not applicable
+    std::string pointer;
+    std::string message;
+
+    std::string to_string() const;
+};
+
 /// \brief Reports errors as the entries of a custom error mapping file describe them.
 ///
 /// evse_manager/Inoperative is never handled: OCPP 1.6 reports a connector as Faulted only through the
@@ -85,29 +100,18 @@ public:
     const Entry* find(const std::string& type, const std::string& sub_type) const;
     const std::map<ErrorKey, Entry>& entries() const;
 
+    /// \returns a copy without the entries that an error-level finding of \p findings names
+    std::shared_ptr<const CustomFileErrorMapping> without(const std::vector<Finding>& findings) const;
+
 private:
     std::map<ErrorKey, Entry> m_entries;
-};
-
-struct Finding {
-    enum class Level {
-        Error,
-        Warning,
-    };
-    Level level;
-    /// key of the entry the finding is about; empty for the file as a whole
-    std::string entry;
-    /// JSON pointer to the offending value; empty when not applicable
-    std::string pointer;
-    std::string message;
-
-    std::string to_string() const;
 };
 
 bool has_errors(const std::vector<Finding>& findings);
 
 struct LoadResult {
-    /// set only when no finding is an error; immutable, so it can be shared by every reader without copies
+    /// unset when the file as a whole is unusable (missing, malformed or not a JSON object); otherwise holds every
+    /// entry without an error-level finding. Immutable, so it can be shared by every reader without copies.
     std::shared_ptr<const CustomFileErrorMapping> error_mapping;
     std::vector<Finding> findings;
 };
@@ -115,8 +119,8 @@ struct LoadResult {
 /// \returns the error mapping schema (JSON schema draft-07)
 const std::string& error_mapping_schema();
 
-/// \brief Parses and validates the mapping file content against the schema. Duplicate keys and entries for
-///        evse_manager/Inoperative are errors.
+/// \brief Parses and validates the mapping file content against the schema. An entry with an error, such as a schema
+///        violation, a duplicate key or the type evse_manager/Inoperative, is left out of the mapping.
 LoadResult parse_error_mapping(std::string_view content);
 
 /// \brief Reads \p path and parses it with parse_error_mapping

@@ -193,6 +193,18 @@ std::optional<Entry> to_entry(const std::string& key, const json& value, std::ve
     return entry;
 }
 
+bool has_file_errors(const std::vector<Finding>& findings) {
+    return std::any_of(findings.begin(), findings.end(), [](const Finding& finding) {
+        return finding.level == Finding::Level::Error && finding.entry.empty();
+    });
+}
+
+bool has_entry_errors(const std::vector<Finding>& findings, const std::string& entry) {
+    return std::any_of(findings.begin(), findings.end(), [&entry](const Finding& finding) {
+        return finding.level == Finding::Level::Error && finding.entry == entry;
+    });
+}
+
 } // namespace
 
 std::string ErrorKey::to_string() const {
@@ -239,6 +251,15 @@ const Entry* CustomFileErrorMapping::find(const std::string& type, const std::st
     }
     const auto it = m_entries.find(ErrorKey{type, std::nullopt});
     return it != m_entries.end() ? &it->second : nullptr;
+}
+
+std::shared_ptr<const CustomFileErrorMapping>
+CustomFileErrorMapping::without(const std::vector<Finding>& findings) const {
+    auto entries = m_entries;
+    for (auto it = entries.begin(); it != entries.end();) {
+        it = has_entry_errors(findings, it->first.to_string()) ? entries.erase(it) : std::next(it);
+    }
+    return std::make_shared<const CustomFileErrorMapping>(std::move(entries));
 }
 
 const std::map<ErrorKey, Entry>& CustomFileErrorMapping::entries() const {
@@ -331,23 +352,22 @@ LoadResult parse_error_mapping(std::string_view content) {
 
     SchemaErrorCollector collector{result.findings};
     schema_validator().validate(document.value(), collector);
-    if (has_errors(result.findings)) {
+    if (has_file_errors(result.findings)) {
         return result;
     }
 
     std::map<ErrorKey, Entry> entries;
     for (const auto& [key, value] : document->items()) {
-        if (key == SCHEMA_KEY) {
+        if (key == SCHEMA_KEY || has_entry_errors(result.findings, key)) {
             continue;
         }
-        if (auto entry = to_entry(key, value, result.findings); entry.has_value()) {
+        auto entry = to_entry(key, value, result.findings);
+        if (entry.has_value() && !has_entry_errors(result.findings, key)) {
             auto error_key = entry->key;
             entries.emplace(std::move(error_key), std::move(entry.value()));
         }
     }
-    if (!has_errors(result.findings)) {
-        result.error_mapping = std::make_shared<const CustomFileErrorMapping>(std::move(entries));
-    }
+    result.error_mapping = std::make_shared<const CustomFileErrorMapping>(std::move(entries));
     return result;
 }
 

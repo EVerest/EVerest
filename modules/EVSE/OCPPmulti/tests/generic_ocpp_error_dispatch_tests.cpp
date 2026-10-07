@@ -8,8 +8,11 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <optional>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -156,6 +159,91 @@ TEST_F(GenericOcppErrorDispatch, EventIdsAreDistinctAndIncreasing) {
     ASSERT_EQ(events.size(), 3U);
     EXPECT_EQ(events[1].event_id, events[0].event_id + 1);
     EXPECT_EQ(events[2].event_id, events[1].event_id + 1);
+}
+
+/// \returns the keys of the custom error mapping entries \p ocpp uses
+std::set<std::string> custom_entry_keys(const stubs::GenericOcppTester& ocpp) {
+    std::set<std::string> keys;
+    if (const auto mapping = ocpp.custom_error_mapping(); mapping != nullptr) {
+        for (const auto& [key, entry] : mapping->entries()) {
+            keys.insert(key.to_string());
+        }
+    }
+    return keys;
+}
+
+/// \brief Writes \p content as the custom error mapping file of \p config; removed again on destruction
+class MappingFile {
+public:
+    MappingFile(stubs::ConfigStub& config, const std::string& content) :
+        m_path(std::filesystem::temp_directory_path() /
+               ("ocppmulti_" + std::string(testing::UnitTest::GetInstance()->current_test_info()->name()) + ".json")) {
+        std::ofstream(m_path) << content;
+        config.CustomErrorMappingPath = m_path.string();
+    }
+    MappingFile(const MappingFile&) = delete;
+    MappingFile& operator=(const MappingFile&) = delete;
+    ~MappingFile() {
+        std::filesystem::remove(m_path);
+    }
+
+private:
+    std::filesystem::path m_path;
+};
+
+// entries that fail a check are reported with warnings and left out, so the built-in mapping applies to their
+// errors; the module starts with the remaining entries. A component unknown to the device model is only warned about.
+class GenericOcppMisconfiguredMapping : public GenericOcppErrorDispatch {
+protected:
+    MappingFile file{config, R"({
+        "evse_board_support/MREC4OverCurrentFailure": {"v16": {"info": "${unknown}"}},
+        "evse_board_support/MREC5OverVoltage": {"v2": {"component_name": "NoSuchComponent"}},
+        "evse_board_support/MREC6UnderVoltage": {"v2": {"component_name": "Known"}}
+    })"};
+    std::vector<std::string> device_model_lookups;
+
+    GenericOcppMisconfiguredMapping() {
+        EXPECT_CALL(chargepoint, get_variables(_)).WillRepeatedly([this](const auto& requests) {
+            std::vector<ocpp::v2::GetVariableResult> results;
+            for (const auto& request : requests) {
+                device_model_lookups.push_back(request.component.name.get());
+                ocpp::v2::GetVariableResult result;
+                result.attributeStatus = request.component.name.get() == "Known"
+                                             ? ocpp::v2::GetVariableStatusEnum::Accepted
+                                             : ocpp::v2::GetVariableStatusEnum::UnknownComponent;
+                result.component = request.component;
+                result.variable = request.variable;
+                results.push_back(result);
+            }
+            return results;
+        });
+    }
+};
+
+TEST_F(GenericOcppMisconfiguredMapping, IgnoresOnlyEntriesWithErrors) {
+    EXPECT_THAT(device_model_lookups, ::testing::Contains("NoSuchComponent"));
+    EXPECT_EQ(custom_entry_keys(*ocpp),
+              (std::set<std::string>{"evse_board_support/MREC5OverVoltage", "evse_board_support/MREC6UnderVoltage"}));
+}
+
+class GenericOcppMissingMappingFile : public GenericOcppErrorDispatch {
+protected:
+    GenericOcppMissingMappingFile() {
+        config.CustomErrorMappingPath = "/does/not/exist/custom_error_mapping.json";
+    }
+};
+
+TEST_F(GenericOcppMissingMappingFile, StartsWithTheBuiltInMapping) {
+    EXPECT_EQ(ocpp->custom_error_mapping(), nullptr);
+}
+
+class GenericOcppMalformedMappingFile : public GenericOcppErrorDispatch {
+protected:
+    MappingFile file{config, R"({"evse_board_support/MREC2GroundFailure": )"};
+};
+
+TEST_F(GenericOcppMalformedMappingFile, StartsWithTheBuiltInMapping) {
+    EXPECT_EQ(ocpp->custom_error_mapping(), nullptr);
 }
 
 // same setup as stubs::GenericOcppProvidesTester, but stops after init(): errors raised before

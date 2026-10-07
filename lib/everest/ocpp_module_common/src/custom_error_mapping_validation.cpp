@@ -3,10 +3,12 @@
 
 #include <everest/ocpp_module_common/custom_error_mapping_validation.hpp>
 
+#include <set>
 #include <sstream>
 #include <string_view>
 #include <utility>
 
+#include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/error_mapping.hpp>
 #include <nlohmann/json.hpp>
 #include <utils/error/error_type_map.hpp>
@@ -19,7 +21,6 @@ constexpr std::string_view PLACEHOLDER_START = "${";
 constexpr std::string_view ACTUAL_VALUE_PLACEHOLDER = "${actual_value}";
 constexpr std::size_t V16_INFO_MAX_LENGTH = 50;
 constexpr std::size_t V2_TECH_INFO_MAX_LENGTH = 500;
-constexpr auto DEFAULT_COMPONENT_NAME = "EVSE";
 constexpr auto DEFAULT_VARIABLE_NAME = "Problem";
 
 std::string pointer(const Entry& entry, std::initializer_list<const char*> path) {
@@ -68,6 +69,19 @@ void validate_text(const Entry& entry, const std::string& text, std::initializer
                                    "text without placeholders has " + std::to_string(static_length) +
                                        " characters and is truncated to " + std::to_string(max_length)));
     }
+}
+
+/// \returns the component name the built-in mapping reports an error on \p evse with
+std::string built_in_component_name(const std::optional<ocpp::v2::EVSE>& evse) {
+    return evse.has_value() ? EVSE_COMPONENT_NAME : CHARGING_STATION_COMPONENT_NAME;
+}
+
+std::string join_quoted(const std::set<std::string>& names) {
+    std::string result;
+    for (const auto& name : names) {
+        result += (result.empty() ? "'" : " or '") + name + "'";
+    }
+    return result;
 }
 
 bool names_device_model_entry(const V2Identity& v2) {
@@ -166,7 +180,6 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
         }
         const auto& v2 = entry.v2.value();
         ocpp::v2::Component component;
-        component.name = v2.component_name.value_or(DEFAULT_COMPONENT_NAME);
         if (v2.component_instance.has_value()) {
             component.instance = v2.component_instance.value();
         }
@@ -178,8 +191,11 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
 
         bool component_known = false;
         bool known = false;
+        std::set<std::string> component_names;
         for (const auto& evse : candidate_evses(topology)) {
+            component.name = v2.component_name.value_or(built_in_component_name(evse));
             component.evse = evse;
+            component_names.insert(component.name.get());
             const auto result = lookup(component, variable);
             known = result == DeviceModelLookup::Known;
             component_known = component_known || result != DeviceModelLookup::UnknownComponent;
@@ -192,8 +208,8 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
         }
 
         const auto message = component_known ? "the device model has no variable '" + variable.name.get() +
-                                                   "' on component '" + component.name.get() + "'"
-                                             : "the device model has no component '" + component.name.get() + "'";
+                                                   "' on component " + join_quoted(component_names)
+                                             : "the device model has no component " + join_quoted(component_names);
         findings.push_back(
             finding(strict ? Finding::Level::Error : Finding::Level::Warning, entry, pointer(entry, {"v2"}), message));
     }

@@ -166,6 +166,7 @@ private:
     provides_t mv_provides;
     requires_t mv_requires;
     std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> mv_custom_error_mapping;
+    std::filesystem::path mv_custom_error_mapping_path;
 
     std::atomic<std::int32_t> mv_event_id_counter{0};
     std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
@@ -322,6 +323,7 @@ protected:
     void init_subscribe();
     void init_evse_subscribe();
 
+    void ready_custom_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
     void ready_module_configuration();
     void ready_transaction_handler();
