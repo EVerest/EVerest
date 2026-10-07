@@ -76,6 +76,10 @@ public:
     /// \brief Registers a \p handler for a specific \p topic
     void register_handler(const std::string& topic, std::shared_ptr<TypedHandler> handler);
 
+    /// \brief Removes the \p handler previously registered for \p topic, so it is not called for further messages.
+    /// Another handler registered for the same \p topic is left untouched.
+    void unregister_handler(const std::string& topic, const std::shared_ptr<TypedHandler>& handler);
+
     using SharedTypedHandler = std::shared_ptr<TypedHandler>;
     using SingleHandlerMap = std::map<MqttTopic, SharedTypedHandler>;
     using MultiHandlerMap = std::map<MqttTopic, std::vector<SharedTypedHandler>>;
@@ -88,7 +92,7 @@ private:
 
     struct ResponseHandlers {
         std::map<CmdId, std::shared_ptr<TypedHandler>> cmd; // cmd result handlers of module
-        std::shared_ptr<TypedHandler> config;               // get module config response handler of module
+        SingleHandlerMap config; // configuration response handlers of module, one per response topic
     };
 
     struct GenericHandlers {

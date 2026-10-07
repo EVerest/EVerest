@@ -1094,3 +1094,113 @@ TEST_CASE("MessageHandler drops GlobalReady messages without data", "[message_ha
     REQUIRE(events.size() == 1);
     CHECK(events[0].sequence == 1);
 }
+
+// ============================================================================
+// Test: ConfigurationResponse handlers and unregistering
+// ============================================================================
+
+namespace {
+
+std::shared_ptr<TypedHandler> make_tracking_handler(HandlerType type, ExecutionTracker& tracker) {
+    auto handler_func = std::make_shared<Handler>(
+        [&tracker](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    return std::make_shared<TypedHandler>(type, handler_func);
+}
+
+// The result worker processes messages in order, so once the sentinel response arrived all earlier ones were handled.
+void wait_for_config_responses(MessageHandlerFixture& handler, ExecutionTracker& sentinel_tracker) {
+    handler->register_handler("sentinel/response",
+                              make_tracking_handler(HandlerType::ConfigurationResponse, sentinel_tracker));
+    handler->add(create_message("sentinel/response", "ConfigurationResponse", {{"sequence", 0}}));
+    sentinel_tracker.wait_for_count(1);
+    REQUIRE(sentinel_tracker.count() == 1);
+}
+
+} // namespace
+
+TEST_CASE("MessageHandler delivers ConfigurationResponse only to the handler of its topic",
+          "[message_handler][config_response]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    handler->register_handler("a/response", make_tracking_handler(HandlerType::ConfigurationResponse, tracker));
+
+    handler->add(create_message("b/response", "ConfigurationResponse", {{"sequence", 1}}));
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 2}}));
+    wait_for_config_responses(handler, sentinel);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].topic == "a/response");
+    CHECK(events[0].sequence == 2);
+}
+
+TEST_CASE("MessageHandler consumes a ConfigurationResponse handler with the first response",
+          "[message_handler][config_response]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    handler->register_handler("a/response", make_tracking_handler(HandlerType::ConfigurationResponse, tracker));
+
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 1}}));
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 2}}));
+    wait_for_config_responses(handler, sentinel);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 1);
+}
+
+TEST_CASE("MessageHandler does not call an unregistered ConfigurationResponse handler",
+          "[message_handler][config_response][unregister]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+    ExecutionTracker sentinel;
+
+    const auto config_handler = make_tracking_handler(HandlerType::ConfigurationResponse, tracker);
+    handler->register_handler("a/response", config_handler);
+    handler->unregister_handler("a/response", config_handler);
+
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 1}}));
+    wait_for_config_responses(handler, sentinel);
+
+    CHECK(tracker.count() == 0);
+}
+
+TEST_CASE("MessageHandler keeps a newer handler when unregistering a replaced one",
+          "[message_handler][config_response][unregister]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker old_tracker;
+    ExecutionTracker new_tracker;
+    ExecutionTracker sentinel;
+
+    const auto old_handler = make_tracking_handler(HandlerType::ConfigurationResponse, old_tracker);
+    handler->register_handler("a/response", old_handler);
+    handler->register_handler("a/response", make_tracking_handler(HandlerType::ConfigurationResponse, new_tracker));
+    handler->unregister_handler("a/response", old_handler);
+
+    handler->add(create_message("a/response", "ConfigurationResponse", {{"sequence", 1}}));
+    wait_for_config_responses(handler, sentinel);
+
+    CHECK(old_tracker.count() == 0);
+    CHECK(new_tracker.count() == 1);
+}
+
+TEST_CASE("MessageHandler removes only the unregistered handler from a shared topic", "[message_handler][unregister]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker removed_tracker;
+    ExecutionTracker kept_tracker;
+
+    const auto removed = make_tracking_handler(HandlerType::ExternalMQTT, removed_tracker);
+    handler->register_handler("external/topic", removed);
+    handler->register_handler("external/topic", make_tracking_handler(HandlerType::ExternalMQTT, kept_tracker));
+    handler->unregister_handler("external/topic", removed);
+
+    handler->add(create_external_mqtt_message("external/topic", 1));
+    kept_tracker.wait_for_count(1);
+
+    CHECK(kept_tracker.count() == 1);
+    CHECK(removed_tracker.count() == 0);
+}

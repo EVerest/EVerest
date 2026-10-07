@@ -329,12 +329,12 @@ const std::string& MQTTAbstractionImpl::get_external_prefix() const {
 
 nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
     BOOST_LOG_FUNCTION();
-    std::promise<json> res_promise;
-    std::future<json> res_future = res_promise.get_future();
+    // Shared with the handler, which may still be running when this function returns on timeout.
+    const auto res_promise = std::make_shared<std::promise<json>>();
+    std::future<json> res_future = res_promise->get_future();
 
-    // Why repsonse by value, wouldn't a reference do?
-    const auto res_handler = [&res_promise](const std::string& /*topic*/, json response) {
-        res_promise.set_value(std::move(response));
+    const auto res_handler = [res_promise](const std::string& /*topic*/, json response) {
+        res_promise->set_value(std::move(response));
     };
 
     // FIXME: use configurable HandlerType?
@@ -511,6 +511,8 @@ void MQTTAbstractionImpl::unregister_handler(const std::string& topic, const Tok
     BOOST_LOG_FUNCTION();
 
     EVLOG_verbose << fmt::format("Unregistering handler {} for {}", fmt::ptr(&token), topic);
+
+    this->message_handler.unregister_handler(topic, token);
 
     if (this->mqtt_is_connected) {
         this->unsubscribe(topic);

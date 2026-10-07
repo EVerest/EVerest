@@ -7,6 +7,7 @@
 #include <everest/logging.hpp>
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <optional>
 #include <stdexcept>
 
@@ -97,6 +98,28 @@ void warn_on_high_queue_size(everest::lib::util::simple_queue<ParsedMessage> con
     if (queue.size() >= MAX_PENDING_MESSAGES_PER_TOPIC) {
         EVLOG_warning << "Pending message queue for topic '" << topic << "' has reached the limit ("
                       << MAX_PENDING_MESSAGES_PER_TOPIC << "). Handler may be stuck or too slow.";
+    }
+}
+
+template <typename Key>
+void erase_handler(std::map<Key, MessageHandler::SharedTypedHandler>& data, const Key& key,
+                   const MessageHandler::SharedTypedHandler& handler) {
+    const auto it = data.find(key);
+    if (it != data.end() && it->second == handler) {
+        data.erase(it);
+    }
+}
+
+void erase_handler(MessageHandler::MultiHandlerMap& data, const std::string& topic,
+                   const MessageHandler::SharedTypedHandler& handler) {
+    const auto it = data.find(topic);
+    if (it == data.end()) {
+        return;
+    }
+    auto& topic_handlers = it->second;
+    topic_handlers.erase(std::remove(topic_handlers.begin(), topic_handlers.end(), handler), topic_handlers.end());
+    if (topic_handlers.empty()) {
+        data.erase(it);
     }
 }
 
@@ -434,7 +457,7 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
     }
     case HandlerType::ConfigurationResponse: {
         auto lock = responses.handle();
-        lock->config = handler;
+        lock->config[topic] = handler;
         break;
     }
     case HandlerType::ModuleReady: {
@@ -449,6 +472,63 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
     }
     default:
         EVLOG_warning << "Unknown handler type for topic: " << topic;
+        break;
+    }
+}
+
+void MessageHandler::unregister_handler(const std::string& topic, const std::shared_ptr<TypedHandler>& handler) {
+    if (!handler) {
+        return;
+    }
+    switch (handler->type) {
+    case HandlerType::Call: {
+        auto lock = handlers.handle();
+        erase_handler(lock->cmd, topic, handler);
+        break;
+    }
+    case HandlerType::Result: {
+        auto lock = responses.handle();
+        erase_handler(lock->cmd, handler->id, handler);
+        break;
+    }
+    case HandlerType::SubscribeVar: {
+        auto lock = handlers.handle();
+        erase_handler(lock->var, topic, handler);
+        break;
+    }
+    case HandlerType::SubscribeError: {
+        auto lock = handlers.handle();
+        erase_handler(lock->error, topic, handler);
+        break;
+    }
+    case HandlerType::ExternalMQTT: {
+        auto lock = handlers.handle();
+        erase_handler(lock->external_var, topic, handler);
+        break;
+    }
+    case HandlerType::ConfigurationRequest: {
+        auto lock = handlers.handle();
+        erase_handler(lock->configuration_request, topic, handler);
+        break;
+    }
+    case HandlerType::ConfigurationResponse: {
+        auto lock = responses.handle();
+        erase_handler(lock->config, topic, handler);
+        break;
+    }
+    case HandlerType::ModuleReady: {
+        auto lock = handlers.handle();
+        erase_handler(lock->module_ready, topic, handler);
+        break;
+    }
+    case HandlerType::GlobalReady: {
+        auto lock = handlers.handle();
+        if (lock->global_ready == handler) {
+            lock->global_ready.reset();
+        }
+        break;
+    }
+    default:
         break;
     }
 }
@@ -564,16 +644,21 @@ void MessageHandler::handle_get_config_response(const std::string& topic, const 
         return;
     }
 
+    // Each request waits for exactly one response, so the handler is consumed by the first response on its topic.
     std::shared_ptr<TypedHandler> handler_copy;
     {
         auto handle = responses.handle();
-        if (handle->config) {
-            handler_copy = handle->config;
+        const auto it = handle->config.find(topic);
+        if (it != handle->config.end()) {
+            handler_copy = it->second;
+            handle->config.erase(it);
         }
     }
-    if (handler_copy) {
-        (*handler_copy->handler)(topic, *data_it);
+    if (!handler_copy) {
+        EVLOG_debug << "Ignoring configuration response without pending request on topic '" << topic << "'";
+        return;
     }
+    (*handler_copy->handler)(topic, *data_it);
 }
 
 } // namespace Everest
