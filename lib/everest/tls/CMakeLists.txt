@@ -21,6 +21,7 @@ target_include_directories(tls
     PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}>
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 # FIXME (aw): check whether all of this needs to be publicly exposed
@@ -46,4 +47,16 @@ install(
         tls
     EXPORT everest-base-targets
     LIBRARY
+)
+
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
+
+# tls.hpp includes them relative to its own directory
+install(
+    DIRECTORY extensions/
+    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest/tls/extensions
+    FILES_MATCHING PATTERN "*.hpp"
 )
