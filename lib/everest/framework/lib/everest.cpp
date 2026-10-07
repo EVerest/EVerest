@@ -467,11 +467,11 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
 
     const std::string call_id = everest::helpers::get_uuid();
 
-    std::promise<CmdResult> res_promise;
-    std::future<CmdResult> res_future = res_promise.get_future();
+    const auto res_promise = std::make_shared<std::promise<CmdResult>>();
+    std::future<CmdResult> res_future = res_promise->get_future();
 
-    const auto res_handler = [this, &res_promise, call_id, connection, cmd_name, return_type](const std::string&,
-                                                                                              json data) {
+    const auto res_handler = [this, res_promise, call_id, connection, cmd_name, return_type](const std::string&,
+                                                                                             json data) {
         const auto& data_id = data.at("id");
         if (data_id != call_id) {
             EVLOG_debug << fmt::format("RES: data_id != call_id ({} != {})", data_id, call_id);
@@ -483,13 +483,13 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
             EVLOG_error << fmt::format(
                 "{}: {} during command call: {}->{}()", conversions::cmd_error_type_to_string(error.event), error.msg,
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name);
-            res_promise.set_value(CmdResult{std::nullopt, std::move(error)});
+            res_promise->set_value(CmdResult{std::nullopt, std::move(error)});
         } else {
             EVLOG_verbose << fmt::format(
                 "Incoming res {} for {}->{}()", data_id,
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name);
 
-            res_promise.set_value(CmdResult{std::move(data["retval"]), std::nullopt});
+            res_promise->set_value(CmdResult{std::move(data["retval"]), std::nullopt});
         }
     };
 
@@ -516,6 +516,8 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
     } while (!this->shutdown_processed &&
              (res_future_status == std::future_status::deferred ||
               (res_future_status == std::future_status::timeout && std::chrono::steady_clock::now() < res_wait)));
+
+    this->mqtt_abstraction->unregister_handler(cmd_response_topic, res_token);
 
     if (res_future_status != std::future_status::ready && this->shutdown_processed) {
         // Once the shutdown handler has returned, module communication is stopped (MQTT is

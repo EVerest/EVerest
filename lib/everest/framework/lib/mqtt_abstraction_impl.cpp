@@ -514,7 +514,8 @@ void MQTTAbstractionImpl::unregister_handler(const std::string& topic, const Tok
 
     this->message_handler.unregister_handler(topic, token);
 
-    if (this->mqtt_is_connected) {
+    // cmd response topics a shared by all calls of that cmd and stay subscribed
+    if (this->mqtt_is_connected && token && token->type != HandlerType::Result) {
         this->unsubscribe(topic);
     }
 }

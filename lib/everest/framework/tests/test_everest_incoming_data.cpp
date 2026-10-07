@@ -186,3 +186,32 @@ TEST_CASE("Incoming data is rejected before module code when schema validation i
     CHECK_FALSE(cmd_called);
     REQUIRE(fixture.cmd_responses().size() == 1);
 }
+
+TEST_CASE("Cmd result arriving after the call gave up is ignored", "[everest][cmd_result]") {
+    EverestFixture fixture;
+    // Once shutdown is processed, call_cmd gives up after a single wait step instead of the full timeout.
+    fixture.deliver("shutdown", json::object());
+
+    CHECK_THROWS_AS(fixture.everest.call_cmd({"r", 0}, "set_value", {{"value", {{"x", 1}}}}), Everest::Shutdown);
+
+    std::string call_id;
+    for (const auto& [topic, payload] : fixture.mqtt->published()) {
+        if (topic.size() >= 14 && topic.compare(topic.size() - 14, 14, "/cmd/set_value") == 0) {
+            call_id = payload.at("data").at("id").get<std::string>();
+        }
+    }
+    REQUIRE_FALSE(call_id.empty());
+
+    std::shared_ptr<TypedHandler> result_handler;
+    std::string response_topic;
+    for (const auto& [topic, handler] : fixture.mqtt->handler_history()) {
+        if (handler->type == HandlerType::Result && handler->id == call_id) {
+            result_handler = handler;
+            response_topic = topic;
+        }
+    }
+    REQUIRE(result_handler != nullptr);
+
+    CHECK(fixture.mqtt->registered_handlers().count(response_topic) == 0);
+    CHECK_NOTHROW((*result_handler->handler)(response_topic, json{{"id", call_id}, {"retval", nullptr}}));
+}
