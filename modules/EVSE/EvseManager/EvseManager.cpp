@@ -2306,6 +2306,7 @@ void EvseManager::powersupply_DC_on() {
 // input voltage/current is what the evse/car would like to set.
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
+    std::lock_guard<std::mutex> set_lock(powersupply_dc_set_mutex);
     // Read once so that a transition during this call cannot mix the rule sets
     const bool demand_active = current_demand_active.load();
     // The offered minimum and the 0 A rule apply to the current the EV requests during current demand. Until the
@@ -2316,7 +2317,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
                                   std::abs(raw_ev_target_current.load()),
                                   latest_evse_max_current.load(),
                                   latest_evse_max_discharge_current.load(),
-                                  current_demand};
+                                  current_demand,
+                                  power_supply_DC_charging_phase.load()};
     {
         std::lock_guard<std::mutex> lock(last_dc_setpoint_inputs_mutex);
         if (last_dc_setpoint_inputs == inputs) {

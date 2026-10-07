@@ -353,7 +353,9 @@ private:
     std::atomic<double> latest_evse_max_current{0.};
     std::atomic<double> latest_evse_max_discharge_current{0.};
 
-    // Inputs of the last setpoint sent to the power supply; a repeated request is not sent again
+    // Inputs of the last setpoint sent to the power supply; a repeated request is not sent again. The charging
+    // phase is an input as well: a phase change with an unchanged setpoint (precharge and current demand target
+    // identical) must still reach the power supply as setMode(Export, <phase>).
     struct DcSetpointInputs {
         double voltage{0.};
         double current{0.};
@@ -361,15 +363,19 @@ private:
         double evse_max_current{0.};
         double evse_max_discharge_current{0.};
         bool current_demand{false};
+        types::power_supply_DC::ChargingPhase phase{types::power_supply_DC::ChargingPhase::Other};
         bool operator==(const DcSetpointInputs& other) const {
             return voltage == other.voltage and current == other.current and
                    ev_target_current == other.ev_target_current and evse_max_current == other.evse_max_current and
                    evse_max_discharge_current == other.evse_max_discharge_current and
-                   current_demand == other.current_demand;
+                   current_demand == other.current_demand and phase == other.phase;
         }
     };
     std::mutex last_dc_setpoint_inputs_mutex;
     std::optional<DcSetpointInputs> last_dc_setpoint_inputs;
+    // Serializes powersupply_DC_set(): the inputs are read and the setpoint sent under this lock, so a call
+    // that started with older inputs cannot overwrite a newer setpoint
+    std::mutex powersupply_dc_set_mutex;
 
     types::authorization::ProvidedIdToken autocharge_token;
 

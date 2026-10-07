@@ -2,6 +2,7 @@
 // Copyright (C) 2023 chargebyte GmbH
 // Copyright (C) 2023 Contributors to EVerest
 #include <cbv2g/common/exi_bitstream.h>
+#include <limits>
 #include <cbv2g/exi_v2gtp.h> //for V2GTP_HEADER_LENGTHs
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
 #include <cbv2g/iso_2/iso2_msgDefDecoder.h>
@@ -2267,6 +2268,10 @@ enum v2g_event iso_handle_request(v2g_connection* conn) {
         if (conn->ctx->last_v2g_msg == V2G_POWER_DELIVERY_MSG) {
             conn->ctx->p_charger->publish_current_demand_started(nullptr);
             conn->ctx->session.is_charging = true;
+            // The first current demand target is published even if it equals the precharge target: EvseManager
+            // applies the current demand rules only from the first target the EV sends in current demand on.
+            conn->ctx->ev_v2g_data.v2g_target_voltage = std::numeric_limits<float>::quiet_NaN();
+            conn->ctx->ev_v2g_data.v2g_target_current = std::numeric_limits<float>::quiet_NaN();
         }
         conn->ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
         exi_out->V2G_Message.Body.CurrentDemandRes_isUsed = 1u;
