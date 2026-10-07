@@ -72,8 +72,8 @@ public:
             return;
         }
         if (depth(ptr) == 1 && message.find("no subschema has succeeded") != std::string::npos) {
-            m_findings.push_back(make_error(first_token(ptr), ptr.to_string(),
-                                            "entry needs at least one of 'v16', 'v2' or 'tier_mapping'"));
+            m_findings.push_back(
+                make_error(first_token(ptr), ptr.to_string(), "entry needs at least one of 'v16' or 'v2'"));
             return;
         }
         m_findings.push_back(make_error(first_token(ptr), ptr.to_string(), message));
@@ -177,13 +177,7 @@ std::optional<Entry> to_entry(const std::string& key, const json& value, std::ve
         findings.push_back(make_error(key, "", INVALID_KEY_MESSAGE));
         return std::nullopt;
     }
-    Entry entry{std::move(error_key.value()), std::nullopt, std::nullopt, std::nullopt};
-    if (const auto it = value.find("tier_mapping"); it != value.end()) {
-        entry.tier_mapping = Mapping{it->at("evse").get<int>()};
-        if (const auto connector = it->find("connector"); connector != it->end()) {
-            entry.tier_mapping->connector = connector->get<int>();
-        }
-    }
+    Entry entry{std::move(error_key.value()), std::nullopt, std::nullopt};
     if (const auto it = value.find("v16"); it != value.end()) {
         entry.v16 = to_v16(*it, key, findings);
     }

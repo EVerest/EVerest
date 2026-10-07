@@ -73,7 +73,6 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
 
     const auto* api = result.error_mapping->find("generic/VendorError", "YourCustomErrorType");
     ASSERT_NE(api, nullptr);
-    EXPECT_FALSE(api->tier_mapping.has_value());
     ASSERT_TRUE(api->v16.has_value());
     EXPECT_EQ(api->v16->error_code, ChargePointErrorCode::OtherError);
     EXPECT_EQ(api->v16->vendor_id, "com.example");
@@ -94,17 +93,14 @@ TEST(ErrorMappingLoaderTest, LoadsExampleFileTyped) {
 
     const auto* surge = result.error_mapping->find("generic/VendorError", "SurgeProtectionDevice2");
     ASSERT_NE(surge, nullptr);
-    ASSERT_TRUE(surge->tier_mapping.has_value());
-    EXPECT_EQ(surge->tier_mapping->evse, 2);
-    EXPECT_FALSE(surge->tier_mapping->connector.has_value());
+    ASSERT_TRUE(surge->v2.has_value());
+    EXPECT_EQ(surge->v2->tech_code, "SPD-2");
     EXPECT_FALSE(surge->v16.has_value());
 
     const auto* lock = result.error_mapping->find("connector_lock/MREC1ConnectorLockFailure", "");
     ASSERT_NE(lock, nullptr);
-    ASSERT_TRUE(lock->tier_mapping.has_value());
-    EXPECT_EQ(lock->tier_mapping->evse, 1);
-    ASSERT_TRUE(lock->tier_mapping->connector.has_value());
-    EXPECT_EQ(lock->tier_mapping->connector.value(), 2);
+    ASSERT_TRUE(lock->v16.has_value());
+    EXPECT_EQ(lock->v16->error_code, ChargePointErrorCode::ConnectorLockFailure);
 }
 
 TEST(ErrorMappingLoaderTest, CopiesOfTheResultShareOneImmutableMapping) {
@@ -142,16 +138,6 @@ TEST(ErrorMappingLoaderTest, AcceptsEmptyFileAndSchemaReference) {
     const auto with_schema = parse_error_mapping(R"({"$schema": "error_mapping.schema.json"})");
     ASSERT_TRUE(with_schema.error_mapping != nullptr);
     EXPECT_TRUE(with_schema.error_mapping->entries().empty());
-}
-
-TEST(ErrorMappingLoaderTest, ParsesMappingWithConnector) {
-    const auto result =
-        parse_error_mapping(R"({"generic/VendorError": {"tier_mapping": {"evse": 1, "connector": 2}}})");
-    ASSERT_TRUE(result.error_mapping != nullptr);
-    const auto& mapping = result.error_mapping->find("generic/VendorError", "")->tier_mapping;
-    ASSERT_TRUE(mapping.has_value());
-    EXPECT_EQ(mapping->evse, 1);
-    EXPECT_EQ(mapping->connector, 2);
 }
 
 TEST(ErrorMappingLoaderTest, RejectsUnknownEntryField) {
@@ -207,14 +193,11 @@ TEST(ErrorMappingLoaderTest, KeepsSeverityUnsetWithoutTheField) {
     EXPECT_FALSE(entry->v2->severity.has_value());
 }
 
-TEST(ErrorMappingLoaderTest, RejectsNegativeEvse) {
-    const auto finding = single_error(R"({"generic/VendorError": {"tier_mapping": {"evse": -1}}})");
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/tier_mapping/evse");
-}
-
-TEST(ErrorMappingLoaderTest, RejectsMappingWithoutEvse) {
-    const auto finding = single_error(R"({"generic/VendorError": {"tier_mapping": {"connector": 1}}})");
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/tier_mapping");
+// where an error is reported follows from the raising module's mapping in the EVerest configuration only
+TEST(ErrorMappingLoaderTest, RejectsTierMapping) {
+    const auto finding = single_error(R"({"generic/VendorError": {"v2": {}, "tier_mapping": {"evse": 1}}})");
+    EXPECT_EQ(finding.entry, "generic/VendorError");
+    EXPECT_THAT(finding.message, HasSubstr("tier_mapping"));
 }
 
 TEST(ErrorMappingLoaderTest, RejectsEmptyEntry) {

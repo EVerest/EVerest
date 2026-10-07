@@ -115,37 +115,6 @@ TEST(ErrorMappingValuesTest, WarnsAboutStaticTextOverOcppLimit) {
     EXPECT_THAT(finding.message, HasSubstr("51"));
 }
 
-TEST(ErrorMappingValuesTest, RejectsConnectorOnChargingStation) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 0, "connector": 1}}})");
-    const auto finding = single(validate_values(mapping));
-    EXPECT_EQ(finding.level, Finding::Level::Error);
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/tier_mapping");
-}
-
-TEST(ErrorMappingTopologyTest, AcceptsExistingEvseAndConnector) {
-    const auto mapping = mapping_of(R"({
-        "generic/VendorError#A": {"tier_mapping": {"evse": 0}},
-        "generic/VendorError#B": {"tier_mapping": {"evse": 2}},
-        "generic/VendorError#C": {"tier_mapping": {"evse": 2, "connector": 2}},
-        "generic/VendorError#D": {"v2": {"tech_code": "D"}}
-    })");
-    EXPECT_TRUE(validate_topology(mapping, {{1, 1}, {2, 2}}).empty());
-}
-
-TEST(ErrorMappingTopologyTest, RejectsUnknownEvse) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 3}}})");
-    const auto finding = single(validate_topology(mapping, {{1, 1}, {2, 1}}));
-    EXPECT_EQ(finding.level, Finding::Level::Error);
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/tier_mapping/evse");
-}
-
-TEST(ErrorMappingTopologyTest, RejectsUnknownConnector) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 1, "connector": 2}}})");
-    const auto finding = single(validate_topology(mapping, {{1, 1}}));
-    EXPECT_EQ(finding.level, Finding::Level::Error);
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/tier_mapping/connector");
-}
-
 /// \brief Device model holding the given components (name, evse, connector) with the given variables
 class FakeDeviceModel {
 public:
@@ -228,58 +197,14 @@ TEST(ErrorMappingDeviceModelTest, StrictReportsUnknownComponentAsError) {
     EXPECT_THAT(finding.message, HasSubstr("no component 'SurgeProtector'"));
 }
 
-TEST(ErrorMappingDeviceModelTest, EntryMappingRestrictsTheLookupToItsEvse) {
-    FakeDeviceModel model;
-    model.add("Connector", 1, 1, {"Temperature"});
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 2, "connector": 1},
-        "v2": {"component_name": "Connector", "variable_name": "Temperature"}}})");
-    const auto finding = single(validate_device_model(mapping, std::ref(model), TWO_EVSES, false));
-    EXPECT_THAT(finding.message, HasSubstr("on evse 2 connector 1"));
-    for (const auto& lookup : model.lookups()) {
-        ASSERT_TRUE(lookup.evse.has_value());
-        EXPECT_EQ(lookup.evse->id, 2);
-    }
-}
-
 TEST(ErrorMappingDeviceModelTest, PassesInstancesToTheLookup) {
     FakeDeviceModel model;
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 0},
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
         "v2": {"component_name": "Spd", "component_instance": "1", "variable_name": "Tripped", "variable_instance": "L1"}}})");
     validate_device_model(mapping, std::ref(model), TWO_EVSES, false);
-    ASSERT_EQ(model.lookups().size(), 1U);
+    ASSERT_FALSE(model.lookups().empty());
     EXPECT_EQ(model.lookups().front().instance.value().get(), "1");
     EXPECT_FALSE(model.lookups().front().evse.has_value());
-}
-
-Everest::error::Error error_from(std::optional<Mapping> origin_mapping) {
-    Everest::error::Error error;
-    error.type = "generic/VendorError";
-    error.origin.module_id = "api";
-    error.origin.implementation_id = "main";
-    error.origin.mapping = origin_mapping;
-    return error;
-}
-
-TEST(ErrorMappingOverrideTest, NoConflictWithoutEntryMapping) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_code": "A"}}})");
-    EXPECT_FALSE(mapping_override(*mapping.find("generic/VendorError", ""), error_from(Mapping{1})).has_value());
-}
-
-TEST(ErrorMappingOverrideTest, NoConflictWithoutModuleMapping) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 2}}})");
-    EXPECT_FALSE(mapping_override(*mapping.find("generic/VendorError", ""), error_from(std::nullopt)).has_value());
-}
-
-TEST(ErrorMappingOverrideTest, NoConflictWithSameMapping) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 2, "connector": 1}}})");
-    EXPECT_FALSE(mapping_override(*mapping.find("generic/VendorError", ""), error_from(Mapping{2, 1})).has_value());
-}
-
-TEST(ErrorMappingOverrideTest, DescribesDifferentModuleMapping) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"tier_mapping": {"evse": 2}}})");
-    const auto conflict = mapping_override(*mapping.find("generic/VendorError", ""), error_from(Mapping{1, 1}));
-    ASSERT_TRUE(conflict.has_value());
-    EXPECT_THAT(conflict.value(), HasSubstr("api/main to evse 2, overriding its module mapping evse 1 connector 1"));
 }
 
 } // namespace

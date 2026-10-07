@@ -38,11 +38,8 @@ std::vector<Finding> validate_error_types(const CustomFileErrorMapping& mapping,
 std::vector<std::string> replaced_builtin_entries(const CustomFileErrorMapping& mapping,
                                                   const std::set<std::string>& builtin);
 
-/// \brief Placeholders, text lengths and the mapping's evse/connector combination.
+/// \brief Placeholders and text lengths.
 std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping);
-
-/// \brief Every entry mapping must name an EVSE and connector that exist.
-std::vector<Finding> validate_topology(const CustomFileErrorMapping& mapping, const EvseTopology& topology);
 
 enum class DeviceModelLookup {
     Known,
@@ -54,14 +51,10 @@ using DeviceModelLookupFunction =
     std::function<DeviceModelLookup(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable)>;
 
 /// \brief Every entry naming an OCPP 2.x component or variable must name a combination the device model contains.
-///        Without an entry mapping, any of the charging station, the EVSEs and the connectors may contain it.
+///        Any of the charging station, the EVSEs and the connectors may contain it.
 /// \param strict report missing combinations as errors instead of warnings
 std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping,
                                            const DeviceModelLookupFunction& lookup, const EvseTopology& topology,
                                            bool strict);
-
-/// \returns a description when \p entry reports \p error on another EVSE or connector than the raising module's
-///          mapping. The raising module is only known once the error arrives, so this cannot be checked at load.
-std::optional<std::string> mapping_override(const Entry& entry, const Everest::error::Error& error);
 
 } // namespace ocpp_module_common::custom_error_mapping

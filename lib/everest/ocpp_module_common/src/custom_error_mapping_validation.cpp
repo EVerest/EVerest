@@ -38,15 +38,6 @@ std::string error_namespace(const std::string& error_type) {
     return error_type.substr(0, error_type.find('/'));
 }
 
-std::string describe(const Mapping& mapping) {
-    std::ostringstream out;
-    out << "evse " << mapping.evse;
-    if (mapping.connector.has_value()) {
-        out << " connector " << mapping.connector.value();
-    }
-    return out.str();
-}
-
 void validate_text(const Entry& entry, const std::string& text, std::initializer_list<const char*> path,
                    std::size_t max_length, std::vector<Finding>& findings) {
     std::size_t static_length = 0;
@@ -84,8 +75,7 @@ bool names_device_model_entry(const V2Identity& v2) {
            v2.variable_instance.has_value();
 }
 
-std::vector<std::optional<ocpp::v2::EVSE>> candidate_evses(const std::optional<Mapping>& mapping,
-                                                           const EvseTopology& topology) {
+std::vector<std::optional<ocpp::v2::EVSE>> candidate_evses(const EvseTopology& topology) {
     std::vector<std::optional<ocpp::v2::EVSE>> candidates;
     const auto add = [&candidates](std::int32_t evse, std::optional<std::int32_t> connector) {
         ocpp::v2::EVSE value;
@@ -93,17 +83,6 @@ std::vector<std::optional<ocpp::v2::EVSE>> candidate_evses(const std::optional<M
         value.connectorId = connector;
         candidates.emplace_back(value);
     };
-    if (mapping.has_value()) {
-        if (mapping->evse == 0) {
-            candidates.emplace_back(std::nullopt);
-            return candidates;
-        }
-        if (mapping->connector.has_value()) {
-            add(mapping->evse, mapping->connector);
-        }
-        add(mapping->evse, std::nullopt);
-        return candidates;
-    }
     candidates.emplace_back(std::nullopt);
     for (const auto& [evse, connectors] : topology) {
         add(evse, std::nullopt);
@@ -173,30 +152,6 @@ std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping) {
         if (entry.v2.has_value() && entry.v2->tech_info.has_value()) {
             validate_text(entry, entry.v2->tech_info.value(), {"v2", "techInfo"}, V2_TECH_INFO_MAX_LENGTH, findings);
         }
-        if (entry.tier_mapping.has_value() && entry.tier_mapping->evse == 0 &&
-            entry.tier_mapping->connector.has_value()) {
-            findings.push_back(finding(Finding::Level::Error, entry, pointer(entry, {"tier_mapping"}),
-                                       "evse 0 is the charging station and has no connector"));
-        }
-    }
-    return findings;
-}
-
-std::vector<Finding> validate_topology(const CustomFileErrorMapping& mapping, const EvseTopology& topology) {
-    std::vector<Finding> findings;
-    for (const auto& [key, entry] : mapping.entries()) {
-        if (!entry.tier_mapping.has_value() || entry.tier_mapping->evse == 0) {
-            continue;
-        }
-        const auto evse = topology.find(entry.tier_mapping->evse);
-        if (evse == topology.end()) {
-            findings.push_back(finding(Finding::Level::Error, entry, pointer(entry, {"tier_mapping", "evse"}),
-                                       "the charger has no EVSE " + std::to_string(entry.tier_mapping->evse)));
-        } else if (entry.tier_mapping->connector.has_value() && entry.tier_mapping->connector.value() > evse->second) {
-            findings.push_back(finding(Finding::Level::Error, entry, pointer(entry, {"tier_mapping", "connector"}),
-                                       "EVSE " + std::to_string(evse->first) + " has no connector " +
-                                           std::to_string(entry.tier_mapping->connector.value())));
-        }
     }
     return findings;
 }
@@ -223,7 +178,7 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
 
         bool component_known = false;
         bool known = false;
-        for (const auto& evse : candidate_evses(entry.tier_mapping, topology)) {
+        for (const auto& evse : candidate_evses(topology)) {
             component.evse = evse;
             const auto result = lookup(component, variable);
             known = result == DeviceModelLookup::Known;
@@ -236,26 +191,13 @@ std::vector<Finding> validate_device_model(const CustomFileErrorMapping& mapping
             continue;
         }
 
-        const auto where =
-            entry.tier_mapping.has_value() ? " on " + describe(entry.tier_mapping.value()) : std::string{};
-        const auto message = component_known
-                                 ? "the device model has no variable '" + variable.name.get() + "' on component '" +
-                                       component.name.get() + "'" + where
-                                 : "the device model has no component '" + component.name.get() + "'" + where;
+        const auto message = component_known ? "the device model has no variable '" + variable.name.get() +
+                                                   "' on component '" + component.name.get() + "'"
+                                             : "the device model has no component '" + component.name.get() + "'";
         findings.push_back(
             finding(strict ? Finding::Level::Error : Finding::Level::Warning, entry, pointer(entry, {"v2"}), message));
     }
     return findings;
-}
-
-std::optional<std::string> mapping_override(const Entry& entry, const Everest::error::Error& error) {
-    if (!entry.tier_mapping.has_value() || !error.origin.mapping.has_value() ||
-        entry.tier_mapping.value() == error.origin.mapping.value()) {
-        return std::nullopt;
-    }
-    return "entry '" + entry.key.to_string() + "' maps " + error.type + " of " + error.origin.module_id + "/" +
-           error.origin.implementation_id + " to " + describe(entry.tier_mapping.value()) +
-           ", overriding its module mapping " + describe(error.origin.mapping.value());
 }
 
 } // namespace ocpp_module_common::custom_error_mapping

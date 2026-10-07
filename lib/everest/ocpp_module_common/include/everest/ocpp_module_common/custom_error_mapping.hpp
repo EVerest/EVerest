@@ -54,8 +54,6 @@ struct V2Identity {
 
 struct Entry {
     ErrorKey key;
-    /// EVSE and connector the error is reported on, instead of the raising module's mapping
-    std::optional<Mapping> tier_mapping;
     std::optional<V16Identity> v16;
     std::optional<V2Identity> v2;
 };

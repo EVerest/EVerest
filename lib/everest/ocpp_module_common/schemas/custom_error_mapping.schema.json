@@ -23,9 +23,6 @@
       "description": "Static identity of one EVerest error.",
       "type": "object",
       "properties": {
-        "tier_mapping": {
-          "$ref": "#/definitions/tier_mapping"
-        },
         "v16": {
           "$ref": "#/definitions/v16"
         },
@@ -39,27 +36,8 @@
         },
         {
           "required": ["v2"]
-        },
-        {
-          "required": ["tier_mapping"]
         }
       ],
-      "additionalProperties": false
-    },
-    "tier_mapping": {
-      "description": "EVSE and connector the error is reported on. Overrides the mapping of the raising module in the EVerest configuration. EVSE 0 is the charging station.",
-      "type": "object",
-      "properties": {
-        "evse": {
-          "type": "integer",
-          "minimum": 0
-        },
-        "connector": {
-          "type": "integer",
-          "minimum": 1
-        }
-      },
-      "required": ["evse"],
       "additionalProperties": false
     },
     "v16": {

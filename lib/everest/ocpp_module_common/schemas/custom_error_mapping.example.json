@@ -31,19 +31,16 @@
     }
   },
   "generic/VendorError#SurgeProtectionDevice1": {
-    "tier_mapping": { "evse": 1 },
     "v2": {
       "tech_code": "SPD-1"
     }
   },
   "generic/VendorError#SurgeProtectionDevice2": {
-    "tier_mapping": { "evse": 2 },
     "v2": {
       "tech_code": "SPD-2"
     }
   },
   "connector_lock/MREC1ConnectorLockFailure": {
-    "tier_mapping": { "evse": 1, "connector": 2 },
     "v16": {
       "error_code": "ConnectorLockFailure",
       "vendor_id": "com.example",
@@ -52,7 +49,6 @@
     "v2": {
       "tech_code": "L-110",
       "component_name": "Connector",
-      "component_instance": "2",
       "variable_name": "Problem"
     }
   }
