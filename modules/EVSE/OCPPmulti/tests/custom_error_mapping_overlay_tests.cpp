@@ -103,12 +103,9 @@ protected:
         event.event_cleared = false;
 
         ON_CALL(m_callbacks, custom_error_mapping()).WillByDefault(Return(nullptr));
-        const auto built_in = m_chargepoint.convert_error(event);
+        const nlohmann::json built_in = m_chargepoint.convert_error(event);
         ON_CALL(m_callbacks, custom_error_mapping()).WillByDefault(Return(custom_mapping()));
-        const auto overlaid = m_chargepoint.convert_error(event);
-        EXPECT_TRUE(built_in.has_value());
-        EXPECT_TRUE(overlaid.has_value());
-        return {nlohmann::json(built_in.value_or(ocpp::v2::EventData{})), overlaid.value_or(ocpp::v2::EventData{})};
+        return {built_in, m_chargepoint.convert_error(event)};
     }
 };
 

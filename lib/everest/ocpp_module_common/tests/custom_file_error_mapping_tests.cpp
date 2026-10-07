@@ -43,17 +43,11 @@ constexpr auto TEMPERATURE_ENTRY = R"({
 
 // what the built-in mapping reports for an error without a custom error mapping file
 ocpp::v16::ErrorInfo built_in_v16(const Everest::error::Error& error) {
-    if (auto info = MrecErrorMapping{}.try_convert(error); info.has_value()) {
-        return std::move(info).value();
-    }
-    return DefaultErrorMappingV16{}.try_convert(error).value();
+    return to_v16_error_info(error);
 }
 
 ocpp::v2::EventData built_in_v2(const Everest::error::Error& error, const std::int32_t event_id = 1) {
-    if (auto data = MrecErrorMapping{}.try_convert(error, false, event_id); data.has_value()) {
-        return std::move(data).value();
-    }
-    return DefaultErrorMappingV2X{}.try_convert(error, false, event_id).value();
+    return to_v2_event_data(error, false, event_id);
 }
 
 void expect_equal(const ocpp::v16::ErrorInfo& actual, const ocpp::v16::ErrorInfo& expected) {
@@ -186,8 +180,8 @@ TEST(CustomFileErrorMappingTest, NeverOverridesTheInoperativeError) {
     const auto error = error_of("evse_manager/Inoperative");
     EXPECT_EQ(mapping.find(error.type, error.sub_type), nullptr);
 
-    const auto v16 = InoperativeErrorMappingV16{}.try_convert(error).value();
-    expect_equal(mapping.overlay(error, v16), v16);
+    expect_equal(mapping.overlay(error, built_in_v16(error)), built_in_v16(error));
+    EXPECT_TRUE(built_in_v16(error).is_fault);
     expect_equal(mapping.overlay(error, built_in_v2(error)), built_in_v2(error));
 }
 

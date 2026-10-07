@@ -78,11 +78,7 @@ ocpp::v2::Component get_component_from_error(const Everest::error::Error& error)
 
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const bool cleared, const int32_t event_id,
                                    const MREC_ERROR_MAP_TYPE& error_map) {
-    const MrecErrorMapping mrec{error_map};
-    if (auto event_data = mrec.try_convert(error, cleared, event_id); event_data.has_value()) {
-        return std::move(event_data).value();
-    }
-    return DefaultErrorMappingV2X{}.try_convert(error, cleared, event_id).value();
+    return to_v2_event_data(error, cleared, event_id, MrecErrorMapping{error_map});
 }
 
 } // namespace ocpp_module_common

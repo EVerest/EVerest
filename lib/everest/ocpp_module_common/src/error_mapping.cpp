@@ -180,7 +180,7 @@ std::optional<ocpp::v16::ErrorInfo> InoperativeErrorMappingV16::try_convert(cons
     return result;
 }
 
-std::optional<ocpp::v16::ErrorInfo> DefaultErrorMappingV16::try_convert(const Everest::error::Error& error) const {
+ocpp::v16::ErrorInfo DefaultErrorMappingV16::convert(const Everest::error::Error& error) const {
     auto result = make_v16_error_info(error);
     result.is_fault = is_fault(error);
     result.info = ocpp::CiString<50>(error.origin.to_string(), ocpp::StringTooLarge::Truncate);
@@ -208,12 +208,33 @@ std::string DefaultErrorMappingV16::vendor_error_code(const Everest::error::Erro
     return result;
 }
 
-std::optional<ocpp::v2::EventData> DefaultErrorMappingV2X::try_convert(const Everest::error::Error& error,
-                                                                       const bool cleared,
-                                                                       const std::int32_t event_id) const {
+ocpp::v2::EventData DefaultErrorMappingV2X::convert(const Everest::error::Error& error, const bool cleared,
+                                                    const std::int32_t event_id) const {
     auto event_data = make_v2_event_data(error, cleared, event_id);
     event_data.techCode = error.type;
     return event_data;
+}
+
+ocpp::v16::ErrorInfo to_v16_error_info(const Everest::error::Error& error) {
+    // MREC before the OCPP table before Inoperative: a more specific mapping is asked first
+    if (auto info = MrecErrorMapping{}.try_convert(error); info.has_value()) {
+        return std::move(info).value();
+    }
+    if (auto info = OcppErrorMappingV16{}.try_convert(error); info.has_value()) {
+        return std::move(info).value();
+    }
+    if (auto info = InoperativeErrorMappingV16{}.try_convert(error); info.has_value()) {
+        return std::move(info).value();
+    }
+    return DefaultErrorMappingV16{}.convert(error);
+}
+
+ocpp::v2::EventData to_v2_event_data(const Everest::error::Error& error, const bool cleared,
+                                     const std::int32_t event_id, const MrecErrorMapping& mrec) {
+    if (auto event_data = mrec.try_convert(error, cleared, event_id); event_data.has_value()) {
+        return std::move(event_data).value();
+    }
+    return DefaultErrorMappingV2X{}.convert(error, cleared, event_id);
 }
 
 } // namespace ocpp_module_common

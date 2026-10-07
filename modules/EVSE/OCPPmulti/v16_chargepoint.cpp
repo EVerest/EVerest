@@ -14,7 +14,6 @@
 #include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
 #include <algorithm>
-#include <array>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -409,26 +408,10 @@ void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) 
 }
 
 ocpp::v16::ErrorInfo ChargePointV16::convert_error(const Everest::error::Error& error) {
-    using namespace ocpp_module_common;
-
-    // MREC before the OCPP table before Inoperative: a more specific mapping is asked first
-    static const MrecErrorMapping mrec;
-    static const OcppErrorMappingV16 ocpp_table;
-    static const InoperativeErrorMappingV16 inoperative;
-    static const DefaultErrorMappingV16 fallback;
-
-    const std::array<const ErrorMappingV16*, 4> mappings{&mrec, &ocpp_table, &inoperative, &fallback};
-
+    auto info = ocpp_module_common::to_v16_error_info(error);
     // the configured mapping file only overrides single fields of the built-in result
     const auto custom = m_callbacks_ptr->custom_error_mapping();
-    for (const auto* mapping : mappings) {
-        if (auto result = mapping->try_convert(error); result.has_value()) {
-            return custom != nullptr ? custom->overlay(error, std::move(result).value()) : std::move(result).value();
-        }
-    }
-
-    EVLOG_error << "no OCPP 1.6 mapping converted error type '" << error.type << "', reporting it as OtherError";
-    return make_v16_error_info(error);
+    return custom != nullptr ? custom->overlay(error, std::move(info)) : info;
 }
 
 ocpp::v2::AuthorizeResponse ChargePointV16::validate_pnc(const types::authorization::ProvidedIdToken& provided_token) {

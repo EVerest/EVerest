@@ -5,8 +5,6 @@
 
 #include <everest/ocpp_module_common/error_mapping.hpp>
 
-#include <array>
-
 #include <algorithm>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
@@ -598,34 +596,15 @@ void ChargePointV2::on_event(const EventInfo& event) {
         return;
     }
 
-    if (auto event_data = convert_error(event); event_data.has_value()) {
-        m_charge_point->on_event({std::move(event_data).value()});
-        return;
-    }
-
-    EVLOG_error << "no OCPP 2.x mapping converted error type '" << event.error->type << "', reporting nothing";
+    m_charge_point->on_event({convert_error(event)});
 }
 
-std::optional<ocpp::v2::EventData> ChargePointV2::convert_error(const EventInfo& event) {
-    using namespace ocpp_module_common;
-
-    // MREC before the fallback: a more specific mapping is asked first
-    static const MrecErrorMapping mrec;
-    static const DefaultErrorMappingV2X fallback;
-
-    const std::array<const ErrorMappingV2X*, 2> mappings{&mrec, &fallback};
-
+ocpp::v2::EventData ChargePointV2::convert_error(const EventInfo& event) {
+    const auto& error = event.error.value();
+    auto event_data = ocpp_module_common::to_v2_event_data(error, event.event_cleared, event.event_id);
     // the configured mapping file only overrides single fields of the built-in result
     const auto custom = m_callbacks_ptr->custom_error_mapping();
-    const auto& error = event.error.value();
-    for (const auto* mapping : mappings) {
-        if (auto event_data = mapping->try_convert(error, event.event_cleared, event.event_id);
-            event_data.has_value()) {
-            return custom != nullptr ? custom->overlay(error, std::move(event_data).value())
-                                     : std::move(event_data).value();
-        }
-    }
-    return std::nullopt;
+    return custom != nullptr ? custom->overlay(error, std::move(event_data)) : event_data;
 }
 void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
                                         const types::evse_manager::SessionEvent& session_event) {
