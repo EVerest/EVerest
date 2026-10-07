@@ -1,6 +1,9 @@
 if(NOT DEFINED sdbus-c++_VERSION_MAJOR AND NOT DISABLE_EDM)
-    string(REPLACE "." ";" SDBUS_CPP_VERSION_SPLIT ${CPM_PACKAGE_sdbus-cpp_VERSION})
-    list(GET SDBUS_CPP_VERSION_SPLIT 0 sdbus-c++_VERSION_MAJOR)
+    get_target_property(SDBUS_CPP_VERSION sdbus-c++ VERSION)
+    string(REGEX MATCH "^[0-9]+" sdbus-c++_VERSION_MAJOR "${SDBUS_CPP_VERSION}")
+endif()
+if(NOT "${sdbus-c++_VERSION_MAJOR}" MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "Could not determine the sdbus-c++ major version")
 endif()
 message("Found sdbus-c++ major version: " ${sdbus-c++_VERSION_MAJOR})
 
