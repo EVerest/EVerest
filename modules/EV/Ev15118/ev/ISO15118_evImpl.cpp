@@ -382,6 +382,12 @@ void ISO15118_evImpl::init() {
 }
 
 void ISO15118_evImpl::ready() {
+    if (not mod->config.supported_ISO15118_20 and not mod->config.supported_ISO15118_2 and
+        not mod->config.supported_DIN70121) {
+        EVLOG_error << "Ev15118: no protocol enabled; not starting the EVCC";
+        return;
+    }
+
     // Resolve the HLC interface once ("auto" -> first usable ipv6 interface) so the connection and
     // the EVCCID MAC use the same device.
     hlc_device = mod->config.device;
@@ -450,7 +456,10 @@ iso15118::ev::EvConfig ISO15118_evImpl::make_ev_config(const SessionState& state
     ev_config.authorization_timeout = std::chrono::milliseconds(mod->config.authorization_timeout_ms);
 
     // Priority order in the SAP offer.
-    ev_config.supported_protocols = {iso15118::ProtocolId::ISO15118_20};
+    ev_config.supported_protocols.clear();
+    if (mod->config.supported_ISO15118_20) {
+        ev_config.supported_protocols.push_back(iso15118::ProtocolId::ISO15118_20);
+    }
     if (mod->config.supported_ISO15118_2) {
         ev_config.supported_protocols.push_back(iso15118::ProtocolId::ISO15118_2);
     }
@@ -828,8 +837,8 @@ bool ISO15118_evImpl::handle_start_charging(types::iso15118::EnergyTransferMode&
     EVLOG_info << "Ev15118: start_charging requested (DepartureTime and EAmount ignored)";
 
     if (not worker_started) {
-        EVLOG_error << "Ev15118: the session worker was never started (HLC interface resolution failed); "
-                       "rejecting start_charging";
+        EVLOG_error << "Ev15118: the session worker was never started (no protocol enabled or HLC interface "
+                       "unresolved, see the startup error); rejecting start_charging";
         return false;
     }
 

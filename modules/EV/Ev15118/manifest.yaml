@@ -1,6 +1,5 @@
 description: >-
-  ISO 15118 EV-side (EVCC) implementation built on the libiso15118 ev::Controller
-  (SIL alternative to PyEvJosev).
+  ISO 15118 EV-side (EVCC) implementation built on the libiso15118 ev::Controller.
 config:
   device:
     description: Ethernet device used for HLC.
@@ -41,6 +40,10 @@ config:
       - Scheduled
       - Dynamic
     default: Dynamic
+  supported_ISO15118_20:
+    description: Offer ISO 15118-20 in the SAP handshake, ahead of ISO 15118-2 and DIN SPEC 70121.
+    type: boolean
+    default: true
   supported_DIN70121:
     description:
       Offer DIN SPEC 70121 (DC, plaintext only) in the SAP handshake, after ISO 15118-20.

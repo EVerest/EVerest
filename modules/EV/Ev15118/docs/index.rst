@@ -4,16 +4,15 @@ Ev15118
 =======
 
 EV-side ISO 15118 EVCC built on the ``libiso15118`` ``ev::Controller``. It
-provides the ``ISO15118_ev`` interface (the same interface as ``PyEvJosev``), so
-it is a drop-in software-in-the-loop (SIL) replacement for the Python EVCC when
-driving a DC or AC session against a SECC such as ``Evse15118D20`` or
-``EvseV2G``.
+provides the ``ISO15118_ev`` interface and drives a DC or AC session against a
+SECC such as ``Evse15118D20`` or ``EvseV2G``.
 
 Protocols
 ---------
 
-The SAP offer carries ISO 15118-20 first, then ISO 15118-2 and DIN SPEC 70121
-when ``supported_ISO15118_2`` / ``supported_DIN70121`` are set:
+The SAP offer carries ISO 15118-20 first, then ISO 15118-2 and DIN SPEC 70121,
+each enabled by ``supported_ISO15118_20`` / ``supported_ISO15118_2`` /
+``supported_DIN70121``:
 
 - **ISO 15118-20** (AC, AC BPT, AC DER IEC, AC DER SAE, DC, DC BPT), EIM, plaintext or
   TLS 1.3 with a client certificate.
@@ -88,6 +87,9 @@ Configuration
      - ``Dynamic``
      - Preferred ISO 15118-20 charge-loop control mode, ``Scheduled`` or
        ``Dynamic``.
+   * - ``supported_ISO15118_20``
+     - ``true``
+     - Offer ISO 15118-20 in the SAP handshake, first in priority.
    * - ``supported_DIN70121``
      - ``false``
      - Offer DIN SPEC 70121 in the SAP handshake, after ISO 15118-20.
