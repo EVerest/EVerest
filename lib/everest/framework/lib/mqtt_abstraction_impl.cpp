@@ -26,6 +26,7 @@
 #include <everest/io/mqtt/mosquitto_cpp.hpp>
 #include <everest/io/mqtt/mqtt_client.hpp>
 #include <everest/logging.hpp>
+#include <everest/util/json/nesting_depth.hpp>
 
 #include <utils/mqtt_abstraction_impl.hpp>
 
@@ -433,6 +434,11 @@ void MQTTAbstractionImpl::handle_mqtt_message(const Message& message) {
         if (topic_view.size() >= mqtt_everest_prefix_view.size() &&
             topic_view.compare(0, mqtt_everest_prefix_view.size(), mqtt_everest_prefix_view) == 0) {
             EVLOG_verbose << fmt::format("topic {} starts with {}", topic, mqtt_everest_prefix);
+            if (everest::lib::util::exceeds_json_nesting_depth(payload, MAX_JSON_NESTING_DEPTH)) {
+                EVLOG_warning << fmt::format("Ignoring message on topic '{}' nested deeper than {} levels", topic,
+                                             MAX_JSON_NESTING_DEPTH);
+                return;
+            }
             try {
                 this->message_handler.add(ParsedMessage{std::move(topic), json::parse(payload.begin(), payload.end())});
             } catch (nlohmann::detail::parse_error& e) {

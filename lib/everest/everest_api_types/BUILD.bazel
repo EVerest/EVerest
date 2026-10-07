@@ -5,7 +5,7 @@ cc_library(
     # NOTE: only the framework-free API modules are exposed here. The
     # configuration/generic/lifecycle modules have no wrapper.cpp and therefore
     # need neither the generated interface headers nor everest::framework, which
-    # keeps this target a leaf (nlohmann_json only). Modules with a wrapper.cpp
+    # keeps this target a leaf (nlohmann_json and util). Modules with a wrapper.cpp
     # are intentionally left out.
     srcs = glob([
         "src/everest_api_types/configuration/*.cpp",
@@ -43,6 +43,7 @@ cc_library(
     ],
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/everest/util",
         "@com_github_nlohmann_json//:json",
     ],
 )
