@@ -16,6 +16,7 @@
 #include <fstream>
 #include <inttypes.h>
 #include <iostream>
+#include <memory>
 #include <net/if.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -416,10 +417,16 @@ void* connection_handle_tcp(void* data) {
 void* connection_handle(void* data) {
     struct v2g_connection* conn = static_cast<struct v2g_connection*>(data);
 
-    conn->buffer = static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE));
-    if (not conn->buffer) {
+    const auto release_buffer = [conn](uint8_t* buffer) {
+        free(buffer);
+        conn->buffer = nullptr;
+    };
+    std::unique_ptr<uint8_t, decltype(release_buffer)> buffer{static_cast<uint8_t*>(malloc(DEFAULT_BUFFER_SIZE)),
+                                                              release_buffer};
+    if (not buffer) {
         return nullptr;
     }
+    conn->buffer = buffer.get();
 
     const auto handshake = v2g_detect_iso20_support(conn);
     if (handshake == HandshakeResult::Failed) {

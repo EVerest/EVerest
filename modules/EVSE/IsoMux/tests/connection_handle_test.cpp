@@ -4,7 +4,6 @@
 #include <gtest/gtest.h>
 
 #include <algorithm>
-#include <cstdlib>
 #include <cstring>
 #include <deque>
 #include <functional>
@@ -135,9 +134,6 @@ protected:
         if (listen_fd >= 0) {
             close(listen_fd);
         }
-        for (auto& conn : conns) {
-            free(conn.buffer);
-        }
     }
 
     v2g_connection& new_connection() {
@@ -237,6 +233,18 @@ TEST_F(ConnectionHandleTest, session_is_released_when_proxy_ends) {
     EXPECT_TRUE(proxy_calls[&first].called);
     ASSERT_TRUE(proxy_calls[&second].called);
     EXPECT_TRUE(proxy_calls[&second].selected_iso20);
+}
+
+TEST_F(ConnectionHandleTest, buffer_is_released_when_connection_ends) {
+    auto& proxied = new_connection();
+    auto& rejected = new_connection();
+
+    handle(proxied, supported_app_protocol_req(DIN_70121_MSG_DEF));
+    handle(rejected, v2gtp_header(0xFFFFFF00));
+
+    ASSERT_TRUE(proxy_calls[&proxied].called);
+    EXPECT_EQ(proxied.buffer, nullptr);
+    EXPECT_EQ(rejected.buffer, nullptr);
 }
 
 TEST_F(ConnectionHandleTest, peer_without_handshake_does_not_block_ev) {
