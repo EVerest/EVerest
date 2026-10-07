@@ -1,0 +1,6 @@
+description: Fixture errors
+errors:
+  - name: SomethingBroke
+    description: Something in the sample broke
+  - name: SomethingElseBroke
+    description: Something else in the sample broke

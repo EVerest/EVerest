@@ -1,0 +1,186 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+#ifndef {{ u.guard }}
+#define {{ u.guard }}
+
+//
+// AUTO GENERATED - DO NOT EDIT!
+// template version {{ u.template_version }}
+//
+
+#include <optional>
+#include <ostream>
+#include <stdexcept>
+#include <string>
+#include <string_view>
+#include <tuple>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+{% if u.includes %}
+
+{% for include in u.includes %}
+#include <{{ include }}>
+{% endfor %}
+{% endif %}
+
+using nlohmann::json;
+
+{% for namespace in u.namespaces %}
+namespace {{ namespace }} {
+{% endfor %}
+{% if not u.enums %}
+
+// no enums defined for {{ u.name }}
+{% endif %}
+{% for enum in u.enums %}
+
+enum class {{ enum.name }} {
+{% for value in enum.values %}
+    {{ value }},
+{% endfor %}
+};
+
+/// \brief Converts the given {{ enum.name }} \p e to human readable string
+/// \returns a string representation of the {{ enum.name }}
+inline std::string {{ enum.name | snake_case }}_to_string(const {{ enum.name }}& e) {
+    switch (e) {
+{% for value in enum.values %}
+    case {{ enum.name }}::{{ value }}:
+        return "{{ value }}";
+{% endfor %}
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type {{ enum.name }}");
+}
+
+/// \brief Converts the given {{ enum.name }} \p e to human readable string
+/// \returns a string_view representation of the {{ enum.name }}
+inline constexpr std::string_view {{ enum.name | snake_case }}_to_string_view(const {{ enum.name }}& e) {
+    switch (e) {
+{% for value in enum.values %}
+    case {{ enum.name }}::{{ value }}:
+        return "{{ value }}";
+{% endfor %}
+    }
+
+    throw std::out_of_range("No known string conversion for provided enum of type {{ enum.name }}");
+}
+
+/// \brief Converts the given std::string \p s to {{ enum.name }}
+/// \returns a {{ enum.name }} from a string representation
+inline {{ enum.name }} string_to_{{ enum.name | snake_case }}(const std::string& s) {
+{% for value in enum.values %}
+    if (s == "{{ value }}") {
+        return {{ enum.name }}::{{ value }};
+    }
+{% endfor %}
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type {{ enum.name }}");
+}
+
+/// \brief Writes the string representation of the given {{ enum.name }} \p {{ enum.name | snake_case }} to the given output stream \p os
+/// \returns an output stream with the {{ enum.name }} written to
+inline std::ostream& operator<<(std::ostream& os, const {{ enum.name }}& {{ enum.name | snake_case }}) {
+    os << {{ enum.name | snake_case }}_to_string({{ enum.name | snake_case }});
+    return os;
+}
+
+/// \brief Conversion from a given {{ enum.name }} \p e to a given json object \p j
+inline void to_json(json& j, const {{ enum.name }}& e) {
+    j = {{ enum.name | snake_case }}_to_string_view(e);
+}
+
+/// \brief Conversion from a given json object \p j to a given {{ enum.name }} \p e
+inline void from_json(const json& j, {{ enum.name }}& e) {
+    e = string_to_{{ enum.name | snake_case }}(j.get<std::string>());
+}
+{% endfor %}
+{% if not u.structs %}
+
+// no types defined for {{ u.name }}
+{% endif %}
+{% for struct in u.structs %}
+
+struct {{ struct.name }} {
+{% for field in struct.fields %}
+    {{ u.field_type(field) }} {{ u.identifier(field) }}; ///< {{ u.description(field.description) }}
+{% endfor %}
+
+    /// \brief Conversion from a given {{ struct.name }} \p k to a given json object \p j
+    friend void to_json(json& j, const {{ struct.name }}& k) {
+        // the required parts of the type
+{% if u.required(struct) %}
+        j = json{
+{% for field in u.required(struct) %}
+            {"{{ field.name }}", {{ u.to_json_value(field, 'k.' ~ field.name) }}},
+{% endfor %}
+        };
+{% else %}
+        j = json ({});
+{% endif %}
+{% if u.optional(struct) %}
+
+        // the optional parts of the type
+{% for field in u.optional(struct) %}
+        if (k.{{ field.name }}) {
+            j.emplace("{{ field.name }}", {{ u.to_json_value(field, '*k.' ~ field.name) }});
+        }
+{% endfor %}
+{% endif %}
+    }
+
+    /// \brief Conversion from a given json object \p j to a given {{ struct.name }} \p k
+    friend void from_json(const json& j, {{ struct.name }}& k) {
+{% if u.required(struct) %}
+        // the required parts of the type
+{% for field in u.required(struct) %}
+        {{ u.from_json_required(field) }}
+{% endfor %}
+{% endif %}
+{% if u.optional(struct) %}
+
+        // the optional parts of the type
+{% for field in u.optional(struct) %}
+        {{ 'auto ' if loop.first }}it = j.find("{{ field.name }}");
+        if (it != j.end()) {
+            {{ u.from_json_optional(field) }}
+        }
+{% endfor %}
+{% endif %}
+    }
+
+    /// \brief Compares objects of type {{ struct.name }} for equality
+    friend constexpr bool operator==(const {{ struct.name }}& k, const {{ struct.name }}& l) {
+        const auto& lhs_tuple = std::tie(
+{% for field in struct.fields %}
+            k.{{ field.name }}{{ ',' if not loop.last }}
+{% endfor %}
+        );
+        const auto& rhs_tuple = std::tie(
+{% for field in struct.fields %}
+            l.{{ field.name }}{{ ',' if not loop.last }}
+{% endfor %}
+        );
+        return lhs_tuple == rhs_tuple;
+    }
+
+    /// \brief Compares objects of type {{ struct.name }} for inequality
+    friend constexpr bool operator!=(const {{ struct.name }}& k, const {{ struct.name }}& l) {
+        return not operator==(k, l);
+    }
+
+    /// \brief Writes the string representation of the given {{ struct.name }} \p k to the given output stream \p os
+    /// \returns an output stream with the {{ struct.name }} written to
+    friend std::ostream& operator<<(std::ostream& os, const {{ struct.name }}& k) {
+        os << json(k).dump(4);
+        return os;
+    }
+};
+{% endfor %}
+
+{% for namespace in u.namespaces | reverse %}
+} // namespace {{ namespace }}
+{% endfor %}
+
+#endif // {{ u.guard }}
