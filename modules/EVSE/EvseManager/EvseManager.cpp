@@ -2538,7 +2538,8 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
                                   std::abs(raw_ev_target_current.load()),
                                   latest_evse_max_current.load(),
                                   latest_evse_max_discharge_current.load(),
-                                  current_demand};
+                                  current_demand,
+                                  power_supply_DC_charging_phase.load()};
     {
         std::lock_guard<std::mutex> lock(last_dc_setpoint_inputs_mutex);
         if (last_dc_setpoint_inputs == inputs) {
