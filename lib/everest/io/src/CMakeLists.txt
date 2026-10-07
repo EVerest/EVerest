@@ -50,13 +50,11 @@ target_include_directories(everest_io
         $<INSTALL_INTERFACE:include>
 )
 
-if(EVEREST_IO_WITH_MQTT)
-    target_sources(everest_io
-        PRIVATE
-            mqtt/mosquitto_cpp.cpp
-            mqtt/mqtt_client.cpp
-    )
-endif()
+target_sources(everest_io
+    PRIVATE
+        mqtt/mosquitto_cpp.cpp
+        mqtt/mqtt_client.cpp
+)
 
 target_link_libraries(everest_io
     PUBLIC
@@ -96,30 +94,28 @@ set_target_properties(everest_io
         POSITION_INDEPENDENT_CODE ON
 )
 
-if(EVEREST_IO_WITH_MQTT)
-  if(DISABLE_EDM)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(mosquitto REQUIRED IMPORTED_TARGET libmosquitto)
-    target_link_libraries(everest_io
-      PRIVATE
-      PkgConfig::mosquitto
-    )
-  else()
-    target_include_directories(everest_io
-      PRIVATE
-      ${mosquitto_SOURCE_DIR}/include
-    )
-    target_link_libraries(everest_io
-      PRIVATE
-      libmosquitto
-    )
-    install(TARGETS libmosquitto
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    )
-  endif()
+if(DISABLE_EDM)
+  find_package(PkgConfig REQUIRED)
+  pkg_check_modules(mosquitto REQUIRED IMPORTED_TARGET libmosquitto)
+  target_link_libraries(everest_io
+    PRIVATE
+    PkgConfig::mosquitto
+  )
+else()
+  target_include_directories(everest_io
+    PRIVATE
+    ${mosquitto_SOURCE_DIR}/include
+  )
+  target_link_libraries(everest_io
+    PRIVATE
+    libmosquitto
+  )
+  install(TARGETS libmosquitto
+      ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+      RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+      INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+  )
 endif()
 
 install(TARGETS everest_io
@@ -133,20 +129,11 @@ install(TARGETS everest_io
 # The tls headers are excluded unconditionally: they include libtls headers, and libtls is
 # reachable only through BUILD_INTERFACE below, so an installed consumer could not compile
 # them. Shipping them would offer an interface that cannot be used.
-if(EVEREST_IO_WITH_MQTT)
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
-        DESTINATION include
-        FILES_MATCHING PATTERN "*.hpp"
-        PATTERN "tls" EXCLUDE
-    )
-else()
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
-        DESTINATION include
-        FILES_MATCHING PATTERN "*.hpp"
-        PATTERN "mqtt" EXCLUDE
-        PATTERN "tls" EXCLUDE
-    )
-endif()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/../include/everest
+    DESTINATION include
+    FILES_MATCHING PATTERN "*.hpp"
+    PATTERN "tls" EXCLUDE
+)
 
 option(EVEREST_IO_ENABLE_TLS "Build TLS client/server adapters in everest_io (requires everest::tls)" ON)
 
