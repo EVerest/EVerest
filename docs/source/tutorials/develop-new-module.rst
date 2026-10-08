@@ -334,6 +334,9 @@ as link to its dependencies. A fairly simple file that includes
     endif()
 
 
+Without EDM, ``find_package(everest-core)`` picks up an installed everest-core and provides the
+``everest::`` library targets, the interface definitions and the ``ev_add_project()`` machinery.
+
 Adding ``modules/CMakeLists.txt``
 ---------------------------------
 
