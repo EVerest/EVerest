@@ -145,4 +145,9 @@ void ChargePointConfigurationConnectivity::set_security_ctrl_identity(const std:
     EVLOG_warning << "OCPP 1.6 does not support setting identity, ignoring";
 }
 
+void ChargePointConfigurationConnectivity::set_active_message_timeout(int32_t /*message_timeout_s*/,
+                                                                      const std::string& /*source*/) {
+    // OCPP 1.6 has no OCPPCommCtrlr.MessageTimeout to keep in sync.
+}
+
 } // namespace ocpp::v16

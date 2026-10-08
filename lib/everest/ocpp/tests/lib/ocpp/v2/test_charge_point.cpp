@@ -673,6 +673,24 @@ public:
     std::shared_ptr<EvseSecurityMock> evse_security;
 };
 
+TEST_F(ChargePointCommonTestFixtureV2, OnWebsocketConnectedMirrorsMessageTimeoutBeforeRegistration) {
+    auto database_handler = create_database_handler();
+    configure_callbacks_with_mocks();
+    auto charge_point = std::make_unique<ChargePoint>(evse_connector_structure, device_model, database_handler,
+                                                      create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                      std::make_shared<EvseSecurityMock>(), callbacks);
+    const auto& cv = ControllerComponentVariables::MessageTimeout;
+    ASSERT_EQ(
+        device_model->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "999", "test"),
+        SetVariableStatusEnum::Accepted);
+    NetworkConnectionProfile profile;
+    profile.messageTimeout = 75;
+
+    charge_point->on_websocket_connected(1, profile, OcppProtocolVersion::v201);
+
+    EXPECT_EQ(device_model->get_value<int>(cv), 75);
+}
+
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint) {
     configure_callbacks_with_mocks();
 
