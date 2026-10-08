@@ -35,13 +35,13 @@ target_include_directories(cbv2g_json_wrapper
 target_compile_features(cbv2g_json_wrapper PRIVATE c_std_99)
 set_property(TARGET cbv2g_json_wrapper PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-# cbv2g::din carries the app_handshake/ sources; libcbv2g exposes no
+# everest::din carries the app_handshake/ sources; libcbv2g exposes no
 # standalone apphand target.
 target_link_libraries(cbv2g_json_wrapper
     PRIVATE
         cjson
-        cbv2g::din
-        cbv2g::iso2
+        everest::din
+        everest::iso2
 )
 
 # Hide all symbols by default; the public API is tagged CBV2G_API in the

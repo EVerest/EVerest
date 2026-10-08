@@ -51,12 +51,4 @@ if (DISABLE_EDM)
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
         INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
     )
-
-    evc_setup_package_no_export(
-        NAME everest-yaml
-        LIBRARY_NAME yaml
-        IMPORTED_LOCATION_FILENAME libeverest_yaml.a
-        NAMESPACE everest
-        TYPE STATIC
-    )
 endif()

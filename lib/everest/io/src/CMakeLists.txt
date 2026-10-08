@@ -182,13 +182,3 @@ if(EVEREST_IO_ENABLE_TLS)
     target_compile_features(everest_io_tls_header_guard PRIVATE cxx_std_17)
     add_dependencies(everest_io everest_io_tls_header_guard)
 endif()
-
-if(DISABLE_EDM)
-    evc_setup_package_no_export(
-        NAME everest-io
-        LIBRARY_NAME io
-        IMPORTED_LOCATION_FILENAME libeverest_io.so
-        NAMESPACE everest
-        TYPE SHARED
-    )
-endif()

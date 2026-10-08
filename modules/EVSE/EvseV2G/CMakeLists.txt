@@ -33,9 +33,9 @@ target_link_libraries(${MODULE_NAME} PUBLIC ${EVENT_LIBRARIES} -levent -lpthread
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::din
+        everest::iso2
+        everest::tp
 )
 
 target_sources(${MODULE_NAME}

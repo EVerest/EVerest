@@ -128,6 +128,21 @@ foreach(_lib IN LISTS _EVEREST_ALL_LIBS)
     endif()
 endforeach()
 
+# libraries that come from an installed package are not built
+if(NOT EVEREST_BUILD_BASE)
+    foreach(_lib IN ITEMS log timer util sqlite evse_security tls)
+        set(EVEREST_BUILD_LIB_${_lib} OFF)
+    endforeach()
+endif()
+if(NOT EVEREST_BUILD_ISO15118)
+    foreach(_lib IN ITEMS iso15118 cbv2g)
+        set(EVEREST_BUILD_LIB_${_lib} OFF)
+    endforeach()
+endif()
+if(NOT EVEREST_BUILD_OCPP)
+    set(EVEREST_BUILD_LIB_ocpp OFF)
+endif()
+
 # --- Query function ---
 # ev_should_build_lib(<lib_name> <output_var>)
 # Sets <output_var> to ON or OFF in the caller's scope.

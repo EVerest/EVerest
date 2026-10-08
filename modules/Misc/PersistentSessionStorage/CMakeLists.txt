@@ -14,7 +14,9 @@ if(NOT TARGET SQLite3::SQLite3)
   add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif()
 
-include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
+if(NOT COMMAND collect_migration_files)
+    include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
+endif()
 
 collect_migration_files(
     LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/migrations

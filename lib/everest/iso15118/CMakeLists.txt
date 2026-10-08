@@ -30,7 +30,7 @@ endif()
 install(
     TARGETS
         iso15118
-    EXPORT everest-core-targets
+    EXPORT everest-iso15118-targets
 )
 
 install(

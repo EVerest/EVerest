@@ -46,7 +46,7 @@ set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
 
 install(
     TARGETS everest_sqlite
-    EXPORT everest-core-targets
+    EXPORT everest-base-targets
     LIBRARY
 )
 
@@ -57,8 +57,7 @@ install(
 
 install(
     FILES cmake/CollectMigrationFiles.cmake
-    DESTINATION
-        ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}/cmake
+    DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/everest-base
 )
 
 if(EVEREST_SQLITE_BUILD_TESTING)

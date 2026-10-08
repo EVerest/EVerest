@@ -195,7 +195,9 @@ else()
     include(find-mqttc)
 endif()
 
-include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
+if(NOT COMMAND collect_migration_files)
+    include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
+endif()
 
 set(EVEREST_FRAMEWORK_GENERATED_INC_DIR ${PROJECT_BINARY_DIR}/generated)
 configure_file(

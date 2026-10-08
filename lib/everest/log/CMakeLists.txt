@@ -63,7 +63,7 @@ set_target_properties(everest_log PROPERTIES EXPORT_NAME log)
 
 install(
     TARGETS everest_log
-    EXPORT everest-core-targets
+    EXPORT everest-base-targets
 )
 
 install(
