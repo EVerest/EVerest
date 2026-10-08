@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // End-to-end: a tls_listener and a tls_client on one fd_event_handler, on one thread. Only the
 // client's TCP connect runs off-loop, on a detached worker; the listen backlog buffers the SYN so

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "charge_bridge/utilities/string.hpp"
+#include <charge_bridge/cb_role.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <everest/io/event/fd_event_handler.hpp>
@@ -10,21 +11,32 @@
 namespace charge_bridge {
 
 namespace {
-std::string to_string(discovery_device_type val) {
-    switch (val) {
-    case discovery_device_type::CB_EV:
-        return "CB-CCS-EV-LU";
-
-    case discovery_device_type::CB_EVSE:
-        return "CB-CCS-EVSE-LU";
-    default:
-        return "INVALID";
-    }
-}
-
+// Matches the board_type TXT record against the intent, by the role it announces (see
+// board_type_role). Both CCS EVSE variants (LU and QCA modem) answer ANY_EVSE. MCS hardware has no
+// role strapping, so there the firmware announces the role it boots with (persisted in its EEPROM
+// identity, overridable once per boot by charge_bridge.type): CB-MCS-EVSE or CB-MCS-EV, and the
+// neutral CB-MCS while it has never been provisioned, which either intent accepts so a fresh board
+// can be reached by the host that is about to provision it. A board provisioned for the other role
+// is invisible to this instance until it has been re-provisioned once with a fixed address.
+// ANY takes whatever announces a board_type (CB-CAN included): the host then learns the variant from
+// the value, which the status publish passes on as chargebridge/board_type.
 bool is_cb_match(std::string const& board_type, discovery_device_type discriminator) {
-    auto result = board_type == to_string(discriminator);
-    return result;
+    if (discriminator == discovery_device_type::CB_ANY) {
+        return not board_type.empty();
+    }
+    if (board_type == "CB-MCS") {
+        return true;
+    }
+    auto const role = board_type_role(board_type);
+    switch (discriminator) {
+    case discovery_device_type::CB_EV:
+        return role == cb_role::ev;
+    case discovery_device_type::CB_EVSE:
+        return role == cb_role::evse;
+    case discovery_device_type::CB_ANY:
+        break;
+    }
+    return false;
 }
 
 } // namespace

@@ -7,7 +7,7 @@ import time
 import asyncio
 from datetime import datetime, timedelta
 from dateutil import parser
-import OpenSSL.crypto as crypto
+from cryptography import x509
 from ocpp.messages import unpack
 
 from ocpp.v16 import call_result
@@ -304,7 +304,7 @@ def validate_data_transfer_sign_certificate(meta_data, msg, exp_payload):
             and "certificateType" in data
             and "csr" in data
             and data["certificateType"] == "V2GCertificate"
-            and crypto.load_certificate_request(crypto.FILETYPE_PEM, data["csr"])
+            and x509.load_pem_x509_csr(data["csr"].encode("utf-8"))
         )
     except Exception:
         return False

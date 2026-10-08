@@ -675,6 +675,123 @@ void from_json(json const& j, ChargeProgress& k) {
                             " could not be converted to enum of type API_V1_0_TYPES_TELEMETRY_ChargeProgress");
 }
 
+void to_json(json& j, SlacState const& k) noexcept {
+    switch (k) {
+    case SlacState::Init:
+        j = "Init";
+        return;
+    case SlacState::Reset:
+        j = "Reset";
+        return;
+    case SlacState::ResetChip:
+        j = "ResetChip";
+        return;
+    case SlacState::Idle:
+        j = "Idle";
+        return;
+    case SlacState::Failed:
+        j = "Failed";
+        return;
+    case SlacState::Unmatched:
+        j = "Unmatched";
+        return;
+    case SlacState::Matching:
+        j = "Matching";
+        return;
+    case SlacState::WaitForLink:
+        j = "WaitForLink";
+        return;
+    case SlacState::Validate:
+        j = "Validate";
+        return;
+    case SlacState::Matched:
+        j = "Matched";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::SlacState";
+}
+
+void from_json(json const& j, SlacState& k) {
+    std::string s = j;
+    if (s == "Init") {
+        k = SlacState::Init;
+        return;
+    }
+    if (s == "Reset") {
+        k = SlacState::Reset;
+        return;
+    }
+    if (s == "ResetChip") {
+        k = SlacState::ResetChip;
+        return;
+    }
+    if (s == "Idle") {
+        k = SlacState::Idle;
+        return;
+    }
+    if (s == "Failed") {
+        k = SlacState::Failed;
+        return;
+    }
+    if (s == "Unmatched") {
+        k = SlacState::Unmatched;
+        return;
+    }
+    if (s == "Matching") {
+        k = SlacState::Matching;
+        return;
+    }
+    if (s == "WaitForLink") {
+        k = SlacState::WaitForLink;
+        return;
+    }
+    if (s == "Validate") {
+        k = SlacState::Validate;
+        return;
+    }
+    if (s == "Matched") {
+        k = SlacState::Matched;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type "
+                            "everest::lib::API::V1_0::types::telemetry::SlacState");
+}
+
+void to_json(json& j, SlacD3State const& k) noexcept {
+    switch (k) {
+    case SlacD3State::Unmatched:
+        j = "Unmatched";
+        return;
+    case SlacD3State::Matching:
+        j = "Matching";
+        return;
+    case SlacD3State::Matched:
+        j = "Matched";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::telemetry::SlacD3State";
+}
+
+void from_json(json const& j, SlacD3State& k) {
+    std::string s = j;
+    if (s == "Unmatched") {
+        k = SlacD3State::Unmatched;
+        return;
+    }
+    if (s == "Matching") {
+        k = SlacD3State::Matching;
+        return;
+    }
+    if (s == "Matched") {
+        k = SlacD3State::Matched;
+        return;
+    }
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type "
+                            "everest::lib::API::V1_0::types::telemetry::SlacD3State");
+}
+
 void to_json(json& j, CertChainState const& k) noexcept {
     j = json{
         {"configured", k.configured},
@@ -885,6 +1002,76 @@ void from_json(json const& j, V2gEvseElectrical& k) {
     k.minimum_rated_voltage_V = j.at("minimum_rated_voltage_V");
     k.current_ripple_A = j.at("current_ripple_A");
     k.current_tolerance_A = j.at("current_tolerance_A");
+}
+
+void to_json(json& j, SlacStatus const& k) noexcept {
+    j = json{
+        {"matching_requested", k.matching_requested},
+        {"modem_PIB", k.modem_PIB},
+        {"modem_NMK", k.modem_NMK},
+        {"modem_link_ready", k.modem_link_ready},
+        {"session_count", k.session_count},
+        {"average_attenuation", k.average_attenuation},
+        {"ev_mac", k.ev_mac},
+        {"match_state", k.match_state},
+        {"d3_state", k.d3_state},
+    };
+}
+
+void from_json(json const& j, SlacStatus& k) {
+    if (j.contains("matching_requested")) {
+        k.matching_requested = j.at("matching_requested");
+    }
+    if (j.contains("modem_PIB")) {
+        k.modem_PIB = j.at("modem_PIB");
+    }
+    if (j.contains("modem_NMK")) {
+        k.modem_NMK = j.at("modem_NMK");
+    }
+    if (j.contains("modem_link_ready")) {
+        k.modem_link_ready = j.at("modem_link_ready");
+    }
+    if (j.contains("session_count")) {
+        k.session_count = j.at("session_count");
+    }
+    if (j.contains("average_attenuation")) {
+        k.average_attenuation = j.at("average_attenuation");
+    }
+    if (j.contains("ev_mac")) {
+        k.ev_mac = j.at("ev_mac");
+    }
+    if (j.contains("match_state")) {
+        k.match_state = j.at("match_state");
+    }
+    if (j.contains("d3_state")) {
+        k.d3_state = j.at("d3_state");
+    }
+}
+
+void to_json(json& j, SlacFsmState const& k) noexcept {
+    j = json::object();
+
+    if (!k.states.empty()) {
+        j["states"] = k.states;
+    }
+    if (!k.submachines.empty()) {
+        j["submachines"] = k.submachines;
+    }
+    if (!k.sessions.empty()) {
+        j["sessions"] = k.sessions;
+    }
+}
+
+void from_json(json const& j, SlacFsmState& k) {
+    if (j.contains("states")) {
+        k.states = j.at("states").get<std::vector<std::string>>();
+    }
+    if (j.contains("submachines")) {
+        k.submachines = j.at("submachines").get<std::map<std::string, SlacFsmState>>();
+    }
+    if (j.contains("sessions")) {
+        k.sessions = j.at("sessions").get<std::vector<SlacFsmState>>();
+    }
 }
 
 } // namespace everest::lib::API::V1_0::types::telemetry

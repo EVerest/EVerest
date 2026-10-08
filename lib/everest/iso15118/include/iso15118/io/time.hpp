@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <chrono>
@@ -36,7 +36,7 @@ public:
     };
     ~Timeout() = default;
 
-    bool is_reached() {
+    bool is_reached() const {
         return get_current_time_point() >= timeout_point;
     }
 

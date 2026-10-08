@@ -799,6 +799,12 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const EventInfo& event) {
     if (event.error) {
         // We do only report inoperative errors as faults
         if (event.error->type == module::EVSE_MANAGER_INOPERATIVE_ERROR) {
+            if (evse_id <= 0) {
+                // libocpp has no EVSE 0; a fault queued without an EVSE cannot be attributed
+                EVLOG_warning << "Ignoring queued " << event.error->type << " without an EVSE (evse_id " << evse_id
+                              << ")";
+                return;
+            }
             if (event.event_cleared) {
                 mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(event.error.value()));
             } else {
@@ -1137,12 +1143,18 @@ void GenericOcpp::cb_ev_info(std::int32_t evse_id, const types::evse_manager::EV
     }
 }
 
+// The fault handlers are subscribed per evse_manager requirement, so \p evse_id is known even when
+// that module has no `mapping` in the config. convert_error() derives the EVSE from the mapping and
+// falls back to 0 without one; queueing or reporting the fault under EVSE 0 makes libocpp throw
+// EvseOutOfRangeException when the queue is replayed in ready() (the transient BSP
+// CommunicationFault at start-up made EvseManager Inoperative before OCPP had started).
 void GenericOcpp::cb_fault_cleared_handler(std::int32_t evse_id, const Everest::error::Error& error) {
     using namespace module;
 
     auto event_data = convert_error(error);
+    event_data.evse_id = evse_id;
     event_data.event_cleared = true;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
+    if (!enqueue_if_not_started(evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(error));
     }
@@ -1152,8 +1164,9 @@ void GenericOcpp::cb_fault_handler(std::int32_t evse_id, const Everest::error::E
     using namespace module;
 
     auto event_data = convert_error(error);
+    event_data.evse_id = evse_id;
     event_data.event_cleared = false;
-    if (!enqueue_if_not_started(event_data.evse_id, event_data)) {
+    if (!enqueue_if_not_started(evse_id, event_data)) {
         mv_charge_point.on_event(event_data);
         mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(error));
     }
@@ -1855,6 +1868,10 @@ module::TxEventEffect GenericOcpp::transaction_event(std::int32_t evse_id, modul
         result = m_transaction_handler->submit_event(evse_id, tx_event);
     }
     return result;
+}
+
+bool GenericOcpp::transaction_is_ev_connect_timeout(std::int32_t evse_id, std::chrono::seconds ev_connection_timeout) {
+    return m_transaction_handler and m_transaction_handler->is_ev_connect_timeout(evse_id, ev_connection_timeout);
 }
 
 void GenericOcpp::transaction_reset(std::int32_t evse_id) {

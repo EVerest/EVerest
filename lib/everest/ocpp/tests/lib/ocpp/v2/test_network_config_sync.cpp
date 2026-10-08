@@ -864,25 +864,21 @@ TEST_F(ConnectivityManagerCacheTest, ReloadAfterClearSlotRemovesFromCache) {
     EXPECT_FALSE(profile.has_value()) << "Cleared slot must not have a cached profile after reload";
 }
 
-// Add a profile to a previously-empty slot via set_network_profile
-TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileAddsNewSlotToCache) {
-    // Slot 2 has no default URL in the test config, so it should not be in the cache initially
-    auto initial = cm->get_network_connection_profile(2);
-    EXPECT_FALSE(initial.has_value()) << "Slot 2 must not be cached initially (no default URL)";
-
-    // Add a profile to slot 2 via the ConnectivityManager
-    auto profile = make_basic_profile(1, "wss://slot2.example.com/ocpp");
-    ASSERT_TRUE(cm->set_network_profile(2, profile, "test"));
-
-    // Slot 2 must now be in the cache
-    auto cached = cm->get_network_connection_profile(2);
-    ASSERT_TRUE(cached.has_value()) << "Newly added slot 2 must be in cache after set_network_profile";
-    EXPECT_EQ(cached->ocppCsmsUrl.get(), "wss://slot2.example.com/ocpp");
-
-    // Slot 2 must also appear in the priority list
+// set_network_profile on a slot outside NetworkConfigurationPriority stores the profile without activating it
+TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileDoesNotAddSlotToPriority) {
+    const auto priority_before = dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority);
     auto slots = cm->get_network_connection_slots();
-    EXPECT_NE(std::find(slots.begin(), slots.end(), 2), slots.end())
-        << "Slot 2 must be in the priority list after set_network_profile";
+    ASSERT_EQ(std::find(slots.begin(), slots.end(), 2), slots.end());
+
+    ASSERT_TRUE(cm->set_network_profile(2, make_basic_profile(1, "wss://slot2.example.com/ocpp"), "test"));
+
+    const auto stored = NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2);
+    ASSERT_TRUE(stored.has_value());
+    EXPECT_EQ(stored->ocppCsmsUrl.get(), "wss://slot2.example.com/ocpp");
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), priority_before);
+    slots = cm->get_network_connection_slots();
+    EXPECT_EQ(std::find(slots.begin(), slots.end(), 2), slots.end());
+    EXPECT_FALSE(cm->get_network_connection_profile(2).has_value());
 }
 
 // B09.FR.18: set_network_profile must not inherit per-slot Identity from the currently
@@ -939,9 +935,11 @@ TEST_F(ConnectivityManagerCacheTest, SetNetworkProfileDoesNotInheritBasicAuthFro
 
 // Full lifecycle — add, update, then clear a profile
 TEST_F(ConnectivityManagerCacheTest, AddUpdateClearLifecycle) {
-    // Step 1: Add profile to slot 2
+    // Step 1: Add profile to slot 2 and list it in NetworkConfigurationPriority
     auto added = make_basic_profile(1, "wss://added.example.com/ocpp");
     ASSERT_TRUE(cm->set_network_profile(2, added, "test"));
+    dm->set_network_configuration_priority("1,2", "test");
+    cm->reload_network_profiles();
     ASSERT_TRUE(cm->get_network_connection_profile(2).has_value());
 
     // Step 2: Update slot 2 via set_network_profile
@@ -1068,6 +1066,7 @@ public:
     MOCK_METHOD(std::optional<StatusInfo>, is_sign_certificate_possible, (const ocpp::CertificateSigningUseEnum&),
                 (const, override));
     MOCK_METHOD(void, stop_certificate_signed_timer, (), (override));
+    MOCK_METHOD(bool, v2g20_certificate_installation_enabled, (), (const, override));
     MOCK_METHOD(void, init_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(void, stop_certificate_expiration_check_timers, (), (override));
     MOCK_METHOD(Get15118EVCertificateResponse, on_get_15118_ev_certificate_request,
@@ -1264,10 +1263,7 @@ TEST_F(ProvisioningActiveSlotTest, ActiveSlot2RejectsSlot2AllowsSlot1) {
 }
 
 // ---------------------------------------------------------------------------
-// URL/security profile consistency validation
-// Tests validate_network_connection_profile (called from
-// validate_set_network_configuration_slot) and
-// validate_network_configuration_priority.
+// URL/security profile consistency validation at activation.
 // ---------------------------------------------------------------------------
 
 // Helper: check if a SetVariableResult was rejected with "InvalidNetworkConf"
@@ -1293,24 +1289,26 @@ static SetVariableData make_priority_set_variable_data(const std::string& value)
 
 // --- URL/Security mismatch via SetVariables on individual slot variables ---
 
-// Slot 2 has ws:// URL; raising SecurityProfile to 2 must be rejected (ws:// requires profile < 2)
-TEST_F(ProvisioningActiveSlotTest, RejectSecurityProfileUpgradeWithWsUrl) {
+TEST_F(ProvisioningActiveSlotTest, StoreSecurityProfileUpgradeWithWsUrlUntilActivation) {
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
     set_active_slot(1);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
     write_slot(*dm, 2, "ws://csms.example.com/ocpp", 1);
 
     auto result = set_single_variable(make_set_variable_data(2, "SecurityProfile", "2"));
-    EXPECT_TRUE(is_rejected_invalid_network_conf(result))
-        << "SecurityProfile=2 with ws:// URL must be rejected as InvalidNetworkConf";
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
 }
 
-// Slot 2 has wss:// + SecurityProfile=2; changing URL to ws:// must be rejected
-TEST_F(ProvisioningActiveSlotTest, RejectUrlDowngradeToWsWithHighSecurityProfile) {
+TEST_F(ProvisioningActiveSlotTest, StoreWsUrlWithHighSecurityProfileUntilActivation) {
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
     set_active_slot(1);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
     write_slot(*dm, 2, "wss://csms.example.com/ocpp", 2);
 
     auto result = set_single_variable(make_set_variable_data(2, "OcppCsmsUrl", "ws://csms.example.com/ocpp"));
-    EXPECT_TRUE(is_rejected_invalid_network_conf(result))
-        << "ws:// URL with SecurityProfile=2 must be rejected as InvalidNetworkConf";
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
 }
 
 // Slot 2 has wss:// URL; raising SecurityProfile to 2 is valid (wss:// requires profile >= 2)
@@ -1336,9 +1334,9 @@ TEST_F(ProvisioningActiveSlotTest, AllowUrlChangeWhenSecurityProfileConsistent) 
 
 // --- Certificate requirement checks ---
 
-// SecurityProfile=3 requires a CSMS Leaf Certificate; reject if not installed
-TEST_F(ProvisioningActiveSlotTest, RejectSecurityProfile3WithoutLeafCert) {
+TEST_F(ProvisioningActiveSlotTest, StoreSecurityProfile3WithoutLeafCertUntilActivation) {
     set_active_slot(1);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
     write_slot(*dm, 2, "wss://csms.example.com/ocpp", 1);
 
     // Mock: leaf cert not available
@@ -1348,39 +1346,197 @@ TEST_F(ProvisioningActiveSlotTest, RejectSecurityProfile3WithoutLeafCert) {
     ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
 
     auto result = set_single_variable(make_set_variable_data(2, "SecurityProfile", "3"));
-    EXPECT_TRUE(is_rejected_invalid_network_conf(result))
-        << "SecurityProfile=3 without CSMS Leaf Certificate must be rejected";
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
 }
 
-// SecurityProfile=2 requires a CSMS Root CA; reject if not installed
-TEST_F(ProvisioningActiveSlotTest, RejectSecurityProfile2WithoutRootCa) {
+TEST_F(ProvisioningActiveSlotTest, StoreSecurityProfile2WithoutRootCaUntilActivation) {
     set_active_slot(1);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
     write_slot(*dm, 2, "wss://csms.example.com/ocpp", 1);
 
     // Mock: root CA not available
     ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
 
     auto result = set_single_variable(make_set_variable_data(2, "SecurityProfile", "2"));
-    EXPECT_TRUE(is_rejected_invalid_network_conf(result)) << "SecurityProfile=2 without CSMS Root CA must be rejected";
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
 }
 
 // --- Priority list validation ---
 
 // Priority list referencing a slot with ws:// + SecurityProfile=2 must be rejected
 TEST_F(ProvisioningActiveSlotTest, RejectPriorityWithMismatchedSlot) {
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
     set_active_slot(1);
-    // Write an inconsistent profile to slot 2 directly in the DM (bypass validation)
-    auto cv_url = NetworkConfigurationComponentVariables::get_component_variable(
-        2, NetworkConfigurationComponentVariables::OcppCsmsUrl);
-    dm->set_value(cv_url.component, cv_url.variable.value(), AttributeEnum::Actual, "ws://csms.example.com/ocpp",
-                  "test");
-    auto cv_sp = NetworkConfigurationComponentVariables::get_component_variable(
-        2, NetworkConfigurationComponentVariables::SecurityProfile);
-    dm->set_value(cv_sp.component, cv_sp.variable.value(), AttributeEnum::Actual, "2", "test");
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
+    write_slot(*dm, 2, "ws://csms.example.com/ocpp", 2);
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
 
     auto result = set_single_variable(make_priority_set_variable_data("1,2"));
     EXPECT_TRUE(is_rejected_invalid_network_conf(result))
         << "Priority list with ws:// + SecurityProfile=2 slot must be rejected";
+}
+
+TEST_F(ProvisioningActiveSlotTest, StoreInactiveSlotVariablesBeforeValidatingPriority) {
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
+    set_active_slot(1);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
+    write_slot(*dm, 2, "ws://csms.example.com/ocpp", 2);
+    const std::vector<std::pair<std::string, std::string>> writes = {
+        {"OcppCsmsUrl", "ws://csms.example.com/ocpp"},
+        {"SecurityProfile", "2"},
+        {"OcppInterface", "Wired0"},
+        {"OcppTransport", "JSON"},
+        {"OcppVersion", "OCPP201"},
+        {"MessageTimeout", "30"},
+        {"Identity", "backup_identity"},
+        {"BasicAuthPassword", "sixteen-character"},
+        {"ApnEnabled", "false"},
+    };
+    for (const auto& [name, value] : writes) {
+        EXPECT_EQ(set_single_variable(make_set_variable_data(2, name, value)).attributeStatus,
+                  SetVariableStatusEnum::Accepted)
+            << name;
+    }
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
+    EXPECT_EQ(
+        set_single_variable(make_set_variable_data(2, "OcppCsmsUrl", "wss://csms.example.com/ocpp")).attributeStatus,
+        SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("1,2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningActiveSlotTest, RemovingPrioritySlotSkipsUnreadableRetainedSlot) {
+    ASSERT_FALSE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 1).has_value());
+    set_active_slot(1);
+    write_slot(*dm, 2, "ws://csms.example.com/ocpp", 2);
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("1")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningActiveSlotTest, ReorderingPrioritySlotsSkipsUnreadableRetainedSlot) {
+    set_active_slot(1);
+    write_slot(*dm, 1, "ws://csms.example.com/ocpp", 1);
+    ASSERT_FALSE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("2,1")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningActiveSlotTest, RejectPriorityWithUnreadableAddedSlot) {
+    ASSERT_FALSE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,2"))));
+}
+
+TEST_F(ProvisioningActiveSlotTest, AddAndRemovePrioritySlotsValidatesAddedContent) {
+    write_slot(*dm, 1, "ws://removed.example.com/ocpp", 2);
+    write_slot(*dm, 2, "wss://added.example.com/ocpp", 1);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2"))));
+
+    write_slot(*dm, 2, "ws://added.example.com/ocpp", 1);
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "2");
+}
+
+TEST_F(ProvisioningActiveSlotTest, DuplicatePriorityTokenValidatesAddedSlot) {
+    write_slot(*dm, 2, "wss://added.example.com/ocpp", 1);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2,2"))));
+
+    write_slot(*dm, 2, "ws://added.example.com/ocpp", 1);
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("2,2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningActiveSlotTest, RejectNonIntegerTokenInNewPriority) {
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("1,invalid"))));
+}
+
+TEST_F(ProvisioningActiveSlotTest, SkipNonIntegerTokenInStoredPriority) {
+    DeviceModelStorageSqlite storage(DEVICE_MODEL_DB_IN_MEMORY_PATH);
+    ASSERT_EQ(storage.set_variable_attribute_value(
+                  ControllerComponentVariables::NetworkConfigurationPriority.component,
+                  ControllerComponentVariables::NetworkConfigurationPriority.variable.value(), AttributeEnum::Actual,
+                  "invalid,1", "test"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "invalid,1");
+    EXPECT_TRUE(is_rejected_by_active_slot(
+        set_single_variable(make_set_variable_data(1, "OcppCsmsUrl", "ws://priority.example.com/ocpp"))));
+    EXPECT_EQ(
+        set_single_variable(make_set_variable_data(2, "OcppCsmsUrl", "ws://added.example.com/ocpp")).attributeStatus,
+        SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("1")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningActiveSlotTest, RetainedPrioritySlotsRequireRootCertificateOnUpgrade) {
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 2);
+    GetCertificateInfoResult leaf;
+    leaf.status = GetCertificateInfoStatus::Accepted;
+    ON_CALL(evse_security, get_leaf_certificate_info(testing::_, testing::_)).WillByDefault(testing::Return(leaf));
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    for (const auto security_profile : {2, 3}) {
+        SCOPED_TRACE(security_profile);
+        write_slot(*dm, 2, "wss://retained.example.com/ocpp", security_profile);
+        EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2,1"))));
+    }
+}
+
+TEST_F(ProvisioningActiveSlotTest, RemovingPrioritySlotsSkipsSecurityPreconditionsInOcpp21) {
+    ocpp_version = OcppProtocolVersion::v21;
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 2);
+    GetCertificateInfoResult no_leaf;
+    no_leaf.status = GetCertificateInfoStatus::NotFound;
+    ON_CALL(evse_security, get_leaf_certificate_info(testing::_, testing::_)).WillByDefault(testing::Return(no_leaf));
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
+    write_slot(*dm, 2, "wss://retained.example.com/ocpp", 3);
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "2");
+}
+
+TEST_F(ProvisioningActiveSlotTest, RemovingPrioritySlotsChecksSecurityPreconditionsInOcpp201) {
+    ASSERT_EQ(ocpp_version, OcppProtocolVersion::v201);
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 2);
+    GetCertificateInfoResult no_leaf;
+    no_leaf.status = GetCertificateInfoStatus::NotFound;
+    ON_CALL(evse_security, get_leaf_certificate_info(testing::_, testing::_)).WillByDefault(testing::Return(no_leaf));
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
+    write_slot(*dm, 2, "wss://retained.example.com/ocpp", 3);
+    ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                            ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                            AttributeEnum::Actual, "1,2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2"))));
+    EXPECT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "1,2");
+}
+
+TEST_F(ProvisioningActiveSlotTest, RetainedPrioritySlotDoesNotValidateContent) {
+    write_slot(*dm, 1, "wss://retained.example.com/ocpp", 1);
+    EXPECT_EQ(set_single_variable(make_priority_set_variable_data("1")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
 }
 
 // Priority list where all slots are consistent should be accepted
@@ -1798,6 +1954,31 @@ TEST_F(ProvisioningSetNetworkProfileTest, HappyPathReturnsAccepted) {
     provisioning->handle_message(em);
 
     EXPECT_EQ(response.status, SetNetworkProfileStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningSetNetworkProfileTest, SecurityProfile3WithoutLeafCertRejectsFollowingPriority) {
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 3);
+    write_slot(*dm, 1, "ws://primary.example.com/ocpp", 1);
+    GetCertificateInfoResult no_leaf;
+    no_leaf.status = GetCertificateInfoStatus::NotFound;
+    ON_CALL(evse_security, get_leaf_certificate_info(testing::_, testing::_)).WillByDefault(testing::Return(no_leaf));
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(true));
+    make_provisioning([](auto, auto) { return SetNetworkProfileStatusEnum::Accepted; });
+    EXPECT_CALL(connectivity_manager, set_network_profile(testing::_, testing::_, testing::_))
+        .WillOnce(testing::Invoke([this](int32_t slot, const NetworkConnectionProfile& profile, const std::string&) {
+            return NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, slot, profile, "test");
+        }));
+
+    SetNetworkProfileResponse response;
+    expect_response(response);
+    provisioning->handle_message(make_enhanced(make_request(2, "wss://csms.example.com/ocpp", 3)));
+    ASSERT_EQ(response.status, SetNetworkProfileStatusEnum::Accepted);
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
+
+    ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "1");
+    const auto result = provisioning->set_variables({make_priority_set_variable_data("2,1")}, "test");
+    ASSERT_EQ(result.size(), 1u);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(result.begin()->second));
 }
 
 // ---------------------------------------------------------------------------

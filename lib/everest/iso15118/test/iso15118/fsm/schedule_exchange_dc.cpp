@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper.hpp"
@@ -20,7 +20,7 @@ SCENARIO("ISO15118-20 scheduled DC schedule exchange state transitions") {
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto& ctx = state_helper.get_context();
 
     GIVEN("Good case - Scheduled control mode") {
@@ -61,7 +61,12 @@ SCENARIO("ISO15118-20 scheduled DC schedule exchange state transitions") {
             REQUIRE_FALSE(schedule.discharging_schedule.has_value());
 
             const auto& charging_schedule = schedule.charging_schedule;
-            REQUIRE(std::holds_alternative<std::monostate>(charging_schedule.price_schedule));
+            REQUIRE(std::holds_alternative<dt::PriceLevelSchedule>(charging_schedule.price_schedule));
+            const auto& price_schedule = std::get<dt::PriceLevelSchedule>(charging_schedule.price_schedule);
+            REQUIRE(price_schedule.number_of_price_levels == 0);
+            REQUIRE(price_schedule.price_level_schedule_entries.size() == 1);
+            REQUIRE(price_schedule.price_level_schedule_entries.front().duration == dt::SCHEDULED_POWER_DURATION_S);
+            REQUIRE(price_schedule.price_level_schedule_entries.front().price_level == 0);
             REQUIRE(charging_schedule.power_schedule.entries.size() == 1);
 
             const auto& entry = charging_schedule.power_schedule.entries.front();

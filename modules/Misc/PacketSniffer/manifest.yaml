@@ -17,6 +17,8 @@ config:
 requires:
   evse_manager:
     interface: evse_manager
+capabilities:
+  - CAP_NET_RAW
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

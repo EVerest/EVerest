@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <chrono>
 #include <limits>
 
@@ -9,6 +9,7 @@
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/certificate_installation.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
@@ -77,6 +78,21 @@ void setup_header(message_20::Header& header, const Session& cur_session) {
     header.timestamp = now_in_secc_time();
 }
 
+void set_certificate_installation_placeholders(message_20::CertificateInstallationResponse& res) {
+    constexpr std::size_t DH_PUBLIC_KEY_SIZE = 133;
+    constexpr std::size_t SECP521_ENCRYPTED_PRIVATE_KEY_SIZE = 94;
+
+    auto& data = res.signed_installation_data;
+    data.id = "id1";
+    // ContractCertificateChain requires at least one SubCertificate.
+    data.contract_certificate_chain.sub_certificates.emplace_back();
+    data.ecdh_curve = message_20::datatypes::EcdhCurve::SECP521;
+    data.dh_public_key.assign(DH_PUBLIC_KEY_SIZE, 0x00);
+    data.secp521_encrypted_private_key.emplace(SECP521_ENCRYPTED_PRIVATE_KEY_SIZE, 0x00);
+    data.x448_encrypted_private_key.reset();
+    data.tpm_encrypted_private_key.reset();
+}
+
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.
 void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
 
@@ -88,6 +104,12 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
         ctx.respond(res);
     } else if (req_type == message_20::Type::AuthorizationReq) {
         const auto res = handle_sequence_error<message_20::AuthorizationResponse>(ctx.session);
+        ctx.respond(res);
+    } else if (req_type == message_20::Type::CertificateInstallationReq) {
+        message_20::CertificateInstallationResponse res;
+        setup_header(res.header, ctx.session);
+        set_certificate_installation_placeholders(res);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
         ctx.respond(res);
     } else if (req_type == message_20::Type::ServiceDiscoveryReq) {
         const auto res = handle_sequence_error<message_20::ServiceDiscoveryResponse>(ctx.session);
@@ -137,6 +159,10 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
     } else {
         logf_warning("Unknown code type id: %d ", req_type);
     }
+
+    // Session ends with a FAILED response: oscillator off without delay + SECC-side TCP close
+    // ([V2G-DC-942]/[V2G-DC-940] semantics), reported once the response hit the wire.
+    ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
 }
 
 } // namespace iso15118::d20

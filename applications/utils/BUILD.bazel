@@ -26,3 +26,5 @@ diff_test(
     file2 = ":requirements.bzl",
     target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
 )
+
+exports_files(["scripts/check_rust_pins.py"])

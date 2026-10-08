@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include "everest/io/event/timer_fd.hpp"
 #include <atomic>
 #include <charge_bridge/bsp_bridge.hpp>
 #include <charge_bridge/can_bridge.hpp>
+#include <charge_bridge/cb_role.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/firmware_update/sync_fw_updater.hpp>
 #include <charge_bridge/heartbeat_service.hpp>
@@ -27,6 +28,7 @@
 #include <optional>
 #include <set>
 #include <thread>
+#include <vector>
 
 namespace charge_bridge {
 
@@ -49,6 +51,9 @@ struct charge_bridge_config {
     std::string cb_name;
     std::uint16_t cb_port;
     std::string cb_remote;
+    // charge_bridge.type. Drives the MCU's role GPIO on an MCS board and derives the plc.station_id
+    // default; the MCU latches it from the first config heartbeat after it boots.
+    cb_role type{cb_role::evse};
     std::optional<telemetry_config> telemetry;
     std::optional<can_bridge_config> can0;
     std::optional<serial_bridge_config> serial1;
@@ -56,6 +61,11 @@ struct charge_bridge_config {
     std::optional<serial_bridge_config> serial3;
     std::optional<plc_bridge_config> plc;
     std::optional<bsp_bridge_config> bsp;
+    // The BSP flavour for the other role. Only set when the config enables both evse_bsp and ev_bsp,
+    // which parse_config allows for an ANY* mDNS endpoint: the role is then decided by the board that
+    // shows up, and handle_discovery() swaps this into bsp when the discovered board_type calls for
+    // it. Never active at the same time as bsp.
+    std::optional<bsp_bridge_config> bsp_alternate;
     std::optional<heartbeat_config> heartbeat;
     std::optional<io_config> io;
     firmware_update::fw_update_config firmware;
@@ -65,6 +75,7 @@ enum class endpoint_intent {
     fixed_ip,
     any_evse_mdns,
     any_ev_mdns,
+    any_mdns,
 };
 
 struct endpoint_intent_info {
@@ -124,6 +135,8 @@ private:
     bool needs_liveness_probe(charge_bridge_status const& status) const;
     bool probe_device_liveness(std::function<bool()> const& abort_requested);
     void handle_discovery(everest::lib::io::mdns::mDNS_discovery const& info);
+    void select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery const& info);
+    void create_bsp_bridge();
     void handle_ready();
     void handle_tick();
     bool register_internal_events(everest::lib::io::event::fd_event_handler& handler);
@@ -160,6 +173,9 @@ private:
     std::unique_ptr<serial_bridge> m_pty_2;
     std::unique_ptr<serial_bridge> m_pty_3;
     std::unique_ptr<bsp_bridge> m_bsp;
+    // Error clears rendered by a BSP bridge that a role switch retired, carried until the replacing
+    // bridge exists to send them (see select_bsp_for_board). Event loop thread only.
+    std::vector<evse_bsp::api_connector::mqtt_message> m_retired_bsp_clears;
     std::unique_ptr<plc_bridge> m_plc;
     std::unique_ptr<heartbeat_service> m_heartbeat;
     std::unique_ptr<io_bridge> m_io;
@@ -173,6 +189,11 @@ private:
     // Bridges whose construction failure has already been reported, so the retry on the manager
     // cadence does not repeat the message until that bridge has been created successfully.
     std::set<std::string> m_bridge_create_failures_reported;
+    // Bridges whose construction failed in a way this host can never recover from (a kernel that does
+    // not implement an ioctl the config asks for). Construction is not retried for these: the retry
+    // would recreate and destroy their host-local device on every cadence forever. Reported once when
+    // it is latched (see create_bridge).
+    std::set<std::string> m_bridge_permanently_disabled;
     // Bridges that were created late but could not be connected and registered into the running
     // runtime (see activate_late_bridge), for the same once-per-episode reporting.
     std::set<std::string> m_bridge_activate_failures_reported;

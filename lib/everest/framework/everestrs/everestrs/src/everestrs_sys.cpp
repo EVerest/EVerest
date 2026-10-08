@@ -2,6 +2,7 @@
 #include "everestrs/src/lib.rs.h"
 
 #include <everest/logging.hpp>
+#include <utils/capabilities.hpp>
 #include <utils/conversions.hpp>
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_manager_req.hpp>
@@ -81,6 +82,10 @@ std::unique_ptr<Module> create_module(rust::Str module_id, rust::Str prefix, rus
 
 Module::Module(const std::string& module_id, const std::string& prefix, const Everest::MQTTSettings& mqtt_settings) :
     module_id_(module_id) {
+    // before any thread is created, capabilities are per thread
+    if (const auto error = Everest::raise_ambient_capabilities()) {
+        EVLOG_warning << "Child processes of this module will not inherit its Linux capabilities: " << *error;
+    }
 
     const auto mqtt_abstraction =
         std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(mqtt_settings));

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_V16_KNOWN_KEYS_HPP
 #define OCPP_V16_KNOWN_KEYS_HPP

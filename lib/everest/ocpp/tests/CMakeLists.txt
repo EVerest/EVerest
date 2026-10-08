@@ -28,6 +28,8 @@ set(GCOVR_DEPENDENCIES)
 
 
 add_libocpp_unittest(NAME libocpp_unit_tests PATH "")
+# since this is a very long running unit test: start it first in a parallel ctest run.
+set_tests_properties(libocpp_unit_tests PROPERTIES COST 1000)
 
 target_include_directories(libocpp_unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp

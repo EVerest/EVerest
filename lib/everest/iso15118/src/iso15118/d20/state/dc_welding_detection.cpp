@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 #include <iso15118/d20/state/session_stop.hpp>
 
@@ -78,6 +78,7 @@ Result DC_WeldingDetection::feed(Event ev) {
         }
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
 
         // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
         if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {

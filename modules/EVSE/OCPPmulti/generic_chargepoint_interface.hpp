@@ -32,6 +32,7 @@
 #include <ocpp/v21/messages/NotifyDERAlarm.hpp>
 #include <ocpp/v21/messages/SetDERControl.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -165,6 +166,8 @@ struct GenericChargePointCallbacks {
     virtual std::shared_ptr<ocpp_module_common::TransactionData> transaction_data(std::int32_t evse_id) = 0;
     virtual ocpp_module_common::TxEventEffect transaction_event(std::int32_t evse_id,
                                                                 ocpp_module_common::TxEvent tx_event) = 0;
+    virtual bool transaction_is_ev_connect_timeout(std::int32_t evse_id,
+                                                   std::chrono::seconds ev_connection_timeout) = 0;
     virtual void transaction_reset(std::int32_t evse_id) = 0;
     virtual void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) = 0;
 };

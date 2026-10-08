@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <cmath>
 
 #include <iso15118/message/common_types.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
+#include <iso15118/detail/cb_sub_certificates.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include <cbv2g/iso_20/iso20_AC_DER_IEC_Datatypes.h>
@@ -15,12 +16,72 @@
 
 namespace iso15118::message_20 {
 
+namespace {
+
+template <typename cb_StringType> std::string cb_string(const cb_StringType& in) {
+    return std::string(in.characters, in.charactersLen);
+}
+
+template <typename cb_SignatureType> void convert_signature(const cb_SignatureType& in, datatypes::Signature& out) {
+    if (in.Id_isUsed) {
+        out.id = cb_string(in.Id);
+    }
+    auto& si = out.signed_info;
+    if (in.SignedInfo.Id_isUsed) {
+        si.id = cb_string(in.SignedInfo.Id);
+    }
+    si.canonicalization_method = cb_string(in.SignedInfo.CanonicalizationMethod.Algorithm);
+    si.signature_method = cb_string(in.SignedInfo.SignatureMethod.Algorithm);
+    si.references.clear();
+    for (uint16_t i = 0; i < in.SignedInfo.Reference.arrayLen and i < si.references.capacity(); ++i) {
+        const auto& cb_ref = in.SignedInfo.Reference.array[i];
+        auto& ref = si.references.emplace_back();
+        if (cb_ref.Id_isUsed) {
+            ref.id = cb_string(cb_ref.Id);
+        }
+        if (cb_ref.Type_isUsed) {
+            ref.type = cb_string(cb_ref.Type);
+        }
+        if (cb_ref.URI_isUsed) {
+            ref.uri = cb_string(cb_ref.URI);
+        }
+        if (cb_ref.Transforms_isUsed) {
+            ref.transform_algorithm = cb_string(cb_ref.Transforms.Transform.Algorithm);
+        }
+        ref.digest_method = cb_string(cb_ref.DigestMethod.Algorithm);
+        ref.digest_value.assign(cb_ref.DigestValue.bytes, cb_ref.DigestValue.bytes + cb_ref.DigestValue.bytesLen);
+    }
+    if (in.SignatureValue.Id_isUsed) {
+        out.signature.id = cb_string(in.SignatureValue.Id);
+    }
+    out.signature.value.assign(in.SignatureValue.CONTENT.bytes,
+                               in.SignatureValue.CONTENT.bytes + in.SignatureValue.CONTENT.bytesLen);
+}
+
+} // namespace
+
+template <>
+void convert(const struct iso20_ContractCertificateChainType& in, datatypes::ContractCertificateChain& out) {
+    out.certificate.assign(in.Certificate.bytes, in.Certificate.bytes + in.Certificate.bytesLen);
+    sub_certificates_from_cb(in.SubCertificates, out.sub_certificates);
+}
+
+template <> void convert(const datatypes::ContractCertificateChain& in, iso20_ContractCertificateChainType& out) {
+    init_iso20_ContractCertificateChainType(&out);
+    CPP2CB_BYTES(in.certificate, out.Certificate);
+    sub_certificates_to_cb(in.sub_certificates, out.SubCertificates);
+}
+
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out) {
 
     std::copy(in.SessionID.bytes, in.SessionID.bytes + in.SessionID.bytesLen, out.session_id.begin());
     out.timestamp = in.TimeStamp;
 
-    // Todo(sl): missing signature
+    if (in.Signature_isUsed) {
+        convert_signature(in.Signature, out.signature.emplace());
+    } else {
+        out.signature.reset();
+    }
 }
 
 template void convert(const struct iso20_MessageHeaderType& in, Header& out);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
 
@@ -326,7 +326,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
-        // TODO(SL): Should be not a problem but maybe its better to assign the values directly
+        // TODO(mlitre): Should be not a problem but maybe its better to assign the values directly
         const auto operating_mode =
             static_cast<dt::OperatingMode>(m_ctx.session_config.der_iec_setup_config.operating_mode);
         const auto grid_connection_mode =
@@ -339,7 +339,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         const auto res =
             handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
-                           m_ctx.session_config.der_limits, operating_mode, grid_connection_mode, der_control);
+                           m_ctx.session_config.der_iec_limits, operating_mode, grid_connection_mode, der_control);
 
         m_ctx.respond(res);
 
@@ -348,8 +348,8 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(SL): Check [V2G20-3154]: It is possible that the EV sends a ServiceDiscoveryReq if the settings from
-        // evse is not accepted from the ev.
+        // An EV that does not accept the settings may restart the service selection, but only once this
+        // state has finished. The schedule exchange state answers that ServiceDiscoveryReq.
 
         m_ctx.feedback.ac_limits(req->transfer_mode);
 
@@ -362,6 +362,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

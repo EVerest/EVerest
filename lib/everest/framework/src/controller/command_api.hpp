@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef CONTROLLER_COMMAND_API_HPP
 #define CONTROLLER_COMMAND_API_HPP
 

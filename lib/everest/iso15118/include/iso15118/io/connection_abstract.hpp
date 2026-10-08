@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstddef>
@@ -37,6 +37,10 @@ struct IConnection {
     virtual ReadResult read(uint8_t* buf, size_t len) = 0;
 
     virtual void close() = 0;
+
+    /// \brief True if this connection is transport-secured (TLS). Used to gate features that ISO 15118-2
+    /// permits only over TLS (e.g. Plug&Charge / Contract payment).
+    virtual bool is_secure() const = 0;
 
     virtual std::optional<sha512_hash_t> get_vehicle_cert_hash() const = 0;
 

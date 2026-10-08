@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef CUSTOMIZATION_BOARD_PI4RC663_H
 #define CUSTOMIZATION_BOARD_PI4RC663_H

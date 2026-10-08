@@ -92,6 +92,19 @@ cmds:
       status:
         description: Set to true when contactor is closed, false when contactor is open
         type: boolean
+  cp_state_changed:
+    description: >-
+      Informs the HLC stack about the currently measured IEC 61851-1 CP state.
+      Needed for SECC-side CP checks tied to the message sequence, e.g.
+      DIN 70121 [V2G-DC-988]/[V2G-DC-556]: CP State B must be detected within
+      V2G_SECC_CPState_Detection_Timeout (1.5s) after the request following
+      PowerDelivery(off), otherwise the SECC responds FAILED, switches the CP
+      oscillator off and closes the TCP connection.
+    arguments:
+      cp_state:
+        description: The newly measured CP state
+        type: string
+        $ref: /iso15118#/CpState
 # Events
   dlink_ready:
     description: >-
@@ -299,6 +312,13 @@ vars:
   dc_open_contactor:
     description: The contactor should be opened
     type: "null"
+  dc_renegotiation_started:
+    description: >-
+      The EV sent PowerDeliveryReq with ChargeProgress Renegotiate in DC. The charger disables
+      the DC output and keeps the session: the EV opens its contactor and changes to CP state B,
+      then the session continues with ChargeParameterDiscovery and a new cable check
+      (IEC 61851-23:2023 CC.3.6).
+    type: "null"
   v2g_setup_finished:
     description: >-
       v2g_setup_finished from ISO15118-3. Trigger when EV sends a PowerDeliveryReq
@@ -435,6 +455,20 @@ vars:
       failure independently of the EvseManager state machine transitions.
     type: string
     $ref: /evse_manager#/HlcSessionFailedReasonEnum
+  session_stop_res_sent:
+    description: >-
+      Published immediately after a session-ending response has been written to
+      the wire. For a positive SessionStopRes it carries the stop action
+      requested by the EVCC (Terminate/Pause): per DIN 70121 [V2G-DC-968] the
+      SECC keeps the CP oscillator (5% PWM) on for
+      V2G_SECC_CPOscillator_Retain_Time (1.5s) after this event and then
+      switches to X1. For a session-ending FAILED_* response it carries
+      FailedTermination: per [V2G-DC-942] the oscillator is switched off
+      without delay. This event does NOT imply data link teardown:
+      dlink_terminate/dlink_pause still follow after the TCP connection is
+      closed.
+    type: string
+    $ref: /iso15118#/SessionStopAction
   dlink_terminate:
     description: Terminate the data link and become UNMATCHED.
     type: "null"
@@ -443,6 +477,12 @@ vars:
     type: "null"
   dlink_pause:
     description: Request power saving mode, while staying MATCHED.
+    type: "null"
+  pause_notified:
+    description: >-
+      ISO 15118-20 only: the pause requested with pause_charging has been notified to the EV
+      (EVSENotification set to Pause). In scheduled control mode the notification is held back until
+      the applied EVPowerProfileEntry is 0 kW, so this may follow the request much later, or not at all.
     type: "null"
   ev_app_protocol:
     description: >-
