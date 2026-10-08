@@ -960,6 +960,11 @@ function(ev_install_project)
             ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
     )
 
+    install(
+        FILES ${EV_CORE_CMAKE_SCRIPT_DIR}/compat/everest-everest_system-config.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/everest-everest_system
+    )
+
     # the project_info sources are shipped as build assets, because consuming projects need to
     # compile them against their own generated version information
     install(
