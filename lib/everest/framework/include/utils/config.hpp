@@ -44,6 +44,9 @@ struct Schemas {
     nlohmann::json error_declaration_list; ///< The error-declaration-list schema
 };
 
+///
+/// \brief A structure that contains all schema validators
+///
 struct Validators {
     nlohmann::json_schema::json_validator config;
     nlohmann::json_schema::json_validator manifest;
@@ -52,11 +55,17 @@ struct Validators {
     nlohmann::json_schema::json_validator error_declaration_list;
 };
 
+///
+/// \brief Bundles the loaded schemas together with their related validators
+///
 struct SchemaValidation {
     Schemas schemas;
     Validators validators;
 };
 
+///
+/// \brief Information identifying a module implementation
+///
 struct ImplementationInfo {
     std::string module_id;
     std::string module_name;
@@ -102,25 +111,25 @@ json get_serialized_module_config(std::string_view module_id, const ModuleConfig
 ///
 class ConfigBase {
 protected:
-    ModuleConfigurations module_configs;
-    nlohmann::json settings;
+    ModuleConfigurations m_module_configs;
+    nlohmann::json m_settings;
 
-    nlohmann::json manifests;
-    nlohmann::json interfaces;
-    nlohmann::json interface_definitions;
-    nlohmann::json types;
-    Schemas schemas;
+    nlohmann::json m_manifests;
+    nlohmann::json m_interfaces;
+    nlohmann::json m_interface_definitions;
+    nlohmann::json m_types;
+    Schemas m_schemas;
     // experimental caches
-    std::map<std::string, std::string, std::less<>> module_names;
+    std::map<std::string, std::string, std::less<>> m_module_names;
 
-    error::ErrorTypeMap error_map;
+    error::ErrorTypeMap m_error_map;
 
-    const MQTTSettings mqtt_settings;
+    const MQTTSettings m_mqtt_settings;
 
 public:
     ///
     /// \brief Create a ConfigBase with the provided \p mqtt_settings
-    explicit ConfigBase(const MQTTSettings& mqtt_settings) : mqtt_settings(mqtt_settings){};
+    explicit ConfigBase(const MQTTSettings& mqtt_settings) : m_mqtt_settings(mqtt_settings){};
 
     ///
     /// \brief turns then given \p module_id into a printable identifier
@@ -141,7 +150,7 @@ public:
     ///
     /// \brief turns the given \p module_id and \p impl_id into a mqtt prefix
     ///
-    std::string mqtt_prefix(std::string_view module_id, std::string_view impl_id);
+    std::string mqtt_prefix(std::string_view module_id, std::string_view impl_id) const;
 
     ///
     /// \brief turns the given \p module_id into a mqtt prefix
@@ -217,12 +226,22 @@ public:
 ///
 class ManagerConfig : public ConfigBase {
 private:
-    const ManagerSettings& ms;
-    Validators validators;
-    std::unique_ptr<nlohmann::json_schema::json_validator> draft7_validator;
-    std::unique_ptr<everest::config::UserConfigStorage> user_config_storage;
-    std::map<everest::config::ConfigurationParameterIdentifier, everest::config::GetConfigurationParameterResponse>
-        database_get_config_parameter_response_cache;
+    // Stored by value on purpose: a reference member would dangle when the config outlives the
+    // settings it was constructed from (e.g. construction from a temporary ManagerSettings).
+    // Construction is rare and dominated by parsing/validation, so the copy is negligible.
+    const ConfigParseSettings m_ps;
+    Validators m_validators;
+    std::unique_ptr<nlohmann::json_schema::json_validator> m_draft7_validator;
+    std::unique_ptr<everest::config::UserConfigStorage> m_user_config_storage;
+
+    /// \brief Sets up schemas, validators and error map (shared by all constructors).
+    void init_schemas();
+
+    /// \brief Init path when module configs are pre-loaded from storage before construction.
+    void init_from_preloaded(everest::config::ModuleConfigurations preloaded_configs);
+
+    /// \brief Init path that parses YAML. Caller is responsible for persisting the result.
+    void init_from_yaml();
 
     nlohmann::json apply_user_config_and_defaults();
 
@@ -292,19 +311,32 @@ private:
 
 public:
     ///
-    /// \brief Create a ManagerConfig from the provided ManagerSettings \p ms
+    /// \brief Create a ManagerConfig from pre-loaded ModuleConfigurations.
+    /// \param ms Manager settings
+    /// \param preloaded_configs Module configurations loaded from the database before construction.
+    explicit ManagerConfig(const ManagerSettings& ms, everest::config::ModuleConfigurations preloaded_configs);
+
+    ///
+    /// \brief Create a ManagerConfig by parsing YAML.
+    /// The caller is responsible for writing the resulting module configs to storage.
     explicit ManagerConfig(const ManagerSettings& ms);
 
-    /// \brief Sets the config \p value associated with the \p identifier
-    /// \returns if the setting of the value was successful or not
-    everest::config::SetConfigStatus
-    set_config_value(const everest::config::ConfigurationParameterIdentifier& identifier,
-                     const everest::config::ConfigEntry& value);
+    ///
+    /// \brief Create a ManagerConfig from ConfigParseSettings only
+    explicit ManagerConfig(const ConfigParseSettings& ps);
 
-    /// \brief Gets the configuration parameter associated with the \p identifier
-    /// \returns a result containing the configuration item or an error
+    ///
+    /// \brief Create a ManagerConfig from ConfigParseSettings and pre-loaded ModuleConfigurations.
+    /// Validates \p preloaded_configs against manifests, interfaces and requirements.
+    /// \param ps Parse settings providing paths to schemas, modules, interfaces, types and errors.
+    /// \param preloaded_configs Module configurations loaded from the database before construction.
+    explicit ManagerConfig(const ConfigParseSettings& ps, everest::config::ModuleConfigurations preloaded_configs);
+
+    ///
+    /// \brief returns the configuration parameter identified by \p identifier together with a status indicating
+    /// whether it was found
     everest::config::GetConfigurationParameterResponse
-    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier);
+    get_config_value(const everest::config::ConfigurationParameterIdentifier& identifier) const;
 };
 
 ///
@@ -313,10 +345,10 @@ public:
 ///
 class Config : public ConfigBase {
 private:
-    ModuleConfig module_config;
-    std::map<std::string, ModuleTierMappings, std::less<>> tier_mappings;
-    std::optional<TelemetryConfig> telemetry_config;
-    std::map<std::string, ConfigCache, std::less<>> module_config_cache;
+    ModuleConfig m_module_config;
+    std::map<std::string, ModuleTierMappings, std::less<>> m_tier_mappings;
+    std::optional<TelemetryConfig> m_telemetry_config;
+    std::map<std::string, ConfigCache, std::less<>> m_module_config_cache;
 
     void populate_module_config_cache();
 
@@ -394,6 +426,30 @@ public:
     /// \returns a set of object keys
     static everest::config::Keys keys(const nlohmann::json& object);
 };
+/// \brief Validate a parsed configuration JSON against module manifests, interface definitions and requirements.
+///
+/// Constructs a temporary ManagerConfig using \p ps for path resolution and \p json_config as the
+/// in-memory configuration (must contain an "active_modules" key). Returns the validated and default-enriched
+/// ModuleConfigurations on success.
+///
+/// \param ps         Parse settings providing paths to schemas, modules, interfaces, types and errors.
+/// \param json_config Full YAML-parsed JSON (must contain "active_modules").
+/// \returns Default-enriched ModuleConfigurations ready to be written to storage.
+/// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
+///         or any requirement cannot be fulfilled.
+ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config);
+
+/// \brief Validate already-parsed ModuleConfigurations (e.g. loaded from the database) against module manifests,
+/// interface definitions and requirements.
+///
+/// \param ps             Parse settings providing paths to schemas, modules, interfaces, types and errors.
+/// \param module_configs Module configurations as loaded from storage.
+/// \returns Default-enriched ModuleConfigurations.
+/// \throws EverestConfigError if any module manifest is missing, any interface is unresolvable,
+///         or any requirement cannot be fulfilled.
+ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                       ModuleConfigurations module_configs);
+
 } // namespace Everest
 
 NLOHMANN_JSON_NAMESPACE_BEGIN

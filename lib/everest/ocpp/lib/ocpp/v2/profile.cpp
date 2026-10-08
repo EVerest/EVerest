@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v2/profile.hpp"
 #include "everest/logging.hpp"
@@ -46,6 +46,35 @@ ocpp::DateTime floor_seconds(const ocpp::DateTime& dt) {
     return ocpp::DateTime(std::chrono::floor<seconds>(dt.to_time_point()));
 }
 
+std::optional<date::utc_clock::time_point> dynamic_expiry_deadline(const ChargingProfile& profile) {
+    if (profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic || profile.chargingSchedule.empty() ||
+        !profile.chargingSchedule.front().duration.has_value() ||
+        profile.chargingSchedule.front().duration.value() <= 0 || !profile.dynUpdateTime.has_value()) {
+        return std::nullopt;
+    }
+    return profile.dynUpdateTime.value().to_time_point() + seconds(profile.chargingSchedule.front().duration.value());
+}
+
+std::optional<date::utc_clock::time_point> dynamic_pull_deadline(const ChargingProfile& profile) {
+    if (profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic || !profile.dynUpdateInterval.has_value() ||
+        profile.dynUpdateInterval.value() <= 0) {
+        return std::nullopt;
+    }
+    const auto interval = seconds(profile.dynUpdateInterval.value());
+    // Bootstrap (no dynUpdateTime): pull immediately the first time.
+    return profile.dynUpdateTime.has_value() ? profile.dynUpdateTime.value().to_time_point() + interval
+                                             : date::utc_clock::now();
+}
+
+bool dynamic_profile_expired(const ChargingProfile& profile, date::utc_clock::time_point now) {
+    const auto deadline = dynamic_expiry_deadline(profile);
+    return deadline.has_value() && now >= deadline.value();
+}
+
+OperationModeEnum effective_mode(const std::optional<OperationModeEnum>& mode) {
+    return mode.value_or(OperationModeEnum::ChargingOnly);
+}
+
 namespace {
 IntermediatePeriod default_intermediate_period() {
     IntermediatePeriod empty;
@@ -60,6 +89,7 @@ IntermediatePeriod default_intermediate_period() {
     empty.power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
     empty.numberPhases = std::nullopt;
     empty.phaseToUse = std::nullopt;
+    empty.operationMode = std::nullopt;
     return empty;
 }
 
@@ -111,6 +141,8 @@ void period_entry_t::init(const DateTime& in_start, int in_duration, const Charg
     setpoint.limit = in_period.setpoint.value_or(NO_SETPOINT_SPECIFIED);       // FIXME
     setpoint.limit_L2 = in_period.setpoint_L2.value_or(NO_SETPOINT_SPECIFIED); // FIXME
     setpoint.limit_L3 = in_period.setpoint_L3.value_or(NO_SETPOINT_SPECIFIED); // FIXME
+
+    operationMode = in_period.operationMode;
 
     min_charging_rate = in_profile.chargingSchedule.front().minChargingRate;
 }
@@ -233,7 +265,8 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
         start_times.push_back(start);
         break;
     case ChargingProfileKindEnum::Dynamic:
-        // FIXME: check if other requirements for dynamic exist
+        // Single period anchored at the schedule start; K28 pull/expiry/reactivation are handled
+        // by DynamicScheduleManager and the expiry filter, not the composite start-time logic.
         start_times.push_back(floor_seconds(start));
         break;
     }
@@ -443,15 +476,19 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
                                                  NO_DISCHARGE_LIMIT_SPECIFIED};
             PeriodLimit current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
             PeriodLimit power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+            std::int32_t stack_level_current = 0;
+            std::int32_t stack_level_power = 0;
 
             if (chosen->charging_rate_unit == ChargingRateUnitEnum::A) {
                 current_limit = chosen->limit;
                 current_setpoint = chosen->setpoint;
                 current_discharge_limit = chosen->discharge_limit;
+                stack_level_current = chosen->stack_level;
             } else {
                 power_limit = chosen->limit;
                 power_setpoint = chosen->setpoint;
                 power_discharge_limit = chosen->discharge_limit;
+                stack_level_power = chosen->stack_level;
             }
 
             IntermediatePeriod charging_schedule_period;
@@ -463,9 +500,12 @@ IntermediateProfile generate_profile_from_periods(std::vector<period_entry_t>& p
             charging_schedule_period.current_discharge_limit = current_discharge_limit;
             charging_schedule_period.power_discharge_limit = power_discharge_limit;
             charging_schedule_period.numberPhases = chosen->number_phases;
+            charging_schedule_period.operationMode = chosen->operationMode;
+            charging_schedule_period.stack_level_current = stack_level_current;
+            charging_schedule_period.stack_level_power = stack_level_power;
             charging_schedule_period.phaseToUse = std::nullopt;
 
-            // If the new ChargingSchedulePeriod.phaseToUse field is set, pass it on
+            // If the new EnhancedChargingSchedulePeriod.phaseToUse field is set, pass it on
             // Profile validation has already ensured that the values have been properly set.
             if (chosen->phase_to_use.has_value()) {
                 charging_schedule_period.phaseToUse = chosen->phase_to_use;
@@ -529,7 +569,10 @@ IntermediateProfile combine_list_of_profiles(const std::vector<IntermediateProfi
             (period.power_discharge_limit != combined.back().power_discharge_limit) ||
             (period.current_setpoint != combined.back().current_setpoint) ||
             (period.power_setpoint != combined.back().power_setpoint) ||
-            (period.numberPhases != combined.back().numberPhases)) {
+            (period.numberPhases != combined.back().numberPhases) ||
+            (period.stack_level_current != combined.back().stack_level_current) ||
+            (period.stack_level_power != combined.back().stack_level_power) ||
+            (effective_mode(period.operationMode) != effective_mode(combined.back().operationMode))) {
             combined.push_back(period);
         }
 
@@ -580,13 +623,20 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                                         NO_DISCHARGE_LIMIT_SPECIFIED};
         period.current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
         period.power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+        period.stack_level_current = 0;
+        period.stack_level_power = 0;
 
         for (const auto& [it, end] : periods) {
+            // A non-default operationMode is itself enough to "pick" this period:
+            // setpoint-less V2X modes (LocalLoadBalancing, Idle, LocalFrequency,
+            // ExternalLimits) carry their meaning solely through operationMode and
+            // would otherwise be silently overruled by the lower-priority profile.
             if (it->current_limit != default_period.current_limit || it->power_limit != default_period.power_limit ||
                 it->current_discharge_limit != default_period.current_discharge_limit ||
                 it->power_discharge_limit != default_period.power_discharge_limit ||
                 it->current_setpoint != default_period.current_setpoint ||
-                it->power_setpoint != default_period.power_setpoint) {
+                it->power_setpoint != default_period.power_setpoint ||
+                effective_mode(it->operationMode) != OperationModeEnum::ChargingOnly) {
                 period.current_limit = it->current_limit;
                 period.power_limit = it->power_limit;
                 period.current_discharge_limit = it->current_discharge_limit;
@@ -594,6 +644,9 @@ IntermediateProfile merge_tx_profile_with_tx_default_profile(const IntermediateP
                 period.current_setpoint = it->current_setpoint;
                 period.power_setpoint = it->power_setpoint;
                 period.numberPhases = it->numberPhases;
+                period.operationMode = it->operationMode;
+                period.stack_level_current = it->stack_level_current;
+                period.stack_level_power = it->stack_level_power;
                 break;
             }
         }
@@ -623,6 +676,8 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                                    std::numeric_limits<float>::max()};
         period.power_setpoint = {std::numeric_limits<float>::max(), std::numeric_limits<float>::max(),
                                  std::numeric_limits<float>::max()};
+        period.stack_level_current = 0;
+        period.stack_level_power = 0;
 
         bool three_phases_used = false;
         // Get number of phases for this period (the lowest of the number of phases).
@@ -647,6 +702,13 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                                                 NO_SETPOINT_SPECIFIED, period.numberPhases, ocpp_version);
             }
 
+            if (new_period.current_limit.limit >= 0.0F && new_period.current_limit.limit < period.current_limit.limit) {
+                period.stack_level_current = new_period.stack_level_current;
+            }
+            if (new_period.power_limit.limit >= 0.0F && new_period.power_limit.limit < period.power_limit.limit) {
+                period.stack_level_power = new_period.stack_level_power;
+            }
+
             period.current_limit = get_min_limit(period.current_limit, new_period.current_limit);
             period.power_limit = get_min_limit(period.power_limit, new_period.power_limit);
             period.current_discharge_limit =
@@ -659,6 +721,23 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                                    period.current_discharge_limit);
             get_set_setpoint_limit(period.power_setpoint, new_period.power_setpoint, period.power_limit,
                                    period.power_discharge_limit);
+
+            // Any non-default operationMode beats nullopt/ChargingOnly. On cross-purpose
+            // conflict (both contributors carry distinct non-default modes) the first
+            // contributor wins and a warning is logged; deterministic resolution requires
+            // SmartChargingCtrlr.SetpointPriority (OCPP 2.1 Edition 2 Q06.FR.20–22) which
+            // is not yet implemented.
+            if (effective_mode(new_period.operationMode) != OperationModeEnum::ChargingOnly) {
+                if (effective_mode(period.operationMode) == OperationModeEnum::ChargingOnly) {
+                    period.operationMode = new_period.operationMode;
+                } else if (effective_mode(period.operationMode) != effective_mode(new_period.operationMode)) {
+                    EVLOG_warning << "Cross-purpose operationMode conflict: keeping "
+                                  << conversions::operation_mode_enum_to_string(period.operationMode.value())
+                                  << ", saw "
+                                  << conversions::operation_mode_enum_to_string(new_period.operationMode.value())
+                                  << " (SetpointPriority not yet implemented).";
+                }
+            }
         }
 
         auto replace_max_with_no_limit = [](PeriodLimit& value, float max_value, float replacement) {
@@ -672,6 +751,13 @@ IntermediateProfile merge_profiles_by_lowest_limit(const std::vector<Intermediat
                 value.limit_L3 = replacement;
             }
         };
+
+        if (period.current_limit.limit == std::numeric_limits<float>::max()) {
+            period.stack_level_current = 0;
+        }
+        if (period.power_limit.limit == std::numeric_limits<float>::max()) {
+            period.stack_level_power = 0;
+        }
 
         replace_max_with_no_limit(period.current_limit, std::numeric_limits<float>::max(), NO_LIMIT_SPECIFIED);
         replace_max_with_no_limit(period.power_limit, std::numeric_limits<float>::max(), NO_LIMIT_SPECIFIED);
@@ -697,6 +783,8 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
         // summing limits dont have a setpoint, so set to default values
         period.current_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
         period.power_setpoint = {NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED, NO_SETPOINT_SPECIFIED};
+        period.stack_level_current = 0; // Stack level cant be determined when summing intermediate profiles
+        period.stack_level_power = 0;   // Stack level cant be determined when summing intermediate profiles
 
         bool three_phases_used = false;
         // Get number of phases for this period (the lowest of the number of phases).
@@ -754,14 +842,14 @@ IntermediateProfile merge_profiles_by_summing_limits(const std::vector<Intermedi
     return combine_list_of_profiles(convert_to_ref_vector(profiles), combinator);
 }
 
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage) {
 
-    std::vector<ChargingSchedulePeriod> output{};
+    std::vector<EnhancedChargingSchedulePeriod> output{};
 
     for (const auto& period : profile) {
-        ChargingSchedulePeriod period_out{};
+        EnhancedChargingSchedulePeriod period_out{};
         period_out.startPeriod = period.startPeriod;
         period_out.numberPhases = period.numberPhases;
 
@@ -775,6 +863,9 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
         const std::int32_t number_phases = period_out.numberPhases.value_or(default_number_phases);
         const float transform_value = supply_voltage;
         if (charging_rate_unit == ChargingRateUnitEnum::A) {
+            if (period.current_limit.limit != NO_LIMIT_SPECIFIED) {
+                period_out.stackLevel = period.stack_level_current;
+            }
             store_limit_to_phase_limits(period.current_limit, NO_LIMIT_SPECIFIED, period_out.limit, period_out.limit_L2,
                                         period_out.limit_L3);
 
@@ -797,6 +888,9 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
                                                            transform_value, number_phases, period_out.setpoint,
                                                            period_out.setpoint_L2, period_out.setpoint_L3, true, true);
         } else {
+            if (period.power_limit.limit != NO_LIMIT_SPECIFIED) {
+                period_out.stackLevel = period.stack_level_power;
+            }
             store_limit_to_phase_limits(period.power_limit, NO_LIMIT_SPECIFIED, period_out.limit, period_out.limit_L2,
                                         period_out.limit_L3);
 
@@ -820,9 +914,12 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
                                                            period_out.setpoint_L2, period_out.setpoint_L3, true, false);
         }
 
+        period_out.operationMode = period.operationMode;
+
         if (output.empty() || (period_out.limit != output.back().limit) ||
             (period_out.numberPhases != output.back().numberPhases) || period_out.setpoint != output.back().setpoint ||
-            period_out.dischargeLimit != output.back().dischargeLimit) {
+            period_out.dischargeLimit != output.back().dischargeLimit ||
+            period_out.operationMode != output.back().operationMode) {
             output.push_back(period_out);
         }
     }

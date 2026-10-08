@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+# Copyright Pionix GmbH and Contributors to EVerest
 import asyncio
 import sys
 from pathlib import Path
@@ -83,25 +83,28 @@ class PyEVJosevModule():
 
         self._mod = m
         self._mod.init_done(self._ready)
+        self._mod.shutdown_handler(self._shutdown)
 
     def start_evcc_handler(self):
         exi_codec = ExificientEXICodec()
         try:
             while True:
                 self._ready_event.wait()
+                self._ready_event.clear()
                 try:
                     asyncio.run(evcc_handler_main_loop(self._setup.configs.module, exi_codec))
                     self._mod.publish_variable('ev', 'v2g_session_finished', None)
                 except KeyboardInterrupt:
                     log.debug("SECC program terminated manually")
                     break
-                finally:
-                    self._ready_event.clear()
         finally:
             exi_codec.shutdown()
 
     def _ready(self):
         log.debug("ready!")
+
+    def _shutdown(self):
+        log.debug("shutdown")
 
     # implementation handlers
 

@@ -3,8 +3,18 @@
 
 #pragma once
 
+#include <chrono>
+#include <functional>
+#include <map>
+#include <optional>
+#include <set>
 #include <utility>
+#include <vector>
 
+#include <everest/timer.hpp>
+#include <everest/util/async/monitor.hpp>
+
+#include <ocpp/v2/dynamic_schedule_manager.hpp>
 #include <ocpp/v2/message_handler.hpp>
 
 #include <ocpp/v2/evse.hpp>
@@ -56,6 +66,8 @@ enum class ProfileValidationResultEnum {
     ChargingProfileUnsupportedPurpose,
     ChargingProfileUnsupportedKind,
     ChargingProfileNotDynamic,
+    ChargingProfileDynamicMustHaveSinglePeriod,
+    ChargingProfileDynamicMustHaveSingleSchedule,
     ChargingScheduleChargingRateUnitUnsupported,
     ChargingScheduleNonFiniteValue,
     ChargingSchedulePriorityExtranousDuration,
@@ -71,10 +83,14 @@ enum class ProfileValidationResultEnum {
     ChargingSchedulePeriodPhaseToUseACPhaseSwitchingUnsupported,
     ChargingSchedulePeriodPriorityChargingNotChargingOnly,
     ChargingSchedulePeriodUnsupportedOperationMode,
+    ChargingSchedulePeriodOperationModeNotInSupportedList,
+    ChargingSchedulePeriodLocalLoadBalancingNotSupported,
     ChargingSchedulePeriodUnsupportedLimitSetpoint,
     ChargingSchedulePeriodNoPhaseForDC,
     ChargingSchedulePeriodNoFreqWattCurve,
     ChargingSchedulePeriodSignDifference,
+    ChargingSchedulePeriodSetpointOutOfRange,
+    ChargingSchedulePeriodPhaseConflict,
     ChargingStationMaxProfileCannotBeRelative,
     ChargingStationMaxProfileEvseIdGreaterThanZero,
     DuplicateTxDefaultProfileFound,
@@ -113,14 +129,24 @@ class SmartChargingInterface : public MessageHandlerInterface {
 public:
     ~SmartChargingInterface() override = default;
 
+    /// \brief Schedules asynchronous processing of stored profiles' offline-validity deadlines.
+    /// Returns without database work; consumers are notified when profile validity changes.
+    virtual void on_connection_lost() = 0;
+
+    /// \brief Schedules cleanup of profiles invalidated by the completed \p offline_duration.
+    /// Must be called while the connectivity manager still reports this outage's disconnect time.
+    /// Returns without database work and notifies consumers once, asynchronously, when profiles
+    /// were deleted or became valid again.
+    virtual void on_connection_restored(std::chrono::steady_clock::duration offline_duration) = 0;
+
     /// \brief Gets composite schedules for all evse_ids (including 0) for the given \p duration and \p unit . If no
     /// valid profiles are given for an evse for the specified period, the composite schedule will be empty for this
     /// evse.
     /// \param duration of the request from. Composite schedules will be retrieved from now to (now + duration)
     /// \param unit of the period entries of the composite schedules
     /// \return vector of composite schedules, one for each evse_id including 0.
-    virtual std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                                       const ChargingRateUnitEnum& unit) = 0;
+    virtual std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                               const ChargingRateUnitEnum& unit) = 0;
 
     ///
     /// \brief for the given \p transaction_id removes the associated charging profile.
@@ -147,9 +173,9 @@ public:
 
     /// \brief Gets a composite schedule based on the given \p request
     /// \param request specifies different options for the request
-    /// \return GetCompositeScheduleResponse containing the status of the operation and the composite schedule if the
-    /// operation was successful
-    virtual GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
+    /// \return EnhancedCompositeScheduleResponse containing the status of the operation and the composite schedule if
+    /// the operation was successful
+    virtual EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
 
     /// \brief Gets a composite schedule based on the given parameters.
     /// \note This will ignore TxDefaultProfiles and TxProfiles if no transaction is active on \p evse_id
@@ -157,8 +183,8 @@ public:
     /// \param duration How long the schedule should be
     /// \param unit ChargingRateUnit to thet the schedule for
     /// \return the composite schedule if the operation was successful, otherwise nullopt
-    virtual std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                                    ChargingRateUnitEnum unit) = 0;
+    virtual std::optional<EnhancedCompositeSchedule>
+    get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) = 0;
 
     /// \brief Initiates a NotifyEvChargingNeeds.req message to the CSMS
     /// \param req the request to send
@@ -172,16 +198,55 @@ private: // Members
     std::map<ChargingProfilePurposeEnum, DateTime> last_charging_profile_update;
     StopTransactionCallback stop_transaction_callback;
 
+protected: // Members
+    /// \brief K28 dynamic-profile state: pull/expire deadlines, async pull-response handlers, and
+    /// the adaptive timer. Engaged only when the device model advertises SupportsDynamicProfiles, so
+    /// stations without Dynamic support pay no dynamic-profile thread/timer cost. Its timer joins
+    /// before the callbacks and context it uses are destroyed.
+    std::optional<DynamicScheduleManager> dynamic_schedule_manager;
+
+private:
+    struct OfflineState {
+        std::optional<std::chrono::steady_clock::time_point> disconnected;
+        std::chrono::steady_clock::time_point restored{};
+        std::optional<std::chrono::steady_clock::duration> pending_reconnect;
+        std::set<std::int32_t> processed_profiles;
+        bool notify_pending = false;
+        std::chrono::seconds retry_delay{1};
+    };
+    everest::lib::util::monitor<OfflineState> m_offline_state;
+    // Destroy and join the timer before the state, dynamic tracking, callbacks and context it uses.
+    Everest::Timer<std::chrono::steady_clock> m_offline_timer;
+
+    void on_offline_deadline();
+
 public:
+    /// \brief Construct the SmartCharging functional block.
+    /// \param functional_block_context        Shared context (device model, database, dispatcher).
+    /// \param set_charging_profiles_callback  Invoked whenever the set of valid charging profiles
+    ///                                         changes and consumers must recompute composite
+    ///                                         schedules. Also fired from the timer thread on
+    ///                                         offline-validity deadlines, K28.FR.13 expiry and K28.FR.06 push apply.
+    /// \param stop_transaction_callback       Invoked from the NotifyEVChargingNeeds response path
+    ///                                         when the schedule mandates transaction termination
+    ///                                         (K18.FR.23 / K19.FR.16).
+    /// \note On construction, rebuilds pull- and expiry-deadline tracking from persisted profiles
+    /// (K28.FR.10) and arms the adaptive timer.
     SmartCharging(const FunctionalBlockContext& functional_block_context,
                   std::function<void()> set_charging_profiles_callback,
                   StopTransactionCallback stop_transaction_callback);
+
+    ~SmartCharging() override = default;
+
+    void on_connection_lost() override;
+    void on_connection_restored(std::chrono::steady_clock::duration offline_duration) override;
+
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
-    GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
-    std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                            ChargingRateUnitEnum unit) override;
-    std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                               const ChargingRateUnitEnum& unit) override;
+    EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
+    std::optional<EnhancedCompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
+                                                                    ChargingRateUnitEnum unit) override;
+    std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                       const ChargingRateUnitEnum& unit) override;
 
     void delete_transaction_tx_profiles(const std::string& transaction_id) override;
 
@@ -198,9 +263,10 @@ protected:
     ///
     /// \brief Calculates the composite schedule for the given \p valid_profiles and the given \p connector_id
     ///
-    CompositeSchedule calculate_composite_schedule(const ocpp::DateTime& start_time, const ocpp::DateTime& end_time,
-                                                   const std::int32_t evse_id, ChargingRateUnitEnum charging_rate_unit,
-                                                   bool is_offline, bool simulate_transaction_active);
+    EnhancedCompositeSchedule calculate_composite_schedule(const ocpp::DateTime& start_time,
+                                                           const ocpp::DateTime& end_time, const std::int32_t evse_id,
+                                                           ChargingRateUnitEnum charging_rate_unit, bool is_offline,
+                                                           bool simulate_transaction_active);
 
     ///
     /// \brief validates the existence of the given \p evse_id according to the specification
@@ -235,6 +301,43 @@ protected:
                                                            std::optional<EvseInterface*> evse_opt = std::nullopt) const;
 
     ///
+    /// \brief Q09.FR.01: whether \p operation_mode is listed in V2XChargingCtrlr.SupportedOperationModes for
+    ///        the given EVSE. The variable is per-EVSE (component evse = *, there is no Charging-Station-level
+    ///        instance), so callers check the profile's EVSE, or every EVSE for a station-wide profile.
+    /// \return true for ChargingOnly or when \p operation_mode is listed; false when the variable is absent
+    ///         (no V2X advertised) or the mode is not listed.
+    ///
+    bool is_operation_mode_supported_by_evse(OperationModeEnum operation_mode, std::int32_t evse_id) const;
+
+    ///
+    /// \brief V2X.05: Ensure every charging schedule period has setpoint within [dischargeLimit, limit].
+    ///
+    /// Stored profiles keep their clamping behavior in the composite schedule, so this must not
+    /// run from validate_profile_schedules which is reused during composite-schedule calculation.
+    ///
+    /// \param profile  Charging profile to validate.
+    /// \return ProfileValidationResultEnum::Valid when all setpoints lie in range (or not set),
+    ///         otherwise ChargingSchedulePeriodSetpointOutOfRange.
+    ///
+    ProfileValidationResultEnum validate_setpoint_within_limit_range(const ChargingProfile& profile) const;
+
+    ///
+    /// \brief Reject SetChargingProfile requests that violate the V2X.09 branch of V2X.10:
+    ///        a non-TxProfile carrying any \c dischargeLimit_L2 / \c _L3,
+    ///        \c setpoint_L2 / \c _L3, or \c setpointReactive_L2 / \c _L3 in any
+    ///        chargingSchedulePeriod must be rejected with reasonCode `PhaseConflict`.
+    ///
+    /// The V2X.08 branch (EV omitted \c maxDischargePower_L2 / \c _L3 in
+    /// NotifyEVChargingNeedsRequest) requires per-EVSE caching of EV V2X parameters
+    /// and is intentionally deferred.
+    ///
+    /// \param profile  Charging profile to validate.
+    /// \return Valid when the profile is a TxProfile, or when no per-phase fields are
+    ///         present; otherwise ChargingSchedulePeriodPhaseConflict.
+    ///
+    ProfileValidationResultEnum validate_phase_conflict(const ChargingProfile& profile) const;
+
+    ///
     /// \brief Checks a given \p profile does not have an id that conflicts with an existing profile
     /// of type ChargingStationExternalConstraints
     ///
@@ -246,10 +349,10 @@ protected:
     SetChargingProfileResponse add_profile(ChargingProfile& profile, std::int32_t evse_id,
                                            CiString<20> charging_limit_source = ChargingLimitSourceEnumStringType::CSO);
 
-    ///
-    /// \brief Clears profiles from the system using the given \p request
-    ///
-    ClearChargingProfileResponse clear_profiles(const ClearChargingProfileRequest& request);
+    /// \brief Clears profiles using \p request and reports the ids actually deleted in
+    /// \p cleared_ids (exactly the rows the DB removed; no mirrored filter).
+    ClearChargingProfileResponse clear_profiles(const ClearChargingProfileRequest& request,
+                                                std::vector<std::int32_t>& cleared_ids);
 
     ///
     /// \brief Gets the charging profiles for the given \p request
@@ -262,6 +365,20 @@ protected:
     ///
     std::vector<ChargingProfile>
     get_valid_profiles(std::int32_t evse_id, const std::vector<ChargingProfilePurposeEnum>& purposes_to_ignore = {});
+
+    /// \brief Return valid (non-expired, conforming) profiles for \p evse_id.
+    /// \param evse_id            EVSE the profiles must belong to.
+    /// \param purposes_to_ignore Profile purposes to exclude from the result (e.g. when the caller
+    ///                            is computing a composite limit for a specific purpose subset).
+    /// \return Filtered profile list. Beyond the existing purpose filter and offline-validity check
+    ///         (Q11/Q12), K28.FR.13 Dynamic profiles whose \c chargingSchedule[0].duration has
+    ///         elapsed since \c dynUpdateTime are skipped. The boundary check uses
+    ///         \c now\ >=\ deadline so it agrees with the manager timer's
+    ///         \c deadline\ <=\ now at the exact boundary instant.
+    /// \note Profiles without \c dynUpdateTime defer to bootstrap pull and are NOT expiry-filtered.
+    std::vector<ChargingProfile>
+    get_valid_profiles_for_evse(std::int32_t evse_id,
+                                const std::vector<ChargingProfilePurposeEnum>& purposes_to_ignore = {});
 
 private: // Functions
     /* OCPP message requests */
@@ -277,8 +394,8 @@ private: // Functions
     void handle_get_composite_schedule_req(Call<GetCompositeScheduleRequest> call);
     void handle_notify_ev_charging_needs_response(const EnhancedMessage<MessageType>& call_result);
 
-    GetCompositeScheduleResponse get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
-                                                                 bool simulate_transaction_active = true);
+    EnhancedCompositeScheduleResponse get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
+                                                                      bool simulate_transaction_active = true);
 
     ///
     /// \brief Checks a given \p candidate_profile and associated \p evse_id validFrom and validTo range
@@ -289,9 +406,6 @@ private: // Functions
     std::vector<ChargingProfile> get_evse_specific_tx_default_profiles() const;
     std::vector<ChargingProfile> get_station_wide_tx_default_profiles() const;
     std::vector<ChargingProfile> get_charging_station_max_profiles() const;
-    std::vector<ChargingProfile>
-    get_valid_profiles_for_evse(std::int32_t evse_id,
-                                const std::vector<ChargingProfilePurposeEnum>& purposes_to_ignore = {});
 
     CurrentPhaseType get_current_phase_type(const std::optional<EvseInterface*> evse_opt) const;
 

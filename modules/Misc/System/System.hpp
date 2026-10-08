@@ -26,6 +26,7 @@ struct Conf {
     double DefaultRetries;
     double DefaultRetryInterval;
     int ResetDelay;
+    bool ResetAfterUpdate;
 };
 
 class System : public Everest::ModuleBase {

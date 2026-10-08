@@ -1,12 +1,23 @@
 import asyncio
 import logging
 import threading
+import weakref
 
 from queue import Queue
 from typing import Any, Callable, Optional
 
 from everest.framework import Module, RuntimeSession
 from everest.framework import error
+
+# Probe modules whose MQTT connection is still open; EverestCore.stop() closes them.
+_open_probes = weakref.WeakSet()
+
+
+def close_all():
+    """Close every probe module that is still connected."""
+    for probe in list(_open_probes):
+        probe.close()
+
 
 class ProbeModule:
     """
@@ -28,6 +39,24 @@ class ProbeModule:
         self._mod = m
         self._ready_event = threading.Event()
         self._started = False
+        self._mod.shutdown_handler(self._shutdown)
+        _open_probes.add(self)
+
+    def close(self):
+        """
+        Disconnect from EVerest and release the module's MQTT connection and threads.
+        The probe cannot be used afterwards. Calling it again does nothing.
+        """
+        _open_probes.discard(self)
+        mod, self._mod = self._mod, None
+        if mod is not None:
+            mod.close()
+
+    def _shutdown(self):
+        """
+        The probe module should not need a shutdown method
+        """
+        pass
 
     def start(self):
         """
@@ -140,6 +169,64 @@ class ProbeModule:
         - clear_callback: a function to handle when the error is cleared, accepting an Error object
         """
         self._mod.subscribe_error(self._setup.connections[connection_id][0], error_type, callback, clear_callback)
+
+    async def set_config_value(self, module_id: str, param_name: str, value: str,
+                               impl_id: Optional[str] = None) -> dict:
+        """
+        Set a configuration parameter of a module at runtime via the config service.
+        - module_id: the id of the target module
+        - param_name: the name of the configuration parameter
+        - value: the new value as a string (regardless of the underlying type)
+        - impl_id: optional implementation id (defaults to module-level scope)
+        returns: dict with keys 'status' (Ok/Error/AccessDenied), 'status_info', and
+                 'set_status' (Accepted/Rejected/RebootRequired)
+        Note: Requires the probe module to have write access to the target module in the EVerest config.
+        """
+        try:
+            async with asyncio.timeout(30):
+                return await asyncio.to_thread(
+                    lambda: self._mod.set_config_value(module_id, param_name, value, impl_id)
+                )
+        except TimeoutError as e:
+            error_message = (f"Timeout in set_config_value for {module_id}.{param_name}: "
+                             f"{type(e)}: {e}")
+            logging.error(error_message)
+            raise RuntimeError(error_message)
+
+    async def get_config_value(self, module_id: str, param_name: str,
+                               impl_id: Optional[str] = None) -> dict:
+        """
+        Get a configuration parameter of a module via the config service.
+        - module_id: the id of the target module
+        - param_name: the name of the configuration parameter
+        - impl_id: optional implementation id (defaults to module-level scope)
+        returns: dict with keys 'status' (Ok/Error/AccessDenied), 'status_info', and
+                 'value' (the current value as a string, present when status is Ok)
+        Note: Requires the probe module to have read access to the target module in the EVerest config.
+        """
+        try:
+            async with asyncio.timeout(30):
+                return await asyncio.to_thread(
+                    lambda: self._mod.get_config_value(module_id, param_name, impl_id)
+                )
+        except TimeoutError as e:
+            error_message = (f"Timeout in get_config_value for {module_id}.{param_name}: "
+                             f"{type(e)}: {e}")
+            logging.error(error_message)
+            raise RuntimeError(error_message)
+
+    def register_config_change_handler(self, impl_id: str, param_name: str,
+                                       handler: Callable[[str], dict]):
+        """
+        Register a handler for runtime configuration changes of a parameter owned by this probe module.
+        This subscribes to incoming set_request messages for the given parameter name.
+        - param_name: the name of the configuration parameter to handle
+        - handler: a callable that takes the new value string and returns a dict with key
+                   'status' (Accepted/Rejected/RebootRequired) and optionally 'reason' (for Rejected)
+        Note: Must be called before start().
+        Note: The handler runs in a separate thread!
+        """
+        self._mod.register_config_change_handler(impl_id, param_name, handler)
 
     def subscribe_all_errors(self, connection_id: str,
                             callback: Callable[[error.Error], None],

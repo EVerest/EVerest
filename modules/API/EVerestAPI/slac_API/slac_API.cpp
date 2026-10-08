@@ -11,15 +11,17 @@
 
 namespace module {
 
-namespace ev_API_types = ev_API::V1_0::types;
-namespace API_types_ext = ev_API_types::slac;
-namespace API_generic = ev_API_types::generic;
+namespace API_types_ext = API_types::slac;
+namespace API_generic = API_types::generic;
 using ev_API::deserialize;
 
 void slac_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "slac", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
 }
 
 void slac_API::ready() {
@@ -29,39 +31,20 @@ void slac_API::ready() {
     generate_api_var_request_error_routine();
     generate_api_var_ev_mac_address();
 
-    generate_api_var_communication_check();
-
     generate_api_var_raise_error();
     generate_api_var_clear_error();
 
+    helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
-}
-
-const ev_API::Topics& slac_API::get_topics() const {
-    return topics;
-}
-
-void slac_API::subscribe_api_topic(std::string const& var, ParseAndPublishFtor const& parse_and_publish) {
-    const auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](const std::string& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+    helper.publish_ready_beacon();
 }
 
 void slac_API::generate_api_var_state() {
-    subscribe_api_topic("state", [=](const std::string& data) {
+    helper.subscribe_api_topic("state", [=](const std::string& data) {
         API_types_ext::State val;
         if (deserialize(data, val)) {
-            p_main->publish_state(to_internal_api(val));
+            p_main->publish_state(API_types_ext::to_internal_api(val));
             return true;
         }
         return false;
@@ -69,7 +52,7 @@ void slac_API::generate_api_var_state() {
 }
 
 void slac_API::generate_api_var_dlink_ready() {
-    subscribe_api_topic("dlink_ready", [=](const std::string& data) {
+    helper.subscribe_api_topic("dlink_ready", [=](const std::string& data) {
         bool val = false;
         if (deserialize(data, val)) {
             p_main->publish_dlink_ready(val);
@@ -80,14 +63,14 @@ void slac_API::generate_api_var_dlink_ready() {
 }
 
 void slac_API::generate_api_var_request_error_routine() {
-    subscribe_api_topic("request_error_routine", [=](const std::string& data) {
+    helper.subscribe_api_topic("request_error_routine", [=](const std::string& data) {
         p_main->publish_request_error_routine(nullptr);
         return true;
     });
 }
 
 void slac_API::generate_api_var_ev_mac_address() {
-    subscribe_api_topic("ev_mac_address", [=](const std::string& data) {
+    helper.subscribe_api_topic("ev_mac_address", [=](const std::string& data) {
         std::string val;
         if (deserialize(data, val)) {
             p_main->publish_ev_mac_address(val);
@@ -97,19 +80,8 @@ void slac_API::generate_api_var_ev_mac_address() {
     });
 }
 
-void slac_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
 void slac_API::generate_api_var_raise_error() {
-    subscribe_api_topic("raise_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("raise_error", [=](std::string const& data) {
         API_generic::Error error;
         if (deserialize(data, error)) {
             auto sub_type_str = error.sub_type ? error.sub_type.value() : "";
@@ -125,7 +97,7 @@ void slac_API::generate_api_var_raise_error() {
 }
 
 void slac_API::generate_api_var_clear_error() {
-    subscribe_api_topic("clear_error", [=](std::string const& data) {
+    helper.subscribe_api_topic("clear_error", [=](std::string const& data) {
         API_generic::Error error;
         if (deserialize(data, error)) {
             std::string error_str = make_error_string(error);
@@ -144,15 +116,6 @@ std::string slac_API::make_error_string(API_generic::Error const& error) {
     auto error_str = API_generic::trimmed(serialize(error.type));
     auto result = "generic/" + error_str;
     return result;
-}
-
-void slac_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
 }
 
 } // namespace module

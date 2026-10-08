@@ -1,8 +1,11 @@
 add_executable(everest_util_tests
+  async/lifecycle_gate_tests.cpp
   async/monitor_tests.cpp
   async/thread_pool_tests.cpp
   async/thread_pool_scaling_tests.cpp
   async/wrapper_tests.cpp
+  misc/change_tracker_tests.cpp
+  misc/container_tests.cpp
   enum/EnumFlagsTest.cpp
   enum/EnumFlagsTest_B.cpp
   math/comparison_tests.cpp

@@ -1,14 +1,21 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/io/socket_helper.hpp>
 
+#include <cerrno>
+#include <chrono>
 #include <cstring>
+#include <utility>
 
 #include <arpa/inet.h>
 #include <ifaddrs.h>
 #include <net/if.h>
 #include <netdb.h>
 #include <netinet/in.h>
+#include <netinet/tcp.h>
+#include <poll.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -43,6 +50,26 @@ auto choose_first_ipv6_interface() {
 
     return interface_name;
 }
+
+// owns an fd until released, so that a throwing setup path cannot leak it
+class fd_guard {
+public:
+    explicit fd_guard(int fd) : fd_{fd} {
+    }
+    fd_guard(const fd_guard&) = delete;
+    fd_guard& operator=(const fd_guard&) = delete;
+    ~fd_guard() {
+        if (fd_ != -1) {
+            ::close(fd_);
+        }
+    }
+    int release() {
+        return std::exchange(fd_, -1);
+    }
+
+private:
+    int fd_;
+};
 
 } // namespace
 
@@ -106,6 +133,138 @@ bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, soc
 
     // Todo(sl): What to do if interface was not found?
     return found_interface;
+}
+
+bool set_tcp_keepalive(int fd) {
+    constexpr int TCP_KEEPALIVE_IDLE_S = 10;
+    constexpr int TCP_KEEPALIVE_INTERVAL_S = 3;
+    constexpr int TCP_KEEPALIVE_PROBE_COUNT = 3;
+
+    int enable = 1;
+    if (setsockopt(fd, SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable)) == -1) {
+        logf_error("Failed to enable SO_KEEPALIVE");
+        return false;
+    }
+
+    int idle = TCP_KEEPALIVE_IDLE_S;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPIDLE, &idle, sizeof(idle)) == -1) {
+        logf_error("Failed to set TCP_KEEPIDLE");
+        return false;
+    }
+
+    int interval = TCP_KEEPALIVE_INTERVAL_S;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPINTVL, &interval, sizeof(interval)) == -1) {
+        logf_error("Failed to set TCP_KEEPINTVL");
+        return false;
+    }
+
+    int count = TCP_KEEPALIVE_PROBE_COUNT;
+    if (setsockopt(fd, IPPROTO_TCP, TCP_KEEPCNT, &count, sizeof(count)) == -1) {
+        logf_error("Failed to set TCP_KEEPCNT");
+        return false;
+    }
+
+    return true;
+}
+
+AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
+    socklen_t address_len = sizeof(peer_address);
+
+    // The poll loop is shared (SDP server + connections), so nothing downstream may ever block here.
+    const auto accept_fd =
+        ::accept4(listen_fd, reinterpret_cast<sockaddr*>(&peer_address), &address_len, SOCK_NONBLOCK);
+
+    if (accept_fd == -1) {
+        // A client that connects and RSTs quickly (e.g. a port scan) yields ECONNABORTED; the listener
+        // stays usable, so the caller should just wait for the next connection.
+        if (errno == EINTR or errno == EAGAIN or errno == EWOULDBLOCK or errno == ECONNABORTED) {
+            logf_warning("accept4 failed with a transient error code: %d", errno);
+            return {AcceptResult::Status::Transient, -1};
+        }
+        // A hard accept failure (e.g. EMFILE): the caller must contain this by tearing down its own
+        // connection rather than letting an exception escape the poll callback.
+        //
+        // Deliberate deviation from accept(2)'s advice to retry the pending-connection network errnos: this
+        // listener serves exactly one EV over a point-to-point link-local connection, so such a failure
+        // means the link itself is gone and dlink-loss handling, not an accept retry, is the recovery.
+        logf_error("accept4 failed with error code: %d", errno);
+        return {AcceptResult::Status::Fatal, -1};
+    }
+
+    // The read() paths rely on the keepalive's ETIMEDOUT to tear down a peer that vanished without FIN.
+    if (not set_tcp_keepalive(accept_fd)) {
+        logf_warning("Failed to configure TCP keepalive on the accepted connection");
+    }
+
+    return {AcceptResult::Status::Accepted, accept_fd};
+}
+
+bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms) {
+    using clock = std::chrono::steady_clock;
+    const auto deadline = clock::now() + std::chrono::milliseconds(timeout_ms);
+
+    size_t written = 0;
+    while (written < len) {
+        // MSG_NOSIGNAL: a peer that closed mid-write must surface as EPIPE, not kill the process.
+        const auto write_result = ::send(fd, buf + written, len - written, MSG_NOSIGNAL);
+
+        if (write_result >= 0) {
+            written += static_cast<size_t>(write_result);
+            continue;
+        }
+
+        if (errno != EINTR and errno != EAGAIN and errno != EWOULDBLOCK) {
+            return false;
+        }
+
+        const auto now = clock::now();
+        if (now >= deadline) {
+            errno = ETIMEDOUT;
+            return false;
+        }
+        const auto remaining_ms = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now).count();
+
+        pollfd pfd{fd, POLLOUT, 0};
+        const auto poll_result = ::poll(&pfd, 1, static_cast<int>(remaining_ms));
+        if (poll_result == -1 and errno != EINTR) {
+            return false;
+        }
+        // A timeout becomes ETIMEDOUT at the top of the next iteration, after one final write attempt.
+    }
+
+    return true;
+}
+
+int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
+    // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept4 would stall the
+    // shared controller poll loop until the next TCP connect arrives.
+    const auto fd = socket(AF_INET6, SOCK_STREAM | SOCK_NONBLOCK, 0);
+    if (fd == -1) {
+        log_and_throw("Failed to create an ipv6 socket");
+    }
+    fd_guard guard{fd};
+
+    address.sin6_port = htons(port);
+
+    int optval_tmp{1};
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEADDR) failed");
+    }
+
+    if (setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &optval_tmp, sizeof(optval_tmp)) == -1) {
+        log_and_throw("setsockopt(SO_REUSEPORT) failed");
+    }
+
+    if (bind(fd, reinterpret_cast<const struct sockaddr*>(&address), sizeof(address)) == -1) {
+        const auto msg = "Failed to bind ipv6 socket to interface " + interface_name;
+        log_and_throw(msg.c_str());
+    }
+
+    if (listen(fd, backlog) == -1) {
+        log_and_throw("Listen on socket failed");
+    }
+
+    return guard.release();
 }
 
 std::unique_ptr<char[]> sockaddr_in6_to_name(const sockaddr_in6& address) {

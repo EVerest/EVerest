@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+//
+// AUTO-GENERATED. Do not edit by hand.
+// Source: config/common/component_config/standardized/NetworkConfiguration_1.json
+
+#include <ocpp/v2/network_configuration_default_schema.hpp>
+
+namespace ocpp::v2 {
+
+const std::string& get_default_network_configuration_schema() {
+    static const std::string schema = R"json(@OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_JSON@)json";
+    return schema;
+}
+
+} // namespace ocpp::v2

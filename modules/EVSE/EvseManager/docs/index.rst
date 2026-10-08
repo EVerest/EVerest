@@ -42,6 +42,52 @@ TODO: AC and DC module graphs and description
 AC Configuration
 ----------------
 
+Captive cable mode
+~~~~~~~~~~~~~~~~~~
+
+For AC sockets with a connector lock in fleet or private installations, the
+cable can be kept permanently locked in the socket as theft protection. Set
+``keep_cable_locked`` to ``true`` to enable this captive cable mode. It requires
+a board_support driver that publishes ``ac_pp_ampacity`` on every change, also
+outside of charging sessions, so that plug presence is known even in CP state A.
+
+With the option enabled:
+
+* The connector locks whenever a plug is present, in every CP state including
+  state A with no EV attached.
+* The lock is latched: losing plug presence without a preceding force unlock
+  (for example the Proximity Pilot contact opening while the cable is pulled
+  against the lock pin) does not release it.
+* The only way to release the cable is the ``force_unlock`` command (for
+  example an OCPP ``UnlockConnector``) or disabling the option again. After a
+  force unlock the connector stays unlocked until the cable is removed; the next
+  plug insertion locks it again.
+* It takes precedence over ``lock_connector_in_state_b`` and
+  ``unlock_when_deauthorized``.
+* The normal locking rules still apply on top. For example, after a force
+  unlock with the cable left in the socket, the connector is locked again for
+  the next charging session as usual, before the relays close.
+
+Captive cable mode only applies to AC charging with a socket and a connected
+connector lock. With ``charge_mode`` other than ``AC``, without a connector
+lock, or when the board_support driver reports a fixed attached cable
+(``IEC62196Type2Cable``), the option is ignored with a warning and setting it at
+runtime is rejected. The connector type is only known once the board_support
+capabilities arrive, so the mode activates then; a runtime change made before
+that is accepted and, if the driver reports a fixed cable, ignored with a
+warning.
+
+``keep_cable_locked`` can be changed at runtime through the configuration
+service and is applied immediately without a restart.
+
+``keep_cable_locked_lock_delay_ms`` (default ``500``) sets the delay in
+milliseconds between detecting a plug and engaging the lock. It gives the plug
+time to seat fully before the lock pin extends, so a lock triggered on the first
+Proximity Pilot contact cannot jam a half-inserted plug. If the plug is pulled
+back out within the delay, no lock is engaged. Set it to ``0`` to lock
+immediately. The timer checks every 500 ms, so the effective delay is rounded up
+to the next multiple of 500 ms.
+
 DC Configuration
 ----------------
 
@@ -59,11 +105,6 @@ In addition, on the DC side the following hardware modules can be connected:
 * Isolation monitoring: This will be used to monitor isolation during
   CableCheck, PreCharge and CurrentDemand steps.
 * DC power supply: This is the AC/DC converter that actually charges the car.
-
-Software over-voltage supervision is always active during DC charging. The configuration option
-``internal_over_voltage_duration_ms`` defines for how long the measured DC voltage
-must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
-Set it to ``0`` to trigger immediately once the threshold is crossed.
 
 Software over-voltage supervision is always active during DC charging. The configuration option
 ``internal_over_voltage_duration_ms`` defines for how long the measured DC voltage
@@ -99,6 +140,13 @@ from the power meter that can be used for billing (DC side on DC, AC side on
 AC). If no powermeter is connected EvseManager will never publish this
 variable.
 
+In DC charge mode, the car side power meter may publish its ``capabilities``
+(minimum measurable currents, e.g. due to calibration law accuracy limits).
+These minimum currents are merged into the DC limits advertised to the EV over
+ISO 15118 (ChargeParameterDiscovery and mid-session limit updates), but they
+never affect internal power supply control such as cable check, precharge or
+setpoint clamping.
+
 
 Charging State Machine
 ======================
@@ -123,7 +171,7 @@ Charging State Machine
        Finished --> Idle : EV unplugged
 
        %% Early exit / Errors
-       WaitingForAuthentication --> Finished : Fatal error or EV unplugged
+       WaitingForAuthentication --> Finished : Fatal error, stop requested, or EV unplugged
        PrepareCharging --> StoppingCharging : Fatal error, deauth, or EV unplugged
 
        %% Pauses
@@ -145,6 +193,8 @@ State Transitions
 
 * ``Idle`` -> ``WaitingForAuthentication``: EV plugged in.
 * ``WaitingForAuthentication`` -> ``PrepareCharging``: Authorized by EIM or PnC.
+* ``WaitingForAuthentication`` -> ``Finished``: Fatal error, stop requested (e.g. via
+  ``request_stop_transaction`` or ``disable``), or EV unplugged.
 * ``PrepareCharging`` -> ``Charging``: Contactor close allowed.
 * ``Charging`` -> ``StoppingCharging``: Triggered by any **Stop Condition** (see below).
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
@@ -157,12 +207,30 @@ State Transitions
 * ``ChargingPausedEVSE`` -> ``PrepareCharging``: Power available, no EVSE pause and errors cleared.
 * ``StoppingCharging`` -> ``ChargingPausedEV``: EV-initiated pause after stop sequence.
 
+**ISO 15118-20 EVSE pause**
+
+An EVSE pause of an ISO 15118-20 session follows the control mode the EV selected:
+
+* Dynamic control mode: the SECC may only ask for a pause at 0 kW ([V2G20-2115]).
+  ``StoppingCharging`` ramps the DC setpoint down at 100 A/s while the charge loop
+  continues, requests the pause once the measured output current is below 1 A and keeps
+  the setpoint at 0 A until the EV has paused. A ramp that does not reach 0 A within
+  35 s ends in the hard stop.
+* Scheduled control mode: a pause may only be notified while the applied entry of the
+  EV's power profile is 0 kW ([V2G20-1198]). The pause is requested from ``Charging``,
+  the HLC stack holds the notification back and publishes ``pause_notified`` once it
+  has gone out; charging continues until then. A resume in between withdraws the
+  request.
+
+Once notified the EV has ``NotificationMaxDelay``, fixed at 60 s ([V2G20-1850]), to
+pause; ``StoppingCharging`` waits 65 s before the hard stop.
+
 **Stop Conditions**
 
 The transition ``Charging`` -> ``StoppingCharging`` occurs if:
     * Fatal error
     * Deauthorization
-    * EVSE pause requested
+    * EVSE pause requested (ISO 15118-20 scheduled control mode: once notified to the EV)
     * EV unplugged
     * IEC contactor opened
     * No power available (Immediate for AC BASIC; timeout for HLC).
@@ -352,6 +420,86 @@ freedom to make the choice in this case.
 Take care especially with the power(watt) and time based hysteresis settings. They should be adjusted to the
 actual use case to avoid relays wearing due too a lot of switching cycles. Consider also to limit the maximum
 number of switching cycles per charging session.
+
+DER (grid support) advertising
+==============================
+
+EvseManager exposes a ``set_der_available`` command that records, per EVSE, whether DER directive support
+(a ``grid_support`` provider) is wired for that EVSE. This is a boot-time fact asserted by whichever module
+provides the ``grid_support`` connection (the OCPP module is one such provider, asserting it from the presence
+of a ``grid_support`` connection); the EV's runtime DER capability is never sent here.
+
+Whether DER is available and which ISO 15118-20 AC DER annex the EVSE speaks are separate axes. The annex is a
+static per-EVSE choice made with the ``iso15118_der_flavor`` config option: ``NONE`` (the default, no AC DER
+advertised), ``IEC`` (Annex L, ``AC_DER_IEC``) or ``SAE`` (Annex M, ``AC_DER_SAE``). The two annexes are
+mutually exclusive per EVSE, so AC DER is opt-in even where DER availability is asserted.
+
+When DER is available, the EVSE is export-capable (its hardware capabilities report a non-zero export current
+and at least one export phase) and a flavor is configured, EvseManager folds that one AC DER energy transfer
+mode into the set it advertises, never both. This is in addition to ``AC_BPT`` (advertised whenever
+``supported_iso_ac_bpt`` is set and the EVSE is export-capable). ISO 15118-20 has no combined ``AC_BPT_DER``
+service category, so "AC_BPT_DER supported" is conveyed by advertising both ``AC_BPT`` and the configured AC
+DER mode as separate energy transfer modes; the EV selects one per session.
+
+The flavor is matched exactly. An unrecognized value advertises no AC DER and logs a warning naming it, a
+branch normally unreachable because the manifest enum is validated at config load.
+
+Configuring ``SAE`` is necessary but not sufficient. The :ref:`Evse15118D20 <everest_modules_Evse15118D20>`
+module withholds the SAE DER limits until AC parameters carrying a positive nominal frequency and a positive
+nominal voltage arrive, and the library then strips ``AC_DER_SAE`` from the advertised services. Neither value
+has a fallback. It is self-correcting, since the limits are derived again on every change to the energy
+services, the AC limits or the AC parameters, so an operator configuring ``SAE`` may briefly see no DER
+service advertised.
+
+The command returns ``NoHlc`` when no HLC is enabled for the EVSE (and does nothing), and ``Accepted`` otherwise.
+
+Nominal grid frequency
+----------------------
+
+``ac_nominal_frequency`` (default ``50``) is passed to the HLC stack on every AC parameters update.
+Informational for plain AC and ``AC_BPT``. For AC DER it is advertised at ChargeParameterDiscovery as the
+mandatory ``GridNominalFrequency`` the EV adopts as the frequency of the grid it is connecting to, so it must
+match the installation.
+
+It is not a denormalization base. The frequency-trip curves and the enter-service band are in absolute Hz and
+are not scaled by it, unlike the voltage curves, which are a percentage of the nominal voltage. Changing it
+from ``50`` to ``60`` moves no frequency threshold; the default grid code carries 50 Hz-family constants, so a
+60 Hz operator supplying a real setup config must supply 60 Hz curve values with it.
+
+It is also load-bearing: the SAE DER limits are only derived once a positive nominal frequency and a positive
+nominal voltage have arrived, as described above.
+
+CP state in packet captures
+===========================
+
+``debug_emit_cp_state_hpav_frames`` is a debugging aid, off by default. When set to ``true``, the
+EvseManager sends a HomePlug AV ``STP_CPSTATE.IND`` vendor MME (ethertype 0x88E1, ST/IoTecha OUI
+00:80:E1) on ``debug_cp_state_hpav_device`` each time the CP state reported by the board support
+module or the PWM duty cycle commanded to it changes. Wireshark decodes the frame natively as
+``CP State Change: B, 5%``. The dsV2Gshark plugin additionally derives the X1/X2 sub-state and the
+AC current limit from it and plots the CP state in its I/O graph. Capturing on the PLC modem
+interface therefore shows CP transitions interleaved with the SLAC and ISO 15118 traffic.
+
+The frame carries the CP state, the duty cycle in percent (100 while no PWM is generated, i.e. in
+X1 and in states E and F), 1000 Hz while PWM is active and a nominal CP voltage for the state
+(12, 9, 6 and 3 V for A to D, 0 V for E and F). It is sent unicast from the interface's own MAC address to the local
+modem address ``00:b0:52:00:00:01``, the destination used by the dSPACE reference captures shipped
+with dsV2Gshark.
+
+Sending raw Ethernet frames requires the ``CAP_NET_RAW`` capability. Without it the module logs a
+warning at startup and charges normally, but no frames are sent. Grant it in the configuration:
+
+.. code-block:: yaml
+
+   evse_manager:
+     module: EvseManager
+     capabilities:
+       - CAP_NET_RAW
+     config_module:
+       debug_emit_cp_state_hpav_frames: true
+       debug_cp_state_hpav_device: eth1
+
+Do not enable this option in production.
 
 Error Handling
 ==============

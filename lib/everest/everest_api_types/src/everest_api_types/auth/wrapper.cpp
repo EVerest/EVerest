@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "auth/wrapper.hpp"
 #include "auth/API.hpp"
@@ -177,6 +177,8 @@ TokenValidationStatus_Internal to_internal_api(TokenValidationStatus_External co
         return TarT::UsedToStart;
     case SrcT::UsedToStop:
         return TarT::UsedToStop;
+    case SrcT::UsedToReauthorize:
+        return TarT::UsedToReauthorize;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::auth::TokenValidationStatus_External");
@@ -199,6 +201,8 @@ TokenValidationStatus_External to_external_api(TokenValidationStatus_Internal co
         return TarT::UsedToStart;
     case SrcT::UsedToStop:
         return TarT::UsedToStop;
+    case SrcT::UsedToReauthorize:
+        return TarT::UsedToReauthorize;
     }
     throw std::out_of_range(
         "Unexpected value for everest::lib::API::V1_0::types::auth::TokenValidationStatus_Internal");
@@ -212,6 +216,8 @@ SelectionAlgorithm_Internal to_internal_api(SelectionAlgorithm_External const& v
         return TarT::UserInput;
     case SrcT::PlugEvents:
         return TarT::PlugEvents;
+    case SrcT::PlugEventsLIFO:
+        return TarT::PlugEventsLIFO;
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }
@@ -225,6 +231,8 @@ SelectionAlgorithm_External to_external_api(SelectionAlgorithm_Internal const& v
         return TarT::UserInput;
     case SrcT::PlugEvents:
         return TarT::PlugEvents;
+    case SrcT::PlugEventsLIFO:
+        return TarT::PlugEventsLIFO;
     case SrcT::FindFirst:
         return TarT::FindFirst;
     }

@@ -20,7 +20,7 @@ ev_define_dependency(
 
 ev_define_dependency(
     DEPENDENCY_NAME libocpp
-    DEPENDENT_MODULES_LIST OCPP OCPP201)
+    DEPENDENT_MODULES_LIST OCPP OCPP201 OCPPmulti)
 
 ev_define_dependency(
     DEPENDENCY_NAME Josev
@@ -38,7 +38,7 @@ ev_define_dependency(
 
 ev_define_dependency(
     DEPENDENCY_NAME everest-sqlite
-    DEPENDENT_MODULES_LIST ErrorHistory)
+    DEPENDENT_MODULES_LIST ErrorHistory PersistentSessionStorage)
 
 ev_define_dependency(
     DEPENDENCY_NAME libiso15118
@@ -49,6 +49,15 @@ ev_define_dependency(
     DEPENDENCY_NAME libnfc-nci
     OUTPUT_VARIABLE_SUFFIX LIBNFC_NCI
     DEPENDENT_MODULES_LIST PN7160TokenProvider)
+
+# the pionix_chargebridge application needs ftxui as well, but applications are no modules and
+# therefore cannot be listed in DEPENDENT_MODULES_LIST below - enable the dependency up front,
+# still honoring EVEREST_EXCLUDE_DEPENDENCIES and an externally set EVEREST_DEPENDENCY_ENABLED_FTXUI
+if(EVEREST_BUILD_APPLICATIONS AND NOT DEFINED EVEREST_DEPENDENCY_ENABLED_FTXUI
+        AND NOT "ftxui" IN_LIST EVEREST_EXCLUDE_DEPENDENCIES)
+    message(STATUS "Enabling dependency ftxui because EVEREST_BUILD_APPLICATIONS=ON (pionix_chargebridge)")
+    set(EVEREST_DEPENDENCY_ENABLED_FTXUI ON)
+endif()
 
 ev_define_dependency(
     DEPENDENCY_NAME ftxui
@@ -71,3 +80,20 @@ else()
     message(STATUS "Dependency everest-gpio NOT enabled")
 endif()
 
+ev_define_dependency(
+    DEPENDENCY_NAME grpc
+    OUTPUT_VARIABLE_SUFFIX GRPC
+    DEPENDENT_MODULES_LIST EEBUS
+)
+
+ev_define_dependency(
+    DEPENDENCY_NAME eebus-grpc
+    OUTPUT_VARIABLE_SUFFIX EEBUS_GRPC
+    DEPENDENT_MODULES_LIST EEBUS
+)
+
+ev_define_dependency(
+    DEPENDENCY_NAME grpc-extended-cpp-plugin
+    OUTPUT_VARIABLE_SUFFIX GRPC_EXTENDED_CPP_PLUGIN
+    DEPENDENT_MODULES_LIST EEBUS
+)

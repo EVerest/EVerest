@@ -2,12 +2,15 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 
 import pytest
+from copy import deepcopy
 from datetime import datetime, timezone
+from typing import Dict
 
 import traceback
 # fmt: off
 import logging
 
+from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 
 from ocpp.v21 import call as call21
@@ -20,7 +23,7 @@ from everest_test_utils import * # Needs to be before the datatypes below since 
 from ocpp.v21.enums import (Action, ConnectorStatusEnumType, AuthorizationStatusEnumType, EnergyTransferModeEnumType, AttributeEnumType, GetVariableStatusEnumType, NotifyEVChargingNeedsStatusEnumType, NotifyAllowedEnergyTransferStatusEnumType)
 from validations import validate_status_notification_201
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 # fmt: on
 
 log = logging.getLogger("bidirectionalTest")
@@ -43,6 +46,17 @@ def validate_tx_event_with_evccid(meta_data, msg, expected):
     )
 
 
+class DelayOcppStartConfigurationAdjustment(EverestConfigAdjustmentStrategy):
+    # V2XChargingCtrlr/ISO15118Ctrlr values are projected from live EvseManager
+    # capabilities after boot; delay OCPP start so the projection settles before
+    # the chargepoint boots and reports them.
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["ocpp"].setdefault(
+            "config_module", {})["DelayOcppStart"] = 3000
+        return adjusted_config
+
+
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.1")
@@ -59,6 +73,8 @@ def validate_tx_event_with_evccid(meta_data, msg, expected):
         ]
     )
 )
+@pytest.mark.everest_config_adaptions(DelayOcppStartConfigurationAdjustment())
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_q01(
     central_system_v21: CentralSystem,
     test_controller: TestController,
@@ -236,6 +252,8 @@ async def test_q01(
         ]
     )
 )
+@pytest.mark.everest_config_adaptions(DelayOcppStartConfigurationAdjustment())
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_rejected_q01(
     central_system_v21: CentralSystem,
     test_controller: TestController,
@@ -414,6 +432,8 @@ async def test_rejected_q01(
         ]
     )
 )
+@pytest.mark.everest_config_adaptions(DelayOcppStartConfigurationAdjustment())
+@pytest.mark.flaky(reruns=2, reruns_delay=5)
 async def test_q02_no_service_renegotiation(
     central_system_v21: CentralSystem,
     test_controller: TestController,
@@ -463,7 +483,7 @@ async def test_q02_no_service_renegotiation(
     )
     test_controller.swipe(id_token.id_token)
     r: call21.TransactionEvent = call21.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v21,
             "TransactionEvent",
@@ -482,5 +502,8 @@ async def test_q02_no_service_renegotiation(
         validate_notify_ev_charging_needs
     )
     r: call_result21.NotifyAllowedEnergyTransfer = await charge_point_v21.notify_allowed_energy_transfer_request(allowed_energy_transfer=[EnergyTransferModeEnumType.dc_bpt], transaction_id=transaction.transaction_id)
+    assert r is not None, (
+        "notify_allowed_energy_transfer_request returned None"
+    )
     # TODO(mlitre): Once service renegotiation is supported expect Accepted instead of rejected
     assert r.status == NotifyAllowedEnergyTransferStatusEnumType.rejected

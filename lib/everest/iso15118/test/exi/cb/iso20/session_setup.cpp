@@ -71,6 +71,29 @@ SCENARIO("Se/Deserialize session setup messages") {
         }
     }
 
+    GIVEN("Deserialize session_setup_res") {
+        uint8_t doc_raw[] = {0x80, 0x90, 0x04, 0x3b, 0x18, 0x22, 0x6f, 0x13, 0xd8, 0x8a,
+                             0xe0, 0x8f, 0xdd, 0x3b, 0x1d, 0x30, 0x62, 0x04, 0x00, 0x80};
+
+        const io::StreamInputView stream_view{doc_raw, sizeof(doc_raw)};
+
+        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+
+        THEN("It should be deserialized successfully") {
+            REQUIRE(variant.get_type() == message_20::Type::SessionSetupRes);
+
+            const auto& msg = variant.get<message_20::SessionSetupResponse>();
+            const auto& header = msg.header;
+
+            REQUIRE(header.session_id == std::array<uint8_t, 8>{0x76, 0x30, 0x44, 0xDE, 0x27, 0xB1, 0x15, 0xC1});
+            REQUIRE(header.timestamp == 1785489917);
+
+            REQUIRE(msg.response_code == message_20::datatypes::ResponseCode::OK_NewSessionEstablished);
+
+            REQUIRE(msg.evseid == "");
+        }
+    }
+
     GIVEN("Serialize session_setup_req") {
 
         const auto header = message_20::Header{{0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00}, 1739635913};

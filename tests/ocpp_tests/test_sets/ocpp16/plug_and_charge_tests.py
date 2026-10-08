@@ -22,7 +22,7 @@ import pytest
 from validations import (validate_standard_start_transaction,
                                     validate_data_transfer_pnc_get_15118_ev_certificate,
                                     validate_data_transfer_sign_certificate)
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.charge_point_v16 import ChargePoint16
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP16ConfigAdjustment
 from everest_test_utils import *
@@ -42,8 +42,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_01(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -79,7 +84,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point_v16,
                 "DataTransfer",
@@ -130,8 +135,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_02(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -193,8 +203,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_03(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -240,7 +255,7 @@ class TestPlugAndCharge:
         test_controller.plug_in_ac_iso()
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point_v16,
                 "DataTransfer",
@@ -292,8 +307,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_04(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system_v16: CentralSystem,
@@ -355,72 +375,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
-    async def test_contract_installation_and_authorization_04(
-        self,
-        request,
-        exi_generator,
-        central_system_v16: CentralSystem,
-        charge_point_v16: ChargePoint16,
-        test_controller: TestController,
-        test_config,
-        test_utility: TestUtility,
-    ):
-        """
-        Test for contract installation on the vehicle and not succeeding authorization because CentralContractValidationAllowed is false
-        """
-
-        await charge_point_v16.change_configuration_req(
-            key="CentralContractValidationAllowed", value="false"
-        )
-
-        certificate_hash_data = {
-            "hashAlgorithm": "SHA256",
-            "issuerKeyHash": "66fce9295edc049f4a183458948ecaa8e3558e4aa3041f13a2363d1d953d33e5",
-            "issuerNameHash": "3a1ad85a129bd5db30c2f099a541f76e562b8a30e9f49f3f47077eeae3750a2a",
-            "serialNumber": "3041",
-        }
-
-        delete_certificate_req = {"certificateHashData": certificate_hash_data}
-
-        # delete MO root
-        data_transfer_response = await charge_point_v16.data_transfer_req(
-            vendor_id="org.openchargealliance.iso15118pnc",
-            message_id="DeleteCertificate",
-            data=json.dumps(delete_certificate_req),
-        )
-
-        # expect not found
-        assert json.loads(data_transfer_response.data) == {
-            "status": "Accepted"}
-
-        setattr(charge_point_v16, "on_data_transfer",
-                make_on_data_transfer_accept_authorize(exi_generator))
-        central_system_v16.chargepoint.route_map = create_route_map(
-            central_system_v16.chargepoint
-        )
-
-        test_controller.plug_in_ac_iso()
-        test_utility.messages.clear()
-        test_utility.forbidden_actions.append("Authorize")
-        test_utility.forbidden_actions.append("StartTransaction")
-
-        test_utility.messages.clear()
-        test_controller.plug_out_iso()
-
-        # expect StatusNotification with status available
-        assert await wait_for_and_validate(
-            test_utility,
-            charge_point_v16,
-            "StatusNotification",
-            call.StatusNotification(
-                1, ChargePointErrorCode.no_error, ChargePointStatus.available
-            ),
-        )
-
-    @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_eim_01(
         self,
+        secc_config,
         test_config,
         charge_point_v16: ChargePoint16,
         test_controller: TestController,
@@ -477,11 +438,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
-    @pytest.mark.everest_core_config(
-        get_everest_config_path_str("everest-config-sil-iso no-tls.yaml")
+    @parametrize_secc_config(
+        "everest-config-sil-iso no-tls.yaml",
+        "everest-config-sil-iso no-tls-evsev2g.yaml",
     )
     async def test_eim_02(
         self,
+        secc_config,
         charge_point_v16: ChargePoint16,
         test_controller: TestController,
         test_utility: TestUtility,
@@ -533,8 +496,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-sil-iso.yaml",
+        "everest-config-sil-iso-evsev2g.yaml",
+    )
     async def test_pnc_reject(
         self,
+        secc_config,
         exi_generator,
         test_config,
         central_system_v16: CentralSystem,

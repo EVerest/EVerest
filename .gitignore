@@ -1,5 +1,6 @@
 *build*
 !lib/everest/*/cmake/*-build.cmake
+!applications/*/cmake/*-build.cmake
 *dist
 .cache/
 workspace.yaml
@@ -14,4 +15,4 @@ __pycache__/
 *.diff
 *.orig
 *.rej
-docs/source/conf.py
+CLAUDE.local.md

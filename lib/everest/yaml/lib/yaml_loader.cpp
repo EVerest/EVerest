@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <utils/yaml_loader.hpp>
+#include <everest/utils/yaml_loader.hpp>
 
 #include <cstddef>
 #include <cstring>
@@ -129,6 +129,12 @@ nlohmann::ordered_json load_yaml(const std::filesystem::path& path) {
     const auto content = load_yaml_content(path);
     // FIXME (aw): using parse_in_place would be faster but that will need the file as a whole char buffer
     const auto tree = ryml::parse_in_arena(ryml::to_csubstr(content));
+    return ryml_to_nlohmann_json(tree.rootref());
+}
+
+nlohmann::ordered_json load_yaml_from_string(const std::string& yaml_content) {
+    const static RymlCallbackInitializer ryml_callback_initializer;
+    const auto tree = ryml::parse_in_arena(ryml::to_csubstr(yaml_content));
     return ryml_to_nlohmann_json(tree.rootref());
 }
 

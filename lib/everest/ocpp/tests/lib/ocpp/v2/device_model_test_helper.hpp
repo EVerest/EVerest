@@ -19,8 +19,17 @@
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 
-const static std::string MIGRATION_FILES_PATH = "./resources/v2/device_model_migration_files";
-const static std::string CONFIG_PATH = "./resources/example_config/v2/component_config";
+// The default paths assume the CMake test setup, which copies the resources to the build directory. The bazel
+// test targets override them with the paths of the source files within the runfiles tree.
+#ifndef DEVICE_MODEL_MIGRATION_FILES_PATH
+#define DEVICE_MODEL_MIGRATION_FILES_PATH "./resources/v2/device_model_migration_files"
+#endif
+#ifndef DEVICE_MODEL_CONFIG_PATH
+#define DEVICE_MODEL_CONFIG_PATH "./resources/example_config/v2/component_config"
+#endif
+
+const static std::string MIGRATION_FILES_PATH = DEVICE_MODEL_MIGRATION_FILES_PATH;
+const static std::string CONFIG_PATH = DEVICE_MODEL_CONFIG_PATH;
 const static std::string DEVICE_MODEL_DB_IN_MEMORY_PATH = "file::memory:?cache=shared";
 
 namespace ocpp {
@@ -32,9 +41,13 @@ namespace v2 {
 
 class DeviceModelTestHelper {
 public:
+    /// \param seed_der_ctrlr_enabled  When true, seed a DCDERCtrlr EVSE 1 `Enabled` variable (ReadWrite boolean,
+    ///                                initial "true"). The shipped DER config carries no `Enabled` variable, so tests
+    ///                                that need to flip it must opt in here; leaving it false keeps the absent-variable
+    ///                                path intact for existing tests.
     explicit DeviceModelTestHelper(const std::string& database_path = DEVICE_MODEL_DB_IN_MEMORY_PATH,
                                    const std::string& migration_files_path = MIGRATION_FILES_PATH,
-                                   const std::string& config_path = CONFIG_PATH);
+                                   const std::string& config_path = CONFIG_PATH, bool seed_der_ctrlr_enabled = false);
     DeviceModel* get_device_model();
 
     ///
@@ -102,6 +115,7 @@ private:
     const std::string& database_path;
     const std::string& migration_files_path;
     const std::string& config_path;
+    bool seed_der_ctrlr_enabled;
 
     // Connection as member so the database keeps open and is not destroyed (because this is an in memory
     // database).

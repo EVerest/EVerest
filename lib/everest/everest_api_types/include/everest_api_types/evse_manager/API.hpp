@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -32,7 +32,8 @@ enum class StopTransactionReason {
     StoppedByEV,
     TimeLimitReached,
     Timeout,
-    ReqEnergyTransferRejected
+    ReqEnergyTransferRejected,
+    EVSEDisabled
 };
 
 struct StopTransactionRequest {
@@ -212,14 +213,23 @@ enum class ConnectorTypeEnum {
     Unknown,
 };
 
+enum class ChargeMode {
+    AC,
+    DC,
+};
+
 struct Connector {
     int32_t id;
     std::optional<ConnectorTypeEnum> type;
+    std::optional<ChargeMode> charge_mode;
+    std::optional<bool> hlc_capable;
 };
 
 struct Evse {
     int32_t id;
     std::vector<Connector> connectors;
+    std::optional<std::string> evse_id;
+    std::optional<std::string> evse_id_din;
 };
 
 enum class EnableSourceEnum {
@@ -309,6 +319,7 @@ struct SessionInfo {
     std::optional<std::string> transaction_start_time;
     std::optional<std::string> session_end_time;
     std::optional<std::string> transaction_end_time;
+    bool reserved{false};
 };
 
 } // namespace everest::lib::API::V1_0::types::evse_manager

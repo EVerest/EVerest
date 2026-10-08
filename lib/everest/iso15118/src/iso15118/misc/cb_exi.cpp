@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/detail/cb_exi.hpp>
 
 exi_bitstream_t get_exi_input_stream(const iso15118::io::StreamInputView& buffer_view) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <chrono>
@@ -21,11 +21,12 @@ inline int32_t get_timeout_ms_until(const TimePoint& until, int32_t max_timeout_
         std::chrono::duration_cast<std::chrono::duration<int32_t, std::milli>>(until - get_current_time_point());
     const auto timeout_ms = duration.count();
 
-    if (timeout_ms < max_timeout_ms) {
-        return timeout_ms;
-    } else {
-        return max_timeout_ms;
+    // if the timeout is already reached, return 0 to trigger an immediate timeout event
+    if (timeout_ms <= 0) {
+        return 0;
     }
+
+    return timeout_ms < max_timeout_ms ? timeout_ms : max_timeout_ms;
 }
 
 class Timeout {
@@ -35,7 +36,7 @@ public:
     };
     ~Timeout() = default;
 
-    bool is_reached() {
+    bool is_reached() const {
         return get_current_time_point() >= timeout_point;
     }
 

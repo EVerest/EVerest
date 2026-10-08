@@ -1,14 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
+#include <ctime>
+#include <map>
 #include <optional>
 #include <vector>
 
+#include <iso15118/d20/der_functions.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/message/common_types.hpp>
 
+// The universal SECC-side session configuration lives in the protocol-neutral iso15118::session
+// namespace. The structs below stay in d20 because they are expressed with the -20 RationalNumber
+// datatype and DER control types, and are referenced qualified from the session-side structs.
 namespace iso15118::d20 {
 
 struct ControlMobilityNeedsModes {
@@ -27,52 +33,40 @@ struct BptSetupConfig {
     std::optional<message_20::datatypes::GridCodeIslandingDetectionMethod> grid_code_detection_method;
 };
 
-struct EvseSetupConfig {
-    std::string evse_id;
-    std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
-    std::vector<message_20::datatypes::Authorization> authorization_services;
-    std::vector<uint16_t> supported_vas_services;
-    bool enable_certificate_install_service;
-    d20::DcTransferLimits dc_limits;
-    d20::AcTransferLimits ac_limits;
-    std::vector<ControlMobilityNeedsModes> control_mobility_modes;
-    std::optional<std::string> custom_protocol{std::nullopt};
-    std::optional<AcSetupConfig> ac_setup_config{std::nullopt};
-    std::optional<BptSetupConfig> bpt_setup_config{std::nullopt};
-    d20::DcTransferLimits powersupply_limits;
+struct DerIecSetupConfig {
+    std::map<iec::DERControlName, iec::DERControlFunction> supported_der_control_functions;
+    iec::OperatingMode operating_mode;
+    iec::GridConnectionMode grid_connection_mode;
 };
 
-// This should only have EVSE information
-struct SessionConfig {
-    explicit SessionConfig(EvseSetupConfig);
+/// \brief Complete but deliberately inert default SAE grid code configuration.
+///
+/// Every enable and permit_service is false, so it does nothing. Values stay schema conformant, and every
+/// mandatory curve carries the two data points the schema requires as a minimum. This is not a real grid
+/// code: a deployment needing actual grid-code behavior must supply its own configuration.
+///
+/// The two EnterService voltage bands and the VoltVar reference voltage are volts, not percentages
+/// (AMD1 Table 1), so they are derived from nominal_voltage_v.
+sae::DERControl get_default_sae_der_control(float nominal_voltage_v);
 
-    std::string evse_id;
+struct DerSaeSetupConfig {
+    explicit DerSaeSetupConfig(sae::DERControl der_control_, sae::RequiredDEROperatingMode op_mode,
+                               sae::GridConnectionMode conn_mode) :
+        der_control(std::move(der_control_)),
+        required_der_operating_mode(op_mode),
+        grid_connection_mode(conn_mode),
+        der_control_update_time(static_cast<std::uint64_t>(std::time(nullptr))) {
+    }
 
-    bool cert_install_service;
-    std::vector<message_20::datatypes::Authorization> authorization_services;
-
-    std::vector<message_20::datatypes::ServiceCategory> supported_energy_transfer_services;
-    std::vector<std::uint16_t> supported_vas_services;
-
-    std::vector<message_20::datatypes::AcParameterList> ac_parameter_list;
-    std::vector<message_20::datatypes::AcBptParameterList> ac_bpt_parameter_list;
-    std::vector<message_20::datatypes::DcParameterList> dc_parameter_list;
-    std::vector<message_20::datatypes::DcBptParameterList> dc_bpt_parameter_list;
-
-    std::vector<message_20::datatypes::McsParameterList> mcs_parameter_list;
-    std::vector<message_20::datatypes::McsBptParameterList> mcs_bpt_parameter_list;
-
-    std::vector<message_20::datatypes::InternetParameterList> internet_parameter_list;
-    std::vector<message_20::datatypes::ParkingParameterList> parking_parameter_list;
-
-    DcTransferLimits dc_limits;
-    AcTransferLimits ac_limits;
-
-    DcTransferLimits powersupply_limits;
-
-    std::vector<ControlMobilityNeedsModes> supported_control_mobility_modes;
-
-    std::optional<std::string> custom_protocol{std::nullopt};
+    sae::DERControl der_control{};
+    sae::RequiredDEROperatingMode required_der_operating_mode{sae::RequiredDEROperatingMode::GridFollowing};
+    sae::GridConnectionMode grid_connection_mode{sae::GridConnectionMode::GridConnected};
+    std::uint64_t der_control_update_time{0}; // SECC time
+    // Producer-owned change counter; der_control_update_time is the wire UpdateTime only (ADR-0027).
+    std::uint32_t revision{0};
 };
+
+/// Inert default grid code with GridFollowing/GridConnected; not a real grid code.
+DerSaeSetupConfig make_inert_default_sae_setup_config(float nominal_voltage_v);
 
 } // namespace iso15118::d20

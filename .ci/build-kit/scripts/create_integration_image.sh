@@ -9,9 +9,10 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
-pip install --break-system-packages \
+python3 -m pip install --break-system-packages \
     $EXT_MOUNT/wheels/everestpy-*.whl \
     $EXT_MOUNT/wheels/everest_testing-*.whl \
+    $EXT_MOUNT/wheels/everest_management_api_cli-*.whl \
     pytest-html
 retVal=$?
 

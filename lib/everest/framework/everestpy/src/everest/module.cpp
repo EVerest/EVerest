@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "module.hpp"
 
 #include <pybind11/pybind11.h>
@@ -8,6 +8,7 @@
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_manager_req.hpp>
 #include <utils/error/error_state_monitor.hpp>
+#include <utils/mqtt_config_service.hpp>
 
 std::unique_ptr<Everest::Everest>
 Module::create_everest_instance(const std::string& module_id, const Everest::Config& config,
@@ -21,7 +22,7 @@ Module::Module(const RuntimeSession& session) : Module(get_variable_from_env("EV
 }
 
 Module::Module(const std::string& module_id_, const RuntimeSession& session_) :
-    module_id(module_id_), session(session_), start_time(std::chrono::system_clock::now()) {
+    module_id(module_id_), session(session_), start_time(std::chrono::steady_clock::now()) {
 
     this->mqtt_abstraction =
         std::shared_ptr<Everest::MQTTAbstraction>(Everest::make_mqtt_abstraction(session.get_mqtt_settings()));
@@ -62,6 +63,19 @@ Module::Module(const std::string& module_id_, const RuntimeSession& session_) :
         const auto& interface_def = config.get_interface_definition(interface_name);
         requirements.emplace(requirement_id, create_everest_interface_from_definition(interface_def));
     }
+}
+
+Module::~Module() {
+    if (handle) {
+        handle->disconnect();
+    }
+}
+
+void Module::close() {
+    // The handler threads call back into Python, so they are joined with the GIL released.
+    const pybind11::gil_scoped_release release;
+    this->handle.reset();
+    this->mqtt_abstraction.reset();
 }
 
 ModuleSetup Module::say_hello() {
@@ -142,4 +156,42 @@ void Module::subscribe_all_errors(const Fulfillment& fulfillment, const Everest:
 std::shared_ptr<Everest::error::ErrorStateMonitor>
 Module::get_error_state_monitor_req(const Fulfillment& fulfillment) const {
     return handle->get_error_state_monitor_req(fulfillment.requirement);
+}
+
+json Module::set_config_value(const std::string& module_id, const std::string& param_name, const std::string& value,
+                              const std::optional<std::string>& impl_id) {
+    everest::config::ConfigurationParameterIdentifier identifier;
+    identifier.module_id = module_id;
+    identifier.configuration_parameter_name = param_name;
+    identifier.module_implementation_id = impl_id;
+
+    const pybind11::gil_scoped_release release;
+    return json(handle->get_config_service_client()->set_config_value(identifier, value));
+}
+
+json Module::get_config_value(const std::string& module_id, const std::string& param_name,
+                              const std::optional<std::string>& impl_id) {
+    everest::config::ConfigurationParameterIdentifier identifier;
+    identifier.module_id = module_id;
+    identifier.configuration_parameter_name = param_name;
+    identifier.module_implementation_id = impl_id;
+
+    const pybind11::gil_scoped_release release;
+    return json(handle->get_config_service_client()->get_config_value(identifier));
+}
+
+void Module::register_config_change_handler(const std::string& impl_id, const std::string& param_name,
+                                            std::function<json(const std::string&)> handler) {
+    auto& stored = config_change_handlers.emplace_back(std::move(handler));
+    handle->get_config_service_client()->register_config_change_handler(
+        impl_id, param_name, [&stored](const std::string& new_value) -> Everest::config::ConfigChangeResult {
+            pybind11::gil_scoped_acquire acquire;
+            try {
+                return stored(new_value).get<Everest::config::ConfigChangeResult>();
+            } catch (const pybind11::error_already_set& e) {
+                return Everest::config::ConfigChangeResult::Rejected(e.what());
+            } catch (const std::exception& e) {
+                return Everest::config::ConfigChangeResult::Rejected(e.what());
+            }
+        });
 }

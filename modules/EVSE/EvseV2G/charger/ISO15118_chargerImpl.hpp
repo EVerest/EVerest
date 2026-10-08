@@ -38,13 +38,14 @@ protected:
                               bool& debug_mode) override;
     virtual void handle_set_charging_parameters(types::iso15118::SetupPhysicalValues& physical_values) override;
     virtual void handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
-                                      bool& supported_certificate_service,
-                                      bool& central_contract_validation_allowed) override;
+                                      bool& supported_certificate_service, bool& central_contract_validation_allowed,
+                                      bool& fake_dc_enabled) override;
     virtual void handle_bpt_setup(types::iso15118::BptSetup& bpt_config) override;
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) override;
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
                                                types::authorization::CertificateStatus& certificate_status) override;
     virtual void handle_ac_contactor_closed(bool& status) override;
+    virtual void handle_cp_state_changed(types::iso15118::CpState& cp_state) override;
     virtual void handle_dlink_ready(bool& value) override;
     virtual void handle_cable_check_finished(bool& status) override;
     virtual void handle_receipt_is_required(bool& receipt_required) override;

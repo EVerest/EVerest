@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 
 #include <iso15118/d20/state/service_detail.hpp>
@@ -36,7 +36,9 @@ convert_service_id_to_service_category(const std::uint16_t service_id) {
     case 9:
         return iso15118::message_20::datatypes::ServiceCategory::MCS_BPT;
     case 10:
-        return iso15118::message_20::datatypes::ServiceCategory::AC_DER;
+        return iso15118::message_20::datatypes::ServiceCategory::AC_DER_IEC;
+    case 11:
+        return iso15118::message_20::datatypes::ServiceCategory::AC_DER_SAE;
     default:
         // returning ParkingStatus as default to show nonsense
         return iso15118::message_20::datatypes::ServiceCategory::ParkingStatus;
@@ -61,18 +63,28 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     message_20::ServiceDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     // Service renegotiation is not yet supported
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
 
-    // Reset default value
-    res.energy_transfer_service_list.clear();
+    // A DER session may re-enter service discovery from the schedule exchange state, so the offers of the
+    // previous pass are reset here and rebuilt below instead of accumulating.
+    session.offered_services.energy_services.clear();
+    session.offered_services.vas_services.clear();
+    ev_energy_services.clear();
 
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
+
+    const auto offer_all_energy_services = [&]() {
+        for (auto& energy_service : energy_services) {
+            energy_services_list.push_back({energy_service, false});
+        }
+    };
 
     // EV supported service ID's
     if (req.supported_service_ids.has_value() == true) {
@@ -94,14 +106,29 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
                 ev_energy_services.emplace_back(energy_service);
             }
         }
-    } else {
-        for (auto& energy_service : energy_services) {
-            energy_services_list.push_back({energy_service, false});
+
+        // Filtering by SupportedServiceIDs is optional (Table 39). With no match, offer every energy
+        // service the EVSE has and let the EV decide at ServiceSelection.
+        if (energy_services_list.empty() and not energy_services.empty()) {
+            logf_info("No EV supported service ID matches the offered energy services, offering all of them");
+            offer_all_energy_services();
         }
+    } else {
+        offer_all_energy_services();
         for (auto& vas_service : vas_services) {
             vas_services_list.push_back({vas_service, false});
         }
     }
+
+    if (energy_services_list.empty()) {
+        logf_error("No energy transfer service is configured, rejecting service discovery. Sending the default AC "
+                   "service to avoid encoding issues");
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
+    }
+
+    // Reset default value
+    res.energy_transfer_service_list.clear();
 
     for (auto& conf_energy_service : energy_services_list) {
         auto& energy_service = res.energy_transfer_service_list.emplace_back();
@@ -118,11 +145,12 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceDiscovery::enter() {
-    m_ctx.log.enter_state("ServiceDiscovery");
+    logf_debug("Enter state: ServiceDiscovery");
 }
 
 Result ServiceDiscovery::feed(Event ev) {
@@ -156,11 +184,12 @@ Result ServiceDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
     } else {
-        m_ctx.log("expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ServiceDiscoveryReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

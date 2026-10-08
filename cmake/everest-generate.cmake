@@ -8,13 +8,31 @@ endif()
 
 set (EV_CORE_CMAKE_SCRIPT_DIR ${CMAKE_CURRENT_LIST_DIR} CACHE FILEPATH "")
 
+# The project_info sources are compiled per project (see _ev_setup_project_info), so that every
+# project - everest-core as well as out-of-tree module projects - reports its own version
+# information.  When everest-core is consumed as an installed package, its project-config.cmake
+# sets this variable to the location the sources got installed to.
+if (NOT EV_PROJECT_INFO_SOURCE_DIR)
+    set (EV_PROJECT_INFO_SOURCE_DIR "${CMAKE_CURRENT_LIST_DIR}/../lib/everest/project_info")
+endif()
+
+set (EV_PROJECT_INFO_SOURCE_DIR ${EV_PROJECT_INFO_SOURCE_DIR} CACHE FILEPATH "")
+
+if (NOT EXISTS "${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp")
+    message(FATAL_ERROR "Could not locate the project_info sources at ${EV_PROJECT_INFO_SOURCE_DIR}")
+endif()
+
 # FIXME (aw): where should this go, should it be global?
 string(ASCII 27 ESCAPE)
 set(FMT_RESET "${ESCAPE}[m")
 set(FMT_BOLD "${ESCAPE}[1m")
 
-# NOTE (aw): maybe this could be also implemented as an IMPORTED target?
-add_custom_target(generate_cpp_files)
+add_library(generate_cpp_files INTERFACE)
+target_include_directories(generate_cpp_files
+    INTERFACE
+        $<BUILD_INTERFACE:${CMAKE_BINARY_DIR}/generated/include>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/everest>
+)
 set_target_properties(generate_cpp_files
     PROPERTIES
         EVEREST_SCHEMA_DIR "${EVEREST_SCHEMA_DIR}"
@@ -22,6 +40,38 @@ set_target_properties(generate_cpp_files
         EVEREST_GENERATED_INCLUDE_DIR "${CMAKE_BINARY_DIR}/generated/include"
         EVEREST_PROJECT_DIRS ""
 )
+install(TARGETS generate_cpp_files
+    EXPORT everest-core-targets
+    ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+    INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
+)
+
+function(_ev_setup_project_info)
+    if (TARGET everest_project_info)
+        return()
+    endif()
+
+    add_library(everest_project_info STATIC "${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp")
+    add_library(everest::project_info ALIAS everest_project_info)
+
+    target_include_directories(everest_project_info
+        PUBLIC
+            $<BUILD_INTERFACE:${EV_PROJECT_INFO_SOURCE_DIR}/include>
+        PRIVATE
+            "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_GENERATED_INCLUDE_DIR>"
+    )
+
+    target_compile_features(everest_project_info PRIVATE cxx_std_17)
+
+    set_target_properties(everest_project_info
+        PROPERTIES
+            POSITION_INDEPENDENT_CODE ON
+    )
+
+    add_dependencies(everest_project_info generate_cpp_files)
+endfunction()
 
 #
 # out-of-tree interfaces/types/modules support
@@ -55,6 +105,8 @@ function(_ev_add_project)
     if (NOT EXISTS ${EVEREST_PROJECT_DIR})
         message(FATAL_ERROR "${CMAKE_CURRENT_FUNCTION} got non-existing project path: ${EVEREST_PROJECT_DIR}")
     endif ()
+
+    _ev_setup_project_info()
 
     message(STATUS "APPENDING ${EVEREST_PROJECT_DIR} to EVEREST_PROJECT_DIRS")
     set_property(TARGET generate_cpp_files
@@ -254,6 +306,11 @@ endmacro()
 if (EVEREST_ENABLE_RS_SUPPORT)
     find_program(CARGO_EXECUTABLE cargo REQUIRED)
 
+    set(EVEREST_RS_TARGET_TRIPLE "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu" CACHE STRING
+        "Rust target triple for the Rust modules; the default assumes glibc and a CMAKE_SYSTEM_PROCESSOR that names a Rust architecture")
+    set(EVEREST_RS_LINKER "${CMAKE_CXX_COMPILER}" CACHE FILEPATH
+        "Linker cargo invokes for the Rust modules, a bare executable; cross builds pass a wrapper that adds sysroot and linker flags")
+
     # FIXME (aw): the RUST_WORKSPACE_DIR could be user setable!
     set(RUST_WORKSPACE_DIR ${PROJECT_BINARY_DIR}/rust_workspace)
     set(RUST_WORKSPACE_CARGO_FILE ${RUST_WORKSPACE_DIR}/Cargo.toml)
@@ -292,17 +349,15 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     set(RUST_LINK_DEPENDENCIES_FILE ${CMAKE_BINARY_DIR}/everestrs-link-dependencies.txt)
     set(RUST_LINK_DEPENDENCIES "$<TARGET_GENEX_EVAL:everest::everestrs_sys,$<TARGET_PROPERTY:everest::everestrs_sys,EVERESTRS_LINK_DEPENDENCIES>>")
 
-    add_custom_command(OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
-        COMMAND_EXPAND_LISTS
-        VERBATIM
-        COMMAND
-            echo -e $<LIST:JOIN,${RUST_LINK_DEPENDENCIES},\\n> > "${RUST_LINK_DEPENDENCIES_FILE}"
+    # Written by CMake rather than a shell command: echo's escape handling differs between bash and dash
+    file(GENERATE
+        OUTPUT ${RUST_LINK_DEPENDENCIES_FILE}
+        CONTENT "$<JOIN:${RUST_LINK_DEPENDENCIES},\n>\n"
     )
 
     add_custom_target(generate_rust
         DEPENDS
             ${RUST_WORKSPACE_CARGO_FILE}
-            ${RUST_LINK_DEPENDENCIES_FILE}
     )
 
     # Store the workspace directory as a target property so that it is accessible in different scopes
@@ -312,7 +367,8 @@ if (EVEREST_ENABLE_RS_SUPPORT)
     )
 
     # FIXME (aw): use generator expressions here, but this first needs to be fixed in the build.rs file ...
-    add_custom_target(build_rust_modules ALL
+    # Part of ALL only once ev_add_rs_module registers a module; cargo rejects an empty workspace.
+    add_custom_target(build_rust_modules
         USES_TERMINAL
         COMMENT
             "Build rust modules"
@@ -321,10 +377,10 @@ if (EVEREST_ENABLE_RS_SUPPORT)
             EVEREST_CORE_ROOT="${CMAKE_CURRENT_SOURCE_DIR}"
             EVEREST_RS_LINK_DEPENDENCIES="${RUST_LINK_DEPENDENCIES_FILE}"
             ${CARGO_EXECUTABLE} build
-            $<IF:$<STREQUAL:$<CONFIG>,Release>,--release,>
+            $<IF:$<CONFIG:Debug>,,--release>
             # explicitly set the linker to match what we're using for C++ to avoid the following issue when cross compiling:
             # https://github.com/rust-lang/rust/issues/28924
-            --config 'target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>.linker = \"${CMAKE_CXX_COMPILER}\"'
+            --config 'target.$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>.linker = \"${EVEREST_RS_LINKER}\"'
             --target $<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>
         WORKING_DIRECTORY
             ${RUST_WORKSPACE_DIR}
@@ -342,8 +398,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
 
     set_property(TARGET build_rust_modules
         PROPERTY
-            # FIXME: Don't assume the glibc ABI here. This won't respect musl builds.
-            RUST_TARGET_TRIPLE "${CMAKE_SYSTEM_PROCESSOR}-unknown-linux-gnu"
+            RUST_TARGET_TRIPLE "${EVEREST_RS_TARGET_TRIPLE}"
     )
 
     function (ev_add_rs_module MODULE_NAME)
@@ -372,6 +427,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
             APPEND
             PROPERTY RUST_MODULE_LIST "${MODULE_NAME}"
         )
+        set_property(TARGET build_rust_modules PROPERTY EXCLUDE_FROM_ALL FALSE)
         get_target_property(RUST_WORKSPACE_DIR generate_rust RUST_WORKSPACE_DIR)
 
         add_custom_command(OUTPUT ${RUST_WORKSPACE_DIR}/${MODULE_NAME}
@@ -392,7 +448,7 @@ if (EVEREST_ENABLE_RS_SUPPORT)
         add_dependencies(generate_rust rust_symlink_module_${MODULE_NAME})
 
         set(EVEREST_MODULE_INSTALL_PREFIX "${CMAKE_INSTALL_LIBEXECDIR}/everest/modules")
-        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<STREQUAL:$<CONFIG>,Release>,release,debug>")
+        set(BIN_PREFIX "target/$<TARGET_PROPERTY:build_rust_modules,RUST_TARGET_TRIPLE>/$<IF:$<CONFIG:Debug>,debug,release>")
 
         install(PROGRAMS ${RUST_WORKSPACE_DIR}/${BIN_PREFIX}/${MODULE_NAME}
             DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
@@ -669,6 +725,7 @@ function (ev_add_cpp_module MODULE_NAME)
             target_link_libraries(${MODULE_NAME}
                 PRIVATE
                     everest::framework
+                    everest::project_info
                     ${ATOMIC_LIBS}
             )
 
@@ -860,6 +917,11 @@ function(ev_install_project)
 
     set (EVEREST_DATADIR "${CMAKE_INSTALL_DATADIR}/everest")
 
+    install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/include/generated
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
+        FILES_MATCHING PATTERN "*.hpp"
+    )
+
     configure_package_config_file(
         ${EV_CORE_CMAKE_SCRIPT_DIR}/project-config.cmake.in
         ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config.cmake
@@ -889,6 +951,18 @@ function(ev_install_project)
             ${EV_CORE_CMAKE_SCRIPT_DIR}/config-tmux-run-script.cmake
         DESTINATION
             ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
+    )
+
+    # the project_info sources are shipped as build assets, because consuming projects need to
+    # compile them against their own generated version information
+    install(
+        FILES ${EV_PROJECT_INFO_SOURCE_DIR}/src/project_info.cpp
+        DESTINATION ${EVEREST_DATADIR}/project_info/src
+    )
+
+    install(
+        FILES ${EV_PROJECT_INFO_SOURCE_DIR}/include/everest/project_info.hpp
+        DESTINATION ${EVEREST_DATADIR}/project_info/include/everest
     )
 endfunction()
 

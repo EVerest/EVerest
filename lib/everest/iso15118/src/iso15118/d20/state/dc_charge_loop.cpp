@@ -1,7 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_charge_loop.hpp>
 #include <iso15118/d20/state/dc_welding_detection.hpp>
+
+#include <optional>
+#include <variant>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/dc_charge_loop.hpp>
@@ -11,6 +14,9 @@
 namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
+
+// Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the power path off.
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 500;
 
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;
@@ -72,14 +78,15 @@ namespace {
 template <typename T>
 void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
-        }
-    }
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
-    res_mode.minimum_soc = parameters.min_soc;
+
+    // [V2G20-1290]
+    if (parameters.min_soc.has_value() and parameters.target_soc.has_value() and
+        parameters.min_soc.value() <= parameters.target_soc.value()) {
+        res_mode.minimum_soc = parameters.min_soc;
+    }
+
     res_mode.ack_max_delay = 30; // TODO(sl) what to send here and define 30 seconds as const
 }
 } // namespace
@@ -93,7 +100,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
     message_20::DC_ChargeLoopResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -108,7 +116,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Scheduled or
             not(selected_energy_service == dt::ServiceCategory::DC or
                 selected_energy_service == dt::ServiceCategory::MCS)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DC_Res>();
@@ -121,12 +130,14 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Scheduled or
             not(selected_energy_service == dt::ServiceCategory::DC_BPT or
                 selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         if (not dc_limits.discharge_limits.has_value()) {
             logf_error("Transfer mode is BPT, but only dc limits without discharge limits are provided!");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_BPT_DC_Res>();
@@ -139,7 +150,8 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Dynamic or
             not(selected_energy_service == dt::ServiceCategory::DC or
                 selected_energy_service == dt::ServiceCategory::MCS)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DC_Res>();
@@ -156,12 +168,14 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
         if (selected_control_mode != dt::ControlMode::Dynamic or
             not(selected_energy_service == dt::ServiceCategory::DC_BPT or
                 selected_energy_service == dt::ServiceCategory::MCS_BPT)) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         if (not dc_limits.discharge_limits.has_value()) {
             logf_error("Transfer mode is BPT, but only dc limits without discharge limits are provided!");
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_BPT_DC_Res>();
@@ -180,16 +194,19 @@ message_20::DC_ChargeLoopResponse handle_request(const message_20::DC_ChargeLoop
     if (stop) {
         res.status = {0, dt::EvseNotification::Terminate};
     } else if (pause) {
-        const uint16_t notification_max_delay =
-            (selected_control_mode == dt::ControlMode::Dynamic) ? 60 : 0; // [V2G20-1850]
-        res.status = {notification_max_delay, dt::EvseNotification::Pause};
+        constexpr auto NotificationMaxDelay = 60; // [V2G20-3308]
+        res.status = {NotificationMaxDelay, dt::EvseNotification::Pause};
+
+        // TODO(SL): [V2G20-3318] Decrease notificationmaxdelay based on the reaming seconds if the ev did not perform a
+        // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_ChargeLoop::enter() {
-    m_ctx.log.enter_state("DC_ChargeLoop");
+    logf_debug("Enter state: DC_ChargeLoop");
     dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
 }
 
@@ -206,9 +223,24 @@ Result DC_ChargeLoop::feed(Event ev) {
             pause = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<UpdateDynamicModeParameters>()) {
             dynamic_parameters = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
+            contactor_closed = static_cast<bool>(*control_data);
+            if (pending_stop_res.has_value() and not *contactor_closed) {
+                m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                return send_pending_stop_res();
+            }
         }
 
-        // Ignore control message
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (pending_stop_res.has_value() and timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("Power path not reported off within %ums, sending PowerDeliveryRes anyway",
+                         DC_OPEN_CONTACTOR_TIMEOUT);
+            return send_pending_stop_res();
+        }
         return {};
     }
 
@@ -219,24 +251,35 @@ Result DC_ChargeLoop::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
-        const auto res = handle_request(*req, m_ctx.session, false);
 
-        m_ctx.respond(res);
+        const auto shutdown_requested = m_ctx.shutdown_requested();
 
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
+        const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         // Reset
         first_entry_in_charge_loop = true;
 
         // Todo(sl): React properly to Start, Stop, Standby and ScheduleRenegotiation
         // TODO(Sl): How to check if the EV wants do a pause in dynamic mode (This should not happen)
-        if (req->charge_progress == dt::Progress::Stop) {
+        if (res.response_code < dt::ResponseCode::FAILED and
+            (req->charge_progress == dt::Progress::Stop or shutdown_requested)) {
+            // The EV leaves power-transfer readiness (CP/CE C -> B) as soon as it gets the response, so
+            // the power permissive has to be withdrawn first (IEC 61851-23-3 Table CC.111, t103 before
+            // t105); on MCS a C-exit under a standing permissive is an emergency shutdown (CC.4.3).
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
-            return m_ctx.create_state<DC_WeldingDetection>();
+            pending_stop_res = res;
+            if (contactor_closed.has_value() and not *contactor_closed) {
+                return send_pending_stop_res();
+            }
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, DC_OPEN_CONTACTOR_TIMEOUT);
+            return {};
+        }
+
+        m_ctx.respond(res);
+
+        if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.session_stopped = true;
         }
 
         return {};
@@ -246,7 +289,8 @@ Result DC_ChargeLoop::feed(Event ev) {
             first_entry_in_charge_loop = false;
         }
 
-        const auto res = handle_request(*req, m_ctx.session, present_voltage, present_current, stop, pause,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, present_voltage, present_current, stop, notify_pause,
                                         m_ctx.session_config.dc_limits, dynamic_parameters);
 
         m_ctx.respond(res);
@@ -265,7 +309,7 @@ Result DC_ChargeLoop::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("Expected PowerDeliveryReq or DC_ChargeLoopReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected PowerDeliveryReq or DC_ChargeLoopReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
@@ -274,6 +318,12 @@ Result DC_ChargeLoop::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
     }
+}
+
+Result DC_ChargeLoop::send_pending_stop_res() {
+    m_ctx.respond(*pending_stop_res);
+    pending_stop_res.reset();
+    return m_ctx.create_state<DC_WeldingDetection>();
 }
 
 } // namespace iso15118::d20::state

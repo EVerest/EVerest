@@ -17,6 +17,7 @@ if(LIBOCPP_ENABLE_V2)
     # Add all v2 tests you don't want to include in the default test executable here.
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_authorization.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_availability.cpp)
+    list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_remote_transaction_control.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_security.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_tariff_and_cost.cpp)
 endif()
@@ -27,6 +28,12 @@ set(GCOVR_DEPENDENCIES)
 
 
 add_libocpp_unittest(NAME libocpp_unit_tests PATH "")
+# since this is a very long running unit test: start it first in a parallel ctest run.
+set_tests_properties(libocpp_unit_tests PROPERTIES COST 1000)
+
+target_include_directories(libocpp_unit_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp
+)
 
 target_link_libraries(libocpp_unit_tests PRIVATE
         ocpp
@@ -77,20 +84,26 @@ add_custom_command(TARGET libocpp_unit_tests POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${DEVICE_MODEL_CURRENT_WRONG_RESOURCES_DIR} ${DEVICE_MODEL_RESOURCES_WRONG_LOCATION_V2}
         COMMAND ${CMAKE_COMMAND} -E remove_directory ${DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2}
         COMMAND ${CMAKE_COMMAND} -E copy_directory ${DEVICE_MODEL_CURRENT_EXAMPLE_CONFIG_LOCATION_V2} ${DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2}
+        COMMAND ${CMAKE_COMMAND} -E copy ${DEVICE_MODEL_TEST_DER_CONFIG_FILE} ${DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2}/custom/DCDERCtrlr_1.json
+        COMMAND ${CMAKE_COMMAND} -E copy ${DEVICE_MODEL_TEST_AC_DER_CONFIG_FILE} ${DEVICE_MODEL_EXAMPLE_CONFIG_LOCATION_V2}/custom/ACDERCtrlr_1.json
 )
 
-set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-parse-errors=negative_hits.warn")
+if(EVEREST_ENABLE_COVERAGE)
+    evc_include(CodeCoverage)
 
-setup_target_for_coverage_gcovr_html(
-    NAME ${PROJECT_NAME}_gcovr_coverage
-    EXECUTABLE ctest
-    DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
-    EXCLUDE "src/*" "tests/*"
-)
+    set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-parse-errors=negative_hits.warn")
 
-setup_target_for_coverage_gcovr_xml(
-    NAME ${PROJECT_NAME}_gcovr_coverage_xml
-    EXECUTABLE ctest
-    DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
-    EXCLUDE "src/*" "tests/*"
-)
+    setup_target_for_coverage_gcovr_html(
+        NAME ${PROJECT_NAME}_gcovr_coverage
+        EXECUTABLE ctest
+        DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
+        EXCLUDE "src/*" "tests/*"
+    )
+
+    setup_target_for_coverage_gcovr_xml(
+        NAME ${PROJECT_NAME}_gcovr_coverage_xml
+        EXECUTABLE ctest
+        DEPENDENCIES libocpp_unit_tests ${GCOVR_DEPENDENCIES}
+        EXCLUDE "src/*" "tests/*"
+    )
+endif()

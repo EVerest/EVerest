@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "gtest/gtest.h"
 #include <atomic>
 #include <chrono>
 #include <everest/util/queue/thread_safe_bounded_queue.hpp>
+#include <future>
 #include <optional>
 #include <thread>
 #include <vector>
@@ -158,4 +159,166 @@ TEST(ThreadSafeBoundedQueueTest, HighContentionStressTest) {
 
     ASSERT_EQ(total_popped.load(), num_producers * items_per_producer);
     ASSERT_EQ(sum_popped.load(), num_producers * items_per_producer);
+}
+
+// =================================================================
+// 5. Bounded Emplace Functionality and Backpressure Tests
+// =================================================================
+
+TEST(ThreadSafeBoundedQueueTest, EmplaceBlocksWhenFullAndForwardArgs) {
+    const size_t limit = 2;
+    thread_safe_bounded_queue<TestTask> queue(limit);
+
+    // 1. Fill the queue using emplace, verify it returns the size post-insertion
+    ASSERT_EQ(queue.emplace(10), 1);
+    ASSERT_EQ(queue.emplace(20), 2);
+
+    std::atomic<bool> emplace_completed{false};
+    std::atomic<size_t> post_emplace_size{999};
+
+    // 2. This worker thread will attempt to emplace into a full queue
+    std::thread producer([&] {
+        // This should block because limit is 2
+        auto sz = queue.emplace(30);
+        post_emplace_size = sz;
+        emplace_completed = true;
+    });
+
+    // Give the thread a moment to spin up and block
+    std::this_thread::sleep_for(50ms);
+    ASSERT_FALSE(emplace_completed.load());
+
+    // 3. Pop an item to make room for the blocked emplace worker
+    auto popped = queue.try_pop(100ms);
+    ASSERT_TRUE(popped.has_value());
+    ASSERT_EQ(popped->value, 10);
+
+    producer.join();
+
+    // 4. Verify the producer successfully unblocked and filled the slot
+    ASSERT_TRUE(emplace_completed.load());
+    ASSERT_EQ(post_emplace_size.load(), 2); // Size should be 2 again after popping 1 and emplacing 1
+
+    // Verify the emplaced item's value matches down the pipeline
+    auto final_pop = queue.try_pop(0ms); // should get value 20
+    final_pop = queue.try_pop(0ms);      // should get value 30
+    ASSERT_TRUE(final_pop.has_value());
+    ASSERT_EQ(final_pop->value, 30);
+}
+
+// =================================================================
+// 6. Move Semantics Verification Test
+// =================================================================
+
+// A mock type that tracks copy and move actions to ensure perfect pipeline efficiency
+struct BoundedCopyMoveTracker {
+    int id;
+    int* copy_count;
+    int* move_count;
+    std::chrono::steady_clock::time_point arrival; // Required by bounded queue interface
+
+    BoundedCopyMoveTracker(int id, int* cc, int* mc) :
+        id(id), copy_count(cc), move_count(mc), arrival(std::chrono::steady_clock::now()) {
+    }
+
+    BoundedCopyMoveTracker(const BoundedCopyMoveTracker& other) :
+        id(other.id), copy_count(other.copy_count), move_count(other.move_count), arrival(other.arrival) {
+        if (copy_count)
+            (*copy_count)++;
+    }
+
+    BoundedCopyMoveTracker(BoundedCopyMoveTracker&& other) noexcept :
+        id(other.id), copy_count(other.copy_count), move_count(other.move_count), arrival(other.arrival) {
+        if (move_count)
+            (*move_count)++;
+    }
+
+    BoundedCopyMoveTracker& operator=(const BoundedCopyMoveTracker&) = default;
+    BoundedCopyMoveTracker& operator=(BoundedCopyMoveTracker&&) noexcept = default;
+    ~BoundedCopyMoveTracker() = default;
+};
+
+TEST(ThreadSafeBoundedQueueTest, PopStrictlyMovesAndNeverCopies) {
+    thread_safe_bounded_queue<BoundedCopyMoveTracker> move_proving_queue(5);
+
+    int total_copies = 0;
+    int total_moves = 0;
+
+    // Emplace directly into the queue so no wrapper copies or moves happen during creation
+    move_proving_queue.emplace(777, &total_copies, &total_moves);
+
+    // Reset counters to clear any inner container adjustments during allocation setup
+    total_copies = 0;
+    total_moves = 0;
+
+    // Pop the item out using the standard interface
+    BoundedCopyMoveTracker retrieved = move_proving_queue.pop();
+
+    // Verify properties and confirm zero copy footprint
+    EXPECT_EQ(retrieved.id, 777);
+    EXPECT_EQ(total_copies, 0) << "Failure: Bounded queue copied the object instead of moving it!";
+    EXPECT_GE(total_moves, 1) << "Failure: Object was not safely moved during pop().";
+}
+
+namespace {
+// Waits until \p count consumers are blocked inside a pop, so that the test does not rely on the consumer thread
+// having started within some sleep.
+bool wait_for_waiting_consumers(const thread_safe_bounded_queue<TestTask>& queue, std::size_t count) {
+    const auto deadline = std::chrono::steady_clock::now() + 5s;
+    while (queue.snapshot().waiting_consumers != count) {
+        if (std::chrono::steady_clock::now() > deadline) {
+            return false;
+        }
+        std::this_thread::sleep_for(1ms);
+    }
+    return true;
+}
+} // namespace
+
+/**
+ * @test WaitingConsumersExcludePoppedConsumer
+ * @brief emplace_tracked reports the consumers blocked inside a pop at the moment of the push. A consumer that has
+ * popped an element is no longer counted even before it returns to its caller, and a consumer whose timed pop has
+ * expired is no longer counted either.
+ */
+TEST(ThreadSafeBoundedQueueTest, WaitingConsumersExcludePoppedConsumer) {
+    thread_safe_bounded_queue<TestTask> queue;
+
+    // no consumer: nothing waits
+    EXPECT_EQ(queue.emplace_tracked(1).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value().value, 1);
+
+    // a consumer blocked in wait_and_pop is counted
+    std::promise<void> popped;
+    auto popped_future = popped.get_future();
+    std::thread consumer([&queue, &popped] {
+        (void)queue.wait_and_pop();
+        popped.set_value();
+    });
+    ASSERT_TRUE(wait_for_waiting_consumers(queue, 1));
+    auto pushed = queue.emplace_tracked(2);
+    EXPECT_EQ(pushed.size, 1u);
+    EXPECT_EQ(pushed.waiting_consumers, 1u);
+    popped_future.wait();
+    consumer.join();
+
+    // a consumer that has popped and is busy with the element is not counted: the next push reports that its
+    // element has nobody waiting for it
+    EXPECT_EQ(queue.snapshot().waiting_consumers, 0u);
+    EXPECT_EQ(queue.emplace_tracked(3).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value().value, 3);
+
+    // a consumer in a timed pop is counted while it waits
+    std::thread timed_consumer([&queue] { EXPECT_EQ(queue.try_pop(2s).value().value, 4); });
+    ASSERT_TRUE(wait_for_waiting_consumers(queue, 1));
+    pushed = queue.emplace_tracked(4);
+    EXPECT_EQ(pushed.waiting_consumers, 1u);
+    timed_consumer.join();
+
+    // and not after its timeout expired
+    std::thread expired_consumer([&queue] { EXPECT_FALSE(queue.try_pop(20ms).has_value()); });
+    expired_consumer.join();
+    EXPECT_EQ(queue.snapshot().waiting_consumers, 0u);
+    EXPECT_EQ(queue.emplace_tracked(5).waiting_consumers, 0u);
+    EXPECT_EQ(queue.try_pop().value().value, 5);
 }

@@ -21,6 +21,7 @@ active_modules:
   evse_manager:
     module: EvseManager
     config_module:
+      enable_nodered_interface: true
       ac_enforce_hlc: false
       ac_hlc_enabled: true
       ac_hlc_use_5percent: false

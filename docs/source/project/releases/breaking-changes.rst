@@ -6,7 +6,8 @@ Breaking Changes Definition
 
 This document defines what constitutes a breaking change versus a non-breaking change for the components of the
 :ref:`EVerest public API <project-release-and-versioning-public-api>`.
-Understanding these definitions is critical for both maintainers and integrators.
+Understanding these definitions is critical for both maintainers and integrators. For details on how planned
+breaking changes are managed through the deprecation process, see :ref:`project-deprecation-policy`.
 
 ********
 Overview
@@ -27,7 +28,11 @@ This document covers breaking change definitions for all components of the :ref:
 This includes:
 
 - :ref:`AsyncAPI specifications <exp-breaking-changes-asyncapi>`
-- :ref:`Configuration files and storage contracts <exp-breaking-changes-configuration>`
+- :ref:`Configuration, storage, and module contracts <exp-breaking-changes-configuration>`
+
+Public API components that are explicitly marked as **experimental** are exempt from these definitions: changing or
+removing an experimental component is **not** considered a breaking change. See
+:ref:`Experimental Components <project-experimental-components>`.
 
 .. _exp-breaking-changes-asyncapi:
 
@@ -127,15 +132,19 @@ Examples
 
 .. _exp-breaking-changes-configuration:
 
-***********************************
-Configuration and Storage Contracts
-***********************************
+********************************************
+Configuration, Storage, and Module Contracts
+********************************************
 
 Configuration changes directly affect deployment processes and runtime behavior. The following principles apply 
 to EVerest YAML/SQLite configurations and OCPP JSON/SQLite configurations.
 
-Some SQLite implementations in EVerest support automatic schema migrations to minimize breaking changes. However, 
+Some SQLite implementations in EVerest support automatic schema migrations to minimize breaking changes. However,
 schema changes requiring manual intervention or altering existing data formats are considered breaking.
+
+This contract also covers the availability of the EVerest modules that a configuration references by name. Only a module's
+availability under a stable name is guaranteed: its implementation may be replaced as long as the replacement keeps
+providing equivalent functionality. The interfaces and types it provides are internal and may change without notice.
 
 Breaking Changes
 ================
@@ -149,6 +158,12 @@ Breaking Changes
 - Changing the meaning or behavior of an option (e.g., units, semantics)
 - Changing default values that affect runtime behavior
 - Narrowing acceptable value ranges (e.g., 0-100 → 1-100)
+
+**Modules:**
+
+- Removing a module name that a configuration may reference, without providing a replacement of equivalent functionality
+  under the same name
+- Renaming a module so that the original name is no longer available
 
 **File Formats:**
 
@@ -171,6 +186,8 @@ Examples
 
 **Breaking**: OCPP: Renaming table ``VARIABLE_ATTRIBUTE`` → ``VARIABLE_ATTRIBUTES`` without migration.
 
+**Breaking**: Removing the ``OCPP`` module without a same-name replacement breaks every configuration that instantiates it.
+
 Non-Breaking Changes
 ====================
 
@@ -181,6 +198,11 @@ Non-Breaking Changes
 - Expanding acceptable value ranges if existing implementations don't reject the new values (e.g., 1-100 → 0-100)
 - Adding new enum values while preserving existing ones
 - Improving documentation or examples
+
+**Modules:**
+
+- Replacing a module's implementation while keeping the same module name and equivalent functionality (e.g., introducing
+  an improved module under the existing name and retiring the previous implementation under a different name)
 
 **Database Schemas:**
 
@@ -197,6 +219,9 @@ Examples
 **Non-breaking**: Accepting ``connector_type: "CCS1"`` alongside existing ``"CCS"``.
 
 **Non-breaking**: OCPP: Adding ``VARIABLE_ATTRIBUTE.last_updated`` column with default ``NULL`` and migration script.
+
+**Non-breaking**: Shipping a rewritten ``EvseManager`` under the same name with equivalent configuration and behavior, while
+moving the previous implementation to ``EvseManagerLegacy``.
 
 ********************
 Practical Guidelines
@@ -245,7 +270,8 @@ Behavioral Compatibility
 Additional Resources
 ********************
 
-For more information on EVerest's release and versioning strategy, see :ref:`project-release-and-versioning`.
+- :ref:`project-release-and-versioning`
+- :ref:`project-deprecation-policy`
 
 For questions about breaking changes or to report potential compatibility issues, please contact the EVerest
-maintainers or raise an issue in the GitHub repository.
+maintainers via Zulip.

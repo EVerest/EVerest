@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_loop.hpp>
 
 #include <iso15118/message/ac_charge_loop.hpp>
@@ -12,6 +12,10 @@
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::d20::state {
+
+// Secc performance timer for PowerDelivery is 1.5s.
+// 100ms is resevered for polling timeout and sending the response.
+constexpr uint32_t AC_OPEN_CONTACTOR_TIMEOUT = 1400;
 
 namespace dt = message_20::datatypes;
 
@@ -68,28 +72,28 @@ namespace {
 template <typename T>
 void set_dynamic_parameters_in_res(T& res_mode, const UpdateDynamicModeParameters& parameters,
                                    uint64_t header_timestamp) {
-    if (parameters.departure_time) {
-        const auto departure_time = static_cast<uint64_t>(parameters.departure_time.value());
-        if (departure_time > header_timestamp) {
-            res_mode.departure_time = static_cast<uint32_t>(departure_time - header_timestamp);
-        }
-    }
+    res_mode.departure_time = departure_time_offset(parameters.departure_time, header_timestamp);
     res_mode.target_soc = parameters.target_soc;
-    res_mode.minimum_soc = parameters.min_soc;
+
+    // [V2G20-1366]
+    if (parameters.min_soc.has_value() and parameters.target_soc.has_value() and
+        parameters.min_soc.value() <= parameters.target_soc.value()) {
+        res_mode.minimum_soc = parameters.min_soc;
+    }
     res_mode.ack_max_delay = 30; // TODO(sl) what to send here and define 30 seconds as const
 }
 } // namespace
 
-message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoopRequest& req,
-                                                 const d20::Session& session, bool stop, bool pause,
-                                                 float target_frequency, const AcTargetPower& target_powers,
-                                                 const AcPresentPower& present_powers,
-                                                 const UpdateDynamicModeParameters& dynamic_parameters) {
+message_20::AC_ChargeLoopResponse
+handle_request(const message_20::AC_ChargeLoopRequest& req, const d20::Session& session, bool stop, bool pause,
+               std::optional<float> target_frequency, const AcTargetPower& target_powers,
+               const AcPresentPower& present_powers, const UpdateDynamicModeParameters& dynamic_parameters) {
 
     message_20::AC_ChargeLoopResponse res;
 
-    if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+    if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -102,7 +106,8 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         // If the ev sends a false control mode or a false energy service other than the previous selected ones, then
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Scheduled or selected_energy_service != dt::ServiceCategory::AC) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_AC_Res>();
@@ -114,7 +119,8 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Scheduled or
             selected_energy_service != dt::ServiceCategory::AC_BPT) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_BPT_AC_Res>();
@@ -125,7 +131,8 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         // If the ev sends a false control mode or a false energy service other than the previous selected ones, then
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Dynamic or selected_energy_service != dt::ServiceCategory::AC) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_AC_Res>();
@@ -141,7 +148,8 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         // the charger should terminate the session
         if (selected_control_mode != dt::ControlMode::Dynamic or
             selected_energy_service != dt::ServiceCategory::AC_BPT) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_BPT_AC_Res>();
@@ -152,23 +160,28 @@ message_20::AC_ChargeLoopResponse handle_request(const message_20::AC_ChargeLoop
         }
     }
 
-    res.target_frequency = dt::from_float(target_frequency);
+    if (target_frequency.has_value()) {
+        res.target_frequency = dt::from_float(target_frequency.value());
+    }
 
     // TODO(sl): Setting EvseStatus, MeterInfo, Receipt
 
     if (stop) {
         res.status = {0, dt::EvseNotification::Terminate};
     } else if (pause) {
-        const uint16_t notification_max_delay =
-            (selected_control_mode == dt::ControlMode::Dynamic) ? 60 : 0; // [V2G20-1850]
-        res.status = {notification_max_delay, dt::EvseNotification::Pause};
+        constexpr auto NotificationMaxDelay = 60; // [V2G20-3308]
+        res.status = {NotificationMaxDelay, dt::EvseNotification::Pause};
+
+        // TODO(SL): [V2G20-3318] Decrease notificationmaxdelay based on the reaming seconds if the ev did not perform a
+        // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void AC_ChargeLoop::enter() {
-    m_ctx.log.enter_state("AC_ChargeLoop");
+    logf_debug("Enter state: AC_ChargeLoop");
     dynamic_parameters = m_ctx.cache_dynamic_mode_parameters.value_or(UpdateDynamicModeParameters{});
     target_powers = m_ctx.cache_ac_target_power.value_or(AcTargetPower{});
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
@@ -187,9 +200,49 @@ Result AC_ChargeLoop::feed(Event ev) {
             target_powers = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<AcPresentPower>()) {
             present_powers = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
+            ac_connector_closed = *control_data;
+
+            if (ac_connector_closed) {
+                logf_warning(
+                    "Got ClosedContactor event, but contactor is not opened. Waiting until the contactor is opened");
+                return {};
+            }
+
+            const auto* active_timeout = m_ctx.get_active_timeout();
+            if (active_timeout != nullptr and *active_timeout == d20::TimeoutType::CONTACTOR) {
+                m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            }
+
+            if (not previous_req.has_value()) {
+                return {};
+            }
+
+            const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
+            m_ctx.respond(res);
+
+            if (res.response_code >= dt::ResponseCode::FAILED) {
+                m_ctx.session_stopped = true;
+                return {};
+            }
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+            return m_ctx.create_state<SessionStop>();
         }
 
         // Ignore control message
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_error("AC contactor is not opened within %ums, sending failure response code and stop the session",
+                       AC_OPEN_CONTACTOR_TIMEOUT);
+            const auto& res =
+                handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+        }
         return {};
     }
 
@@ -200,7 +253,24 @@ Result AC_ChargeLoop::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
-        const auto res = handle_request(*req, m_ctx.session, false);
+
+        const auto shutdown_requested = m_ctx.shutdown_requested();
+
+        // If the car wants to stop the session and the contactor is closed
+        if (req->charge_progress == dt::Progress::Stop and ac_connector_closed) {
+            previous_req = *req;
+            // Open the AC contactor
+            m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, AC_OPEN_CONTACTOR_TIMEOUT);
+
+            logf_info("Waiting for contactor is opened"); // [V2G20-863]
+            return {};
+        }
+
+        // The contactor is already opened
+        const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
 
@@ -209,21 +279,21 @@ Result AC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        // V2G20-1623 -> state machine direct transition (skipped PowerDelivery)
-        if (req->charge_progress == dt::Progress::Stop) {
+        if (req->charge_progress == dt::Progress::Stop and not ac_connector_closed) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-            m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
             return m_ctx.create_state<SessionStop>();
         }
-
         return {};
-    } else if (const auto req = variant->get_if<message_20::AC_ChargeLoopRequest>()) {
+    }
+
+    if (const auto req = variant->get_if<message_20::AC_ChargeLoopRequest>()) {
         if (first_entry_in_charge_loop) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_STARTED);
             first_entry_in_charge_loop = false;
         }
 
-        const auto res = handle_request(*req, m_ctx.session, stop, pause, target_frequency, target_powers,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, stop, notify_pause, target_frequency, target_powers,
                                         present_powers, dynamic_parameters);
 
         m_ctx.respond(res);
@@ -233,23 +303,34 @@ Result AC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        m_ctx.feedback.ac_charge_loop_req(req->control_mode);
+        if (const auto* mode = std::get_if<Scheduled_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        } else if (const auto* mode = std::get_if<Scheduled_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+        if (const auto* mode = std::get_if<Dynamic_BPT_AC_Req>(&req->control_mode)) {
+            m_ctx.feedback.ac_charge_loop_req(*mode);
+        }
+
         m_ctx.feedback.ac_charge_loop_req(req->meter_info_requested);
         if (req->display_parameters) {
             m_ctx.feedback.ac_charge_loop_req(*req->display_parameters);
         }
 
         return {};
-    } else {
-        m_ctx.log("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
-
-        // Sequence Error
-        const message_20::Type req_type = variant->get_type();
-        send_sequence_error(req_type, m_ctx);
-
-        m_ctx.session_stopped = true;
-        return {};
     }
+
+    logf_warning("Expected PowerDeliveryReq or AC_ChargeLoopRequest! But code type id: %d", variant->get_type());
+
+    // Sequence Error
+    const message_20::Type req_type = variant->get_type();
+    send_sequence_error(req_type, m_ctx);
+
+    m_ctx.session_stopped = true;
+    return {};
 }
 
 } // namespace iso15118::d20::state

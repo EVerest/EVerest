@@ -480,6 +480,92 @@ TEST_P(Configuration, StopTransactionIfUnlockNotSupported) {
     EXPECT_FALSE(kv.readonly);
 }
 
+TEST_P(Configuration, RejectRemoteStartTransactionWithoutConnectorIdAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_FALSE(get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue().has_value());
+    EXPECT_EQ(get()->set("RejectRemoteStartTransactionWithoutConnectorId", "true"),
+              ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, RejectRemoteStartTransactionWithoutConnectorId) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+    ASSERT_TRUE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), false);
+    auto kv = get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RejectRemoteStartTransactionWithoutConnectorId");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setRejectRemoteStartTransactionWithoutConnectorId(true);
+    ASSERT_TRUE(get()->getRejectRemoteStartTransactionWithoutConnectorId().has_value());
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), true);
+    kv = get()->getRejectRemoteStartTransactionWithoutConnectorIdKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RejectRemoteStartTransactionWithoutConnectorId");
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("RejectRemoteStartTransactionWithoutConnectorId", "not-a-bool"),
+              ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getRejectRemoteStartTransactionWithoutConnectorId().value(), true);
+}
+
+TEST_P(Configuration, RemoteStartTransactionWithoutConnectorIdFindFirstAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_FALSE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue().has_value());
+    EXPECT_EQ(get()->set("RemoteStartTransactionWithoutConnectorIdFindFirst", "true"),
+              ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, RemoteStartTransactionWithoutConnectorIdFindFirst) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+    ASSERT_TRUE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), false);
+    auto kv = get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RemoteStartTransactionWithoutConnectorIdFindFirst");
+    EXPECT_EQ(kv.value().value, "false");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setRemoteStartTransactionWithoutConnectorIdFindFirst(true);
+    ASSERT_TRUE(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().has_value());
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), true);
+    kv = get()->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "RemoteStartTransactionWithoutConnectorIdFindFirst");
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("RemoteStartTransactionWithoutConnectorIdFindFirst", "not-a-bool"),
+              ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getRemoteStartTransactionWithoutConnectorIdFindFirst().value(), true);
+}
+
+TEST_P(Configuration, ReportSuspendedEVSEReasonChange) {
+    ASSERT_NE(get(), nullptr);
+
+    get()->setReportSuspendedEVSEReasonChange(true);
+    EXPECT_TRUE(get()->getReportSuspendedEVSEReasonChange());
+    auto kv = get()->getReportSuspendedEVSEReasonChangeKeyValue();
+    EXPECT_EQ(kv.key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value, "true");
+    EXPECT_FALSE(kv.readonly);
+
+    get()->setReportSuspendedEVSEReasonChange(false);
+    EXPECT_FALSE(get()->getReportSuspendedEVSEReasonChange());
+    kv = get()->getReportSuspendedEVSEReasonChangeKeyValue();
+    EXPECT_EQ(kv.key, "ReportSuspendedEVSEReasonChange");
+    EXPECT_EQ(kv.value, "false");
+    EXPECT_FALSE(kv.readonly);
+}
+
 TEST_P(Configuration, UseSslDefaultVerifyPaths) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files
@@ -749,6 +835,15 @@ TEST_P(Configuration, QueueAllMessages) {
     ASSERT_FALSE(kv.has_value());
 }
 
+TEST_P(Configuration, ReportClearedErrors) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+
+    EXPECT_FALSE(get()->getReportClearedErrors().has_value());
+    auto kv = get()->getReportClearedErrorsKeyValue();
+    ASSERT_FALSE(kv.has_value());
+}
+
 TEST_P(Configuration, SeccLeafSubjectCommonName) {
     ASSERT_NE(get(), nullptr);
     // No initial value set - hence set() doesn't work
@@ -816,6 +911,43 @@ TEST_P(Configuration, SupplyVoltage) {
     EXPECT_FALSE(kv.value().readonly);
 }
 
+TEST_P(Configuration, SwitchSecurityProfileConnectionTimeoutAbsent) {
+    ASSERT_NE(get(), nullptr);
+
+    EXPECT_FALSE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_FALSE(get()->getSwitchSecurityProfileConnectionTimeoutKeyValue().has_value());
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "15"), ocpp::v16::ConfigurationStatus::NotSupported);
+}
+
+TEST_P(ConfigurationFull, SwitchSecurityProfileConnectionTimeout) {
+    ASSERT_NE(get(), nullptr);
+    // initial values are from the JSON unit test config files
+
+    EXPECT_TRUE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 30);
+    auto kv = get()->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "SwitchSecurityProfileConnectionTimeout");
+    EXPECT_EQ(kv.value().value, "30");
+    EXPECT_FALSE(kv.value().readonly);
+
+    get()->setSwitchSecurityProfileConnectionTimeout(45);
+    EXPECT_TRUE(get()->getSwitchSecurityProfileConnectionTimeout().has_value());
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+    kv = get()->getSwitchSecurityProfileConnectionTimeoutKeyValue();
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv.value().key, "SwitchSecurityProfileConnectionTimeout");
+    EXPECT_EQ(kv.value().value, "45");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "-1"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+
+    // The schema declares minimum 1; a 0 s window would revert immediately, so 0 must be rejected at runtime too.
+    EXPECT_EQ(get()->set("SwitchSecurityProfileConnectionTimeout", "0"), ocpp::v16::ConfigurationStatus::Rejected);
+    EXPECT_EQ(get()->getSwitchSecurityProfileConnectionTimeout(), 45);
+}
+
 TEST_P(Configuration, AllMeterPublicKeys) {
     ASSERT_NE(get(), nullptr);
     EXPECT_EQ(get()->getAllMeterPublicKeyKeyValues(), std::nullopt);
@@ -823,6 +955,9 @@ TEST_P(Configuration, AllMeterPublicKeys) {
 
 TEST_P(Configuration, PublicKey) {
     ASSERT_NE(get(), nullptr);
+
+    // Internal CSL representation is not exposed via GetConfiguration.
+    EXPECT_FALSE(get()->get("MeterPublicKeys").has_value());
 
     const auto max = get()->getNumberOfConnectors();
     for (std::uint8_t i = 0; i <= max; i++) {

@@ -1,14 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
+#include "nlohmann/json_fwd.hpp"
 #include <everest_api_types/evse_security/API.hpp>
-#pragma GCC diagnostic push
-#pragma GCC diagnostic ignored "-Wignored-qualifiers"
-#pragma GCC diagnostic ignored "-Wunused-function"
-#include "generated/types/evse_security.hpp"
-#pragma GCC diagnostic pop
 
 namespace everest::lib::API::V1_0::types::evse_security {
 

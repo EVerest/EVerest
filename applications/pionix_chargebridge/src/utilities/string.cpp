@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <charge_bridge/utilities/string.hpp>
 #include <sstream>
 
@@ -40,6 +40,32 @@ std::string& replace_all_in_place(std::string& source, std::string const& placeh
 std::string replace_all(std::string const& source, std::string const& placeholder, std::string const& substitute) {
     std::string result = source;
     return replace_all_in_place(result, placeholder, substitute);
+}
+
+std::string strip_brackets(std::string const& host) {
+    if (host.size() >= 2 && host.front() == '[' && host.back() == ']') {
+        return host.substr(1, host.size() - 2);
+    }
+    return host;
+}
+
+std::string format_host_port(std::string const& host, std::uint16_t port) {
+    if (host.find(':') != std::string::npos) {
+        return "[" + host + "]:" + std::to_string(port);
+    }
+    return host + ":" + std::to_string(port);
+}
+
+std::optional<std::string_view> discovery_sentinel(std::string_view const& endpoint) {
+    for (std::string_view const sentinel : {"ANY_EVSE", "ANY_EV"}) {
+        if (string_starts_with(endpoint, sentinel)) {
+            return sentinel;
+        }
+    }
+    if (endpoint == "ANY" or string_starts_with(endpoint, "ANY(")) {
+        return "ANY";
+    }
+    return std::nullopt;
 }
 
 std::set<std::string> csv_to_set(std::string const& str) {

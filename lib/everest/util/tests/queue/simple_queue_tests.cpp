@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "gtest/gtest.h"
 #include <everest/util/queue/simple_queue.hpp>
@@ -100,6 +100,31 @@ TYPED_TEST(SimpleQueueTest, MultiplePushAndPopOrder) {
         ASSERT_EQ(result.value(), expected_value) << "Element popped out of FIFO order.";
     }
 
+    ASSERT_TRUE(this->queue.empty());
+}
+
+TYPED_TEST(SimpleQueueTest, EmplaceElementsInPlace) {
+    TypeParam expected_value;
+
+    if constexpr (std::is_same_v<TypeParam, int>) {
+        // Constructing an int with 123
+        this->queue.emplace(123);
+        expected_value = 123;
+    } else if constexpr (std::is_same_v<TypeParam, std::string>) {
+        // Leverages emplace to construct a string of 5 'A's: "AAAAA"
+        // This validates that multiple constructor arguments are forwarded perfectly.
+        this->queue.emplace(5, 'A');
+        expected_value = "AAAAA";
+    } else {
+        return;
+    }
+
+    ASSERT_FALSE(this->queue.empty());
+    ASSERT_EQ(this->queue.size(), 1);
+
+    std::optional<TypeParam> result = this->queue.pop();
+    ASSERT_TRUE(result.has_value());
+    ASSERT_EQ(result.value(), expected_value);
     ASSERT_TRUE(this->queue.empty());
 }
 

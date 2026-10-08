@@ -69,6 +69,9 @@ struct evse_managerImplStub : public evse_managerImplBase {
         std::vector<types::iso15118::EnergyTransferMode>& allowed_energy_transfer_modes) {
         return types::evse_manager::UpdateAllowedEnergyTransferModesResult::Accepted;
     }
+    virtual types::evse_manager::SetDerAvailableResult handle_set_der_available(bool& available) {
+        return types::evse_manager::SetDerAvailableResult::Accepted;
+    }
 };
 
 struct EvseManagerModuleAdapter : public ModuleAdapterStub {

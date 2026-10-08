@@ -1,7 +1,10 @@
+add_subdirectory(management_api)
+
 add_executable(manager)
 target_sources(manager
     PRIVATE
         system_unix.cpp
+        manager_admin_panel.cpp
         manager.cpp
 )
 # generate version information header
@@ -15,7 +18,7 @@ target_link_libraries(manager
     PRIVATE
         everest::framework
         Boost::program_options
-        PkgConfig::libcap
+        management_api
 )
 
 if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)

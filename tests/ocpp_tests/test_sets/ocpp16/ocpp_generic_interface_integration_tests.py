@@ -4,7 +4,6 @@
 import asyncio
 from dataclasses import dataclass
 from unittest.mock import Mock, call as mock_call, ANY
-import logging
 
 import pytest
 import pytest_asyncio
@@ -18,6 +17,7 @@ from ocpp.v16.call import SetChargingProfile
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import (
     GenericOCPP16ConfigAdjustment,
 )
+from everest_test_utils_probe_modules import implement_ocpp16_probe_commands
 
 
 @dataclass
@@ -42,164 +42,9 @@ async def _env(
     csms_mock = central_system.mock
 
     probe_module = ProbeModule(everest_core.get_runtime_session())
-    probe_module_command_mocks = {}
-
-    def _add_pm_command_mock(implementation_id, command, value, skip_implementation):
-        skip = False
-        if skip_implementation:
-            if implementation_id in skip_implementation:
-                to_skip = skip_implementation[implementation_id]
-                if command in to_skip:
-                    logging.info(f"Skipping implementation of {command}")
-                    skip = True
-        if not skip:
-            if overwrite_implementation:
-                logging.info(f"OVERW: {overwrite_implementation}")
-                if implementation_id in overwrite_implementation:
-                    to_overwrite = overwrite_implementation[implementation_id]
-                    if command in to_overwrite:
-                        logging.info(
-                            f"Overwriting implementation of {command}")
-                        value = to_overwrite[command]
-            probe_module_command_mocks.setdefault(implementation_id, {})[
-                command
-            ] = Mock()
-            probe_module_command_mocks[implementation_id][command].return_value = value
-            probe_module.implement_command(
-                implementation_id=implementation_id,
-                command_name=command,
-                handler=probe_module_command_mocks[implementation_id][command],
-            )
-
-    for idx, evse_manager in enumerate(["evse_manager", "evse_manager_b"]):
-        _add_pm_command_mock(
-            evse_manager,
-            "get_evse",
-            {"id": idx + 1, "connectors": [{"id": 1}]},
-            skip_implementation,
-        )
-        _add_pm_command_mock(evse_manager, "enable_disable",
-                             True, skip_implementation)
-        _add_pm_command_mock(
-            evse_manager, "authorize_response", None, skip_implementation
-        )
-        _add_pm_command_mock(
-            evse_manager, "withdraw_authorization", None, skip_implementation
-        )
-        _add_pm_command_mock(evse_manager, "reserve",
-                             False, skip_implementation)
-        _add_pm_command_mock(
-            evse_manager, "cancel_reservation", None, skip_implementation
-        )
-        _add_pm_command_mock(evse_manager, "pause_charging",
-                             True, skip_implementation)
-        _add_pm_command_mock(evse_manager, "resume_charging",
-                             True, skip_implementation)
-        _add_pm_command_mock(
-            evse_manager, "stop_transaction", True, skip_implementation
-        )
-        _add_pm_command_mock(evse_manager, "force_unlock",
-                             True, skip_implementation)
-        _add_pm_command_mock(
-            evse_manager, "update_allowed_energy_transfer_modes", None, skip_implementation)
-        _add_pm_command_mock(
-            evse_manager, "external_ready_to_start_charging", True, skip_implementation
-        )
-        _add_pm_command_mock(
-            evse_manager, "set_plug_and_charge_configuration", True, skip_implementation)
-    _add_pm_command_mock(
-        "security", "get_leaf_expiry_days_count", 42, skip_implementation
+    probe_module_command_mocks = implement_ocpp16_probe_commands(
+        probe_module, skip_implementation, overwrite_implementation
     )
-    _add_pm_command_mock(
-        "security",
-        "get_v2g_ocsp_request_data",
-        {"ocsp_request_data_list": []},
-        skip_implementation,
-    )
-    _add_pm_command_mock(
-        "security",
-        "get_mo_ocsp_request_data",
-        {"ocsp_request_data_list": []},
-        skip_implementation,
-    )
-    _add_pm_command_mock(
-        "security", "install_ca_certificate", "Accepted", skip_implementation
-    )
-    _add_pm_command_mock(
-        "security", "delete_certificate", "Accepted", skip_implementation
-    )
-    _add_pm_command_mock(
-        "security", "update_leaf_certificate", "Accepted", skip_implementation
-    )
-    _add_pm_command_mock("security", "verify_certificate",
-                         "Valid", skip_implementation)
-    _add_pm_command_mock(
-        "security",
-        "get_installed_certificates",
-        {"status": "Accepted", "certificate_hash_data_chain": []},
-        skip_implementation,
-    )
-    _add_pm_command_mock("security", "update_ocsp_cache",
-                         None, skip_implementation)
-    _add_pm_command_mock(
-        "security", "is_ca_certificate_installed", False, skip_implementation
-    )
-    _add_pm_command_mock(
-        "security",
-        "generate_certificate_signing_request",
-        {"status": "Accepted"},
-        skip_implementation,
-    )
-    _add_pm_command_mock(
-        "security",
-        "get_leaf_certificate_info",
-        {"status": "Accepted"},
-        skip_implementation,
-    )
-    _add_pm_command_mock("security", "get_verify_file",
-                         "", skip_implementation)
-    _add_pm_command_mock("security", "verify_file_signature",
-                         True, skip_implementation)
-    _add_pm_command_mock(
-        "security",
-        "get_all_valid_certificates_info",
-        {"status": "NotFound", "info": []},
-        skip_implementation,
-    )
-    _add_pm_command_mock(
-        "security",
-        "get_verify_location",
-        "",
-        skip_implementation,
-    )
-    _add_pm_command_mock("auth", "set_connection_timeout",
-                         None, skip_implementation)
-    _add_pm_command_mock("auth", "withdraw_authorization",
-                         "Accepted", skip_implementation)
-    _add_pm_command_mock("auth", "set_master_pass_group_id",
-                         None, skip_implementation)
-    _add_pm_command_mock(
-        "reservation", "cancel_reservation", "Accepted", skip_implementation
-    )
-    _add_pm_command_mock("reservation", "reserve_now",
-                         False, skip_implementation)
-    _add_pm_command_mock(
-        "reservation", "exists_reservation", False, skip_implementation
-    )
-    _add_pm_command_mock("system", "get_boot_reason",
-                         "PowerUp", skip_implementation)
-    _add_pm_command_mock("system", "update_firmware",
-                         "Accepted", skip_implementation)
-    _add_pm_command_mock(
-        "system", "allow_firmware_installation", None, skip_implementation
-    )
-    _add_pm_command_mock("system", "upload_logs",
-                         "Accepted", skip_implementation)
-    _add_pm_command_mock("system", "is_reset_allowed",
-                         True, skip_implementation)
-    _add_pm_command_mock("system", "reset", None, skip_implementation)
-    _add_pm_command_mock("system", "set_system_time",
-                         True, skip_implementation)
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
@@ -232,12 +77,41 @@ class CSMSConnectionUtils:
         return connection.open
 
 
-async def wait_for_mock_called(mock, call=None, timeout=2):
+async def wait_for_mock_called(mock, call=None, timeout=10):
     async def _await_called():
         while not mock.call_count or (call and call not in mock.mock_calls):
             await asyncio.sleep(0.1)
 
     await asyncio.wait_for(_await_called(), timeout=timeout)
+
+
+async def wait_for_mock_call_matching(mock, predicate, timeout=10):
+    """Waits for a call whose single argument satisfies predicate and returns that argument."""
+
+    def _matching_argument():
+        return next(
+            (
+                call.args[0]
+                for call in mock.mock_calls
+                if call.args and predicate(call.args[0])
+            ),
+            None,
+        )
+
+    async def _await_called():
+        while _matching_argument() is None:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_called(), timeout=timeout)
+    return _matching_argument()
+
+
+async def wait_for_connection_state(csms_connection, connected, timeout=15):
+    async def _await_state():
+        while csms_connection.is_connected != connected:
+            await asyncio.sleep(0.1)
+
+    await asyncio.wait_for(_await_state(), timeout=timeout)
 
 
 @pytest.mark.ocpp_version("ocpp1.6")
@@ -252,16 +126,16 @@ class TestOCPP16GenericInterfaceIntegration:
         assert csms_connection.is_connected
         res = await _env.probe_module.call_command("ocpp", "stop", None)
         assert res is True
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=False)
         assert not csms_connection.is_connected
 
     async def test_command_restart(self, _env):
         csms_connection = CSMSConnectionUtils(_env.central_system)
         await _env.probe_module.call_command("ocpp", "stop", None)
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=False)
         assert not csms_connection.is_connected
         res = await _env.probe_module.call_command("ocpp", "restart", None)
-        await asyncio.sleep(5)
+        await wait_for_connection_state(csms_connection, connected=True)
         assert res is True
         assert csms_connection.is_connected
 
@@ -322,12 +196,15 @@ class TestOCPP16GenericInterfaceIntegration:
             len(_env.csms_mock.on_security_event_notification.mock_calls) == 3
         )  # we expect 3 because of the StartupOfTheDevice, SecurityLogWasCleared, StringTooLong
 
+    @pytest.mark.ocpp_legacy_only
     @pytest.mark.ocpp_config_adaptions(
         GenericOCPP16ConfigAdjustment(
             [("Custom", "ExampleConfigurationKey", "test_value")]
         )
     )
-    async def test_command_get_variables(self, _env):
+    async def test_command_get_variables_legacy(self, _env):
+        """The legacy OCPP module ignores the component name and variable
+        instance; variable.name is always treated as a configuration key."""
         res = await _env.probe_module.call_command(
             "ocpp",
             "get_variables",
@@ -388,12 +265,83 @@ class TestOCPP16GenericInterfaceIntegration:
             },
         ]
 
+    @pytest.mark.ocpp_multi_only
     @pytest.mark.ocpp_config_adaptions(
         GenericOCPP16ConfigAdjustment(
             [("Custom", "ExampleConfigurationKey", "test_value")]
         )
     )
-    async def test_command_set_variables(self, _env):
+    async def test_command_get_variables_multi(self, _env):
+        """OCPPmulti never reinterprets a non-empty component name as a
+        configuration key (UnknownComponent); the deprecated empty-component
+        form still routes to keys, ignoring the variable instance."""
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "get_variables",
+            {
+                "requests": [
+                    {
+                        "component_variable": {
+                            "component": {"name": "NOT_A_COMPONENT"},
+                            "variable": {"name": "ChargePointId"},
+                        }
+                    },
+                    {
+                        "component_variable": {
+                            "component": {"name": ""},
+                            "variable": {"name": "UNKNOWN"},
+                        },
+                        "attribute_type": "Target",
+                    },
+                    {
+                        "component_variable": {
+                            "component": {"name": ""},
+                            "variable": {
+                                "name": "ExampleConfigurationKey",
+                                "instance": "TO_BE_IGNORED",
+                            },
+                        },
+                        "attribute_type": "Target",  # ignored on the key path
+                    },
+                ]
+            },
+        )
+
+        assert res == [
+            {
+                "component_variable": {
+                    "component": {"name": "NOT_A_COMPONENT"},
+                    "variable": {"name": "ChargePointId"},
+                },
+                "status": "UnknownComponent",
+            },
+            {
+                "component_variable": {
+                    "component": {"name": ""},
+                    "variable": {"name": "UNKNOWN"},
+                },
+                "status": "UnknownVariable",
+            },
+            {
+                "attribute_type": "Actual",
+                "component_variable": {
+                    "component": {"name": ""},
+                    "variable": {"name": "ExampleConfigurationKey"},
+                },
+                "status": "Accepted",
+                "value": "test_value",
+            },
+        ]
+
+    @pytest.mark.ocpp_legacy_only
+    @pytest.mark.ocpp_config_adaptions(
+        GenericOCPP16ConfigAdjustment(
+            [("Custom", "ExampleConfigurationKey", "test_value")]
+        )
+    )
+    async def test_command_set_variables_legacy(self, _env):
+        """The legacy OCPP module ignores the component name and variable
+        instance; variable.name is always treated as a configuration key."""
         res = await _env.probe_module.call_command(
             "ocpp",
             "set_variables",
@@ -404,7 +352,7 @@ class TestOCPP16GenericInterfaceIntegration:
                             "component": {"name": "IGNORED"},
                             "variable": {"name": "RetryBackoffRandomRange"},
                         },
-                        # not custom - will be Rejected
+                        # standard (non-custom), writable key; will be Accepted.
                         "value": "99",
                     },
                     {
@@ -440,7 +388,7 @@ class TestOCPP16GenericInterfaceIntegration:
                     "component": {"name": "IGNORED"},
                     "variable": {"name": "RetryBackoffRandomRange"},
                 },
-                "status": "Rejected",
+                "status": "Accepted",
             },
             {
                 "component_variable": {
@@ -488,8 +436,117 @@ class TestOCPP16GenericInterfaceIntegration:
             }
         ]
 
-    async def test_command_monitor_variables(self, _env):
-        """Test monitoring a configuraton variable as well as an event_data subscription."""
+    @pytest.mark.ocpp_multi_only
+    @pytest.mark.ocpp_config_adaptions(
+        GenericOCPP16ConfigAdjustment(
+            [("Custom", "ExampleConfigurationKey", "test_value")]
+        )
+    )
+    async def test_command_set_variables_multi(self, _env):
+        """OCPPmulti never reinterprets a non-empty component name as a
+        configuration key (UnknownComponent, nothing written); the deprecated
+        empty-component form still routes to keys, ignoring the variable
+        instance."""
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "set_variables",
+            {
+                "requests": [
+                    {
+                        "component_variable": {
+                            "component": {"name": "NOT_A_COMPONENT"},
+                            "variable": {"name": "RetryBackoffRandomRange"},
+                        },
+                        # writable key, but the component does not resolve -
+                        # will be UnknownComponent and not written
+                        "value": "99",
+                    },
+                    {
+                        "component_variable": {
+                            "component": {"name": ""},
+                            "variable": {"name": "UNKNOWN"},
+                        },
+                        # does not exist - will be UnknownVariable
+                        "attribute_type": "Target",
+                        "value": "test_value",
+                    },
+                    {
+                        "component_variable": {
+                            "component": {"name": ""},
+                            "variable": {
+                                "name": "ExampleConfigurationKey",
+                                "instance": "TO_BE_IGNORED",
+                            },
+                        },
+                        "attribute_type": "Target",
+                        "value": "unittest changed value",
+                    },
+                ],
+                "source": "testcase",
+            },
+        )
+
+        assert res
+        assert isinstance(res, list) and len(res) == 3
+        assert res == [
+            {
+                "component_variable": {
+                    "component": {"name": "NOT_A_COMPONENT"},
+                    "variable": {"name": "RetryBackoffRandomRange"},
+                },
+                "status": "UnknownComponent",
+            },
+            {
+                "component_variable": {
+                    "component": {"name": ""},
+                    "variable": {"name": "UNKNOWN"},
+                },
+                "status": "UnknownVariable",
+            },
+            {
+                "component_variable": {
+                    "component": {"name": ""},
+                    "variable": {
+                        "instance": "TO_BE_IGNORED",
+                        "name": "ExampleConfigurationKey",
+                    },
+                },
+                "status": "Accepted",
+            },
+        ]
+
+        # Verify value changed
+        check = await _env.probe_module.call_command(
+            "ocpp",
+            "get_variables",
+            {
+                "requests": [
+                    {
+                        "component_variable": {
+                            "component": {"name": ""},
+                            "variable": {"name": "ExampleConfigurationKey"},
+                        }
+                    }
+                ]
+            },
+        )
+        assert check == [
+            {
+                "attribute_type": "Actual",
+                "component_variable": {
+                    "component": {"name": ""},
+                    "variable": {"name": "ExampleConfigurationKey"},
+                },
+                "status": "Accepted",
+                "value": "unittest changed value",
+            }
+        ]
+
+    @pytest.mark.ocpp_legacy_only
+    async def test_command_monitor_variables_legacy(self, _env):
+        """Test monitoring a configuration variable as well as an event_data
+        subscription. The legacy OCPP module ignores the component name and
+        registers the variable name as a configuration key."""
 
         async def change_var(key: str, value: str):
             res = await _env.charge_point.change_configuration_req(key=key, value=value)
@@ -538,6 +595,227 @@ class TestOCPP16GenericInterfaceIntegration:
                     "actual_value": "42",
                     "component_variable": {
                         "component": {"name": "IGNORED"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    "event_id": ANY,
+                    "event_notification_type": "CustomMonitor",
+                    "timestamp": ANY,
+                    "trigger": "Alerting",
+                }
+            ),
+        )
+
+    @pytest.mark.ocpp_multi_only
+    async def test_command_monitor_variables_multi(self, _env):
+        """Test monitoring a configuration variable as well as an event_data
+        subscription. OCPPmulti resolves the component, so the canonical
+        address must be used; events echo the registered form."""
+
+        async def change_var(key: str, value: str):
+            res = await _env.charge_point.change_configuration_req(key=key, value=value)
+            assert res.status == "Accepted"
+
+        event_data_subscription_mock = Mock()
+        _env.probe_module.subscribe_variable(
+            "ocpp", "event_data", event_data_subscription_mock
+        )
+
+        await change_var("HeartbeatInterval", "1")
+
+        # assert no event before monitoring is enabled
+        await asyncio.sleep(0.1)
+        event_data_subscription_mock.assert_not_called()
+
+        # enable monitoring; the deprecated empty-component key form is still
+        # accepted, unknown keys are skipped
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "monitor_variables",
+            {
+                "component_variables": [
+                    {
+                        "component": {"name": "OCPPCommCtrlr"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "MeterValuesAlignedData"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "UNKNOWN"},
+                    },
+                ]
+            },
+        )
+        assert res is None
+
+        # verify event is triggered
+        await change_var("HeartbeatInterval", "42")
+        await wait_for_mock_called(
+            event_data_subscription_mock,
+            mock_call(
+                {
+                    "actual_value": "42",
+                    "component_variable": {
+                        "component": {"name": "OCPPCommCtrlr"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    "event_id": ANY,
+                    "event_notification_type": "CustomMonitor",
+                    "timestamp": ANY,
+                    "trigger": "Alerting",
+                }
+            ),
+        )
+
+    @pytest.mark.ocpp_legacy_only
+    async def test_command_monitor_and_get_variables_legacy(self, _env):
+        """Test the combined monitor + get command: monitors are registered
+        like monitor_variables and the current values are returned in the
+        reply with get_variables semantics (key-form echo in the legacy
+        module, request order preserved)."""
+
+        async def change_var(key: str, value: str):
+            res = await _env.charge_point.change_configuration_req(key=key, value=value)
+            assert res.status == "Accepted"
+
+        event_data_subscription_mock = Mock()
+        _env.probe_module.subscribe_variable(
+            "ocpp", "event_data", event_data_subscription_mock
+        )
+
+        await change_var("HeartbeatInterval", "1")
+
+        # assert no event before monitoring is enabled
+        await asyncio.sleep(0.1)
+        event_data_subscription_mock.assert_not_called()
+
+        # enable monitoring and read the current values in one call
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "monitor_and_get_variables",
+            {
+                "component_variables": [
+                    {
+                        "component": {"name": "IGNORED"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "MeterValuesAlignedData"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "UNKNOWN"},
+                    },
+                ]
+            },
+        )
+        assert isinstance(res, list) and len(res) == 3
+        # results follow this module's get_variables semantics: key-form echo
+        assert res[0]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "HeartbeatInterval"},
+        }
+        assert res[0]["status"] == "Accepted"
+        assert res[0]["value"] == "1"
+        assert res[1]["component_variable"]["variable"]["name"] == "MeterValuesAlignedData"
+        assert res[1]["status"] == "Accepted"
+        assert res[2]["component_variable"]["variable"]["name"] == "UNKNOWN"
+        assert res[2]["status"] == "UnknownVariable"
+
+        # verify the monitors were registered: events echo the requested form
+        await change_var("HeartbeatInterval", "42")
+        await wait_for_mock_called(
+            event_data_subscription_mock,
+            mock_call(
+                {
+                    "actual_value": "42",
+                    "component_variable": {
+                        "component": {"name": "IGNORED"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    "event_id": ANY,
+                    "event_notification_type": "CustomMonitor",
+                    "timestamp": ANY,
+                    "trigger": "Alerting",
+                }
+            ),
+        )
+
+    @pytest.mark.ocpp_multi_only
+    async def test_command_monitor_and_get_variables_multi(self, _env):
+        """Test the combined monitor + get command with OCPPmulti: canonical
+        addressing, results and events echo the requested form, request
+        order preserved."""
+
+        async def change_var(key: str, value: str):
+            res = await _env.charge_point.change_configuration_req(key=key, value=value)
+            assert res.status == "Accepted"
+
+        event_data_subscription_mock = Mock()
+        _env.probe_module.subscribe_variable(
+            "ocpp", "event_data", event_data_subscription_mock
+        )
+
+        await change_var("HeartbeatInterval", "1")
+
+        # assert no event before monitoring is enabled
+        await asyncio.sleep(0.1)
+        event_data_subscription_mock.assert_not_called()
+
+        # enable monitoring and read the current values in one call; the
+        # deprecated empty-component key form is still accepted, unknown keys
+        # are skipped for monitoring but still get a result
+        res = await _env.probe_module.call_command(
+            "ocpp",
+            "monitor_and_get_variables",
+            {
+                "component_variables": [
+                    {
+                        "component": {"name": "OCPPCommCtrlr"},
+                        "variable": {"name": "HeartbeatInterval"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "MeterValuesAlignedData"},
+                    },
+                    {
+                        "component": {"name": ""},
+                        "variable": {"name": "UNKNOWN"},
+                    },
+                ]
+            },
+        )
+        assert isinstance(res, list) and len(res) == 3
+        # results echo the requested addressing form
+        assert res[0]["component_variable"] == {
+            "component": {"name": "OCPPCommCtrlr"},
+            "variable": {"name": "HeartbeatInterval"},
+        }
+        assert res[0]["status"] == "Accepted"
+        assert res[0]["value"] == "1"
+        assert res[1]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "MeterValuesAlignedData"},
+        }
+        assert res[1]["status"] == "Accepted"
+        assert res[2]["component_variable"] == {
+            "component": {"name": ""},
+            "variable": {"name": "UNKNOWN"},
+        }
+        assert res[2]["status"] == "UnknownVariable"
+
+        # verify the monitors were registered: events echo the requested form
+        await change_var("HeartbeatInterval", "42")
+        await wait_for_mock_called(
+            event_data_subscription_mock,
+            mock_call(
+                {
+                    "actual_value": "42",
+                    "component_variable": {
+                        "component": {"name": "OCPPCommCtrlr"},
                         "variable": {"name": "HeartbeatInterval"},
                     },
                     "event_id": ANY,
@@ -618,16 +896,31 @@ class TestOCPP16GenericInterfaceIntegration:
             ),
         )
 
-    async def test_subscribe_is_connected(self, _env):
+    async def test_subscribe_connection_status(self, _env):
         subscription_mock = Mock()
         _env.probe_module.subscribe_variable(
-            "ocpp", "is_connected", subscription_mock)
+            "ocpp", "connection_status", subscription_mock)
 
+        # Await the disconnect before restarting
         assert await _env.probe_module.call_command("ocpp", "stop", None)
-        assert await _env.probe_module.call_command("ocpp", "restart", None)
+        disconnected = await wait_for_mock_call_matching(
+            subscription_mock, lambda status: status["connected"] is False
+        )
 
-        await wait_for_mock_called(subscription_mock, mock_call(False))
-        await wait_for_mock_called(subscription_mock, mock_call(True))
+        assert await _env.probe_module.call_command("ocpp", "restart", None)
+        connected = await wait_for_mock_call_matching(
+            subscription_mock, lambda status: status["connected"] is True
+        )
+
+
+        for status in (connected, disconnected):
+            assert status["csms_url"]
+            assert status["identity"]
+            assert isinstance(status["security_profile"], int)
+            assert status["ocpp_version"] == "1.6"
+            assert isinstance(status["configuration_slot"], int)
+            assert status["ocpp_interface"]
+            assert status["ocpp_transport"]
 
     @pytest.mark.parametrize(
         "overwrite_implementation",

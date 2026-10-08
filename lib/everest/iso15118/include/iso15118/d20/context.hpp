@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <any>
@@ -7,23 +7,20 @@
 #include <optional>
 #include <string>
 #include <tuple>
+#include <vector>
 
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/message/payload_type.hpp>
 #include <iso15118/message/variant.hpp>
+#include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
-#include <iso15118/session/logger.hpp>
 
-#include "config.hpp"
 #include "control_event.hpp"
 #include "ev_information.hpp"
 #include "ev_session_info.hpp"
 #include "session.hpp"
 
 namespace iso15118::d20 {
-
-// forward declare
-class ControlEventQueue;
 
 class MessageExchange {
 public:
@@ -53,7 +50,13 @@ public:
         }
     }
 
+    // Stages an already encoded response verbatim. False when it is empty or exceeds the output buffer.
+    bool set_raw_response(const uint8_t* data, size_t len, message_20::Type type);
+
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_20::Type> check_and_clear_response();
+    bool has_response() const {
+        return response_available;
+    }
 
 private:
     // input
@@ -76,7 +79,7 @@ using BasePointerType = std::unique_ptr<StateBase>;
 class Context {
 public:
     // FIXME (aw): bundle arguments
-    Context(session::feedback::Callbacks, session::SessionLogger&, d20::SessionConfig, std::optional<PauseContext>&,
+    Context(session::feedback::Callbacks, session::SessionConfig, std::optional<PauseContext>&,
             const std::optional<ControlEvent>&, MessageExchange&, Timeouts&);
 
     template <typename StateType, typename... Args> BasePointerType create_state(Args&&... args) {
@@ -92,6 +95,10 @@ public:
 
     template <typename Msg> std::optional<Msg> get_response() {
         return message_exchange.get_response<Msg>();
+    }
+
+    bool respond_raw(const std::vector<uint8_t>& exi, message_20::Type type) {
+        return message_exchange.set_raw_response(exi.data(), exi.size(), type);
     }
 
     const auto& get_control_event() {
@@ -126,6 +133,12 @@ public:
         timeouts.stop_timeout(type);
     }
 
+    // (Re)arms a slot that may already be running.
+    void restart_timeout(d20::TimeoutType type, uint32_t time_ms) {
+        timeouts.reset_timeout(type);
+        timeouts.start_timeout(type, time_ms);
+    }
+
     d20::TimeoutType const* get_active_timeout() {
         if (not current_timeout.has_value()) {
             return nullptr;
@@ -137,13 +150,19 @@ public:
         current_timeout = timeout;
     }
 
-    const session::Feedback feedback;
+    void request_shutdown() {
+        requested_shutdown = true;
+    }
 
-    session::SessionLogger& log;
+    [[nodiscard]] bool shutdown_requested() const {
+        return requested_shutdown;
+    }
+
+    const session::Feedback feedback;
 
     Session session;
 
-    SessionConfig session_config;
+    session::SessionConfig session_config;
 
     // Contains the EV received data
     EVSessionInfo session_ev_info;
@@ -153,6 +172,9 @@ public:
 
     bool session_stopped{false};
     bool session_paused{false};
+    // Armed by the SessionStop state on a positive Res; drained by Session::send_response() right
+    // after the response hit the wire to emit feedback.session_stop_res_sent ([V2G-DC-968] anchor).
+    std::optional<session::feedback::SessionStopAction> session_stop_res_pending{};
 
     std::optional<UpdateDynamicModeParameters> cache_dynamic_mode_parameters;
     std::optional<AcTargetPower> cache_ac_target_power;
@@ -167,6 +189,8 @@ private:
     Timeouts& timeouts;
 
     std::optional<TimeoutType> current_timeout{std::nullopt};
+
+    bool requested_shutdown{false};
 };
 
 } // namespace iso15118::d20

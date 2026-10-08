@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/v2/device_model.hpp>
 #include <smart_charging_test_utils.hpp>
+#include <test_temp_paths.hpp>
 
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 
@@ -45,7 +46,37 @@ bool operator!=(const ChargingSchedulePeriod& a, const ChargingSchedulePeriod& b
     return (!(a == b));
 }
 
-bool operator==(const CompositeSchedule& a, const CompositeSchedule& b) {
+bool operator==(const EnhancedChargingSchedulePeriod& a, const EnhancedChargingSchedulePeriod& b) {
+    auto diff = std::abs(a.startPeriod - b.startPeriod);
+    bool bRes = diff < 10; // allow for a small difference
+    bRes = bRes && (a.limit == b.limit);
+    bRes = bRes && (a.numberPhases == b.numberPhases);
+    bRes = bRes && (a.phaseToUse == b.phaseToUse);
+    bRes = bRes && (a.setpoint == b.setpoint);
+    bRes = bRes && (a.setpoint_L2 == b.setpoint_L2);
+    bRes = bRes && (a.setpoint_L3 == b.setpoint_L3);
+    bRes = bRes && (a.setpointReactive == b.setpointReactive);
+    bRes = bRes && (a.setpointReactive_L2 == b.setpointReactive_L2);
+    bRes = bRes && (a.setpointReactive_L3 == b.setpointReactive_L3);
+    bRes = bRes && (a.dischargeLimit == b.dischargeLimit);
+    bRes = bRes && (a.dischargeLimit_L2 == b.dischargeLimit_L2);
+    bRes = bRes && (a.dischargeLimit_L3 == b.dischargeLimit_L3);
+    bRes = bRes && (a.evseSleep == b.evseSleep);
+    bRes = bRes && (a.operationMode == b.operationMode);
+    bRes = bRes && (a.preconditioningRequest == b.preconditioningRequest);
+    bRes = bRes && (a.v2xBaseline == b.v2xBaseline);
+    bRes = bRes && (a.v2xFreqWattCurve == b.v2xFreqWattCurve);
+    bRes = bRes && (a.v2xSignalWattCurve == b.v2xSignalWattCurve);
+    bRes = bRes && (a.stackLevel == b.stackLevel);
+
+    return bRes;
+}
+
+bool operator!=(const EnhancedChargingSchedulePeriod& a, const EnhancedChargingSchedulePeriod& b) {
+    return (!(a == b));
+}
+
+bool operator==(const EnhancedCompositeSchedule& a, const EnhancedCompositeSchedule& b) {
     bool bRes = true;
 
     if (a.chargingSchedulePeriod.size() != b.chargingSchedulePeriod.size()) {
@@ -64,7 +95,7 @@ bool operator==(const CompositeSchedule& a, const CompositeSchedule& b) {
     return bRes;
 }
 
-bool operator!=(const CompositeSchedule& a, const CompositeSchedule& b) {
+bool operator!=(const EnhancedCompositeSchedule& a, const EnhancedCompositeSchedule& b) {
     return (!(a == b));
 }
 
@@ -442,7 +473,7 @@ std::unique_ptr<TestSmartCharging>
 CompositeScheduleTestFixtureV2::create_smart_charging_handler(const OcppProtocolVersion ocpp_version) {
     this->ocpp_version = ocpp_version;
     std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-        std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+        std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
     this->database_handler =
         std::make_unique<DatabaseHandlerFake>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     database_handler->open_connection();

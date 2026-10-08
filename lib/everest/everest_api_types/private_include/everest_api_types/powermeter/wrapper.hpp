@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -150,5 +150,11 @@ using RequestStartTransaction_Internal = ::types::powermeter::TransactionReq;
 using RequestStartTransaction_External = RequestStartTransaction;
 
 RequestStartTransaction_External to_external_api(RequestStartTransaction_Internal const& val);
+
+using Capabilities_Internal = ::types::powermeter::Capabilities;
+using Capabilities_External = Capabilities;
+
+Capabilities_Internal to_internal_api(Capabilities_External const& val);
+Capabilities_External to_external_api(Capabilities_Internal const& val);
 
 } // namespace everest::lib::API::V1_0::types::powermeter

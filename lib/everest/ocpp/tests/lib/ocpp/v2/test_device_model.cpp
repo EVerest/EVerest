@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <gtest/gtest.h>
 
@@ -108,6 +108,82 @@ TEST_F(DeviceModelTest, test_component_as_key_in_map) {
     EXPECT_EQ(components_to_ints.find(different_evse_and_instance_comp), components_to_ints.end());
     EXPECT_EQ(components_to_ints.find(comp_with_custom_data)->second, 1);
     EXPECT_EQ(components_to_ints.find(different_name_comp), components_to_ints.end());
+
+    // OCPP 2.1 Part 2: ComponentType.name and .instance are identifierString, which is case-insensitive.
+    Component lower_case_name_comp;
+    lower_case_name_comp.name = "foo";
+
+    Component upper_case_name_comp;
+    upper_case_name_comp.name = "FOO";
+
+    EXPECT_EQ(components_to_ints.count(lower_case_name_comp), 1U) << "\"foo\" should match \"Foo\"";
+    EXPECT_EQ(components_to_ints.count(upper_case_name_comp), 1U) << "\"FOO\" should match \"Foo\"";
+    EXPECT_EQ(base_comp, lower_case_name_comp);
+    EXPECT_EQ(base_comp, upper_case_name_comp);
+
+    components_to_ints[different_instance_comp] = 2;
+
+    Component different_case_instance_comp;
+    different_case_instance_comp.name = "Foo";
+    different_case_instance_comp.instance = "BAR";
+
+    EXPECT_EQ(components_to_ints.count(different_case_instance_comp), 1U) << "instance \"BAR\" should match \"bar\"";
+    EXPECT_EQ(different_instance_comp, different_case_instance_comp);
+
+    ASSERT_EQ(components_to_ints.count(lower_case_name_comp), 1U);
+    EXPECT_EQ(components_to_ints.at(lower_case_name_comp), 1);
+    ASSERT_EQ(components_to_ints.count(different_case_instance_comp), 1U);
+    EXPECT_EQ(components_to_ints.at(different_case_instance_comp), 2);
+}
+
+TEST_F(DeviceModelTest, test_variable_as_key_in_map) {
+    std::map<Variable, std::int32_t> variables_to_ints;
+
+    Variable base_var;
+    base_var.name = "Foo";
+    variables_to_ints[base_var] = 1;
+
+    Variable different_instance_var;
+    different_instance_var.name = "Foo";
+    different_instance_var.instance = "bar";
+
+    Variable var_with_custom_data;
+    var_with_custom_data.name = "Foo";
+    var_with_custom_data.customData = json::object({{"vendorId", "Baz"}});
+
+    Variable different_name_var;
+    different_name_var.name = "Bar";
+
+    EXPECT_EQ(variables_to_ints.find(base_var)->second, 1);
+    EXPECT_EQ(variables_to_ints.find(different_instance_var), variables_to_ints.end());
+    EXPECT_EQ(variables_to_ints.find(var_with_custom_data)->second, 1);
+    EXPECT_EQ(variables_to_ints.find(different_name_var), variables_to_ints.end());
+
+    // OCPP 2.1 Part 2: VariableType.name and .instance are identifierString, which is case-insensitive.
+    Variable lower_case_name_var;
+    lower_case_name_var.name = "foo";
+
+    Variable upper_case_name_var;
+    upper_case_name_var.name = "FOO";
+
+    EXPECT_EQ(variables_to_ints.count(lower_case_name_var), 1U) << "\"foo\" should match \"Foo\"";
+    EXPECT_EQ(variables_to_ints.count(upper_case_name_var), 1U) << "\"FOO\" should match \"Foo\"";
+    EXPECT_EQ(base_var, lower_case_name_var);
+    EXPECT_EQ(base_var, upper_case_name_var);
+
+    variables_to_ints[different_instance_var] = 2;
+
+    Variable different_case_instance_var;
+    different_case_instance_var.name = "Foo";
+    different_case_instance_var.instance = "BAR";
+
+    EXPECT_EQ(variables_to_ints.count(different_case_instance_var), 1U) << "instance \"BAR\" should match \"bar\"";
+    EXPECT_EQ(different_instance_var, different_case_instance_var);
+
+    ASSERT_EQ(variables_to_ints.count(lower_case_name_var), 1U);
+    EXPECT_EQ(variables_to_ints.at(lower_case_name_var), 1);
+    ASSERT_EQ(variables_to_ints.count(different_case_instance_var), 1U);
+    EXPECT_EQ(variables_to_ints.at(different_case_instance_var), 2);
 }
 
 TEST_F(DeviceModelTest, test_set_monitors) {
@@ -166,6 +242,61 @@ TEST_F(DeviceModelTest, test_set_monitors) {
     ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
     // Interval is not a float but an integer.
     ASSERT_EQ(results[1].status, SetMonitoringStatusEnum::Rejected);
+}
+
+TEST_F(DeviceModelTest, test_set_threshold_and_delta_monitors_on_integer_variable) {
+    Component component;
+    component.name = "AlignedDataCtrlr";
+
+    Variable variable;
+    variable.name = "Interval";
+
+    // Clear all existing monitors for a clean test state
+    auto existing_monitors = dm->get_monitors({}, {{component, variable}});
+    for (auto& result : existing_monitors) {
+        std::vector<std::int32_t> ids;
+        for (auto& monitor : result.variableMonitoring) {
+            ids.push_back(monitor.id);
+        }
+        dm->clear_monitors(ids, true);
+    }
+
+    SetMonitoringData upper_threshold;
+    upper_threshold.value = 950.0;
+    upper_threshold.type = MonitorEnum::UpperThreshold;
+    upper_threshold.severity = 3;
+    upper_threshold.component = component;
+    upper_threshold.variable = variable;
+
+    SetMonitoringData lower_threshold;
+    lower_threshold.value = 10.0;
+    lower_threshold.type = MonitorEnum::LowerThreshold;
+    lower_threshold.severity = 3;
+    lower_threshold.component = component;
+    lower_threshold.variable = variable;
+
+    SetMonitoringData delta;
+    delta.value = 30.0;
+    delta.type = MonitorEnum::Delta;
+    delta.severity = 3;
+    delta.component = component;
+    delta.variable = variable;
+
+    // Non-integral values remain invalid for integer-typed variables
+    SetMonitoringData non_integral;
+    non_integral.value = 4.579;
+    non_integral.type = MonitorEnum::UpperThreshold;
+    non_integral.severity = 4;
+    non_integral.component = component;
+    non_integral.variable = variable;
+
+    auto results = dm->set_monitors({upper_threshold, lower_threshold, delta, non_integral});
+    ASSERT_EQ(results.size(), 4);
+
+    EXPECT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[1].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[2].status, SetMonitoringStatusEnum::Accepted);
+    EXPECT_EQ(results[3].status, SetMonitoringStatusEnum::Rejected);
 }
 
 TEST_F(DeviceModelTest, test_get_monitors) {

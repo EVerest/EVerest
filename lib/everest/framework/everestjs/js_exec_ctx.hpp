@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 //
 // author: aw@pionix.de
@@ -40,6 +40,13 @@ public:
     }
 
     void exec(const ArgFuncType& arg_func, const ResFuncType& res_func);
+
+    /// \brief Stop this thread-safe function from keeping the node event loop alive. Must be
+    /// called from the main js thread. Used during shutdown so the process can exit once the
+    /// module's own work has drained.
+    void unref(const Napi::Env& env) {
+        tsfn.Unref(env);
+    }
 
 private:
     ArgFuncType arg_func;

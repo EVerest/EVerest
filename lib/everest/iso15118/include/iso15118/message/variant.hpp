@@ -1,12 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <cstddef>
-#include <cstdint>
+#include <functional>
 #include <memory>
 #include <stdexcept>
 #include <string>
+#include <vector>
 
 // FIXME (aw): we only need the payload types from sdp.hpp, this could be shared in a separate header file
 #include <iso15118/io/sdp.hpp>
@@ -18,21 +18,24 @@ namespace iso15118::message_20 {
 
 class Variant {
 public:
-    using CustomDeleter = void (*)(void*);
+    using CustomDeleter = std::function<void(void*)>;
     Variant(io::v2gtp::PayloadType, const io::StreamInputView&);
-    template <typename MessageType> Variant(const MessageType& in) {
+    template <typename MessageType>
+    explicit Variant(const MessageType& in_) :
+        data(new MessageType(in_), [](void* ptr) { delete static_cast<MessageType*>(ptr); }),
+        type(message_20::TypeTrait<MessageType>::type) {
         static_assert(TypeTrait<MessageType>::type != Type::None, "Unhandled type!");
-
-        data = new MessageType;
-        *static_cast<MessageType*>(data) = in;
-        custom_deleter = [](void* ptr) { delete static_cast<MessageType*>(ptr); };
-        type = message_20::TypeTrait<MessageType>::type;
     }
-    ~Variant();
 
-    Type get_type() const;
+    [[nodiscard]] Type get_type() const;
+    [[nodiscard]] const std::string& get_error() const;
 
-    const std::string& get_error() const;
+    // The raw EXI of an AuthorizationReq or CertificateInstallationReq, empty for every other message and
+    // for a variant built directly from a C++ message. The PnC signature verification re-decodes the request
+    // from it to rebuild the signed EXI fragment; the certificate relay forwards it verbatim.
+    [[nodiscard]] const std::vector<uint8_t>& get_exi_payload() const {
+        return exi_payload;
+    }
 
     template <typename T> const T& get() const {
         static_assert(TypeTrait<T>::type != Type::None, "Unhandled type!");
@@ -40,7 +43,7 @@ public:
             throw std::runtime_error("Illegal message type access");
         }
 
-        return *static_cast<T*>(data);
+        return *static_cast<T*>(data.get());
     }
 
     template <typename T> T const* get_if() const {
@@ -49,13 +52,13 @@ public:
             return nullptr;
         }
 
-        return static_cast<T*>(data);
+        return static_cast<T*>(data.get());
     }
 
 private:
-    CustomDeleter custom_deleter{nullptr};
-    void* data{nullptr};
+    std::unique_ptr<void, CustomDeleter> data;
     Type type{Type::None};
     std::string error;
+    std::vector<uint8_t> exi_payload;
 };
 } // namespace iso15118::message_20

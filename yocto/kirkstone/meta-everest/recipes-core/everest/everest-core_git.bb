@@ -7,7 +7,7 @@ SRC_URI:append = " file://everest.service"
 
 do_compile[network] = "0"
 
-inherit cmake pkgconfig systemd python3native
+inherit cmake pkgconfig systemd python3native everest_file_capabilities
 
 DEPENDS = " \
     boost \
@@ -18,7 +18,6 @@ DEPENDS = " \
     fmt \
     ftxui \
     json-schema-validator \
-    libcap \
     libevent \
     libnfc-nci \
     libpcap \
@@ -57,6 +56,7 @@ EXTRA_OECMAKE += " \
     -DTIMER_INSTALL=ON \
     -DEVSE_SECURITY_INSTALL=ON \
     -DOCPP_INSTALL=ON \
+    -DTLS_INSTALL=ON \
 "
 
 # there are issues with pybind11 and the sstate cache

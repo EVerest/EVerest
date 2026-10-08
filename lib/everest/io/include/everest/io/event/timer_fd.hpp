@@ -1,12 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 /** \file */
 
 #pragma once
 
 #include "unique_fd.hpp"
+#include <everest/io/event/handler_liveness.hpp>
+#include <everest/io/event/registration_record.hpp>
+
 #include <chrono>
+#include <memory>
 
 namespace everest::lib::io::event {
 
@@ -21,6 +25,16 @@ public:
      * @details After construction the timeout is undefined. It must be set manually.
      */
     timer_fd();
+
+    /**
+     * @brief Drops a registration recorded by \ref fd_event_handler
+     */
+    ~timer_fd();
+
+    timer_fd(timer_fd const&) = delete;
+    timer_fd& operator=(timer_fd const&) = delete;
+    timer_fd(timer_fd&&) = delete;
+    timer_fd& operator=(timer_fd&&) = delete;
 
     /**
      * @brief Explicit conversion to file descriptor
@@ -55,6 +69,19 @@ public:
      * @return True on success, false otherwise
      */
     bool reset();
+
+    /**
+     * @brief Select one-shot or periodic mode for subsequent \ref set_timeout_ns calls.
+     * @details One-shot: \c it_value is the delay, \c it_interval is zero. Periodic (default):
+     * both \c it_value and \c it_interval use the configured timeout.
+     */
+    void set_single_shot(bool on);
+
+    /**
+     * @brief Stop the timer (no pending expiry until armed again).
+     * @return True on success, false otherwise
+     */
+    bool disarm();
 
     /**
      * @name Configuring the notification timeout
@@ -94,8 +121,27 @@ public:
      */
 
 private:
+    friend class fd_event_handler;
+
+    bool has_recorded_registration() const;
+
+    void record_registration(std::shared_ptr<handler_liveness> handler, int fd);
+
+    bool unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler);
+
+    /**
+     * @brief Drop the record, removing the registration while the handler is alive
+     * @details Uses the recorded descriptor instead of \ref get_raw_fd, so this stays callable
+     * while the object is being destroyed.
+     * @see registration_record::drop
+     * @return true if a registration was removed, false otherwise
+     */
+    bool unregister_recorded_events();
+
     unique_fd m_fd;
     long long m_to_ns{0};
+    bool m_single_shot{false};
+    registration_record m_record;
 };
 
 } // namespace everest::lib::io::event

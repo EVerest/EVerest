@@ -25,6 +25,7 @@ public:
     static std::string x509_get_organizational_unit(X509Handle* handle);
     static std::string x509_get_responder_url(X509Handle* handle);
     static std::string x509_get_key_hash(X509Handle* handle);
+    static std::string x509_get_public_key_algorithm(X509Handle* handle);
     static std::string x509_get_serial_number(X509Handle* handle);
     static std::string x509_get_issuer_name_hash(X509Handle* handle);
     static std::string x509_get_country(X509Handle* handle);

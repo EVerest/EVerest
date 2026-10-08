@@ -2,6 +2,7 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 
 from datetime import datetime, timedelta, timezone
+import base64
 import logging
 import asyncio
 from unittest.mock import ANY
@@ -11,6 +12,8 @@ import pytest
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
 )
+from everest.testing.core_utils._configuration.everest_configuration_strategies.disable_reset_after_update_strategy import \
+    DisableResetAfterUpdateStrategy
 
 # fmt: off
 
@@ -407,7 +410,7 @@ async def test_regular_charging_session_identification_conn_timeout(
     )
 
     await charge_point_v16.clear_cache_req()
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="5")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="5")
 
     # swipe id tag to authorize
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
@@ -1419,7 +1422,7 @@ async def test_clear_authorization_data_cache(
         call_result.ChangeConfiguration(ConfigurationStatus.accepted),
     )
 
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="2")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="2")
     # expect ChangeConfiguration.conf with status Accepted
     assert await wait_for_and_validate(
         test_utility,
@@ -1693,7 +1696,7 @@ async def test_remote_charge_start_timeout(
     logging.info("######### test_remote_charge_start_timeout #########")
 
     await charge_point_v16.get_configuration_req(key=["AuthorizeRemoteTxRequests"])
-    await charge_point_v16.change_configuration_req(key="ConnectionTimeout", value="10")
+    await charge_point_v16.change_configuration_req(key="ConnectionTimeOut", value="10")
 
     # send RemoteStartTransaction.req
     await charge_point_v16.remote_start_transaction_req(
@@ -4302,6 +4305,15 @@ async def test_firmware_update_download_install(
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.unavailable
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
         "FirmwareStatusNotification",
         call.DiagnosticsStatusNotification(FirmwareStatus.installing),
     )
@@ -4311,6 +4323,67 @@ async def test_firmware_update_download_install(
         charge_point_v16,
         "FirmwareStatusNotification",
         call.DiagnosticsStatusNotification(FirmwareStatus.installed),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.available
+        ),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="FTP")
+async def test_firmware_update_download_install_keep_connectors_available(
+    charge_point_v16: ChargePoint16, test_utility: TestUtility, ftp_server, test_config
+):
+    logging.info(
+        "######### test_firmware_update_download_install_keep_connectors_available #########"
+    )
+
+    retrieve_date = datetime.now(timezone.utc)
+    location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update.pnx#disable_connectors_during_install=false"
+
+    await charge_point_v16.update_firmware_req(
+        location=location, retrieve_date=retrieve_date.isoformat()
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.downloading),
+    )
+
+    # Verify that the connectors are not made unavailable.
+    # Drop the message buffer so that no StatusNotification sent before this point causes a test failure.
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.append("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.downloaded),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.installing),
+    )
+
+    test_utility.forbidden_actions.remove("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.installed),
     )
 
 
@@ -4461,13 +4534,13 @@ async def test_reservation_local_start_tx(
     # start charging session
     test_controller.plug_in()
 
-    # expect StartTransaction.req
+    # expect StartTransaction.req with the reservation id
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "StartTransaction",
         call.StartTransaction(
-            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+            1, test_config.authorization_info.valid_id_tag_1, 0, "", reservation_id=0
         ),
         validate_standard_start_transaction,
     )
@@ -4870,13 +4943,13 @@ async def test_reservation_connector_zero_supported(
     # start charging session
     test_controller.plug_in()
 
-    # expect StartTransaction.req
+    # expect StartTransaction.req with the reservation id
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
         "StartTransaction",
         call.StartTransaction(
-            1, test_config.authorization_info.valid_id_tag_1, 0, ""
+            1, test_config.authorization_info.valid_id_tag_1, 0, "", reservation_id=0
         ),
         validate_standard_start_transaction,
     )
@@ -6458,6 +6531,102 @@ async def test_chargepoint_update_http_auth_key(
     assert len(response.configuration_key) > 20
 
 
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-security-profile-1.yaml")
+)
+@pytest.mark.asyncio
+async def test_chargepoint_update_http_auth_key_with_call_in_flight(
+    central_system_v16: CentralSystem,
+    charge_point_v16: ChargePoint16,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    logging.info(
+        "######### test_chargepoint_update_http_auth_key_with_call_in_flight #########")
+
+    # Hold back the answer to StatusNotification(Preparing) so the charge point has a CALL in flight
+    held_unique_ids = []
+    held_answers = []
+    send = charge_point_v16._send
+
+    @on(Action.status_notification)
+    def on_status_notification(call_unique_id, **kwargs):
+        if kwargs.get("status") == ChargePointStatus.preparing:
+            held_unique_ids.append(call_unique_id)
+        return call_result.StatusNotification()
+
+    async def send_holding_answers(message):
+        if unpack(message).unique_id in held_unique_ids:
+            held_answers.append(message)
+            return
+        await send(message)
+
+    setattr(charge_point_v16, "on_status_notification", on_status_notification)
+    charge_point_v16.route_map = create_route_map(charge_point_v16)
+    setattr(charge_point_v16, "_send", send_holding_answers)
+
+    test_controller.plug_in()
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.preparing
+        ),
+    )
+
+    new_key = "4f43415f4f4354545f61646d696e5f74657374"
+    await charge_point_v16.change_configuration_req(
+        key="AuthorizationKey", value=new_key
+    )
+    # expect ChangeConfiguration.conf with status Accepted
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "ChangeConfiguration",
+        call_result.ChangeConfiguration(ConfigurationStatus.accepted),
+    )
+    assert len(held_answers) == 1
+
+    # queued behind the StatusNotification in flight
+    test_controller.plug_out()
+
+    # the charge point keeps the connection open while its StatusNotification is unanswered
+    await asyncio.sleep(3)
+    assert charge_point_v16._connection.open
+
+    answer_time = datetime.now(timezone.utc)
+    await send(held_answers[0])
+
+    # reconnect with the new key once the StatusNotification is answered
+    charge_point_v16 = await central_system_v16.wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+    expected_credentials = (
+        central_system_v16.chargepoint_id.encode() + b":" + bytes.fromhex(new_key)
+    )
+    expected_authorization = "Basic " + base64.b64encode(expected_credentials).decode()
+    assert (
+        charge_point_v16._connection.request_headers["Authorization"]
+        == expected_authorization
+    )
+    test_utility = TestUtility()
+
+    # the queued StatusNotification(Available) is sent on the new connection
+    available = await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.available
+        ),
+    )
+    assert available
+    assert datetime.fromisoformat(
+        available["timestamp"].replace("Z", "+00:00")
+    ) < answer_time
+
+
 @pytest.mark.asyncio
 @pytest.mark.ocpp_config_adaptions(
     GenericOCPP16ConfigAdjustment([("Security", "SecurityProfile", 0)])
@@ -6497,6 +6666,7 @@ async def test_chargepoint_update_security_profile(
         [
             ("Internal", "RetryBackoffRandomRange", 1),
             ("Internal", "RetryBackoffWaitMinimum", 2),
+            ("Internal", "SwitchSecurityProfileConnectionTimeout", 5)
         ]
     )
 )
@@ -6882,9 +7052,112 @@ async def test_signed_update_firmware(
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v16,
+        "StatusNotification",
+        call.StatusNotification(
+            1, ChargePointErrorCode.no_error, ChargePointStatus.unavailable
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
         "SignedFirmwareStatusNotification",
         call.SignedFirmwareStatusNotification(FirmwareStatus.installing, 1),
     )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.installed, 1),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.install_rebooting, 1),
+    )
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="FTP")
+@pytest.mark.everest_config_adaptions(DisableResetAfterUpdateStrategy())
+async def test_signed_update_firmware_keep_connectors_available(
+    test_config: OcppTestConfiguration,
+    charge_point_v16: ChargePoint16,
+    test_utility: TestUtility,
+    ftp_server,
+):
+    logging.info("######### test_signed_update_firmware_keep_connectors_available #########")
+
+    certificate = open(test_config.certificate_info.mf_root_ca).read()
+
+    await charge_point_v16.install_certificate_req(
+        certificate_type=CertificateUse.manufacturer_root_certificate,
+        certificate=certificate,
+    )
+
+    os.system(
+        f"curl -T {Path(__file__).parent.parent / test_config.firmware_info.update_file_keep_connectors_available} ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}"
+    )
+
+    location = f"ftp://{getpass.getuser()}:12345@localhost:{ftp_server.port}/firmware_update_keep_connectors_available.pnx"
+    retrieve_date_time = datetime.now(timezone.utc)
+    mf_root_ca = open(test_config.certificate_info.mf_root_ca).read()
+    fw_signature = open(test_config.firmware_info.update_file_keep_connectors_available_signature).read()
+
+    firmware = {
+        "location": location,
+        "retrieveDateTime": retrieve_date_time.isoformat(),
+        "signingCertificate": mf_root_ca,
+        "signature": fw_signature,
+    }
+
+    await charge_point_v16.signed_update_firmware_req(request_id=1, firmware=firmware)
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedUpdateFirmware",
+        call_result.SignedUpdateFirmware(UpdateFirmwareStatus.accepted),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.downloading, 1),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.downloaded, 1),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(
+            FirmwareStatus.signature_verified, 1
+        ),
+    )
+
+    # Verify that the connectors are not made unavailable.
+    # Drop the message buffer so that no StatusNotification sent before this point causes a test failure.
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.append("StatusNotification")
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "SignedFirmwareStatusNotification",
+        call.SignedFirmwareStatusNotification(FirmwareStatus.installing, 1),
+    )
+
+    test_utility.forbidden_actions.remove("StatusNotification")
 
     assert await wait_for_and_validate(
         test_utility,
@@ -6922,7 +7195,7 @@ async def test_get_security_configuration_keys(
         "DisableSecurityEventNotifications",
         "SupportedFileTransferProtocols"
     ])
-    
+
     assert response.configuration_key[0]["key"] == "AdditionalRootCertificateCheck"
     assert response.configuration_key[0]["value"] == "false"
     assert response.configuration_key[1]["key"] == "CertificateSignedMaxChainSize"

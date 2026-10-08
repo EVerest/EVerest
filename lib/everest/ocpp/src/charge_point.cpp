@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <chrono>
 #include <condition_variable>
 #include <csignal>
@@ -20,6 +20,7 @@
 #include <everest/logging.hpp>
 
 #include <ocpp/v16/charge_point.hpp>
+#include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/database_handler.hpp>
 
 #include <ocpp/common/cistring.hpp>
@@ -135,8 +136,9 @@ int main(int argc, char* argv[]) {
     secConfig.secc_leaf_cert_directory = fs::path("/tmp/client/cso/");
     secConfig.secc_leaf_key_directory = fs::path("/tmp/client/cso/");
 
-    charge_point = new ocpp::v16::ChargePoint(json_config.dump(), share_path, user_config_path, database_path,
-                                              sql_init_path, fs::path("/tmp"), nullptr, secConfig);
+    ocpp::v16::ChargePointConfiguration chargePointConfiguration(json_config.dump(), share_path, user_config_path);
+    charge_point = new ocpp::v16::ChargePoint(chargePointConfiguration, share_path, database_path, sql_init_path,
+                                              fs::path("/tmp"), nullptr, secConfig);
 
     /************************************** START REGISTERING CALLBACKS **************************************/
 
@@ -247,11 +249,11 @@ int main(int argc, char* argv[]) {
                   << "Setting charging profiles" << std::endl;
     });
 
-    charge_point->register_transaction_updated_callback([](const std::int32_t connector, const std::string& session_id,
-                                                           const std::int32_t transaction_id,
-                                                           const ocpp::v16::IdTagInfo& id_tag_info) {
-        std::cout << "Callback: Transaction updated at connector# " << connector
-                  << " and transaction id: " << transaction_id << std::endl;
+    charge_point->register_transaction_updated_callback([](const std::string& session_id,
+                                                           const ocpp::v16::StartTransactionRequest& request,
+                                                           const ocpp::v16::StartTransactionResponse& response) {
+        std::cout << "Callback: Transaction updated at connector# " << request.connectorId
+                  << " and transaction id: " << response.transactionId << std::endl;
     });
 
     /************************************** STOP REGISTERING CALLBACKS **************************************/
@@ -291,7 +293,7 @@ int main(int argc, char* argv[]) {
             } else if (command == "stop_transaction") {
                 if (transaction_running) {
                     charge_point->on_transaction_stopped(1, uuid, ocpp::v16::Reason::Local, ocpp::DateTime(), 2500,
-                                                         std::nullopt, std::nullopt);
+                                                         std::nullopt, std::nullopt, std::nullopt);
                     charge_point->on_session_stopped(1, uuid);
                     transaction_running = false;
                 } else {

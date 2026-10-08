@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -16,6 +16,8 @@
 
 #include <everest_api_types/utilities/Topics.hpp>
 
+#include "MqttProviderInterface.hpp"
+
 namespace everest::lib::API {
 
 namespace internal {
@@ -29,13 +31,16 @@ using namespace std::chrono_literals;
 
 template <class ValueT> class AsyncApiRequestReply {
 public:
-    AsyncApiRequestReply(Everest::MqttProvider& mqtt_, Topics const& topic_generator_,
+    AsyncApiRequestReply(Mqtt::MqttProviderInterface& mqtt_, Topics const& topic_generator_,
                          std::chrono::seconds timeout_ = 5s) :
         mqtt(mqtt_), topic_generator(topic_generator_), timeout(timeout_) {
     }
     std::optional<ValueT> create(std::string const& topic_id, json payload = json()) {
         using namespace std::literals::chrono_literals;
         using weak_promise = std::weak_ptr<std::promise<ValueT>>;
+        // thread_local: constructing the generator seeds it from the entropy
+        // source, which is too expensive to repeat for every request
+        static thread_local boost::uuids::random_generator uuid_create;
         auto reply_topic = topic_generator.reply_to_everest(boost::uuids::to_string(uuid_create()));
         auto value_prom = std::make_shared<std::promise<ValueT>>();
         auto value_fut = value_prom->get_future();
@@ -59,7 +64,7 @@ public:
         json req;
         req["headers"]["replyTo"] = reply_topic;
         if (not payload.empty()) {
-            req["payload"] = payload;
+            req["payload"] = std::move(payload);
         }
         mqtt.publish(topic_generator.everest_to_extern(topic_id), req.dump());
 
@@ -72,14 +77,13 @@ public:
     }
 
 private:
-    Everest::MqttProvider& mqtt;
+    Mqtt::MqttProviderInterface& mqtt;
     Topics const& topic_generator;
     std::chrono::seconds timeout;
-    boost::uuids::random_generator uuid_create;
 };
 
 template <class ReplyT, class ReqT>
-auto request_reply_handler(Everest::MqttProvider& mqtt, Topics const& topic_generator, ReqT const& request,
+auto request_reply_handler(Mqtt::MqttProviderInterface& mqtt, Topics const& topic_generator, ReqT const& request,
                            std::string const& topic, int timeout_s) {
     using namespace internal;
     using ResultT = std::optional<decltype(to_internal_api(std::declval<ReplyT>()))>;
@@ -96,7 +100,7 @@ auto request_reply_handler(Everest::MqttProvider& mqtt, Topics const& topic_gene
 }
 
 template <class ReplyT>
-auto request_reply_handler(Everest::MqttProvider& mqtt, Topics const& topic_generator, std::string const& topic,
+auto request_reply_handler(Mqtt::MqttProviderInterface& mqtt, Topics const& topic_generator, std::string const& topic,
                            int timeout_s) {
     return request_reply_handler<ReplyT>(mqtt, topic_generator, internal::empty_payload, topic, timeout_s);
 }

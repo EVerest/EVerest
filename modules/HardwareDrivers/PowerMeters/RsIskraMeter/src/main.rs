@@ -46,7 +46,7 @@ use backon::ConstantBuilder;
 use chrono::{Local, Offset, Utc};
 use everestrs::serde as everest_serde;
 use everestrs::serde_json as everest_serde_json;
-use generated::errors::powermeter::{Error, GenericError};
+use generated::errors::powermeter::{Error, PowermeterError};
 use generated::types::powermeter::{
     Powermeter, TransactionReq, TransactionRequestStatus, TransactionStartResponse,
     TransactionStopResponse,
@@ -225,6 +225,7 @@ impl TransactionStartResponse {
             status: TransactionRequestStatus::UNEXPECTED_ERROR,
             transaction_max_stop_time: None,
             transaction_min_stop_time: None,
+            signed_meter_value: None,
         }
     }
 }
@@ -827,6 +828,7 @@ impl ReadyState {
             transaction_min_stop_time: Option::None,
             status: TransactionRequestStatus::OK,
             transaction_max_stop_time: Option::None,
+            signed_meter_value: Option::None,
         })
     }
 
@@ -994,7 +996,8 @@ impl generated::OnReadySubscriber for IskraMeter {
         }
 
         let ready_state_clone = ready_state.clone();
-        let power_meter_clone = publishers.meter.clone();
+        let meter_clone = publishers.meter.clone();
+        let main_clone = publishers.main.clone();
         let interval_ms = self.read_meter_values_interval_ms;
 
         let backoff = ConstantBuilder::default()
@@ -1014,17 +1017,22 @@ impl generated::OnReadySubscriber for IskraMeter {
             {
                 Ok(meter) => {
                     log::debug!("Got meter value {:?}", meter);
-                    match power_meter_clone.powermeter(meter) {
-                        Ok(_) => log::debug!("Successfully published meter value"),
-                        Err(e) => log::error!("Failed to post meter values {:?}", e),
+                    for power_meter_clone in [&meter_clone, &main_clone] {
+                        match power_meter_clone.powermeter(meter.clone()) {
+                            Ok(_) => log::debug!("Successfully published meter value"),
+                            Err(e) => log::error!("Failed to post meter values {:?}", e),
+                        }
+                        power_meter_clone
+                            .clear_error(Error::Powermeter(PowermeterError::CommunicationFault));
                     }
-                    power_meter_clone
-                        .clear_error(Error::Generic(GenericError::CommunicationFault));
                 }
                 Err(e) => {
                     log::error!("Failed to read meter value {:?}", e);
-                    power_meter_clone
-                        .raise_error(Error::Generic(GenericError::CommunicationFault).into());
+                    for power_meter_clone in [&meter_clone, &main_clone] {
+                        power_meter_clone.raise_error(
+                            Error::Powermeter(PowermeterError::CommunicationFault).into(),
+                        );
+                    }
                 }
             };
             // Check the time status. In case of failure we just carry on.
@@ -1062,9 +1070,12 @@ impl generated::SerialCommunicationHubClientSubscriber for IskraMeter {}
 impl generated::PowermeterServiceSubscriber for IskraMeter {
     fn start_transaction(
         &self,
-        _context: &generated::Context,
+        context: &generated::Context,
         value: generated::types::powermeter::TransactionReq,
     ) -> everestrs::Result<generated::types::powermeter::TransactionStartResponse> {
+        if context.name == "meter" {
+            log::warn!("The `meter` interface is deprecated. Use `main`");
+        }
         let lock = self
             .state_machine
             .lock()
@@ -1089,9 +1100,12 @@ impl generated::PowermeterServiceSubscriber for IskraMeter {
 
     fn stop_transaction(
         &self,
-        _context: &generated::Context,
+        context: &generated::Context,
         _transaction_id: String,
     ) -> everestrs::Result<generated::types::powermeter::TransactionStopResponse> {
+        if context.name == "meter" {
+            log::warn!("The `meter` interface is deprecated. Use `main`");
+        }
         let lock = self
             .state_machine
             .lock()
@@ -1129,7 +1143,7 @@ fn main(module: &Module) {
         read_meter_values_interval_ms: config.read_meter_values_interval_ms as u64,
     });
 
-    let _publishers = module.start(class.clone(), class.clone(), class.clone());
+    let _publishers = module.start(class.clone(), class.clone(), class.clone(), class.clone());
 
     loop {
         std::thread::sleep(std::time::Duration::from_secs(1));

@@ -1,5 +1,6 @@
 target_include_directories(libocpp_unit_tests PUBLIC
         ${CMAKE_CURRENT_SOURCE_DIR}
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/mocks
 )
 
 target_sources(libocpp_unit_tests PRIVATE
@@ -14,6 +15,7 @@ target_sources(libocpp_unit_tests PRIVATE
         v2config/test_pnc.cpp
         v2config/test_security.cpp
         v2config/test_smart_charging.cpp
+        v2config/test_integrity.cpp
         v2config/test_user_config.cpp
         profile_tests_common.cpp
         profile_testsA.cpp
@@ -25,10 +27,17 @@ target_sources(libocpp_unit_tests PRIVATE
         test_message_queue.cpp
         test_charge_point_state_machine.cpp
         test_composite_schedule.cpp
+        test_charge_point_connectivity.cpp
+        test_devicemodel_connectivity.cpp
+        test_charge_point_status_notification.cpp
+        test_charge_point_suspend_reason.cpp
+        test_charge_point_malformed_call_result.cpp
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp
+        test_custom_key_hooks.cpp
         test_utils.cpp
+        test_variable_resolver.cpp
 )
 
 # Copy the json files used for testing to the destination directory

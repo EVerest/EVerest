@@ -1,6 +1,11 @@
 # API module documentation
 This module is responsible for providing a simple MQTT based API to EVerest internals
 
+> **Deprecated** in 2026.10.0, earliest removal in 2027.04.0. Use the EVerest API
+> modules under `modules/API/EVerestAPI/` instead, see the
+> [Active Deprecation Index](../../../docs/source/project/releases/deprecation-index.rst)
+> for the topic mapping.
+
 ## Periodically published variables for each connected EvseManager
 This module periodically publishes the following variables for each connected EvseManager.
 
@@ -148,7 +153,7 @@ of the EVSE.
 ### everest_api/ocpp/var/connection_status
 This variable is published every second and contains the connection
 status of the OCPP module.
-If the OCPP module has not yet published its "is_connected" status or
+If the OCPP module has not yet published its "connection_status" or
 no OCPP module is configured "unknown" is published. Otherwise "connected"
 or "disconnected" are published.
 

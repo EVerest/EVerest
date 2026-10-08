@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/database/sqlite/statement.hpp>
 #include <everest/logging.hpp>
 #include <limits>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
+#include <ocpp/v2/network_configuration_default_schema.hpp>
 #include <ocpp/v2/utils.hpp>
 
 using namespace everest::db;
@@ -47,8 +48,8 @@ void DeviceModelStorageSqlite::initialize_connection(const fs::path& db_path) {
 }
 
 int DeviceModelStorageSqlite::get_component_id(const Component& component_id) {
-    const std::string select_query =
-        "SELECT ID FROM COMPONENT WHERE NAME = ? AND INSTANCE IS ? AND EVSE_ID IS ? AND CONNECTOR_ID IS ?";
+    const std::string select_query = "SELECT ID FROM COMPONENT WHERE NAME = ? COLLATE NOCASE AND INSTANCE IS ? COLLATE "
+                                     "NOCASE AND EVSE_ID IS ? AND CONNECTOR_ID IS ?";
 
     auto select_stmt = this->db->new_statement(select_query);
 
@@ -81,7 +82,8 @@ int DeviceModelStorageSqlite::get_variable_id(const Component& component_id, con
         return -1;
     }
 
-    const std::string select_query = "SELECT ID FROM VARIABLE WHERE COMPONENT_ID = ? AND NAME = ? AND INSTANCE IS ?";
+    const std::string select_query = "SELECT ID FROM VARIABLE WHERE COMPONENT_ID = ? AND NAME = ? COLLATE NOCASE AND "
+                                     "INSTANCE IS ? COLLATE NOCASE";
     auto select_stmt = this->db->new_statement(select_query);
 
     select_stmt->bind_int(1, _component_id);
@@ -473,6 +475,126 @@ std::int32_t DeviceModelStorageSqlite::clear_custom_variable_monitors() {
 
 void DeviceModelStorageSqlite::check_integrity() {
     // Function is now empty because checks are already done elsewhere (for example the check for 'required' variables).
+}
+
+bool DeviceModelStorageSqlite::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    const std::string new_instance = std::to_string(new_slot);
+
+    // Embedded schema parse. Failure means a build defect, not a runtime data issue.
+    std::pair<ComponentKey, std::vector<DeviceModelVariable>> parsed;
+    try {
+        parsed = parse_component_config_from_string(get_default_network_configuration_schema());
+    } catch (const std::exception& e) {
+        EVLOG_critical << "create_network_configuration_slot_from_default_schema: embedded default "
+                          "schema could not be parsed (build defect): "
+                       << e.what();
+        return false;
+    }
+    const auto& variables = parsed.second;
+
+    try {
+        auto select_existing = this->db->new_statement("SELECT 1 FROM COMPONENT WHERE NAME = 'NetworkConfiguration' "
+                                                       "COLLATE NOCASE AND INSTANCE = @instance");
+        select_existing->bind_text("@instance", new_instance, SQLiteString::Transient);
+        if (select_existing->step() == SQLITE_ROW) {
+            EVLOG_warning << "create_network_configuration_slot_from_default_schema: slot " << new_slot
+                          << " already exists";
+            return false;
+        }
+
+        auto transaction = this->db->begin_transaction();
+
+        auto bind_opt_text = [](everest::db::sqlite::StatementInterface& stmt, const char* p,
+                                const std::optional<std::string>& v) {
+            if (v.has_value() && !v->empty()) {
+                stmt.bind_text(p, *v, SQLiteString::Transient);
+            } else {
+                stmt.bind_null(p);
+            }
+        };
+        auto bind_opt_int = [](everest::db::sqlite::StatementInterface& stmt, const char* p, const auto& v) {
+            if (v.has_value()) {
+                stmt.bind_int(p, static_cast<int>(*v));
+            } else {
+                stmt.bind_null(p);
+            }
+        };
+        auto bind_opt_double = [](everest::db::sqlite::StatementInterface& stmt, const char* p, const auto& v) {
+            if (v.has_value()) {
+                stmt.bind_double(p, static_cast<double>(*v));
+            } else {
+                stmt.bind_null(p);
+            }
+        };
+
+        auto insert_component = this->db->new_statement("INSERT INTO COMPONENT (NAME, INSTANCE, EVSE_ID, CONNECTOR_ID) "
+                                                        "VALUES ('NetworkConfiguration', @instance, NULL, NULL)");
+        insert_component->bind_text("@instance", new_instance, SQLiteString::Transient);
+        if (insert_component->step() != SQLITE_DONE) {
+            EVLOG_error << "create_network_configuration_slot_from_default_schema: insert COMPONENT failed: "
+                        << this->db->get_error_message();
+            return false;
+        }
+        const auto new_component_id = this->db->get_last_inserted_rowid();
+
+        for (const auto& variable : variables) {
+            auto insert_variable = this->db->new_statement(
+                "INSERT INTO VARIABLE (NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES (@n, @i, @cid, @src)");
+            insert_variable->bind_text("@n", variable.name, SQLiteString::Transient);
+            bind_opt_text(*insert_variable, "@i", variable.instance);
+            insert_variable->bind_int("@cid", static_cast<int>(new_component_id));
+            bind_opt_text(*insert_variable, "@src", variable.source);
+            if (insert_variable->step() != SQLITE_DONE) {
+                EVLOG_error << "create_network_configuration_slot_from_default_schema: insert VARIABLE failed: "
+                            << this->db->get_error_message();
+                return false;
+            }
+            const auto new_variable_id = this->db->get_last_inserted_rowid();
+
+            auto insert_characteristics = this->db->new_statement(
+                "INSERT INTO VARIABLE_CHARACTERISTICS "
+                "(DATATYPE_ID, VARIABLE_ID, MAX_LIMIT, MIN_LIMIT, SUPPORTS_MONITORING, UNIT, VALUES_LIST) "
+                "VALUES (@dtype, @vid, @max, @min, @supp, @unit, @vlist)");
+            insert_characteristics->bind_int("@dtype", static_cast<int>(variable.characteristics.dataType));
+            insert_characteristics->bind_int("@vid", static_cast<int>(new_variable_id));
+            bind_opt_double(*insert_characteristics, "@max", variable.characteristics.maxLimit);
+            bind_opt_double(*insert_characteristics, "@min", variable.characteristics.minLimit);
+            insert_characteristics->bind_int("@supp", variable.characteristics.supportsMonitoring ? 1 : 0);
+            bind_opt_text(*insert_characteristics, "@unit", variable.characteristics.unit);
+            bind_opt_text(*insert_characteristics, "@vlist", variable.characteristics.valuesList);
+            if (insert_characteristics->step() != SQLITE_DONE) {
+                EVLOG_error << "create_network_configuration_slot_from_default_schema: "
+                               "insert VARIABLE_CHARACTERISTICS failed: "
+                            << this->db->get_error_message();
+                return false;
+            }
+
+            for (const auto& db_attribute : variable.attributes) {
+                const auto& attribute = db_attribute.variable_attribute;
+                auto insert_attribute = this->db->new_statement(
+                    "INSERT INTO VARIABLE_ATTRIBUTE "
+                    "(VARIABLE_ID, MUTABILITY_ID, PERSISTENT, CONSTANT, TYPE_ID, VALUE_SOURCE, VALUE) "
+                    "VALUES (@vid, @mut, 1, 0, @type, 'internal', NULL)");
+                insert_attribute->bind_int("@vid", static_cast<int>(new_variable_id));
+                bind_opt_int(*insert_attribute, "@mut", attribute.mutability);
+                bind_opt_int(*insert_attribute, "@type", attribute.type);
+                if (insert_attribute->step() != SQLITE_DONE) {
+                    EVLOG_error << "create_network_configuration_slot_from_default_schema: "
+                                   "insert VARIABLE_ATTRIBUTE failed: "
+                                << this->db->get_error_message();
+                    return false;
+                }
+            }
+        }
+
+        transaction->commit();
+        EVLOG_info << "Created NetworkConfiguration_" << new_slot << " from embedded default schema ("
+                   << variables.size() << " variables)";
+        return true;
+    } catch (const std::exception& e) {
+        EVLOG_error << "create_network_configuration_slot_from_default_schema: exception: " << e.what();
+        return false;
+    }
 }
 
 } // namespace v2

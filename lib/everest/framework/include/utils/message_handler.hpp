@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <exception>
 #include <map>
 #include <string>
 #include <thread>
@@ -16,6 +17,7 @@
 #include <everest/util/async/thread_pool_scaling.hpp>
 #include <everest/util/queue/thread_safe_queue.hpp>
 
+#include <utils/message_handler_scaling_policy.hpp>
 #include <utils/message_queue.hpp>
 #include <utils/types.hpp>
 
@@ -24,17 +26,40 @@ using CmdId = std::string;
 
 namespace Everest {
 
-constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS = 50;
+constexpr std::size_t THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS =
+    detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS;
 constexpr std::chrono::seconds THREAD_POOL_SCALING_IDLE_TIMEOUT{2};
-constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT = 1;
+/// \brief Age of the oldest queued message at which the pool reports it stalled at the thread limit.
+constexpr std::chrono::seconds THREAD_POOL_SCALING_STALL_THRESHOLD{1};
+/// \brief How long starting a handler thread may keep failing before the failure is rethrown, which ends the
+/// module like a crash and lets the manager restart the stack.
+constexpr std::chrono::seconds THREAD_POOL_SCALING_START_FAILURE_TOLERANCE{5};
+
+/// \brief Exception policy of the message handler pool. A handler's exception is rethrown from the worker and
+/// terminates the process. A failed worker start is logged and left to the pool to retry, until it has kept
+/// failing for THREAD_POOL_SCALING_START_FAILURE_TOLERANCE; then it is rethrown. A message stalled at the thread
+/// limit is logged; the remedy is a higher EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT.
+struct MessageHandlerExceptionPolicy {
+    static void handle_exception(std::exception_ptr eptr);
+};
+/// \brief Worker count range of the message handler pool, configured at build time and independent of the CPU
+/// core count: the pool grows to let handlers that block waiting for another message make progress (see #2102),
+/// and those threads do not run in parallel.
+constexpr std::size_t THREAD_POOL_SCALING_MIN_THREAD_COUNT =
+    detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_MIN_THREAD_COUNT;
+constexpr std::size_t THREAD_POOL_SCALING_MAX_THREAD_COUNT =
+    detail::MESSAGE_HANDLER_THREAD_POOL_SCALING_MAX_THREAD_COUNT;
+static_assert(THREAD_POOL_SCALING_MIN_THREAD_COUNT >= 1, "the message handler pool needs at least one worker");
+static_assert(THREAD_POOL_SCALING_MAX_THREAD_COUNT >= THREAD_POOL_SCALING_MIN_THREAD_COUNT,
+              "the message handler pool's maximum worker count must not be below its minimum");
 constexpr std::size_t MAX_PENDING_MESSAGES_PER_TOPIC = 100;
 
 /// \brief Handles message dispatching and thread-safe queuing of different message types.
 ///
 /// Messages are routed to one of four channels based on their type:
 ///   - operation_message_queue → operation_dispatcher_thread → operation_thread_pool
-///     (vars, cmds, errors, GetConfig, ModuleReady — parallel across topics, serial per topic)
-///   - result_message_queue    → result_worker_thread (cmd results, GetConfig responses — serial)
+///     (vars, cmds, errors, ConfigurationRequest, ModuleReady — parallel across topics, serial per topic)
+///   - result_message_queue    → result_worker_thread (cmd results, ConfigurationResponse — serial)
 ///   - external_mqtt_message_queue → external_mqtt_worker_thread (external MQTT — serial)
 ///   - GlobalReady             → ready_thread (one-shot, spawned per message)
 class MessageHandler {
@@ -67,13 +92,13 @@ private:
     };
 
     struct GenericHandlers {
-        MultiHandlerMap var;                // var handlers of module
-        SingleHandlerMap cmd;               // cmd handlers of module
-        MultiHandlerMap error;              // error handlers with wildcard support
-        SingleHandlerMap get_module_config; // get module config handler of manager
-        SharedTypedHandler global_ready;    // global ready handler of module
-        SingleHandlerMap module_ready;      // module ready handlers of manager
-        MultiHandlerMap external_var;       // external MQTT handlers of module
+        MultiHandlerMap var;                    // var handlers of module
+        SingleHandlerMap cmd;                   // cmd handlers of module
+        MultiHandlerMap error;                  // error handlers with wildcard support
+        SingleHandlerMap configuration_request; // configuration request handler of manager
+        SharedTypedHandler global_ready;        // global ready handler of module
+        SingleHandlerMap module_ready;          // module ready handlers of manager
+        MultiHandlerMap external_var;           // external MQTT handlers of module
     };
 
     void run_operation_dispatcher();
@@ -98,9 +123,9 @@ private:
     void handle_get_config_response(const std::string& topic, const json& payload);
 
     // Threads
-    std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, GetConfig and
-                                             // ModuleReady messages
-    std::thread result_worker_thread;        // processes cmd results and GetConfig responses
+    std::thread operation_dispatcher_thread; // processes vars, commands, external MQTT, errors, ConfigurationRequest
+                                             // and ModuleReady messages
+    std::thread result_worker_thread;        // processes cmd results and ConfigurationResponse messages
     std::thread external_mqtt_worker_thread; // processes external MQTT messages
 
     // Wrapped in a monitor so that concurrent GlobalReady arrivals in add() are safe:
@@ -108,8 +133,8 @@ private:
     // outside the lock, preventing concurrent join/assignment races on the raw std::thread.
     everest::lib::util::monitor<std::thread> ready;
 
-    using LatencyScaling = everest::lib::util::LatencyScaling<THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS>;
-    using ThreadPool = everest::lib::util::thread_pool_scaling<LatencyScaling, everest::lib::util::RethrowExceptions>;
+    using ThreadPool =
+        everest::lib::util::thread_pool_scaling<detail::MessageHandlerScalingPolicy, MessageHandlerExceptionPolicy>;
     std::unique_ptr<ThreadPool> operation_thread_pool;
 
     using MessageQueue = everest::lib::util::thread_safe_queue<ParsedMessage>;

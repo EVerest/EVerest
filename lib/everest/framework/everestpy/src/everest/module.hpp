@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef EVERESTPY_MODULE_HPP
 #define EVERESTPY_MODULE_HPP
 
@@ -8,6 +8,7 @@
 #include <functional>
 #include <map>
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -15,10 +16,17 @@
 
 #include "misc.hpp"
 
+namespace Everest {
+namespace config {
+class ConfigServiceClient;
+}
+} // namespace Everest
+
 class Module {
 public:
     Module(const RuntimeSession&);
     Module(const std::string&, const RuntimeSession&);
+    ~Module();
 
     ModuleSetup say_hello();
 
@@ -29,7 +37,7 @@ public:
             handle->register_on_ready_handler(on_ready_handler);
         }
 
-        const auto end_time = std::chrono::system_clock::now();
+        const auto end_time = std::chrono::steady_clock::now();
         EVLOG_info << "Module " << fmt::format(Everest::TERMINAL_STYLE_BLUE, "{}", this->module_id) << " initialized ["
                    << std::chrono::duration_cast<std::chrono::milliseconds>(end_time - this->start_time).count()
                    << "ms]";
@@ -39,6 +47,15 @@ public:
 
     void init_done() {
         init_done(nullptr);
+    }
+
+    // Stops the MQTT connection and joins its threads. The module is unusable afterwards.
+    void close();
+
+    void shutdown_handler(const std::function<void()>& on_shutdown_handler) {
+        if (on_shutdown_handler) {
+            handle->register_on_shutdown_handler(on_shutdown_handler);
+        }
     }
 
     Everest::Config& get_config() {
@@ -66,6 +83,13 @@ public:
     std::shared_ptr<Everest::error::ErrorStateMonitor>
     get_error_state_monitor_req(const Fulfillment& fulfillment) const;
 
+    json set_config_value(const std::string& module_id, const std::string& param_name, const std::string& value,
+                          const std::optional<std::string>& impl_id = std::nullopt);
+    json get_config_value(const std::string& module_id, const std::string& param_name,
+                          const std::optional<std::string>& impl_id = std::nullopt);
+    void register_config_change_handler(const std::string& impl_id, const std::string& param_name,
+                                        std::function<json(const std::string&)> handler);
+
     const auto& get_fulfillments() const {
         return fulfillments;
     }
@@ -85,7 +109,7 @@ public:
 private:
     const std::string module_id;
     const RuntimeSession& session;
-    const std::chrono::time_point<std::chrono::system_clock> start_time;
+    const std::chrono::time_point<std::chrono::steady_clock> start_time;
     std::unique_ptr<Everest::RuntimeSettings> rs;
     std::shared_ptr<Everest::MQTTAbstraction> mqtt_abstraction;
     std::unique_ptr<Everest::Config> config_;
@@ -98,6 +122,7 @@ private:
     std::deque<std::function<void(json)>> subscription_callbacks{};
     std::deque<std::function<void(json)>> err_susbcription_callbacks{};
     std::deque<std::function<void(json)>> err_cleared_susbcription_callbacks{};
+    std::deque<std::function<json(const std::string&)>> config_change_handlers{};
 
     static std::unique_ptr<Everest::Everest>
     create_everest_instance(const std::string& module_id, const Everest::Config& config,

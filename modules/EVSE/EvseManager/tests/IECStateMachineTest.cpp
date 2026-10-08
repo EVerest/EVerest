@@ -3,6 +3,7 @@
 #include "evse_board_supportIntfStub.hpp"
 #include <EventQueue.hpp>
 #include <IECStateMachine.hpp>
+#include <atomic>
 #include <backtrace.hpp>
 #include <chrono>
 #include <gtest/gtest.h>
@@ -27,6 +28,7 @@ struct BspStub : public module::stub::ModuleAdapterStub {
         _bsp["allow_power_on"] = &BspStub::call_allow_power_on;
         _bsp["enable"] = &BspStub::call_enable;
         _bsp["cp_state_X1"] = &BspStub::call_cp_state_X1;
+        _bsp["cp_state_F"] = &BspStub::call_cp_state_F;
         _bsp["pwm_on"] = &BspStub::call_pwm_on;
     }
 
@@ -59,6 +61,11 @@ struct BspStub : public module::stub::ModuleAdapterStub {
         return std::nullopt;
     }
 
+    virtual Result call_cp_state_F(Parameters p) {
+        std::cout << "call_cp_state_F(" << p << ")" << std::endl;
+        return std::nullopt;
+    }
+
     virtual Result call_pwm_on(Parameters p) {
         std::cout << "call_pwm_on(" << p << ")" << std::endl;
         return std::nullopt;
@@ -85,7 +92,7 @@ TEST(IECStateMachine, init) {
     module::stub::ModuleAdapterStub module_adapter = module::stub::ModuleAdapterStub();
     std::unique_ptr<evse_board_supportIntf> bsp_if =
         std::make_unique<module::stub::evse_board_supportIntfStub>(module_adapter);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 }
 
 #if 0
@@ -215,7 +222,7 @@ TEST(IECStateMachine, deadlock_test) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -281,7 +288,7 @@ TEST(IECStateMachine, deadlock_fix) {
 
     BspStubDeadlock bsp;
     std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
-    module::IECStateMachine state_machine(std::move(bsp_if), true);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
 
     std::uint8_t signal_lock_count = 0;
 
@@ -332,6 +339,570 @@ TEST(IECStateMachine, deadlock_fix) {
 
     std::this_thread::sleep_for(10s);
     // if there is a deadlock the test won't finish
+}
+
+// ---------------------------------------------------------------------------
+// Tests for auth-aware connector locking
+//
+// When use_authorized is true, the connector should only lock in State B/C
+// once the session is authorized. This prevents trapping cables before
+// authorization while still keeping them locked during BMS pauses.
+
+struct ConnectorLockTest : public testing::Test {
+    BspStub bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+    // Incremented from the debounce timer thread in the captive tests
+    std::atomic<int> lock_count{0};
+    std::atomic<int> unlock_count{0};
+
+    void reset_counts() {
+        lock_count = 0;
+        unlock_count = 0;
+    }
+
+    std::unique_ptr<module::IECStateMachine> create_state_machine(bool use_authorized, bool keep_cable_locked = false,
+                                                                  int keep_cable_locked_lock_delay_ms = 0) {
+        bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, use_authorized, keep_cable_locked,
+                                                            keep_cable_locked_lock_delay_ms);
+        sm->signal_lock.connect([this]() { lock_count++; });
+        sm->signal_unlock.connect([this]() { unlock_count++; });
+        sm->enable(true);
+        return sm;
+    }
+
+    void set_pp(module::IECStateMachine& sm, types::board_support_common::Ampacity ampacity) {
+        sm.set_pp_ampacity(types::board_support_common::ProximityPilot{ampacity});
+    }
+
+    // Drive the state machine to State B via A→B (simulates plug-in)
+    void plug_in() {
+        bsp.raise_event(Event::A);
+        bsp.raise_event(Event::B);
+    }
+
+    void plug_out() {
+        bsp.raise_event(Event::A);
+    }
+};
+
+TEST_F(ConnectorLockTest, use_authorized_false_always_locks) {
+    // Default behavior: use_authorized=false locks immediately in B
+    auto sm = create_state_machine(false);
+
+    plug_in();
+
+    EXPECT_GT(lock_count, 0) << "connector should lock in State B when use_authorized is false";
+}
+
+TEST_F(ConnectorLockTest, use_authorized_true_no_auth_stays_unlocked) {
+    // With use_authorized=true and no authorization,
+    // State B should NOT lock the connector (cable free to unplug)
+    auto sm = create_state_machine(true);
+
+    plug_in();
+
+    EXPECT_EQ(lock_count, 0) << "connector should not lock without authorization";
+
+    // Re-enter B to re-trigger the state machine evaluation
+    bsp.raise_event(Event::B);
+
+    EXPECT_EQ(lock_count, 0) << "connector should not lock in State B without authorization";
+}
+
+TEST_F(ConnectorLockTest, set_authorized_in_state_b_locks) {
+    // Car plugs in → State B → no lock → authorize → lock engages
+    auto sm = create_state_machine(true);
+
+    plug_in();
+
+    EXPECT_EQ(lock_count, 0) << "connector should not lock without authorization";
+
+    sm->set_authorized(true);
+
+    EXPECT_GT(lock_count, 0) << "connector should lock when authorized in State B";
+}
+
+TEST_F(ConnectorLockTest, set_authorized_first) {
+    // Car plugs in → State B → no lock → authorize → lock engages
+    auto sm = create_state_machine(true);
+
+    sm->set_authorized(true);
+
+    EXPECT_EQ(lock_count, 0) << "connector should not lock without authorization";
+
+    plug_in();
+
+    EXPECT_GT(lock_count, 0) << "connector should lock when authorized in State B";
+}
+
+TEST_F(ConnectorLockTest, set_deauthorized_in_state_b_unlocks) {
+    // After authorization, deauthorizing in State B should unlock
+    auto sm = create_state_machine(true);
+
+    sm->set_authorized(true);
+    plug_in();
+    reset_counts();
+
+    sm->set_authorized(false);
+
+    EXPECT_GT(unlock_count, 0) << "connector should unlock when deauthorized in State B";
+}
+
+TEST_F(ConnectorLockTest, bms_pause_stays_locked) {
+    // Authorized session: C→B (BMS pause) should keep the connector locked
+    auto sm = create_state_machine(true);
+
+    plug_in();
+    sm->set_authorized(true);
+
+    // Transition to State C (car requests power)
+    bsp.raise_event(Event::C);
+    reset_counts();
+
+    // BMS pause: car goes back to B
+    bsp.raise_event(Event::B);
+
+    // Lock should re-engage (or stay engaged), no unlock should fire
+    EXPECT_EQ(unlock_count, 0) << "connector should not unlock during BMS pause (C->B) while authorized";
+    EXPECT_EQ(lock_count, 0) << "connector already locked";
+}
+
+TEST_F(ConnectorLockTest, set_authorized_outside_state_b_no_lock_change) {
+    // Setting authorized while in State A should not trigger lock/unlock
+    auto sm = create_state_machine(true);
+
+    bsp.raise_event(Event::A);
+    reset_counts();
+
+    sm->set_authorized(true);
+
+    EXPECT_EQ(lock_count, 0) << "set_authorized in State A should not trigger lock";
+    EXPECT_EQ(unlock_count, 0) << "set_authorized in State A should not trigger unlock";
+}
+
+TEST_F(ConnectorLockTest, use_authorized_false_ignores_auth_state) {
+    // With use_authorized=false, authorization state is irrelevant
+    auto sm = create_state_machine(false);
+
+    plug_in();
+    EXPECT_GT(lock_count, 0);
+    reset_counts();
+
+    // Deauthorize should not unlock when use_authorized is false
+    sm->set_authorized(false);
+
+    EXPECT_EQ(unlock_count, 0) << "use_authorized=false should keep lock regardless of auth state";
+
+    // Authorize should also be a no-op (and not double-fire signal_lock)
+    sm->set_authorized(true);
+
+    EXPECT_EQ(lock_count, 0) << "use_authorized=false: set_authorized(true) should not re-fire lock";
+    EXPECT_EQ(unlock_count, 0) << "use_authorized=false: set_authorized(true) should not unlock";
+
+    plug_out();
+    EXPECT_GT(unlock_count, 0);
+}
+
+TEST_F(ConnectorLockTest, force_unlock_in_state_f_does_not_relock) {
+    auto sm = create_state_machine(false);
+
+    plug_in();
+    bsp.raise_event(Event::C);
+    bsp.raise_event(Event::F);
+    ASSERT_GT(lock_count, 0) << "precondition: connector locked during the session";
+    reset_counts();
+
+    // e.g. a fault put the charger in F and the CSMS sends UnlockConnector
+    sm->connector_force_unlock();
+
+    EXPECT_GT(unlock_count, 0) << "connector_force_unlock should unlock in state F";
+    EXPECT_EQ(lock_count, 0) << "connector_force_unlock must not re-lock right after unlocking";
+}
+
+TEST_F(ConnectorLockTest, force_unlock_in_state_d_does_not_relock) {
+    auto sm = create_state_machine(false);
+
+    plug_in();
+    bsp.raise_event(Event::C);
+    bsp.raise_event(Event::D);
+    ASSERT_GT(lock_count, 0) << "precondition: connector locked during the session";
+    reset_counts();
+
+    sm->connector_force_unlock();
+
+    EXPECT_GT(unlock_count, 0) << "connector_force_unlock should unlock in state D";
+    EXPECT_EQ(lock_count, 0) << "connector_force_unlock must not re-lock right after unlocking";
+}
+
+TEST_F(ConnectorLockTest, force_unlock_overrides_authorized) {
+    // connector_force_unlock must release the connector even while authorized
+    auto sm = create_state_machine(true);
+
+    plug_in();
+    sm->set_authorized(true);
+    ASSERT_GT(lock_count, 0) << "precondition: connector locked when authorized in State B";
+    reset_counts();
+
+    sm->connector_force_unlock();
+
+    EXPECT_GT(unlock_count, 0) << "connector_force_unlock should unlock even when authorized";
+}
+
+// ---------------------------------------------------------------------------
+// Tests for captive cable mode (keep_cable_locked)
+//
+// The cable stays locked in the socket whenever a plug is present (detected
+// via Proximity Pilot), in every CP state including A. Only a force unlock
+// releases it, and only until the cable is removed: the next insertion locks
+// again. An engaged lock is latched: PP loss without a force unlock (plug
+// pulled against the lock pin) does not release it.
+
+using Ampacity = types::board_support_common::Ampacity;
+
+TEST_F(ConnectorLockTest, captive_locks_on_plug_present_without_car) {
+    auto sm = create_state_machine(false, true);
+
+    // No CP activity at all: plug the cable into the socket only
+    set_pp(*sm, Ampacity::A_32);
+
+    EXPECT_GT(lock_count, 0) << "captive mode should lock as soon as a plug is present, even in state A";
+}
+
+// The AsyncTimeout poll resolution is 500ms, so a configured delay of D fires in [D, D+500)ms.
+// With a 200ms delay that is up to ~700ms; assertions wait past 1000ms to stay robust.
+TEST_F(ConnectorLockTest, captive_lock_debounce_waits_before_locking) {
+    auto sm = create_state_machine(false, true, 200);
+
+    // Plug detected: must not lock immediately, the plug is not yet seated.
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(lock_count, 0) << "captive mode must not lock before the seating debounce elapses";
+
+    // After the debounce, the seated plug locks.
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_GT(lock_count, 0) << "captive mode should lock once the seating debounce has elapsed";
+}
+
+TEST_F(ConnectorLockTest, captive_lock_debounce_cancelled_if_plug_pulled_back) {
+    auto sm = create_state_machine(false, true, 200);
+
+    set_pp(*sm, Ampacity::A_32); // plug touches PP
+    set_pp(*sm, Ampacity::None); // pulled back out before it seats
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_EQ(lock_count, 0) << "a plug pulled back out within the debounce must not lock";
+}
+
+TEST_F(ConnectorLockTest, captive_lock_debounce_removal_racing_expiry_leaves_socket_unlocked) {
+    // A 1200ms delay fires at the 1500ms poll, leaving ample margin for the removal at 300ms.
+    auto sm = create_state_machine(false, true, 1200);
+
+    // Remove while the debounce is still pending: the expiry must not lock the now empty socket,
+    // and a later insertion must re-arm the debounce (not lock immediately).
+    set_pp(*sm, Ampacity::A_32);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    set_pp(*sm, Ampacity::None);
+    std::this_thread::sleep_for(std::chrono::milliseconds(1500));
+    EXPECT_EQ(lock_count, 0) << "a removal before the debounce expiry must not lock the empty socket";
+
+    reset_counts();
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(lock_count, 0) << "reinsertion after such a removal must re-arm the debounce, not lock at once";
+    std::this_thread::sleep_for(std::chrono::milliseconds(2000));
+    EXPECT_GT(lock_count, 0) << "and then lock once the fresh debounce elapses";
+}
+
+TEST_F(ConnectorLockTest, captive_empty_socket_stays_unlocked) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::None);
+
+    EXPECT_EQ(lock_count, 0) << "captive mode must not lock an empty socket";
+
+    // Negative control: the same state machine does lock once a plug shows up
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_GT(lock_count, 0) << "captive mode should lock on insertion";
+}
+
+TEST_F(ConnectorLockTest, captive_force_unlock_on_empty_socket_does_not_defeat_next_lock) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::None);
+    // e.g. a CSMS (re)sending UnlockConnector after the cable was already taken out
+    sm->connector_force_unlock();
+    reset_counts();
+
+    set_pp(*sm, Ampacity::A_32);
+
+    EXPECT_GT(lock_count, 0) << "a force unlock on an empty socket must not leave the next cable unlocked";
+}
+
+TEST_F(ConnectorLockTest, captive_stays_locked_across_full_session) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    plug_in();  // A -> B
+    plug_out(); // back to A: normally this unlocks
+
+    EXPECT_EQ(unlock_count, 0) << "captive mode should stay locked when the car unplugs (plug still in socket)";
+}
+
+TEST_F(ConnectorLockTest, captive_pp_loss_without_force_unlock_stays_locked) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    // Pulling the plug against the engaged lock pin opens the PP contact before the plug
+    // can leave the socket; the lock is latched and must not release on the PP loss.
+    set_pp(*sm, Ampacity::None);
+    EXPECT_EQ(unlock_count, 0) << "PP loss without force unlock must not release the lock";
+
+    // Plug pushed back in: still locked
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(unlock_count, 0);
+}
+
+TEST_F(ConnectorLockTest, captive_force_unlock_holds_until_reinsertion) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    sm->connector_force_unlock();
+    EXPECT_GT(unlock_count, 0) << "force unlock should release the cable";
+    reset_counts();
+
+    // Cable not yet removed; in state A nothing re-locks while the window is open
+    plug_out();
+    EXPECT_EQ(lock_count, 0) << "must stay unlocked until the cable is removed";
+
+    // Cable removed: socket empty, still unlocked
+    set_pp(*sm, Ampacity::None);
+    EXPECT_EQ(lock_count, 0) << "empty socket must stay unlocked";
+
+    // Next insertion locks again
+    set_pp(*sm, Ampacity::A_20);
+    EXPECT_GT(lock_count, 0) << "next insertion should lock again";
+}
+
+TEST_F(ConnectorLockTest, captive_force_unlock_blocked_while_relais_on) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    plug_in();
+    bsp.raise_event(Event::PowerOn);
+    reset_counts();
+
+    sm->connector_force_unlock();
+    EXPECT_EQ(unlock_count, 0) << "force unlock must not release the connector while relais are on";
+
+    // Once the relais open, the pending window takes effect
+    bsp.raise_event(Event::PowerOff);
+    EXPECT_GT(unlock_count, 0) << "pending force unlock should release once the relais are off";
+}
+
+TEST_F(ConnectorLockTest, captive_force_unlock_then_session_locks_before_power_on) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    sm->connector_force_unlock();
+    reset_counts();
+
+    // The cable is left in the socket and a car charges with it: the normal rules still apply, so
+    // the connector locks in B/C before the relais close, not only once PowerOn is reported.
+    plug_in();
+    bsp.raise_event(Event::C);
+    EXPECT_GT(lock_count, 0) << "the normal rules must lock before the relais close while the window is open";
+    reset_counts();
+
+    // Session ends, car unplugs: the window is still open, so the connector releases again.
+    plug_out();
+    EXPECT_GT(unlock_count, 0) << "back in state A the open window keeps the cable releasable";
+}
+
+TEST_F(ConnectorLockTest, captive_without_pp_does_not_latch_normal_lock) {
+    // No PP (e.g. a BSP that does not report it): only the normal rules lock, and their lock must not
+    // be latched by captive mode after the session.
+    auto sm = create_state_machine(false, true);
+
+    plug_in();
+    EXPECT_GT(lock_count, 0) << "the normal rules should lock in state B";
+    bsp.raise_event(Event::C);
+    bsp.raise_event(Event::PowerOn);
+    bsp.raise_event(Event::PowerOff);
+    reset_counts();
+
+    plug_out();
+    EXPECT_GT(unlock_count, 0) << "a lock not engaged by captive mode must release as usual";
+}
+
+TEST_F(ConnectorLockTest, captive_lock_debounce_not_restarted_by_repeated_pp) {
+    auto sm = create_state_machine(false, true, 600);
+
+    // A BSP republishing the unchanged PP more often than the debounce can expire must not
+    // postpone the lock forever. A 600ms delay fires at the 1000ms poll; republishing every 300ms
+    // for 1500ms would keep restarting it.
+    set_pp(*sm, Ampacity::A_32);
+    for (int i = 0; i < 5; i++) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(300));
+        set_pp(*sm, Ampacity::A_32);
+    }
+    EXPECT_GT(lock_count, 0) << "repeated PP publishes must not restart the seating debounce";
+}
+
+TEST_F(ConnectorLockTest, captive_force_unlock_with_relais_on_and_pp_lost) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    plug_in();
+    bsp.raise_event(Event::C);
+    bsp.raise_event(Event::PowerOn);
+    // PP contact opens while the plug is pulled against the lock pin
+    set_pp(*sm, Ampacity::None);
+    reset_counts();
+
+    sm->connector_force_unlock();
+    EXPECT_EQ(unlock_count, 0) << "force unlock must not release the connector while relais are on";
+
+    bsp.raise_event(Event::PowerOff);
+    EXPECT_GT(unlock_count, 0) << "the force unlock should release once the relais are off, even with PP lost";
+}
+
+TEST_F(ConnectorLockTest, captive_disable_during_debounce_does_not_lock) {
+    auto sm = create_state_machine(false, true, 200);
+
+    set_pp(*sm, Ampacity::A_32);
+    sm->set_keep_cable_locked(false);
+
+    std::this_thread::sleep_for(std::chrono::milliseconds(1300));
+    EXPECT_EQ(lock_count, 0) << "a debounce pending when the mode is disabled must not lock";
+}
+
+TEST_F(ConnectorLockTest, captive_disable_while_latched_releases) {
+    auto sm = create_state_machine(false, true);
+
+    set_pp(*sm, Ampacity::A_32);
+    set_pp(*sm, Ampacity::None); // latched despite PP loss
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    sm->set_keep_cable_locked(false);
+    EXPECT_GT(unlock_count, 0) << "disabling the mode should release a captive latch";
+}
+
+TEST_F(ConnectorLockTest, captive_enable_keeps_normal_lock) {
+    auto sm = create_state_machine(false, false);
+
+    plug_in(); // normal rules lock in state B, no PP reported
+    ASSERT_GT(lock_count, 0);
+    reset_counts();
+
+    sm->set_keep_cable_locked(true);
+    EXPECT_EQ(unlock_count, 0) << "enabling captive mode must not release a lock held by the normal rules";
+}
+
+TEST_F(ConnectorLockTest, captive_ignores_authorization) {
+    // captive mode takes precedence over use_authorized
+    auto sm = create_state_machine(true, true);
+
+    set_pp(*sm, Ampacity::A_32);
+
+    EXPECT_GT(lock_count, 0) << "captive mode should lock without any authorization";
+}
+
+TEST_F(ConnectorLockTest, captive_runtime_toggle) {
+    auto sm = create_state_machine(false, false);
+
+    // Normal mode, plug in socket, no car: unlocked
+    set_pp(*sm, Ampacity::A_32);
+    EXPECT_EQ(lock_count, 0);
+
+    sm->set_keep_cable_locked(true);
+    EXPECT_GT(lock_count, 0) << "enabling captive mode at runtime should lock immediately";
+    reset_counts();
+
+    sm->set_keep_cable_locked(false);
+    EXPECT_GT(unlock_count, 0) << "disabling captive mode at runtime should fall back to CP-state logic";
+}
+
+// ---------------------------------------------------------------------------
+// Tests for CP state F persistence
+//
+// The high level state machine commands state F on fatal errors. A BSP state
+// event (e.g. the initial A published around startup) arriving after that
+// command must not trigger the automatic X1 reset, which would undo the F
+// and unmask the fault.
+
+struct CpStateFTest : public testing::Test {
+    struct CpCommandRecorder : public BspStub {
+        std::vector<std::string> cp_commands;
+
+        Result call_cp_state_X1(Parameters p) override {
+            cp_commands.push_back("X1");
+            return BspStub::call_cp_state_X1(p);
+        }
+
+        Result call_cp_state_F(Parameters p) override {
+            cp_commands.push_back("F");
+            return BspStub::call_cp_state_F(p);
+        }
+    };
+
+    CpCommandRecorder bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    std::unique_ptr<module::IECStateMachine> create_state_machine() {
+        bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
+        auto sm = std::make_unique<module::IECStateMachine>(bsp_if, true, false, false, 0);
+        sm->enable(true);
+        return sm;
+    }
+};
+
+TEST_F(CpStateFTest, state_events_do_not_undo_requested_state_f) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    ASSERT_EQ(bsp.cp_commands, std::vector<std::string>{"F"});
+
+    // BSP still reports A, the F command has not taken effect there yet
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"F"}) << "A event must not reset the requested state F to X1";
+
+    bsp.raise_event(Event::E);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"F"}) << "E event must not reset the requested state F to X1";
+}
+
+TEST_F(CpStateFTest, x1_request_reenables_automatic_reset) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    bsp.raise_event(Event::F);
+    sm->set_cp_state_X1();
+    bsp.cp_commands.clear();
+
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"X1"})
+        << "after an X1 request the A event should reset the CP state again";
+}
+
+TEST_F(CpStateFTest, pwm_request_reenables_automatic_reset) {
+    auto sm = create_state_machine();
+
+    sm->set_cp_state_F();
+    bsp.raise_event(Event::F);
+    sm->set_pwm(0.05);
+    bsp.cp_commands.clear();
+
+    bsp.raise_event(Event::A);
+    EXPECT_EQ(bsp.cp_commands, std::vector<std::string>{"X1"})
+        << "after a PWM request the A event should reset the CP state again";
 }
 
 } // namespace

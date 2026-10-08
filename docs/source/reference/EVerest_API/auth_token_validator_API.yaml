@@ -208,7 +208,7 @@ components:
     EnergyTransferMode:
       description: >-
         Possible energy transfer modes. The modes AC_single_phase_core to DC_unique apply to DIN70121 and ISO15118-2.
-        The other modes DC to MCS_BPT apply to ISO15118-20 (and amendment).
+        The other modes DC to MCS_BPT apply to ISO15118-20 (and amendment). AC_DER is treated the same as AC_DER_IEC.
       type: string
       enum:
         - AC_single_phase_core
@@ -222,6 +222,8 @@ components:
         - AC_BPT
         - AC_BPT_DER
         - AC_DER
+        - AC_DER_IEC
+        - AC_DER_SAE
         - DC_BPT
         - DC_ACDP
         - DC_ACDP_BPT

@@ -2,11 +2,17 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <cstdint>
+
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/ac_charge_loop.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/session/config.hpp>
 
 using namespace iso15118;
+
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 
 namespace dt = message_20::datatypes;
 
@@ -20,8 +26,9 @@ using Scheduled_BPT_AC_Res = dt::BPT_Scheduled_AC_CLResControlMode;
 using Dynamic_AC_Res = dt::Dynamic_AC_CLResControlMode;
 using Dynamic_BPT_AC_Res = dt::BPT_Dynamic_AC_CLResControlMode;
 
-SCENARIO("AC charge loop state handling") {
+namespace {
 
+session::EvseSetupConfig make_evse_setup() {
     const auto evse_id = std::string("everest se");
     const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC,
                                                                         dt::ServiceCategory::AC_BPT};
@@ -29,8 +36,8 @@ SCENARIO("AC charge loop state handling") {
     const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
     const std::vector<uint16_t> vas_services{};
 
-    d20::DcTransferLimits dc_limits;
-    d20::DcTransferLimits powersupply_limits;
+    const d20::DcTransferLimits dc_limits;
+    const d20::DcTransferLimits powersupply_limits;
     d20::AcTransferLimits ac_limits;
     ac_limits.charge_power = {{22, 3}, {10, 0}};
     ac_limits.nominal_frequency = {50, 0};
@@ -44,9 +51,26 @@ SCENARIO("AC charge loop state handling") {
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc},
         {dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc}};
 
-    const d20::EvseSetupConfig evse_setup{
-        evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
+    session::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("AC charge loop state handling") {
+
+    const auto evse_setup = make_evse_setup();
 
     GIVEN("Bad case - Unknown session") {
         d20::Session session = d20::Session();
@@ -314,7 +338,8 @@ SCENARIO("AC charge loop state handling") {
         auto ac_present_power = d20::AcPresentPower{};
         ac_present_power.present_active_power = {11, 3};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, std::nullopt, 95};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res = d20::state::handle_request(req, session, false, false, 50, ac_target_power, ac_present_power,
                                                     dynamic_parameters);
@@ -333,7 +358,8 @@ SCENARIO("AC charge loop state handling") {
             REQUIRE(dt::from_RationalNumber(res_control_mode.target_active_power) == 11000.0f);
 
             REQUIRE(res_control_mode.departure_time.value_or(0) >= 39);
-            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.target_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 80);
             REQUIRE(res_control_mode.ack_max_delay.value_or(0) == 30);
         }
     }
@@ -362,7 +388,8 @@ SCENARIO("AC charge loop state handling") {
         auto ac_present_power = d20::AcPresentPower{};
         ac_present_power.present_active_power = {11, 3};
 
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, std::nullopt, 95};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
 
         const auto res = d20::state::handle_request(req, session, false, false, 50, ac_target_power, ac_present_power,
                                                     dynamic_parameters);
@@ -381,7 +408,8 @@ SCENARIO("AC charge loop state handling") {
             REQUIRE(dt::from_RationalNumber(res_control_mode.target_active_power) == 11000.0f);
 
             REQUIRE(res_control_mode.departure_time.value_or(0) >= 39);
-            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.target_soc.value_or(0) == 95);
+            REQUIRE(res_control_mode.minimum_soc.value_or(0) == 80);
             REQUIRE(res_control_mode.ack_max_delay.value_or(0) == 30);
         }
     }

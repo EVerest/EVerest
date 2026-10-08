@@ -15,6 +15,12 @@ Have a look at this categorized list of all EVerest tutorials:
 
         Write an EVerest module from scratch.
 
+    .. grid-item-card:: OCPP (combined module)
+        :link: ocpp-combined
+        :link-type: doc
+
+        Learn how to use the combined OCPP module supporting OCPP 1.6, 2.0.1 and 2.1 in EVerest; this is the recommended way to run OCPP
+
     .. grid-item-card:: OCPP 1.6
         :link: ocpp16
         :link-type: doc
@@ -33,6 +39,12 @@ Have a look at this categorized list of all EVerest tutorials:
 
         Learn how to run a Plug-&-Charge simulation on your PC
 
+    .. grid-item-card:: Management APIs
+        :link: management_apis
+        :link-type: doc
+
+        Learn how to use the configuration API and the lifecycle API
+
     .. grid-item-card:: Using the Bazel Build Tool
         :link: bazel
         :link-type: doc
@@ -44,14 +56,23 @@ Have a look at this categorized list of all EVerest tutorials:
         :link-type: doc
 
         Learn how to setup a development container for EVerest development.
+   
+    .. grid-item-card:: Get to know the EVerestAPI
+        :link: everest_api
+        :link-type: doc
+
+        Learn how the EVerestAPI can be used in your setup
 
 .. toctree::
     :maxdepth: 1
     :hidden:
 
     develop-new-module
+    ocpp-combined
     ocpp16
     ocpp2
     plug-and-charge
+    management_apis
     bazel
     EVerest devcontainer <setup-devcontainer/index>
+    everest_api

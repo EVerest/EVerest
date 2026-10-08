@@ -9,8 +9,10 @@
 #include <everest/logging.hpp>
 
 #include <csignal>
+#include <cstdlib>
 #include <everest/tls/openssl_util.hpp>
 #include <stdexcept>
+#include <unistd.h>
 namespace {
 void log_handler(openssl::log_level_t level, const std::string& str) {
     switch (level) {
@@ -37,6 +39,9 @@ namespace module {
 
 void EvseV2G::init() {
 
+    telemetry_publisher = std::make_unique<V2gTelemetryPublisher>(telemetry, info.telemetry_enabled,
+                                                                  config.publish_telemetry_only_on_change);
+
     std::vector<ISO15118_vasIntf*> r_vas;
     r_vas.reserve(r_iso15118_vas.size());
     for (const auto& vas : r_iso15118_vas) {
@@ -52,6 +57,7 @@ void EvseV2G::init() {
     (void)openssl::set_log_handler(log_handler);
     tls::Server::configure_signal_handler(SIGUSR1);
     v2g_ctx->tls_server = &tls_server;
+    v2g_ctx->telemetry_publisher = telemetry_publisher.get();
 
     this->r_security->subscribe_certificate_store_update(
         [this](const types::evse_security::CertificateStoreUpdate& update) {
@@ -79,46 +85,127 @@ void EvseV2G::init() {
 }
 
 void EvseV2G::ready() {
-    int rv = 0;
+    run_network_lifecycle();
+}
 
+void EvseV2G::run_network_lifecycle() {
+    dlog(DLOG_LEVEL_DEBUG, "Starting V2G network lifecycle");
+
+    while (!v2g_ctx->shutdown) {
+        v2g_ctx->if_name = config.device.c_str();
+
+        if (try_start_network()) {
+            invoke_ready(*p_charger);
+            invoke_ready(*p_extensions);
+
+            telemetry_publisher->publish_all();
+
+            if (config.enable_sdp_server) {
+                if (sdp_listen(v2g_ctx) == -1) {
+                    dlog(DLOG_LEVEL_ERROR, "sdp_listen() failed");
+                }
+            } else {
+                wait_for_shutdown();
+            }
+            return;
+        }
+
+        if (!v2g_ctx->shutdown) {
+            std::this_thread::sleep_for(std::chrono::seconds(1));
+        }
+    }
+}
+
+bool EvseV2G::try_start_network() {
     dlog(DLOG_LEVEL_DEBUG, "Starting SDP responder");
 
-    rv = connection_init(v2g_ctx);
-
-    if (rv == -1) {
-        dlog(DLOG_LEVEL_ERROR, "Failed to initialize connection");
-        goto err_out;
+    std::string failure_detail;
+    if (connection_init(v2g_ctx, &failure_detail) == -1) {
+        report_network_startup_failure("Failed to initialize connection: " + failure_detail);
+        return false;
     }
 
-    if (config.enable_sdp_server) {
-        rv = sdp_init(v2g_ctx);
-
-        if (rv == -1) {
-            dlog(DLOG_LEVEL_ERROR, "Failed to start SDP responder");
-            goto err_out;
-        }
+    if (config.enable_sdp_server && sdp_init(v2g_ctx, &failure_detail) == -1) {
+        report_network_startup_failure("Failed to start SDP responder: " + failure_detail);
+        cleanup_failed_network_start();
+        return false;
     }
 
     dlog(DLOG_LEVEL_DEBUG, "starting socket server(s)");
     if (connection_start_servers(v2g_ctx)) {
-        dlog(DLOG_LEVEL_ERROR, "start_connection_servers() failed");
-        goto err_out;
+        report_network_startup_failure("start_connection_servers() failed");
+        cleanup_failed_network_start();
+        return false;
     }
 
-    invoke_ready(*p_charger);
-    invoke_ready(*p_extensions);
+    clear_network_startup_failure();
+    return true;
+}
 
-    rv = sdp_listen(v2g_ctx);
+void EvseV2G::cleanup_failed_network_start() {
+    connection_cleanup(v2g_ctx);
 
-    if (rv == -1) {
-        dlog(DLOG_LEVEL_ERROR, "sdp_listen() failed");
-        goto err_out;
+    if (v2g_ctx->sdp_socket != -1) {
+        close(v2g_ctx->sdp_socket);
+        v2g_ctx->sdp_socket = -1;
+    }
+}
+
+void EvseV2G::wait_for_shutdown() {
+    while (!v2g_ctx->shutdown) {
+        std::this_thread::sleep_for(std::chrono::seconds(1));
+    }
+}
+
+std::string EvseV2G::network_device_label() const {
+    // When "device: auto" is configured, and the interface name is resolved, this returns
+    // the resolved interface name. Fall back to config.device if still unresolved.
+    if (v2g_ctx != nullptr && v2g_ctx->if_name != nullptr) {
+        const std::string resolved = v2g_ctx->if_name;
+        if (!resolved.empty() && resolved != "auto") {
+            return resolved;
+        }
+    }
+    return config.device;
+}
+
+void EvseV2G::report_network_startup_failure(const std::string& reason) {
+    const auto message = "Device " + network_device_label() + ": " + reason;
+
+    if (startup_fault_message == message) {
+        if (!startup_fault_raised && p_charger->error_factory && p_charger->error_manager) {
+            p_charger->raise_error(p_charger->error_factory->create_error("generic/CommunicationFault", "", message));
+            startup_fault_raised = true;
+        }
+        return;
     }
 
-    return;
+    if (startup_fault_raised && p_charger->error_manager) {
+        p_charger->clear_error("generic/CommunicationFault");
+        startup_fault_raised = false;
+    }
 
-err_out:
-    throw std::runtime_error("Could not initialise EvseV2G module");
+    startup_fault_message = message;
+    dlog(DLOG_LEVEL_WARNING, "V2G network startup failed, retrying: %s", message.c_str());
+
+    if (p_charger->error_factory && p_charger->error_manager) {
+        p_charger->raise_error(p_charger->error_factory->create_error("generic/CommunicationFault", "", message));
+        startup_fault_raised = true;
+    }
+}
+
+void EvseV2G::clear_network_startup_failure() {
+    if (startup_fault_message.empty()) {
+        return;
+    }
+
+    dlog(DLOG_LEVEL_INFO, "V2G network startup recovered: Device %s is available", network_device_label().c_str());
+    startup_fault_message.clear();
+
+    if (startup_fault_raised && p_charger->error_manager) {
+        p_charger->clear_error("generic/CommunicationFault");
+        startup_fault_raised = false;
+    }
 }
 
 EvseV2G::~EvseV2G() {

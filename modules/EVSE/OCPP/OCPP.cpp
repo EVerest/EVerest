@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "OCPP.hpp"
 
+#include "charge_point_config_factory.hpp"
+
 #include <cmath>
-#include <fstream>
 #include <memory>
 #include <optional>
 #include <sstream>
@@ -11,17 +12,21 @@
 
 #include "generated/types/ocpp.hpp"
 #include "ocpp/common/types.hpp"
-#include "ocpp/v16/charge_point_configuration.hpp"
 #include "ocpp/v16/types.hpp"
+#include "ocpp/v2/ocpp_types.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <fmt/core.h>
 
-#include <conversions.hpp>
-#include <error_mapping.hpp>
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/ocpp_module_common/v16/error_mapping.hpp>
 
 namespace module {
+
+// The MREC error mapping is shared with other OCPP modules via lib/everest/ocpp_module_common
+using ocpp_module_common::v16::CHARGE_X_MREC_VENDOR_ID;
+using ocpp_module_common::v16::MREC_ERROR_MAP;
+using ocpp_module_common::v16::OCPP_ERROR_MAP;
 
 // helper type for visitor
 template <class... Ts> struct overloaded : Ts... {
@@ -33,7 +38,7 @@ const std::string CERTS_SUB_DIR = "certs";
 const std::string SQL_CORE_MIGRTATIONS = "core_migrations";
 const std::string INOPERATIVE_ERROR_TYPE = "evse_manager/Inoperative";
 const std::string SWITCHING_PHASES_REASON = "SwitchingPhases";
-const ocpp::CiString<50> CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeout";
+const ocpp::CiString<50> CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeOut";
 const ocpp::CiString<50> ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
 const ocpp::CiString<50> CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY = "CentralContractValidationAllowed";
 const std::string OCPP_VERSION = "1.6";
@@ -54,7 +59,11 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (mrec_it != MREC_ERROR_MAP.end()) {
         // lambda to create MREC error info
         auto make_mrec_error_info = [&](ocpp::v16::ChargePointErrorCode code, const std::string& vendor_error_code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
+            std::optional<std::string> info = std::nullopt;
+            if (!error.message.empty()) {
+                info = error.message;
+            }
+            return ocpp::v16::ErrorInfo{uuid, code, false, info, CHARGE_X_MREC_VENDOR_ID, vendor_error_code};
         };
         return make_mrec_error_info(mrec_it->second.first, mrec_it->second.second);
     }
@@ -66,7 +75,7 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
     if (ocpp_it != OCPP_ERROR_MAP.end()) {
         // lambda to create OCPP error info
         auto make_ocpp_error_info = [&](ocpp::v16::ChargePointErrorCode code) {
-            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt};
+            return ocpp::v16::ErrorInfo{uuid, code, false, std::nullopt, error.message};
         };
         return make_ocpp_error_info(ocpp_it->second);
     }
@@ -120,18 +129,6 @@ static ocpp::v16::ErrorInfo get_error_info(const Everest::error::Error& error) {
         error.message,                                                           // vendor id
         get_simplified_error_type(error.type) + TYPE_DELIMITER + error.sub_type, // vendor error code
     };
-}
-
-void create_empty_user_config(const fs::path& user_config_path) {
-    if (fs::exists(user_config_path.parent_path())) {
-        std::ofstream fs(user_config_path.c_str());
-        auto user_config = json::object();
-        fs << user_config << std::endl;
-        fs.close();
-    } else {
-        EVLOG_AND_THROW(
-            std::runtime_error(fmt::format("Provided UserConfigPath is invalid: {}", user_config_path.string())));
-    }
 }
 
 void OCPP::set_external_limits(const std::map<int32_t, ocpp::v16::EnhancedChargingSchedule>& charging_schedules) {
@@ -262,8 +259,13 @@ void OCPP::process_session_event(int32_t evse_id, const types::evse_manager::Ses
             // custom data transfer
             signed_meter_data.emplace(signed_meter_value.value().signed_meter_data);
         }
+        std::optional<std::string> start_signed_meter_data;
+        if (transaction_finished.start_signed_meter_value.has_value()) {
+            start_signed_meter_data.emplace(transaction_finished.start_signed_meter_value.value().signed_meter_data);
+        }
         this->charge_point->on_transaction_stopped(ocpp_connector_id, session_event.uuid, reason, timestamp,
-                                                   energy_Wh_import, id_tag_opt, signed_meter_data);
+                                                   energy_Wh_import, id_tag_opt, signed_meter_data,
+                                                   start_signed_meter_data);
         // always triggered by libocpp
     } else if (session_event.event == types::evse_manager::SessionEventEnum::SessionStarted) {
         EVLOG_info << "Connector#" << ocpp_connector_id << ": "
@@ -366,7 +368,7 @@ void OCPP::init_evse_subscriptions() {
             [this, extensions_id](types::iso15118::RequestExiStreamSchema request) {
                 this->charge_point->data_transfer_pnc_get_15118_ev_certificate(
                     extensions_id, request.exi_request, request.iso15118_schema_version,
-                    conversions::to_ocpp_certificate_action_enum(request.certificate_action));
+                    ocpp_module_common::conversions::to_ocpp_certificate_action_enum(request.certificate_action));
             });
         extensions_id++;
     }
@@ -473,6 +475,11 @@ ocpp::v16::ChargingRateUnit get_unit_or_default(const std::string& unit_string) 
 }
 
 void OCPP::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : OCPP (OCPP 1.6)\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate to the Combined OCPPmulti Module";
+
     invoke_init(*p_main);
     invoke_init(*p_ocpp_generic);
     invoke_init(*p_auth_validator);
@@ -548,52 +555,9 @@ void OCPP::init() {
 
     this->ocpp_share_path = this->info.paths.share;
 
-    auto configured_config_path = fs::path(this->config.ChargePointConfigPath);
+    charge_point_config = create_charge_point_configuration(this->ocpp_share_path, this->config,
+                                                            static_cast<int32_t>(this->r_evse_manager.size()));
 
-    // try to find the config file if it has been provided as a relative path
-    if (!fs::exists(configured_config_path) && configured_config_path.is_relative()) {
-        configured_config_path = this->ocpp_share_path / configured_config_path;
-    }
-    if (!fs::exists(configured_config_path)) {
-        EVLOG_AND_THROW(Everest::EverestConfigError(
-            fmt::format("OCPP config file is not available at given path: {} which was "
-                        "resolved to: {}",
-                        this->config.ChargePointConfigPath, configured_config_path.string())));
-    }
-    const auto config_path = configured_config_path;
-    EVLOG_info << "OCPP config: " << config_path.string();
-
-    auto configured_user_config_path = fs::path(this->config.UserConfigPath);
-    // try to find the user config file if it has been provided as a relative path
-    if (!fs::exists(configured_user_config_path) && configured_user_config_path.is_relative()) {
-        configured_user_config_path = this->ocpp_share_path / configured_user_config_path;
-    }
-    const auto user_config_path = configured_user_config_path;
-    EVLOG_info << "OCPP user config: " << user_config_path.string();
-
-    std::ifstream ifs(config_path.c_str());
-    std::string config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-    auto json_config = json::parse(config_file);
-    json_config.at("Core").at("NumberOfConnectors") = this->r_evse_manager.size();
-
-    if (fs::exists(user_config_path)) {
-        std::ifstream ifs(user_config_path.c_str());
-        std::string user_config_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
-
-        try {
-            const auto user_config = json::parse(user_config_file);
-            EVLOG_info << "Augmenting chargepoint config with user_config entries";
-            json_config.merge_patch(user_config);
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Error while parsing user config file.";
-            EVLOG_AND_THROW(e);
-        }
-    } else {
-        EVLOG_debug << "No user-config provided. Creating user config file";
-        create_empty_user_config(user_config_path);
-    }
-
-    const auto sql_init_path = this->ocpp_share_path / SQL_CORE_MIGRTATIONS;
     if (!fs::exists(this->config.MessageLogPath)) {
         try {
             fs::create_directory(this->config.MessageLogPath);
@@ -602,9 +566,8 @@ void OCPP::init() {
         }
     }
 
-    const auto charge_point_config_json = json_config.dump();
-    charge_point_config = std::make_unique<ocpp::v16::ChargePointConfiguration>(charge_point_config_json,
-                                                                                ocpp_share_path, user_config_path);
+    const auto sql_init_path = this->ocpp_share_path / SQL_CORE_MIGRTATIONS;
+
     std::shared_ptr<ocpp::EvseSecurity> security = std::make_shared<EvseSecurity>(*r_security);
     std::function<void(const std::string& message, ocpp::MessageDirection direction)> message_callback =
         [this](const std::string& message, ocpp::MessageDirection direction) {
@@ -654,9 +617,14 @@ void OCPP::init() {
         [this](types::system::FirmwareUpdateStatus firmware_update_status) {
             std::lock_guard<std::mutex> lg(this->event_mutex);
             if (this->started) {
+                auto disable_connectors_during_install =
+                    !firmware_update_status.firmware_update_metadata.has_value() ||
+                    firmware_update_status.firmware_update_metadata.value().disable_connectors_during_install.value_or(
+                        true);
                 this->charge_point->on_firmware_update_status_notification(
                     firmware_update_status.request_id,
-                    conversions::to_ocpp_firmware_status_notification(firmware_update_status.firmware_update_status));
+                    conversions::to_ocpp_firmware_status_notification(firmware_update_status.firmware_update_status),
+                    disable_connectors_during_install);
             } else {
                 this->event_queue.emplace(0, firmware_update_status);
             }
@@ -944,14 +912,20 @@ void OCPP::ready() {
     });
 
     this->charge_point->register_connection_state_changed_callback(
-        [this](bool is_connected) { this->p_ocpp_generic->publish_is_connected(is_connected); });
+        [this](const bool is_connected, const int configuration_slot,
+               const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
+            this->p_ocpp_generic->publish_connection_status(
+                ocpp_module_common::conversions::to_everest_connection_status(
+                    is_connected, configuration_slot, network_connection_profile, ocpp::OcppProtocolVersion::v16));
+        });
 
     this->charge_point->register_get_15118_ev_certificate_response_callback(
         [this](const int32_t connector_id, const ocpp::v2::Get15118EVCertificateResponse& certificate_response,
                const ocpp::v2::CertificateActionEnum& certificate_action) {
             types::iso15118::ResponseExiStreamStatus response;
-            response.status = conversions::to_everest_iso15118_status(certificate_response.status);
-            response.certificate_action = conversions::to_everest_certificate_action_enum(certificate_action);
+            response.status = ocpp_module_common::conversions::to_everest_iso15118_status(certificate_response.status);
+            response.certificate_action =
+                ocpp_module_common::conversions::to_everest_certificate_action_enum(certificate_action);
             if (not certificate_response.exiResponse.get().empty()) {
                 // since exi_response is an optional in the EVerest type we only set
                 // it when not empty
@@ -970,48 +944,53 @@ void OCPP::ready() {
     });
 
     this->charge_point->register_transaction_started_callback(
-        [this](const int32_t connector, const std::string& session_id) {
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Started;
-            tevent.evse = {connector, 1};
+            tevent.evse = {request.connectorId, 1};
             tevent.session_id = session_id;
+            tevent.timestamp = request.timestamp.to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
         });
 
     this->charge_point->register_transaction_updated_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id,
-               const ocpp::v16::IdTagInfo& id_tag_info) {
+        [this](const std::string& session_id, const ocpp::v16::StartTransactionRequest& request,
+               const ocpp::v16::StartTransactionResponse& response) {
             types::ocpp::OcppTransactionEvent tevent;
             tevent.transaction_event = types::ocpp::TransactionEvent::Updated;
-            tevent.evse = {connector, 1};
+            tevent.evse = {request.connectorId, 1};
             tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
+            tevent.transaction_id = std::to_string(response.transactionId);
+            // StartTransaction.conf carries no time of its own, the update happens when it is processed
+            tevent.timestamp = ocpp::DateTime().to_rfc3339();
             p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-            if (id_tag_info.parentIdTag.has_value()) {
+            if (response.idTagInfo.parentIdTag.has_value()) {
                 types::authorization::ValidationResultUpdate result_update;
                 types::authorization::IdToken id_token;
-                id_token.value = id_tag_info.parentIdTag.value();
+                id_token.value = response.idTagInfo.parentIdTag.value();
                 // Default to RFID auth type for parentIdTag since we have no
                 // information about it in ocpp1.6
                 id_token.type = types::authorization::IdTokenType::ISO14443;
                 result_update.validation_result.parent_id_token = id_token;
                 result_update.validation_result.authorization_status =
-                    conversions::to_everest_authorization_status(id_tag_info.status);
-                result_update.connector_id = connector;
+                    conversions::to_everest_authorization_status(response.idTagInfo.status);
+                result_update.connector_id = request.connectorId;
                 p_auth_validator->publish_validate_result_update(result_update);
             }
         });
 
-    this->charge_point->register_transaction_stopped_callback(
-        [this](const int32_t connector, const std::string& session_id, const int32_t transaction_id) {
-            EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
-            types::ocpp::OcppTransactionEvent tevent;
-            tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
-            tevent.evse = {connector, 1};
-            tevent.session_id = session_id;
-            tevent.transaction_id = std::to_string(transaction_id);
-            p_ocpp_generic->publish_ocpp_transaction_event(tevent);
-        });
+    this->charge_point->register_transaction_stopped_callback([this](const std::string& session_id,
+                                                                     const int32_t connector,
+                                                                     const ocpp::v16::StopTransactionRequest& request) {
+        EVLOG_info << "Transaction stopped at connector: " << connector << ", session_id: " << session_id;
+        types::ocpp::OcppTransactionEvent tevent;
+        tevent.transaction_event = types::ocpp::TransactionEvent::Ended;
+        tevent.evse = {connector, 1};
+        tevent.session_id = session_id;
+        tevent.transaction_id = std::to_string(request.transactionId);
+        tevent.timestamp = request.timestamp.to_rfc3339();
+        p_ocpp_generic->publish_ocpp_transaction_event(tevent);
+    });
 
     this->charge_point->register_boot_notification_response_callback(
         [this](const ocpp::v16::BootNotificationResponse& boot_notification_response) {
@@ -1153,8 +1132,12 @@ void OCPP::ready() {
                                                              types::system::log_status_enum_to_string(log.log_status));
                 },
                 [&](const types::system::FirmwareUpdateStatus& fw) {
+                    auto disable_connectors_during_install =
+                        !fw.firmware_update_metadata.has_value() ||
+                        fw.firmware_update_metadata.value().disable_connectors_during_install.value_or(true);
                     charge_point->on_firmware_update_status_notification(
-                        fw.request_id, conversions::to_ocpp_firmware_status_notification(fw.firmware_update_status));
+                        fw.request_id, conversions::to_ocpp_firmware_status_notification(fw.firmware_update_status),
+                        disable_connectors_during_install);
                 },
                 [&](const PowermeterPublicKey public_key) {
                     this->charge_point->set_powermeter_public_key(queued_event.evse_id, public_key.value);
@@ -1162,6 +1145,16 @@ void OCPP::ready() {
             queued_event.data);
     }
     this->started = true;
+    this->p_ocpp_generic->publish_ready(true);
+}
+
+void OCPP::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
 }
 
 int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {

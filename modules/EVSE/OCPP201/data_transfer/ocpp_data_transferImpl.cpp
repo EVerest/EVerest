@@ -3,7 +3,7 @@
 
 #include "ocpp_data_transferImpl.hpp"
 
-#include <conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
 namespace module {
 namespace data_transfer {
@@ -12,6 +12,10 @@ void ocpp_data_transferImpl::init() {
 }
 
 void ocpp_data_transferImpl::ready() {
+}
+
+void ocpp_data_transferImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
 }
 
 types::ocpp::DataTransferResponse

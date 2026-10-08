@@ -1,0 +1,5 @@
+active_modules:
+  exit_simulator:
+    module: ManagerLifecycleSimulator
+  block_simulator:
+    module: ManagerLifecycleSimulator

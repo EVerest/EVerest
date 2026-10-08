@@ -4,7 +4,7 @@ description: >-
   Responses. They also specify which keys are optional, and the complete
   range of enums.
 
-  This is version 1.0.0 of the JSON RPC API.
+  This is version 1.1.0 of the JSON RPC API.
 
   Changes to this definition need to be done with care, to take
   compatibility into consideration.  Bump the version as necessary.
@@ -92,6 +92,8 @@ types:
       - AC_BPT
       - AC_BPT_DER
       - AC_DER
+      - AC_DER_IEC
+      - AC_DER_SAE
       - DC_BPT
       - DC_ACDP
       - DC_ACDP_BPT

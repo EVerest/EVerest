@@ -35,7 +35,11 @@ enum class StateID {
     DC_CableCheck,
     PowerDelivery,
     ScheduleExchange,
-    SessionStop
+    SessionStop,
+    AC_DER_IEC_ChargeParameterDiscovery,
+    AC_DER_IEC_ChargeLoop,
+    AC_DER_SAE_ChargeParameterDiscovery,
+    AC_DER_SAE_ChargeLoop,
 };
 
 struct Result {

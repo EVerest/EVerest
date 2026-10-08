@@ -14,15 +14,17 @@ set_target_properties(framework PROPERTIES SOVERSION ${PROJECT_VERSION})
 
 target_sources(framework
     PRIVATE
+        capabilities.cpp
         config.cpp
         config/mqtt_settings.cpp
         config/settings.cpp
+        config/config_service_core.cpp
+        config/slot_manager.cpp
         config/sqlite_storage.cpp
-        config/storage_types.cpp
         config/userconfig_storage.cpp
         config/types.cpp
         config_cache.cpp
-        config_service.cpp
+        mqtt_config_service.cpp
         conversions.cpp
         error/error.cpp
         error/error_database_map.cpp
@@ -61,6 +63,14 @@ target_include_directories(framework
         $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}/everest>
 )
 
+if(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY STREQUAL "custom" AND
+   EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR)
+    target_include_directories(framework
+        PUBLIC
+            $<BUILD_INTERFACE:${EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_INCLUDE_DIR}>
+    )
+endif()
+
 if(Boost_VERSION_STRING VERSION_LESS "1.69.0")
     set(EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY Boost::system)
 endif()
@@ -94,9 +104,23 @@ collect_migration_files(
 )
 
 target_compile_definitions(framework
-    PRIVATE
+    PUBLIC
         TARGET_MIGRATION_FILE_VERSION=${TARGET_MIGRATION_FILE_VERSION}
 )
+
+
+if (CMAKE_INSTALL_PREFIX)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+    )
+endif()
+
+if (CMAKE_INSTALL_LIBDIR)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_LIBDIR="${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
+
 
 set_target_properties(framework
     PROPERTIES

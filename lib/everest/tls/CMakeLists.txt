@@ -41,7 +41,7 @@ if(EVEREST_CORE_BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 
-if(DISABLE_EDM)
+if(DISABLE_EDM AND TLS_INSTALL)
     install(
         TARGETS
             tls

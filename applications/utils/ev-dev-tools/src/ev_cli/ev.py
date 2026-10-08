@@ -153,15 +153,25 @@ def generate_tmpl_data_for_module(module, module_def):
     provides = []
     for impl, impl_info in module_def.get('provides', {}).items():
         config = []
+        rwconfig = []
         for conf_id, conf_info in impl_info.get('config', {}).items():
             type_info = helpers.build_type_info(conf_id, conf_info['type'])
-            config.append(type_info)
+            add = True
+            try:
+                if conf_info['mutability'] == "ReadWrite":
+                    rwconfig.append(type_info)
+                    add = False
+            except Exception as ex:
+                pass
+            if add:
+                config.append(type_info)
 
         provides.append({
             'id': impl,
             'type': impl_info['interface'],
             'desc': impl_info['description'],
             'config': config,
+            'rwconfig': rwconfig,
             'class_name': f'{impl_info["interface"]}Impl',
             'base_class': f'{impl_info["interface"]}ImplBase',
             'base_class_header': f'generated/interfaces/{impl_info["interface"]}/Implementation.hpp'
@@ -182,9 +192,19 @@ def generate_tmpl_data_for_module(module, module_def):
         })
 
     module_config = []
+    module_rwconfig = []
+
     for conf_id, conf_info in module_def.get('config', {}).items():
         type_info = helpers.build_type_info(conf_id, conf_info['type'])
-        module_config.append(type_info)
+        add = True
+        try:
+            if conf_info['mutability'] == "ReadWrite":
+                module_rwconfig.append(type_info)
+                add = False
+        except Exception as ex:
+            pass
+        if add:
+            module_config.append(type_info)
 
     tmpl_data = {
         'info': {
@@ -193,6 +213,7 @@ def generate_tmpl_data_for_module(module, module_def):
             'desc': module_def['description'],
             'module_header': f'{module}.hpp',
             'module_config': module_config,
+            'module_rwconfig': module_rwconfig,
             'ld_ev_header': 'ld-ev.hpp',
             'enable_external_mqtt': module_def.get('enable_external_mqtt', False),
             'enable_telemetry': module_def.get('enable_telemetry', False),
@@ -364,6 +385,7 @@ def generate_module_files(rel_mod_dir, update_flag, licenses):
         if_tmpl_data['info'].update({
             'hpp_guard': helpers.snake_case(f'{impl["id"]}_{interface}').upper() + '_IMPL_HPP',
             'config': impl['config'],
+            'rwconfig': impl['rwconfig'],
             'class_name': interface + 'Impl',
             'class_parent': interface + 'ImplBase',
             'module_header': f'../{mod}.hpp',

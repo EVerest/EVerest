@@ -43,6 +43,15 @@ config:
       Timeout in seconds for the allocation of a module placeholder.
     type: integer
     default: 5
+  modbus_timeout_s:
+    description: |
+      Timeout in seconds for the Modbus communication with the power supply.
+      If no Modbus data is received from the power supply for this duration,
+      the communication is considered lost and a CommunicationFault is raised.
+    type: integer
+    default: 60
+    minimum: 1
+    maximum: 120
   esn:
     description: |
       Electronic Serial Number of the dispenser.
@@ -195,6 +204,8 @@ requires:
     min_connections: 0
     max_connections: 4
 enable_external_mqtt: true
+capabilities:
+  - CAP_NET_RAW
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

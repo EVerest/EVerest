@@ -12,9 +12,12 @@ ev_setup_cpp_module()
 target_sources(${MODULE_NAME}
     PRIVATE
         Charger.cpp
+        energy_transfer_modes.cpp
+        powermeter_limits.cpp
         SessionLog.cpp
         v2gMessage.cpp
         CarManufacturer.cpp
+        CpStateFrameEmitter.cpp
         IECStateMachine.cpp
         ErrorHandling.cpp
         backtrace.cpp
@@ -25,6 +28,7 @@ target_sources(${MODULE_NAME}
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
+        everest::everest_api_types
         everest::helpers
         everest::util
         Pal::Sigslot

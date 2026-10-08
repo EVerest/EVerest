@@ -7,6 +7,8 @@
 #include <memory>
 #include <set>
 
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/common/message_dispatcher.hpp>
 
 #include <ocpp/common/charging_station_base.hpp>
@@ -26,9 +28,16 @@
 #include <ocpp/v2/messages/GetCompositeSchedule.hpp>
 #include <ocpp/v2/messages/NotifyEVChargingNeeds.hpp>
 
+#include <ocpp/v21/messages/NotifyDERAlarm.hpp>
+
 #include "component_state_manager.hpp"
 
 namespace ocpp {
+
+namespace v21 {
+class DERControlInterface;
+} // namespace v21
+
 namespace v2 {
 
 class AuthorizationInterface;
@@ -72,14 +81,14 @@ public:
     /// \brief Stops the ChargePoint. Disconnects the websocket connection and stops MessageQueue and all timers
     virtual void stop() = 0;
 
-    /// \brief Initializes the websocket and connects to a CSMS. Provide a network_profile_slot to connect to that
-    /// specific slot.
+    /// \brief Initializes the websocket and connects to a CSMS once no CALL is in flight. Does nothing after stop().
+    /// Provide a network_profile_slot to connect to that specific slot.
     ///
     /// \param network_profile_slot Optional slot to use when connecting. std::nullopt means the slot will be determined
     /// automatically.
     virtual void connect_websocket(std::optional<std::int32_t> network_profile_slot = std::nullopt) = 0;
 
-    /// \brief Disconnects the the websocket connection to the CSMS if it is connected
+    /// \brief Disconnects the websocket from the CSMS once no CALL is in flight. Does nothing after stop().
     virtual void disconnect_websocket() = 0;
 
     /// \addtogroup ocpp201_handlers OCPP 2.0.1 handlers
@@ -89,6 +98,28 @@ public:
     /// @name Handlers
     /// The handlers
     /// @{
+
+    ///
+    /// \brief Shall be called when a websocket connection has been established in case the connectivity_handler is
+    /// provided exernally.
+    /// \param configuration_slot The network profile slot used for the connection.
+    /// \param network_connection_profile The network connection profile used for the connection.
+    virtual void on_websocket_connected(const int configuration_slot,
+                                        const NetworkConnectionProfile& network_connection_profile,
+                                        const OcppProtocolVersion ocpp_version) = 0;
+
+    ///
+    /// \brief Shall be called when a websocket connection has been disconnected in case the connectivity_handler is
+    /// provided externally.
+    /// \param configuration_slot The network profile slot used for the connection.
+    /// \param network_connection_profile The network connection profile used for the connection.
+    virtual void on_websocket_disconnected(const int configuration_slot,
+                                           const NetworkConnectionProfile& network_connection_profile) = 0;
+
+    /// \brief Shall be called when a websocket connection attempt has failed in case the connectivity_handler is
+    /// provided externally.
+    /// \param reason The reason why the connection failed.
+    virtual void on_websocket_connection_failed(ConnectionFailedReason reason) = 0;
 
     ///
     /// \brief Can be called when a network is disconnected, for example when an ethernet cable is removed.
@@ -104,8 +135,19 @@ public:
     ///        called during a Firmware Update to indicate the current firmware_update_status.
     /// \param request_id   The request_id. When it is -1, it will not be included in the request.
     /// \param firmware_update_status The firmware_update_status
+    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
+    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
     virtual void on_firmware_update_status_notification(std::int32_t request_id,
-                                                        const FirmwareStatusEnum& firmware_update_status) = 0;
+                                                        const FirmwareStatusEnum& firmware_update_status,
+                                                        const bool disable_connectors_during_install = true) = 0;
+
+    /// \brief Sends a NotifyDERAlarm to the CSMS for a DER grid event. No-op if no EVSE declares DER support.
+    virtual void on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) = 0;
+
+    /// \brief Re-emit the current active DER directive set through the der_active_directives_callback. Lets a
+    /// provider learn the standing set when a newly-enabled EVSE joins an already-built DER block (whose
+    /// construction-time emit already fired). No-op if the DER functional block is not available.
+    virtual void on_der_republish_active_directives() = 0;
 
     /// \brief Event handler that should be called when a session has started
     /// \param evse_id
@@ -145,12 +187,13 @@ public:
     /// \param reason
     /// \param id_token
     /// \param signed_meter_value
+    /// \param start_signed_meter_value
     /// \param charging_state
-    virtual void on_transaction_finished(const std::int32_t evse_id, const DateTime& timestamp,
-                                         const MeterValue& meter_stop, const ReasonEnum reason,
-                                         const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
-                                         const std::optional<std::string>& signed_meter_value,
-                                         const ChargingStateEnum charging_state) = 0;
+    virtual void on_transaction_finished(
+        const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop, const ReasonEnum reason,
+        const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
+        const std::optional<std::string>& signed_meter_value, const ChargingStateEnum charging_state,
+        const std::optional<SignedMeterValue>& start_signed_meter_value = std::nullopt) = 0;
 
     /// \brief Event handler that should be called when a session has finished
     /// \param evse_id
@@ -310,9 +353,9 @@ public:
 
     /// \brief Gets a composite schedule based on the given \p request
     /// \param request specifies different options for the request
-    /// \return GetCompositeScheduleResponse containing the status of the operation and the composite schedule if the
-    /// operation was successful
-    virtual GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
+    /// \return EnhancedCompositeScheduleResponse containing the status of the operation and the composite schedule if
+    /// the operation was successful
+    virtual EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) = 0;
 
     /// \brief Gets a composite schedule based on the given parameters.
     /// \note This will ignore TxDefaultProfiles and TxProfiles if no transaction is active on \p evse_id
@@ -320,8 +363,8 @@ public:
     /// \param duration How long the schedule should be
     /// \param unit ChargingRateUnit to thet the schedule for
     /// \return the composite schedule if the operation was successful, otherwise nullopt
-    virtual std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                                    ChargingRateUnitEnum unit) = 0;
+    virtual std::optional<EnhancedCompositeSchedule>
+    get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) = 0;
 
     /// \brief Gets composite schedules for all evse_ids (including 0) for the given \p duration and \p unit . If no
     /// valid profiles are given for an evse for the specified period, the composite schedule will be empty for this
@@ -329,8 +372,8 @@ public:
     /// \param duration of the request from. Composite schedules will be retrieved from now to (now + duration)
     /// \param unit of the period entries of the composite schedules
     /// \return vector of composite schedules, one for each evse_id including 0.
-    virtual std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                                       const ChargingRateUnitEnum& unit) = 0;
+    virtual std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                               const ChargingRateUnitEnum& unit) = 0;
 
     /// \brief Gets the configured NetworkConnectionProfile based on the given \p configuration_slot . The
     /// central system uri of the connection options will not contain ws:// or wss:// because this method removes it if
@@ -345,12 +388,13 @@ public:
     ///
     virtual std::optional<int> get_priority_from_configuration_slot(const int configuration_slot) const = 0;
 
-    /// @brief Get the network connection slots sorted by priority.
+    /// @brief Get a snapshot of the network connection slots sorted by priority.
     /// Each item in the vector contains the configured configuration slots, where the slot with index 0 has the highest
-    /// priority.
+    /// priority. A copy is returned (rather than a const reference) so callers do not observe mid-mutation state once
+    /// the underlying ConnectivityManager monitor handle has been released.
     /// @return The network connection slots
     ///
-    virtual const std::vector<int>& get_network_connection_slots() const = 0;
+    virtual std::vector<int> get_network_connection_slots() const = 0;
 };
 
 /// \brief Class implements OCPP2.0.1 Charging Station
@@ -359,7 +403,7 @@ class ChargePoint : public ChargePointInterface, private ocpp::ChargingStationBa
 private:
     std::shared_ptr<DeviceModelAbstract> device_model;
     std::unique_ptr<EvseManager> evse_manager;
-    std::unique_ptr<ConnectivityManager> connectivity_manager;
+    std::shared_ptr<ConnectivityManagerInterface> connectivity_manager;
 
     std::unique_ptr<MessageDispatcherInterface<MessageType>> message_dispatcher;
 
@@ -380,6 +424,7 @@ private:
     std::unique_ptr<ProvisioningInterface> provisioning;
     std::unique_ptr<RemoteTransactionControlInterface> remote_transaction_control;
     std::unique_ptr<BidirectionalInterface> bidirectional;
+    everest::lib::util::monitor<std::unique_ptr<v21::DERControlInterface>> der_control;
 
     // utility
     std::shared_ptr<MessageQueue<v2::MessageType>> message_queue;
@@ -387,13 +432,13 @@ private:
     fs::path share_path;
 
     // states
-    std::atomic<RegistrationStatusEnum> registration_status;
-    std::atomic<OcppProtocolVersion> ocpp_version =
-        OcppProtocolVersion::Unknown; // version that is currently in use, selected by CSMS in websocket handshake
-    std::atomic<UploadLogStatusEnum> upload_log_status;
+    std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Rejected};
+    std::atomic<OcppProtocolVersion> ocpp_version{
+        OcppProtocolVersion::Unknown}; // version that is currently in use, selected by CSMS in websocket handshake
+    std::atomic<UploadLogStatusEnum> upload_log_status{UploadLogStatusEnum::Idle};
     std::atomic<std::int32_t> upload_log_status_id;
-    BootReasonEnum bootreason;
-    bool skip_invalid_csms_certificate_notifications;
+    BootReasonEnum bootreason{BootReasonEnum::PowerUp};
+    bool skip_invalid_csms_certificate_notifications{false};
 
     /// \brief Component responsible for maintaining and persisting the operational status of CS, EVSEs, and connectors.
     std::shared_ptr<ComponentStateManagerInterface> component_state_manager;
@@ -425,14 +470,13 @@ private:
     // internal helper functions
     void initialize(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                     const std::string& message_log_path);
-    void websocket_connected_callback(const int configuration_slot,
-                                      const NetworkConnectionProfile& network_connection_profile,
-                                      const OcppProtocolVersion ocpp_version);
-    void websocket_disconnected_callback(const int configuration_slot,
-                                         const NetworkConnectionProfile& network_connection_profile);
-    void websocket_connection_failed(ConnectionFailedReason reason);
+    OcspUpdater make_ocsp_updater();
     void update_dm_availability_state(const std::int32_t evse_id, const std::int32_t connector_id,
                                       const ConnectorStatusEnum status);
+
+    /// \brief Builds the DER functional block if not yet built and any DER component reports Available==true.
+    /// Idempotent. Invoked at construction and from the variable listener when Available flips false->true.
+    void build_der_control_if_enabled();
 
     void message_callback(const std::string& message);
 
@@ -469,6 +513,11 @@ protected:
     void handle_message(const EnhancedMessage<v2::MessageType>& message);
     void clear_invalid_charging_profiles();
 
+    /// \brief Requests the OCSP status of a V2G certificate from the CSMS on behalf of the OcspUpdater
+    /// \return the response of the CSMS, or a response with status Failed when the CSMS did not answer with a
+    /// GetCertificateStatusResponse
+    GetCertificateStatusResponse get_certificate_status_from_csms(const GetCertificateStatusRequest& request);
+
 public:
     /// \addtogroup chargepoint_constructors
     /// @{
@@ -482,14 +531,33 @@ public:
     /// the EVSEs have to increment starting with 1.
     /// \param device_model device model instance
     /// \param database_handler database handler instance
+    /// \param evse_security Pointer to evse_security that manages security related operations
+    /// \param connectivity_manager connectivity manager instance
+    /// \param message_log_path Path to where logfiles are written to
+    /// \param callbacks Callbacks that will be registered for ChargePoint
+    ChargePoint(const std::map<int32_t, int32_t>& evse_connector_structure,
+                const std::shared_ptr<DeviceModelAbstract> device_model,
+                const std::shared_ptr<DatabaseHandler> database_handler,
+                const std::shared_ptr<EvseSecurity> evse_security,
+                const std::shared_ptr<ConnectivityManagerInterface> connectivity_manager,
+                const std::string& message_log_path, const Callbacks& callbacks);
+
+    /// \brief Construct a new ChargePoint object
+    /// \param evse_connector_structure Map that defines the structure of EVSE and connectors of the chargepoint. The
+    /// key represents the id of the EVSE and the value represents the number of connectors for this EVSE. The ids of
+    /// the EVSEs have to increment starting with 1.
+    /// \param device_model device model instance
+    /// \param database_handler database handler instance
     /// \param message_queue message queue instance
     /// \param message_log_path Path to where logfiles are written to
     /// \param evse_security Pointer to evse_security that manages security related operations
     /// \param callbacks Callbacks that will be registered for ChargePoint
+    /// \param share_path Path where utility files for OCPP are read and written to
     ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                 std::shared_ptr<DeviceModelAbstract> device_model, std::shared_ptr<DatabaseHandler> database_handler,
                 std::shared_ptr<MessageQueue<v2::MessageType>> message_queue, const std::string& message_log_path,
-                const std::shared_ptr<EvseSecurity> evse_security, const Callbacks& callbacks);
+                const std::shared_ptr<EvseSecurity> evse_security, const Callbacks& callbacks,
+                const fs::path& share_path = {});
 
     /// \brief Construct a new ChargePoint object
     /// \param evse_connector_structure Map that defines the structure of EVSE and connectors of the chargepoint. The
@@ -540,10 +608,21 @@ public:
     void connect_websocket(std::optional<std::int32_t> network_profile_slot = std::nullopt) override;
     void disconnect_websocket() override;
 
+    void on_websocket_connected(const int configuration_slot,
+                                const NetworkConnectionProfile& network_connection_profile,
+                                const OcppProtocolVersion ocpp_version) override;
+    void on_websocket_disconnected(const int configuration_slot,
+                                   const NetworkConnectionProfile& network_connection_profile) override;
+    void on_websocket_connection_failed(ConnectionFailedReason reason) override;
     void on_network_disconnected(OCPPInterfaceEnum ocpp_interface) override;
 
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const FirmwareStatusEnum& firmware_update_status) override;
+                                                const FirmwareStatusEnum& firmware_update_status,
+                                                bool disable_connectors_during_install = true) override;
+
+    void on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) override;
+
+    void on_der_republish_active_directives() override;
 
     void on_session_started(const std::int32_t evse_id, const std::int32_t connector_id) override;
 
@@ -558,11 +637,11 @@ public:
                                 const std::optional<std::int32_t>& remote_start_id,
                                 const ChargingStateEnum charging_state) override;
 
-    void on_transaction_finished(const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop,
-                                 const ReasonEnum reason, const TriggerReasonEnum trigger_reason,
-                                 const std::optional<IdToken>& id_token,
-                                 const std::optional<std::string>& signed_meter_value,
-                                 const ChargingStateEnum charging_state) override;
+    void on_transaction_finished(
+        const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop, const ReasonEnum reason,
+        const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
+        const std::optional<std::string>& signed_meter_value, const ChargingStateEnum charging_state,
+        const std::optional<SignedMeterValue>& start_signed_meter_value = std::nullopt) override;
 
     void on_session_finished(const std::int32_t evse_id, const std::int32_t connector_id) override;
 
@@ -626,18 +705,18 @@ public:
                            const Component& component, const Variable& variable,
                            const VariableCharacteristics& characteristics, const VariableAttribute& attribute,
                            const std::string& value_previous, const std::string& value_current)>&& listener) override;
-    GetCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
-    std::optional<CompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
-                                                            ChargingRateUnitEnum unit) override;
-    std::vector<CompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
-                                                               const ChargingRateUnitEnum& unit) override;
+    EnhancedCompositeScheduleResponse get_composite_schedule(const GetCompositeScheduleRequest& request) override;
+    std::optional<EnhancedCompositeSchedule> get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration,
+                                                                    ChargingRateUnitEnum unit) override;
+    std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
+                                                                       const ChargingRateUnitEnum& unit) override;
 
     std::optional<NetworkConnectionProfile>
     get_network_connection_profile(const std::int32_t configuration_slot) const override;
 
     std::optional<int> get_priority_from_configuration_slot(const int configuration_slot) const override;
 
-    const std::vector<int>& get_network_connection_slots() const override;
+    std::vector<int> get_network_connection_slots() const override;
 
     void send_not_implemented_error(const MessageId unique_message_id, const MessageTypeId message_type_id);
 

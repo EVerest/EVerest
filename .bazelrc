@@ -4,6 +4,12 @@
 # This flag can be removed once all dependencies are updated for Bazel 9.
 build --incompatible_autoload_externally=+cc_library,+cc_binary,+cc_test,+cc_shared_library,+cc_import,+cc_toolchain,+py_binary,+py_library,+py_test,+sh_binary,+sh_library,+sh_test
 
+# Force -fPIC on C/C++ compilation so static archives can be linked into PIE
+# binaries. Required because modern rustc defaults to producing PIE executables
+# on x86_64-unknown-linux-gnu, and any static C++ library mixed into a Rust
+# binary therefore has to be position-independent.
+build --copt=-fPIC
+
 # CI config: smaller binaries, shared repo cache, disk cache for artifacts.
 build:ci -c opt
 build:ci --strip=always
@@ -11,11 +17,19 @@ build:ci --copt=-g0
 build:ci --repository_cache=~/.cache/bazel-repo-cache
 build:ci --disk_cache=~/.cache/bazel-disk-cache
 
+# Authenticate external downloads from GitHub. Anonymous archive fetches share a
+# per-IP rate limit that answers 429 and fails the job before anything is built.
+# The helper serves the credentials CI writes to ~/.netrc, on the redirect
+# target as well as on the URL a repository rule names; see the helper for why
+# netrc alone does not cover both.
+build:ci --credential_helper=github.com=%workspace%/.ci/bazel/netrc_credential_helper.py
+build:ci --credential_helper=codeload.github.com=%workspace%/.ci/bazel/netrc_credential_helper.py
+
 # workaround for goption.c:169:14: error: two or more data types in declaration specifiers on armv7
 build:armv7-linux-gnueabihf --repo_env=BAZEL_CONLYOPTS="-std=gnu17"
 build:aarch64-linux-gnu --repo_env=BAZEL_CONLYOPTS=""
 build:aarch64-linux-musl --repo_env=BAZEL_CONLYOPTS=""
-build:armv7-linux-musleabihf --repo_env=BAZEL_CONLYOPTS=""
+build:armv7-linux-musleabihf --repo_env=BAZEL_CONLYOPTS="-std=gnu17"
 
 # With our setup Bazel links every binary statically to `libframework.a` If you
 # want to link dynamically to `libframework.so` use `--dynamic_mode=fully`.

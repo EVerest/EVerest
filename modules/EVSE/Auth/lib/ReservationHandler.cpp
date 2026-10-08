@@ -62,7 +62,9 @@ void ReservationHandler::load_reservations() {
         }
 
         types::reservation::ReservationResult reservation_result = this->make_reservation(evse_id, r);
-        if (reservation_result != types::reservation::ReservationResult::Accepted) {
+        if (reservation_result == types::reservation::ReservationResult::Accepted && evse_id.has_value()) {
+            this->restored_reservations[evse_id.value()] = r.reservation_id;
+        } else if (reservation_result != types::reservation::ReservationResult::Accepted) {
             EVLOG_warning << "Load reservations: Could not make reservation with id " << r.reservation_id
                           << ": reservation cancelled.";
             this->reservation_cancelled_callback(evse_id, r.reservation_id,
@@ -136,6 +138,7 @@ ReservationHandler::make_reservation(const std::optional<uint32_t> evse_id,
                 EVLOG_info << "Created reservation for evse id " << evse_id.value() << ", connector type "
                            << types::evse_manager::connector_type_enum_to_string(
                                   reservation.connector_type.value_or(types::evse_manager::ConnectorTypeEnum::Unknown));
+                store_reservations();
                 return types::reservation::ReservationResult::Accepted;
             }
 
@@ -155,6 +158,7 @@ ReservationHandler::make_reservation(const std::optional<uint32_t> evse_id,
             EVLOG_info << "Created reservation for evse id " << evse_id.value() << ", connector type "
                        << types::evse_manager::connector_type_enum_to_string(
                               reservation.connector_type.value_or(types::evse_manager::ConnectorTypeEnum::Unknown));
+            store_reservations();
         }
     } else {
         if (reservation.connector_type.has_value() &&
@@ -180,6 +184,21 @@ ReservationHandler::make_reservation(const std::optional<uint32_t> evse_id,
     set_reservation_timer(reservation, evse_id);
 
     return types::reservation::ReservationResult::Accepted;
+}
+
+std::optional<int32_t> ReservationHandler::take_restored_reservation(const uint32_t evse_id) {
+    std::lock_guard<std::recursive_mutex> lk(this->event_mutex);
+    const auto it = this->restored_reservations.find(evse_id);
+    if (it == this->restored_reservations.end()) {
+        return std::nullopt;
+    }
+
+    const int32_t reservation_id = it->second;
+    this->restored_reservations.erase(it);
+    if (!this->is_evse_reserved(evse_id, reservation_id)) {
+        return std::nullopt;
+    }
+    return reservation_id;
 }
 
 void ReservationHandler::on_connector_state_changed(const ConnectorState connector_state, const uint32_t evse_id,
@@ -249,6 +268,12 @@ bool ReservationHandler::is_evse_reserved(const uint32_t evse_id) {
     }
 
     return false;
+}
+
+bool ReservationHandler::is_evse_reserved(const uint32_t evse_id, const int32_t reservation_id) {
+    std::lock_guard<std::recursive_mutex> lk(this->event_mutex);
+    const auto it = this->evse_reservations.find(evse_id);
+    return it != this->evse_reservations.end() && it->second.reservation_id == reservation_id;
 }
 
 std::pair<bool, std::optional<uint32_t>>
@@ -779,9 +804,10 @@ void ReservationHandler::store_reservations() {
         reservations.push_back(r);
     }
 
-    if (!reservations.empty()) {
-        this->store->call_store(this->kvs_store_key_id, reservations);
-    }
+    // Always persist, even an empty array: cancelling or expiring the last
+    // reservation must clear the stored state. Otherwise the stale entry is
+    // reloaded on the next boot and the cancelled reservation "resurrects".
+    this->store->call_store(this->kvs_store_key_id, reservations);
 }
 
 ReservationEvseStatus ReservationHandler::get_evse_global_reserved_status_and_set_new_status(

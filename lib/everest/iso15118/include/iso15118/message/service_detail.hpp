@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <variant>
@@ -25,6 +25,7 @@ struct ParameterSet {
     ParameterSet(uint16_t _id);
     ParameterSet(uint16_t _id, const AcParameterList& list);
     ParameterSet(uint16_t _id, const AcBptParameterList& list);
+    ParameterSet(uint16_t _id, const AcDerParameterList& list);
     ParameterSet(uint16_t _id, const DcParameterList& list);
     ParameterSet(uint16_t _id, const DcBptParameterList& list);
     ParameterSet(uint16_t _id, const McsParameterList& list);

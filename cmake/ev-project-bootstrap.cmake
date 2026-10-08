@@ -1,6 +1,6 @@
 set_property(
     GLOBAL
-    PROPERTY EVEREST_REQUIRED_EV_CLI_VERSION "0.6.2"
+    PROPERTY EVEREST_REQUIRED_EV_CLI_VERSION "0.8.1"
 )
 
 # FIXME (aw): clean up this inclusion chain

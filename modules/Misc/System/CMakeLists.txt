@@ -15,6 +15,7 @@ target_link_libraries(${MODULE_NAME}
         date::date-tz
         everest::timer
         everest::run_application
+        everest::util
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 
@@ -34,6 +35,7 @@ install(
         firmware_updater.sh
         signed_firmware_downloader.sh
         signed_firmware_installer.sh
+        signed_firmware_metadata_parser.sh
     DESTINATION "${EVEREST_MODULE_INSTALL_PREFIX}/${MODULE_NAME}"
 )
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

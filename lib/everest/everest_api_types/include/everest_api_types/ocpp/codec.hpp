@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
 #include "API.hpp"
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::ocpp {
 
@@ -38,6 +39,10 @@ create_serialize_interface(SetVariableRequestList);
 create_serialize_interface(SetVariableResultList);
 create_serialize_interface(SecurityEvent);
 create_serialize_interface(StatusInfoType);
+create_serialize_interface(OperationalStatusEnumType);
+create_serialize_interface(ChangeAvailabilityStatusEnumType);
+create_serialize_interface(ChangeAvailabilityRequest);
+create_serialize_interface(ChangeAvailabilityResponse);
 create_serialize_interface(BootNotificationResponse);
 create_serialize_interface(OcppTransactionEvent);
 create_serialize_interface(MonitorVariableRequestList);
@@ -51,24 +56,10 @@ create_serialize_interface(V2XSignalWattPointCurve);
 create_serialize_interface(V2XFreqWattPointType);
 create_serialize_interface(MessageDirection);
 create_serialize_interface(Message);
+create_serialize_interface(ConnectionStatus);
 
 #undef create_serialize_interface
 
-template <class T> T deserialize(std::string const& val);
-template <class T> std::optional<T> try_deserialize(std::string const& val) {
-    try {
-        return deserialize<T>(val);
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-template <class T> bool adl_deserialize(std::string const& json_data, T& obj) {
-    auto opt = try_deserialize<T>(json_data);
-    if (opt) {
-        obj = opt.value();
-        return true;
-    }
-    return false;
-}
+#include <everest_api_types/utilities/deserialize_templates.inc>
 
 } // namespace everest::lib::API::V1_0::types::ocpp

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_CHARGE_POINT_HPP
 #define OCPP_V16_CHARGE_POINT_HPP
 
 #include <ocpp/common/cistring.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/evse_security.hpp>
 #include <ocpp/common/evse_security_impl.hpp>
 #include <ocpp/common/support_older_cpp_versions.hpp>
@@ -19,6 +20,8 @@
 #include <ocpp/v16/messages/GetDiagnostics.hpp>
 #include <ocpp/v16/messages/GetLog.hpp>
 #include <ocpp/v16/messages/SignedUpdateFirmware.hpp>
+#include <ocpp/v16/messages/StartTransaction.hpp>
+#include <ocpp/v16/messages/StopTransaction.hpp>
 #include <ocpp/v16/messages/UpdateFirmware.hpp>
 
 // for OCPP1.6 PnC
@@ -77,6 +80,15 @@ public:
         const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
 
+    /// \brief Constructor that allows providing a \p connectivity_manager .
+    explicit ChargePoint(
+        ChargePointConfigurationInterface& cfg, const fs::path& share_path, const fs::path& database_path,
+        const fs::path& sql_init_path, const fs::path& message_log_path,
+        const std::shared_ptr<EvseSecurity> evse_security,
+        std::shared_ptr<ocpp::ConnectivityManagerInterface> connectivity_manager,
+        const std::optional<SecurityConfiguration> security_configuration = std::nullopt,
+        const std::function<void(const std::string& message, MessageDirection direction)>& message_callback = nullptr);
+
     virtual ~ChargePoint();
 
     /// @}  // End constructors 1.6 group
@@ -128,9 +140,11 @@ public:
     /// not stop transactions with this session_id even in case it has an internal database entry for this session and
     /// it hasnt been stopped yet. Its ignored if this vector contains session_ids that are unknown to libocpp.
     ///  \return
+    /// \param start_connecting if true (default) the websocket connection is initiated as part of start(). If false
+    /// connecting is deferred until an explicit connect_websocket() call.
     bool start(const std::map<int, ChargePointStatus>& connector_status_map = {},
                BootReasonEnum bootreason = BootReasonEnum::PowerUp,
-               const std::set<std::string>& resuming_session_ids = {});
+               const std::set<std::string>& resuming_session_ids = {}, bool start_connecting = true);
 
     /// \brief Restarts the ChargePoint if it has been stopped before. The ChargePoint is reinitialized, connects to the
     /// websocket and starts to communicate OCPP messages again
@@ -155,6 +169,27 @@ public:
 
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
+
+    /// \brief Rebuilds the cached network connection profiles and slot priority list from the configuration.
+    /// Call after network-related configuration (NetworkConfiguration components, NetworkConfigurationPriority)
+    /// was changed externally, e.g. via the EVerest ocpp interface. Does not affect an active connection; the
+    /// updated profiles take effect on the next (re)connect attempt.
+    void reload_network_profiles();
+
+    /// \brief Notifies the charge point that the websocket is connected. This allows an external owner of an injected
+    /// ConnectivityManager to drive the charge point's websocket lifecycle (mirroring ocpp::v2::ChargePointInterface).
+    void on_websocket_connected(const int configuration_slot,
+                                const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                const ocpp::OcppProtocolVersion ocpp_version);
+
+    /// \brief Notifies the charge point that the websocket is disconnected. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
+    void on_websocket_disconnected(const int configuration_slot,
+                                   const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
+
+    /// \brief Notifies the charge point that the websocket connection failed. This allows an external owner of an
+    /// injected ConnectivityManager to drive the charge point's websocket lifecycle
+    void on_websocket_connection_failed(ocpp::ConnectionFailedReason reason);
 
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
@@ -293,9 +328,11 @@ public:
     /// \param energy_wh_import stop meter value in Wh
     /// \param id_tag_end
     /// \param signed_meter_value e.g. in OCMF format
+    /// \param start_signed_meter_value e.g. in OCMF format
     void on_transaction_stopped(const std::int32_t connector, const std::string& session_id, const Reason& reason,
                                 ocpp::DateTime timestamp, float energy_wh_import,
-                                std::optional<CiString<20>> id_tag_end, std::optional<std::string> signed_meter_value);
+                                std::optional<CiString<20>> id_tag_end, std::optional<std::string> signed_meter_value,
+                                std::optional<std::string> start_signed_meter_value);
 
     /// \brief This function should be called when EV indicates that it suspends charging on the given \p connector
     /// \param connector
@@ -303,8 +340,10 @@ public:
     void on_suspend_charging_ev(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when EVSE indicates that it suspends charging on the given \p connector
+    /// . The \p info is always forwarded verbatim, but unless ReportSuspendedEVSEReasonChange is set a suspend on an
+    /// already suspended connector is discarded.
     /// \param connector
-    /// \param reason
+    /// \param info
     void on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when charging resumes on the given \p connector
@@ -348,8 +387,11 @@ public:
     /// \param request_id A \p request_id of -1 indicates a FirmwareStatusNotification.req, else a
     /// SignedFirmwareUpdateStatusNotification.req .
     /// \param firmware_update_status The \p firmware_update_status
+    /// \param disable_connectors_during_install By default, all connectors will be disabled before installing the
+    /// firmware update. Setting this parameter to false will keep the connectors available during the update.
     void on_firmware_update_status_notification(std::int32_t request_id,
-                                                const ocpp::FirmwareStatusNotification firmware_update_status);
+                                                const ocpp::FirmwareStatusNotification firmware_update_status,
+                                                const bool disable_connectors_during_install = true);
 
     /// \brief This function must be called when a reservation is started at the given \p connector .
     /// \param connector
@@ -515,6 +557,14 @@ public:
     /// \param callback
     void register_set_connection_timeout_callback(const std::function<void(std::int32_t connection_timeout)>& callback);
 
+    /// \brief registers a \p callback that is called before each websocket connection attempt so the host can
+    /// configure (e.g. bring up) the network interface for the network connection profile. OCPP 1.6 has a single
+    /// implicit profile (configuration slot 1, ocppInterface Any) synthesized from CentralSystemURI/SecurityProfile.
+    /// The returned future is awaited (60 s default timeout) before connecting; an unsuccessful result skips the
+    /// connection attempt and schedules a retry. Must be called before start().
+    /// \param callback
+    void register_configure_network_connection_profile_callback(ConfigureNetworkConnectionProfileCallback callback);
+
     /// \brief registers a \p callback function that can be used to check if a reset is allowed . The
     /// is_reset_allowed_callback is called when a Reset.req is received.
     /// \param callback
@@ -545,7 +595,9 @@ public:
     /// \brief registers a \p callback function that can be used when the connection state to CSMS changes. The
     /// connection_state_changed_callback is called when chargepoint has connected to or disconnected from the CSMS.
     /// \param callback
-    void register_connection_state_changed_callback(const std::function<void(bool is_connected)>& callback);
+    void register_connection_state_changed_callback(
+        const std::function<void(const bool is_connected, const int configuration_slot,
+                                 const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback);
 
     /// \brief registers a \p callback function that can be used to publish the response to a Get15118Certificate.req
     /// wrapped in a DataTransfer.req . The get_15118_ev_certificate_response_callback is called after the response to a
@@ -557,24 +609,27 @@ public:
                                  const ocpp::v2::CertificateActionEnum& certificate_action)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, the \p session_id correlates it with the EVerest session
+    /// because it is not part of the message.
     /// \param callback
     void register_transaction_started_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StopTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, \p session_id and \p connector correlate it with the
+    /// EVerest session and connector because neither is part of the message.
     /// \param callback
     void register_transaction_stopped_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id)>& callback);
+        const std::function<void(const std::string& session_id, const std::int32_t connector,
+                                 const StopTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.conf message is received by the
-    /// CSMS. This includes the transactionId.
+    /// CSMS. The \p response includes the transactionId and the idTagInfo, the \p request is the StartTransaction.req
+    /// it answers.
     /// \param callback
     void register_transaction_updated_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                                 const StartTransactionResponse& response)>& callback);
 
     /// \brief registers a \p callback function that can be used to react on changed configuration keys. This
     /// callback is called when a configuration key has been successfully changed by the CSMS or internally using the
@@ -590,6 +645,18 @@ public:
     /// \param callback executed when this configuration key and its value changed
     void
     register_generic_configuration_key_changed_callback(const std::function<void(const KeyValue& key_value)>& callback);
+
+    /// \brief registers a \p callback that can veto a ChangeConfiguration before it is applied (e.g.
+    /// based on runtime charge-point state), for both Core and Custom-profile keys
+    /// \param callback returns true to allow the change, false to reject it
+    void register_custom_key_validation_callback(
+        const std::function<bool(const std::string& key, const std::string& value)>& callback);
+
+    /// \brief force-writes a Custom key's value, bypassing its readOnly flag (see
+    /// ChargePointConfigurationInterface::set_custom_key_forced for details)
+    /// \param key
+    /// \param value
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value);
 
     /// \brief registers a \p callback function that can be used to react to a security event callback. This callback is
     /// called only if the SecurityEvent occured internally within libocpp

@@ -1,4 +1,4 @@
-name: Build Documentation
+name: Build and Deploy Documentation
 
 on:
   workflow_call:
@@ -30,6 +30,25 @@ on:
         description: 'Whether the current repository is a fork'
         required: true
         type: boolean
+      is_release:
+        description: 'Whether the current build is for a release version'
+        required: false
+        default: false
+        type: boolean
+      overwrite_existing_instance:
+        description: 'Whether to overwrite the existing documentation instance if it already exists'
+        required: false
+        default: true
+        type: boolean
+      instance_name:
+        description: 'The name of the instance to build the documentation for'
+        required: true
+        type: string
+      display_name:
+        description: 'The human-readable label shown in the version switcher (defaults to the sanitized instance name if empty)'
+        required: false
+        default: ''
+        type: string
     secrets:
       SA_GITHUB_SSH_KEY:
         description: 'SSH key for the service account used to deploy the documentation'
@@ -42,7 +61,7 @@ on:
 
 jobs:
   build-docs:
-    name: Build EVerest Documentation
+    name: build
     runs-on: ${{ inputs.runner }}
     env:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
@@ -67,12 +86,20 @@ jobs:
             ssh-keyscan github.com >> ~/.ssh/known_hosts
           fi
           ssh-add ~/.ssh/id_ed25519
+      - name: Sanitize instance name
+        id: sanitize
+        # Keep this formula in sync with the "Sanitize display_name into
+        # instance name" step in .github/workflows/on_workflow_dispatch_delete.yaml.
+        run: |
+          sanitized=$(echo -n "${{ inputs.instance_name }}" | tr '[:upper:]' '[:lower:]' | tr -cs 'a-z0-9_' '_')
+          echo "instance_name=${sanitized}" >> $GITHUB_OUTPUT
+          echo "Sanitized instance name: ${sanitized}"
       - name: Configure Git user
         run: |
           git config --global user.name "Pionix Github Service Account"
           git config --global user.email "compiler@pionix.de"
       - name: Download build-kit image
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           name: ${{ inputs.build_kit_artifact_name }}
       - name: Load build-kit image
@@ -83,8 +110,9 @@ jobs:
         run: |
           BRANCH_NAME_FOR_CACHE="${GITHUB_REF_NAME//-/_}"
           echo "branch_name_for_cache=${BRANCH_NAME_FOR_CACHE}" >> "$GITHUB_ENV"
-      - name: Setup cache
-        uses: actions/cache@v4
+      # Restore only: the compile cache is written by the CMake GCC job on main.
+      - name: Restore cache
+        uses: actions/cache/restore@v6
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
@@ -92,7 +120,7 @@ jobs:
             compile-${{ env.branch_name_for_cache }}-
             compile-
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
           path: source
       - name: Setup run scripts
@@ -121,16 +149,16 @@ jobs:
           docker run \
           --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
           --env SSH_AUTH_SOCK=/ssh-agent \
-          --env TRAILBOOK_everest_IS_RELEASE=OFF \
-          --env TRAILBOOK_everest_INSTANCE_NAME=nightly \
-          --env TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE=ON \
+          --env TRAILBOOK_everest_IS_RELEASE="${{ inputs.is_release }}" \
+          --env TRAILBOOK_everest_INSTANCE_NAME="${{ steps.sanitize.outputs.instance_name }}" \
+          --env TRAILBOOK_everest_DISPLAY_NAME="${{ inputs.display_name }}" \
+          --env TRAILBOOK_everest_OVERWRITE_EXISTING_INSTANCE="${{ inputs.overwrite_existing_instance }}" \
           --env EVEREST_DOCS_REPO_URL=${{ steps.github-pages-input.outputs.url }} \
           --volume "${{ github.workspace }}:/ext" \
           --name build-docs-container \
           build-kit run-script build_docs
-          docker commit build-docs-container build-docs-image
       - name: Upload Documentation Artifact
-        uses: actions/upload-artifact@v4.6.2
+        uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
           path: ${{ github.workspace }}/build/docs/deployed_docs_repo/docs/

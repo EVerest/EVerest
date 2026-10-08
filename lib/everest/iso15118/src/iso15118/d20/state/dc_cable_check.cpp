@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_cable_check.hpp>
 #include <iso15118/d20/state/dc_pre_charge.hpp>
 
@@ -18,7 +18,8 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
     message_20::DC_CableCheckResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not cable_check_done) {
@@ -27,11 +28,12 @@ message_20::DC_CableCheckResponse handle_request(const message_20::DC_CableCheck
         res.processing = dt::Processing::Finished;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_CableCheck::enter() {
-    m_ctx.log.enter_state("DC_CableCheck");
+    logf_debug("Enter state: DC_CableCheck");
 }
 
 Result DC_CableCheck::feed(Event ev) {
@@ -78,11 +80,12 @@ Result DC_CableCheck::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
     } else {
-        m_ctx.log("expected DC_CableCheckReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_CableCheckReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

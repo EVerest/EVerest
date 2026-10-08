@@ -5,6 +5,7 @@
 #include <framework/runtime.hpp>
 #include <tests/helpers.hpp>
 #include <utils/config.hpp>
+#include <utils/config/slot_manager.hpp>
 
 namespace fs = std::filesystem;
 
@@ -18,9 +19,11 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
         }
     }
     GIVEN("A valid prefix, but a non existing config file") {
-        THEN("It should throw BootException") {
+        THEN("It should throw BootException about the user provided path (not the short-form lookup)") {
             CHECK_THROWS_AS(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "non-existing-config.yaml"),
                             Everest::BootException);
+            CHECK_THROWS_WITH(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "non-existing-config.yaml"),
+                              Catch::Matchers::ContainsSubstring("User provided config"));
         }
     }
     GIVEN("A valid prefix and a valid config file") {
@@ -63,13 +66,220 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
                             Everest::BootException);
         }
     }
-    GIVEN("A non-exsiting database file with ConfigurationBootMode::DatabaseInit") {
+    GIVEN("A non-exsiting database file") {
         THEN("It should not throw and create the file") {
-            CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
-                                                   "valid_config/non_existing.db"));
+            Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
+                                        bin_dir + "valid_config/non_existing.db");
+            CHECK_NOTHROW(Everest::init_database_bootstrap(ms));
         }
     }
 }
+
+SCENARIO("Check ManagerSettings without a config file", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    // The empty_yaml fixture uses the filesystem hierarchy standard layout (share/everest/...,
+    // etc/everest/default_logging.cfg, libexec/everest/modules) but contains no etc/everest/default.yaml.
+    auto prefix = bin_dir + "empty_yaml/";
+
+    GIVEN("A valid prefix without any config file and without a default.yaml") {
+        THEN("The WithoutConfig constructor never looks for default.yaml and uses built-in defaults") {
+            auto ms = Everest::ManagerSettings(Everest::ManagerSettings::WithoutConfig{}, prefix, "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.config.is_object());
+            CHECK(ms.config.empty());
+            CHECK(ms.db_dir == fs::path(Everest::defaults::IN_MEMORY_DB_URI));
+        }
+        THEN("The default config lookup (no --config) tolerates the missing default.yaml") {
+            CHECK_NOTHROW(Everest::ManagerSettings(prefix, ""));
+            auto ms = Everest::ManagerSettings(prefix, "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.config.is_object());
+            CHECK(ms.config.empty());
+        }
+        THEN("The three-argument constructor without --config and --db falls back to an in-memory database") {
+            auto ms = Everest::ManagerSettings(prefix, "", "");
+            CHECK(ms.config_file.empty());
+            CHECK(ms.db_dir == fs::path(Everest::defaults::IN_MEMORY_DB_URI));
+        }
+        THEN("An explicitly given short-form config name that does not exist still throws") {
+            CHECK_THROWS_AS(Everest::ManagerSettings(prefix, "does-not-exist"), Everest::BootException);
+        }
+        THEN("An explicitly given config path that does not exist still throws") {
+            CHECK_THROWS_AS(Everest::ManagerSettings(prefix, prefix + "does-not-exist.yaml"), Everest::BootException);
+        }
+    }
+    GIVEN("A valid prefix without default.yaml, no --config and an explicit database path") {
+        auto db_path = bin_dir + "empty_yaml/no_default_config.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(prefix, "", db_path);
+        CHECK(ms.config_file.empty());
+        CHECK(ms.db_dir == fs::path(db_path));
+
+        THEN("Bootstrap on a fresh database should seed an empty config slot without a config file path") {
+            auto bs = Everest::init_database_bootstrap(ms);
+            CHECK(bs.module_configs_initialized == true);
+            CHECK_FALSE(bs.seed_failure.has_value());
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK_FALSE(slots.front().config_file_path.has_value());
+            CHECK_FALSE(slots.front().description.has_value());
+        }
+    }
+    GIVEN("A valid prefix without a config file and an explicit database path") {
+        auto db_path = bin_dir + "empty_yaml/no_config.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(Everest::ManagerSettings::WithoutConfig{}, prefix, db_path);
+        CHECK(ms.db_dir == fs::path(db_path));
+
+        THEN("Bootstrap on a fresh database should seed an empty config slot") {
+            auto bs = Everest::init_database_bootstrap(ms);
+            CHECK(bs.module_configs_initialized == true);
+            CHECK_FALSE(bs.seed_failure.has_value());
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+            CHECK(slot_mgr.exists(boot_slot_id));
+
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs.db_connection, boot_slot_id);
+            auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(get_mod_cfg_response.module_configs.empty());
+
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK(slots.front().id == boot_slot_id);
+            CHECK_FALSE(slots.front().config_file_path.has_value());
+            CHECK_FALSE(slots.front().description.has_value());
+
+            THEN("A second bootstrap (restart) without a YAML keeps the existing empty slot") {
+                auto bs2 = Everest::init_database_bootstrap(ms);
+                CHECK(bs2.module_configs_initialized == true);
+                CHECK_FALSE(bs2.seed_failure.has_value());
+                CHECK(slot_mgr.list_slots().size() == 1);
+            }
+        }
+        THEN("Bootstrap with reset-from-yaml should throw, since there is no YAML to re-seed from") {
+            CHECK_THROWS_AS(Everest::init_database_bootstrap(ms, true), Everest::BootException);
+        }
+    }
+}
+
+SCENARIO("Check ManagerSettings default config lookup", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+    // The default_yaml fixture is the only FHS fixture that contains etc/everest/default.yaml.
+    auto prefix = bin_dir + "default_yaml/";
+    const auto default_config = fs::canonical(bin_dir + "default_yaml/etc/everest/default.yaml");
+
+    GIVEN("A valid prefix that contains etc/everest/default.yaml") {
+        THEN("No --config resolves to the default config file") {
+            auto ms = Everest::ManagerSettings(prefix, "");
+            CHECK(ms.config_file == default_config);
+            CHECK(ms.config.is_object());
+        }
+        THEN("The short form 'default' resolves to the same file") {
+            auto ms = Everest::ManagerSettings(prefix, "default");
+            CHECK(ms.config_file == default_config);
+        }
+    }
+}
+
+SCENARIO("Check resolve_boot_source", "[!throws]") {
+    using Everest::BootMode;
+    GIVEN("Neither --config nor --db") {
+        THEN("The YAML mode with an in-memory database is selected (optional default config lookup)") {
+            const auto src = Everest::resolve_boot_source("", "", false, false);
+            CHECK(src.mode == BootMode::YamlWithInMemoryDb);
+            CHECK(src.config_path.empty());
+            CHECK(src.db_path.empty());
+        }
+    }
+    GIVEN("Only --config") {
+        THEN("The YAML mode with an in-memory database is selected") {
+            const auto src = Everest::resolve_boot_source("config.yaml", "", false, false);
+            CHECK(src.mode == BootMode::YamlWithInMemoryDb);
+            CHECK(src.config_path == "config.yaml");
+        }
+    }
+    GIVEN("Only --db") {
+        THEN("The database is the only configuration source") {
+            const auto src = Everest::resolve_boot_source("", "everest.db", false, false);
+            CHECK(src.mode == BootMode::DatabaseOnly);
+            CHECK(src.db_path == "everest.db");
+        }
+    }
+    GIVEN("--config and --db") {
+        THEN("The database wins when valid, otherwise it is seeded from YAML") {
+            const auto src = Everest::resolve_boot_source("config.yaml", "everest.db", false, false);
+            CHECK(src.mode == BootMode::DatabaseWithYamlSeed);
+        }
+    }
+    GIVEN("The deprecated --db-init flag") {
+        THEN("With both --config and --db it is a no-op (only warns)") {
+            const auto src = Everest::resolve_boot_source("config.yaml", "everest.db", false, true);
+            CHECK(src.mode == BootMode::DatabaseWithYamlSeed);
+        }
+        THEN("Without both options it is ignored (warns), not an error") {
+            CHECK(Everest::resolve_boot_source("config.yaml", "", false, true).mode == BootMode::YamlWithInMemoryDb);
+            CHECK(Everest::resolve_boot_source("", "everest.db", false, true).mode == BootMode::DatabaseOnly);
+            CHECK(Everest::resolve_boot_source("", "", false, true).mode == BootMode::YamlWithInMemoryDb);
+        }
+    }
+    GIVEN("--reset-from-yaml") {
+        THEN("Without --config it throws BootException") {
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "everest.db", true, false), Everest::BootException);
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "", true, false), Everest::BootException);
+        }
+        THEN("With --config it is passed through") {
+            CHECK(Everest::resolve_boot_source("config.yaml", "", true, false).reset_from_yaml);
+            CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", true, false).reset_from_yaml);
+        }
+    }
+}
+
+SCENARIO("Check database bootstrap with an in-memory database", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+
+    GIVEN("A valid config and no database path") {
+        Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", "");
+        // A shared-cache in-memory database persists within this test process for as long as one
+        // connection stays open, so give each scenario its own database instead of the default URI.
+        ms.db_dir = fs::path("file:test_config_in_memory_bootstrap?mode=memory&cache=shared");
+
+        THEN("Bootstrap seeds the database from YAML and the data survives the bootstrap scopes") {
+            const auto bs = Everest::init_database_bootstrap(ms);
+            CHECK(bs.module_configs_initialized == true);
+
+            // Reading through fresh storage/slot-manager instances proves the connection keepalive:
+            // without it the in-memory database would have been dropped when the bootstrap-internal
+            // consumers closed their connection.
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+            CHECK(slot_mgr.exists(boot_slot_id));
+
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs.db_connection, boot_slot_id);
+            const auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK(slots.front().config_file_path == ms.config_file.string());
+            CHECK_FALSE(slots.front().description.has_value());
+            CHECK_FALSE(bs.seed_failure.has_value());
+
+            THEN("A second bootstrap while the connection is held boots from the existing slot") {
+                const auto bs2 = Everest::init_database_bootstrap(ms);
+                CHECK(bs2.module_configs_initialized == true);
+            }
+        }
+    }
+}
+
 SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
     auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
     GIVEN("A config without modules") {
@@ -217,26 +427,156 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerConfig(ms));
         }
     }
-    GIVEN("ManagerSettings are instantiated two times - first with fallback to init from config file, second with "
-          "database") {
+    GIVEN("Bootstrap is called two times - first with fallback to init from config file, second with database") {
         auto db_path = bin_dir + "valid_config/everest.db";
 
         // Clean up before test
         if (fs::exists(db_path)) {
             fs::remove(db_path);
         }
-        auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-        CHECK(ms.storage->contains_valid_config() == false);
-        THEN("In the first intstantiation the database is not initialized") {
-            CHECK_NOTHROW(Everest::ManagerConfig(ms));
+        Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
+        auto bs = Everest::init_database_bootstrap(ms);
+        CHECK(bs.module_configs_initialized == true);
+        THEN("In the first instantiation the database is not initialized — ManagerConfig parses YAML") {
+            auto config = Everest::ManagerConfig(ms);
 
             THEN("In the second instantiation the database is initialized and valid") {
-                ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml", db_path);
-                CHECK(ms.storage->contains_valid_config() == true);
-                CHECK_NOTHROW(Everest::ManagerConfig(ms));
+                auto bs2 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs2.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+                CHECK(bs2.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
             }
-            THEN("It should be possible to construct the ManagerSettings with a database path") {
-                CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", db_path, Everest::DatabaseTag{}));
+            THEN("It should be possible to bootstrap again from the initialized database") {
+                auto bs3 = Everest::init_database_bootstrap(ms);
+                auto storage = std::make_unique<everest::config::SqliteStorage>(bs3.db_connection);
+                auto get_mod_cfg_response = storage->get_module_configs();
+                CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+                CHECK(bs3.module_configs_initialized == true);
+                CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
+            }
+        }
+    }
+    GIVEN("A YAML config without active_modules and an uninitialized database") {
+        auto db_path = bin_dir + "empty_yaml_object/everest.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms(bin_dir + "empty_yaml_object/", bin_dir + "empty_yaml_object/config.yaml", db_path);
+        auto bs = Everest::init_database_bootstrap(ms);
+        CHECK(bs.module_configs_initialized == true);
+        CHECK_FALSE(bs.seed_failure.has_value());
+        THEN("Reconstructing ManagerConfig from the (empty) database-backed module configs should not throw, "
+             "mirroring what Manager::reload_and_update_context does on restart") {
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs.db_connection);
+            auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(get_mod_cfg_response.module_configs.empty());
+            CHECK_NOTHROW(Everest::ManagerConfig(ms, std::move(get_mod_cfg_response.module_configs)));
+        }
+        THEN("A second bootstrap re-seeds the module-less boot slot from the same YAML, idempotently") {
+            auto bs2 = Everest::init_database_bootstrap(ms);
+            CHECK(bs2.module_configs_initialized == true);
+            CHECK_FALSE(bs2.seed_failure.has_value());
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs2.db_connection);
+            const auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK(slots.front().config_file_path == ms.config_file.string());
+            CHECK_FALSE(slots.front().description.has_value());
+
+            auto storage = std::make_unique<everest::config::SqliteStorage>(bs2.db_connection);
+            auto get_mod_cfg_response = storage->get_module_configs();
+            CHECK(get_mod_cfg_response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(get_mod_cfg_response.module_configs.empty());
+        }
+    }
+}
+
+SCENARIO("Check database bootstrap with an invalid YAML config", "[!throws]") {
+    auto bin_dir = Everest::tests::get_bin_dir().string() + "/";
+
+    GIVEN("A YAML config referencing a non existent module and a fresh database") {
+        auto db_path = bin_dir + "missing_module/everest.db";
+        if (fs::exists(db_path)) {
+            fs::remove(db_path);
+        }
+        Everest::ManagerSettings ms_bad(bin_dir + "missing_module/", bin_dir + "missing_module/config.yaml", db_path);
+
+        THEN("Bootstrap writes an empty placeholder boot slot that records the failure") {
+            auto bs = Everest::init_database_bootstrap(ms_bad);
+            CHECK(bs.module_configs_initialized == true);
+            REQUIRE(bs.seed_failure.has_value());
+            CHECK_THAT(*bs.seed_failure, Catch::Matchers::ContainsSubstring(ms_bad.config_file.string()));
+            // The readable validation message, not boost's scope tag line
+            CHECK_THAT(*bs.seed_failure, Catch::Matchers::ContainsSubstring("Failed to load and parse configuration"));
+
+            everest::config::SqliteConfigSlotManager slot_mgr(bs.db_connection);
+            const auto boot_slot_id = slot_mgr.get_next_boot_slot_id();
+            REQUIRE(slot_mgr.exists(boot_slot_id));
+            auto slots = slot_mgr.list_slots();
+            REQUIRE(slots.size() == 1);
+            CHECK(slots.front().id == boot_slot_id);
+            CHECK(slots.front().config_file_path == ms_bad.config_file.string());
+            CHECK(slots.front().description == bs.seed_failure);
+
+            everest::config::SqliteStorage storage(bs.db_connection, boot_slot_id);
+            auto response = storage.get_module_configs();
+            CHECK(response.status == everest::config::GenericResponseStatus::OK);
+            CHECK(response.module_configs.empty());
+
+            // Make the boot slot selection explicit and add a second slot: neither may be disturbed by the
+            // re-seeds below.
+            REQUIRE(slot_mgr.set_next_boot_slot_id(boot_slot_id) == everest::config::GenericResponseStatus::OK);
+            const auto duplicate = slot_mgr.duplicate_slot(boot_slot_id, std::string{"other"});
+            REQUIRE(duplicate.success);
+
+            THEN("A second bootstrap with the same broken YAML keeps the placeholder") {
+                auto bs2 = Everest::init_database_bootstrap(ms_bad);
+                CHECK(bs2.module_configs_initialized == true);
+                CHECK(bs2.seed_failure.has_value());
+                CHECK(slot_mgr.get_next_boot_slot_id() == boot_slot_id);
+                slots = slot_mgr.list_slots();
+                REQUIRE(slots.size() == 2);
+                CHECK(slots.front().description == bs2.seed_failure);
+                CHECK(slots.back().description == std::optional<std::string>{"other"});
+                CHECK(storage.get_module_configs().module_configs.empty());
+            }
+            THEN("A bootstrap with a fixed YAML replaces the placeholder with the modules") {
+                // valid_module_config holds a module; the valid_config fixture is module-less and would be
+                // re-seeded on every boot like any other empty boot slot.
+                Everest::ManagerSettings ms_ok(bin_dir + "valid_module_config/",
+                                               bin_dir + "valid_module_config/config.yaml", db_path);
+                auto bs3 = Everest::init_database_bootstrap(ms_ok);
+                CHECK(bs3.module_configs_initialized == true);
+                CHECK_FALSE(bs3.seed_failure.has_value());
+                CHECK(slot_mgr.get_next_boot_slot_id() == boot_slot_id);
+                slots = slot_mgr.list_slots();
+                REQUIRE(slots.size() == 2);
+                CHECK(slots.front().config_file_path == ms_ok.config_file.string());
+                CHECK_FALSE(slots.front().description.has_value());
+                CHECK(slots.back().description == std::optional<std::string>{"other"});
+                CHECK_FALSE(storage.get_module_configs().module_configs.empty());
+
+                THEN("The database now wins over the broken YAML") {
+                    auto bs4 = Everest::init_database_bootstrap(ms_bad);
+                    CHECK(bs4.module_configs_initialized == true);
+                    CHECK_FALSE(bs4.seed_failure.has_value());
+                    CHECK_FALSE(storage.get_module_configs().module_configs.empty());
+                    CHECK(slot_mgr.list_slots().front().config_file_path == ms_ok.config_file.string());
+                }
+                THEN("--reset-from-yaml with the broken YAML aborts and leaves the database untouched") {
+                    auto bs5 = Everest::init_database_bootstrap(ms_bad, true);
+                    CHECK(bs5.module_configs_initialized == false);
+                    CHECK(bs5.seed_failure.has_value());
+                    CHECK(slot_mgr.get_next_boot_slot_id() == boot_slot_id);
+                    slots = slot_mgr.list_slots();
+                    REQUIRE(slots.size() == 2);
+                    CHECK(slots.front().config_file_path == ms_ok.config_file.string());
+                    CHECK_FALSE(slots.front().description.has_value());
+                    CHECK_FALSE(storage.get_module_configs().module_configs.empty());
+                }
             }
         }
     }
@@ -383,6 +723,118 @@ SCENARIO("Config returns parsed module configs", "[Config]") {
             CHECK(configs.find("!module") != configs.end());
             CHECK(std::get<std::string>(configs["!module"]["valid_module_config_entry"]) == "test");
             CHECK(std::get<int>(configs["main"]["valid_impl_config_entry"]) == 42);
+        }
+    }
+}
+
+SCENARIO("ConfigurationParameterCharacteristics serialization of min_value and max_value", "[types]") {
+    using everest::config::ConfigurationParameterCharacteristics;
+    using everest::config::Datatype;
+    using everest::config::Mutability;
+
+    GIVEN("A characteristics struct with min_value and max_value set") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.min_value = -10;
+        c.max_value = 100;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value appear in the JSON") {
+                REQUIRE(j.contains("min_value"));
+                REQUIRE(j.contains("max_value"));
+                CHECK(j["min_value"].get<int32_t>() == -10);
+                CHECK(j["max_value"].get<int32_t>() == 100);
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value are preserved") {
+                REQUIRE(c2.min_value.has_value());
+                REQUIRE(c2.max_value.has_value());
+                CHECK(c2.min_value.value() == -10);
+                CHECK(c2.max_value.value() == 100);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct without min_value or max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::String;
+        c.mutability = Mutability::ReadOnly;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("min_value and max_value are absent from the JSON") {
+                CHECK_FALSE(j.contains("min_value"));
+                CHECK_FALSE(j.contains("max_value"));
+            }
+        }
+
+        WHEN("Round-tripped through JSON") {
+            nlohmann::json j = c;
+            auto c2 = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value and max_value remain nullopt") {
+                CHECK_FALSE(c2.min_value.has_value());
+                CHECK_FALSE(c2.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only min_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"min_value", 5}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("min_value is populated and max_value is absent") {
+                REQUIRE(c.min_value.has_value());
+                CHECK(c.min_value.value() == 5);
+                CHECK_FALSE(c.max_value.has_value());
+            }
+        }
+    }
+
+    GIVEN("A JSON object with only max_value set") {
+        nlohmann::json j = {{"datatype", "integer"}, {"mutability", "ReadWrite"}, {"max_value", 50}};
+
+        WHEN("Deserialized") {
+            auto c = j.get<ConfigurationParameterCharacteristics>();
+
+            THEN("max_value is populated and min_value is absent") {
+                CHECK_FALSE(c.min_value.has_value());
+                REQUIRE(c.max_value.has_value());
+                CHECK(c.max_value.value() == 50);
+            }
+        }
+    }
+
+    GIVEN("A characteristics struct with unit, min_value and max_value") {
+        ConfigurationParameterCharacteristics c;
+        c.datatype = Datatype::Integer;
+        c.mutability = Mutability::ReadWrite;
+        c.unit = "ms";
+        c.min_value = 0;
+        c.max_value = 60000;
+
+        WHEN("Serialized to JSON") {
+            nlohmann::json j = c;
+
+            THEN("All optional fields appear") {
+                CHECK(j.contains("unit"));
+                CHECK(j.contains("min_value"));
+                CHECK(j.contains("max_value"));
+                CHECK(j["unit"].get<std::string>() == "ms");
+                CHECK(j["min_value"].get<int32_t>() == 0);
+                CHECK(j["max_value"].get<int32_t>() == 60000);
+            }
         }
     }
 }

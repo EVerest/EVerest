@@ -25,6 +25,8 @@
     },
     "firmware_info": {
         "update_file": "everest-aux/firmware/firmware_update.pnx",
-        "update_file_signature": "everest-aux/firmware/firmware_update.pnx.base64"
+        "update_file_signature": "everest-aux/firmware/firmware_update.pnx.base64",
+        "update_file_keep_connectors_available": "everest-aux/firmware/firmware_update_keep_connectors_available.pnx",
+        "update_file_keep_connectors_available_signature": "everest-aux/firmware/firmware_update_keep_connectors_available.pnx.base64"
     }
 }

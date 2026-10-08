@@ -30,12 +30,6 @@ endif()
 # options
 option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
 option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
-option(OPT_AUTODOWNLOAD_ISO20_SCHEMAS "\
-Automatically download ISO15118-20 schemas.  Note: by setting this option to \
-true and hence downloading the schema files, YOU accept the ISO Customer \
-Licence Agreement (“Licence Agreement”), clauses 1. ISO’s Copyright, \
-7. Termination, 8. Limitations, and 9. Governing Law." OFF)
-
 option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
 option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
 option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
@@ -64,7 +58,6 @@ if (NOT DISABLE_EDM)
     set(ISO15118_INSTALL OFF)
 endif()
 
-add_subdirectory(input)
 add_subdirectory(src)
 
 if (ISO15118_BUILD_TESTING)

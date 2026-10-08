@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "IECStateMachine.hpp"
 #include "everest/logging.hpp"
 
 #include <cstdint>
 #include <math.h>
+#include <optional>
 #include <string.h>
 
 namespace module {
@@ -71,12 +72,30 @@ const std::string cpevent_to_string(CPEvent e) {
     throw std::out_of_range("No known string conversion for provided enum of type CPEvent");
 }
 
-IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_,
-                                 bool lock_connector_in_state_b_) :
-    r_bsp(r_bsp_), lock_connector_in_state_b(lock_connector_in_state_b_) {
+IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
+                                 bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_) :
+    r_bsp(r_bsp_),
+    lock_connector_in_state_b(lock_connector_in_state_b_),
+    use_authorized(use_authorized_),
+    authorized(!use_authorized_),
+    keep_cable_locked(keep_cable_locked_),
+    keep_cable_locked_lock_delay_ms(keep_cable_locked_lock_delay_ms_) {
     // feed the state machine whenever the timer expires
     timeout_state_c1.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
     timeout_unlock_state_F.signal_reached.connect([this]() { feed_state_machine(std::nullopt); });
+    // Captive lock debounce elapsed: mark the plug seated and re-evaluate so it gets locked. Guard
+    // under the mutex and only if a plug is still present, so a removal racing this expiry cannot
+    // leave a stale "seated" flag that would lock an empty socket.
+    timeout_captive_lock.signal_reached.connect([this]() {
+        {
+            Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                              Everest::MutexDescription::IEC_captive_lock_debounce_reached);
+            if (pp_ampacity > 0.) {
+                captive_lock_delay_elapsed = true;
+            }
+            check_connector_lock();
+        }
+    });
 
     // Subscribe to bsp driver to receive BspEvents from the hardware
     r_bsp->subscribe_event([this](types::board_support_common::BspEvent const& event) {
@@ -97,13 +116,17 @@ void IECStateMachine::process_bsp_event(types::board_support_common::BspEvent co
                           },
                           // If it is another CP event, pass through
                           [this](CPEvent& event) {
-                              // track relais state as confirmed by BSP
-                              if (event == CPEvent::PowerOn) {
-                                  relais_on = true;
-                              } else if (event == CPEvent::PowerOff) {
-                                  relais_on = false;
+                              {
+                                  Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                                                    Everest::MutexDescription::IEC_process_bsp_event);
+                                  // track relais state as confirmed by BSP
+                                  if (event == CPEvent::PowerOn) {
+                                      relais_on = true;
+                                  } else if (event == CPEvent::PowerOff) {
+                                      relais_on = false;
+                                  }
+                                  check_connector_lock();
                               }
-                              check_connector_lock();
 
                               signal_event(event);
                           }},
@@ -112,6 +135,14 @@ void IECStateMachine::process_bsp_event(types::board_support_common::BspEvent co
 
 void IECStateMachine::feed_state_machine(std::optional<RawCPState> const& cp_state_opt) {
     auto events = state_machine(cp_state_opt);
+
+    // Publish the raw measured CP state change BEFORE the derived CPEvents: the HLC stack must
+    // e.g. learn state A (and close its TCP connection over the still-intact AVLN, [V2G-DC-962])
+    // before a signal_event handler triggers the SLAC teardown.
+    if (cp_state_opt.has_value() and cp_state_opt.value() != signalled_raw_cp_state) {
+        signalled_raw_cp_state = cp_state_opt.value();
+        signal_raw_cp_state_changed(signalled_raw_cp_state);
+    }
 
     // Process all events
     while (not events.empty()) {
@@ -151,7 +182,10 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
         case RawCPState::Disabled:
             if (last_cp_state != RawCPState::Disabled) {
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
+                }
                 ev_simplified_mode = false;
                 timer_state_C1 = TimerControl::stop;
                 call_allow_power_on_bsp(false);
@@ -162,7 +196,10 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
         case RawCPState::A:
             if (last_cp_state != RawCPState::A) {
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
+                }
                 ev_simplified_mode = false;
                 car_plugged_in = false;
                 call_allow_power_on_bsp(false);
@@ -187,7 +224,7 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
                 connector_unlock();
             }
 
-            if (last_cp_state != RawCPState::A && last_cp_state != RawCPState::B) {
+            if (last_cp_state == RawCPState::C || last_cp_state == RawCPState::D) {
 
                 events.push(CPEvent::CarRequestedStopPower);
                 // Need to switch off according to Table A.6 Sequence 8.1
@@ -197,8 +234,10 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
             }
 
             // Table A.6: Sequence 1.1 Plug-in
+            // A plug-in may pass through a transient E (e.g. MCS CE/ID mating order), so E->B
+            // without a plugged-in car is a plug-in as well.
             if (last_cp_state == RawCPState::A || last_cp_state == RawCPState::Disabled ||
-                (!car_plugged_in && last_cp_state == RawCPState::F)) {
+                (!car_plugged_in && (last_cp_state == RawCPState::F || last_cp_state == RawCPState::E))) {
                 events.push(CPEvent::CarPluggedIn);
                 car_plugged_in = true;
                 ev_simplified_mode = false;
@@ -281,20 +320,30 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
             }
             break;
 
-        case RawCPState::E:
-            connector_unlock();
+        case RawCPState::E: {
+            const bool state_e_triggered_by_evse = state_e_triggered_through_handle.exchange(false);
+
+            if (!state_e_triggered_by_evse) {
+                connector_unlock();
+            }
             if (last_cp_state != RawCPState::E) {
                 timer_state_C1 = TimerControl::stop;
                 call_allow_power_on_bsp(false);
                 pwm_running = false;
-                r_bsp->call_cp_state_X1();
+                if (not state_e_triggered_by_evse and not cp_state_f_requested) {
+                    r_bsp->call_cp_state_X1();
+                    signal_pwm_duty_cycle(100.0);
+                }
                 if (last_cp_state == RawCPState::B || last_cp_state == RawCPState::C ||
                     last_cp_state == RawCPState::D) {
                     events.push(CPEvent::BCDtoEF);
-                    events.push(CPEvent::BCDtoE);
+                    if (!state_e_triggered_by_evse) {
+                        events.push(CPEvent::BCDtoE);
+                    }
                 }
             }
             break;
+        }
 
         case RawCPState::F:
             timer_state_C1 = TimerControl::stop;
@@ -359,6 +408,7 @@ void IECStateMachine::set_pwm(double value) {
         } else {
             pwm_running = false;
         }
+        cp_state_f_requested = false;
     }
 
     if (ev_simplified_mode_evse_limit and ev_simplified_mode and value > ev_simplified_mode_evse_limit_pwm) {
@@ -368,6 +418,7 @@ void IECStateMachine::set_pwm(double value) {
     }
 
     r_bsp->call_pwm_on(value * 100);
+    signal_pwm_duty_cycle(value * 100);
 
     feed_state_machine(std::nullopt);
 }
@@ -377,8 +428,10 @@ void IECStateMachine::set_cp_state_X1() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_X1);
         pwm_running = false;
+        cp_state_f_requested = false;
     }
     r_bsp->call_cp_state_X1();
+    signal_pwm_duty_cycle(100.0);
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }
@@ -388,8 +441,23 @@ void IECStateMachine::set_cp_state_F() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_F);
         pwm_running = false;
+        cp_state_f_requested = true;
     }
     r_bsp->call_cp_state_F();
+    signal_pwm_duty_cycle(100.0);
+    // Don't run the state machine in the callers context
+    feed_state_machine(std::nullopt);
+}
+
+// High level state machine sets state E
+void IECStateMachine::set_cp_state_E() {
+    {
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_cp_state_E);
+        pwm_running = false;
+        state_e_triggered_through_handle = true;
+    }
+    r_bsp->call_cp_state_E();
+    signal_pwm_duty_cycle(100.0);
     // Don't run the state machine in the callers context
     feed_state_machine(std::nullopt);
 }
@@ -398,6 +466,13 @@ void IECStateMachine::set_cp_state_F() {
 void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reason reason) {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_allow_power_on);
+        // Change-gated diagnostic: the BSP forward is edge-triggered further down, and a lost
+        // edge is invisible in the logs otherwise (bench-found: a cable check that never closed
+        // the contactors, with every permissive provably set upstream).
+        if (power_on_allowed != value) {
+            EVLOG_info << "IEC allow_power_on requested: " << (value ? "true" : "false") << " (reason "
+                       << types::evse_board_support::reason_to_string(reason) << ")";
+        }
         // Only set the flags here in case of power on.
         power_on_allowed = value;
         power_on_reason = reason;
@@ -418,37 +493,87 @@ void IECStateMachine::call_allow_power_on_bsp(bool value) {
         power_on_allowed = false;
         power_on_reason = types::evse_board_support::Reason::PowerOff;
     }
+    // Change-gated diagnostic, the counterpart of the one in allow_power_on(): a requested
+    // "true" that is never followed by this forward means the state machine swallowed the edge.
+    if (value != last_power_on_forwarded) {
+        last_power_on_forwarded = value;
+        EVLOG_info << "IEC allow_power_on forwarded to BSP: " << (value ? "true" : "false");
+    }
     r_bsp->call_allow_power_on({value, power_on_reason});
 }
 
 void IECStateMachine::set_pp_ampacity(types::board_support_common::ProximityPilot const& pp) {
-    switch (pp.ampacity) {
-    case types::board_support_common::Ampacity::A_13:
-        pp_ampacity = 13.;
-        break;
-    case types::board_support_common::Ampacity::A_20:
-        pp_ampacity = 20.;
-        break;
-    case types::board_support_common::Ampacity::A_32:
-        pp_ampacity = 32.;
-        break;
-    case types::board_support_common::Ampacity::A_63_3ph_70_1ph:
-        if (max_phases == AcPhases::SinglePhase) {
-            pp_ampacity = 70.;
-        } else {
-            pp_ampacity = 63.;
+    bool start_captive_lock_debounce = false;
+    bool stop_captive_lock_debounce = false;
+    {
+        // Serialized with connector_force_unlock(): a force unlock racing a cable removal must not
+        // leave the captive window open on an empty socket.
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_pp_ampacity);
+        const bool plug_was_present = pp_ampacity > 0.;
+
+        switch (pp.ampacity) {
+        case types::board_support_common::Ampacity::A_13:
+            pp_ampacity = 13.;
+            break;
+        case types::board_support_common::Ampacity::A_20:
+            pp_ampacity = 20.;
+            break;
+        case types::board_support_common::Ampacity::A_32:
+            pp_ampacity = 32.;
+            break;
+        case types::board_support_common::Ampacity::A_63_3ph_70_1ph:
+            if (max_phases == AcPhases::SinglePhase) {
+                pp_ampacity = 70.;
+            } else {
+                pp_ampacity = 63.;
+            }
+            break;
+        default:
+            pp_ampacity = 0.;
         }
-        break;
-    default:
-        pp_ampacity = 0.;
+
+        if (keep_cable_locked) {
+            if (pp_ampacity == 0.) {
+                // Cable removed: the next insertion locks again, after the debounce.
+                captive_unlock_window = false;
+                captive_lock_delay_elapsed = false;
+                stop_captive_lock_debounce = true;
+            } else if (not plug_was_present and not captive_lock_delay_elapsed) {
+                // Only on insertion: a BSP republishing an unchanged PP must not restart the debounce.
+                const auto delay = std::chrono::milliseconds(keep_cable_locked_lock_delay_ms.load());
+                if (delay.count() > 0) {
+                    // Plug just detected: give it time to seat before the lock pin extends.
+                    start_captive_lock_debounce = true;
+                } else {
+                    captive_lock_delay_elapsed = true;
+                }
+            }
+            // Only the lock depends on plug presence; no need to re-run the whole state machine.
+            check_connector_lock();
+        }
+    }
+
+    // start()/stop() join the timer's wait thread, which acquires state_machine_mutex; keep them out
+    // of the locked section above to avoid the deadlock the other timers guard against the same way.
+    if (keep_cable_locked) {
+        if (stop_captive_lock_debounce) {
+            timeout_captive_lock.stop();
+        }
+        if (start_captive_lock_debounce) {
+            timeout_captive_lock.start(std::chrono::milliseconds(keep_cable_locked_lock_delay_ms.load()));
+        }
     }
 }
 
 // High level state machine requests reading PP ampacity value.
 // The high level state machine will never call this if it is not used
 // (e.g. in DC or AC tethered charging)
-double IECStateMachine::read_pp_ampacity() {
-    return pp_ampacity;
+std::optional<double> IECStateMachine::read_pp_ampacity() {
+    const double tmp = pp_ampacity;
+    if (tmp == 0.0) {
+        return std::nullopt;
+    }
+    return tmp;
 }
 
 // Forward special request to switch the number of phases during charging. BSP will need to implement a special
@@ -493,23 +618,45 @@ void IECStateMachine::connector_force_unlock() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_force_unlock);
         cp = last_cp_state;
-    }
 
-    if (not relais_on) {
-        // Unconditionally try to unlock, as `is_locked` might not always reflect the physical state of the lock.
-        // This can occur for example in case of a failed unlock due to a hardware issue.
-        signal_unlock();
-        is_locked = false;
-    }
+        if (keep_cable_locked) {
+            // Only with a plug present: a retried UnlockConnector on an empty socket must not leave
+            // the next inserted cable unlocked.
+            if (pp_ampacity > 0.) {
+                captive_unlock_window = true;
+            }
+            captive_latched = false;
+        }
 
-    if (cp == RawCPState::B or cp == RawCPState::C) {
-        force_unlocked = true;
-        check_connector_lock();
+        if (not relais_on) {
+            // Unconditionally try to unlock, as `is_locked` might not always reflect the physical state of the lock.
+            // This can occur for example in case of a failed unlock due to a hardware issue.
+            // Under the mutex so it cannot clobber a captive re-lock from a concurrent removal + reinsertion.
+            signal_unlock();
+            is_locked = false;
+        }
+
+        if (cp == RawCPState::B or cp == RawCPState::C) {
+            force_unlocked = true;
+            check_connector_lock();
+        }
     }
 }
 
 void IECStateMachine::check_connector_lock() {
-    bool should_be_locked_considering_relais_and_force = relais_on or (should_be_locked and not force_unlocked);
+    bool should_be_locked_considering_relais_and_force =
+        relais_on or (should_be_locked and not force_unlocked and authorized);
+
+    if (keep_cable_locked) {
+        // In addition to the rules above, hold a plug once the seating debounce has elapsed, so the
+        // lock pin does not jam a half-inserted plug. The hold is latched (see captive_latched); only a
+        // force unlock (captive window) or disabling the mode releases it.
+        if ((pp_ampacity > 0.) and captive_lock_delay_elapsed and not captive_unlock_window) {
+            captive_latched = true;
+        }
+        should_be_locked_considering_relais_and_force =
+            should_be_locked_considering_relais_and_force or captive_latched;
+    }
 
     if (not is_locked and should_be_locked_considering_relais_and_force) {
         signal_lock();
@@ -518,6 +665,36 @@ void IECStateMachine::check_connector_lock() {
         signal_unlock();
         is_locked = false;
     }
+}
+
+void IECStateMachine::set_authorized(bool a) {
+    EVLOG_debug << "set_authorized - " << a;
+    if (!use_authorized) {
+        return;
+    }
+    authorized = a;
+    feed_state_machine(std::nullopt);
+}
+
+void IECStateMachine::set_keep_cable_locked(bool enabled) {
+    if (keep_cable_locked == enabled) {
+        return;
+    }
+    EVLOG_info << "Captive cable mode (keep_cable_locked) " << (enabled ? "enabled" : "disabled");
+    {
+        // Reset the captive flags so the new mode starts deterministic; serialized with the other flag
+        // writers. force_unlocked belongs to the normal rules, which apply in both modes, so it is kept.
+        Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_keep_cable_locked);
+        keep_cable_locked = enabled;
+        captive_unlock_window = false;
+        captive_latched = false;
+        // A plug already present when the mode is enabled is considered seated: lock without waiting.
+        captive_lock_delay_elapsed = (pp_ampacity > 0.);
+        // should_be_locked is kept up to date by the state machine in either mode, so re-evaluating
+        // the lock is enough.
+        check_connector_lock();
+    }
+    timeout_captive_lock.stop();
 }
 
 } // namespace module

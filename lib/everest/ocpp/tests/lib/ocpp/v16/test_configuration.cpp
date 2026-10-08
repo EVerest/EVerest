@@ -1,6 +1,6 @@
 
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v16/charge_point_configuration_interface.hpp"
 #include <filesystem>
@@ -149,6 +149,50 @@ TEST_F(ConfigurationTester, DefaultPriceText) {
     EXPECT_EQ(set_result, ConfigurationStatus::Accepted);
     set_result = config->setDefaultPriceText("DefaultPriceText,en", minimal);
     EXPECT_EQ(set_result, ConfigurationStatus::Accepted);
+}
+
+// Boolean ChangeConfiguration values must be validated rather than silently
+// coerced to false. See EVerest/EVerest#2182.
+TEST_F(ConfigurationTester, BooleanKeyAcceptsValidLiterals) {
+    const std::vector<std::string> accepted_values = {"true", "false", "True", "FALSE", "tRuE"};
+    for (const auto& v : accepted_values) {
+        auto result = config->set("AuthorizeRemoteTxRequests", v);
+        ASSERT_TRUE(result.has_value()) << "value=" << v;
+        EXPECT_EQ(result.value(), ConfigurationStatus::Accepted) << "value=" << v;
+    }
+}
+
+TEST_F(ConfigurationTester, OcspRequestInterval) {
+    EXPECT_EQ(config->getOcspRequestInterval(), 604800);
+
+    auto set_ok = config->set("OcspRequestInterval", "86400");
+    ASSERT_TRUE(set_ok.has_value());
+    EXPECT_EQ(set_ok.value(), ConfigurationStatus::Accepted);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
+
+    auto set_low = config->set("OcspRequestInterval", "86399");
+    ASSERT_TRUE(set_low.has_value());
+    EXPECT_EQ(set_low.value(), ConfigurationStatus::Rejected);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
+}
+
+TEST_F(ConfigurationTester, BooleanKeyRejectsInvalidLiterals) {
+    auto initial = config->get("AuthorizeRemoteTxRequests");
+    ASSERT_TRUE(initial.has_value());
+    ASSERT_TRUE(initial.value().value.has_value());
+    const auto initial_value = initial.value().value.value();
+
+    const std::vector<std::string> rejected_values = {"maybe", "", "1", "0", "yes", "no", "tru", "falsey"};
+    for (const auto& v : rejected_values) {
+        auto result = config->set("AuthorizeRemoteTxRequests", v);
+        ASSERT_TRUE(result.has_value()) << "value=" << v;
+        EXPECT_EQ(result.value(), ConfigurationStatus::Rejected) << "value=" << v;
+
+        auto current = config->get("AuthorizeRemoteTxRequests");
+        ASSERT_TRUE(current.has_value());
+        ASSERT_TRUE(current.value().value.has_value()) << "value=" << v;
+        EXPECT_EQ(current.value().value.value(), initial_value) << "value=" << v;
+    }
 }
 
 } // namespace

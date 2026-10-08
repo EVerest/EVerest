@@ -18,6 +18,13 @@ config:
     type: integer
     minimum: 0
     default: 0
+  ResetAfterUpdate:
+    description: >-
+      Whether the System module triggers a device reset after a firmware update has been installed.
+      Defaults to true. Set to false to keep the device running after install (e.g. for updates that
+      keep connectors available and must not interrupt ongoing sessions).
+    type: boolean
+    default: true
 provides:
   main:
     description: Implements the system interface

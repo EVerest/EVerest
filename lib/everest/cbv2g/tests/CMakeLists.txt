@@ -1,14 +1,20 @@
 include(FetchContent)
 
-FetchContent_Declare(
-    Catch2
-    GIT_REPOSITORY https://github.com/catchorg/Catch2.git
-    GIT_TAG        v3.4.0 # or a later release
-)
+if (NOT TARGET Catch2::Catch2WithMain)
+    FetchContent_Declare(
+        Catch2
+        GIT_REPOSITORY https://github.com/catchorg/Catch2.git
+        GIT_TAG        v3.4.0 # or a later release
+    )
 
-FetchContent_MakeAvailable(Catch2)
+    FetchContent_MakeAvailable(Catch2)
+endif()
 
-list(APPEND CMAKE_MODULE_PATH ${catch2_SOURCE_DIR}/extras)
+FetchContent_GetProperties(Catch2)
+if(catch2_POPULATED)
+    list(APPEND CMAKE_MODULE_PATH "${catch2_SOURCE_DIR}/extras")
+endif()
+
 include(Catch)
 
 # source helper functions and library

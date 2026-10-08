@@ -3,9 +3,10 @@
 
 #include "ocppImpl.hpp"
 #include "everest/conversions/ocpp/evse_security_ocpp.hpp"
+#include "ocpp/v2/component_state_manager.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
-#include <conversions.hpp>
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 
 namespace {
 inline module::ocpp_generic::ocppImpl::MonitorListEntry convert(const types::ocpp::ComponentVariable& cv) {
@@ -21,6 +22,10 @@ void ocppImpl::init() {
 }
 
 void ocppImpl::ready() {
+}
+
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
 }
 
 bool ocppImpl::handle_stop() {
@@ -124,7 +129,15 @@ ocppImpl::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& req
         EVLOG_warning << "ChargePoint not initialized, cannot handle change availability command";
     } else {
         const auto ocpp_request = conversions::to_ocpp_change_availability_request(request);
-        result = mod->charge_point->on_change_availability(ocpp_request);
+        try {
+            result = mod->charge_point->on_change_availability(ocpp_request);
+        } catch (const ocpp::v2::EvseOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        } catch (const ocpp::v2::ConnectorOutOfRangeException& e) {
+            result.status = ChangeAvailabilityStatusEnum::Rejected;
+            result.statusInfo = ocpp::v2::StatusInfo{"InvalidInput", e.what()};
+        }
     }
 
     return conversions::to_everest_change_availability_response(result);
@@ -138,11 +151,13 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
     } else {
         std::lock_guard lock(monitor_list_mutex);
 
-        if (monitor_list.empty()) {
-            // register a handler
+        // guard with a flag, not monitor_list.empty(): a first call with an empty list would
+        // otherwise register the handler again on the next call
+        if (!variable_listener_registered) {
             mod->charge_point->register_variable_listener(
                 [this](auto&, const Component& component, const Variable& variable, auto&, auto&, auto&,
                        const std::string& value) { variable_changed(component, variable, value); });
+            variable_listener_registered = true;
         }
 
         // add variables to monitor list
@@ -152,6 +167,21 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
             (void)monitor_list.insert(convert(cv));
         }
     }
+}
+
+std::vector<types::ocpp::GetVariableResult>
+ocppImpl::handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    // register the monitors first so that no change between reading the values and the registration is lost
+    handle_monitor_variables(component_variables);
+
+    std::vector<types::ocpp::GetVariableRequest> requests;
+    requests.reserve(component_variables.size());
+    for (const auto& cv : component_variables) {
+        types::ocpp::GetVariableRequest request;
+        request.component_variable = cv; // no attribute_type: Actual is the default
+        requests.push_back(request);
+    }
+    return handle_get_variables(requests);
 }
 
 void ocppImpl::variable_changed(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

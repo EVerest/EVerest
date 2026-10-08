@@ -5,13 +5,14 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
+#include <generated/interfaces/grid_support/Implementation.hpp>
 #include <generated/interfaces/iso15118_extensions/Implementation.hpp>
 
 // headers for required interface implementations
@@ -20,6 +21,12 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <functional>
+#include <optional>
+
+#include <everest/util/async/monitor.hpp>
+
+#include <generated/types/grid_support.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -29,6 +36,11 @@ struct Conf {
     std::string logging_path;
     std::string tls_negotiation_strategy;
     bool enforce_tls_1_3;
+    bool supported_DIN70121;
+    bool supported_ISO15118_2;
+    bool supported_ISO15118_20;
+    int auth_timeout_eim;
+    int auth_timeout_pnc;
     bool enable_ssl_logging;
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;
@@ -38,6 +50,7 @@ struct Conf {
     bool supported_scheduled_mode;
     std::string custom_protocol_namespace;
     bool negative_bidirectional_limits;
+    bool selecting_sap_based_on_energy_service;
 };
 
 class Evse15118D20 : public Everest::ModuleBase {
@@ -45,23 +58,35 @@ public:
     Evse15118D20() = delete;
     Evse15118D20(const ModuleInfo& info, std::unique_ptr<ISO15118_chargerImplBase> p_charger,
                  std::unique_ptr<iso15118_extensionsImplBase> p_extensions,
-                 std::unique_ptr<evse_securityIntf> r_security,
+                 std::unique_ptr<grid_supportImplBase> p_grid_support, std::unique_ptr<evse_securityIntf> r_security,
                  std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas, Conf& config) :
         ModuleBase(info),
         p_charger(std::move(p_charger)),
         p_extensions(std::move(p_extensions)),
+        p_grid_support(std::move(p_grid_support)),
         r_security(std::move(r_security)),
         r_iso15118_vas(std::move(r_iso15118_vas)),
         config(config){};
 
     const std::unique_ptr<ISO15118_chargerImplBase> p_charger;
     const std::unique_ptr<iso15118_extensionsImplBase> p_extensions;
+    const std::unique_ptr<grid_supportImplBase> p_grid_support;
     const std::unique_ptr<evse_securityIntf> r_security;
     const std::vector<std::unique_ptr<ISO15118_vasIntf>> r_iso15118_vas;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
+    void set_active_der_directives(const types::grid_support::ActiveDirectiveSet& directives);
+    std::optional<types::grid_support::ActiveDirectiveSet> get_active_der_directives() const;
+    void register_der_directive_callback(std::function<void()> callback);
+    void notify_der_directives_changed();
+
+    // ISO 15118-2 Plug-and-Charge CertificateInstallation relay bridge: the extensions impl receives
+    // the CertificateInstallationRes (from the CSMS/CPS backend) and forwards it here; the charger impl
+    // registers a handler that injects it into libiso15118 as a control event. Set in the charger impl
+    // once its libiso15118 controller exists.
+    std::function<void(const types::iso15118::ResponseExiStreamStatus&)> on_certificate_response;
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -73,9 +98,14 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
+    mutable everest::lib::util::monitor<std::optional<types::grid_support::ActiveDirectiveSet>> active_der_directives;
+    // Set once during init() (before any command handling) and never rewritten, so the command-thread
+    // read in notify_der_directives_changed() needs no lock.
+    std::function<void()> der_directive_callback;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

@@ -1,16 +1,18 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include "API.hpp"
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::evse_manager {
 
 std::string serialize(StopTransactionReason val) noexcept;
 std::string serialize(StopTransactionRequest const& val) noexcept;
 std::string serialize(StartSessionReason val) noexcept;
+std::string serialize(ChargeMode val) noexcept;
 std::string serialize(SessionEventEnum val) noexcept;
 std::string serialize(SessionEvent const& val) noexcept;
 std::string serialize(Limits const& val) noexcept;
@@ -45,6 +47,7 @@ std::string serialize(HlcSessionFailedEvent const& val) noexcept;
 std::ostream& operator<<(std::ostream& os, StopTransactionReason const& val);
 std::ostream& operator<<(std::ostream& os, StopTransactionRequest const& val);
 std::ostream& operator<<(std::ostream& os, StartSessionReason const& val);
+std::ostream& operator<<(std::ostream& os, ChargeMode const& val);
 std::ostream& operator<<(std::ostream& os, SessionEventEnum const& val);
 std::ostream& operator<<(std::ostream& os, SessionEvent const& val);
 std::ostream& operator<<(std::ostream& os, HlcSessionFailedEvent const& val);
@@ -76,22 +79,6 @@ std::ostream& operator<<(std::ostream& os, PauseChargingEVSEReasonEnum const& va
 std::ostream& operator<<(std::ostream& os, ChargingPausedEVSEReasons const& val);
 std::ostream& operator<<(std::ostream& os, HlcSessionFailedReasonEnum const& val);
 
-template <class T> T deserialize(std::string const& val);
-template <class T> std::optional<T> try_deserialize(std::string const& val) noexcept {
-    try {
-        return deserialize<T>(val);
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-
-template <class T> bool adl_deserialize(std::string const& json_data, T& obj) {
-    auto opt = try_deserialize<T>(json_data);
-    if (opt) {
-        obj = opt.value();
-        return true;
-    }
-    return false;
-}
+#include <everest_api_types/utilities/deserialize_templates.inc>
 
 } // namespace everest::lib::API::V1_0::types::evse_manager

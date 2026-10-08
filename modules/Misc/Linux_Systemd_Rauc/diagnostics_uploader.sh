@@ -5,12 +5,14 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 #
 
-
 . "${1}"
 
 echo "$UPLOADING"
-sleep 2
-curl -L --progress-bar --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2}"
+protocols=ftp,ftps,http,https
+if curl --version | grep -qE '^Protocols:(.* )?sftp( |$)'; then
+    protocols+=,sftp
+fi
+curl -L --progress-bar --proto "=$protocols" --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" -T "${4}" "${2}"
 curl_exit_code=$?
 if [[ $curl_exit_code -eq 0 ]]; then
     echo "$UPLOADED"

@@ -17,6 +17,7 @@ target_include_directories(${TEST_TARGET_NAME}
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
         ${GTEST_LIBRARIES}
+        everest::timer
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})

@@ -107,6 +107,29 @@ bool Callbacks::all_callbacks_valid(std::shared_ptr<DeviceModelAbstract> device_
                 valid = false;
             }
         }
+
+        // Gate on presence (.has_value()), not availability: the block may be built lazily later.
+        const bool der_present = std::any_of(
+            evse_connector_structure.begin(), evse_connector_structure.end(), [device_model](const auto& entry) {
+                const auto& [evse, connectors] = entry;
+                return device_model
+                           ->get_optional_value<bool>(
+                               DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Available))
+                           .has_value() or
+                       device_model
+                           ->get_optional_value<bool>(
+                               DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Available))
+                           .has_value();
+            });
+
+        if (der_present) {
+            if (!this->der_active_directives_callback.has_value() or
+                this->der_active_directives_callback.value() == nullptr) {
+                EVLOG_error << "A DER component is present in the device model, but "
+                               "der_active_directives_callback is not implemented";
+                valid = false;
+            }
+        }
     }
 
     return valid;

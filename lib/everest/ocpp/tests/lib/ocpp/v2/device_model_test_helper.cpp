@@ -12,10 +12,11 @@ using namespace everest::db::sqlite;
 
 namespace ocpp::v2 {
 DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, const std::string& migration_files_path,
-                                             const std::string& config_path) :
+                                             const std::string& config_path, bool seed_der_ctrlr_enabled) :
     database_path(database_path),
     migration_files_path(migration_files_path),
     config_path(config_path),
+    seed_der_ctrlr_enabled(seed_der_ctrlr_enabled),
     database_connection(std::make_unique<everest::db::sqlite::Connection>(database_path)) {
     this->database_connection->open_connection();
     this->device_model = create_device_model();
@@ -212,7 +213,49 @@ bool DeviceModelTestHelper::set_variable_attribute_value_null(const std::string&
 
 void DeviceModelTestHelper::create_device_model_db() {
     InitDeviceModelDb db(this->database_path, this->migration_files_path);
-    const auto component_configs = get_all_component_configs(this->config_path);
+    auto component_configs = get_all_component_configs(this->config_path);
+
+    DeviceModelVariable supported_operation_modes;
+    supported_operation_modes.name = "SupportedOperationModes";
+    VariableCharacteristics characteristics;
+    characteristics.dataType = DataEnum::MemberList;
+    characteristics.supportsMonitoring = false;
+    supported_operation_modes.characteristics = characteristics;
+    DbVariableAttribute supported_operation_modes_attribute;
+    supported_operation_modes_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
+    supported_operation_modes_attribute.variable_attribute.value =
+        "ChargingOnly,CentralSetpoint,ExternalSetpoint,ExternalLimits,CentralFrequency,LocalFrequency,"
+        "LocalLoadBalancing,Idle";
+    supported_operation_modes_attribute.variable_attribute.type = AttributeEnum::Actual;
+    supported_operation_modes.attributes = std::vector<DbVariableAttribute>{supported_operation_modes_attribute};
+    const std::vector<DeviceModelVariable> v2x_variables{supported_operation_modes};
+    for (const std::int32_t evse_id : {1, 2}) {
+        ComponentKey v2x_ctrl;
+        v2x_ctrl.name = "V2XChargingCtrlr";
+        v2x_ctrl.evse_id = evse_id;
+        component_configs.insert(std::make_pair(v2x_ctrl, v2x_variables));
+    }
+
+    if (this->seed_der_ctrlr_enabled) {
+        DeviceModelVariable der_enabled;
+        der_enabled.name = "Enabled";
+        VariableCharacteristics der_enabled_characteristics;
+        der_enabled_characteristics.dataType = DataEnum::boolean;
+        der_enabled_characteristics.supportsMonitoring = false;
+        der_enabled.characteristics = der_enabled_characteristics;
+        DbVariableAttribute der_enabled_attribute;
+        der_enabled_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
+        der_enabled_attribute.variable_attribute.value = "true";
+        der_enabled_attribute.variable_attribute.type = AttributeEnum::Actual;
+        der_enabled.attributes = std::vector<DbVariableAttribute>{der_enabled_attribute};
+        for (auto& [component_key, variables] : component_configs) {
+            if ((component_key.name == "DCDERCtrlr" || component_key.name == "ACDERCtrlr") &&
+                component_key.evse_id == 1) {
+                variables.push_back(der_enabled);
+            }
+        }
+    }
+
     db.initialize_database(component_configs, true);
 }
 

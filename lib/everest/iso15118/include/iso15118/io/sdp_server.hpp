@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <atomic>
@@ -31,6 +31,8 @@ class SdpServer {
 public:
     explicit SdpServer(const std::string& interface_name);
     ~SdpServer();
+
+    void close();
     PeerRequestContext get_peer_request();
     void send_response(const PeerRequestContext&, const Ipv6EndPoint&);
 

@@ -20,6 +20,7 @@ cmake(
     name = "libwebsockets",
     cache_entries = {
         "CMAKE_POLICY_DEFAULT_CMP0077": "NEW",
+        "CMAKE_POSITION_INDEPENDENT_CODE": "ON",
         "LWS_ROLE_RAW_FILE": "OFF",
         "LWS_UNIX_SOCK": "OFF",
         "LWS_WITH_SYS_STATE": "OFF",

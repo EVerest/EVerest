@@ -22,12 +22,13 @@ Goal Of This Tutorial
 In this tutorial, we will keep everything as simple as possible. You will
 learn the following:
 
-1. Create an EVerest module that implements an interface.
-2. Define an interface containing a simple command with parameter and return
-   value.
+1. Define an interface containing a simple command with parameter and return value.
+2. Create a module that implements the interface.
 3. Define a configuration parameter for the new module.
 4. Configure required dependencies of the EVerest framework and modules.
 5. Build and run.
+6. Connect the module to the system by requiring another module.
+7. Implement the new requirement in Python.
 
 Install Prerequisites
 =====================
@@ -37,10 +38,14 @@ all prerequisites into your environment.
 
 After that, you should in particular have:
 
-- *optional:* The EVerest dependency manager (check via ``edm --version``)
+- The EVerest dependency manager (check via ``edm --version``)
 - The EVerest cli utility (check via ``ev-cli --version``)
 - A running MQTT broker (e.g. started as container as described in the setup
   guide; per default expected on localhost on port 1883)
+
+It is not necessary to compile and install EVerest. During this tutorial, it
+will be included as a dependency and compiled as part of the build process
+anyway.
 
 Workspace Setup
 ===============
@@ -97,7 +102,7 @@ First, create an empty folder that is to contain your module. In the
 following, we assume the environment variable ``EVEREST_TUTORIAL_DIR`` to hold
 this directory, for example::
 
-    export EVEREST_TUTORIAL_DIR=~/everest-tutorial-module
+    export EVEREST_TUTORIAL_DIR=${EVEREST_WORKSPACE}/everest-tutorial-module
     git clone https://github.com/EVerest/everest-template.git $EVEREST_TUTORIAL_DIR
 
 This provides you in particular with the ``.clang-format`` and ``.eslintrc.json``
@@ -211,6 +216,11 @@ configuration::
 
     cd $EVEREST_TUTORIAL_DIR && ev-cli module create --everest-dir . --schemas-dir $EVEREST_WORKSPACE/EVerest/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/EVerest/applications/utils/ev-dev-tools/src/ev_cli/licenses
 
+.. note::
+
+    ``ev-cli`` prints ``Could not detect EVerest path in --everest-dir`` at
+    this point, because the project has not been configured with CMake yet.
+    This message can be ignored, the files are generated nevertheless.
 
 After that, you should have the following file structure::
 
@@ -218,7 +228,6 @@ After that, you should have the following file structure::
     ├── build
     │        └── generated
     │            (...)
-    ├── config
     ├── interfaces
     │        └── interface_tutorial_module.yaml
     └── modules
@@ -226,7 +235,6 @@ After that, you should have the following file structure::
             ├── CMakeLists.txt
             ├── TutorialModule.cpp
             ├── TutorialModule.hpp
-            ├── doc.rst
             ├── docs
             │        └── index.rst
             ├── interface_impl_tutorial_module
@@ -389,6 +397,14 @@ And finally, install the binaries::
 
     make install -j <number of parallel jobs>
 
+.. note::
+
+    Since ``EVerest`` is included as a dependency, the first build
+    compiles all of EVerest and installs all of its modules and run scripts
+    alongside your own into ``dist/`` and ``build/run-scripts/``. Expect this
+    to take a while (e.g. about 20 minutes with 6 parallel jobs). Subsequent
+    builds only recompile what changed.
+
 
 If everything worked smoothly so far, your modules are installed and ready to
 run.
@@ -458,7 +474,7 @@ Up to path substitution this will have the following content::
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
     manager \
         --prefix $EVEREST_TUTORIAL_DIR/dist \
-        --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
+        --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml
 
 It puts the compiled libraries and binaries into the respective paths, and
 then runs EVerest by calling the `manager` binary with the respective
@@ -471,13 +487,14 @@ project!).
 Executing ``run-modules-tutorial.sh`` then should start EVerest, and provide
 an output similar to::
 
-    YYYY-MM-DD 00:00:12.500139 [INFO] manager          :: 8< 8< 8< ------------------------------------------------------------------------------ 8< 8< 8<
-    YYYY-MM-DD 00:00:12.500327 [INFO] manager          :: EVerest manager starting using /home/everest/everest-module-tutorial/config/config-modules-tutorial.yaml
-    YYYY-MM-DD 00:00:12.500354 [INFO] manager          :: EVerest using MQTT broker localhost:1883
-    YYYY-MM-DD 00:00:12.799618 [INFO] everest_ctrl     :: everest controller process started ...
-    YYYY-MM-DD 00:00:12.799822 [INFO] everest_ctrl     :: Launching controller service on port 8849
-    YYYY-MM-DD 00:00:13.120267 [INFO] tutorial_module  :: Module tutorial_module_instance initialized.
-    YYYY-MM-DD 00:00:13.149934 [INFO] manager          :: >>> All modules are initialized. EVerest up and running <<<
+    YYYY-MM-DD 00:00:12.012386 [INFO] manager          :: Manager state transition: Idle -> Initializing
+    (...)
+    YYYY-MM-DD 00:00:12.016459 [INFO] manager          :: Using MQTT broker localhost:1883
+    (...)
+    YYYY-MM-DD 00:00:12.085100 [INFO] manager          :: Starting 1 modules
+    YYYY-MM-DD 00:00:12.421989 [INFO] tutorial_module  :: Module tutorial_module_instance initialized [325ms]
+    YYYY-MM-DD 00:00:12.422833 [INFO] manager          :: 🚙🚙🚙 All modules are initialized. EVerest up and running [337ms] 🚙🚙🚙
+    YYYY-MM-DD 00:00:12.422879 [INFO] manager          :: Manager state transition: StartingModules -> Running
 
 If your socket can't be connected, make sure that your MQTT brocker is running.
 
@@ -501,25 +518,25 @@ notice an `everest` topic popping up.
 
 We can now publish a command to our self-written module. For this, choose the topic::
 
-    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd
+    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd/command_tutorial
 
 and publish the JSON::
 
     {
-      "data": {
-        "args": {
-          "payload": "Hello World!"
-        },
-        "id": "00000000-0000-0000-0000-000000000042",
-        "origin": "manual_test"
-      },
-      "name": "command_tutorial",
-      "type": "call"
+        "msg_type": "Cmd",
+        "data": {
+            "args": {
+                "payload": "Hello World!"
+            },
+            "id": "00000000-0000-0000-0000-000000000042",
+            "origin": "manual_test"
+        }
     }
 
-Our module should return with a "everest" response (you may have to reselect
-the ``everest/tutorial_module_instance/interface_impl_tutorial_module/cmd``
-on the left to refresh this view.
+Our module should return a response including "everest" as ``retval`` on the
+topic (the last segment is the ``origin`` from the request)::
+
+    everest/modules/tutorial_module_instance/impl/interface_impl_tutorial_module/cmd/command_tutorial/response/manual_test
 
 .. image:: images/mqtt_explorer_example.png
 
@@ -540,6 +557,9 @@ Rerun Cmake, this time with `-DCMAKE_BUILD_TYPE=Debug`, and rebuild::
     CMAKE_PREFIX_PATH=$EVEREST_WORKSPACE cmake --install-prefix $EVEREST_TUTORIAL_DIR/dist -DCMAKE_BUILD_TYPE=Debug ..
     make -j <number of parallel jobs>
 
+Note that changing the build type rebuilds everything, including all of
+``EVerest``, so this takes about as long as the first build.
+
 *2) Start EVerest with your module with your module marked as "standalone"*
 
 With EVerest built as described before, but with the additonal option
@@ -547,7 +567,7 @@ With EVerest built as described before, but with the additonal option
 
     LD_LIBRARY_PATH=$EVEREST_TUTORIAL_DIR/dist/lib:$LD_LIBRARY_PATH \
     PATH=$EVEREST_TUTORIAL_DIR/dist/bin:$PATH \
-    manager --prefix $EVEREST_TUTORIAL_DIR/dist  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
+    manager --prefix $EVEREST_TUTORIAL_DIR/dist --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --standalone tutorial_module_instance
 
 This starts EVerest, but without your module. Instead, the output contains a
 line::
@@ -564,7 +584,7 @@ Now open a second terminal (while keeping EVerest running in the frist
 terminal), and start your  module via ``gdb``::
 
     cd $EVEREST_TUTORIAL_DIR/build
-    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance  --conf $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
+    gdb --args ./modules/TutorialModule/TutorialModule --module tutorial_module_instance --config $EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml --prefix $EVEREST_TUTORIAL_DIR/dist
 
 
 In gdb, we set a break in the line that returns the payload when  your test
@@ -579,28 +599,240 @@ modules have now started. You may now again use MQTT Explorer as before and
 send a command call via MQTT, this should hit your set breakpoint with a
 output similar to::
 
-    Thread 4 "tutorial_module" hit Breakpoint 1, module::interface_impl_tutorial_module::interface_tutorial_moduleImpl::handle_command_tutorial (this=0xaaaaaad24fc0, payload="mock_transaction_id") at /tmp/everest-tutorial-verify/modules/TutorialModule/interface_impl_tutorial_module/interface_tutorial_moduleImpl.cpp:17
+    Thread 4 "tutorial_module" hit Breakpoint 1, module::interface_impl_tutorial_module::interface_tutorial_moduleImpl::handle_command_tutorial (this=0xaaaaaad24fc0, payload="Hello World!") at $EVEREST_TUTORIAL_DIR/modules/TutorialModule/interface_impl_tutorial_module/interface_tutorial_moduleImpl.cpp:17
     17	    return "everest";
 
 
 Of course, you might setup your favorite IDE in a similar way for a nicer
 debugging experience.
 
-Exemplary Module Customizations
-===============================
+Extending the Module
+====================
 
-Having prepared a buildable and runnable module, we can now extend the logic
-of our implementation:
+Having prepared a buildable and runnable module, we can now extend our implementation
+to interact with the rest of the system.
 
-- Add a variable to your interface, and publish it;
-- Add a second module which requires the ``interface_tutorial_module`` interface and sends commands or subscribes to variables.
-- ...
+One way to connect a module to other modules is by requiring interfaces. First, create
+a new interface in ``interfaces/countdown_interface.yaml``:
 
-.. hint::
-    This section is yet to come. Want to help us with that? Feel free and create
-    a suggestion for this.
+..  code-block:: yaml
+
+    description: Countdown interface
+    cmds:
+      start:
+        description: Start the countdown
+        arguments:
+          start_value:
+            description: Start value of the countdown
+            type: string
+        result:
+          description: Whether the countdown has started
+          type: boolean
+    vars:
+      value:
+        description: Current countdown value
+        type: integer
+
+Next, require that interface in the tutorial module by adding a requirements block
+to ``modules/TutorialModule/manifest.yaml``:
+
+..  code-block:: yaml
+
+    # ...
+    requires:
+      countdown:
+        interface: countdown_interface
+
+Adding a new requirement necessitates regenerating some of our source code. The ``ev-cli`` tool
+can help with that::
+
+    cd $EVEREST_TUTORIAL_DIR && ev-cli module update --force --everest-dir . --schemas-dir $EVEREST_WORKSPACE/EVerest/lib/everest/framework/schemas TutorialModule --licenses $EVEREST_WORKSPACE/EVerest/applications/utils/ev-dev-tools/src/ev_cli/licenses
+
+The ``--force`` flag makes sure that the tool doesn't skip existing files, but still overwrites what's
+necessary to reflect changes in the manifest.
+
+Now we can implement our interaction with the timer in ``interface_tutorial_moduleImpl.cpp``:
+
+..  code-block:: cpp
+
+    #include "interface_tutorial_moduleImpl.hpp"
+
+    #include <everest/logging.hpp>
+
+    namespace module {
+    namespace interface_impl_tutorial_module {
+
+    void interface_tutorial_moduleImpl::init() {
+        mod->r_countdown->subscribe_value([](const auto& value) {
+            if (value > 0) {
+                EVLOG_info << "Countdown: " << value;
+            } else {
+                EVLOG_info << "Countdown complete";
+            }
+        });
+        EVLOG_info << "Tutorial module implementation initialized";
+    }
+
+    void interface_tutorial_moduleImpl::ready() {
+        EVLOG_info << "Tutorial module implementation ready";
+    }
+
+    std::string interface_tutorial_moduleImpl::handle_command_tutorial(std::string& payload) {
+        if (mod->r_countdown->call_start(payload)) {
+            EVLOG_info << "Started countdown";
+        } else {
+            EVLOG_warning << "Countdown failed";
+        }
+        return "everest";
+    }
+
+    } // namespace interface_impl_tutorial_module
+    } // namespace module
+
+Note that the framework has used the countdown interface definition and the module requirements to
+define ``r_countdown`` and its methods, ``call_start`` and ``subscribe_value``.
+
+Implementing a Module in Python
+-------------------------------
+
+Now let's define an implementation of the countdown interface in Python. EVerest doesn't
+provide the same code-generation for Python as it does for C++, so module authors have to
+write the module implementation themselves.
+
+First, create a folder for our module called ``PyCountdown`` and create the necessary files::
+
+    cd $EVEREST_TUTORIAL_DIR && mkdir modules/PyCountdown && touch modules/PyCountdown/{CMakeLists.txt,manifest.yaml,module.py}
+
+..  note::
+
+    Modules implemented in Python must have their names prefixed with "Py" so the EVerest build
+    system knows how to handle them.
+
+
+In ``modules/PyCountdown/manifest.yaml``, add the following:
+
+..  code-block:: yaml
+
+    description: A countdown module
+    provides:
+      countdown:
+        interface: countdown_interface
+        description: Countdown implementation
+    metadata:
+      license: https://opensource.org/licenses/Apache-2.0
+      authors:
+        - <Your Name>, <Your Organization>
+
+Finally, implement the module in ``modules/PyCountdown/module.py``:
+
+..  code-block:: Python
+
+    import time
+    from threading import Event
+
+    from everest.framework import Module, RuntimeSession, log
+
+
+    class PyCountdown:
+        def __init__(self):
+            # Set up the module.
+            self.module = Module(RuntimeSession())
+            log.update_process_name(self.module.info.id)
+            self.setup = self.module.say_hello()
+            self.ready = Event()
+            self.count = 0
+
+            # Map interface commands to handler functions.
+            self.setup_command_handlers()
+
+            # Let EVerest know that initialization is complete.
+            self.module.init_done()
+
+        def run(self):
+            try:
+                while True:
+                    self.ready.wait()
+                    self.ready.clear()
+                    while self.count >= 0:
+                        self.module.publish_variable("countdown", "value", self.count)
+                        self.count -= 1
+                        time.sleep(1)
+            except KeyboardInterrupt:
+                pass
+
+        def handle_start(self, args):
+            try:
+                count = int(args["start_value"])
+                if count <= 0:
+                    return False
+                self.count = count
+                self.ready.set()
+                return True
+            except:
+                return False
+
+        def setup_command_handlers(self):
+            for cmd in self.module.implementations["countdown"].commands:
+                self.module.implement_command("countdown", cmd, getattr(self, f"handle_{cmd}"))
+
+
+    module = PyCountdown()
+    module.run()
+
+.. note::
+
+    Notice that along with the boilerplate, module authors must also implement
+    some kind of run loop so that the process won't exit immediately. The
+    ``ready`` event is cleared after waking up, so that the loop blocks again
+    once a countdown has finished instead of spinning.
+
+.. note::
+
+    The ``CMakeLists.txt`` file for the PyCountdown module remains empty, but is still
+    required to let the ``ev_add_module(PyCountdown)`` call in the higher-level
+    ``CMakeLists.txt`` succeed.
+
+Don't forget to add the new module to the build system in ``modules/CMakeLists.txt``::
+
+    ev_add_module(TutorialModule)
+    ev_add_module(PyCountdown)
+
+Connecting the Modules At Runtime
+---------------------------------
+
+Our tutorial module requires an implementation of the countdown interface, so let's add
+the new module to the config in ``$EVEREST_TUTORIAL_DIR/config/config-modules-tutorial.yaml``:
+
+..  code-block:: yaml
+
+    active_modules:
+      tutorial_module_instance:
+        module: TutorialModule
+        connections:
+          countdown:
+            - module_id: countdown
+              implementation_id: countdown
+      countdown:
+        module: PyCountdown
+
+After building the project and running the script, try sending the ``command_tutorial`` command
+as before. If the payload is a number string, PyCountdown will count down from that number until
+it reaches zero. If the payload is not a valid number, the tutorial module will log that the
+countdown was unsuccessful.
+
+Next Steps
+==========
+
+With the basics covered, you're ready to start exploring more advanced usages of EVerest, like:
+
+* Requiring more than one implementation of an interface
+* Writing modules in Rust
+* Implementing board support interfaces
+* EVerest APIs
+* Much more!
+
+Please reach out on the mailing list or Zulip if you have questions, and happy charging!
 
 --------------------------------
 
-**Authors**: Valentin Dimov, Manuel Ziegler, Andreas Heinrich, Lukas Mertens, Martin Litre, Piet Gömpel, Christoph Burandt
-
+**Authors**: Valentin Dimov, Manuel Ziegler, Andreas Heinrich, Lukas Mertens, Martin Litre, Piet Gömpel, Christoph Burandt, Andy Bond

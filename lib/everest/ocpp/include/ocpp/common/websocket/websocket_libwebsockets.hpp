@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_WEBSOCKET_TLS_TPM_HPP
 #define OCPP_WEBSOCKET_TLS_TPM_HPP
 
@@ -104,7 +104,7 @@ private:
     std::shared_ptr<ConnectionData> conn_data;
 
     // Queue of outgoing messages, notify thread only when we remove messages
-    SafeQueue<std::shared_ptr<WebsocketMessage>> message_queue;
+    SafeQueue<std::shared_ptr<WebsocketMessage>> send_message_queue;
 
     std::unique_ptr<std::thread> recv_message_thread;
     SafeQueue<std::string> recv_message_queue;

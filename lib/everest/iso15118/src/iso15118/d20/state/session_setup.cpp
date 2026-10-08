@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 #include <iomanip>
 #include <openssl/evp.h>
 #include <sstream>
 
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/authorization_setup.hpp>
 #include <iso15118/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/session_setup.hpp>
@@ -67,14 +69,16 @@ message_20::SessionSetupResponse handle_request([[maybe_unused]] const message_2
     res.evseid = evse_id;
 
     if (new_session) {
-        return response_with_code(res, dt::ResponseCode::OK_NewSessionEstablished);
+        set_response_code(res, dt::ResponseCode::OK_NewSessionEstablished);
+        return res;
     } else {
-        return response_with_code(res, dt::ResponseCode::OK_OldSessionJoined);
+        set_response_code(res, dt::ResponseCode::OK_OldSessionJoined);
+        return res;
     }
 }
 
 void SessionSetup::enter() {
-    m_ctx.log.enter_state("SessionSetup");
+    logf_debug("Enter state: SessionSetup");
 }
 
 Result SessionSetup::feed(Event ev) {
@@ -90,8 +94,12 @@ Result SessionSetup::feed(Event ev) {
         logf_info("Received session setup with evccid: %s", req->evccid.c_str());
         m_ctx.feedback.evcc_id(req->evccid);
         m_ctx.ev_info.evcc_id = req->evccid;
-        m_ctx.feedback.ev_information(m_ctx.ev_info);
 
+        // Only emit ev_information feedback when the sap negotiation is handled here. When SAP is skipped the
+        // application already has the information.
+        if (not skip_app_protocol_negotiation) {
+            m_ctx.feedback.ev_information(m_ctx.ev_info);
+        }
         bool new_session{false};
 
         const auto vehicle_cert_hash = m_ctx.get_new_vehicle_cert_hash();
@@ -141,6 +149,12 @@ Result SessionSetup::feed(Event ev) {
             if (m_ctx.session.is_dc_charger()) {
                 return m_ctx.create_state<DC_ChargeParameterDiscovery>();
             }
+            if (m_ctx.session.is_ac_der_iec_charger()) {
+                return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
+            }
+            if (m_ctx.session.is_ac_der_sae_charger()) {
+                return m_ctx.create_state<AC_DER_SAE_ChargeParameterDiscovery>();
+            }
 
             // TODO(sl): Error handling
             return {};
@@ -148,7 +162,7 @@ Result SessionSetup::feed(Event ev) {
         return m_ctx.create_state<AuthorizationSetup>();
 
     } else {
-        m_ctx.log("expected SessionSetupReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected SessionSetupReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

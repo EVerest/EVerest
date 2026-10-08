@@ -7,7 +7,7 @@ ConditionFileNotEmpty=/etc/everest/config.yaml
 [Service]
 Type=simple
 Restart=always
-ExecStart=/usr/bin/manager --conf /etc/everest/config.yaml
+ExecStart=/usr/bin/manager --config /etc/everest/config.yaml
 
 [Install]
 WantedBy=multi-user.target

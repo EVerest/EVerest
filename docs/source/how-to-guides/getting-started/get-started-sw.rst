@@ -75,7 +75,7 @@ Use `zypper` to get your needed libraries installed:
    libboost_program_options-devel libboost_system-devel libboost_thread-devel \
    java-17-openjdk java-17-openjdk-devel nodejs nodejs-devel npm python3-devel \
    python3-pip gcc-c++ libopenssl-devel sqlite3-devel libpcap-devel \
-   libevent-devel libcap-devel
+   libevent-devel libcap-devel systemd-devel
 
 **Fedora**:
 
@@ -164,8 +164,7 @@ It is used for the communication between the EVerest modules:
 
 .. code-block:: bash
 
-  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/containers/mosquitto:docker-images-v0.1.0
-
+  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.2.0
 
 That makes us ready for entering the simulation phase described in the next
 chapter.

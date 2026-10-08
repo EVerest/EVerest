@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "comparators.hpp"
+#include "connectivity_manager_mock.hpp"
 #include "device_model_test_helper.hpp"
 #include "everest/logging.hpp"
 #include "evse_security_mock.hpp"
@@ -13,20 +14,30 @@
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 #include "ocpp/v2/device_model_storage_sqlite.hpp"
 #include "ocpp/v2/init_device_model_db.hpp"
+#include "ocpp/v2/messages/BootNotification.hpp"
+#include "ocpp/v2/messages/GetCertificateStatus.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/types.hpp"
+#include "ocpp/v21/messages/NotifyDERAlarm.hpp"
+#include "ocpp/v21/messages/SetDERControl.hpp"
 #include "smart_charging_test_utils.hpp"
+#include "test_temp_paths.hpp"
 
 #include "gmock/gmock.h"
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <condition_variable>
+#include <deque>
+#include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
+#include <optional>
 
 static const ocpp::v2::AddChargingProfileSource DEFAULT_REQUEST_TO_ADD_PROFILE_SOURCE =
     ocpp::v2::AddChargingProfileSource::SetChargingProfile;
-static const std::string TEMP_OUTPUT_PATH = "/tmp/ocpp201";
+static const std::string TEMP_OUTPUT_PATH = libocpp_test::unique_temp_directory("ocpp201_message_log").string();
 static const std::string DEFAULT_TX_ID = "10c75ff7-74f5-44f5-9d01-f649f3ac7b78";
 
 namespace ocpp::v2 {
@@ -81,6 +92,39 @@ public:
         component_configs.insert(std::make_pair(v2x_ctrl, variables));
         v2x_ctrl.evse_id = 2;
         component_configs.insert(std::make_pair(v2x_ctrl, variables));
+
+        // ACDERCtrlr on an in-range EVSE: Available is a ReadOnly capability flag fixed true, Enabled is the
+        // ReadWrite runtime gate defaulting false. The DER block must stay unbuilt until Enabled flips true.
+        std::vector<DeviceModelVariable> ac_der_variables;
+        DeviceModelVariable ac_der_available;
+        ac_der_available.name = "Available";
+        VariableCharacteristics ac_der_available_characteristics;
+        ac_der_available_characteristics.dataType = DataEnum::boolean;
+        ac_der_available_characteristics.supportsMonitoring = false;
+        ac_der_available.characteristics = ac_der_available_characteristics;
+        DbVariableAttribute ac_der_available_attribute;
+        ac_der_available_attribute.variable_attribute.mutability = MutabilityEnum::ReadOnly;
+        ac_der_available_attribute.variable_attribute.value = "true";
+        ac_der_available_attribute.variable_attribute.type = AttributeEnum::Actual;
+        ac_der_available.attributes = std::vector<DbVariableAttribute>{ac_der_available_attribute};
+        ac_der_variables.push_back(ac_der_available);
+        DeviceModelVariable ac_der_enabled;
+        ac_der_enabled.name = "Enabled";
+        VariableCharacteristics ac_der_enabled_characteristics;
+        ac_der_enabled_characteristics.dataType = DataEnum::boolean;
+        ac_der_enabled_characteristics.supportsMonitoring = false;
+        ac_der_enabled.characteristics = ac_der_enabled_characteristics;
+        DbVariableAttribute ac_der_enabled_attribute;
+        ac_der_enabled_attribute.variable_attribute.mutability = MutabilityEnum::ReadWrite;
+        ac_der_enabled_attribute.variable_attribute.value = "false";
+        ac_der_enabled_attribute.variable_attribute.type = AttributeEnum::Actual;
+        ac_der_enabled.attributes = std::vector<DbVariableAttribute>{ac_der_enabled_attribute};
+        ac_der_variables.push_back(ac_der_enabled);
+        ComponentKey ac_der_ctrl;
+        ac_der_ctrl.name = "ACDERCtrlr";
+        ac_der_ctrl.evse_id = 2;
+        component_configs.insert(std::make_pair(ac_der_ctrl, ac_der_variables));
+
         db.initialize_database(component_configs, true);
     }
 
@@ -115,7 +159,7 @@ public:
 
     std::shared_ptr<DatabaseHandler> create_database_handler() {
         auto database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         return std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     }
 
@@ -123,7 +167,10 @@ public:
     create_message_queue(std::shared_ptr<DatabaseHandler>& database_handler) {
         const auto DEFAULT_MESSAGE_QUEUE_SIZE_THRESHOLD = 2E5;
         return std::make_shared<ocpp::MessageQueue<v2::MessageType>>(
-            [this](json message) -> bool { return false; },
+            [this](json message) -> bool {
+                this->sent_messages.push_back(message);
+                return false;
+            },
             MessageQueueConfig<v2::MessageType>{
                 this->device_model->get_value<int>(ControllerComponentVariables::MessageAttempts),
                 this->device_model->get_value<int>(ControllerComponentVariables::MessageAttemptInterval),
@@ -154,10 +201,16 @@ public:
         callbacks.cancel_reservation_callback = cancel_reservation_callback_mock.AsStdFunction();
         callbacks.update_allowed_energy_transfer_modes_callback =
             update_allowed_energy_transfer_modes_callback.AsStdFunction();
+        callbacks.der_active_directives_callback = [this](const std::vector<ocpp::v21::SetDERControlRequest>& active) {
+            this->der_active_directives_emit_count++;
+            this->last_der_active_directives = active;
+        };
     }
 
     std::shared_ptr<DeviceModel> device_model;
     std::map<std::int32_t, std::int32_t> evse_connector_structure;
+
+    std::vector<json> sent_messages;
 
     testing::MockFunction<bool(const std::optional<const std::int32_t> evse_id, const ResetEnum& reset_type)>
         is_reset_allowed_callback_mock;
@@ -191,6 +244,9 @@ public:
         update_allowed_energy_transfer_modes_callback;
 
     ocpp::v2::Callbacks callbacks;
+
+    int der_active_directives_emit_count = 0;
+    std::vector<ocpp::v21::SetDERControlRequest> last_der_active_directives;
 };
 
 /*
@@ -489,6 +545,52 @@ TEST_F(ChargePointCommonTestFixtureV2,
     EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure));
 }
 
+// A set-but-empty der_active_directives_callback is invalid (a registered-yet-null
+// optional callback must fail validation); unset or non-null is valid.
+TEST_F(ChargePointCommonTestFixtureV2,
+       K01FR02_CallbacksValidityChecksIfOptionalDERActiveDirectivesCallbackIsNotSetOrNotNull) {
+    configure_callbacks_with_mocks();
+
+    callbacks.der_active_directives_callback = nullptr;
+    EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure));
+
+    testing::MockFunction<void(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls)>
+        der_active_directives_callback_mock;
+    callbacks.der_active_directives_callback = der_active_directives_callback_mock.AsStdFunction();
+    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure));
+}
+
+// der_active_directives_callback is required on component presence, not availability. EVSE 1 has a DC DER
+// component, EVSE 2 has none, EVSE 3 has only an AC DER component (covers the AC term of der_present).
+TEST_F(ChargePointCommonTestFixtureV2, DERComponentPresentRequiresActiveDirectivesCallback) {
+    configure_callbacks_with_mocks();
+
+    // EVSE 1 (DC DER present): unset callback invalid, set callback valid.
+    std::map<std::int32_t, std::int32_t> evse_connector_structure_dc_der;
+    evse_connector_structure_dc_der.insert_or_assign(1, 1);
+    callbacks.der_active_directives_callback = std::nullopt;
+    EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_dc_der));
+
+    callbacks.der_active_directives_callback = [](const std::vector<ocpp::v21::SetDERControlRequest>&) {};
+    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_dc_der));
+
+    // EVSE 4 (no DER component): absent callback is valid.
+    std::map<std::int32_t, std::int32_t> evse_connector_structure_no_der;
+    evse_connector_structure_no_der.insert_or_assign(4, 1);
+    callbacks.der_active_directives_callback = std::nullopt;
+    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_no_der));
+
+    // EVSE 2 (AC DER only): same presence requirement via the AC term of der_present. Presence gates on the
+    // Available variable existing, so Enabled==false does not hide it.
+    std::map<std::int32_t, std::int32_t> evse_connector_structure_ac_der;
+    evse_connector_structure_ac_der.insert_or_assign(2, 1);
+    callbacks.der_active_directives_callback = std::nullopt;
+    EXPECT_FALSE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_ac_der));
+
+    callbacks.der_active_directives_callback = [](const std::vector<ocpp::v21::SetDERControlRequest>&) {};
+    EXPECT_TRUE(callbacks.all_callbacks_valid(device_model, evse_connector_structure_ac_der));
+}
+
 TEST_F(ChargePointCommonTestFixtureV2, ReservationAvailableReserveNowCallbackNotSet) {
     configure_callbacks_with_mocks();
     device_model->set_value(ControllerComponentVariables::ReservationCtrlrAvailable.component,
@@ -571,11 +673,69 @@ public:
     std::shared_ptr<EvseSecurityMock> evse_security;
 };
 
+TEST_F(ChargePointCommonTestFixtureV2, OnWebsocketConnectedMirrorsMessageTimeoutBeforeRegistration) {
+    auto database_handler = create_database_handler();
+    configure_callbacks_with_mocks();
+    auto charge_point = std::make_unique<ChargePoint>(evse_connector_structure, device_model, database_handler,
+                                                      create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                      std::make_shared<EvseSecurityMock>(), callbacks);
+    const auto& cv = ControllerComponentVariables::MessageTimeout;
+    ASSERT_EQ(
+        device_model->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "999", "test"),
+        SetVariableStatusEnum::Accepted);
+    NetworkConnectionProfile profile;
+    profile.messageTimeout = 75;
+
+    charge_point->on_websocket_connected(1, profile, OcppProtocolVersion::v201);
+
+    EXPECT_EQ(device_model->get_value<int>(cv), 75);
+}
+
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint) {
     configure_callbacks_with_mocks();
 
     EXPECT_NO_THROW(ocpp::v2::ChargePoint(evse_connector_structure, device_model, database_handler,
                                           create_message_queue(database_handler), "/tmp", evse_security, callbacks));
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesFalse_DoesNotLogMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_false");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "false",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_TRUE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesTrue_LogsMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_true");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "true",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_FALSE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
 }
 
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_InitializeInCorrectOrder) {
@@ -641,6 +801,7 @@ TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_CallbacksNotValid_
 
 class TestChargePoint : public ChargePoint {
 public:
+    using ChargePoint::get_certificate_status_from_csms;
     using ChargePoint::handle_message;
 
     TestChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
@@ -787,4 +948,357 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, K02FR05_TransactionEnds_WillDelete
     charge_point->on_transaction_finished(DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::StoppedByEV,
                                           TriggerReasonEnum::StopAuthorized, {}, {}, ChargingStateEnum::EVConnected);
 }
+
+// on_der_alarm must no-op (not dereference null) when no DER component exists and der_control is unbuilt.
+TEST_F(ChargePointFunctionalityTestFixtureV2, OnDerAlarm_WhenDerControlAbsent_NoOpsWithoutCrash) {
+    ocpp::v21::NotifyDERAlarmRequest req;
+    req.controlType = ocpp::v2::DERControlEnum::FreqDroop;
+    req.timestamp = ocpp::DateTime("2020-01-01T00:00:00Z");
+    req.gridEventFault = ocpp::v2::GridEventFaultEnum::OverFrequency;
+
+    EXPECT_NO_FATAL_FAILURE(charge_point->on_der_alarm(req));
+}
+
+// The DER block is built only once a component reports Enabled==true. EVSE 2's AC DER component is
+// Available==true but Enabled==false at construction, so SetDERControl gets NotImplemented at first and a
+// CALLRESULT after Enabled flips true.
+TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenEnabledFlipsTrue) {
+    ocpp::v21::SetDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-lifecycle";
+    // Once the block exists the request is accepted: EVSE 2's AC DER component is enabled by then and AC
+    // admission accepts all control types. The persisted control is deleted at the end of the test because
+    // the handler database is file-backed and shared across tests.
+    req.controlType = DERControlEnum::HFMustTrip;
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 0.0f;
+    p1.y = 0.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    auto build_message = [&]() {
+        return request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req);
+    };
+
+    // Enabled==false at construction: block absent, response is a NotImplemented CALLERROR.
+    this->sent_messages.clear();
+    charge_point->handle_message(build_message());
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& error_response = this->sent_messages.back();
+    EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
+    EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
+
+    // Flip Enabled true: the registered variable listener builds the block.
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    // Same SetDERControl now reaches the block and is answered with a CALLRESULT (not NotImplemented).
+    this->sent_messages.clear();
+    charge_point->handle_message(build_message());
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& result_response = this->sent_messages.back();
+    EXPECT_EQ(result_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLRESULT);
+
+    auto cleanup_handler = create_database_handler();
+    cleanup_handler->open_connection();
+    cleanup_handler->delete_der_control("ctrl-lifecycle");
+}
+
+// When the DER block is built (here lazily, once a DER component reports Enabled==true), it self-emits
+// the current active set so the provider learns the standing state. The DER_CONTROLS table is empty at
+// startup, so the initial emit carries an empty set.
+TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlockBuild_EmitsInitialActiveSet) {
+    // EVSE 2's AC DER component is Available==true but Enabled==false, so no block (and no emit) yet at
+    // construction.
+    ASSERT_EQ(this->der_active_directives_emit_count, 0);
+
+    // Flip Enabled true: the registered variable listener builds the block, which self-emits its
+    // initial (empty) active set.
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    EXPECT_EQ(this->der_active_directives_emit_count, 1);
+    EXPECT_TRUE(this->last_der_active_directives.empty());
+}
+
+// Available==true alone must not build the DER block at boot: the Enabled gate (false here) keeps it unbuilt.
+TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenAvailableTrueButEnabledFalse) {
+    // EVSE 2's AC DER component is Available==true, Enabled==false at construction. No block, no emit.
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v21::SetDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-boot-gate";
+    req.controlType = DERControlEnum::HFMustTrip;
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 0.0f;
+    p1.y = 0.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    this->sent_messages.clear();
+    charge_point->handle_message(
+        request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req));
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& error_response = this->sent_messages.back();
+    EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
+    EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
+}
+
+// Strict opt-in: a DER component with Available==true but no Enabled variable stays disabled, so the
+// block is not built at boot (Enabled.value_or(false)).
+TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnabledVariable) {
+    configure_callbacks_with_mocks();
+
+    // EVSE 1's DC DER component (from DCDERCtrlr_1.json) has no Enabled variable. Flip its Available true
+    // before construction; the missing Enabled must keep the block unbuilt.
+    const auto dc_available_cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
+    this->device_model->set_value(dc_available_cv.component, dc_available_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    ASSERT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                       create_message_queue(database_handler), "/tmp", evse_security, callbacks);
+
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
+}
+
+// stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive
+// and restartable, and its owner still gets the disconnect notification. Disarming here raced the deferred
+// delivery of that notification and swallowed it.
+TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+
+    charge_point.start(BootReasonEnum::PowerUp);
+    charge_point.stop();
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
+
+    // Verify while still alive: destruction is the only disarm site.
+    ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
+}
+
+// The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
+// destructor body runs before any member is gone and blocks on an in-flight callback.
+TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                           connectivity_manager, "/tmp", callbacks);
+        charge_point.start(BootReasonEnum::PowerUp);
+        charge_point.stop();
+
+        EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    }
+}
+
+// A connect and a disconnect requested while a CALL is in flight both wait for its answer, then apply in the order they
+// were requested.
+TEST_F(ChargePointConstructorTestFixtureV2, ConnectThenDisconnectAwaitCallInFlightInOrder) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+    std::function<void(const std::string&)> csms_to_charge_point;
+    ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+        .WillByDefault(
+            ::testing::Invoke([&csms_to_charge_point](const std::function<void(const std::string&)>& callback) {
+                csms_to_charge_point = callback;
+            }));
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<std::string> boot_notification_id;
+    std::vector<std::string> transport_calls;
+    ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+        .WillByDefault(::testing::Invoke([&](const std::string& message) {
+            const auto call = json::parse(message);
+            std::lock_guard<std::mutex> lock(mtx);
+            if (call.at(MESSAGE_TYPE_ID) == MessageTypeId::CALL && call.at(CALL_ACTION) == "BootNotification" &&
+                !boot_notification_id.has_value()) {
+                boot_notification_id = call.at(MESSAGE_ID).get<std::string>();
+                cv.notify_all();
+            }
+            return true;
+        }));
+    ON_CALL(*connectivity_manager, connect(::testing::_))
+        .WillByDefault(::testing::Invoke([&](std::optional<std::int32_t>) {
+            std::lock_guard<std::mutex> lock(mtx);
+            transport_calls.push_back("connect");
+            cv.notify_all();
+        }));
+    ON_CALL(*connectivity_manager, disconnect()).WillByDefault(::testing::Invoke([&]() {
+        std::lock_guard<std::mutex> lock(mtx);
+        transport_calls.push_back("disconnect");
+        cv.notify_all();
+    }));
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp, false);
+    NetworkConnectionProfile network_connection_profile;
+    network_connection_profile.messageTimeout = 30;
+    charge_point.on_websocket_connected(1, network_connection_profile, OcppProtocolVersion::v201);
+
+    std::string in_flight_id;
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return boot_notification_id.has_value(); }));
+        in_flight_id = boot_notification_id.value();
+    }
+
+    charge_point.connect_websocket();
+    charge_point.disconnect_websocket();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        EXPECT_TRUE(transport_calls.empty());
+    }
+
+    const json accepted = {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 300}, {"status", "Accepted"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, in_flight_id, accepted}.dump());
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return transport_calls.size() >= 2; }));
+        EXPECT_EQ(transport_calls, (std::vector<std::string>{"connect", "disconnect"}));
+    }
+
+    charge_point.stop();
+}
+
+/// \brief Stands in for the CSMS transport: collects what the message queue sends so the test can answer it
+class FakeCsmsTransport {
+public:
+    bool send(const json& message) {
+        {
+            const std::lock_guard<std::mutex> lock(this->mutex);
+            this->outbox.push_back(message);
+        }
+        this->outbox_changed.notify_all();
+        return true;
+    }
+
+    std::optional<json> next_sent_message(std::chrono::seconds timeout) {
+        std::unique_lock<std::mutex> lock(this->mutex);
+        if (!this->outbox_changed.wait_for(lock, timeout, [this] { return !this->outbox.empty(); })) {
+            return std::nullopt;
+        }
+        const json message = this->outbox.front();
+        this->outbox.pop_front();
+        return message;
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable outbox_changed;
+    std::deque<json> outbox;
+};
+
+/// \brief A registered charging station whose outgoing CALLs the test answers through the real message queue
+class ChargePointCsmsReplyTestFixtureV2 : public ChargePointCommonTestFixtureV2,
+                                          public testing::WithParamInterface<const char*> {
+public:
+    void SetUp() override {
+        configure_callbacks_with_mocks();
+        auto database_handler = create_database_handler();
+        message_queue = std::make_shared<MessageQueue<v2::MessageType>>(
+            [this](json message) -> bool { return this->csms.send(message); }, MessageQueueConfig<v2::MessageType>{},
+            database_handler);
+        charge_point = std::make_unique<TestChargePoint>(
+            create_evse_connector_structure(), device_model, database_handler, message_queue, TEMP_OUTPUT_PATH,
+            std::make_shared<testing::NiceMock<EvseSecurityMock>>(), callbacks);
+        message_queue->start();
+        message_queue->resume(std::chrono::seconds(0));
+        charge_point->handle_message(boot_notification_accepted());
+    }
+
+    void TearDown() override {
+        charge_point->stop();
+    }
+
+    static EnhancedMessage<MessageType> boot_notification_accepted() {
+        BootNotificationResponse response;
+        response.currentTime = ocpp::DateTime();
+        response.interval = 0;
+        response.status = RegistrationStatusEnum::Accepted;
+
+        EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::BootNotificationResponse;
+        enhanced_message.messageTypeId = MessageTypeId::CALLRESULT;
+        enhanced_message.message = json(CallResult<BootNotificationResponse>(response, MessageId("boot")));
+        return enhanced_message;
+    }
+
+    /// \brief Answers every CALL the charging station sends. GetCertificateStatus is answered with \p payload, every
+    /// other CALL with an empty payload.
+    /// \return true once GetCertificateStatus was answered, false when it did not arrive in time
+    bool answer_calls_until_get_certificate_status(const std::string& payload) {
+        while (const auto call = csms.next_sent_message(std::chrono::seconds(5))) {
+            const std::string message_id = call->at(MESSAGE_ID);
+            const bool is_get_certificate_status = call->at(CALL_ACTION) == "GetCertificateStatus";
+            const std::string reply_payload = is_get_certificate_status ? payload : "{}";
+            message_queue->receive(R"([3, ")" + message_id + R"(", )" + reply_payload + "]");
+            if (is_get_certificate_status) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    FakeCsmsTransport csms;
+    std::shared_ptr<MessageQueue<v2::MessageType>> message_queue;
+    std::unique_ptr<TestChargePoint> charge_point;
+};
+
+/// \brief A CALLRESULT for GetCertificateStatus without a usable status must be reported to the OcspUpdater as a
+/// Failed response instead of escaping as an exception
+TEST_P(ChargePointCsmsReplyTestFixtureV2, MalformedGetCertificateStatusResponse_YieldsFailedResponse) {
+    const std::string payload = GetParam();
+
+    auto response_future = std::async(std::launch::async, [this] {
+        GetCertificateStatusRequest request;
+        request.ocspRequestData.hashAlgorithm = HashAlgorithmEnum::SHA256;
+        request.ocspRequestData.issuerNameHash = "issuerHash";
+        request.ocspRequestData.issuerKeyHash = "issuerKey";
+        request.ocspRequestData.serialNumber = "serial";
+        request.ocspRequestData.responderURL = "responder";
+        return charge_point->get_certificate_status_from_csms(request);
+    });
+
+    ASSERT_TRUE(answer_calls_until_get_certificate_status(payload))
+        << "charging station did not send GetCertificateStatus";
+
+    try {
+        const GetCertificateStatusResponse response = response_future.get();
+        EXPECT_EQ(response.status, GetCertificateStatusEnum::Failed);
+    } catch (const std::exception& e) {
+        ADD_FAILURE() << "get_certificate_status_from_csms threw: " << e.what();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
+                         testing::Values("{}", "12345", R"("Accepted")", R"({"status": null})",
+                                         R"({"status": "test"})"));
+
 } // namespace ocpp::v2

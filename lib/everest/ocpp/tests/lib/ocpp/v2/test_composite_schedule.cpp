@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/common/constants.hpp"
 #include "ocpp/common/types.hpp"
@@ -12,13 +12,16 @@
 #include "ocpp/v2/utils.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sqlite3.h>
 #include <string>
+#include <thread>
 
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/evse.hpp>
@@ -39,8 +42,8 @@ TEST_F(CompositeScheduleTestFixtureV2, NoSchedulesPresent) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T00:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T01:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -61,8 +64,8 @@ TEST_F(CompositeScheduleTestFixtureV2, ExtraSeconds) {
     const DateTime start_time = ocpp::DateTime("2024-01-01T12:01:59");
     const DateTime end_time = ocpp::DateTime("2024-01-01T13:02:01");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -88,103 +91,103 @@ TEST_F(CompositeScheduleTestFixtureV2, FoundationTest_Grid) {
 
     const DateTime start_time = ocpp::DateTime("2024-01-17T00:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-18T00:00:00");
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 1.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3600;
     period2.limit = 2.0;
     period2.numberPhases = 1;
-    ChargingSchedulePeriod period3;
+    EnhancedChargingSchedulePeriod period3;
     period3.startPeriod = 7200;
     period3.limit = 3.0;
     period3.numberPhases = 1;
-    ChargingSchedulePeriod period4;
+    EnhancedChargingSchedulePeriod period4;
     period4.startPeriod = 10800;
     period4.limit = 4.0;
     period4.numberPhases = 1;
-    ChargingSchedulePeriod period5;
+    EnhancedChargingSchedulePeriod period5;
     period5.startPeriod = 14400;
     period5.limit = 5.0;
     period5.numberPhases = 1;
-    ChargingSchedulePeriod period6;
+    EnhancedChargingSchedulePeriod period6;
     period6.startPeriod = 18000;
     period6.limit = 6.0;
     period6.numberPhases = 1;
-    ChargingSchedulePeriod period7;
+    EnhancedChargingSchedulePeriod period7;
     period7.startPeriod = 21600;
     period7.limit = 7.0;
     period7.numberPhases = 1;
-    ChargingSchedulePeriod period8;
+    EnhancedChargingSchedulePeriod period8;
     period8.startPeriod = 25200;
     period8.limit = 8.0;
     period8.numberPhases = 1;
-    ChargingSchedulePeriod period9;
+    EnhancedChargingSchedulePeriod period9;
     period9.startPeriod = 28800;
     period9.limit = 9.0;
     period9.numberPhases = 1;
-    ChargingSchedulePeriod period10;
+    EnhancedChargingSchedulePeriod period10;
     period10.startPeriod = 32400;
     period10.limit = 10.0;
     period10.numberPhases = 1;
-    ChargingSchedulePeriod period11;
+    EnhancedChargingSchedulePeriod period11;
     period11.startPeriod = 36000;
     period11.limit = 11.0;
     period11.numberPhases = 1;
-    ChargingSchedulePeriod period12;
+    EnhancedChargingSchedulePeriod period12;
     period12.startPeriod = 39600;
     period12.limit = 12.0;
     period12.numberPhases = 1;
-    ChargingSchedulePeriod period13;
+    EnhancedChargingSchedulePeriod period13;
     period13.startPeriod = 43200;
     period13.limit = 13.0;
     period13.numberPhases = 1;
-    ChargingSchedulePeriod period14;
+    EnhancedChargingSchedulePeriod period14;
     period14.startPeriod = 46800;
     period14.limit = 14.0;
     period14.numberPhases = 1;
-    ChargingSchedulePeriod period15;
+    EnhancedChargingSchedulePeriod period15;
     period15.startPeriod = 50400;
     period15.limit = 15.0;
     period15.numberPhases = 1;
-    ChargingSchedulePeriod period16;
+    EnhancedChargingSchedulePeriod period16;
     period16.startPeriod = 54000;
     period16.limit = 16.0;
     period16.numberPhases = 1;
-    ChargingSchedulePeriod period17;
+    EnhancedChargingSchedulePeriod period17;
     period17.startPeriod = 57600;
     period17.limit = 17.0;
     period17.numberPhases = 1;
-    ChargingSchedulePeriod period18;
+    EnhancedChargingSchedulePeriod period18;
     period18.startPeriod = 61200;
     period18.limit = 18.0;
     period18.numberPhases = 1;
-    ChargingSchedulePeriod period19;
+    EnhancedChargingSchedulePeriod period19;
     period19.startPeriod = 64800;
     period19.limit = 19.0;
     period19.numberPhases = 1;
-    ChargingSchedulePeriod period20;
+    EnhancedChargingSchedulePeriod period20;
     period20.startPeriod = 68400;
     period20.limit = 20.0;
     period20.numberPhases = 1;
-    ChargingSchedulePeriod period21;
+    EnhancedChargingSchedulePeriod period21;
     period21.startPeriod = 72000;
     period21.limit = 21.0;
     period21.numberPhases = 1;
-    ChargingSchedulePeriod period22;
+    EnhancedChargingSchedulePeriod period22;
     period22.startPeriod = 75600;
     period22.limit = 22.0;
     period22.numberPhases = 1;
-    ChargingSchedulePeriod period23;
+    EnhancedChargingSchedulePeriod period23;
     period23.startPeriod = 79200;
     period23.limit = 23.0;
     period23.numberPhases = 1;
-    ChargingSchedulePeriod period24;
+    EnhancedChargingSchedulePeriod period24;
     period24.startPeriod = 82800;
     period24.limit = 24.0;
     period24.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1,  period2,  period3,  period4,  period5,  period6,  period7,  period8,
                                        period9,  period10, period11, period12, period13, period14, period15, period16,
                                        period17, period18, period19, period20, period21, period22, period23, period24};
@@ -193,8 +196,8 @@ TEST_F(CompositeScheduleTestFixtureV2, FoundationTest_Grid) {
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -209,19 +212,19 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredTest_SameStartTime) {
         const DateTime start_time = ocpp::DateTime("2024-01-18T18:04:00");
         const DateTime end_time = ocpp::DateTime("2024-01-18T18:22:00");
 
-        ChargingSchedulePeriod period;
+        EnhancedChargingSchedulePeriod period;
         period.startPeriod = 0;
         period.limit = 19.0;
         period.numberPhases = 1;
-        CompositeSchedule expected;
+        EnhancedCompositeSchedule expected;
         expected.chargingSchedulePeriod = {period};
         expected.evseId = DEFAULT_EVSE_ID;
         expected.duration = 1080;
         expected.scheduleStart = start_time;
         expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-        CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                         ChargingRateUnitEnum::W, false, false);
+        auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
+                                                            ChargingRateUnitEnum::W, false, false);
 
         ASSERT_EQ(actual, expected);
     }
@@ -231,23 +234,24 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredTest_SameStartTime) {
         const DateTime start_time = ocpp::DateTime("2024-01-17T18:04:00");
         const DateTime end_time = ocpp::DateTime("2024-01-17T18:33:00");
 
-        ChargingSchedulePeriod period1;
+        EnhancedChargingSchedulePeriod period1;
         period1.startPeriod = 0;
         period1.limit = 2000.0;
         period1.numberPhases = 1;
-        ChargingSchedulePeriod period2;
+        period1.stackLevel = 1;
+        EnhancedChargingSchedulePeriod period2;
         period2.startPeriod = 1080;
         period2.limit = 19.0;
         period2.numberPhases = 1;
-        CompositeSchedule expected;
+        EnhancedCompositeSchedule expected;
         expected.chargingSchedulePeriod = {period1, period2};
         expected.evseId = DEFAULT_EVSE_ID;
         expected.duration = 1740;
         expected.scheduleStart = start_time;
         expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-        CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                         ChargingRateUnitEnum::W, false, false);
+        auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
+                                                            ChargingRateUnitEnum::W, false, false);
 
         ASSERT_EQ(actual, expected);
     }
@@ -257,28 +261,29 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredTest_SameStartTime) {
         const DateTime start_time = ocpp::DateTime("2024-01-17T18:04:00");
         const DateTime end_time = ocpp::DateTime("2024-01-17T19:04:00");
 
-        ChargingSchedulePeriod period1;
+        EnhancedChargingSchedulePeriod period1;
         period1.startPeriod = 0;
         period1.limit = 2000.0;
         period1.numberPhases = 1;
-        ChargingSchedulePeriod period2;
+        period1.stackLevel = 1;
+        EnhancedChargingSchedulePeriod period2;
         period2.startPeriod = 1080;
         period2.limit = 19.0;
         period2.numberPhases = 1;
-        ChargingSchedulePeriod period3;
+        EnhancedChargingSchedulePeriod period3;
         period3.startPeriod = 3360;
         period3.limit = 20.0;
         period3.numberPhases = 1;
 
-        CompositeSchedule expected;
+        EnhancedCompositeSchedule expected;
         expected.chargingSchedulePeriod = {period1, period2, period3};
         expected.evseId = DEFAULT_EVSE_ID;
         expected.duration = 3600;
         expected.scheduleStart = start_time;
         expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-        CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                         ChargingRateUnitEnum::W, false, false);
+        auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
+                                                            ChargingRateUnitEnum::W, false, false);
 
         ASSERT_EQ(actual, expected);
     }
@@ -292,19 +297,20 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredRecurringTest_FutureStartTime) {
     const DateTime start_time = ocpp::DateTime("2024-02-17T18:04:00");
     const DateTime end_time = ocpp::DateTime("2024-02-17T18:05:00");
 
-    ChargingSchedulePeriod period;
+    EnhancedChargingSchedulePeriod period;
     period.startPeriod = 0;
     period.limit = 2000.0;
     period.numberPhases = 1;
-    CompositeSchedule expected;
+    period.stackLevel = 1;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 60;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -316,22 +322,23 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredTest_PreviousStartTime) {
 
     const DateTime start_time = ocpp::DateTime("2024-01-17T18:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-17T18:05:00");
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = DEFAULT_LIMIT_WATT;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 240;
     period2.limit = 2000;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    period2.stackLevel = 1;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 300;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -343,31 +350,32 @@ TEST_F(CompositeScheduleTestFixtureV2, LayeredRecurringTest_PreviousStartTime) {
 
     const DateTime start_time = ocpp::DateTime("2024-02-19T18:00:00");
     const DateTime end_time = ocpp::DateTime("2024-02-19T19:04:00");
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 19.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 240;
     period2.limit = 2000;
     period2.numberPhases = 1;
-    ChargingSchedulePeriod period3;
+    period2.stackLevel = 1;
+    EnhancedChargingSchedulePeriod period3;
     period3.startPeriod = 1320;
     period3.limit = 19.0;
     period3.numberPhases = 1;
-    ChargingSchedulePeriod period4;
+    EnhancedChargingSchedulePeriod period4;
     period4.startPeriod = 3600;
     period4.limit = 20.0;
     period4.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2, period3, period4};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 3840;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -385,27 +393,28 @@ TEST_F(CompositeScheduleTestFixtureV2, ValidateBaselineProfileVector) {
 
     evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 2000.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    period1.stackLevel = 1;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 1020;
     period2.limit = 11000.0;
     period2.numberPhases = 3;
-    ChargingSchedulePeriod period3;
+    EnhancedChargingSchedulePeriod period3;
     period3.startPeriod = 25140;
     period3.limit = 6000.0;
     period3.numberPhases = 3;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2, period3};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 43140;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -419,19 +428,20 @@ TEST_F(CompositeScheduleTestFixtureV2, RelativeProfile_minutia) {
     this->evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
     this->evse_manager->get_evse(DEFAULT_EVSE_ID).get_transaction()->start_time = start_time;
 
-    ChargingSchedulePeriod period;
+    EnhancedChargingSchedulePeriod period;
     period.startPeriod = 0;
     period.limit = 2000.0;
     period.numberPhases = 1;
-    CompositeSchedule expected;
+    period.stackLevel = 1;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 3600;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -445,23 +455,24 @@ TEST_F(CompositeScheduleTestFixtureV2, RelativeProfile_e2e) {
     this->evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
     this->evse_manager->get_evse(DEFAULT_EVSE_ID).get_transaction()->start_time = start_time;
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 2000.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    period1.stackLevel = 1;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3601;
     period2.limit = 7.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 3660;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -474,27 +485,28 @@ TEST_F(CompositeScheduleTestFixtureV2, DemoCaseOne_17th) {
     const DateTime start_time = ocpp::DateTime("2024-01-17T18:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-18T06:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 2000.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    period1.stackLevel = 1;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 1080;
     period2.limit = 11000.0;
     period2.numberPhases = 1;
-    ChargingSchedulePeriod period3;
+    EnhancedChargingSchedulePeriod period3;
     period3.startPeriod = 25200;
     period3.limit = 6000.0;
     period3.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2, period3};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 43200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -507,23 +519,23 @@ TEST_F(CompositeScheduleTestFixtureV2, DemoCaseOne_19th) {
     const DateTime start_time = ocpp::DateTime("2024-01-19T18:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-20T06:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 11000.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 25200;
     period2.limit = 6000.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 43200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -537,23 +549,23 @@ TEST_F(CompositeScheduleTestFixtureV2, MaxOverridesHigherLimits) {
     const DateTime start_time = ocpp::DateTime("2024-01-17T00:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-17T02:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 10.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3600;
     period2.limit = 20.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 7200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
     ASSERT_EQ(actual, expected);
 }
 
@@ -566,23 +578,24 @@ TEST_F(CompositeScheduleTestFixtureV2, MaxOverridenByLowerLimits) {
     const DateTime start_time = ocpp::DateTime("2024-01-17T22:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-18T00:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 230.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3600;
     period2.limit = 10.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    period2.stackLevel = 1;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 7200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
     ASSERT_EQ(actual, expected);
 }
 
@@ -595,23 +608,23 @@ TEST_F(CompositeScheduleTestFixtureV2, ExternalOverridesHigherLimits) {
     const DateTime start_time = ocpp::DateTime("2024-01-17T00:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-17T02:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 10.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3600;
     period2.limit = 20.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 7200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
     ASSERT_EQ(actual, expected);
 }
 
@@ -624,23 +637,24 @@ TEST_F(CompositeScheduleTestFixtureV2, ExternalOverridenByLowerLimits) {
     const DateTime start_time = ocpp::DateTime("2024-01-17T22:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-18T00:00:00");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 230.0;
     period1.numberPhases = 1;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 3600;
     period2.limit = 10.0;
     period2.numberPhases = 1;
-    CompositeSchedule expected;
+    period2.stackLevel = 1;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 7200;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::W;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
     ASSERT_EQ(actual, expected);
 }
 
@@ -653,39 +667,39 @@ TEST_F(CompositeScheduleTestFixtureV2, OCTT_TC_K_41_CS) {
     const DateTime start_time = ocpp::DateTime("2024-08-21T12:24:40");
     const DateTime end_time = ocpp::DateTime("2024-08-21T12:31:20");
 
-    ChargingSchedulePeriod period1;
+    EnhancedChargingSchedulePeriod period1;
     period1.startPeriod = 0;
     period1.limit = 8.0;
     period1.numberPhases = 3;
-    ChargingSchedulePeriod period2;
+    EnhancedChargingSchedulePeriod period2;
     period2.startPeriod = 46;
     period2.limit = 10.0;
     period2.numberPhases = 3;
-    ChargingSchedulePeriod period3;
+    EnhancedChargingSchedulePeriod period3;
     period3.startPeriod = 196;
     period3.limit = 6.0;
     period3.numberPhases = 3;
-    ChargingSchedulePeriod period4;
+    EnhancedChargingSchedulePeriod period4;
     period4.startPeriod = 236;
     period4.limit = 10.0;
     period4.numberPhases = 3;
-    ChargingSchedulePeriod period5;
+    EnhancedChargingSchedulePeriod period5;
     period5.startPeriod = 260;
     period5.limit = 8.0;
     period5.numberPhases = 3;
-    ChargingSchedulePeriod period6;
+    EnhancedChargingSchedulePeriod period6;
     period6.startPeriod = 300;
     period6.limit = 10.0;
     period6.numberPhases = 3;
-    CompositeSchedule expected;
+    EnhancedCompositeSchedule expected;
     expected.chargingSchedulePeriod = {period1, period2, period3, period4, period5, period6};
     expected.evseId = DEFAULT_EVSE_ID;
     expected.duration = 400;
     expected.scheduleStart = start_time;
     expected.chargingRateUnit = ChargingRateUnitEnum::A;
 
-    CompositeSchedule actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, false);
+    auto actual = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, false);
 
     ASSERT_EQ(actual, expected);
 }
@@ -696,8 +710,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleStationMaxForEvse0) {
     const DateTime start_time = ocpp::DateTime("2024-08-21T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-08-21T09:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, false);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, false);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -721,8 +735,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleTxDefaultProfileForEvse0WithSingleE
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -749,8 +763,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleTxDefaultProfileForEvse0WithMultipl
 
     this->reconfigure_for_nr_of_evses(nr_of_evses);
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -778,8 +792,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleTxDefaultProfileForEvse0WithMultipl
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -806,8 +820,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleTxDefaultProfileWithStationMaxForEv
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:01:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:01:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -837,8 +851,8 @@ TEST_F(CompositeScheduleTestFixtureV2, SingleTxDefaultProfileWithStationMaxForEv
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:01:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:01:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -868,8 +882,8 @@ TEST_F(CompositeScheduleTestFixtureV2, TxProfilePerEvseWithMultipleEvses) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:01:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:01:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -896,8 +910,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_16A_1P) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T00:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T01:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -920,8 +934,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_16A_3P) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T01:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T02:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -947,8 +961,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_10A_1P) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T02:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T03:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -971,8 +985,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_10A_3P) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T03:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T04:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -997,8 +1011,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_10A_1P_RequestPower
     const DateTime start_time = ocpp::DateTime("2024-01-02T02:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T03:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -1021,8 +1035,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingCurrentAndPower_10A_3P_RequestPower
     const DateTime start_time = ocpp::DateTime("2024-01-02T03:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T04:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::W, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -1052,8 +1066,8 @@ TEST_F(CompositeScheduleTestFixtureV2, TxProfilePerEvseWithMultipleEvses_Differe
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T09:00:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, STATION_WIDE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, STATION_WIDE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -1078,8 +1092,8 @@ TEST_F(CompositeScheduleTestFixtureV2, MixingNumberOfPhasesOnSingleEvse) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T00:40:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T01:40:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -1103,8 +1117,8 @@ TEST_F(CompositeScheduleTestFixtureV2, NoGapsWithSequentialProfiles) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T08:20:00");
 
-    CompositeSchedule result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
-                                                                     ChargingRateUnitEnum::A, false, true);
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::A,
+                                                        false, true);
 
     EXPECT_EQ(result.evseId, DEFAULT_EVSE_ID);
     EXPECT_EQ(result.scheduleStart, start_time);
@@ -1130,7 +1144,7 @@ TEST_F(CompositeScheduleTestFixtureV2, TxDefaultConnector0) {
     const DateTime start_time = ocpp::DateTime("2024-01-02T08:00:00");
     const DateTime end_time = ocpp::DateTime("2024-01-02T08:20:00");
 
-    CompositeSchedule result_con0 =
+    auto result_con0 =
         handler->calculate_composite_schedule(start_time, end_time, 0, ChargingRateUnitEnum::W, false, true);
 
     EXPECT_EQ(result_con0.evseId, STATION_WIDE_ID);
@@ -1143,7 +1157,7 @@ TEST_F(CompositeScheduleTestFixtureV2, TxDefaultConnector0) {
                                      PeriodEquals(210, 12000.0F), PeriodEquals(280, 3000.0F),
                                      PeriodEquals(350, 10000.0F)));
 
-    CompositeSchedule result_con1 =
+    auto result_con1 =
         handler->calculate_composite_schedule(start_time, end_time, 1, ChargingRateUnitEnum::W, false, true);
 
     EXPECT_EQ(result_con1.evseId, 1);
@@ -1156,7 +1170,7 @@ TEST_F(CompositeScheduleTestFixtureV2, TxDefaultConnector0) {
                                      PeriodEquals(210, 6000.0F), PeriodEquals(280, 1500.0F),
                                      PeriodEquals(350, 5000.0F)));
 
-    CompositeSchedule result_con2 =
+    auto result_con2 =
         handler->calculate_composite_schedule(start_time, end_time, 2, ChargingRateUnitEnum::W, false, true);
 
     EXPECT_EQ(result_con2.evseId, 2);
@@ -1175,7 +1189,7 @@ TEST_F(CompositeScheduleTestFixtureV2, TxDefaultConnector0) {
 
     this->evse_manager->open_transaction(1, "TX_ID_12345", tx_start_time);
 
-    CompositeSchedule result_con1_tx_active =
+    auto result_con1_tx_active =
         handler->calculate_composite_schedule(request_time, end_time, 1, ChargingRateUnitEnum::W, false, true);
 
     EXPECT_EQ(result_con1_tx_active.evseId, 1);
@@ -1263,13 +1277,15 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_Online) {
     const auto end_time = ocpp::DateTime{"2024-01-18T06:00:00"};
 
     // Profile with CentralSetpoint has higher StackLevel and therefore is preferred
-    ChargingSchedulePeriod expected_period{};
+    EnhancedChargingSchedulePeriod expected_period{};
     expected_period.limit = 2000.0;
     expected_period.numberPhases = 3;
     expected_period.setpoint = -2000.0;
+    expected_period.stackLevel = 2;
+    expected_period.operationMode = OperationModeEnum::CentralSetpoint;
     expected_period.startPeriod = 0;
 
-    CompositeSchedule expected_schedule{};
+    EnhancedCompositeSchedule expected_schedule{};
     expected_schedule.chargingSchedulePeriod = {expected_period};
     expected_schedule.evseId = DEFAULT_EVSE_ID;
     expected_schedule.duration = 43200;
@@ -1299,13 +1315,15 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineNotLongEnough) {
     const auto end_time = ocpp::DateTime{"2024-01-18T06:00:00"};
 
     // Profile with CentralSetpoint is preferred, because it is still valid in the offline case
-    ChargingSchedulePeriod expected_period{};
+    EnhancedChargingSchedulePeriod expected_period{};
     expected_period.limit = 2000.0;
     expected_period.numberPhases = 3;
     expected_period.setpoint = -2000.0;
+    expected_period.stackLevel = 2;
+    expected_period.operationMode = OperationModeEnum::CentralSetpoint;
     expected_period.startPeriod = 0;
 
-    CompositeSchedule expected_schedule{};
+    EnhancedCompositeSchedule expected_schedule{};
     expected_schedule.chargingSchedulePeriod = {expected_period};
     expected_schedule.evseId = DEFAULT_EVSE_ID;
     expected_schedule.duration = 43200;
@@ -1336,12 +1354,13 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong) {
 
     // Profile with ChargingOnly is preferred, because the other one is invalid now that we have been offline for too
     // long
-    ChargingSchedulePeriod expected_period{};
+    EnhancedChargingSchedulePeriod expected_period{};
     expected_period.limit = 2000.0;
     expected_period.numberPhases = 3;
     expected_period.startPeriod = 0;
+    expected_period.stackLevel = 1;
 
-    CompositeSchedule expected_schedule{};
+    EnhancedCompositeSchedule expected_schedule{};
     expected_schedule.chargingSchedulePeriod = {expected_period};
     expected_schedule.evseId = DEFAULT_EVSE_ID;
     expected_schedule.duration = 43200;
@@ -1371,12 +1390,13 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong_ValidAfter
     const auto end_time = ocpp::DateTime{"2024-01-18T06:00:00"};
 
     // Profile with ChargingOnly is preferred after being offline for too long
-    ChargingSchedulePeriod expected_period{};
+    EnhancedChargingSchedulePeriod expected_period{};
     expected_period.limit = 2000.0;
     expected_period.numberPhases = 3;
     expected_period.startPeriod = 0;
+    expected_period.stackLevel = 1;
 
-    CompositeSchedule expected_schedule{};
+    EnhancedCompositeSchedule expected_schedule{};
     expected_schedule.chargingSchedulePeriod = {expected_period};
     expected_schedule.evseId = DEFAULT_EVSE_ID;
     expected_schedule.duration = 43200;
@@ -1395,6 +1415,8 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong_ValidAfter
 
     // Profile with CentralSetpoint is preferred after being online again
     expected_period.setpoint = -2000.0;
+    expected_period.stackLevel = 2;
+    expected_period.operationMode = OperationModeEnum::CentralSetpoint;
     expected_schedule.chargingSchedulePeriod = {expected_period};
 
     actual_schedule = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID,
@@ -1422,12 +1444,13 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong_InvalidAft
     const auto start_time = ocpp::DateTime{"2024-01-17T18:00:00"};
     const auto end_time = ocpp::DateTime{"2024-01-18T06:00:00"};
 
-    ChargingSchedulePeriod expected_period{};
+    EnhancedChargingSchedulePeriod expected_period{};
     expected_period.limit = 2000.0;
     expected_period.numberPhases = 3;
     expected_period.startPeriod = 0;
+    expected_period.stackLevel = 1;
 
-    CompositeSchedule expected_schedule{};
+    EnhancedCompositeSchedule expected_schedule{};
     expected_schedule.chargingSchedulePeriod = {expected_period};
     expected_schedule.evseId = DEFAULT_EVSE_ID;
     expected_schedule.duration = 43200;
@@ -1438,6 +1461,609 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong_InvalidAft
                                                                  ChargingRateUnitEnum::W, false, false);
 
     ASSERT_EQ(actual_schedule, expected_schedule);
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerDeletesAtDeadline) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified, disconnected] {
+        EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+        EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+        notified->set_value();
+    });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerKeepsReusableProfile) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = false;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified, disconnected] {
+        EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+        EXPECT_EQ(database_handler->get_all_charging_profiles().size(), 1);
+        notified->set_value();
+    });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    const auto remaining = database_handler->get_all_charging_profiles();
+    ASSERT_EQ(remaining.size(), 1);
+    EXPECT_EQ(remaining.front().id, profile.id);
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerDeletesAtSeparateDeadlines) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    profile.id += 1;
+    profile.maxOfflineDuration = 2;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_notification = first->get_future();
+    auto second_notification = second->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call())
+        .Times(2)
+        .WillOnce([this, first, disconnected, id = profile.id] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+            const auto remaining = database_handler->get_all_charging_profiles();
+            EXPECT_EQ(remaining.size(), 1);
+            if (!remaining.empty()) {
+                EXPECT_EQ(remaining.front().id, id);
+            }
+            first->set_value();
+        })
+        .WillOnce([this, second, disconnected] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(2));
+            EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+            second->set_value();
+        });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(first_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    ASSERT_EQ(second_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerCancelledOnReconnect) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = false;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    profile.id += 1;
+    profile.maxOfflineDuration = 3;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto first = std::make_shared<std::promise<void>>();
+    auto restored = std::make_shared<std::promise<void>>();
+    auto restored_notification = restored->get_future();
+    auto unexpected = std::make_shared<std::promise<void>>();
+    auto calls = std::make_shared<std::atomic<unsigned>>(0);
+    auto first_notification = first->get_future();
+    auto unexpected_notification = unexpected->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).WillRepeatedly([first, restored, unexpected, calls] {
+        const auto count = ++*calls;
+        if (count == 1) {
+            first->set_value();
+        } else if (count == 2) {
+            restored->set_value();
+        } else if (count == 3) {
+            unexpected->set_value();
+        }
+    });
+    smart_charging.on_connection_lost();
+    ASSERT_EQ(first_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+
+    const auto offline_duration = std::chrono::steady_clock::now() - disconnected;
+    ASSERT_LT(offline_duration, std::chrono::seconds(3));
+    smart_charging.on_connection_restored(offline_duration);
+    ASSERT_EQ(restored_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_EQ(unexpected_notification.wait_until(disconnected + std::chrono::milliseconds(3250)),
+              std::future_status::timeout);
+    EXPECT_EQ(calls->load(), 2);
+    EXPECT_EQ(database_handler->get_all_charging_profiles().size(), 2);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_DisconnectDatabaseFailureRetriesOffThread) {
+    const auto disconnected = std::chrono::steady_clock::now();
+    const auto caller = std::this_thread::get_id();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto retried = std::make_shared<std::promise<void>>();
+    auto retry = retried->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([caller]() -> std::vector<ChargingProfile> {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([retried, disconnected] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+            retried->set_value();
+            return std::vector<ChargingProfile>{};
+        });
+    EXPECT_NO_THROW(handler->on_connection_lost());
+    EXPECT_EQ(retry.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectDatabaseFailureRetriesOffThread) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    const auto caller = std::this_thread::get_id();
+    const auto started = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(started - std::chrono::seconds(900)));
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([caller]() -> std::vector<ChargingProfile> {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([caller, started, profile] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            EXPECT_GE(std::chrono::steady_clock::now(), started + std::chrono::seconds(1));
+            return std::vector<ChargingProfile>{profile};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified, caller] {
+        EXPECT_NE(std::this_thread::get_id(), caller);
+        notified->set_value();
+    });
+    EXPECT_NO_THROW(handler->on_connection_restored(std::chrono::seconds(900)));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ShorterReconnectRetainsPendingDeletions) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_scan = first->get_future();
+    auto second_scan = second->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([first]() -> std::vector<ChargingProfile> {
+            first->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([second]() -> std::vector<ChargingProfile> {
+            second->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{profile}));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+
+    handler->on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(first_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(300)));
+    handler->on_connection_lost();
+    ASSERT_EQ(second_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler->on_connection_restored(std::chrono::seconds(300));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_PendingReconnectExcludesExpiredProfile) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+    ON_CALL(*database_handler, get_charging_profiles_for_evse(DEFAULT_EVSE_ID))
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+    ASSERT_EQ(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).size(), 1);
+
+    auto scanned = std::make_shared<std::promise<void>>();
+    auto scan = scanned->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([scanned]() -> std::vector<ChargingProfile> {
+            scanned->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillRepeatedly(testing::Throw(std::runtime_error("database unavailable")));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Return(std::vector<std::int32_t>{profile.id}));
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+
+    handler->on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(300)));
+    handler->on_connection_lost();
+    EXPECT_TRUE(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectCallbackFailureRetainsNotification) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    const auto caller = std::this_thread::get_id();
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{profile}))
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{}));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    auto first_attempt = std::make_shared<std::chrono::steady_clock::time_point>();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call())
+        .Times(2)
+        .WillOnce([first_attempt, caller] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            *first_attempt = std::chrono::steady_clock::now();
+            throw std::runtime_error("consumer unavailable");
+        })
+        .WillOnce([first_attempt, notified, caller] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            EXPECT_GE(std::chrono::steady_clock::now() - *first_attempt, std::chrono::seconds(1));
+            notified->set_value();
+        });
+    EXPECT_NO_THROW(handler->on_connection_restored(std::chrono::seconds(900)));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_PartialDeletionRetainsNotification) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    auto second = profile;
+    second.id += 1;
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto deleted = std::make_shared<std::atomic<bool>>(false);
+    ON_CALL(*database_handler, get_all_charging_profiles()).WillByDefault([profile, second, deleted] {
+        return deleted->load() ? std::vector<ChargingProfile>{second} : std::vector<ChargingProfile>{profile, second};
+    });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce([deleted, profile] {
+            deleted->store(true);
+            return std::vector<std::int32_t>{profile.id};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(second.id), testing::_))
+        .WillOnce(testing::Throw(std::runtime_error("delete failed")))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    handler->on_connection_lost();
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_CallbackFailureRetriesWithBackoff) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    profile.invalidAfterOfflineDuration = false;
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now()));
+    ON_CALL(*database_handler, get_all_charging_profiles())
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    auto attempts = std::make_shared<std::vector<std::chrono::steady_clock::time_point>>();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(3).WillRepeatedly([attempts, notified] {
+        attempts->push_back(std::chrono::steady_clock::now());
+        if (attempts->size() < 3) {
+            throw std::runtime_error("consumer unavailable");
+        }
+        EXPECT_GE(attempts->at(1) - attempts->at(0), std::chrono::seconds(1));
+        EXPECT_GE(attempts->at(2) - attempts->at(1), std::chrono::seconds(2));
+        notified->set_value();
+    });
+    handler->on_connection_lost();
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(6)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ProfileAddedAfterDisconnectArmsTimer) {
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto scanned = std::make_shared<std::promise<void>>();
+    auto scan = scanned->get_future();
+    auto stored = std::make_shared<std::atomic<bool>>(false);
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    profile.invalidAfterOfflineDuration = false;
+    ON_CALL(*database_handler, get_all_charging_profiles()).WillByDefault([stored, scanned, profile] {
+        if (stored->load()) {
+            return std::vector<ChargingProfile>{profile};
+        }
+        scanned->set_value();
+        return std::vector<ChargingProfile>{};
+    });
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    handler->on_connection_lost();
+    ASSERT_EQ(scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    stored->store(true);
+    ASSERT_EQ(handler->add_profile(profile, DEFAULT_EVSE_ID).status, ChargingProfileStatusEnum::Accepted);
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectDeletesExpiredProfile) {
+    const auto profiles = SmartChargingTestUtils::get_charging_profiles_from_directory(
+        BASE_JSON_PATH_V2 + "/offline_duration/invalid_after_offline_duration/");
+    for (auto profile : profiles) {
+        profile.stackLevel -= 1;
+        database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    }
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+
+    const auto remaining = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
+    ASSERT_EQ(remaining.size(), 1);
+    EXPECT_EQ(remaining.front().id, 1);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::time_point{}));
+    const auto schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 0);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().limit, 2000.0);
+    EXPECT_FALSE(schedule.chargingSchedulePeriod.front().setpoint.has_value());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ZeroExpiresWithinOneSecond) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+
+    EXPECT_CALL(connectivity_manager, get_time_disconnected()).WillRepeatedly(testing::Invoke([] {
+        return std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
+    }));
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+    testing::Mock::VerifyAndClearExpectations(&set_charging_profiles_callback_mock);
+
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::milliseconds(100));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectKeepsReusableProfile) {
+    const auto profiles = SmartChargingTestUtils::get_charging_profiles_from_directory(
+        BASE_JSON_PATH_V2 + "/offline_duration/valid_after_offline_duration/");
+    for (const auto& profile : profiles) {
+        database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    }
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    const auto offline_schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(offline_schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(offline_schedule.chargingSchedulePeriod.front().stackLevel, 1);
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified] {
+        const auto schedule = smart_charging.calculate_composite_schedule(
+            ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+            ChargingRateUnitEnum::W, false, false);
+        ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+        EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 2);
+        notified->set_value();
+    });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_EQ(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).size(), 2);
+
+    // A later outage must not be mistaken for the outage already handled on reconnect.
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(800)));
+    const auto schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 1);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectKeepsUnexpiredProfile) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_scan = first->get_future();
+    auto second_scan = second->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([first, profile] {
+            first->set_value();
+            return std::vector<ChargingProfile>{profile};
+        })
+        .WillOnce([second, profile] {
+            second->set_value();
+            return std::vector<ChargingProfile>{profile};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::_, testing::_)).Times(0);
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    handler->on_connection_restored(std::chrono::seconds(300));
+    ASSERT_EQ(first_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler->on_connection_restored(std::chrono::seconds(600));
+    EXPECT_EQ(second_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectDeletesAcrossEvsesOnce) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    for (const auto evse_id : {0, 1, 2}) {
+        profile.id = evse_id + 10;
+        database_handler->insert_or_update_charging_profile(evse_id, profile);
+    }
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_OfflineDeletionDoesNotNotify) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    EXPECT_CALL(connectivity_manager, get_time_disconnected())
+        .WillRepeatedly(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+}
+
+TEST_F(CompositeScheduleTestFixtureV2, Q03_CentralSetpoint_PreservedInCompositeSchedule) {
+    // Create a TxProfile with CentralSetpoint operationMode and a setpoint
+    EnhancedChargingSchedulePeriod period{};
+    period.startPeriod = 0;
+    period.limit = 7000.0F;
+    period.setpoint = 5000.0F;
+    period.operationMode = OperationModeEnum::CentralSetpoint;
+    period.numberPhases = 3;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, {period.get()}, ocpp::DateTime("2024-01-17T17:00:00")), TX_ID);
+
+    ON_CALL(*database_handler, get_charging_profiles_for_evse(DEFAULT_EVSE_ID))
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    const DateTime start_time = ocpp::DateTime("2024-01-17T17:00:00");
+    const DateTime end_time = ocpp::DateTime("2024-01-17T18:00:00");
+
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+
+    ASSERT_FALSE(result.chargingSchedulePeriod.empty());
+    EXPECT_EQ(result.chargingSchedulePeriod.front().operationMode, OperationModeEnum::CentralSetpoint);
+    EXPECT_EQ(result.chargingSchedulePeriod.front().setpoint, 5000.0F);
+}
+
+TEST_F(CompositeScheduleTestFixtureV2, Q03_NoSetpoint_OperationModeIsNullopt) {
+    // Create a TxProfile with only a limit (no setpoint, no operationMode)
+    EnhancedChargingSchedulePeriod period{};
+    period.startPeriod = 0;
+    period.limit = 7000.0F;
+    period.numberPhases = 3;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, {period.get()}, ocpp::DateTime("2024-01-17T17:00:00")), TX_ID);
+
+    ON_CALL(*database_handler, get_charging_profiles_for_evse(DEFAULT_EVSE_ID))
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    const DateTime start_time = ocpp::DateTime("2024-01-17T17:00:00");
+    const DateTime end_time = ocpp::DateTime("2024-01-17T18:00:00");
+
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+
+    ASSERT_FALSE(result.chargingSchedulePeriod.empty());
+    EXPECT_FALSE(result.chargingSchedulePeriod.front().operationMode.has_value());
+}
+
+TEST_F(CompositeScheduleTestFixtureV2, Q03_MultiplePeriodsWithDifferentOperationModes) {
+    // Two periods: first ChargingOnly, second CentralSetpoint
+    EnhancedChargingSchedulePeriod period1{};
+    period1.startPeriod = 0;
+    period1.limit = 7000.0F;
+    period1.operationMode = OperationModeEnum::ChargingOnly;
+    period1.numberPhases = 3;
+
+    EnhancedChargingSchedulePeriod period2{};
+    period2.startPeriod = 1800;
+    period2.setpoint = 5000.0F;
+    period2.limit = 7000.0F;
+    period2.operationMode = OperationModeEnum::CentralSetpoint;
+    period2.numberPhases = 3;
+
+    auto profile =
+        create_charging_profile(DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+                                create_charge_schedule(ChargingRateUnitEnum::W, {period1.get(), period2.get()},
+                                                       ocpp::DateTime("2024-01-17T17:00:00")),
+                                TX_ID);
+
+    ON_CALL(*database_handler, get_charging_profiles_for_evse(DEFAULT_EVSE_ID))
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    const DateTime start_time = ocpp::DateTime("2024-01-17T17:00:00");
+    const DateTime end_time = ocpp::DateTime("2024-01-17T18:00:00");
+
+    auto result = handler->calculate_composite_schedule(start_time, end_time, DEFAULT_EVSE_ID, ChargingRateUnitEnum::W,
+                                                        false, false);
+
+    ASSERT_GE(result.chargingSchedulePeriod.size(), 2);
+    // nullopt operationMode is equivalent to ChargingOnly; effective_mode()
+    // normalizes the comparison so an explicit ChargingOnly round-trips
+    // through the pipeline.
+    EXPECT_EQ(effective_mode(result.chargingSchedulePeriod[0].operationMode), OperationModeEnum::ChargingOnly);
+    EXPECT_EQ(result.chargingSchedulePeriod[1].operationMode, OperationModeEnum::CentralSetpoint);
+    EXPECT_EQ(result.chargingSchedulePeriod[1].setpoint, 5000.0F);
 }
 
 } // namespace ocpp::v2

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "error_wrapper.hpp"
 #include <utils/date.hpp>
@@ -38,7 +38,8 @@ types::error_history::State framework_to_internal_api(Everest::error::State cons
     case SrcT::ClearedByReboot:
         return TarT::ClearedByReboot;
     }
-    throw std::out_of_range("Unexpected value for everest::lib::API::V1_0::types::error_history::State_External");
+    throw std::out_of_range("Unexpected value for "
+                            "everest::lib::API::V1_0::types::error_history::State_External");
 }
 
 types::error_history::ErrorObject framework_to_internal_api(Everest::error::Error const& val) {

@@ -3,6 +3,7 @@
 
 #include "evse_securityImpl.hpp"
 #include <everest/conversions/evse_security/conversions.hpp>
+#include <everest_api_types/telemetry/json_codec.hpp>
 
 namespace module {
 namespace main {
@@ -24,10 +25,22 @@ void evse_securityImpl::init() {
         private_key_password = this->mod->config.private_key_password;
     }
 
-    this->evse_security = std::make_unique<evse_security::EvseSecurity>(file_paths, private_key_password);
+    const auto max_fs_usage_bytes = static_cast<std::uintmax_t>(this->mod->config.max_fs_usage_bytes);
+    const auto max_fs_certificate_store_entries =
+        static_cast<std::uintmax_t>(this->mod->config.max_fs_certificate_store_entries);
+    const std::chrono::seconds csr_expiry(this->mod->config.csr_expiry_s);
+    const std::chrono::seconds garbage_collect_time(this->mod->config.garbage_collect_time_s);
+
+    this->evse_security = std::make_unique<evse_security::EvseSecurity>(
+        file_paths, private_key_password, max_fs_usage_bytes, max_fs_certificate_store_entries, csr_expiry,
+        garbage_collect_time);
 }
 
 void evse_securityImpl::ready() {
+    publish_cert_telemetry();
+}
+
+void evse_securityImpl::shutdown() {
 }
 
 types::evse_security::InstallCertificateResult
@@ -41,6 +54,7 @@ evse_securityImpl::handle_install_ca_certificate(std::string& certificate,
             update.operation = types::evse_security::CertificateStoreUpdateOperation::Installed;
             update.ca_certificate_type = certificate_type;
             this->publish_certificate_store_update(update);
+            this->publish_cert_telemetry();
         }
         return response;
     } catch (const std::out_of_range& e) {
@@ -68,6 +82,7 @@ evse_securityImpl::handle_delete_certificate(types::evse_security::CertificateHa
             }
 
             this->publish_certificate_store_update(update);
+            this->publish_cert_telemetry();
         }
 
         return result;
@@ -88,6 +103,7 @@ evse_securityImpl::handle_update_leaf_certificate(std::string& certificate_chain
             update.operation = types::evse_security::CertificateStoreUpdateOperation::Installed;
             update.leaf_certificate_type = certificate_type;
             this->publish_certificate_store_update(update);
+            this->publish_cert_telemetry();
         }
         return response;
     } catch (const std::out_of_range& e) {
@@ -284,6 +300,38 @@ bool evse_securityImpl::handle_verify_file_signature(std::string& file_path, std
         EVLOG_warning << e.what();
         return false;
     }
+}
+
+void evse_securityImpl::publish_cert_telemetry() {
+    if (!this->mod->info.telemetry_enabled || !this->evse_security) {
+        return;
+    }
+
+    everest::lib::API::V1_0::types::telemetry::CertTelemetry payload;
+
+    const int secc_count =
+        this->evse_security->get_count_of_installed_certificates({evse_security::CertificateType::V2GCertificateChain});
+    payload.secc_chain.num_files = secc_count;
+    payload.secc_chain.num_useful_files = secc_count;
+    payload.secc_chain.configured = secc_count > 0;
+    payload.secc_chain.synced = secc_count > 0;
+
+    const int mo_count =
+        this->evse_security->get_count_of_installed_certificates({evse_security::CertificateType::MORootCertificate});
+    payload.mo_root.num_files = mo_count;
+    payload.mo_root.num_useful_files = mo_count;
+    payload.mo_root.configured = mo_count > 0;
+    payload.mo_root.synced = mo_count > 0;
+
+    payload.config_complete = payload.secc_chain.configured && payload.mo_root.configured;
+    payload.sync_complete = payload.secc_chain.synced && payload.mo_root.synced;
+
+    const nlohmann::json json_payload = payload;
+    Everest::TelemetryMap telemetry;
+    for (const auto& [key, value] : json_payload.items()) {
+        telemetry.emplace(key, value);
+    }
+    this->mod->telemetry.publish("Cert", "status", telemetry);
 }
 
 } // namespace main

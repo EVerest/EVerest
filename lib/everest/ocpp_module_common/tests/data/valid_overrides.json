@@ -1,0 +1,4 @@
+{
+    "evse_manager/MREC4OverCurrentFailure": "OVERRIDE_CX004",
+    "custom/MyNewError": "CX999"
+}

@@ -1,11 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <ctime>
 #include <everest/io/event/timer_fd.hpp>
 #include <stdexcept>
 #include <sys/timerfd.h>
 #include <unistd.h>
+#include <utility>
 
 namespace everest::lib::io::event {
 
@@ -13,6 +14,11 @@ timer_fd::timer_fd() : m_fd(::timerfd_create(CLOCK_MONOTONIC, TFD_NONBLOCK)) {
     if (m_fd == -1) {
         throw std::runtime_error("failed to create an timerfd");
     }
+}
+
+// Runs before m_fd is destroyed, so the recorded descriptor is still the one the handler holds.
+timer_fd::~timer_fd() {
+    unregister_recorded_events();
 }
 
 timer_fd::operator int() const {
@@ -36,6 +42,15 @@ bool timer_fd::reset() {
     return set_timeout_ns(m_to_ns);
 }
 
+void timer_fd::set_single_shot(bool on) {
+    m_single_shot = on;
+}
+
+bool timer_fd::disarm() {
+    struct itimerspec timer {};
+    return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
+}
+
 bool timer_fd::set_timeout_ms(long long to) {
     return set_timeout_ns(1000 * 1000 * to);
 }
@@ -46,16 +61,37 @@ bool timer_fd::set_timeout_us(long long to) {
 
 bool timer_fd::set_timeout_ns(long long to) {
     m_to_ns = to;
-    struct itimerspec timer;
-    auto sec = to / 1000000000;
-    auto nano = to % 1000000000;
+    struct itimerspec timer {};
+    auto const sec = to / 1000000000LL;
+    auto const nano = to % 1000000000LL;
 
-    timer.it_interval.tv_nsec = nano;
-    timer.it_interval.tv_sec = sec;
-    timer.it_value.tv_nsec = nano;
     timer.it_value.tv_sec = sec;
+    timer.it_value.tv_nsec = nano;
+    if (m_single_shot) {
+        timer.it_interval.tv_sec = 0;
+        timer.it_interval.tv_nsec = 0;
+    } else {
+        timer.it_interval.tv_sec = sec;
+        timer.it_interval.tv_nsec = nano;
+    }
 
-    return timerfd_settime(m_fd, 0, &timer, NULL) == 0;
+    return ::timerfd_settime(m_fd, 0, &timer, nullptr) == 0;
+}
+
+bool timer_fd::has_recorded_registration() const {
+    return m_record.active();
+}
+
+void timer_fd::record_registration(std::shared_ptr<handler_liveness> handler, int fd) {
+    m_record.record(std::move(handler), fd);
+}
+
+bool timer_fd::unregister_recorded_events(std::shared_ptr<handler_liveness> const& handler) {
+    return m_record.drop_if(handler);
+}
+
+bool timer_fd::unregister_recorded_events() {
+    return m_record.drop();
 }
 
 } // namespace everest::lib::io::event

@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef DEVICE_MODEL_HPP
 #define DEVICE_MODEL_HPP
 
+#include <mutex>
 #include <type_traits>
 
 #include <everest/logging.hpp>
@@ -29,6 +30,12 @@ using on_monitor_updated = std::function<void(const VariableMonitoringMeta& upda
 class DeviceModel : public DeviceModelAbstract {
 
 private:
+    // Serializes access to device_model_map / device_model storage. Recursive: locked methods call back into
+    // public methods (e.g. via DeviceModelInterface& composites). Invariant: never held while listeners are
+    // invoked; set_value / clear_value / set_monitors copy listeners and payload, unlock, then notify, and
+    // no method may hold the mutex around a call into them.
+    mutable std::recursive_mutex mutex;
+
     DeviceModelMap device_model_map;
     std::unique_ptr<DeviceModelStorageInterface> device_model;
 
@@ -90,6 +97,14 @@ private:
     ///
     void check_required_variables();
 
+    /// \brief Resolve the identity for \p slot.
+    /// Per-slot Identity overrides SecurityCtrlr.Identity (B09.FR.16-18).
+    std::string resolve_identity(std::int32_t slot);
+
+    /// \brief Resolve the basic-auth password for \p slot.
+    /// Per-slot BasicAuthPassword overrides the global BasicAuthPassword (B09.FR.26-28).
+    std::optional<std::string> resolve_basic_auth_password(std::int32_t slot);
+
 public:
     /// \brief Constructor for the device model
     /// \param device_model_storage_interface pointer to a device model interface class
@@ -103,9 +118,14 @@ public:
                                     const AttributeEnum& attribute_enum, const std::string& value,
                                     const std::string& source, bool allow_read_only = false) override;
 
+    bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
+
     SetVariableStatusEnum set_read_only_value(const Component& component_id, const Variable& variable_id,
                                               const AttributeEnum& attribute_enum, const std::string& value,
                                               const std::string& source) override;
+
+    SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                      const AttributeEnum& attribute_enum, const std::string& source) override;
 
     std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,
                                                  const AttributeEnum& attribute_enum) override;
@@ -136,14 +156,35 @@ public:
     std::int32_t clear_custom_monitors() override;
 
     void register_variable_listener(on_variable_changed&& listener) override {
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
         variable_listener.push_back(std::move(listener));
     }
 
     void register_monitor_listener(on_monitor_updated&& listener) override {
+        std::lock_guard<std::recursive_mutex> lock(this->mutex);
         monitor_update_listener = std::move(listener);
     }
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
+
+    // ConnectivityManagerConfiguration interface
+    std::string get_network_configuration_priority() override;
+    void set_network_configuration_priority(const std::string& priority, const std::string& source) override;
+    std::optional<ocpp::v2::NetworkConnectionProfile> read_network_connection_profile(std::int32_t slot) override;
+    bool write_network_connection_profile(std::int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
+                                          const std::string& source) override;
+    void clear_network_connection_profile(std::int32_t slot) override;
+    bool get_allow_security_level_zero_connections() override;
+    std::int32_t get_security_profile() override;
+    std::optional<std::int32_t> get_network_config_timeout() override;
+    std::optional<WebsocketConnectionOptions> get_websocket_connection_options(std::int32_t slot) override;
+    void set_active_security_profile(std::int32_t security_profile, const std::string& source) override;
+    void set_active_network_profile_slot(std::int32_t slot, const std::string& source) override;
+    std::optional<std::int32_t> get_active_network_profile_slot() override;
+    void set_per_slot_ocpp_version(std::int32_t slot, const std::string& version, const std::string& source) override;
+    void set_security_ctrl_security_profile(std::int32_t security_profile, const std::string& source) override;
+    void set_security_ctrl_identity(const std::string& identity, const std::string& source) override;
+    void set_active_message_timeout(std::int32_t message_timeout_s, const std::string& source) override;
 };
 
 } // namespace v2

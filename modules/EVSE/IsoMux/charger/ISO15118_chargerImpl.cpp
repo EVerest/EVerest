@@ -151,6 +151,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_dc_renegotiation_started([this]() {
+        if (not mod->selected_iso20()) {
+            publish_dc_renegotiation_started(nullptr);
+        }
+    });
+    mod->r_iso20->subscribe_dc_renegotiation_started([this]() {
+        if (mod->selected_iso20()) {
+            publish_dc_renegotiation_started(nullptr);
+        }
+    });
+
     mod->r_iso2->subscribe_current_demand_finished([this]() {
         if (not mod->selected_iso20()) {
             publish_current_demand_finished(nullptr);
@@ -411,6 +422,17 @@ void ISO15118_chargerImpl::init() {
         }
     });
 
+    mod->r_iso2->subscribe_session_stop_res_sent([this](const auto action) {
+        if (not mod->selected_iso20()) {
+            publish_session_stop_res_sent(action);
+        }
+    });
+    mod->r_iso20->subscribe_session_stop_res_sent([this](const auto action) {
+        if (mod->selected_iso20()) {
+            publish_session_stop_res_sent(action);
+        }
+    });
+
     mod->r_iso2->subscribe_dlink_error([this]() {
         if (not mod->selected_iso20()) {
             publish_dlink_error(nullptr);
@@ -554,11 +576,11 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                bool& central_contract_validation_allowed) {
+                                                bool& central_contract_validation_allowed, bool& fake_dc_enabled) {
     mod->r_iso20->call_session_setup(payment_options, supported_certificate_service,
-                                     central_contract_validation_allowed);
-    mod->r_iso2->call_session_setup(payment_options, supported_certificate_service,
-                                    central_contract_validation_allowed);
+                                     central_contract_validation_allowed, fake_dc_enabled);
+    mod->r_iso2->call_session_setup(payment_options, supported_certificate_service, central_contract_validation_allowed,
+                                    fake_dc_enabled);
 }
 
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
@@ -590,7 +612,24 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     }
 }
 
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    // CP state is physical-layer information: broadcast to both children so whichever stack owns
+    // the session has it (the selection may also not have happened yet at plug-in time).
+    mod->r_iso20->call_cp_state_changed(cp_state);
+    mod->r_iso2->call_cp_state_changed(cp_state);
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
+    if (not value) {
+        // Data-link loss is a broadcast teardown: forward to both children so the
+        // active session's owner tears down regardless of the current selection.
+        // Out of scope (follow-up): keepalive on IsoMux's own EV-facing accepted
+        // socket and teardown of IsoMux's own proxy connection
+        // (connection/connection.cpp "v2g-session already running") on disconnect.
+        mod->r_iso20->call_dlink_ready(value);
+        mod->r_iso2->call_dlink_ready(value);
+        return;
+    }
     if (mod->selected_iso20()) {
         mod->r_iso20->call_dlink_ready(value);
     } else {

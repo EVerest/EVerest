@@ -1,5 +1,5 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+# Copyright Pionix GmbH and Contributors to EVerest
 
 set(EVEREST_CONFIG_ASSET_DIR "${CMAKE_CURRENT_LIST_DIR}/assets" CACHE INTERNAL "")
 

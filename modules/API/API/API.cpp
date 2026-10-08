@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "API.hpp"
 #include <everest/external_energy_limits/external_energy_limits.hpp>
+#include <everest/utils/yaml_loader.hpp>
 #include <utils/date.hpp>
-#include <utils/yaml_loader.hpp>
 
 namespace module {
 
@@ -304,6 +304,11 @@ SessionInfo::operator std::string() {
 }
 
 void API::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : API\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : use the EVerest API modules (evse_manager_consumer_API and others)";
+
     // ensure all evse_energy_sink(s) that are connected have an evse id mapping
     for (const auto& evse_sink : this->r_evse_energy_sink) {
         if (not evse_sink->get_mapping().has_value()) {
@@ -612,9 +617,9 @@ void API::init() {
     std::string var_ocpp_schedule = this->api_base + "ocpp/var/charging_schedules";
 
     if (this->r_ocpp.size() == 1) {
-        this->r_ocpp.at(0)->subscribe_is_connected([this](bool is_connected) {
+        this->r_ocpp.at(0)->subscribe_connection_status([this](const types::ocpp::ConnectionStatus& connection_status) {
             std::scoped_lock lock(ocpp_data_mutex);
-            if (is_connected) {
+            if (connection_status.connected) {
                 this->ocpp_connection_status = "connected";
             } else {
                 this->ocpp_connection_status = "disconnected";
@@ -758,6 +763,13 @@ void API::ready() {
             std::this_thread::sleep_until(next_tick);
         }
     });
+}
+
+void API::shutdown() {
+    this->running = false;
+    for (auto& api_thread : this->api_threads) {
+        api_thread.join();
+    }
 }
 
 } // namespace module

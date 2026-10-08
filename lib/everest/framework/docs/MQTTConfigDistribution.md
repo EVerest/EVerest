@@ -11,6 +11,13 @@ Afterwards they signal ready to the manager.
 The manager sends out the global ready signal
 once it has received all Module ready signals.
 
+Since the config-service refactor the module configurations are no longer
+parsed from the YAML config on every boot: the manager seeds a SQLite config
+database from the YAML config once, loads the active config slot from the
+database via the ConfigServiceCore and validates it against the manifests with
+ManagerConfig. Distribution to the modules is unchanged. See ConfigService.md
+for the config slot handling and the runtime configuration service.
+
 The following sequence diagram illustrates this startup process
 
 ```mermaid
@@ -19,16 +26,17 @@ sequenceDiagram
     create participant ManagerSettings
     manager-)ManagerSettings: ManagerSettings(prefix, config_path)
     ManagerSettings-->>manager: return ms
-    create participant ManagerConfig
-    manager-)ManagerConfig: ManagerConfig(ms)
+    create participant ConfigServiceCore
+    manager-)ConfigServiceCore: ConfigServiceCore(ms, config database)
+    ConfigServiceCore-->>manager: module configs of the active config slot
     create participant MQTTAbstraction
     manager-)MQTTAbstraction: MQTTAbstraction(ms.mqtt_settings)
     MQTTAbstraction-->>manager: return mqtt_abstraction
+    create participant ManagerConfig
+    manager-)ManagerConfig: ManagerConfig(ms, module configs)
     activate manager
     manager->>manager: start_modules()
-    manager->>ManagerConfig: serialize()
-    ManagerConfig-->>manager: serialized_config
-    manager->>MQTTAbstraction: publish(interfaces, types, schemas, manifests, settings, retain=true)
+    manager->>MQTTAbstraction: publish(interfaces, types, schemas, manifests, module_names, settings, retain=true)
     loop For every module
         manager->>manager: spawn_modules(Module)
         create participant Module
@@ -50,38 +58,46 @@ Class diagram
 classDiagram
 ConfigBase <|-- ManagerConfig
 ConfigBase <|-- Config
+ConfigParseSettings <|-- ManagerSettings
 MQTTSettings *-- ConfigBase
-ManagerSettings *-- ManagerConfig
+ConfigParseSettings <-- ManagerConfig : references
 
 note for ConfigBase "
-Baseclass containing json config, manifests, interfaces,
+Baseclass containing module configs, manifests, interfaces,
 types and functions to access this information which
 needs to be available in all derived classes
 "
 
-class ManagerSettings{
-    +fs::path configs_dir
+class ConfigParseSettings{
     +fs::path schemas_dir
     +fs::path interfaces_dir
     +fs::path types_dir
     +fs::path errors_dir
+    +fs::path modules_dir
+    +fs::path configs_dir
     +fs::path config_file
+    +nlohmann::json config
+    +bool validate_schema
+}
+
+class ManagerSettings{
+    +fs::path db_dir
     +fs::path www_dir
     +int controller_port
     +int controller_rpc_timeout_ms
     +std::string run_as_user
     +std::string version_information
-    +nlohmann::json config
     +MQTTSettings mqtt_settings
-    +std::unique_ptr<RuntimeSettings> runtime_settings
+    +RuntimeSettings runtime_settings
     +ManagerSettings(const std::string& prefix, const std::string& config)
-    +const RuntimeSettings& get_runtime_settings()
+    +ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path)
+    +ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path)
 }
 
 class MQTTSettings{
     +std::string broker_socket_path
     +std::string broker_host
-    +int broker_port
+    +std::uint16_t broker_port
     +std::string everest_prefix
     +std::string external_prefix
     +bool uses_socket()
@@ -93,28 +109,28 @@ class ConfigBase{
 }
 
 class ManagerConfig{
-    -const ManagerSettings& ms
+    -const ConfigParseSettings ps
     +ManagerConfig(const ManagerSettings& ms)
-    +nlohmann::json serialize()
-    -load_and_validate_manifest(const std::string& module_id, const nlohmann::json& module_config)
-    -std::tuple~nlohmann::json, int64_t~ load_and_validate_with_schema(const fs::path& file_path, const nlohmann::json& schema)
-    -nlohmann::json resolve_interface(const std::string& intf_name)
-    -nlohmann::json load_interface_file(const std::string& intf_name)
+    +ManagerConfig(const ManagerSettings& ms, ModuleConfigurations preloaded_configs)
+    +ManagerConfig(const ConfigParseSettings& ps)
+    +ManagerConfig(const ConfigParseSettings& ps, ModuleConfigurations preloaded_configs)
+    -load_and_validate_manifest(ModuleConfig& module_config)
+    -nlohmann::json resolve_interface(std::string_view intf_name)
+    -nlohmann::json load_interface_file(std::string_view intf_name)
     -resolve_all_requirements()
-    -parse(nlohmann::json config)
+    -parse(ModuleConfigurations& module_configs)
 }
 
 class Config{
-    +Config(const MQTTSettings& mqtt_settings, nlohmann::json config)
-    +bool module_provides(const std::string& module_name, const std::string& impl_id);
-    +nlohmann::json get_module_cmds(const std::string& module_name, const std::string& impl_id)
-    +nlohmann::json resolve_requirement(const std::string& module_id, const std::string& requirement_id)
-    +std::list~Requirement~ get_requirements(const std::string& module_id)
-    +RequirementInitialization get_requirement_initialization(const std::string& module_id)
-    +ModuleConfigs get_module_configs(const std::string& module_id)
-    +nlohmann::json get_module_json_config(const std::string& module_id)
-    +ModuleInfo get_module_info(const std::string& module_id)
-    +std::optional~<~TelemetryConfig~ get_telemetry_config()
-    +nlohmann::json get_interface_definition(const std::string& interface_name) const;
+    +Config(const MQTTSettings& mqtt_settings, const nlohmann::json& config)
+    +bool module_provides(std::string_view module_name, std::string_view impl_id)
+    +const nlohmann::json& get_module_cmds(std::string_view module_name, std::string_view impl_id)
+    +std::vector~Fulfillment~ resolve_requirement(std::string_view module_id, std::string_view requirement_id) const
+    +std::list~Requirement~ get_requirements(std::string_view module_id) const
+    +RequirementInitialization get_requirement_initialization(std::string_view module_id) const
+    +ModuleConfigs get_module_configs(std::string_view module_id) const
+    +ModuleInfo get_module_info(std::string_view module_id) const
+    +std::optional~TelemetryConfig~ get_telemetry_config()
+    +nlohmann::json get_interface_definition(std::string_view interface_name) const
 }
 ```

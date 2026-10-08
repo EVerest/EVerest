@@ -3,12 +3,14 @@
 
 #include <ocpp/v2/functional_blocks/smart_charging.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <future>
 #include <optional>
 
 #include <ocpp/common/constants.hpp>
 
-#include <ocpp/v2/connectivity_manager.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
@@ -22,6 +24,9 @@
 #include <ocpp/v2/messages/NotifyEVChargingNeeds.hpp>
 #include <ocpp/v2/messages/ReportChargingProfiles.hpp>
 #include <ocpp/v2/messages/SetChargingProfile.hpp>
+
+#include <ocpp/v21/messages/PullDynamicScheduleUpdate.hpp>
+#include <ocpp/v21/messages/UpdateDynamicSchedule.hpp>
 
 const std::int32_t STATION_WIDE_ID = 0;
 
@@ -158,6 +163,10 @@ std::string profile_validation_result_to_string(ProfileValidationResultEnum e) {
         return "ChargingProfileUnsupportedKind";
     case ProfileValidationResultEnum::ChargingProfileNotDynamic:
         return "ChargingProfileNotDynamic";
+    case ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSinglePeriod:
+        return "ChargingProfileDynamicMustHaveSinglePeriod";
+    case ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSingleSchedule:
+        return "ChargingProfileDynamicMustHaveSingleSchedule";
     case ProfileValidationResultEnum::ChargingScheduleChargingRateUnitUnsupported:
         return "ChargingScheduleChargingRateUnitUnsupported";
     case ProfileValidationResultEnum::ChargingScheduleNonFiniteValue:
@@ -188,6 +197,10 @@ std::string profile_validation_result_to_string(ProfileValidationResultEnum e) {
         return "ChargingSchedulePeriodPriorityChargingNotChargingOnly";
     case ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedOperationMode:
         return "ChargingSchedulePeriodUnsupportedOperationMode";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList:
+        return "ChargingSchedulePeriodOperationModeNotInSupportedList";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported:
+        return "ChargingSchedulePeriodLocalLoadBalancingNotSupported";
     case ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedLimitSetpoint:
         return "ChargingSchedulePeriodUnsupportedLimitSetpoint";
     case ProfileValidationResultEnum::ChargingSchedulePeriodNoPhaseForDC:
@@ -196,6 +209,10 @@ std::string profile_validation_result_to_string(ProfileValidationResultEnum e) {
         return "ChargingSchedulePeriodNoFreqWattCurve";
     case ocpp::v2::ProfileValidationResultEnum::ChargingSchedulePeriodSignDifference:
         return "ChargingSchedulePeriodSignDifference";
+    case ocpp::v2::ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange:
+        return "ChargingSchedulePeriodSetpointOutOfRange";
+    case ocpp::v2::ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict:
+        return "ChargingSchedulePeriodPhaseConflict";
     case ProfileValidationResultEnum::ChargingStationMaxProfileCannotBeRelative:
         return "ChargingStationMaxProfileCannotBeRelative";
     case ProfileValidationResultEnum::ChargingStationMaxProfileEvseIdGreaterThanZero:
@@ -240,6 +257,8 @@ std::string profile_validation_result_to_reason_code(ProfileValidationResultEnum
         return "UnsupportedKind";
     case ProfileValidationResultEnum::ChargingProfileNotDynamic:
         return "InvalidProfile";
+    case ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSinglePeriod:
+    case ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSingleSchedule:
     case ProfileValidationResultEnum::ChargingProfileNoChargingSchedulePeriods:
     case ProfileValidationResultEnum::ChargingProfileFirstStartScheduleIsNotZero:
     case ProfileValidationResultEnum::ChargingProfileMissingRequiredStartSchedule:
@@ -262,7 +281,14 @@ std::string profile_validation_result_to_reason_code(ProfileValidationResultEnum
     case ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedLimitSetpoint:
     case ProfileValidationResultEnum::ChargingSchedulePeriodSignDifference:
     case ProfileValidationResultEnum::ChargingSchedulePeriodNonFiniteValue:
+    case ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange:
         return "InvalidSchedule";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported:
+        return "UnsupportedParam";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList:
+        return "InvalidOperationMode";
+    case ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict:
+        return "PhaseConflict";
     case ProfileValidationResultEnum::ChargingSchedulePeriodNoPhaseForDC:
         return "NoPhaseForDC";
     case ProfileValidationResultEnum::ChargingSchedulePeriodNoFreqWattCurve:
@@ -332,7 +358,18 @@ SmartCharging::SmartCharging(const FunctionalBlockContext& functional_block_cont
                              StopTransactionCallback stop_transaction_callback) :
     context(functional_block_context),
     set_charging_profiles_callback(set_charging_profiles_callback),
-    stop_transaction_callback(stop_transaction_callback) {
+    stop_transaction_callback(stop_transaction_callback),
+    m_offline_timer([this] { this->on_offline_deadline(); }) {
+    // K28: only stand up the Dynamic-profile machinery (reaper thread + adaptive timer) when the
+    // device model advertises support; otherwise leave the optional disengaged to save the resources.
+    const bool supports_dynamic_profiles =
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SupportsDynamicProfiles)
+            .value_or(false);
+    if (supports_dynamic_profiles) {
+        this->dynamic_schedule_manager.emplace(functional_block_context, this->set_charging_profiles_callback);
+        // K28.FR.10: rebuild adaptive-pull state from persisted Dynamic profiles, then arm the timer.
+        this->dynamic_schedule_manager->rebuild_from_db();
+    }
 }
 
 void SmartCharging::handle_message(const ocpp::EnhancedMessage<MessageType>& message) {
@@ -348,16 +385,23 @@ void SmartCharging::handle_message(const ocpp::EnhancedMessage<MessageType>& mes
         this->handle_get_composite_schedule_req(json_message);
     } else if (message.messageType == MessageType::NotifyEVChargingNeedsResponse) {
         this->handle_notify_ev_charging_needs_response(message);
+    } else if (message.messageType == MessageType::UpdateDynamicSchedule) {
+        if (not this->dynamic_schedule_manager.has_value()) {
+            // Dynamic profiles unsupported, so the manager was never built. The CSMS gates this
+            // message on SupportsDynamicProfiles, so this is defensive: answer NotImplemented.
+            throw MessageTypeNotImplementedException(message.messageType);
+        }
+        this->dynamic_schedule_manager->handle_update_dynamic_schedule_request(message);
     } else {
         throw MessageTypeNotImplementedException(message.messageType);
     }
 }
 
-GetCompositeScheduleResponse SmartCharging::get_composite_schedule(const GetCompositeScheduleRequest& request) {
+EnhancedCompositeScheduleResponse SmartCharging::get_composite_schedule(const GetCompositeScheduleRequest& request) {
     return this->get_composite_schedule_internal(request);
 }
 
-std::optional<CompositeSchedule>
+std::optional<EnhancedCompositeSchedule>
 SmartCharging::get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) {
     GetCompositeScheduleRequest request;
     request.duration = clamp_to<std::int32_t>(duration.count());
@@ -397,11 +441,63 @@ ProfileValidationResultEnum SmartCharging::verify_rate_limit(const ChargingProfi
     return result;
 }
 
+ProfileValidationResultEnum SmartCharging::validate_setpoint_within_limit_range(const ChargingProfile& profile) const {
+    // V2X.05: reject setpoints outside [dischargeLimit, limit].
+    // Kept out of validate_profile_schedules so stored profiles retain clamping behavior during
+    // composite-schedule calculation.
+    if (this->context.ocpp_version != OcppProtocolVersion::v21) {
+        return ProfileValidationResultEnum::Valid;
+    }
+    for (const auto& schedule : profile.chargingSchedule) {
+        for (const auto& period : schedule.chargingSchedulePeriod) {
+            if (!period.setpoint.has_value()) {
+                continue;
+            }
+            const float sp = period.setpoint.value();
+            if ((period.limit.has_value() && sp > period.limit.value()) ||
+                (period.dischargeLimit.has_value() && sp < period.dischargeLimit.value())) {
+                return ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange;
+            }
+        }
+    }
+    return ProfileValidationResultEnum::Valid;
+}
+
+ProfileValidationResultEnum SmartCharging::validate_phase_conflict(const ChargingProfile& profile) const {
+    // V2X.10 (V2X.09 branch): non-TxProfile carrying any per-phase dischargeLimit /
+    // setpoint / setpointReactive value must be rejected with reasonCode "PhaseConflict".
+    if (this->context.ocpp_version != OcppProtocolVersion::v21) {
+        return ProfileValidationResultEnum::Valid;
+    }
+    if (profile.chargingProfilePurpose == ChargingProfilePurposeEnum::TxProfile) {
+        return ProfileValidationResultEnum::Valid;
+    }
+    for (const auto& schedule : profile.chargingSchedule) {
+        for (const auto& period : schedule.chargingSchedulePeriod) {
+            if (period.dischargeLimit_L2.has_value() || period.dischargeLimit_L3.has_value() ||
+                period.setpoint_L2.has_value() || period.setpoint_L3.has_value() ||
+                period.setpointReactive_L2.has_value() || period.setpointReactive_L3.has_value()) {
+                return ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict;
+            }
+        }
+    }
+    return ProfileValidationResultEnum::Valid;
+}
+
 std::pair<bool, bool> SmartCharging::validate_profile_with_offline_time(const ChargingProfile& profile) {
     const auto time_disconnected = this->context.connectivity_manager.get_time_disconnected();
-    // Being online means the profile is valid
-    if (time_disconnected.time_since_epoch() == 0s) {
-        return {true, false};
+    {
+        auto state = this->m_offline_state.handle();
+        // Permanently invalid under an outage whose reconnect cleanup has not completed yet
+        if (state->pending_reconnect.has_value() && profile.invalidAfterOfflineDuration.value_or(false) &&
+            profile.maxOfflineDuration.has_value() &&
+            state->pending_reconnect.value() > std::chrono::seconds(profile.maxOfflineDuration.value())) {
+            return {false, true};
+        }
+        // Being online means the profile is valid
+        if (time_disconnected.time_since_epoch() == 0s || time_disconnected == state->restored) {
+            return {true, false};
+        }
     }
 
     // Absent maxOfflineDuration means the profile is valid independent of the offline time
@@ -410,13 +506,126 @@ std::pair<bool, bool> SmartCharging::validate_profile_with_offline_time(const Ch
     }
 
     // Not being offline for long enough means profile is valid
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - time_disconnected)
-            .count() <= profile.maxOfflineDuration.value()) {
+    if (std::chrono::steady_clock::now() - time_disconnected <=
+        std::chrono::seconds(profile.maxOfflineDuration.value())) {
         return {true, false};
     }
 
     // Profile must be cleared when we are offline for too long and invalidAfterOfflineDuration is set
     return {false, profile.invalidAfterOfflineDuration.value_or(false)};
+}
+
+void SmartCharging::on_connection_lost() {
+    auto state = this->m_offline_state.handle();
+    const auto disconnected = this->context.connectivity_manager.get_time_disconnected();
+    if (disconnected.time_since_epoch() == 0s) {
+        return;
+    }
+    if (state->disconnected != disconnected) {
+        state->disconnected = disconnected;
+        state->processed_profiles.clear();
+        state->retry_delay = 1s;
+    }
+    this->m_offline_timer.timeout(0s);
+}
+
+void SmartCharging::on_offline_deadline() {
+    try {
+        bool notify_pending = false;
+        std::chrono::steady_clock::time_point restored;
+        std::optional<std::chrono::steady_clock::duration> pending_reconnect;
+        {
+            auto state = this->m_offline_state.handle();
+            if (!state->disconnected.has_value() && !state->pending_reconnect.has_value()) {
+                return;
+            }
+            pending_reconnect = state->pending_reconnect;
+            restored = state->restored;
+            const auto now = std::chrono::steady_clock::now();
+            std::optional<std::chrono::steady_clock::time_point> next_deadline;
+            for (const auto& profile : this->context.database_handler.get_all_charging_profiles()) {
+                if (!profile.maxOfflineDuration.has_value()) {
+                    continue;
+                }
+                if (pending_reconnect.has_value()) {
+                    if (pending_reconnect.value() <= std::chrono::seconds(profile.maxOfflineDuration.value())) {
+                        continue;
+                    }
+                    state->notify_pending = true;
+                } else {
+                    if (state->processed_profiles.count(profile.id) != 0) {
+                        continue;
+                    }
+                    const auto deadline =
+                        state->disconnected.value() + std::chrono::seconds(profile.maxOfflineDuration.value());
+                    if (deadline > now) {
+                        if (!next_deadline.has_value() || deadline < next_deadline.value()) {
+                            next_deadline = deadline;
+                        }
+                        continue;
+                    }
+                }
+                if (profile.invalidAfterOfflineDuration.value_or(false)) {
+                    const auto cleared_ids = this->context.database_handler.clear_charging_profiles_matching_criteria(
+                        profile.id, std::nullopt);
+                    for (const auto id : cleared_ids) {
+                        state->notify_pending = true;
+                        if (this->dynamic_schedule_manager.has_value()) {
+                            this->dynamic_schedule_manager->erase_tracking(id);
+                        }
+                    }
+                } else {
+                    state->notify_pending = true;
+                }
+                if (!pending_reconnect.has_value()) {
+                    state->processed_profiles.insert(profile.id);
+                }
+            }
+            if (next_deadline.has_value()) {
+                this->m_offline_timer.timeout(std::max(0ns, next_deadline.value() - std::chrono::steady_clock::now()));
+            } else {
+                this->m_offline_timer.stop();
+            }
+            notify_pending = state->notify_pending;
+        }
+        if (notify_pending) {
+            this->set_charging_profiles_callback();
+        }
+        {
+            auto state = this->m_offline_state.handle();
+            if (notify_pending) {
+                state->notify_pending = false;
+            }
+            if (pending_reconnect.has_value() && state->pending_reconnect == pending_reconnect &&
+                state->restored == restored) {
+                state->pending_reconnect.reset();
+                if (state->disconnected.has_value()) {
+                    this->m_offline_timer.timeout(0s);
+                }
+            }
+            state->retry_delay = 1s;
+        }
+        return;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Could not process offline charging profile deadline: " << e.what();
+    } catch (...) {
+        EVLOG_error << "Could not process offline charging profile deadline: unknown exception";
+    }
+    auto state = this->m_offline_state.handle();
+    if (state->disconnected.has_value() || state->pending_reconnect.has_value()) {
+        this->m_offline_timer.timeout(state->retry_delay);
+        state->retry_delay = std::min(state->retry_delay * 2, 60s);
+    }
+}
+
+void SmartCharging::on_connection_restored(std::chrono::steady_clock::duration offline_duration) {
+    auto state = this->m_offline_state.handle();
+    this->m_offline_timer.stop();
+    // ConnectivityManager clears its timestamp after the reconnect callback returns.
+    state->restored = this->context.connectivity_manager.get_time_disconnected();
+    state->disconnected.reset();
+    state->pending_reconnect = std::max(state->pending_reconnect.value_or(offline_duration), offline_duration);
+    this->m_offline_timer.timeout(0s);
 }
 
 bool SmartCharging::has_dc_input_phase_control(const std::int32_t evse_id) const {
@@ -440,9 +649,9 @@ bool SmartCharging::evse_has_dc_input_phase_control(const std::int32_t evse_id) 
     return this->context.device_model.get_optional_value<bool>(evse_variable).value_or(false);
 }
 
-std::vector<CompositeSchedule> SmartCharging::get_all_composite_schedules(const std::int32_t duration_s,
-                                                                          const ChargingRateUnitEnum& unit) {
-    std::vector<CompositeSchedule> composite_schedules;
+std::vector<EnhancedCompositeSchedule> SmartCharging::get_all_composite_schedules(const std::int32_t duration_s,
+                                                                                  const ChargingRateUnitEnum& unit) {
+    std::vector<EnhancedCompositeSchedule> composite_schedules;
 
     const auto number_of_evses = this->context.evse_manager.get_number_of_evses();
     // get all composite schedules including the one for evse_id == 0
@@ -457,7 +666,7 @@ std::vector<CompositeSchedule> SmartCharging::get_all_composite_schedules(const 
             composite_schedules.push_back(composite_schedule_response.schedule.value());
         } else {
             EVLOG_warning << "Could not internally retrieve composite schedule for evse id " << evse_id << ": "
-                          << composite_schedule_response;
+                          << composite_schedule_response.get();
         }
     }
 
@@ -478,10 +687,22 @@ SetChargingProfileResponse SmartCharging::conform_validate_and_add_profile(Charg
     auto result = this->conform_and_validate_profile(profile, evse_id, source_of_request);
 
     if (result == ProfileValidationResultEnum::Valid) {
+        result = validate_setpoint_within_limit_range(profile);
+    }
+
+    if (result == ProfileValidationResultEnum::Valid) {
+        result = validate_phase_conflict(profile);
+    }
+
+    if (result == ProfileValidationResultEnum::Valid) {
         result = verify_rate_limit(profile);
     }
 
     if (result == ProfileValidationResultEnum::Valid) {
+        // K28.FR.05: Auto-populate dynUpdateTime on accept for Dynamic profiles.
+        if (profile.chargingProfileKind == ChargingProfileKindEnum::Dynamic && !profile.dynUpdateTime.has_value()) {
+            profile.dynUpdateTime = ocpp::DateTime();
+        }
         response = this->add_profile(profile, evse_id, charging_limit_source);
     } else {
         response.statusInfo = StatusInfo();
@@ -630,11 +851,10 @@ std::vector<IntermediateProfile> generate_evse_intermediates(std::vector<Chargin
 }
 } // namespace
 
-CompositeSchedule SmartCharging::calculate_composite_schedule(const ocpp::DateTime& start_t,
-                                                              const ocpp::DateTime& end_time,
-                                                              const std::int32_t evse_id,
-                                                              ChargingRateUnitEnum charging_rate_unit, bool is_offline,
-                                                              bool simulate_transaction_active) {
+EnhancedCompositeSchedule
+SmartCharging::calculate_composite_schedule(const ocpp::DateTime& start_t, const ocpp::DateTime& end_time,
+                                            const std::int32_t evse_id, ChargingRateUnitEnum charging_rate_unit,
+                                            bool is_offline, bool simulate_transaction_active) {
 
     // handle edge case where start_time > end_time
     auto start_time = start_t;
@@ -697,7 +917,7 @@ CompositeSchedule SmartCharging::calculate_composite_schedule(const ocpp::DateTi
     // Calculate the final limit of all the combined profiles
     auto retval = merge_profiles_by_lowest_limit(combined_profiles, this->context.ocpp_version);
 
-    CompositeSchedule composite{};
+    EnhancedCompositeSchedule composite{};
     composite.evseId = evse_id;
     composite.scheduleStart = floor_seconds(start_time);
     composite.duration = elapsed_seconds(floor_seconds(end_time), floor_seconds(start_time));
@@ -838,10 +1058,29 @@ ProfileValidationResultEnum SmartCharging::validate_priority_charging_profile(co
  * - K01.FR.90
  */
 
+bool SmartCharging::is_operation_mode_supported_by_evse(const OperationModeEnum operation_mode,
+                                                        const std::int32_t evse_id) const {
+    if (operation_mode == OperationModeEnum::ChargingOnly) {
+        return true;
+    }
+    const auto supported_operation_modes = this->context.device_model.get_optional_value<std::string>(
+        V2xComponentVariables::get_component_variable(evse_id, V2xComponentVariables::SupportedOperationModes));
+    if (!supported_operation_modes.has_value()) {
+        return false;
+    }
+    return supported_operation_modes.value().find(conversions::operation_mode_enum_to_string(operation_mode)) !=
+           std::string::npos;
+}
+
 ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingProfile& profile,
                                                                       std::optional<EvseInterface*> evse_opt) const {
     if (profile.chargingSchedule.empty()) {
         return ProfileValidationResultEnum::ChargingProfileEmptyChargingSchedules;
+    }
+
+    // K28.FR.01: Dynamic profile must have exactly one schedule with one period.
+    if (profile.chargingProfileKind == ChargingProfileKindEnum::Dynamic && profile.chargingSchedule.size() != 1) {
+        return ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSingleSchedule;
     }
 
     auto charging_station_supply_phases =
@@ -901,6 +1140,13 @@ ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingPr
             if ((profile.dynUpdateInterval.has_value() || profile.dynUpdateTime.has_value()) &&
                 profile.chargingProfileKind != ChargingProfileKindEnum::Dynamic) {
                 return ProfileValidationResultEnum::ChargingProfileNotDynamic;
+            }
+
+            // K28.FR.01: Dynamic profile's single schedule must have exactly one period.
+            // (K28.FR.02 is enforced by the K01.FR.31 startPeriod=0 check below.)
+            if (profile.chargingProfileKind == ChargingProfileKindEnum::Dynamic &&
+                schedule.chargingSchedulePeriod.size() != 1) {
+                return ProfileValidationResultEnum::ChargingProfileDynamicMustHaveSinglePeriod;
             }
 
             // K01.FR.123 Local time is not supported
@@ -1005,17 +1251,38 @@ ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingPr
                     return ProfileValidationResultEnum::ChargingSchedulePeriodUnsupportedOperationMode;
                 }
 
+                // Q09.FR.01: operationMode must be in V2XChargingCtrlr.SupportedOperationModes (per-EVSE;
+                // evseId 0 must be supported by every EVSE).
+                bool operation_mode_supported = true;
+                if (evse_opt.has_value()) {
+                    operation_mode_supported =
+                        this->is_operation_mode_supported_by_evse(operation_mode, evse_opt.value()->get_id());
+                } else {
+                    for (std::int32_t id = 1;
+                         id <= static_cast<std::int32_t>(this->context.evse_manager.get_number_of_evses()); ++id) {
+                        if (this->context.evse_manager.does_evse_exist(id) &&
+                            !this->is_operation_mode_supported_by_evse(operation_mode, id)) {
+                            operation_mode_supported = false;
+                            break;
+                        }
+                    }
+                }
+                if (!operation_mode_supported) {
+                    // Q09.FR.01 carves out LocalLoadBalancing with reasonCode UnsupportedParam; every other
+                    // operationMode not listed in V2XSupportedOperationModes uses InvalidOperationMode (K01.FR.115).
+                    return operation_mode == OperationModeEnum::LocalLoadBalancing
+                               ? ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported
+                               : ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList;
+                }
+
                 // Q08.FR.05: LocalFrequency should have chargingRateUnit `W`.
                 if (operation_mode == OperationModeEnum::LocalFrequency &&
                     schedule.chargingRateUnit == ChargingRateUnitEnum::A) {
                     return ProfileValidationResultEnum::ChargingScheduleChargingRateUnitUnsupported;
                 }
 
-                // K01.FR.126: EvseSleep is not supported.
-                if (charging_schedule_period.evseSleep.value_or(false) &&
-                    !this->context.device_model
-                         .get_optional_value<bool>(ControllerComponentVariables::SupportsEvseSleep)
-                         .value_or(false)) {
+                // K01.FR.126: evseSleep is only valid with operationMode Idle.
+                if (charging_schedule_period.evseSleep.value_or(false) && operation_mode != OperationModeEnum::Idle) {
                     return ProfileValidationResultEnum::ChargingScheduleUnsupportedEvseSleep;
                 }
 
@@ -1096,18 +1363,51 @@ SetChargingProfileResponse SmartCharging::add_profile(ChargingProfile& profile, 
         response.status = ChargingProfileStatusEnum::Rejected;
         response.statusInfo = StatusInfo();
         response.statusInfo->reasonCode = "InternalError";
+        return response;
+    }
+
+    // K28.FR.10: refresh the adaptive-pull deadline for this profile id (handles Dynamic +
+    // non-Dynamic-replacing-Dynamic transitions). Run in its own try-block: the profile is already
+    // in the DB, so we must not lie to the CSMS with Rejected if pull-tracking refresh fails
+    // (e.g. std::bad_alloc on a map insert, std::system_error from timer rearm). Log the local
+    // mismatch and keep the Accepted response.
+    try {
+        if (this->dynamic_schedule_manager.has_value()) {
+            this->dynamic_schedule_manager->update_tracking(profile);
+        }
+    } catch (const std::exception& e) {
+        // The profile is persisted, so the response stays Accepted (responding Rejected would lie
+        // to the CSMS about a stored profile). The tracking refresh that would (re)arm the adaptive
+        // timer was lost; the next profile change re-arms tracking.
+        EVLOG_error << "[K28-tracking] ChargingProfile " << profile.id << " stored but pull-tracking refresh failed ("
+                    << e.what() << "); adaptive pull disabled for profile " << profile.id
+                    << " until next profile change";
+    }
+
+    {
+        auto state = this->m_offline_state.handle();
+        if (state->disconnected.has_value()) {
+            state->processed_profiles.erase(profile.id);
+            this->m_offline_timer.timeout(0s);
+        }
     }
 
     return response;
 }
 
-ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingProfileRequest& request) {
+ClearChargingProfileResponse SmartCharging::clear_profiles(const ClearChargingProfileRequest& request,
+                                                           std::vector<std::int32_t>& cleared_ids) {
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatusEnum::Unknown;
 
-    if (this->context.database_handler.clear_charging_profiles_matching_criteria(request.chargingProfileId,
-                                                                                 request.chargingProfileCriteria)) {
-        response.status = ClearChargingProfileStatusEnum::Accepted;
+    try {
+        cleared_ids = this->context.database_handler.clear_charging_profiles_matching_criteria(
+            request.chargingProfileId, request.chargingProfileCriteria);
+        if (!cleared_ids.empty()) {
+            response.status = ClearChargingProfileStatusEnum::Accepted;
+        }
+    } catch (const everest::db::QueryExecutionException& e) {
+        EVLOG_error << "Could not clear ChargingProfiles from the database: " << e.what();
     }
 
     return response;
@@ -1235,7 +1535,16 @@ void SmartCharging::handle_clear_charging_profile_req(Call<ClearChargingProfileR
         EVLOG_debug << "Rejecting SetChargingProfileRequest:\n reasonCode: " << response.statusInfo->reasonCode.get()
                     << "\nadditionalInfo: " << response.statusInfo->additionalInfo->get();
     } else {
-        response = this->clear_profiles(msg);
+        // K28.FR.10: the DELETE returns exactly the ids it removed, so dropping their deadline
+        // tracking needs no mirrored lookup and cannot drift from the DB delete filter.
+        std::vector<std::int32_t> cleared_ids;
+        response = this->clear_profiles(msg, cleared_ids);
+
+        if (response.status == ClearChargingProfileStatusEnum::Accepted && this->dynamic_schedule_manager.has_value()) {
+            for (const auto id : cleared_ids) {
+                this->dynamic_schedule_manager->erase_tracking(id);
+            }
+        }
     }
 
     if (response.status == ClearChargingProfileStatusEnum::Accepted) {
@@ -1357,15 +1666,17 @@ void SmartCharging::handle_notify_ev_charging_needs_response(const EnhancedMessa
 
 void SmartCharging::handle_get_composite_schedule_req(Call<GetCompositeScheduleRequest> call) {
     EVLOG_debug << "Received GetCompositeScheduleRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
-    const auto response = this->get_composite_schedule_internal(call.msg);
+    const auto schedule = this->get_composite_schedule_internal(call.msg);
+    const GetCompositeScheduleResponse response = schedule.get();
 
     const ocpp::CallResult<GetCompositeScheduleResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);
 }
 
-GetCompositeScheduleResponse SmartCharging::get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
-                                                                            bool simulate_transaction_active) {
-    GetCompositeScheduleResponse response;
+EnhancedCompositeScheduleResponse
+SmartCharging::get_composite_schedule_internal(const GetCompositeScheduleRequest& request,
+                                               bool simulate_transaction_active) {
+    EnhancedCompositeScheduleResponse response;
     response.status = GenericStatusEnum::Rejected;
 
     std::vector<std::string> supported_charging_rate_units =
@@ -1428,12 +1739,16 @@ bool SmartCharging::is_overlapping_validity_period(const ChargingProfile& candid
     overlap_stmt->bind_text(
         "@purpose", conversions::charging_profile_purpose_enum_to_string(candidate_profile.chargingProfilePurpose),
         everest::db::sqlite::SQLiteString::Transient);
-    while (overlap_stmt->step() != SQLITE_DONE) {
+    int status;
+    while ((status = overlap_stmt->step()) == SQLITE_ROW) {
         const ChargingProfile existing_profile = json::parse(overlap_stmt->column_text(0));
         if (candidate_profile.validFrom <= existing_profile.validTo &&
             candidate_profile.validTo >= existing_profile.validFrom) {
             return true;
         }
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error while checking is_overlapping_validity_period, db error: " << status;
     }
 
     return false;
@@ -1445,9 +1760,13 @@ std::vector<ChargingProfile> SmartCharging::get_evse_specific_tx_default_profile
     auto stmt =
         this->context.database_handler.new_statement("SELECT PROFILE FROM CHARGING_PROFILES WHERE "
                                                      "EVSE_ID != 0 AND CHARGING_PROFILE_PURPOSE = 'TxDefaultProfile'");
-    while (stmt->step() != SQLITE_DONE) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         evse_specific_tx_default_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_evse_specific_tx_default_profiles, db error: " << status;
     }
 
     return evse_specific_tx_default_profiles;
@@ -1458,9 +1777,13 @@ std::vector<ChargingProfile> SmartCharging::get_station_wide_tx_default_profiles
 
     auto stmt = this->context.database_handler.new_statement(
         "SELECT PROFILE FROM CHARGING_PROFILES WHERE EVSE_ID = 0 AND CHARGING_PROFILE_PURPOSE = 'TxDefaultProfile'");
-    while (stmt->step() != SQLITE_DONE) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         station_wide_tx_default_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_station_wide_tx_default_profiles, db error: " << status;
     }
 
     return station_wide_tx_default_profiles;
@@ -1471,9 +1794,13 @@ std::vector<ChargingProfile> SmartCharging::get_charging_station_max_profiles() 
     auto stmt =
         this->context.database_handler.new_statement("SELECT PROFILE FROM CHARGING_PROFILES WHERE EVSE_ID = 0 AND "
                                                      "CHARGING_PROFILE_PURPOSE = 'ChargingStationMaxProfile'");
-    while (stmt->step() != SQLITE_DONE) {
+    int status;
+    while ((status = stmt->step()) == SQLITE_ROW) {
         const ChargingProfile profile = json::parse(stmt->column_text(0));
         charging_station_max_profiles.push_back(profile);
+    }
+    if (status != SQLITE_DONE) {
+        EVLOG_error << "Error during get_charging_station_max_profiles, db error: " << status;
     }
 
     return charging_station_max_profiles;
@@ -1485,6 +1812,7 @@ SmartCharging::get_valid_profiles_for_evse(std::int32_t evse_id,
     std::vector<ChargingProfile> valid_profiles;
 
     auto evse_profiles = this->context.database_handler.get_charging_profiles_for_evse(evse_id);
+    const auto now = date::utc_clock::now();
     for (auto profile : evse_profiles) {
         // Q11
         if (const auto [valid, clear] = this->validate_profile_with_offline_time(profile); !valid) {
@@ -1492,8 +1820,21 @@ SmartCharging::get_valid_profiles_for_evse(std::int32_t evse_id,
                 // Q12
                 EVLOG_debug << "Clearing profile with ID: " << profile.id
                             << ", because it is invalid after offline duration";
-                this->context.database_handler.clear_charging_profiles_matching_criteria(profile.id, std::nullopt);
+                const auto cleared_ids =
+                    this->context.database_handler.clear_charging_profiles_matching_criteria(profile.id, std::nullopt);
+                for (const auto id : cleared_ids) {
+                    if (this->dynamic_schedule_manager.has_value()) {
+                        this->dynamic_schedule_manager->erase_tracking(id);
+                    }
+                }
             }
+            continue;
+        }
+
+        // K28.FR.13: drop a Dynamic profile whose schedule duration has elapsed since dynUpdateTime.
+        if (dynamic_profile_expired(profile, now)) {
+            EVLOG_debug << "Skipping expired Dynamic profile " << profile.id
+                        << " from composite calc (duration elapsed)";
             continue;
         }
 

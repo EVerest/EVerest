@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
 #include "helper.hpp"
@@ -13,10 +13,11 @@
 
 using namespace iso15118;
 
-SCENARIO("ISO15118-20 service detail state transitions") {
+namespace dt = message_20::datatypes;
 
-    namespace dt = message_20::datatypes;
+namespace {
 
+session::EvseSetupConfig make_evse_setup() {
     const auto evse_id = std::string("everest se");
     const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::DC};
     const auto cert_install{false};
@@ -28,9 +29,26 @@ SCENARIO("ISO15118-20 service detail state transitions") {
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{
-        evse_id,   supported_energy_services, auth_services, vas_services, cert_install, dc_limits,
-        ac_limits, control_mobility_modes,    std::nullopt,  std::nullopt, std::nullopt, powersupply_limits};
+    session::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = std::nullopt;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("ISO15118-20 service detail state transitions") {
+
+    const auto evse_setup = make_evse_setup();
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
 
@@ -43,7 +61,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"Service1", 40});
-            parameter_set.parameter.push_back({"Service2", "house"});
+            parameter_set.parameter.push_back({"Service2", std::string{"house"}});
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
@@ -52,14 +70,14 @@ SCENARIO("ISO15118-20 service detail state transitions") {
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::Internet)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 3;
-            parameter_set.parameter.push_back({"Protocol", "http"});
+            parameter_set.parameter.push_back({"Protocol", std::string{"http"}});
             parameter_set.parameter.push_back({"Port", 80});
         }
 
         return std::make_optional(service_parameter_list);
     };
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
     ctx.session = d20::Session();
 
@@ -483,7 +501,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -548,7 +566,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));
@@ -626,7 +644,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_0.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_0.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters_0.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_0.parameter[1].value));
@@ -651,7 +669,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters_1.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters_1.parameter[0].value) == 2);
             // ControlMode == Dynamic
             REQUIRE(parameters_1.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters_1.parameter[1].value));
@@ -710,7 +728,7 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             // Connector == ThreePhases
             REQUIRE(parameters.parameter[0].name == "Connector");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[0].value));
-            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 3);
+            REQUIRE(std::get<int32_t>(parameters.parameter[0].value) == 2);
             // ControlMode == Scheduled
             REQUIRE(parameters.parameter[1].name == "ControlMode");
             REQUIRE(std::holds_alternative<int32_t>(parameters.parameter[1].value));

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <chrono>
@@ -46,6 +46,7 @@ public:
 
     void raise_comm_fault();
     void clear_comm_fault();
+    void clear_raised_errors();
     void sync(bool cb_connected);
 
 private:
@@ -73,16 +74,22 @@ private:
     void receive_set_rcd_error(std::string const& payload);
     void receive_heartbeat(std::string const& pl);
 
+    void publish_error_flag_edges(std::uint32_t prev, std::uint32_t next);
     void handle_error(const SafetyErrorFlags& data);
     void handle_event_cp(std::uint8_t cp);
     void handle_event_relay(std::uint8_t relay);
+    void handle_stop_button(std::uint8_t data);
     void handle_bsp_measurement(uint16_t cp, uint8_t pp_1, uint8_t pp2);
 
     bool check_everest_heartbeat();
     void handle_everest_connection_state();
 
     evse_bsp_host_to_cb& host_status;
-    evse_bsp_cb_to_host m_cb_status;
+    // Zero initialized, like the evse adapter does in its constructor: the first set_cb_message()
+    // diffs the incoming message against this, so indeterminate bytes are not just undefined
+    // behaviour - a garbage error-flag bit would make the first real error look unchanged and mask it
+    // for as long as it stays raised.
+    evse_bsp_cb_to_host m_cb_status{};
 
     tx_ftor m_tx;
     bool m_everest_connected{false};

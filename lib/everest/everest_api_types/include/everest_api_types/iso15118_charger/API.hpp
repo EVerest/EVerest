@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -26,6 +26,8 @@ enum class EnergyTransferMode {
     AC_BPT,
     AC_BPT_DER,
     AC_DER,
+    AC_DER_IEC,
+    AC_DER_SAE,
     DC_BPT,
     DC_ACDP,
     DC_ACDP_BPT,

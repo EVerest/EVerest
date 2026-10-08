@@ -47,18 +47,32 @@ class AcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["connector_1"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
         return adjusted_config
 
+class RequestZeroPowerInIdleAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """
+    Adjustment strategy to set request_zero_power_in_idle of connector_1
+    """
+
+    def __init__(self, request_zero_power_in_idle: bool):
+        self.request_zero_power_in_idle = request_zero_power_in_idle
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        adjusted_config["active_modules"]["connector_1"]["config_module"]["request_zero_power_in_idle"] = self.request_zero_power_in_idle
+        return adjusted_config
+
 class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     """
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False):
+    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, cable_check_measurements: int = 1):
         self.zero_power_ignore_pause = zero_power_ignore_pause
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
         self.ev_d20_only = ev_d20_only
         self.payment_enable_contract = payment_enable_contract
         self.force_payment_option = force_payment_option
         self.fail_cable_check = fail_cable_check
+        self.cable_check_measurements = cable_check_measurements
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
@@ -69,9 +83,50 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["powersupply_dc"]["config_implementation"] = {"main": {"min_current": 0}}
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["zero_power_ignore_pause"] = self.zero_power_ignore_pause
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["hlc_charge_loop_without_energy_timeout_s"] = self.hlc_charge_loop_without_energy_timeout_s
-        adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract
+        # PyEvJosev signs ISO 15118-20 PnC with P-256, which the Annex B profile check rejects
+        adjusted_config["active_modules"]["evse_manager"]["config_module"]["payment_enable_contract"] = self.payment_enable_contract and not self.ev_d20_only
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
+        adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
+        return adjusted_config
+
+
+class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """Force a specific TLS version on the direct-d20 SIL config so the
+    Evse15118D20 ConnectionSSL adapter performs the handshake end to end.
+
+    Unlike the IsoMux configs (where IsoMux terminates TLS and the d20
+    backend only sees decrypted plaintext), config-sil-dc-d20.yaml wires
+    EvseManager's `hlc` straight to Evse15118D20, which runs its own SDP
+    server and therefore drives the ConnectionSSL / tls::Server adapter.
+
+    tls13=False -> EV offers TLS 1.2 only and presents no client cert; the
+                   SECC accepts the 1.2 offer and requires no client cert
+                   (server-authenticated / unilateral TLS).
+    tls13=True  -> EV offers TLS 1.3 and presents its VEHICLE client cert;
+                   the SECC is pinned to TLS 1.3 (so the session cannot fall
+                   back to 1.2) and the verify-on-1.3 upgrade requires that
+                   client cert (mutual TLS, as ISO 15118-20 mandates).
+    """
+
+    def __init__(self, tls13: bool):
+        self.tls13 = tls13
+
+    def adjust_everest_configuration(self, everest_config: Dict):
+        adjusted_config = deepcopy(everest_config)
+        ev = adjusted_config["active_modules"]["iso15118_car"]["config_module"]
+        secc = adjusted_config["active_modules"]["iso15118_charger"]["config_module"]
+
+        ev["tls_active"] = True
+        ev["enforce_tls"] = True
+        ev["enable_tls_1_3"] = self.tls13
+
+        if self.tls13:
+            secc["tls_negotiation_strategy"] = "ENFORCE_TLS"
+            secc["enforce_tls_1_3"] = True
+        else:
+            secc["tls_negotiation_strategy"] = "ACCEPT_CLIENT_OFFER"
+            secc["enforce_tls_1_3"] = False
         return adjusted_config
 
 
@@ -528,7 +583,52 @@ async def test_iso15118_dc_session(
     _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
         test_controller, everest_core
     )
-    
+
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.everest_core_config("config-sil-dc-d20.yaml")
+@pytest.mark.parametrize(
+    "tls_version",
+    [
+        pytest.param(
+            "tls1_2",
+            marks=pytest.mark.everest_config_adaptions(
+                D20TlsConfigAdjustmentStrategy(tls13=False)
+            ),
+            id="d20_tls1_2",
+        ),
+        pytest.param(
+            "tls1_3",
+            marks=pytest.mark.everest_config_adaptions(
+                D20TlsConfigAdjustmentStrategy(tls13=True)
+            ),
+            id="d20_tls1_3",
+        ),
+    ],
+)
+async def test_iso15118_20_dc_session_over_tls(
+    tls_version, test_controller: TestController, everest_core: EverestCore
+):
+    """ISO 15118-20 DC charging session over TLS through the Evse15118D20
+    ConnectionSSL adapter, at both negotiated TLS versions.
+
+    config-sil-dc-d20.yaml wires EvseManager.hlc directly to Evse15118D20
+    (no IsoMux), so the d20 module owns the SDP server and terminates TLS via
+    the tls::Server adapter under test. The session only reaches Charging if
+    the handshake succeeds, so a regression in the adapter (TLS 1.2 min-version
+    pinning, the enforce_tls_1_3 path, or the verify-client-on-1.3 upgrade)
+    surfaces as a timeout in run_basic_session.
+    """
+    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+
     await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
 
 @pytest.mark.asyncio
@@ -628,6 +728,42 @@ async def test_iso15118_dc_session_error_before_session(
     ), "No session events should occur while error is active"
 
 ###########################################################
+################ External Limits Capabilities Tests #######
+###########################################################
+
+@pytest.mark.asyncio
+@pytest.mark.probe_module(
+    connections={
+        "gcp": [Requirement("grid_connection_point", "external_limits")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil.yaml")
+async def test_energy_node_publishes_capabilities_on_startup(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """EnergyNode must publish its 'capabilities' var on its external_limits
+    interface at startup (i.e. invoke_ready must be called for that
+    implementation), matching config-sil.yaml's grid_connection_point
+    (fuse_limit_A: 40, phase_count: 3, default nominal_voltage_V: 230)."""
+    test_controller.start()
+    probe_module = ProbeModule(everest_core.get_runtime_session())
+
+    capabilities_mock = Mock()
+    probe_module.subscribe_variable("gcp", "capabilities", capabilities_mock)
+
+    probe_module.start()
+    await probe_module.wait_to_be_ready()
+
+    await wait_for_ready(capabilities_mock, timeout=5)
+
+    capabilities = capabilities_mock.call_args[0][0]
+    assert capabilities["max_current_A"] == 40
+    assert capabilities["max_phase_count"] == 3
+    assert capabilities["nominal_voltage_V"] == 230
+    assert capabilities["total_power_W"] == 40 * 3 * 230
+
+
+###########################################################
 ################ Pause and No Energy Tests ################
 ###########################################################
 
@@ -664,6 +800,7 @@ async def test_pwm_ac_session_no_energy_before_session(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={
         "evse_manager": [Requirement("connector_1", "evse")],
@@ -1037,11 +1174,28 @@ async def test_iso15118_dc_session_paused_by_ev(
 )
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.everest_core_config("config-sil.yaml")
+@pytest.mark.parametrize(
+    "request_zero_power_in_idle",
+    [
+        pytest.param(
+            False,
+            marks=pytest.mark.everest_config_adaptions(RequestZeroPowerInIdleAdjustmentStrategy(False)),
+            id="request_zero_power_in_idle_false",
+        ),
+        pytest.param(
+            True,
+            marks=pytest.mark.everest_config_adaptions(RequestZeroPowerInIdleAdjustmentStrategy(True)),
+            id="request_zero_power_in_idle_true",
+        ),
+    ],
+)
 async def test_pwm_ac_session_paused_by_evse(
-    test_controller: TestController, everest_core: EverestCore
+    request_zero_power_in_idle, test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test session events of a basic PWM AC charging session with session paused by EVSE.
+    With request_zero_power_in_idle the EVSE requests no energy while paused by the user and has to request
+    energy again once the pause is lifted, otherwise it could never resume.
     """
 
     probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
@@ -1156,6 +1310,7 @@ async def test_iso15118_dc_session_paused_by_evse(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1177,6 +1332,7 @@ async def test_iso15118_protocol_negotiation_failed(
     test_controller.plug_out()
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1200,6 +1356,7 @@ async def test_iso15118_tls_handshake_failed_ev_reason(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1225,6 +1382,7 @@ async def test_iso15118_dc_charging_parameters_not_accepted_ac_ev(
 
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1250,6 +1408,7 @@ async def test_iso15118_pnc_only_ev_authorization_failed(
     test_controller.plug_out()
 
 @pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
@@ -1259,16 +1418,101 @@ async def test_iso15118_dc_cable_check_failed(
     test_controller: TestController, everest_core: EverestCore
 ):
     """
-    Test that a DC EVSE fails the cable check resulting in EnergyTransferSetupFailed.
+    Test that a DC EVSE fails the cable check resulting in EnergyTransferSetupFailed
+    and a raised MREC11CableCheckFault error.
     """
-    _, _, _, hlc_session_failed_mock = await setup_session_mocks(
+    probe_module, _, _, hlc_session_failed_mock = await setup_session_mocks(
         test_controller, everest_core
     )
+    error_raised_mock, _ = setup_error_monitoring(probe_module, "evse_manager")
 
     # Simulate an EV that enforces PnC (contract) payment against an EIM-only charger.
     # iso_start_v2g_session with 2 args: energy_mode + payment_option.
     test_controller.plug_in_dc_iso()
 
     await wait_for_hlc_session_failed_with_reason(hlc_session_failed_mock, "EnergyTransferSetupFailed")
+
+    # A genuine cable check failure must raise the cable check fault error
+    await wait_for_error(error_raised_mock, timeout=10)
+    raised_error_types = [call[0][0].type for call in error_raised_mock.call_args_list]
+    assert "evse_manager/MREC11CableCheckFault" in raised_error_types, (
+        f"Expected MREC11CableCheckFault to be raised on a failed cable check, got: {raised_error_types}"
+    )
+
     test_controller.plug_out()
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "imd": [Requirement("imd", "main")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil-dc.yaml")
+@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(cable_check_measurements=10))
+async def test_iso15118_dc_stop_transaction_during_cable_check(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test that stopping the transaction on request (regular Local/Remote stop) while the
+    cable check is still running does not raise a cable check fault: the cable check is
+    aborted because of the requested stop, which is a regular termination and must not
+    surface as MREC11CableCheckFault/Inoperative to the user. The session must still wind
+    down cleanly with a TransactionFinished event (StoppingCharging -> Finished), without
+    the D-LINK_ERROR of the dying HLC session restarting SLAC matching.
+    """
+    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    error_raised_mock, _ = setup_error_monitoring(probe_module, "evse_manager")
+    imd_measurement_mock = Mock()
+    probe_module.subscribe_variable("imd", "isolation_measurement", imd_measurement_mock)
+
+    # Run a complete charging session first: the state machine only arms the HLC stop
+    # handling (hlc_charging_active) when the Idle state is re-entered, so only from the
+    # second session on does a stop during cable check take the HLC stop path that must
+    # end in StoppingCharging -> Finished (and not in a SLAC matching restart).
+    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
+    await asyncio.sleep(3)
+    imd_measurement_mock.reset_mock()
+
+    test_controller.plug_in_dc_iso()
+
+    # Wait until the EVSE starts preparing for charging (DC: CableCheck, PreCharge, PowerDelivery)
+    await wait_for_session_events(session_event_mock, NO_ENERGY_SESSION_START_SEQUENCE)
+
+    # The IMD is first started during the cable check measurement phase, so the first
+    # isolation measurement means the cable check is running right now. The config asks
+    # for 10 measurement samples (10s at the simulator's 1Hz), so the stop request below
+    # reliably lands within the cable check.
+    await wait_for_ready(imd_measurement_mock, timeout=30)
+    await probe_module.call_command(
+        "evse_manager",
+        "stop_transaction",
+        {
+            "request": {
+                "reason": "Local"
+            }
+        },
+    )
+
+    # The stop must land during the cable check, i.e. charging must never start
+    await assert_no_events(session_event_mock, ["ChargingStarted"], wait_time=2, reset_after_check=False)
+    await wait_for_session_events(session_event_mock, ["TransactionFinished"])
+
+    # Give the detached cable check thread time to wind down before checking for errors
+    await asyncio.sleep(3)
+    raised_error_types = [call[0][0].type for call in error_raised_mock.call_args_list]
+    assert "evse_manager/MREC11CableCheckFault" not in raised_error_types, (
+        f"A requested stop during cable check must not raise a cable check fault, got: {raised_error_types}"
+    )
+    assert "evse_manager/Inoperative" not in raised_error_types, (
+        f"A requested stop during cable check must not make the EVSE inoperative, got: {raised_error_types}"
+    )
+
+    # Follow the session to its end to verify it winds down cleanly after the unplug
+    test_controller.plug_out()
+    await wait_for_session_events(session_event_mock, ["SessionFinished"])
 

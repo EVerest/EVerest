@@ -97,6 +97,28 @@ bool is_keyfile(const fs::path& file_path) {
 }
 
 /// @brief Searches for the private key linked to the provided certificate or nullopt if none was found
+/// @brief ISO 15118-20 mandates a secp521r1 or Ed448 key for the SECC TLS leaf, ISO 15118-2 a
+/// prime256v1 key. That key algorithm is what tells a V2G20 leaf from a V2G leaf in the shared SECC store
+bool is_v2g20_key_algorithm(const std::string& public_key_algorithm) {
+    return public_key_algorithm == "secp521r1" || public_key_algorithm == "ED448";
+}
+
+/// @brief whether a leaf in the SECC store belongs to the requested leaf type
+bool leaf_matches_type(LeafCertificateType certificate_type, const X509Wrapper& leaf) {
+    switch (certificate_type) {
+    case LeafCertificateType::V2G:
+        return !is_v2g20_key_algorithm(leaf.get_public_key_algorithm());
+    case LeafCertificateType::V2G20:
+        return is_v2g20_key_algorithm(leaf.get_public_key_algorithm());
+    default:
+        return true;
+    }
+}
+
+bool is_secc_leaf_type(LeafCertificateType certificate_type) {
+    return certificate_type == LeafCertificateType::V2G || certificate_type == LeafCertificateType::V2G20;
+}
+
 std::optional<fs::path> get_private_key_path_of_certificate(const X509Wrapper& certificate,
                                                             const fs::path& key_path_directory,
                                                             const std::optional<std::string> password) {
@@ -226,6 +248,16 @@ std::set<fs::path> get_certificate_path_of_key(const fs::path& key, const fs::pa
     error += certificate_path_directory.string();
 
     throw NoCertificateValidException(error);
+}
+
+/// @brief Writes a DER encoded OCSP response, replacing any previous content
+/// @return True if the file was written
+bool write_ocsp_response(const fs::path& path, const std::vector<std::uint8_t>& ocsp_response_der) {
+    std::ofstream fs(path.c_str(), std::ios::binary | std::ios::trunc);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): binary stream API
+    fs.write(reinterpret_cast<const char*>(ocsp_response_der.data()),
+             static_cast<std::streamsize>(ocsp_response_der.size()));
+    return fs.good();
 }
 
 /// @brief Searches for the ocsp data and hash related to the specified certificate and hash
@@ -379,6 +411,23 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
 
         X509CertificateBundle existing_certs(ca_bundle_path, EncodingFormat::PEM);
 
+        std::uintmax_t total_v2g_mo_ca_count = 0;
+        for (const auto ca_type : {CaCertificateType::V2G, CaCertificateType::MO}) {
+            const auto ca_path = this->ca_bundle_path_map.at(ca_type);
+            if (!fs::is_directory(ca_path)) {
+                filesystem_utils::create_file_if_nonexistent(ca_path);
+            }
+
+            X509CertificateBundle ca_certs(ca_path, EncodingFormat::PEM);
+            total_v2g_mo_ca_count += ca_certs.get_certificate_count();
+        }
+
+        if (total_v2g_mo_ca_count > max_fs_certificate_store_entries) {
+            EVLOG_error << "Max number of certificates " << max_fs_certificate_store_entries
+                        << " reached, install not possible!";
+            return InstallCertificateResult::CertificateStoreMaxLengthExceeded;
+        }
+
         if (existing_certs.is_using_directory()) {
             const std::string filename = conversions::ca_certificate_type_to_string(certificate_type) + "_ROOT_" +
                                          filesystem_utils::get_random_file_name(PEM_EXTENSION.string());
@@ -415,7 +464,7 @@ InstallCertificateResult EvseSecurity::install_ca_certificate(const std::string&
 DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certificate_hash_data) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
 
-    EVLOG_info << "Deleteing certificate: " << certificate_hash_data.serial_number;
+    EVLOG_info << "Deleting certificate: " << certificate_hash_data.serial_number;
 
     DeleteResult response;
     response.result = DeleteCertificateResult::NotFound;
@@ -515,7 +564,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
             std::move(X509CertificateHierarchy::build_hierarchy(base_roots, leaf_bundle.split()));
 
         // Collect all the leafs that we have to delete
-        auto leafs_to_delete = hierarchy.find_certificates_multi(certificate_hash_data);
+        auto leafs_to_delete = hierarchy.find_certificates_multi(certificate_hash_data, true);
 
         leaf_bundle.for_each_chain([&](const fs::path& path, const std::vector<X509Wrapper>& chain) {
             // If any chain element is contained in the leafs to delete, then delete the whole chain
@@ -621,11 +670,11 @@ InstallCertificateResult EvseSecurity::update_leaf_certificate(const std::string
     if (certificate_type == LeafCertificateType::CSMS) {
         cert_path = this->directories.csms_leaf_cert_directory;
         key_path = this->directories.csms_leaf_key_directory;
-    } else if (certificate_type == LeafCertificateType::V2G) {
+    } else if (is_secc_leaf_type(certificate_type)) {
         cert_path = this->directories.secc_leaf_cert_directory;
         key_path = this->directories.secc_leaf_key_directory;
     } else {
-        EVLOG_error << "Attempt to update leaf certificate for non CSMS/V2G certificate!";
+        EVLOG_error << "Attempt to update leaf certificate for non CSMS/V2G/V2G20 certificate!";
         return InstallCertificateResult::WriteError;
     }
 
@@ -644,6 +693,15 @@ InstallCertificateResult EvseSecurity::update_leaf_certificate(const std::string
 
         // First certificate is always the leaf as per the spec
         const auto& leaf_certificate = _certificate_chain[0];
+
+        // The SECC store is shared: retrieval by V2G / V2G20 goes by key algorithm, not by the type the
+        // installer named, so a mismatch is not fatal -- but it means the CSMS signed a CSR of the other type
+        if (is_secc_leaf_type(certificate_type) && !leaf_matches_type(certificate_type, leaf_certificate)) {
+            EVLOG_warning << "Installing " << conversions::leaf_certificate_type_to_string(certificate_type)
+                          << " leaf with key algorithm " << leaf_certificate.get_public_key_algorithm()
+                          << ", which is the profile of the other SECC leaf type (ISO 15118-2: prime256v1, "
+                             "ISO 15118-20: secp521r1 / ED448); it will be served as that type";
+        }
 
         // Check if a private key belongs to the provided certificate
         std::optional<fs::path> private_key_path_opt =
@@ -742,6 +800,7 @@ EvseSecurity::get_installed_certificates(const std::vector<CertificateType>& cer
                     continue;
                 }
                 certificate_hash_data_chain.certificate_hash_data = root.hash.value();
+                certificate_hash_data_chain.public_key_algorithm = root.certificate.get_public_key_algorithm();
 
                 // Add all owned children/certificates in order
                 X509CertificateHierarchy::for_each_descendant(
@@ -769,6 +828,7 @@ EvseSecurity::get_installed_certificates(const std::vector<CertificateType>& cer
         params.certificate_type = LeafCertificateType::V2G;
         params.include_all_valid = true;
         params.remove_duplicates = true;
+        params.all_key_algorithms = true; // V2G and V2G20 leafs alike
 
         const GetCertificateFullInfoResult secc_key_pairs = get_full_leaf_certificate_info_internal(params);
 
@@ -806,6 +866,7 @@ EvseSecurity::get_installed_certificates(const std::vector<CertificateType>& cer
                     for (auto& root : hierarchy.get_hierarchy()) {
                         CertificateHashDataChain certificate_hash_data_chain;
                         certificate_hash_data_chain.certificate_type = CertificateType::V2GCertificateChain;
+                        certificate_hash_data_chain.public_key_algorithm = secc_key_pair.public_key_algorithm;
 
                         // Since the hierarchy starts with V2G (Root) -> SubCa1->SubCa2 we have to reorder:
                         // them with the leaf first when returning to:
@@ -911,6 +972,7 @@ OCSPRequestDataList EvseSecurity::get_v2g_ocsp_request_data() {
     params.include_ocsp = false;
     params.include_root = false;
     params.remove_duplicates = true;
+    params.all_key_algorithms = true; // OCSP data for V2G and V2G20 leafs alike
 
     const GetCertificateFullInfoResult result = get_full_leaf_certificate_info_internal(params);
 
@@ -1081,6 +1143,14 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
 
     EVLOG_info << "Updating OCSP cache";
 
+    // The cache holds DER: the TLS server staples the file content as-is
+    std::vector<std::uint8_t> ocsp_response_der;
+    if (false == CryptoSupplier::base64_decode_to_bytes(ocsp_response, ocsp_response_der) ||
+        ocsp_response_der.empty()) {
+        EVLOG_error << "Could not update ocsp cache, OCSP response is not base64 encoded DER";
+        return;
+    }
+
     // TODO(ioan): shouldn't we also do this for the MO?
     const auto ca_bundle_path = this->ca_bundle_path_map.at(CaCertificateType::V2G);
     auto leaf_cert_dir = this->directories.secc_leaf_cert_directory; // V2G leafs
@@ -1095,7 +1165,8 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
         // If we already have the hash, over-write, else create a new one
         try {
             // Find the certificates, can me multiple if we have SUBcas in multiple bundles
-            const std::vector<X509Wrapper> certs = certificate_hierarchy.find_certificates_multi(certificate_hash_data);
+            const std::vector<X509Wrapper> certs =
+                certificate_hierarchy.find_certificates_multi(certificate_hash_data, true);
 
             for (auto& cert : certs) {
                 EVLOG_debug << "Writing OCSP Response to filesystem";
@@ -1118,10 +1189,9 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
                 if (get_oscp_data_of_certificate(cert, certificate_hash_data, out_path_hash, out_path_data)) {
                     EVLOG_debug << "OCSP certificate hash already found, over-writing!";
 
-                    // Discard previous content
-                    std::ofstream fs(out_path_data.c_str(), std::ios::trunc);
-                    fs << ocsp_response;
-                    fs.close();
+                    if (false == write_ocsp_response(out_path_data, ocsp_response_der)) {
+                        EVLOG_error << "Could not write OCSP certificate data!";
+                    }
 
                     updated_hash = true;
                 }
@@ -1133,12 +1203,7 @@ void EvseSecurity::update_ocsp_cache(const CertificateHashData& certificate_hash
                     const auto ocsp_file_path = (ocsp_path / name) += DER_EXTENSION;
                     const auto hash_file_path = (ocsp_path / name) += CERT_HASH_EXTENSION;
 
-                    // Write out OCSP data
-                    try {
-                        std::ofstream fs(ocsp_file_path.c_str());
-                        fs << ocsp_response;
-                        fs.close();
-                    } catch (const std::exception& e) {
+                    if (false == write_ocsp_response(ocsp_file_path, ocsp_response_der)) {
                         EVLOG_error << "Could not write OCSP certificate data!";
                     }
 
@@ -1278,10 +1343,10 @@ GetCertificateSignRequestResult EvseSecurity::generate_certificate_signing_reque
     fs::path key_path;
     if (certificate_type == LeafCertificateType::CSMS) {
         key_path = this->directories.csms_leaf_key_directory / file_name;
-    } else if (certificate_type == LeafCertificateType::V2G) {
+    } else if (is_secc_leaf_type(certificate_type)) {
         key_path = this->directories.secc_leaf_key_directory / file_name;
     } else {
-        EVLOG_error << "Generate CSR for non CSMS/V2G leafs!";
+        EVLOG_error << "Generate CSR for non CSMS/V2G/V2G20 leafs!";
 
         GetCertificateSignRequestResult result{};
         result.status = GetCertificateSignRequestStatus::InvalidRequestedType;
@@ -1294,6 +1359,11 @@ GetCertificateSignRequestResult EvseSecurity::generate_certificate_signing_reque
     info.commonName = common;
     info.country = country;
     info.organization = organization;
+    // Subject DC of the SECC leaf: "CPO" per ISO 15118-2 Table F.2, "CSO" per ISO 15118-20 Table B.5
+    info.domain_component = (certificate_type == LeafCertificateType::V2G20) ? "CSO" : "CPO";
+    // keyUsage: digitalSignature only for the CSMS client and the ISO 15118-2 SECC leaf (Table F.2), the
+    // ISO 15118-20 SECC leaf adds keyAgreement (Table B.5)
+    info.key_agreement = (certificate_type == LeafCertificateType::V2G20);
 #ifdef CSR_DNS_NAME
     info.dns_name = CSR_DNS_NAME;
 #else
@@ -1305,7 +1375,10 @@ GetCertificateSignRequestResult EvseSecurity::generate_certificate_signing_reque
     info.ip_address = std::nullopt;
 #endif
 
-    info.key_info.key_type = CryptoKeyType::EC_prime256v1;
+    // ISO 15118-20 mandates secp521r1 (or Ed448) for the SECC TLS leaf, ISO 15118-2 and the CSMS
+    // client certificate use prime256v1
+    info.key_info.key_type =
+        (certificate_type == LeafCertificateType::V2G20) ? CryptoKeyType::EC_secp521r1 : CryptoKeyType::EC_prime256v1;
     info.key_info.generate_on_custom = use_custom_provider;
     info.key_info.private_key_file = key_path;
 
@@ -1338,9 +1411,12 @@ GetCertificateFullInfoResult EvseSecurity::get_all_valid_certificates_info(LeafC
     GetCertificateFullInfoResult filtered_results;
     filtered_results.status = result.status;
 
-    // Filter the certificates to return only the ones that have a unique
-    // root, and from those that have a unique root, return only the newest
-    std::set<std::string> unique_roots;
+    // Filter the certificates to return only the newest leaf per (root, public key algorithm).
+    // Leafs under the same root but with different key algorithms are distinct deployments
+    // rather than renewals of one another -- ISO 15118-2 mandates a prime256v1 SECC leaf while
+    // ISO 15118-20 mandates secp521r1/ED448, and a SECC offering both protocols installs both
+    // under the same V2G root -- so each algorithm keeps its own newest leaf.
+    std::set<std::pair<std::string, std::string>> unique_root_algorithms;
 
     // The newest are the first, that's how 'get_leaf_certificate_info_internal'
     // returns them
@@ -1350,14 +1426,11 @@ GetCertificateFullInfoResult EvseSecurity::get_all_valid_certificates_info(LeafC
             continue;
         }
 
-        const std::string& root = chain.certificate_root.value();
+        const auto key = std::make_pair(chain.certificate_root.value(), chain.public_key_algorithm);
 
-        // If we don't contain the unique root yet, it is the newest leaf for that root
-        if (unique_roots.find(root) == unique_roots.end()) {
+        // If we don't contain the (root, algorithm) yet, it is the newest leaf for that pair
+        if (unique_root_algorithms.insert(key).second) {
             filtered_results.info.push_back(chain);
-
-            // Add it to the roots list, adding only unique roots
-            unique_roots.insert(root);
         }
     }
 
@@ -1402,12 +1475,12 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
         key_dir = this->directories.csms_leaf_key_directory;
         cert_dir = this->directories.csms_leaf_cert_directory;
         root_type = CaCertificateType::CSMS;
-    } else if (certificate_type == LeafCertificateType::V2G) {
+    } else if (is_secc_leaf_type(certificate_type)) {
         key_dir = this->directories.secc_leaf_key_directory;
         cert_dir = this->directories.secc_leaf_cert_directory;
         root_type = CaCertificateType::V2G;
     } else {
-        EVLOG_warning << "Rejected attempt to retrieve non CSMS/V2G key pair";
+        EVLOG_warning << "Rejected attempt to retrieve non CSMS/V2G/V2G20 key pair";
         result.status = GetCertificateInfoStatus::Rejected;
         return result;
     }
@@ -1445,6 +1518,11 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
 
                     if (params.include_future_valid) {
                         is_valid |= chain.at(0).is_valid_in_future();
+                    }
+
+                    // V2G and V2G20 share the SECC store; keep only the leafs of the requested profile
+                    if (!params.all_key_algorithms && !leaf_matches_type(params.certificate_type, chain.at(0))) {
+                        return true;
                     }
                 }
 
@@ -1653,6 +1731,7 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
             info.certificate_single = certificate_file;
             info.certificate_count = chain_len;
             info.password = this->private_key_password;
+            info.public_key_algorithm = certificate.get_public_key_algorithm();
 
             if (params.include_ocsp) {
                 info.ocsp = certificate_ocsp;
@@ -2011,6 +2090,7 @@ EvseSecurity::verify_certificate_internal(const std::string& certificate_chain,
             ca_certificate_types.insert(CaCertificateType::CSMS);
             break;
         case LeafCertificateType::V2G:
+        case LeafCertificateType::V2G20:
             ca_certificate_types.insert(CaCertificateType::V2G);
             break;
         case LeafCertificateType::MF:

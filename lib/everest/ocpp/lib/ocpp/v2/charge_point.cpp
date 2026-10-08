@@ -31,6 +31,7 @@
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 
 #include <ocpp/v21/functional_blocks/bidirectional.hpp>
+#include <ocpp/v21/functional_blocks/der_control.hpp>
 
 #include <ocpp/v2/messages/LogStatusNotification.hpp>
 #include <ocpp/v2/messages/RequestStopTransaction.hpp>
@@ -48,46 +49,33 @@ namespace v2 {
 const auto DEFAULT_MESSAGE_QUEUE_SIZE_THRESHOLD = 1000;
 
 ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
+                         const std::shared_ptr<DeviceModelAbstract> device_model,
+                         const std::shared_ptr<DatabaseHandler> database_handler,
+                         const std::shared_ptr<EvseSecurity> evse_security,
+                         const std::shared_ptr<ConnectivityManagerInterface> connectivity_manager,
+                         const std::string& message_log_path, const Callbacks& callbacks) :
+    ocpp::ChargingStationBase(evse_security),
+    device_model(device_model),
+    database_handler(database_handler),
+    connectivity_manager(connectivity_manager),
+    ocsp_updater(make_ocsp_updater()),
+    callbacks(callbacks) {
+    initialize(evse_connector_structure, message_log_path);
+}
+
+ChargePoint::ChargePoint(const std::map<int32_t, int32_t>& evse_connector_structure,
                          std::shared_ptr<DeviceModelAbstract> device_model,
                          std::shared_ptr<DatabaseHandler> database_handler,
                          std::shared_ptr<MessageQueue<v2::MessageType>> message_queue,
                          const std::string& message_log_path, const std::shared_ptr<EvseSecurity> evse_security,
-                         const Callbacks& callbacks) :
+                         const Callbacks& callbacks, const fs::path& share_path) :
     ocpp::ChargingStationBase(evse_security),
     message_queue(message_queue),
     device_model(device_model),
     database_handler(database_handler),
-    registration_status(RegistrationStatusEnum::Rejected),
-    skip_invalid_csms_certificate_notifications(false),
-    upload_log_status(UploadLogStatusEnum::Idle),
-    bootreason(BootReasonEnum::PowerUp),
-    ocsp_updater(this->evse_security,
-                 [this](GetCertificateStatusRequest req) -> GetCertificateStatusResponse {
-                     try {
-                         return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
-                             MessageType::GetCertificateStatusResponse)(req);
-                     } catch (const UnexpectedMessageTypeFromCSMS& e) {
-                         EVLOG_warning << e.what();
-                     }
-                     GetCertificateStatusResponse response;
-                     response.status = GetCertificateStatusEnum::Failed;
-                     return response;
-                 }),
+    share_path(share_path),
+    ocsp_updater(make_ocsp_updater()),
     callbacks(callbacks) {
-
-    if (!this->device_model) {
-        EVLOG_AND_THROW(std::invalid_argument("Device model should not be null"));
-    }
-
-    // Make sure the received callback struct is completely filled early before we actually start running
-    if (!this->callbacks.all_callbacks_valid(this->device_model, evse_connector_structure)) {
-        EVLOG_AND_THROW(std::invalid_argument("All non-optional callbacks must be supplied"));
-    }
-
-    if (!this->database_handler) {
-        EVLOG_AND_THROW(std::invalid_argument("Database handler should not be null"));
-    }
-
     initialize(evse_connector_structure, message_log_path);
 }
 
@@ -100,9 +88,8 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
         evse_connector_structure, std::make_shared<DeviceModel>(std::move(device_model_storage_interface)),
         std::make_shared<DatabaseHandler>(
             std::make_unique<everest::db::sqlite::Connection>(fs::path(core_database_path) / "cp.db"), sql_init_path),
-        nullptr /* message_queue initialized in this constructor */, message_log_path, evse_security, callbacks) {
-
-    this->share_path = ocpp_main_path;
+        nullptr /* message_queue initialized in this constructor */, message_log_path, evse_security, callbacks,
+        ocpp_main_path) {
 }
 
 ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
@@ -115,13 +102,16 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
                 std::make_unique<DeviceModelStorageSqlite>(device_model_storage_address, device_model_migration_path,
                                                            device_model_config_path),
                 ocpp_main_path, core_database_path, sql_init_path, message_log_path, evse_security, callbacks) {
-
-    this->share_path = ocpp_main_path;
 }
 
-ChargePoint::~ChargePoint() = default;
+ChargePoint::~ChargePoint() {
+    // Suppress deferred websocket callbacks before any member is destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
+}
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
+    this->connectivity_manager->set_message_callback(
+        std::bind(&ChargePoint::message_callback, this, std::placeholders::_1));
     this->message_queue->start();
 
     // Publish the initial default price before connecting (offline state at startup).
@@ -139,7 +129,7 @@ void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     // call clear_invalid_charging_profiles when system boots
     this->clear_invalid_charging_profiles();
 
-    if (start_connecting) {
+    if (start_connecting && !this->connectivity_manager->is_websocket_connected()) {
         this->connectivity_manager->connect();
     }
 
@@ -174,15 +164,20 @@ void ChargePoint::stop() {
     this->ocsp_updater.stop();
     this->availability->stop_heartbeat_timer();
     this->provisioning->stop_bootnotification_timer();
-    this->connectivity_manager->disconnect();
     this->security->stop_certificate_expiration_check_timers();
     this->diagnostics->stop_monitoring();
-    this->message_queue->stop();
     this->security->stop_certificate_signed_timer();
+    this->message_queue->stop();
+    // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
+    // ~ChargePoint() disarms.
+    this->connectivity_manager->disconnect();
 }
 
 void ChargePoint::disconnect_websocket() {
-    this->connectivity_manager->disconnect();
+    this->message_queue->run_when_idle([this]() {
+        this->connectivity_manager->disconnect();
+        return false;
+    });
 }
 
 void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
@@ -190,12 +185,36 @@ void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
 }
 
 void ChargePoint::on_firmware_update_status_notification(std::int32_t request_id,
-                                                         const FirmwareStatusEnum& firmware_update_status) {
-    this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status);
+                                                         const FirmwareStatusEnum& firmware_update_status,
+                                                         const bool disable_connectors_during_install) {
+    this->firmware_update->on_firmware_update_status_notification(request_id, firmware_update_status,
+                                                                  disable_connectors_during_install);
+}
+
+void ChargePoint::on_der_alarm(const ocpp::v21::NotifyDERAlarmRequest& request) {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        (*handle)->notify_der_alarm(request);
+    } else {
+        EVLOG_warning << "on_der_alarm called but DER functional block is not available; ignoring";
+    }
+}
+
+void ChargePoint::on_der_republish_active_directives() {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        (*handle)->republish_active_directives();
+    } else {
+        EVLOG_warning
+            << "on_der_republish_active_directives called but DER functional block is not available; ignoring";
+    }
 }
 
 void ChargePoint::connect_websocket(std::optional<std::int32_t> network_profile_slot) {
-    this->connectivity_manager->connect(network_profile_slot);
+    this->message_queue->run_when_idle([this, network_profile_slot]() {
+        this->connectivity_manager->connect(network_profile_slot);
+        return this->connectivity_manager->is_websocket_connected();
+    });
 }
 void ChargePoint::on_session_started(const std::int32_t evse_id, const std::int32_t connector_id) {
     this->evse_manager->get_evse(evse_id).submit_event(connector_id, ConnectorEvent::PlugIn);
@@ -232,9 +251,12 @@ void ChargePoint::on_transaction_finished(const std::int32_t evse_id, const Date
                                           const TriggerReasonEnum trigger_reason,
                                           const std::optional<IdToken>& id_token,
                                           const std::optional<std::string>& signed_meter_value,
-                                          const ChargingStateEnum charging_state) {
+                                          const ChargingStateEnum charging_state,
+                                          const std::optional<SignedMeterValue>& start_signed_meter_value) {
     this->transaction->on_transaction_finished(evse_id, timestamp, meter_stop, reason, trigger_reason, id_token,
-                                               signed_meter_value, charging_state);
+                                               signed_meter_value, charging_state, start_signed_meter_value);
+    // Starts a firmware download deferred by L01.FR.13 once the last transaction ended.
+    this->firmware_update->on_transaction_finished();
 }
 
 void ChargePoint::on_session_finished(const std::int32_t evse_id, const std::int32_t connector_id) {
@@ -269,6 +291,9 @@ void ChargePoint::on_meter_value(const std::int32_t evse_id, const MeterValue& m
 
 void ChargePoint::configure_message_logging_format(const std::string& message_log_path) {
     auto log_formats = this->device_model->get_value<std::string>(ControllerComponentVariables::LogMessagesFormat);
+    const bool log_messages =
+        this->device_model->get_optional_value<bool>(ControllerComponentVariables::LogMessages).value_or(true) &&
+        !log_formats.empty();
     const bool log_to_console = log_formats.find("console") != std::string::npos;
     const bool detailed_log_to_console = log_formats.find("console_detailed") != std::string::npos;
     const bool log_to_file = log_formats.find("log") != std::string::npos;
@@ -297,7 +322,7 @@ void ChargePoint::configure_message_logging_format(const std::string& message_lo
 
     if (log_rotation) {
         this->logging = std::make_shared<ocpp::MessageLogging>(
-            !log_formats.empty(), message_log_path, "libocpp_201", log_to_console, detailed_log_to_console, log_to_file,
+            log_messages, message_log_path, "libocpp_201", log_to_console, detailed_log_to_console, log_to_file,
             log_to_html, log_raw, log_security, session_logging, logging_callback,
             ocpp::LogRotationConfig(log_rotation_date_suffix, log_rotation_maximum_file_size,
                                     log_rotation_maximum_file_count),
@@ -312,7 +337,7 @@ void ChargePoint::configure_message_logging_format(const std::string& message_lo
             });
     } else {
         this->logging = std::make_shared<ocpp::MessageLogging>(
-            !log_formats.empty(), message_log_path, DateTime().to_rfc3339(), log_to_console, detailed_log_to_console,
+            log_messages, message_log_path, DateTime().to_rfc3339(), log_to_console, detailed_log_to_console,
             log_to_file, log_to_html, log_raw, log_security, session_logging, logging_callback);
     }
 }
@@ -445,7 +470,27 @@ void ChargePoint::on_ev_charging_needs(const NotifyEVChargingNeedsRequest& reque
 
 void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                              const std::string& message_log_path) {
+    if (this->device_model == nullptr) {
+        EVLOG_AND_THROW(std::invalid_argument("Device model should not be null"));
+    }
+
+    // Make sure the received callback struct is completely filled early before we actually start running
+    if (!this->callbacks.all_callbacks_valid(this->device_model, evse_connector_structure)) {
+        EVLOG_AND_THROW(std::invalid_argument("All non-optional callbacks must be supplied"));
+    }
+
+    if (this->database_handler == nullptr) {
+        EVLOG_AND_THROW(std::invalid_argument("Database handler should not be null"));
+    }
+
+    // make sure number of connectors is set correctly
+    const auto number_of_connectors_cv = ControllerComponentVariables::NumberOfConnectors;
+    this->device_model->set_value(number_of_connectors_cv.component, number_of_connectors_cv.variable.value(),
+                                  AttributeEnum::Actual, std::to_string(evse_connector_structure.size()),
+                                  VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
     this->device_model->check_integrity(evse_connector_structure);
+    // One-time migration: if NetworkConnectionProfiles blob is non-empty, write into DM components and clear blob
+    NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*this->device_model);
     this->database_handler->open_connection();
     this->component_state_manager = std::make_shared<ComponentStateManager>(
         evse_connector_structure, database_handler,
@@ -500,23 +545,26 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
     this->evse_manager = std::make_unique<EvseManager>(
         evse_connector_structure, *this->device_model, this->database_handler, component_state_manager,
         transaction_meter_value_callback, this->callbacks.pause_charging_callback);
+
     this->configure_message_logging_format(message_log_path);
 
-    this->connectivity_manager =
-        std::make_unique<ConnectivityManager>(*this->device_model, this->evse_security, this->logging, this->share_path,
-                                              [this](const std::string& message) { this->message_callback(message); });
-
-    this->connectivity_manager->set_websocket_connected_callback(
-        [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
-               const OcppProtocolVersion ocpp_version) {
-            this->websocket_connected_callback(configuration_slot, network_connection_profile, ocpp_version);
-        });
-    this->connectivity_manager->set_websocket_disconnected_callback(
-        [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile, auto) {
-            this->websocket_disconnected_callback(configuration_slot, network_connection_profile);
-        });
-    this->connectivity_manager->set_websocket_connection_failed_callback(
-        [this](ConnectionFailedReason reason) { this->websocket_connection_failed(reason); });
+    if (this->connectivity_manager == nullptr) {
+        // connectivity manager was not provided in constructor. Create a new one and set the message callbacks
+        this->connectivity_manager =
+            std::make_shared<ConnectivityManager>(*this->device_model, this->evse_security, this->share_path);
+        this->connectivity_manager->set_websocket_connected_callback(
+            [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
+                   const OcppProtocolVersion ocpp_version) {
+                this->on_websocket_connected(configuration_slot, network_connection_profile, ocpp_version);
+            });
+        this->connectivity_manager->set_websocket_disconnected_callback(
+            [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile, auto) {
+                this->on_websocket_disconnected(configuration_slot, network_connection_profile);
+            });
+        this->connectivity_manager->set_websocket_connection_failed_callback(
+            std::bind(&ChargePoint::on_websocket_connection_failed, this, std::placeholders::_1));
+    }
+    this->connectivity_manager->set_logging(this->logging);
 
     if (this->message_queue == nullptr) {
         std::set<v2::MessageType> message_types_discard_for_queueing;
@@ -559,10 +607,21 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         *this->message_dispatcher, *this->device_model, *this->connectivity_manager, *this->evse_manager,
         *this->database_handler, *this->evse_security, *this->component_state_manager, this->ocpp_version);
 
+    this->device_model->register_variable_listener(
+        [this](const std::unordered_map<std::int64_t, VariableMonitoringMeta>& /*monitors*/, const Component& component,
+               const Variable& variable, const VariableCharacteristics& /*characteristics*/,
+               const VariableAttribute& /*attribute*/, const std::string& /*value_previous*/,
+               const std::string& value_current) {
+            if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") &&
+                (variable.name == "Enabled" || variable.name == "Available") && value_current == "true") {
+                this->build_der_control_if_enabled();
+            }
+        });
+
     this->data_transfer = std::make_unique<DataTransfer>(
         *this->functional_block_context, this->callbacks.data_transfer_callback, DEFAULT_WAIT_FOR_FUTURE_TIMEOUT);
-    this->security = std::make_unique<Security>(*this->functional_block_context, *this->logging, this->ocsp_updater,
-                                                this->callbacks.security_event_callback);
+    this->security = std::make_unique<Security>(*this->functional_block_context, *this->message_queue, *this->logging,
+                                                this->ocsp_updater, this->callbacks.security_event_callback);
 
     if (device_model->get_optional_value<bool>(ControllerComponentVariables::ReservationCtrlrAvailable)
             .value_or(false)) {
@@ -660,11 +719,74 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             *this->functional_block_context, this->callbacks.update_allowed_energy_transfer_modes_callback);
     }
 
+    this->build_der_control_if_enabled();
+
     Variable field_length = {"FieldLength"};
     field_length.instance = "Get15118EVCertificateResponse.exiResponse";
     this->device_model->set_value(ControllerComponents::OCPPCommCtrlr, field_length, AttributeEnum::Actual,
                                   std::to_string(ISO15118_GET_EV_CERTIFICATE_EXI_RESPONSE_SIZE),
                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+}
+
+void ChargePoint::build_der_control_if_enabled() {
+    auto handle = this->der_control.handle();
+    if (*handle != nullptr) {
+        return;
+    }
+
+    // A DER component is active if Available==true and Enabled==true. A missing variable means disabled:
+    // static configs must define Enabled (typically "true") for the block to build.
+    const auto number_of_evses = static_cast<std::int32_t>(this->evse_manager->get_number_of_evses());
+    bool der_available = false;
+    for (std::int32_t evse = 1; evse <= number_of_evses; evse++) {
+        const bool dc_active =
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Available))
+                .value_or(false) &&
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_dc_component_variable(evse, DERComponentVariables::Enabled))
+                .value_or(false);
+        const bool ac_active =
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Available))
+                .value_or(false) &&
+            this->device_model
+                ->get_optional_value<bool>(
+                    DERComponentVariables::get_ac_component_variable(evse, DERComponentVariables::Enabled))
+                .value_or(false);
+        if (dc_active || ac_active) {
+            der_available = true;
+            break;
+        }
+    }
+
+    if (der_available) {
+        *handle = std::make_unique<v21::DERControl>(*this->functional_block_context,
+                                                    this->callbacks.der_active_directives_callback);
+    }
+}
+
+OcspUpdater ChargePoint::make_ocsp_updater() {
+    return OcspUpdater(this->evse_security, [this](const GetCertificateStatusRequest& request) {
+        return this->get_certificate_status_from_csms(request);
+    });
+}
+
+GetCertificateStatusResponse ChargePoint::get_certificate_status_from_csms(const GetCertificateStatusRequest& request) {
+    try {
+        return this->send_callback<GetCertificateStatusRequest, GetCertificateStatusResponse>(
+            MessageType::GetCertificateStatusResponse)(request);
+    } catch (const UnexpectedMessageTypeFromCSMS& e) {
+        EVLOG_warning << e.what();
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Malformed GetCertificateStatusResponse from CSMS: " << e.what();
+    }
+    GetCertificateStatusResponse response;
+    response.status = GetCertificateStatusEnum::Failed;
+    return response;
 }
 
 void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message) {
@@ -734,6 +856,7 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::GetChargingProfiles:
         case MessageType::GetCompositeSchedule:
         case MessageType::NotifyEVChargingNeedsResponse:
+        case MessageType::UpdateDynamicSchedule:
             if (this->smart_charging != nullptr) {
                 this->smart_charging->handle_message(message);
             } else {
@@ -763,8 +886,18 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
             } else {
                 send_not_implemented_error(message.uniqueId, message.messageTypeId);
             }
-
             break;
+        case MessageType::SetDERControl:
+        case MessageType::GetDERControl:
+        case MessageType::ClearDERControl: {
+            auto handle = this->der_control.handle();
+            if (*handle != nullptr) {
+                (*handle)->handle_message(message);
+            } else {
+                send_not_implemented_error(message.uniqueId, message.messageTypeId);
+            }
+            break;
+        }
         case MessageType::Authorize:
         case MessageType::AuthorizeResponse:
         case MessageType::BootNotification:
@@ -859,24 +992,18 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::BatterySwapResponse:
         case MessageType::ChangeTransactionTariff:
         case MessageType::ChangeTransactionTariffResponse:
-        case MessageType::ClearDERControl:
-        case MessageType::ClearDERControlResponse:
         case MessageType::ClearTariffs:
         case MessageType::ClearTariffsResponse:
         case MessageType::ClosePeriodicEventStream:
         case MessageType::ClosePeriodicEventStreamResponse:
         case MessageType::GetCRL:
         case MessageType::GetCRLResponse:
-        case MessageType::GetDERControl:
-        case MessageType::GetDERControlResponse:
         case MessageType::GetPeriodicEventStream:
         case MessageType::GetPeriodicEventStreamResponse:
         case MessageType::GetTariffs:
         case MessageType::GetTariffsResponse:
         case MessageType::NotifyDERAlarm:
         case MessageType::NotifyDERAlarmResponse:
-        case MessageType::NotifyDERStartStop:
-        case MessageType::NotifyDERStartStopResponse:
         case MessageType::NotifyPeriodicEventStream:
         case MessageType::NotifyPeriodicEventStreamResponse:
         case MessageType::NotifyPriorityCharging:
@@ -891,9 +1018,13 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
         case MessageType::RequestBatterySwapResponse:
         case MessageType::SetDefaultTariff:
         case MessageType::SetDefaultTariffResponse:
-        case MessageType::SetDERControl:
+        case MessageType::ClearDERControlResponse:
+        case MessageType::GetDERControlResponse:
+        case MessageType::NotifyDERStartStop:
+        case MessageType::NotifyDERStartStopResponse:
+        case MessageType::ReportDERControl:
+        case MessageType::ReportDERControlResponse:
         case MessageType::SetDERControlResponse:
-        case MessageType::UpdateDynamicSchedule:
         case MessageType::UpdateDynamicScheduleResponse:
         case MessageType::UsePriorityCharging:
         case MessageType::UsePriorityChargingResponse:
@@ -1103,18 +1234,23 @@ std::optional<DataTransferResponse> ChargePoint::data_transfer_req(const DataTra
     return this->data_transfer->data_transfer_req(request);
 }
 
-void ChargePoint::websocket_connected_callback(const int configuration_slot,
-                                               const NetworkConnectionProfile& network_connection_profile,
-                                               const OcppProtocolVersion ocpp_version) {
+void ChargePoint::on_websocket_connected(const int configuration_slot,
+                                         const NetworkConnectionProfile& network_connection_profile,
+                                         const OcppProtocolVersion ocpp_version) {
     this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
+    this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
+                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
     this->message_queue->resume(this->message_queue_resume_delay);
     this->ocpp_version = ocpp_version;
+    const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
+    if (this->smart_charging != nullptr && time_disconnected.time_since_epoch() != 0s) {
+        this->smart_charging->on_connection_restored(std::chrono::steady_clock::now() - time_disconnected);
+    }
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
         this->connectivity_manager->confirm_successful_connection();
 
         // check if we are disconnected and offline theshold has been defined
-        if (const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
-            time_disconnected.time_since_epoch() != 0s &&
+        if (time_disconnected.time_since_epoch() != 0s &&
             this->device_model->get_value<int>(ControllerComponentVariables::OfflineThreshold) != 0) {
             // handle offline threshold
             //  Get the current time point using steady_clock
@@ -1149,11 +1285,14 @@ void ChargePoint::websocket_connected_callback(const int configuration_slot,
     }
 }
 
-void ChargePoint::websocket_disconnected_callback(const int configuration_slot,
-                                                  const NetworkConnectionProfile& network_connection_profile) {
+void ChargePoint::on_websocket_disconnected(const int configuration_slot,
+                                            const NetworkConnectionProfile& network_connection_profile) {
     this->message_queue->pause();
 
     this->security->stop_certificate_expiration_check_timers();
+    if (this->smart_charging != nullptr) {
+        this->smart_charging->on_connection_lost();
+    }
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(false, configuration_slot, network_connection_profile,
                                                                   this->ocpp_version);
@@ -1163,7 +1302,7 @@ void ChargePoint::websocket_disconnected_callback(const int configuration_slot,
     }
 }
 
-void ChargePoint::websocket_connection_failed(ConnectionFailedReason reason) {
+void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) {
     switch (reason) {
     case ConnectionFailedReason::InvalidCSMSCertificate:
         if (!this->skip_invalid_csms_certificate_notifications) {
@@ -1174,13 +1313,21 @@ void ChargePoint::websocket_connection_failed(ConnectionFailedReason reason) {
             EVLOG_debug << "Skipping InvalidCsmsCertificate SecurityEvent since it has been sent already";
         }
         break;
-    case ConnectionFailedReason::FailedToAuthenticateAtCsms:
+    case ConnectionFailedReason::FailedToAuthenticateAtCsms: {
         const auto& security_event = ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS;
         this->security->security_event_notification_req(CiString<50>(security_event), std::nullopt, true,
                                                         utils::is_critical(security_event));
         break;
     }
+    default: {
+        const auto& security_event = "WebsocketConnectionFailedWithUnknownReason";
+        EVLOG_error << "Websocket connection failed with unknown reason";
+        this->security->security_event_notification_req(CiString<50>(security_event), std::nullopt, true, false);
+        break;
+    }
+    }
 }
+
 void ChargePoint::update_dm_availability_state(const std::int32_t evse_id, const std::int32_t connector_id,
                                                const ConnectorStatusEnum status) {
     RequiredComponentVariable charging_station = ControllerComponentVariables::ChargingStationAvailabilityState;
@@ -1248,16 +1395,16 @@ void ChargePoint::register_variable_listener(
     device_model->register_variable_listener(std::move(listener));
 }
 
-GetCompositeScheduleResponse ChargePoint::get_composite_schedule(const GetCompositeScheduleRequest& request) {
+EnhancedCompositeScheduleResponse ChargePoint::get_composite_schedule(const GetCompositeScheduleRequest& request) {
     if (this->smart_charging == nullptr) {
-        GetCompositeScheduleResponse response;
+        EnhancedCompositeScheduleResponse response;
         response.status = GenericStatusEnum::Rejected;
         return response;
     }
     return this->smart_charging->get_composite_schedule(request);
 }
 
-std::optional<CompositeSchedule>
+std::optional<EnhancedCompositeSchedule>
 ChargePoint::get_composite_schedule(std::int32_t evse_id, std::chrono::seconds duration, ChargingRateUnitEnum unit) {
     if (this->smart_charging == nullptr) {
         return std::nullopt;
@@ -1265,8 +1412,8 @@ ChargePoint::get_composite_schedule(std::int32_t evse_id, std::chrono::seconds d
     return this->smart_charging->get_composite_schedule(evse_id, duration, unit);
 }
 
-std::vector<CompositeSchedule> ChargePoint::get_all_composite_schedules(const std::int32_t duration_s,
-                                                                        const ChargingRateUnitEnum& unit) {
+std::vector<EnhancedCompositeSchedule> ChargePoint::get_all_composite_schedules(const std::int32_t duration_s,
+                                                                                const ChargingRateUnitEnum& unit) {
     if (this->smart_charging == nullptr) {
         return {};
     }
@@ -1282,7 +1429,7 @@ std::optional<int> ChargePoint::get_priority_from_configuration_slot(const int c
     return this->connectivity_manager->get_priority_from_configuration_slot(configuration_slot);
 }
 
-const std::vector<int>& ChargePoint::get_network_connection_slots() const {
+std::vector<int> ChargePoint::get_network_connection_slots() const {
     return this->connectivity_manager->get_network_connection_slots();
 }
 

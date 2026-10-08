@@ -43,6 +43,11 @@ else()
     endif()
 endif()
 
+# this policy allows us to continue using the removed FindBoost module for now
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 OLD)
+endif()
+
 # library dependencies
 
 if (LIBLOG_USE_BOOST_FILESYSTEM) 

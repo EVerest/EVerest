@@ -16,6 +16,8 @@ Version history of the module:
      - Description
    * - 1.0.0
      - Initial version of the RpcApi module
+   * - 1.1.0
+     - Added new enums for AC_DER
 
 Introduction
 ------------
@@ -517,6 +519,8 @@ Enumeration to differentiate between the various energy transfer modes
    "AC_BPT",
    "AC_BPT_DER",
    "AC_DER",
+   "AC_DER_IEC",
+   "AC_DER_SAE",
    "DC_BPT",
    "DC_ACDP",
    "DC_ACDP_BPT",

@@ -1,14 +1,24 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/v2/functional_blocks/smart_charging.hpp>
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <atomic>
+#include <chrono>
 #include <filesystem>
+#include <future>
 #include <memory>
+#include <mutex>
 #include <optional>
+#include <sstream>
+#include <string>
+#include <system_error>
+#include <thread>
+
+#include <unistd.h>
 
 #include <date/tz.h>
 #include <sqlite3.h>
@@ -23,6 +33,8 @@
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v21/messages/PullDynamicScheduleUpdate.hpp>
+#include <ocpp/v21/messages/UpdateDynamicSchedule.hpp>
 
 #include "component_state_manager_mock.hpp"
 #include "connectivity_manager_mock.hpp"
@@ -42,53 +54,6 @@ using ::testing::Return;
 using ::testing::ReturnRef;
 
 namespace ocpp::v2 {
-class SmartChargingTestV21 : public DatabaseTestingUtils {
-protected:
-    void SetUp() override {
-        const auto& charging_rate_unit_cv = ControllerComponentVariables::ChargingScheduleChargingRateUnit;
-        device_model->set_value(charging_rate_unit_cv.component, charging_rate_unit_cv.variable.value(),
-                                AttributeEnum::Actual, "A,W", "test", true);
-
-        const auto& ac_phase_switching_cv = ControllerComponentVariables::ACPhaseSwitchingSupported;
-        device_model->set_value(ac_phase_switching_cv.component, ac_phase_switching_cv.variable.value(),
-                                AttributeEnum::Actual, "true", "test", true);
-    }
-
-    void TearDown() override {
-        // TODO: use in-memory db so we don't need to reset the db between tests
-        this->database_handler->clear_charging_profiles();
-    }
-
-    TestSmartCharging create_smart_charging() {
-        std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
-        database_handler =
-            std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
-        database_handler->open_connection();
-        device_model = device_model_test_helper.get_device_model();
-        this->functional_block_context = std::make_unique<FunctionalBlockContext>(
-            this->mock_dispatcher, *this->device_model, this->connectivity_manager, *this->evse_manager,
-            *this->database_handler, this->evse_security, this->component_state_manager, this->ocpp_version);
-        return TestSmartCharging(*functional_block_context, set_charging_profiles_callback_mock.AsStdFunction(),
-                                 stop_transaction_callback_mock.AsStdFunction());
-    }
-
-    // Default values used within the tests
-    DeviceModelTestHelper device_model_test_helper;
-    MockMessageDispatcher mock_dispatcher;
-    std::unique_ptr<EvseManagerFake> evse_manager = std::make_unique<EvseManagerFake>(NR_OF_TWO_EVSES);
-    std::shared_ptr<DatabaseHandler> database_handler;
-    DeviceModel* device_model;
-    ::testing::NiceMock<ConnectivityManagerMock> connectivity_manager;
-    ocpp::EvseSecurityMock evse_security;
-    ComponentStateManagerMock component_state_manager;
-    MockFunction<void()> set_charging_profiles_callback_mock;
-    MockFunction<RequestStartStopStatusEnum(const std::int32_t evse_id, const ReasonEnum& stop_reason)>
-        stop_transaction_callback_mock;
-    std::unique_ptr<FunctionalBlockContext> functional_block_context;
-    TestSmartCharging smart_charging = create_smart_charging();
-    std::atomic<OcppProtocolVersion> ocpp_version = OcppProtocolVersion::v21;
-};
 
 TEST_F(SmartChargingTestV21,
        K01FR44_IfPhaseToUseProvidedForDCChargingStationAndDCInputPhaseControlFalse_ThenProfileIsInvalid) {
@@ -383,7 +348,7 @@ TEST_F(SmartChargingTestV21, K01FR125_LimitAtSoCNotSupported) {
 }
 
 TEST_F(SmartChargingTestV21, K01FR126_EvseSleepNotSupported) {
-    // EvseSleep is default not supported, so we don't set the value in the device model here.
+    // K01.FR.126: evseSleep is only valid with operationMode Idle; default operationMode is ChargingOnly.
     auto periods = create_charging_schedule_periods(0, 1, 1, 0.5f);
     ASSERT_GE(periods.size(), 1);
     periods.at(0).evseSleep = true;
@@ -398,6 +363,45 @@ TEST_F(SmartChargingTestV21, K01FR126_EvseSleepNotSupported) {
     EXPECT_THAT(response.status, testing::Eq(ChargingProfileStatusEnum::Rejected));
     EXPECT_EQ(response.statusInfo.value().reasonCode, "InvalidSchedule");
     EXPECT_EQ(response.statusInfo.value().additionalInfo, "ChargingScheduleUnsupportedEvseSleep");
+}
+
+TEST_F(SmartChargingTestV21, Q10FR05_IdleEvseSleepUnsupported_NotRejected) {
+    // Q10 error handling / Q10.FR.05: when EvseSleep is unsupported, the flag must be ignored (accept, not reject).
+    auto mock_evse = testing::NiceMock<EvseMock>();
+    ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
+
+    auto periods = create_charging_schedule_periods({0});
+    ASSERT_GE(periods.size(), 1);
+    periods.at(0).operationMode = OperationModeEnum::Idle;
+    periods.at(0).evseSleep = true;
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_profile_schedules(profile, &mock_evse);
+
+    EXPECT_NE(sut, ProfileValidationResultEnum::ChargingScheduleUnsupportedEvseSleep);
+}
+
+TEST_F(SmartChargingTestV21, K01FR126_EvseSleepNonIdle_RejectedEvenWhenSupported) {
+    // K01.FR.126: non-Idle + evseSleep=true must reject even when SupportsEvseSleep=true.
+    auto mock_evse = testing::NiceMock<EvseMock>();
+    ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
+
+    const auto& cv = ControllerComponentVariables::SupportsEvseSleep;
+    device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "true", "test", true);
+
+    auto periods = create_charging_schedule_periods(0, 1, 1, 0.5f);
+    ASSERT_GE(periods.size(), 1);
+    periods.at(0).operationMode = OperationModeEnum::ChargingOnly;
+    periods.at(0).evseSleep = true;
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::A, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_profile_schedules(profile, &mock_evse);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::ChargingScheduleUnsupportedEvseSleep);
 }
 
 // Test for Table 95. operationMode for various ChargingProfilePurposes
@@ -587,6 +591,66 @@ TEST_P(LimitsAndSetpointsForOperationModeV21_Param_Test, Q08FR04_LimitsAndSetpoi
     }
 }
 
+TEST_F(SmartChargingTestV21, Q09FR01_LocalLoadBalancingNotInSupportedOperationModes_RejectedUnsupportedParam) {
+    auto mock_evse = testing::NiceMock<EvseMock>();
+    ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
+    const auto cv = V2xComponentVariables::get_component_variable(1, V2xComponentVariables::SupportedOperationModes);
+    device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "ChargingOnly,Idle", "test",
+                            true);
+
+    auto periods = create_charging_schedule_periods(0, 1, 1);
+    ASSERT_GE(periods.size(), 1);
+    periods.at(0).operationMode = OperationModeEnum::LocalLoadBalancing;
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_profile_schedules(profile, &mock_evse);
+
+    EXPECT_THAT(sut, testing::Eq(ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported));
+    EXPECT_EQ(conversions::profile_validation_result_to_reason_code(sut), "UnsupportedParam");
+}
+
+TEST_F(SmartChargingTestV21, K01FR115_OperationModeNotInSupportedOperationModes_RejectedInvalidOperationMode) {
+    auto mock_evse = testing::NiceMock<EvseMock>();
+    ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
+    const auto cv = V2xComponentVariables::get_component_variable(1, V2xComponentVariables::SupportedOperationModes);
+    device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "ChargingOnly,Idle", "test",
+                            true);
+
+    auto periods = create_charging_schedule_periods(0, 1, 1);
+    ASSERT_GE(periods.size(), 1);
+    periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_profile_schedules(profile, &mock_evse);
+
+    EXPECT_THAT(sut, testing::Eq(ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList));
+    EXPECT_EQ(conversions::profile_validation_result_to_reason_code(sut), "InvalidOperationMode");
+}
+
+TEST_F(SmartChargingTestV21, K01FR115_OperationModeInSupportedOperationModes_NotRejected) {
+    auto mock_evse = testing::NiceMock<EvseMock>();
+    ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
+    const auto cv = V2xComponentVariables::get_component_variable(1, V2xComponentVariables::SupportedOperationModes);
+    device_model->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "ChargingOnly,Idle", "test",
+                            true);
+
+    auto periods = create_charging_schedule_periods(0, 1, 1);
+    ASSERT_GE(periods.size(), 1);
+    periods.at(0).operationMode = OperationModeEnum::Idle;
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_profile_schedules(profile, &mock_evse);
+
+    EXPECT_NE(sut, ProfileValidationResultEnum::ChargingSchedulePeriodLocalLoadBalancingNotSupported);
+    EXPECT_NE(sut, ProfileValidationResultEnum::ChargingSchedulePeriodOperationModeNotInSupportedList);
+}
+
 TEST_F(SmartChargingTestV21, Q08FR02_LocalFrequency_ChargingRateUnitW_NoFreqWattCurve) {
     auto mock_evse = testing::NiceMock<EvseMock>();
     ON_CALL(mock_evse, get_id).WillByDefault(testing::Return(1));
@@ -763,4 +827,121 @@ TEST_F(SmartChargingTestV21, AllSetpointsSameSign) {
 
     EXPECT_EQ(sut, ProfileValidationResultEnum::Valid);
 }
+// V2X.05: Reject if setpoint exceeds limit
+TEST_F(SmartChargingTestV21, V2X05_SetpointExceedsLimit_Rejected) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
+    periods.at(0).setpoint = 8000.0F;
+    periods.at(0).limit = 5000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_setpoint_within_limit_range(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange);
+}
+
+// V2X.05: Reject if setpoint below dischargeLimit
+TEST_F(SmartChargingTestV21, V2X05_SetpointBelowDischargeLimit_Rejected) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
+    periods.at(0).setpoint = -5000.0F;
+    periods.at(0).dischargeLimit = -3000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_setpoint_within_limit_range(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::ChargingSchedulePeriodSetpointOutOfRange);
+}
+
+// V2X.05: Accept if setpoint within range
+TEST_F(SmartChargingTestV21, V2X05_SetpointWithinRange_Accepted) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
+    periods.at(0).setpoint = 5000.0F;
+    periods.at(0).limit = 7000.0F;
+    periods.at(0).dischargeLimit = -3000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_setpoint_within_limit_range(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::Valid);
+}
+
+// V2X.05: Accept if setpoint with no limits (limits are optional per Q03.FR.03)
+TEST_F(SmartChargingTestV21, V2X05_SetpointWithNoLimits_Accepted) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).operationMode = OperationModeEnum::CentralSetpoint;
+    periods.at(0).setpoint = 5000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_setpoint_within_limit_range(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::Valid);
+}
+
+// V2X.10 (V2X.09 branch): reject non-TxProfile carrying _L2/_L3 fields with PhaseConflict
+TEST_F(SmartChargingTestV21, V2X10_NonTxProfile_WithDischargeLimitL2_Rejected) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).dischargeLimit_L2 = -2000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxDefaultProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")));
+
+    auto sut = smart_charging.validate_phase_conflict(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict);
+}
+
+TEST_F(SmartChargingTestV21, V2X10_NonTxProfile_WithSetpointReactiveL3_Rejected) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).setpointReactive_L3 = 1000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::ChargingStationMaxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")));
+
+    auto sut = smart_charging.validate_phase_conflict(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::ChargingSchedulePeriodPhaseConflict);
+}
+
+TEST_F(SmartChargingTestV21, V2X10_TxProfile_WithDischargeLimitL2_Accepted) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).dischargeLimit_L2 = -2000.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxProfile,
+        create_charge_schedule(ChargingRateUnitEnum::W, periods, ocpp::DateTime("2024-01-17T17:00:00")), DEFAULT_TX_ID);
+
+    auto sut = smart_charging.validate_phase_conflict(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::Valid);
+}
+
+TEST_F(SmartChargingTestV21, V2X10_NonTxProfile_NoL2L3Fields_Accepted) {
+    auto periods = create_charging_schedule_periods(0, 1, std::nullopt, std::nullopt);
+    periods.at(0).limit = 16.0F;
+
+    auto profile = create_charging_profile(
+        DEFAULT_PROFILE_ID, ChargingProfilePurposeEnum::TxDefaultProfile,
+        create_charge_schedule(ChargingRateUnitEnum::A, periods, ocpp::DateTime("2024-01-17T17:00:00")));
+
+    auto sut = smart_charging.validate_phase_conflict(profile);
+
+    EXPECT_EQ(sut, ProfileValidationResultEnum::Valid);
+}
+
 } // namespace ocpp::v2

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_WEBSOCKET_HPP
 #define OCPP_WEBSOCKET_HPP
 
@@ -37,6 +37,10 @@ public:
 
     /// \brief disconnect the websocket
     void disconnect(const WebsocketCloseReason code);
+
+    /// \brief suppress the internal reconnect loop without closing the live socket
+    /// (see WebsocketBase::suppress_reconnect)
+    void suppress_reconnect();
 
     // \brief reconnects the websocket after the delay
     void reconnect(long delay);

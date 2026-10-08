@@ -1,0 +1,1154 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <algorithm>
+#include <string_view>
+
+#include <everest/logging.hpp>
+
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/init_device_model_db.hpp>
+#include <ocpp/v2/ocpp_types.hpp>
+
+using ocpp::v2::Component;
+using ocpp::v2::DataEnum;
+using ocpp::v2::EVSE;
+using ocpp::v2::Variable;
+using ocpp::v2::VariableAttribute;
+using ocpp::v2::VariableCharacteristics;
+using ocpp::v2::VariableMap;
+using ocpp::v2::VariableMetaData;
+
+static constexpr auto VARIABLE_SOURCE_EVEREST = "EVEREST";
+static constexpr auto NUMBER_OF_CONNECTED_EV_PROTOCOLS = 20;
+
+using ocpp::v2::ComponentKey;
+using ocpp::v2::DbVariableAttribute;
+using ocpp::v2::DeviceModelVariable;
+
+namespace ocpp_module_common::device_model {
+ocpp::v2::DataEnum to_ocpp_data_enum(const everest::config::Datatype& data_type) {
+    switch (data_type) {
+    case everest::config::Datatype::Unknown:
+        throw std::out_of_range("Could not convert Datatype::Unknown to DataEnum");
+    case everest::config::Datatype::String:
+        return ocpp::v2::DataEnum::string;
+    case everest::config::Datatype::Decimal:
+        return ocpp::v2::DataEnum::decimal;
+    case everest::config::Datatype::Integer:
+        return ocpp::v2::DataEnum::integer;
+    case everest::config::Datatype::Boolean:
+        return ocpp::v2::DataEnum::boolean;
+    }
+    throw std::out_of_range("Could not convert Datatype to DataEnum");
+}
+
+ocpp::v2::MutabilityEnum to_ocpp_mutability_enum(const everest::config::Mutability& mutability) {
+    switch (mutability) {
+    case everest::config::Mutability::ReadOnly:
+        return ocpp::v2::MutabilityEnum::ReadOnly;
+    case everest::config::Mutability::ReadWrite:
+        return ocpp::v2::MutabilityEnum::ReadWrite;
+    case everest::config::Mutability::WriteOnly:
+        return ocpp::v2::MutabilityEnum::WriteOnly;
+    }
+    throw std::out_of_range("Could not convert Mutability to MutabilityEnum");
+}
+
+namespace {
+
+Component get_evse_component(const int32_t evse_id) {
+    Component component;
+    component.name = "EVSE";
+    component.evse = EvseDefinitions::get_evse(evse_id);
+    return component;
+}
+
+Component get_connector_component(const int32_t evse_id, const int32_t connector_id) {
+    Component component;
+    component.name = "Connector";
+    component.evse = EvseDefinitions::get_evse(evse_id, connector_id);
+    return component;
+}
+
+Component get_v2x_component(const int32_t evse_id) {
+    Component component;
+    component.name = "V2XChargingCtrlr";
+    component.evse = EvseDefinitions::get_evse(evse_id);
+    return component;
+}
+
+Component get_iso15118_component(const int32_t evse_id) {
+    Component component;
+    component.name = "ISO15118Ctrlr";
+    component.evse = EvseDefinitions::get_evse(evse_id);
+    return component;
+}
+
+Component get_connected_ev_component(const int32_t evse_id) {
+    Component component;
+    component.name = "ConnectedEV";
+    component.evse = EvseDefinitions::get_evse(evse_id);
+    return component;
+}
+
+ComponentKey get_evse_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "EVSE";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_connector_component_key(const int32_t evse_id, const int32_t connector_id) {
+    ComponentKey component;
+    component.name = "Connector";
+    component.evse_id = evse_id;
+    component.connector_id = connector_id;
+    return component;
+}
+
+ComponentKey get_v2x_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "V2XChargingCtrlr";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_iso15118_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "ISO15118Ctrlr";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_connected_ev_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "ConnectedEV";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_dc_der_ctrlr_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "DCDERCtrlr";
+    component.evse_id = evse_id;
+    return component;
+}
+
+ComponentKey get_ac_der_ctrlr_component_key(const int32_t evse_id) {
+    ComponentKey component;
+    component.name = "ACDERCtrlr";
+    component.evse_id = evse_id;
+    return component;
+}
+
+// Helper function to construct DeviceModelVariable with common structure
+DeviceModelVariable make_variable(const std::string& name, const ocpp::v2::VariableCharacteristics& characteristics,
+                                  const std::string& value = "",
+                                  ocpp::v2::MutabilityEnum mutability = ocpp::v2::MutabilityEnum::ReadOnly) {
+    DeviceModelVariable var_data;
+    var_data.name = name;
+    var_data.characteristics = characteristics;
+    var_data.source = VARIABLE_SOURCE_EVEREST;
+
+    DbVariableAttribute db_attr;
+    VariableAttribute attr;
+    attr.type = ocpp::v2::AttributeEnum::Actual;
+    attr.value = value;
+    attr.mutability = mutability;
+    db_attr.variable_attribute = attr;
+
+    var_data.attributes.push_back(db_attr);
+    return var_data;
+}
+
+// Helper function to construct DeviceModelVariable with common structure
+DeviceModelVariable
+make_variable_with_instance(const std::string& name, const std::string& instance,
+                            const ocpp::v2::VariableCharacteristics& characteristics, const std::string& value = "",
+                            ocpp::v2::MutabilityEnum mutability = ocpp::v2::MutabilityEnum::ReadOnly) {
+    DeviceModelVariable var_data;
+    var_data.name = name;
+    var_data.instance = instance;
+    var_data.characteristics = characteristics;
+    var_data.source = VARIABLE_SOURCE_EVEREST;
+
+    DbVariableAttribute db_attr;
+    VariableAttribute attr;
+    attr.type = ocpp::v2::AttributeEnum::Actual;
+    attr.value = value;
+    attr.mutability = mutability;
+    db_attr.variable_attribute = attr;
+
+    var_data.attributes.push_back(db_attr);
+    return var_data;
+}
+
+// Populates EVSE variables
+std::vector<DeviceModelVariable> build_evse_variables(const float max_power) {
+    std::vector<DeviceModelVariable> variables;
+
+    auto evse_power_characteristics = EvseDefinitions::Characteristics::EVSEPower;
+    evse_power_characteristics.maxLimit = max_power;
+
+    return {make_variable(ocpp::v2::EvseComponentVariables::Available.name, EvseDefinitions::Characteristics::Available,
+                          "true"),
+            make_variable(ocpp::v2::EvseComponentVariables::AvailabilityState.name,
+                          EvseDefinitions::Characteristics::AvailabilityState, "Available"),
+            make_variable(ocpp::v2::EvseComponentVariables::Power.name, evse_power_characteristics),
+            make_variable(ocpp::v2::EvseComponentVariables::SupplyPhases.name,
+                          EvseDefinitions::Characteristics::SupplyPhases),
+            make_variable(ocpp::v2::EvseComponentVariables::AllowReset.name,
+                          EvseDefinitions::Characteristics::AllowReset, "false"),
+            make_variable(ocpp::v2::EvseComponentVariables::ISO15118EvseId.name,
+                          EvseDefinitions::Characteristics::ISO15118EvseId, "DEFAULT_EVSE_ID")};
+}
+
+// Populates Connector variables
+std::vector<DeviceModelVariable> build_connector_variables() {
+
+    return {make_variable(ocpp::v2::ConnectorComponentVariables::Available.name,
+                          ConnectorDefinitions::Characteristics::Available, "true"),
+            make_variable(ocpp::v2::ConnectorComponentVariables::AvailabilityState.name,
+                          ConnectorDefinitions::Characteristics::AvailabilityState, "Available"),
+            make_variable(ocpp::v2::ConnectorComponentVariables::Type.name,
+                          ConnectorDefinitions::Characteristics::ConnectorType),
+            make_variable(ocpp::v2::ConnectorComponentVariables::SupplyPhases.name,
+                          ConnectorDefinitions::Characteristics::SupplyPhases)};
+}
+
+// Populates V2X variables
+std::vector<DeviceModelVariable> build_v2x_variables(const bool v2x_supported,
+                                                     const std::string& supported_energy_transfers,
+                                                     const std::string& supported_operation_modes) {
+    std::string v2x_supported_string = v2x_supported ? "true" : "false";
+    return {make_variable(ocpp::v2::V2xComponentVariables::Available.name, V2XDefinitions::Characteristics::Available,
+                          v2x_supported_string),
+            make_variable(ocpp::v2::V2xComponentVariables::Enabled.name, V2XDefinitions::Characteristics::Enabled,
+                          v2x_supported_string),
+            make_variable(ocpp::v2::V2xComponentVariables::SupportedEnergyTransferModes.name,
+                          V2XDefinitions::Characteristics::SupportedEnergyTransferModes, supported_energy_transfers),
+            make_variable(ocpp::v2::V2xComponentVariables::SupportedOperationModes.name,
+                          V2XDefinitions::Characteristics::SupportedOperationModes, supported_operation_modes)};
+}
+
+// Populates ISO15118 variables
+std::vector<DeviceModelVariable> build_iso15118_variables(const bool iso_supported,
+                                                          const bool service_renegotiation_supported,
+                                                          const std::string& supported_protocols) {
+    return {make_variable(ocpp::v2::ISO15118ComponentVariables::Enabled.name,
+                          ISO15118Definitions::Characteristics::Enabled, iso_supported ? "true" : "false"),
+            make_variable(ocpp::v2::ISO15118ComponentVariables::ServiceRenegotiationSupport.name,
+                          ISO15118Definitions::Characteristics::ServiceRenegotiationSupport,
+                          service_renegotiation_supported ? "true" : "false"),
+            make_variable(ocpp::v2::ISO15118ComponentVariables::ProtocolSupported.name,
+                          ISO15118Definitions::Characteristics::ProtocolSupported, supported_protocols)};
+}
+
+// Populates ConnectedEV variables
+std::vector<DeviceModelVariable> build_connected_ev_variables() {
+    std::vector<DeviceModelVariable> connected_ev_variables{
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::Available.name,
+                      ConnectedEVDefinitions::Characteristics::Available, "false"),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleId.name,
+                      ConnectedEVDefinitions::Characteristics::VehicleId, ""),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed.name,
+                      ConnectedEVDefinitions::Characteristics::ProtocolAgreed, ""),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.name,
+                      ConnectedEVDefinitions::Characteristics::VehicleCertificateLeaf, ""),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.name,
+                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa1, ""),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.name,
+                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa2, ""),
+        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
+                      ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
+    const int number_of_variables = NUMBER_OF_CONNECTED_EV_PROTOCOLS + connected_ev_variables.size();
+    connected_ev_variables.resize(number_of_variables);
+
+    std::string variable_name = ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(1).name;
+    for (int i = 1; i <= NUMBER_OF_CONNECTED_EV_PROTOCOLS; ++i) {
+        connected_ev_variables.emplace_back(make_variable_with_instance(
+            variable_name, std::to_string(i), ConnectedEVDefinitions::Characteristics::ProtocolSupportedByEV));
+    }
+    return connected_ev_variables;
+}
+
+// DC DER controller variables: Available marks static presence (provisioned "true", ReadOnly) and Enabled
+// is the CSMS runtime control (provisioned "true", ReadWrite). Every variable the config/enable builders may
+// write
+// on the DC path must be defined here, else the write targets an unknown variable and is rejected.
+std::vector<DeviceModelVariable> build_dc_der_ctrlr_variables() {
+    std::vector<DeviceModelVariable> variables;
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::Available.name,
+                                      DERDefinitions::Characteristics::Available, "true",
+                                      ocpp::v2::MutabilityEnum::ReadOnly));
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::Enabled.name,
+                                      DERDefinitions::Characteristics::Enabled, "true",
+                                      ocpp::v2::MutabilityEnum::ReadWrite));
+    variables.push_back(make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
+                                      DERDefinitions::Characteristics::ModesSupported, ""));
+    for (const auto& name : DERDefinitions::DecimalVariableNames) {
+        variables.push_back(make_variable(name, DERDefinitions::Characteristics::Decimal));
+    }
+    for (const auto& name : DERDefinitions::InverterStringVariableNames) {
+        variables.push_back(make_variable(name, DERDefinitions::Characteristics::InverterString));
+    }
+    return variables;
+}
+
+// AC DER controller variables: Available (static presence, ReadOnly), Enabled (CSMS runtime control, provisioned
+// "true", ReadWrite) and ModesSupported. The nameplate scalars live exclusively on the DC component
+// (matching to_der_ctrlr_config_set_variables).
+std::vector<DeviceModelVariable> build_ac_der_ctrlr_variables() {
+    return {make_variable(ocpp::v2::DERComponentVariables::Available.name, DERDefinitions::Characteristics::Available,
+                          "true", ocpp::v2::MutabilityEnum::ReadOnly),
+            make_variable(ocpp::v2::DERComponentVariables::Enabled.name, DERDefinitions::Characteristics::Enabled,
+                          "true", ocpp::v2::MutabilityEnum::ReadWrite),
+            make_variable(ocpp::v2::DERComponentVariables::ModesSupported.name,
+                          DERDefinitions::Characteristics::ModesSupported, "")};
+}
+
+std::string get_everest_config_value(const everest::config::ModuleConfigurationParameters& module_config,
+                                     const std::string& impl, const std::string& config_key) {
+    const auto& config = module_config.at(impl);
+    for (const auto& config_param : config) {
+        if (config_param.name == config_key) {
+            return everest::config::config_entry_to_string(config_param.value);
+        }
+    }
+    throw std::out_of_range("Could not find requested config key: " + config_key);
+}
+
+// Populate EVerest module config variables
+std::vector<DeviceModelVariable>
+build_everest_config_variables(const everest::config::ModuleConfigurationParameters& module_config) {
+    std::vector<DeviceModelVariable> component_config;
+    for (const auto& [impl, config_params] : module_config) {
+        std::string prefix;
+        if (impl != Everest::config::MODULE_IMPLEMENTATION_ID) {
+            // prefix variable name with impl + .
+            prefix = impl + ".";
+        }
+        for (const auto& config_param : config_params) {
+            try {
+                const auto variable_name = prefix + config_param.name;
+                ocpp::v2::VariableCharacteristics characteristics;
+                characteristics.dataType = to_ocpp_data_enum(config_param.characteristics.datatype);
+                characteristics.supportsMonitoring = false; // TODO: can we enable monitoring support?
+                // TODO: add unit if/once available?
+
+                auto device_model_variable = make_variable(
+                    variable_name, characteristics, get_everest_config_value(module_config, impl, config_param.name),
+                    to_ocpp_mutability_enum(config_param.characteristics.mutability));
+                component_config.push_back(device_model_variable);
+            } catch (const std::exception& e) {
+                EVLOG_error << "Could not add EVerest config entry to OCPP device model: " << e.what();
+            }
+        }
+    }
+
+    return component_config;
+}
+
+std::string supported_operation_modes_vector_to_string(
+    const std::vector<ocpp::v2::OperationModeEnum>& evse_supported_operation_modes) {
+    std::string supported_string{};
+    for (const auto& operation_mode : evse_supported_operation_modes) {
+        supported_string += ocpp::v2::conversions::operation_mode_enum_to_string(operation_mode) + ",";
+    }
+    if (!supported_string.empty()) {
+        supported_string.pop_back();
+    }
+    return supported_string;
+}
+
+std::string build_supported_protocol_string(const std::string& uri, const int32_t major, const int32_t minor) {
+    return uri + ',' + std::to_string(major) + ',' + std::to_string(minor);
+}
+
+ocpp::v2::SetVariableData make_set_variable_data(const ocpp::v2::ComponentVariable& component_variable,
+                                                 const std::string& value) {
+    ocpp::v2::SetVariableData data;
+    data.component = component_variable.component;
+    if (component_variable.variable) {
+        data.variable = component_variable.variable.value();
+    }
+    data.attributeValue = value;
+    return data;
+}
+
+} // anonymous namespace
+
+std::string
+supported_energy_transfer_modes_vector_to_string(const std::vector<types::iso15118::EnergyTransferMode>& modes) {
+    std::vector<ocpp::v2::EnergyTransferModeEnum> ocpp_modes;
+    for (const auto mode : modes) {
+        const auto ocpp_mode = ocpp_module_common::conversions::to_ocpp_energy_transfer_mode(mode);
+        if (std::find(ocpp_modes.cbegin(), ocpp_modes.cend(), ocpp_mode) == ocpp_modes.cend()) {
+            ocpp_modes.push_back(ocpp_mode);
+        }
+    }
+    std::string supported_string{};
+    for (const auto ocpp_mode : ocpp_modes) {
+        supported_string += ocpp::v2::conversions::energy_transfer_mode_enum_to_string(ocpp_mode) + ",";
+    }
+    if (!supported_string.empty()) {
+        supported_string.pop_back();
+    }
+    return supported_string;
+}
+
+bool evse_hlc_capable(const std::vector<types::evse_manager::Connector>& connectors) {
+    return std::any_of(connectors.cbegin(), connectors.cend(),
+                       [](const types::evse_manager::Connector& c) { return c.hlc_capable; });
+}
+
+DerCtrlrComponent der_ctrlr_component(const bool der_wired,
+                                      const std::vector<types::evse_manager::Connector>& connectors) {
+    if (not der_wired) {
+        return DerCtrlrComponent::None;
+    }
+    // The schema requires at least one connector, so this is a malformed payload rather than a case to
+    // model; guarded because the alternative is reading front() off an empty vector.
+    if (connectors.empty()) {
+        return DerCtrlrComponent::None;
+    }
+    // Take the answer from a connector and require the rest to agree, rather than testing each mode in
+    // turn: the component then follows the reported data instead of the order the modes are checked in.
+    const auto mode = connectors.front().charge_mode;
+    const bool unanimous =
+        std::all_of(connectors.cbegin(), connectors.cend(),
+                    [mode](const types::evse_manager::Connector& c) { return c.charge_mode == mode; });
+    if (not unanimous) {
+        // OCPP holds at most one DER controller per EVSE, so there is no answer here that is not a guess
+        // between two true ones.
+        return DerCtrlrComponent::None;
+    }
+    if (mode == types::evse_manager::ChargeMode::DC) {
+        // No HLC check: EvseManager refuses to start a DC EVSE without HLC and SLAC wired, so a DC
+        // connector that reported no HLC could not have booted (EvseManager.cpp, "DC mode requires
+        // slac, HLC and powersupply DCDC to be connected").
+        return DerCtrlrComponent::Dc;
+    }
+    // AC DER exists only as an ISO 15118-20 relay, so an EVSE that can never run an HLC session can
+    // never do AC DER.
+    return evse_hlc_capable(connectors) ? DerCtrlrComponent::Ac : DerCtrlrComponent::None;
+}
+
+namespace {
+
+// A connector reporting no hlc_capable otherwise reads as a charge mode disagreement, sending an operator
+// after a conflict that is not there. Only meaningful for a (der_wired, connectors) pair that
+// der_ctrlr_component already resolved to None. Re-asks with HLC forced on so the HLC rule is not
+// restated here; a wired None cause that forcing HLC does not flip needs its own branch above, or it
+// reports as a mode disagreement.
+std::string_view none_reason(const bool der_wired, const std::vector<types::evse_manager::Connector>& connectors) {
+    if (not der_wired) {
+        return ": no grid_support connection";
+    }
+    if (connectors.empty()) {
+        return ": it reports no connectors";
+    }
+    auto hlc_forced = connectors;
+    for (auto& connector : hlc_forced) {
+        connector.hlc_capable = true;
+    }
+    if (der_ctrlr_component(true, hlc_forced) != DerCtrlrComponent::None) {
+        return ": AC DER runs only over ISO 15118-20 and no connector is hlc_capable";
+    }
+    return ": its connectors report no single charge mode";
+}
+
+} // anonymous namespace
+
+std::map<int32_t, DerCtrlrComponent> decide_der_ctrlr_components(const std::vector<types::evse_manager::Evse>& evses,
+                                                                 const std::set<int32_t>& der_wired_evse_ids,
+                                                                 const bool with_der_components) {
+    std::map<int32_t, DerCtrlrComponent> result;
+    if (not with_der_components) {
+        return result;
+    }
+    for (const auto& evse : evses) {
+        const bool der_wired = der_wired_evse_ids.count(evse.id) > 0;
+        const auto component = der_ctrlr_component(der_wired, evse.connectors);
+        if (component == DerCtrlrComponent::None) {
+            EVLOG_info << "No DER controller for EVSE " << evse.id << none_reason(der_wired, evse.connectors);
+        }
+        result[evse.id] = component;
+    }
+    // Every served EVSE got an entry above, None ones included, so a wired id missing from the map matches
+    // no EVSE at all: the connection exists but can never route.
+    for (const auto wired_id : der_wired_evse_ids) {
+        if (result.count(wired_id) == 0) {
+            EVLOG_error << "grid_support is wired to EVSE " << wired_id
+                        << ", which this station does not serve; the connection is inert";
+        }
+    }
+    return result;
+}
+
+std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>>
+build_der_ctrlr_component_config(const int32_t evse_id, const DerCtrlrComponent component) {
+    switch (component) {
+    case DerCtrlrComponent::Dc:
+        return std::make_pair(get_dc_der_ctrlr_component_key(evse_id), build_dc_der_ctrlr_variables());
+    case DerCtrlrComponent::Ac:
+        return std::make_pair(get_ac_der_ctrlr_component_key(evse_id), build_ac_der_ctrlr_variables());
+    case DerCtrlrComponent::None:
+        break;
+    }
+    return std::nullopt;
+}
+
+std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>
+build_der_component_configs(const std::map<int32_t, DerCtrlrComponent>& der_ctrlr_components,
+                            const std::vector<types::evse_manager::Evse>& evses,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported) {
+    std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>> result;
+    for (const auto& [evse_id, component] : der_ctrlr_components) {
+        auto config = build_der_ctrlr_component_config(evse_id, component);
+        if (config.has_value()) {
+            result[config->first] = std::move(config->second);
+        }
+    }
+    for (const auto evse_id : iso_extension_evse_ids) {
+        const auto evse = std::find_if(evses.cbegin(), evses.cend(),
+                                       [evse_id](const types::evse_manager::Evse& e) { return e.id == evse_id; });
+        if (evse == evses.cend()) {
+            EVLOG_error << "iso15118_extensions is mapped to EVSE " << evse_id
+                        << ", which this station does not serve; no ISO15118Ctrlr component is provisioned";
+            continue;
+        }
+        // Unreachable through today's callers: the guard above narrows evse_id to a served EVSE and both
+        // modules seed this map over that same range. Kept because this function is public and directly
+        // callable, and "not supported" is the safe default.
+        const auto renegotiation = evse_service_renegotiation_supported.find(evse_id);
+        const bool renegotiation_supported =
+            renegotiation != evse_service_renegotiation_supported.cend() and renegotiation->second;
+        // TODO(mlitre): Correctly fill iso supported protocols
+        // Reported by the serving evse_manager rather than assumed: an extension can be wired to an
+        // EVSE whose HLC is switched off, and Enabled is provisioned ReadOnly, so a hardcoded "true"
+        // told the CSMS an ISO 15118 session was possible when it never was.
+        result[get_iso15118_component_key(evse_id)] =
+            build_iso15118_variables(evse_hlc_capable(evse->connectors), renegotiation_supported, "");
+    }
+    return result;
+}
+
+std::map<ocpp::v2::ComponentKey, std::vector<DeviceModelVariable>>
+build_der_component_configs(const std::vector<types::evse_manager::Evse>& evses,
+                            const std::set<int32_t>& der_wired_evse_ids, const bool with_der_components,
+                            const std::vector<int32_t>& iso_extension_evse_ids,
+                            const std::map<int32_t, bool>& evse_service_renegotiation_supported) {
+    return build_der_component_configs(decide_der_ctrlr_components(evses, der_wired_evse_ids, with_der_components),
+                                       evses, iso_extension_evse_ids, evse_service_renegotiation_supported);
+}
+
+std::vector<ocpp::v2::SetVariableData>
+to_der_ctrlr_config_set_variables(const int32_t evse_id, const types::grid_support::DERCapability& capability) {
+    std::vector<ocpp::v2::SetVariableData> result;
+
+    using ComponentVariableGetter = ocpp::v2::ComponentVariable (*)(const std::int32_t, const ocpp::v2::Variable&);
+    const ComponentVariableGetter get_component_variable =
+        capability.dc.has_value() ? &ocpp::v2::DERComponentVariables::get_dc_component_variable
+                                  : &ocpp::v2::DERComponentVariables::get_ac_component_variable;
+
+    const auto named_variable = [&](const std::string& name) {
+        ocpp::v2::Variable variable;
+        variable.name = name;
+        return get_component_variable(evse_id, variable);
+    };
+
+    std::string modes_csv;
+    for (const auto& directive_type : capability.supported_types) {
+        if (not modes_csv.empty()) {
+            modes_csv += ",";
+        }
+        modes_csv += types::grid_support::directive_type_to_string(directive_type);
+    }
+    result.push_back(make_set_variable_data(
+        get_component_variable(evse_id, ocpp::v2::DERComponentVariables::ModesSupported), modes_csv));
+
+    // Nameplate scalars below exist only on the DC component (DCDERCtrlr_1.json); emit on DC path only.
+    if (not capability.dc) {
+        return result;
+    }
+
+    const auto& nameplate = capability.nameplate;
+    const auto emit_float = [&](const std::string& name, const float value) {
+        result.push_back(make_set_variable_data(named_variable(name), std::to_string(value)));
+    };
+    const auto emit_string = [&](const std::string& name, const std::string& value) {
+        result.push_back(make_set_variable_data(named_variable(name), value));
+    };
+
+    emit_float("MaxW", nameplate.max_w_W);
+    emit_float("MaxVA", nameplate.max_va_VA);
+    if (nameplate.max_var_over_excited_var) {
+        emit_float("MaxVar", nameplate.max_var_over_excited_var.value());
+    }
+    if (nameplate.max_var_under_excited_var) {
+        emit_float("MaxVarNeg", nameplate.max_var_under_excited_var.value());
+    }
+    if (nameplate.max_charge_w_W) {
+        emit_float("MaxChargeRateW", nameplate.max_charge_w_W.value());
+    }
+
+    const auto& dc = capability.dc.value();
+    if (dc.device_info) {
+        const auto& info = dc.device_info.value();
+        if (info.manufacturer) {
+            emit_string("InverterManufacturer", info.manufacturer.value());
+        }
+        if (info.model) {
+            emit_string("InverterModel", info.model.value());
+        }
+        if (info.sw_version) {
+            emit_string("InverterSwVersion", info.sw_version.value());
+        }
+        if (info.hw_version) {
+            emit_string("InverterHwVersion", info.hw_version.value());
+        }
+    }
+    if (dc.over_excited_pf) {
+        emit_float("OverExcitedPF", dc.over_excited_pf.value());
+    }
+    if (dc.under_excited_pf) {
+        emit_float("UnderExcitedPF", dc.under_excited_pf.value());
+    }
+    if (dc.over_excited_w) {
+        emit_float("OverExcitedW", dc.over_excited_w.value());
+    }
+    if (dc.under_excited_w) {
+        emit_float("UnderExcitedW", dc.under_excited_w.value());
+    }
+    if (dc.reactive_susceptance) {
+        emit_float("ReactiveSusceptance", dc.reactive_susceptance.value());
+    }
+
+    return result;
+}
+
+namespace {
+
+/// Writes "false" to one Available/Enabled Actual attribute, but only when it currently reads exactly
+/// "true". Absent components and any other value are left alone, which preserves the source marker of a
+/// CSMS-written Enabled="false" across an unwire/rewire cycle.
+void force_false(ocpp::v2::DeviceModelStorageInterface& storage,
+                 const ocpp::v2::ComponentVariable& component_variable) {
+    if (not component_variable.variable.has_value()) {
+        return;
+    }
+    const auto& variable = component_variable.variable.value();
+    const auto attribute =
+        storage.get_variable_attribute(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual);
+    if (not attribute.has_value() or not attribute.value().value.has_value()) {
+        return;
+    }
+    if (attribute.value().value.value().get() != "true") {
+        return;
+    }
+    storage.set_variable_attribute_value(component_variable.component, variable, ocpp::v2::AttributeEnum::Actual,
+                                         "false", VARIABLE_SOURCE_EVEREST);
+}
+
+} // namespace
+
+void disable_other_der_ctrlrs(ocpp::v2::DeviceModelStorageInterface& storage, const int32_t evse_id,
+                              const DerCtrlrComponent keep) {
+    namespace dcv = ocpp::v2::DERComponentVariables;
+    const auto clear_dc = [&] {
+        force_false(storage, dcv::get_dc_component_variable(evse_id, dcv::Available));
+        force_false(storage, dcv::get_dc_component_variable(evse_id, dcv::Enabled));
+    };
+    const auto clear_ac = [&] {
+        force_false(storage, dcv::get_ac_component_variable(evse_id, dcv::Available));
+        force_false(storage, dcv::get_ac_component_variable(evse_id, dcv::Enabled));
+    };
+
+    // -Werror=switch-enum on this target makes a new DerCtrlrComponent enumerator fail to compile here
+    // rather than silently leave a stale Available="true" in the database.
+    switch (keep) {
+    case DerCtrlrComponent::Dc:
+        clear_ac();
+        break;
+    case DerCtrlrComponent::Ac:
+        clear_dc();
+        break;
+    case DerCtrlrComponent::None:
+        clear_dc();
+        clear_ac();
+        break;
+    }
+}
+
+EverestDeviceModelStorage::EverestDeviceModelStorage(
+    const std::vector<std::unique_ptr<evse_managerIntf>>& r_evse_manager,
+    const std::vector<std::unique_ptr<iso15118_extensionsIntf>>& r_extensions_15118,
+    const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
+    const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers,
+    const std::map<int32_t, bool>& evse_service_renegotiation_supported, const bool with_der_components,
+    const std::set<int32_t>& der_wired_evse_ids, const std::filesystem::path& db_path,
+    const std::filesystem::path& migration_files_path,
+    std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client) :
+    r_evse_manager(r_evse_manager),
+    r_extensions_15118(r_extensions_15118),
+    config_service_client(config_service_client) {
+    this->module_configs = config_service_client->get_module_configs();
+    this->mappings = config_service_client->get_mappings();
+    std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
+    std::vector<types::evse_manager::Evse> evses;
+
+    for (const auto& evse_manager : r_evse_manager) {
+        const auto evse_info = evse_manager->call_get_evse();
+        evses.push_back(evse_info);
+        const auto& hw_capabilities = evse_hardware_capabilities_map.at(evse_info.id);
+
+        ComponentKey evse_component_key = get_evse_component_key(evse_info.id);
+        const auto max_power = hw_capabilities.max_current_A_import * 230.0F * hw_capabilities.max_phase_count_import;
+        component_configs[evse_component_key] = build_evse_variables(max_power);
+
+        for (const auto& connector : evse_info.connectors) {
+            ComponentKey connector_component_key = get_connector_component_key(evse_info.id, connector.id);
+            component_configs[connector_component_key] = build_connector_variables();
+        }
+
+        const auto v2x_component_key = get_v2x_component_key(evse_info.id);
+        const auto& supported_energy_transfer_modes = evse_supported_energy_transfers.at(evse_info.id);
+        // TODO(mlitre): Update dynamically operation mode, depends on future implementation
+        const bool supports_v2x =
+            std::find_if(supported_energy_transfer_modes.cbegin(), supported_energy_transfer_modes.cend(),
+                         [](const types::iso15118::EnergyTransferMode& mode) {
+                             return mode == types::iso15118::EnergyTransferMode::AC_BPT or
+                                    mode == types::iso15118::EnergyTransferMode::AC_BPT_DER or
+                                    mode == types::iso15118::EnergyTransferMode::DC_BPT or
+                                    mode == types::iso15118::EnergyTransferMode::DC_ACDP_BPT;
+                         }) != supported_energy_transfer_modes.cend();
+        component_configs[v2x_component_key] = build_v2x_variables(
+            supports_v2x, supported_energy_transfer_modes_vector_to_string(supported_energy_transfer_modes),
+            supported_operation_modes_vector_to_string(std::vector<ocpp::v2::OperationModeEnum>{
+                ocpp::v2::OperationModeEnum::ChargingOnly, ocpp::v2::OperationModeEnum::Idle}));
+
+        const auto connected_ev_component_key = get_connected_ev_component_key(evse_info.id);
+        component_configs[connected_ev_component_key] = build_connected_ev_variables();
+    }
+
+    std::vector<int32_t> iso_extension_evse_ids;
+    for (const auto& extension : r_extensions_15118) {
+        const auto mapping = extension->get_mapping();
+        if (not mapping.has_value()) {
+            continue;
+        }
+        iso_extension_evse_ids.push_back(mapping->evse);
+    }
+
+    // This map keeps the None entries that build_der_component_configs drops; disable_other_der_ctrlrs
+    // needs them once the storage is open.
+    const auto der_ctrlr_components = decide_der_ctrlr_components(evses, der_wired_evse_ids, with_der_components);
+    // Assemble from the decision already in hand: re-deciding would log every None EVSE a second time.
+    for (auto& [component_key, variables] : build_der_component_configs(
+             der_ctrlr_components, evses, iso_extension_evse_ids, evse_service_renegotiation_supported)) {
+        component_configs[component_key] = std::move(variables);
+    }
+
+    // build OCPP2.x device model components from EVerest config    // This is our mapping strategy:
+    // Component.name = module_type
+    // Component.instance = module_id
+    // Component.evse.id/connector = mapping of module
+    // impl mappings are not taken into account at the moment
+    for (const auto& [module_id_type, module_config] : this->module_configs) {
+        ComponentKey component_key;
+        component_key.name = module_id_type.module_type;
+        component_key.instance = module_id_type.module_id;
+        const auto& mapping = this->mappings.at(module_id_type.module_id);
+        if (mapping.module.has_value()) {
+            const auto& module_mapping = mapping.module.value();
+            // in OCPP2.x the id and connectorId of the EVSEType must be > 0
+            if (module_mapping.evse > 0) {
+                component_key.evse_id = module_mapping.evse;
+                if (module_mapping.connector.has_value()) {
+                    const auto connector_id = module_mapping.connector.value();
+                    if (connector_id > 0) {
+                        component_key.connector_id = module_mapping.connector;
+                    }
+                }
+            }
+        }
+
+        component_configs[component_key] = build_everest_config_variables(module_config);
+    }
+
+    ocpp::v2::InitDeviceModelDb init_device_model_db(db_path, migration_files_path);
+    init_device_model_db.initialize_database(component_configs, false, false);
+    init_device_model_db.close_connection();
+    this->device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(db_path);
+
+    // Provisioning only adds. A component this EVSE resolved to on an earlier boot is kept by
+    // InitDeviceModelDb, so clear whatever was not selected now: each EVSE ends with at most one
+    // DER controller marked available.
+    for (const auto& [evse_id, component] : der_ctrlr_components) {
+        disable_other_der_ctrlrs(*this->device_model_storage, evse_id, component);
+    }
+
+    this->init_evse_components_and_variables(evse_hardware_capabilities_map, evse_supported_energy_transfers);
+    this->init_everest_config();
+}
+
+void EverestDeviceModelStorage::init_evse_components_and_variables(
+    const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
+    const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers) {
+    for (const auto& evse_manager : r_evse_manager) {
+        const auto evse_info = evse_manager->call_get_evse();
+        Component evse_component = get_evse_component(evse_info.id);
+
+        if (evse_hardware_capabilities_map.find(evse_info.id) != evse_hardware_capabilities_map.end()) {
+            this->update_hw_capabilities(evse_component, evse_hardware_capabilities_map.at(evse_info.id));
+        } else {
+            EVLOG_error << "No hardware capabilities found for EVSE with ID " << evse_info.id;
+        }
+
+        evse_manager->subscribe_hw_capabilities(
+            [this, evse_component](const types::evse_board_support::HardwareCapabilities hw_capabilities) {
+                this->update_hw_capabilities(evse_component, hw_capabilities);
+            });
+
+        Component v2x_component = get_v2x_component(evse_info.id);
+
+        if (evse_supported_energy_transfers.find(evse_info.id) != evse_supported_energy_transfers.end()) {
+            this->update_supported_energy_transfers(v2x_component, evse_supported_energy_transfers.at(evse_info.id));
+        } else {
+            EVLOG_error << "No supported energy transfer modes found for EVSE with ID " << evse_info.id;
+        }
+
+        evse_manager->subscribe_supported_energy_transfer_modes(
+            [this,
+             v2x_component](const std::vector<types::iso15118::EnergyTransferMode>& supported_energy_transfer_modes) {
+                this->update_supported_energy_transfers(v2x_component, supported_energy_transfer_modes);
+            });
+        // TODO(mlitre): Dynamic update of OperationModeEnum via energy manger conf or subscribed var
+
+        for (const auto& connector : evse_info.connectors) {
+            if (connector.type.has_value()) {
+                const auto component = get_connector_component(evse_info.id, connector.id);
+                std::lock_guard<std::mutex> lock(device_model_mutex);
+                this->device_model_storage->set_variable_attribute_value(
+                    component, ocpp::v2::ConnectorComponentVariables::Type, ocpp::v2::AttributeEnum::Actual,
+                    types::evse_manager::connector_type_enum_to_string(connector.type.value()),
+                    VARIABLE_SOURCE_EVEREST);
+            }
+        }
+    }
+    for (const auto& extension : r_extensions_15118) {
+        const auto mapping = extension->get_mapping();
+        if (!mapping.has_value()) {
+            continue;
+        }
+        const auto evse_id = mapping->evse;
+        Component iso15118_component = get_iso15118_component(evse_id);
+        extension->subscribe_service_renegotiation_supported(
+            [this, iso15118_component](const bool service_renegotiation_supported) {
+                this->update_service_renegotiation_supported(iso15118_component, service_renegotiation_supported);
+            });
+
+        const auto connected_ev_component = get_connected_ev_component(evse_id);
+        extension->subscribe_ev_info(
+            [this, connected_ev_component](const types::iso15118::EvInformation& ev_information) {
+                this->update_connected_ev_information(connected_ev_component, ev_information);
+            });
+    }
+}
+
+void EverestDeviceModelStorage::init_everest_config() {
+    for (const auto& [module_id_type, module_config] : this->module_configs) {
+        for (const auto& [impl, config_params] : module_config) {
+            std::string prefix;
+            if (impl != Everest::config::MODULE_IMPLEMENTATION_ID) {
+                // prefix variable name with impl + .
+                prefix = impl + ".";
+            }
+            for (const auto& config_param : config_params) {
+                try {
+                    const auto variable_name = prefix + config_param.name;
+
+                    Component component;
+                    component.name = module_id_type.module_type;
+                    component.instance = module_id_type.module_id;
+                    Variable variable;
+                    variable.name = variable_name;
+                    ocpp::v2::ComponentVariable component_variable;
+                    component_variable.component = component;
+                    component_variable.variable = variable;
+                    // allows to differentiate variables backed by the EVerest config from other device model variables
+                    this->stored_in_everest_config_service.insert(component_variable);
+
+                    std::lock_guard<std::mutex> lock(device_model_mutex);
+                    this->device_model_storage->set_variable_attribute_value(
+                        component, variable, ocpp::v2::AttributeEnum::Actual,
+                        get_everest_config_value(module_config, impl, config_param.name), VARIABLE_SOURCE_EVEREST);
+                } catch (const std::exception& e) {
+                    EVLOG_error << "Could not initialize EVerest config entry in OCPP device model: " << e.what();
+                }
+            }
+        }
+    }
+}
+
+void EverestDeviceModelStorage::update_hw_capabilities(
+    const Component& evse_component, const types::evse_board_support::HardwareCapabilities& hw_capabilities) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        evse_component, ocpp::v2::EvseComponentVariables::SupplyPhases, ocpp::v2::AttributeEnum::Actual,
+        std::to_string(hw_capabilities.max_phase_count_import), VARIABLE_SOURCE_EVEREST);
+    // TODO: update EVSE.Power maxLimit value once device model storage interface supports it
+}
+
+void EverestDeviceModelStorage::update_supported_energy_transfers(
+    const ocpp::v2::Component& evse_component,
+    const std::vector<types::iso15118::EnergyTransferMode>& evse_supported_energy_transfers) {
+    std::string supported_string = supported_energy_transfer_modes_vector_to_string(evse_supported_energy_transfers);
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        evse_component, ocpp::v2::V2xComponentVariables::SupportedEnergyTransferModes, ocpp::v2::AttributeEnum::Actual,
+        supported_string, VARIABLE_SOURCE_EVEREST);
+}
+
+void EverestDeviceModelStorage::update_supported_operation_modes(
+    const ocpp::v2::Component& evse_component,
+    const std::vector<ocpp::v2::OperationModeEnum>& evse_supported_operation_modes) {
+    std::string supported_string = supported_operation_modes_vector_to_string(evse_supported_operation_modes);
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        evse_component, ocpp::v2::V2xComponentVariables::SupportedOperationModes, ocpp::v2::AttributeEnum::Actual,
+        supported_string, VARIABLE_SOURCE_EVEREST);
+}
+
+void EverestDeviceModelStorage::update_service_renegotiation_supported(const ocpp::v2::Component& iso15118_component,
+                                                                       const bool& service_renegotiation_supported) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        iso15118_component, ocpp::v2::ISO15118ComponentVariables::ServiceRenegotiationSupport,
+        ocpp::v2::AttributeEnum::Actual, service_renegotiation_supported ? "true" : "false", VARIABLE_SOURCE_EVEREST);
+}
+
+void EverestDeviceModelStorage::update_connected_ev_information(const ocpp::v2::Component& connected_ev_component,
+                                                                const types::iso15118::EvInformation& ev_information) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    // We update to true even though it should already be true as a precaution
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::Available, ocpp::v2::AttributeEnum::Actual,
+        "true", VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
+        ev_information.evcc_id, VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed,
+        ocpp::v2::AttributeEnum::Actual,
+        build_supported_protocol_string(ev_information.selected_protocol.protocol_namespace,
+                                        ev_information.selected_protocol.version_number_major,
+                                        ev_information.selected_protocol.version_number_minor),
+        VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf,
+        ocpp::v2::AttributeEnum::Actual,
+        ev_information.tls_leaf_certificate.has_value() ? ev_information.tls_leaf_certificate.value() : "",
+        VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1,
+        ocpp::v2::AttributeEnum::Actual,
+        ev_information.tls_sub_ca_1_certificate.has_value() ? ev_information.tls_sub_ca_1_certificate.value() : "",
+        VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2,
+        ocpp::v2::AttributeEnum::Actual,
+        ev_information.tls_sub_ca_2_certificate.has_value() ? ev_information.tls_sub_ca_2_certificate.value() : "",
+        VARIABLE_SOURCE_EVEREST);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot,
+        ocpp::v2::AttributeEnum::Actual,
+        ev_information.tls_root_certificate.has_value() ? ev_information.tls_root_certificate.value() : "",
+        VARIABLE_SOURCE_EVEREST);
+    for (const auto& protocol : ev_information.supported_protocols.Protocols) {
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component,
+            ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(protocol.priority),
+            ocpp::v2::AttributeEnum::Actual,
+            build_supported_protocol_string(protocol.protocol_namespace, protocol.version_number_major,
+                                            protocol.version_number_minor),
+            VARIABLE_SOURCE_EVEREST);
+    }
+}
+
+void EverestDeviceModelStorage::update_connected_ev_available(const int32_t evse_id, const bool connected) {
+    const auto connected_ev_component = get_connected_ev_component(evse_id);
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::Available, ocpp::v2::AttributeEnum::Actual,
+        connected ? "true" : "false", VARIABLE_SOURCE_EVEREST);
+    if (!connected) {
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
+            "", VARIABLE_SOURCE_EVEREST);
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed,
+            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf,
+            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1,
+            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2,
+            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        this->device_model_storage->set_variable_attribute_value(
+            connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot,
+            ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        for (int i = 1; i <= NUMBER_OF_CONNECTED_EV_PROTOCOLS; ++i) {
+            this->device_model_storage->set_variable_attribute_value(
+                connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(i),
+                ocpp::v2::AttributeEnum::Actual, "", VARIABLE_SOURCE_EVEREST);
+        }
+    }
+}
+
+void EverestDeviceModelStorage::update_connected_ev_vehicle_id(const int32_t evse_id, const std::string& vehicle_id) {
+    const auto connected_ev_component = get_connected_ev_component(evse_id);
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    this->device_model_storage->set_variable_attribute_value(
+        connected_ev_component, ocpp::v2::ConnectedEvComponentVariables::VehicleId, ocpp::v2::AttributeEnum::Actual,
+        vehicle_id, VARIABLE_SOURCE_EVEREST);
+}
+
+void EverestDeviceModelStorage::update_power(const int32_t evse_id, const float total_power_active_import) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    Component evse_component = get_evse_component(evse_id);
+    this->device_model_storage->set_variable_attribute_value(
+        evse_component, ocpp::v2::EvseComponentVariables::Power, ocpp::v2::AttributeEnum::Actual,
+        std::to_string(total_power_active_import), VARIABLE_SOURCE_EVEREST);
+}
+
+ocpp::v2::DeviceModelMap EverestDeviceModelStorage::get_device_model() {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_device_model();
+}
+
+std::optional<ocpp::v2::VariableAttribute>
+EverestDeviceModelStorage::get_variable_attribute(const ocpp::v2::Component& component_id,
+                                                  const ocpp::v2::Variable& variable_id,
+                                                  const ocpp::v2::AttributeEnum& attribute_enum) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_variable_attribute(component_id, variable_id, attribute_enum);
+}
+
+std::vector<ocpp::v2::VariableAttribute>
+EverestDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& component_id,
+                                                   const ocpp::v2::Variable& variable_id,
+                                                   const std::optional<ocpp::v2::AttributeEnum>& attribute_enum) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_variable_attributes(component_id, variable_id, attribute_enum);
+}
+
+ocpp::v2::SetVariableStatusEnum EverestDeviceModelStorage::set_variable_attribute_value(
+    const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
+    const ocpp::v2::AttributeEnum& attribute_enum, const std::string& value, const std::string& source) {
+
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+
+    int evse_id = 0;
+    if (component_id.evse.has_value()) {
+        evse_id = component_id.evse.value().id;
+    }
+
+    ocpp::v2::ComponentVariable component_variable;
+    component_variable.component = component_id;
+    component_variable.variable = variable_id;
+    auto stored_in_everest_config_service_it = this->stored_in_everest_config_service.find(component_variable);
+    if (stored_in_everest_config_service_it != this->stored_in_everest_config_service.end()) {
+        if (attribute_enum != ocpp::v2::AttributeEnum::Actual) {
+            return ocpp::v2::SetVariableStatusEnum::Rejected;
+        }
+        if (not component_id.instance.has_value()) {
+            return ocpp::v2::SetVariableStatusEnum::Rejected;
+        }
+        const auto module_id = component_id.instance.value();
+        everest::config::ConfigurationParameterIdentifier identifier;
+        identifier.module_id = module_id;
+        const std::string variable_name = variable_id.name;
+        const auto strpos = variable_name.find(".");
+        if (strpos != std::string::npos) {
+            identifier.module_implementation_id = variable_name.substr(0, strpos);
+            identifier.configuration_parameter_name = variable_name.substr(strpos + 1, variable_name.length());
+        } else {
+            identifier.module_implementation_id = Everest::config::MODULE_IMPLEMENTATION_ID;
+            identifier.configuration_parameter_name = variable_name;
+        }
+
+        const auto result = this->config_service_client->set_config_value(identifier, value);
+
+        if (result.set_status == everest::config::SetConfigStatus::Accepted) {
+            // immediately set it in the libocpp device model as well
+            const auto libocpp_result = this->device_model_storage->set_variable_attribute_value(
+                component_id, variable_id, attribute_enum, value, source);
+            if (libocpp_result != ocpp::v2::SetVariableStatusEnum::Accepted) {
+                EVLOG_error << "Device model set variable results disagree";
+            }
+            return libocpp_result; // FIXME: what to return, libocpp or EVerest result?
+        } else if (result.set_status == everest::config::SetConfigStatus::Rejected) {
+            return ocpp::v2::SetVariableStatusEnum::Rejected;
+        } else if (result.set_status == everest::config::SetConfigStatus::RebootRequired) {
+            return ocpp::v2::SetVariableStatusEnum::RebootRequired;
+        }
+    }
+
+    // FIXME: device_model_storage->set_variable_attribute_value does only return accepted or rejected, no other
+    // checks
+    // are performed. Since libocpp contains the full device model in memory and does these checks independently,
+    // it's currently only a minor issue.
+    return this->device_model_storage->set_variable_attribute_value(component_id, variable_id, attribute_enum, value,
+                                                                    source);
+}
+
+std::optional<ocpp::v2::VariableMonitoringMeta>
+EverestDeviceModelStorage::set_monitoring_data(const ocpp::v2::SetMonitoringData& data,
+                                               const ocpp::v2::VariableMonitorType type) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->set_monitoring_data(data, type);
+}
+
+bool EverestDeviceModelStorage::update_monitoring_reference(const int32_t monitor_id,
+                                                            const std::string& reference_value) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->update_monitoring_reference(monitor_id, reference_value);
+}
+
+std::vector<ocpp::v2::VariableMonitoringMeta>
+EverestDeviceModelStorage::get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
+                                               const ocpp::v2::Component& component_id,
+                                               const ocpp::v2::Variable& variable_id) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->get_monitoring_data(criteria, component_id, variable_id);
+}
+
+ocpp::v2::ClearMonitoringStatusEnum EverestDeviceModelStorage::clear_variable_monitor(int monitor_id,
+                                                                                      bool allow_protected) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->clear_variable_monitor(monitor_id, allow_protected);
+}
+
+int32_t EverestDeviceModelStorage::clear_custom_variable_monitors() {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->clear_custom_variable_monitors();
+}
+
+void EverestDeviceModelStorage::check_integrity() {
+}
+
+bool EverestDeviceModelStorage::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    std::lock_guard<std::mutex> lock(device_model_mutex);
+    return this->device_model_storage->create_network_configuration_slot_from_default_schema(new_slot);
+}
+} // namespace ocpp_module_common::device_model

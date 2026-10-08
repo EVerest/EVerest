@@ -21,6 +21,7 @@ target_sources(ocpp
     PRIVATE
         ocpp/common/call_types.cpp
         ocpp/common/charging_station_base.cpp
+        ocpp/common/connectivity_manager.cpp
         ocpp/common/ocpp_logging.cpp
         ocpp/common/schemas.cpp
         ocpp/common/types.cpp
@@ -39,7 +40,9 @@ if(LIBOCPP_ENABLE_V16)
             ocpp/v16/message_dispatcher.cpp
             ocpp/v16/smart_charging.cpp
             ocpp/v16/known_keys.cpp
+            ocpp/v16/variable_resolver.cpp
             ocpp/v16/charge_point_configuration_base.cpp
+            ocpp/v16/charge_point_configuration_connectivity.cpp
             ocpp/v16/charge_point_configuration_devicemodel.cpp
             ocpp/v16/charge_point_configuration.cpp
             ocpp/v16/charge_point_state_machine.cpp
@@ -81,6 +84,8 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/evse.cpp
             ocpp/v2/evse_manager.cpp
             ocpp/v2/init_device_model_db.cpp
+            ocpp/v2/ocpp16_component_config_patcher.cpp
+            ocpp/v2/ocpp16_custom_config_mappings.cpp
             ocpp/v2/notify_report_requests_splitter.cpp
             ocpp/v2/message_queue.cpp
             ocpp/v2/ocpp_enums.cpp
@@ -92,11 +97,11 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/types.cpp
             ocpp/v2/utils.cpp
             ocpp/v2/component_state_manager.cpp
-            ocpp/v2/connectivity_manager.cpp
             ocpp/v2/message_dispatcher.cpp
             ocpp/v2/functional_blocks/authorization.cpp
             ocpp/v2/functional_blocks/availability.cpp
             ocpp/v2/functional_blocks/security.cpp
+            ocpp/v2/dynamic_schedule_manager.cpp
             ocpp/v2/functional_blocks/smart_charging.cpp
             ocpp/v2/functional_blocks/data_transfer.cpp
             ocpp/v2/functional_blocks/firmware_update.cpp
@@ -109,9 +114,48 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/functional_blocks/tariff_and_cost.cpp
             ocpp/v2/functional_blocks/transaction.cpp
             ocpp/v21/functional_blocks/bidirectional.cpp
+            ocpp/v21/functional_blocks/der_control.cpp
     )
     add_subdirectory(ocpp/v2/messages)
     add_subdirectory(ocpp/v21/messages)
+
+    # Embed the canonical NetworkConfiguration_1 schema as a build-time C++ string so
+    # blob migration can bootstrap a per-slot component without a filesystem dependency.
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE
+        "${PROJECT_SOURCE_DIR}/config/common/component_config/standardized/NetworkConfiguration_1.json")
+    file(READ "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE}"
+         OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_JSON)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_SOURCE}")
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/network_configuration_default_schema.cpp")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/ocpp/v2/network_configuration_default_schema.cpp.in"
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}"
+        @ONLY)
+    target_sources(ocpp PRIVATE
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}")
+    set(OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED
+        "${OCPP_NETWORK_CONFIGURATION_DEFAULT_SCHEMA_GENERATED}" PARENT_SCOPE)
+
+    # Embed the canonical OCPP16LegacyCtrlr schema as a build-time C++ string so
+    # initialize_database can bootstrap the component without a filesystem dependency.
+    set(OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_SOURCE
+        "${PROJECT_SOURCE_DIR}/config/common/component_config/standardized/OCPP16LegacyCtrlr.json")
+    file(READ "${OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_SOURCE}"
+         OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_JSON)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
+        "${OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_SOURCE}")
+    set(OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_GENERATED
+        "${CMAKE_CURRENT_BINARY_DIR}/generated/ocpp16_legacy_ctrlr_default_schema.cpp")
+    configure_file(
+        "${CMAKE_CURRENT_SOURCE_DIR}/ocpp/v2/ocpp16_legacy_ctrlr_default_schema.cpp.in"
+        "${OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_GENERATED}"
+        @ONLY)
+    target_sources(ocpp PRIVATE
+        "${OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_GENERATED}")
+    set(OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_GENERATED
+        "${OCPP16_LEGACY_CTRLR_DEFAULT_SCHEMA_GENERATED}" PARENT_SCOPE)
 endif()
 
 add_subdirectory(ocpp/common/websocket)
@@ -176,6 +220,7 @@ endif()
 target_link_libraries(ocpp
     PUBLIC
         everest::timer
+        everest::util
         nlohmann_json_schema_validator
         everest::evse_security
         websockets_shared
@@ -183,9 +228,10 @@ target_link_libraries(ocpp
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
-        SQLite::SQLite3
+        SQLite3::SQLite3
         Threads::Threads
         nlohmann_json::nlohmann_json
+        ryml::ryml
         date::date-tz
 )
 

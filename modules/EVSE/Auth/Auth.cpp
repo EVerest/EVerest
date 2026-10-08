@@ -16,7 +16,7 @@ void Auth::init() {
     this->auth_handler = std::make_unique<AuthHandler>(
         string_to_selection_algorithm(this->config.selection_algorithm), this->config.connection_timeout,
         this->config.plug_in_timeout_enabled, this->config.prioritize_authorization_over_stopping_transaction,
-        this->config.ignore_connector_faults, this->info.id,
+        this->config.ignore_connector_faults, this->config.stop_transaction_on_reswipe, this->info.id,
         (!this->r_kvs.empty() ? this->r_kvs.at(0).get() : nullptr));
 
     for (const auto& token_provider : this->r_token_provider) {
@@ -148,26 +148,24 @@ void Auth::ready() {
         [this](const int32_t evse_index, const StopTransactionRequest& request) {
             this->r_evse_manager.at(evse_index)->call_stop_transaction(request);
         });
-    this->auth_handler->register_reserved_callback(
-        [this](const std::optional<int32_t> evse_id, const int32_t& reservation_id) {
-            // Only call the evse manager to store the reservation if it is done for a specific evse.
-            if (evse_id.has_value()) {
-                EVLOG_info << "Call reserved callback for evse id " << evse_id.value();
+    this->auth_handler->register_reserved_callback([this](const std::optional<int32_t> evse_id,
+                                                          const int32_t& reservation_id) {
+        // Only call the evse manager to store the reservation if it is done for a specific evse.
+        if (evse_id.has_value()) {
+            EVLOG_info << "Call reserved callback for evse id " << evse_id.value();
 
-                if (!this->r_evse_manager.at(evse_id.value() - 1)->call_reserve(reservation_id)) {
-                    EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id " << evse_id.value()
-                                  << ": cancelling reservation.";
-                    this->auth_handler->handle_cancel_reservation(reservation_id);
-                    return false;
-                }
+            if (!this->r_evse_manager.at(evse_id.value() - 1)->call_reserve(reservation_id)) {
+                EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id " << evse_id.value();
+                return false;
             }
+        }
 
-            ReservationUpdateStatus status;
-            status.reservation_id = reservation_id;
-            status.reservation_status = Reservation_status::Placed;
-            this->p_reservation->publish_reservation_update(status);
-            return true;
-        });
+        ReservationUpdateStatus status;
+        status.reservation_id = reservation_id;
+        status.reservation_status = Reservation_status::Placed;
+        this->p_reservation->publish_reservation_update(status);
+        return true;
+    });
     this->auth_handler->register_reservation_cancelled_callback(
         [this](const std::optional<int32_t> evse_id, const int32_t reservation_id, const ReservationEndReason reason,
                const bool send_reservation_update) {

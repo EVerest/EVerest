@@ -1,5 +1,6 @@
 option(BUILD_DOC "Build documentation" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
+option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
 
 add_subdirectory(src)
 

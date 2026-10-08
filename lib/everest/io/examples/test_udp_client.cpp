@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/timer_fd.hpp>
 #include <everest/io/udp/udp_client.hpp>
@@ -103,7 +103,7 @@ int main(int argc, char* argv[]) {
     }
 
     std::cout << "Connecting to ->  " << remote << ":" << port << std::endl;
-    udp_client client(remote, port, 1000);
+    udp_client client(remote, port);
     client.set_error_handler(make_error_cb(client));
     client.set_rx_handler(make_rx_callback(client));
 

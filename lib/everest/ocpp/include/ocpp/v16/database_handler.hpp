@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_DATABASE_HANDLER_HPP
 #define OCPP_V16_DATABASE_HANDLER_HPP
 
@@ -72,6 +72,9 @@ public:
     /// \brief Updates the CSMS_ACK column for the transaction with the given \p transaction_id in the TRANSACTIONS
     /// table
     void update_transaction_csms_ack(const std::int32_t transaction_id);
+
+    /// \brief Returns the TransactionEntry for the given \p transaction_id, or std::nullopt if not found.
+    std::optional<TransactionEntry> get_transaction(const std::int32_t transaction_id);
 
     /// \brief Updates the START_TRANSACTION_MESSAGE_ID column for the transaction with the given \p session_id in the
     /// TRANSACTIONS table

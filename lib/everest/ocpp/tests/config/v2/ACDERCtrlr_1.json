@@ -1,0 +1,44 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Schema for ACDERCtrlr EVSE 1",
+  "name": "ACDERCtrlr",
+  "evse_id": 1,
+  "type": "object",
+  "properties": {
+    "ACDERCtrlrAvailable": {
+      "variable_name": "Available",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": false
+        }
+      ],
+      "description": "Whether AC DER control is supported by this EVSE. Default disabled; set to true to enable DER control on this EVSE.",
+      "default": false,
+      "type": "boolean"
+    },
+    "ACDERCtrlrModesSupported": {
+      "variable_name": "ModesSupported",
+      "characteristics": {
+        "valuesList": "EnterService,FreqDroop,FreqWatt,FixedPFAbsorb,FixedPFInject,FixedVar,Gradients,HFMustTrip,HFMayTrip,HVMustTrip,HVMomCess,HVMayTrip,LimitMaxDischarge,LFMustTrip,LVMustTrip,LVMomCess,LVMayTrip,PowerMonitoringMustTrip,VoltVar,VoltWatt,WattPF,WattVar",
+        "supportsMonitoring": true,
+        "dataType": "MemberList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly",
+          "value": "FreqDroop"
+        }
+      ],
+      "description": "List of DER control modes supported by the AC inverter of this EVSE. Ignored while Available is true: AC accepts all control types because the supported set is not known until the EV is plugged in.",
+      "type": "string"
+    }
+  },
+  "required": []
+}

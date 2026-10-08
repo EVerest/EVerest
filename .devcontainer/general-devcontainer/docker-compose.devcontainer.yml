@@ -34,6 +34,7 @@ services:
   devcontainer:
     depends_on:
       - docker-proxy
+    init: true
     env_file:
       - .env
     build:

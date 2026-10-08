@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -10,19 +11,21 @@
 
 #include <ocpp/common/support_older_cpp_versions.hpp>
 #include <ocpp/v16/charge_point_configuration_base.hpp>
-#include <ocpp/v16/charge_point_configuration_interface.hpp>
+#include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/ocpp_types.hpp>
 #include <ocpp/v16/types.hpp>
+#include <ocpp/v16/utils.hpp>
 
 namespace ocpp {
 namespace v16 {
 
 /// \brief contains the configuration of the charge point
-class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationInterface {
+class ChargePointConfiguration : private ChargePointConfigurationBase, public ChargePointConfigurationConnectivity {
 private:
     json config;
     json custom_schema;
     json internal_schema;
+    json cost_and_price_schema;
     bool core_schema_unlock_connector_on_ev_side_disconnect_ro_value;
     fs::path user_config_path;
 
@@ -31,6 +34,8 @@ private:
     bool validate_measurands(const json& config);
     json get_user_config();
     void setInUserConfig(const std::string& profile, const std::string& key, json value);
+    std::optional<KeyValue> getCustomKeyValue(const CiString<50>& key);
+    ConfigurationStatus setCustomKey(const CiString<50>& key, const CiString<500>& value, bool force);
 
     void setChargepointInformationProperty(json& user_config, const std::string& key,
                                            const std::optional<std::string>& value);
@@ -112,6 +117,9 @@ public:
     std::optional<std::int32_t> getSupplyVoltage() override;
     std::optional<KeyValue> getSupplyVoltageKeyValue() override;
     void setSupplyVoltage(std::int32_t supply_voltage) override;
+    std::optional<std::int32_t> getSwitchSecurityProfileConnectionTimeout() override;
+    std::optional<KeyValue> getSwitchSecurityProfileConnectionTimeoutKeyValue() override;
+    void setSwitchSecurityProfileConnectionTimeout(std::int32_t switch_security_profile_connection_timeout) override;
     std::string getSupportedCiphers12() override;
     KeyValue getSupportedCiphers12KeyValue() override;
     std::string getSupportedCiphers13() override;
@@ -123,6 +131,9 @@ public:
     bool getVerifyCsmsAllowWildcards() override;
     void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) override;
     KeyValue getVerifyCsmsAllowWildcardsKeyValue() override;
+    bool getReportSuspendedEVSEReasonChange() override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     bool getUseTPM() override;
     KeyValue getUseTPMKeyValue() override;
     bool getUseTPMSeccLeafCertificate() override;
@@ -171,6 +182,9 @@ public:
 
     std::optional<bool> getQueueAllMessages() override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
+
+    std::optional<bool> getReportClearedErrors() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
 
     std::optional<std::string> getMessageTypesDiscardForQueueing() override;
     std::optional<KeyValue> getMessageTypesDiscardForQueueingKeyValue() override;
@@ -469,13 +483,22 @@ public:
     void setAllowChargingProfileWithoutStartSchedule(bool allow) override;
     std::optional<KeyValue> getAllowChargingProfileWithoutStartScheduleKeyValue() override;
 
+    std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() override;
+    void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) override;
+    std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() override;
+
+    std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() override;
+    void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
+    std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
+
     std::int32_t getWaitForStopTransactionsOnResetTimeout() override;
     void setWaitForStopTransactionsOnResetTimeout(std::int32_t wait_for_stop_transactions_on_reset_timeout) override;
     KeyValue getWaitForStopTransactionsOnResetTimeoutKeyValue() override;
 
     // California Pricing Requirements
     bool getCustomDisplayCostAndPriceEnabled() override;
-    KeyValue getCustomDisplayCostAndPriceEnabledKeyValue() override;
+    std::optional<KeyValue> getCustomDisplayCostAndPriceEnabledKeyValue();
+    ConfigurationStatus setCustomDisplayCostAndPrice(const bool& value);
 
     std::optional<std::uint32_t> getPriceNumberOfDecimalsForCostValues() override;
     std::optional<KeyValue> getPriceNumberOfDecimalsForCostValuesKeyValue() override;
@@ -485,6 +508,7 @@ public:
     ConfigurationStatus setDefaultPriceText(const CiString<50>& key, const CiString<500>& value) override;
     KeyValue getDefaultPriceTextKeyValue(const std::string& language) override;
     std::optional<std::vector<KeyValue>> getAllDefaultPriceTextKeyValues() override;
+    std::optional<json> getDefaultPriceText();
 
     std::optional<std::string> getDefaultPrice() override;
     ConfigurationStatus setDefaultPrice(const std::string& value) override;
@@ -523,17 +547,18 @@ public:
     // Signed Meter Values
     std::optional<KeyValue> getPublicKeyKeyValue(std::uint32_t connector_id) override;
     std::optional<std::vector<KeyValue>> getAllMeterPublicKeyKeyValues() override;
-    bool setMeterPublicKey(std::int32_t connector_id, const std::string& public_key_pem) override;
+    std::optional<std::string> getMeterPublicKeysCsl();
+    std::optional<json> getMeterPublicKeys();
 
-    // custom
-    std::optional<KeyValue> getCustomKeyValue(const CiString<50>& key) override;
-    ConfigurationStatus setCustomKey(const CiString<50>& key, const CiString<500>& value, bool force) override;
+    bool setMeterPublicKey(std::int32_t connector_id, const std::string& public_key_pem) override;
 
     std::optional<KeyValue> get(const CiString<50>& key) override;
 
     std::vector<KeyValue> get_all_key_value() override;
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
+
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) override;
 };
 
 } // namespace v16

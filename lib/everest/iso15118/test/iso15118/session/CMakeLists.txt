@@ -9,3 +9,85 @@ target_link_libraries(test_feedback
 )
 
 catch_discover_tests(test_feedback)
+
+add_executable(test_session_teardown session_teardown.cpp)
+
+target_link_libraries(test_session_teardown
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_session_teardown)
+
+add_executable(test_tbd_controller_teardown tbd_controller_teardown.cpp)
+
+target_link_libraries(test_tbd_controller_teardown
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_tbd_controller_teardown)
+
+add_executable(test_tbd_controller_start_session tbd_controller_start_session.cpp)
+
+target_link_libraries(test_tbd_controller_start_session
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_tbd_controller_start_session
+    PROPERTIES RUN_SERIAL TRUE
+)
+
+add_executable(test_sap_engine sap_engine.cpp)
+
+target_link_libraries(test_sap_engine
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_sap_engine)
+
+add_executable(test_secc_sap secc_sap.cpp)
+
+target_link_libraries(test_secc_sap
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_secc_sap)
+
+add_executable(test_secc_engine_config secc_engine_config.cpp)
+
+target_link_libraries(test_secc_engine_config
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_secc_engine_config)
+
+add_executable(test_v2gtp_frame_drop v2gtp_frame_drop.cpp)
+
+target_link_libraries(test_v2gtp_frame_drop
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_v2gtp_frame_drop)
+
+add_executable(test_communication_setup_anchor communication_setup_anchor.cpp)
+
+target_link_libraries(test_communication_setup_anchor
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_communication_setup_anchor)

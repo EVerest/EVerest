@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -42,9 +42,12 @@
 #include <mutex>
 #include <queue>
 
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/v16/conversions.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/charge_point.hpp>
 #include <ocpp/v16/charge_point_configuration.hpp>
+#include <ocpp/v16/charge_point_configuration_interface.hpp>
 #include <ocpp/v16/types.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -66,6 +69,12 @@ struct Event {
 };
 
 using EvseConnectorMap = std::map<int32_t, std::map<int32_t, int32_t>>;
+namespace module {
+
+// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
+// pull the names into the module namespace to keep call sites unchanged.
+namespace conversions = ocpp_module_common::v16::conversions;
+} // namespace module
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -74,6 +83,12 @@ struct Conf {
     std::string ChargePointConfigPath;
     std::string UserConfigPath;
     std::string DatabasePath;
+    std::string DeviceModelDatabasePath;
+    std::string DeviceModelDatabaseMigrationPath;
+    std::string DeviceModelConfigPath;
+    std::string DeviceModelConfigMappings;
+    std::string ConfigBackend;
+    bool EnableDeviceModelFallbackToLegacyJson;
     bool EnableExternalWebsocketControl;
     int PublishChargingScheduleIntervalS;
     int PublishChargingScheduleDurationS;
@@ -82,6 +97,7 @@ struct Conf {
     std::string RequestCompositeScheduleUnit;
     int DelayOcppStart;
     int ResetStopDelay;
+    int Ocpp16NetworkConfigSlot;
 };
 
 class OCPP : public Everest::ModuleBase {
@@ -143,7 +159,7 @@ public:
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     std::unique_ptr<ocpp::v16::ChargePoint> charge_point;
-    std::unique_ptr<ocpp::v16::ChargePointConfiguration> charge_point_config;
+    std::unique_ptr<ocpp::v16::ChargePointConfigurationInterface> charge_point_config;
     std::unique_ptr<Everest::SteadyTimer> charging_schedules_timer;
     bool ocpp_stopped = false;
 
@@ -161,6 +177,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

@@ -37,6 +37,16 @@ channels:
     messages:
       receive_capabilities:
         $ref: '#/components/messages/receive_capabilities'
+  send_request_get_capabilities:
+    address: 'm2e/capabilities/get'
+    messages:
+      send_request_get_capabilities:
+        $ref: '#/components/messages/send_request_get_capabilities'
+  receive_reply_get_capabilities:
+    address: null
+    messages:
+      receive_reply_get_capabilities:
+        $ref: '#/components/messages/receive_reply_get_capabilities'
 
   receive_heartbeat:
     address: 'e2m/heartbeat'
@@ -57,6 +67,25 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_set_external_limits'
+  send_request_get_capabilities:
+    title: 'Request current Capabilities'
+    action: send
+    channel:
+      $ref: '#/channels/send_request_get_capabilities'
+    description: >-
+      Request the most recently published (latched) Capabilities.
+      The reply will be sent to the replyTo address specified in the message headers.
+      If no latched value is available yet, a null payload will be sent.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/receive_reply_get_capabilities'
+  receive_reply_get_capabilities:
+    title: 'Reply to get Capabilities request'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_reply_get_capabilities'
 
   receive_heartbeat:
     title: 'Receive heartbeat'
@@ -235,6 +264,38 @@ components:
               "nominal_voltage_V": 230,
               "total_power_W": 11040
             }
+    send_request_get_capabilities:
+      name: send_request_get_capabilities
+      title: 'Request current Capabilities'
+      summary: 'Request the most recently published (latched) Capabilities.'
+      contentType: application/json
+      payload:
+        type: object
+        required:
+          - headers
+        properties:
+          headers:
+            type: object
+            required:
+              - replyTo
+            properties:
+              replyTo:
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: ""
+          payload:
+            headers:
+              replyTo: everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}
+    receive_reply_get_capabilities:
+      name: receive_reply_get_capabilities
+      title: 'Reply to get Capabilities request'
+      summary: 'The most recently published Capabilities.'
+      contentType: application/json
+      payload:
+        oneOf:
+          - $ref: '#/components/schemas/CapabilityLimits'
+          - type: 'null'
 
     receive_heartbeat:
       name: receive_heartbeat

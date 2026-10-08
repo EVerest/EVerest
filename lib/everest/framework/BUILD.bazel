@@ -17,9 +17,19 @@ genrule(
     srcs = ["//lib/everest/framework/schemas/migrations"],
     outs = ["include/everest/compile_time_settings.hpp"],
     cmd = """
-    echo "#define EVEREST_INSTALL_PREFIX \\"/usr\\"" > $@
-    echo "#define EVEREST_INSTALL_LIBDIR \\"/lib\\"" >> $@
-    echo "#define EVEREST_NAMESPACE (\\"everest\\")" >> $@
+    echo "#define EVEREST_NAMESPACE (\\"everest\\")" > $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_LATENCY 1" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_GREEDY 2" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CONSERVATIVE 3" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_FIXED_SIZE 4" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM 5" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_GREEDY" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS 50" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS 5" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD 3" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT 1" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT 6" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE void" >> $@
     $(location :collect_migration_files) --migration-files $(locations //lib/everest/framework/schemas/migrations) --output $@
   """,
     tools = [":collect_migration_files"],
@@ -130,7 +140,20 @@ cc_binary(
         "//lib/everest/log:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
-        "@libcap",
+    ],
+)
+
+cc_library(
+    name = "management_api",
+    srcs = glob(["src/management_api/*.cpp"]),
+    hdrs = glob(["src/management_api/include/*.hpp"]),
+    cxxopts = ["-std=c++17"],
+    strip_include_prefix = "src/management_api/include",
+    visibility = ["//visibility:public"],
+    deps = [
+        ":framework",
+        "//lib/everest/everest_api_types:everest_api_types",
+        "//lib/everest/log:liblog",
     ],
 )
 
@@ -141,20 +164,19 @@ cc_binary(
             "src/*.cpp",
             "src/*.hpp",
         ],
+        exclude = [
+            "src/everest-config.cpp",
+        ],
     ),
     cxxopts = ["-std=c++17"],
     visibility = ["//visibility:public"],
     deps = [
         ":controller-ipc",
         ":framework",
+        ":management_api",
         "//lib/everest/log:liblog",
         "@boost.program_options",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
-        "@libcap",
     ],
 )
-
-exports_files([
-    "dependencies.yaml",
-])

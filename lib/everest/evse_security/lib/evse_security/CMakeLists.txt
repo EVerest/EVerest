@@ -23,6 +23,7 @@ if (LIBEVSE_CRYPTO_SUPPLIER_OPENSSL)
     target_sources(evse_security
         PRIVATE
             crypto/openssl/openssl_crypto_supplier.cpp
+            crypto/openssl/openssl_iso20.cpp
             crypto/openssl/openssl_provider.cpp
     )
 endif()

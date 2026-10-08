@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <cassert>
 #include <cstddef>
@@ -8,12 +8,15 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <everest/tls/openssl_util.hpp>
 
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 
 #include <openssl/bio.h>
+#include <openssl/bn.h>
+#include <openssl/core_names.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
@@ -316,17 +319,29 @@ bool sha_512(const void* data, std::size_t len, sha_512_digest_t& digest) {
 }
 
 std::vector<std::uint8_t> base64_decode(const char* text, std::size_t len) {
-    assert(text != nullptr);
-    assert(len > 0);
-
-    // remove \n
+    // Strip whitespace; pass everything else to BIO_f_base64. Byte set matches
+    // EVP_Decode*'s B64_WS table so this stays drop-in equivalent to the
+    // evse_security path (consolidation target). NUL terminates the scan: an
+    // embedded NUL almost certainly indicates a length-parameter error and
+    // continuing would feed garbage to the decoder.
     auto input = std::make_unique<std::uint8_t[]>(len);
     std::size_t input_len{0};
 
     for (std::size_t i = 0; i < len; i++) {
         const auto item = text[i];
-        if (item != '\n') {
-            input.get()[input_len++] = item;
+        if (item == '\0') {
+            break;
+        }
+        switch (item) {
+        case '\t':
+        case '\n':
+        case '\v':
+        case '\f':
+        case '\r':
+        case ' ':
+            continue;
+        default:
+            input.get()[input_len++] = static_cast<std::uint8_t>(item);
         }
     }
 
@@ -370,9 +385,6 @@ bool base64_decode(const char* text, std::size_t len, std::uint8_t* out_data, st
 }
 
 std::string base64_encode(const std::uint8_t* data, std::size_t len, bool newLine) {
-    assert(data != nullptr);
-    assert(len > 0);
-
     auto* b64 = BIO_new(BIO_f_base64());
     auto* mem = BIO_new(BIO_s_mem());
     BIO_push(b64, mem);
@@ -414,6 +426,27 @@ pkey_ptr load_private_key(const char* filename, const char* password) {
         BIO_free(bio);
     }
 
+    return private_key;
+}
+
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password) {
+    {
+        OpenSSLProvider provider; // ensure providers are loaded
+    }
+
+    pkey_ptr private_key{nullptr, nullptr};
+    auto* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+    if (bio != nullptr) {
+        // password is passed to password_cb() as parameter u which is never
+        // written to, hence const_cast is okay
+        auto* pkey = PEM_read_bio_PrivateKey(bio, nullptr, &password_cb, const_cast<char*>(password));
+        if (pkey != nullptr) {
+            private_key = pkey_ptr{pkey, &EVP_PKEY_free};
+        } else {
+            log_error("PEM_read_bio_PrivateKey");
+        }
+        BIO_free(bio);
+    }
     return private_key;
 }
 
@@ -826,18 +859,77 @@ bool certificate_sha_1(openssl::sha_1_digest_t& digest, const X509* cert) {
     return bResult;
 }
 
+bool is_tls_1_3(const std::uint8_t* in, std::size_t inlen) {
+    // supported_versions extension payload (RFC 8446 4.2.1):
+    // first byte is the length of the version list, followed by
+    // two-byte version IDs (e.g. TLS 1.3 = 0x0304).
+    //
+    // Byte 1   -> length
+    // Byte 2+3 -> first version  (e.g. 03 04)
+    // Byte 4+5 -> second version (e.g. 03 03)
+    // ...
+    bool result{false};
+
+    if (in != nullptr && inlen > 0) {
+        const std::uint8_t length_supported_versions = *(in++);
+        inlen -= 1;
+
+        if (length_supported_versions != inlen) {
+            log_error("length_supported_versions does not match remaining bytes");
+        } else if (length_supported_versions % 2 != 0) {
+            log_error("length_supported_versions is not divisible by 2");
+        } else {
+            for (std::size_t i = 0; i < length_supported_versions; i += 2) {
+                const std::uint8_t first_byte = *(in++);
+                const std::uint8_t second_byte = *(in++);
+
+                const auto tls_version = static_cast<int>(first_byte) << 8 | second_byte;
+
+                if (tls_version == TLS1_3_VERSION) {
+                    result = true;
+                    break;
+                }
+            }
+        }
+    }
+
+    return result;
+}
+
 bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const X509* cert) {
     assert(cert != nullptr);
 
     bool bResult{false};
-    const auto* pubkey = X509_get_X509_PUBKEY(cert);
-    if (pubkey != nullptr) {
-        unsigned char* data{nullptr};
-        const auto len = i2d_X509_PUBKEY(pubkey, &data);
-        if (len > 0) {
-            bResult = openssl::sha_1(data, len, digest);
+    const auto* pubkey = X509_get0_pubkey(cert);
+    if (pubkey == nullptr) {
+        return bResult;
+    }
+
+    if (EVP_PKEY_is_a(pubkey, "RSA")) {
+        // RFC 6066 6: the big-endian modulus without leading zero bytes
+        BIGNUM* modulus{nullptr};
+        if (EVP_PKEY_get_bn_param(pubkey, OSSL_PKEY_PARAM_RSA_N, &modulus) == 1) {
+            const auto len = BN_num_bytes(modulus);
+            if (len > 0) {
+                std::vector<std::uint8_t> bytes(static_cast<std::size_t>(len));
+                if (BN_bn2bin(modulus, bytes.data()) == len) {
+                    bResult = openssl::sha_1(bytes.data(), bytes.size(), digest);
+                }
+            }
+            BN_free(modulus);
         }
-        OPENSSL_free(data);
+        return bResult;
+    }
+
+    // RFC 6066 6: for DSA and ECDSA keys the hash covers the subjectPublicKey
+    // BIT STRING contents, not the whole SubjectPublicKeyInfo
+    const auto* key_bits = X509_get0_pubkey_bitstr(cert);
+    if (key_bits != nullptr) {
+        const auto* data = ASN1_STRING_get0_data(key_bits);
+        const auto len = ASN1_STRING_length(key_bits);
+        if ((data != nullptr) && (len > 0)) {
+            bResult = openssl::sha_1(data, static_cast<std::size_t>(len), digest);
+        }
     }
 
     return bResult;

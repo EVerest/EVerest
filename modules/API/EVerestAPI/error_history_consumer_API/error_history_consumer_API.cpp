@@ -1,70 +1,70 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "error_history_consumer_API.hpp"
 
 #include "error_wrapper.hpp"
 #include <everest_api_types/error_history/API.hpp>
 #include <everest_api_types/error_history/codec.hpp>
+#include <everest_api_types/error_history/json_codec.hpp>
 #include <everest_api_types/error_history/wrapper.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <everest_api_types/utilities/request_reply.hpp>
 
+#include <map>
 #include <utility>
+#include <vector>
 
 #include <generated/types/error_history.hpp>
 
 namespace module {
 
-namespace API_types = ev_API::V1_0::types;
-namespace API_types_ext = API_types::error_history;
-namespace API_generic = API_types::generic;
-using ev_API::deserialize;
+using ev_API::deserialize_request;
 
 void error_history_consumer_API::init() {
     invoke_init(*p_main);
 
-    topics.setup(info.id, "error_history_consumer", 1);
+    API_types_entry::CommunicationParameters comm_params{};
+    comm_params.heartbeat_period_ms = config.cfg_heartbeat_interval_ms;
+    comm_params.communication_check_period_s = config.cfg_communication_check_to_s;
+    helper.init(comm_params);
+
+    // setup var forwarding before modules start publishing
+    generate_api_var_error_events();
 }
 
 void error_history_consumer_API::ready() {
     invoke_ready(*p_main);
 
+    // setup commands now, as the target modules are ready
     generate_api_cmd_active_errors();
     generate_api_cmd_get_errors();
-    generate_api_var_error_events();
 
-    generate_api_var_communication_check();
+    helper.generate_api_var_communication_check(&comm_check);
 
     comm_check.start(config.cfg_communication_check_to_s);
-    setup_heartbeat_generator();
+    helper.setup_heartbeat_generator(&comm_check, config.cfg_heartbeat_interval_ms);
+
+    helper.publish_ready_beacon();
 }
 
-auto error_history_consumer_API::forward_api_var(std::string const& var) {
-    using namespace API_types_ext;
-    auto topic = topics.everest_to_extern(var);
-    return [this, topic](auto const& val) {
-        try {
-            auto&& external = to_external_api(val);
-            auto&& payload = serialize(external);
-            mqtt.publish(topic, payload);
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Variable: '" << topic << "' failed with -> " << e.what();
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Cannot convert internal to external or serialize it.\n" << topic;
-        }
-    };
+auto error_history_consumer_API::forward_and_cache_api_var(std::string const& var) {
+    return helper.forward_and_cache_api_var(var, config.latch_variable_values, [](auto const& val) {
+        using namespace API_types_ext;
+        return serialize(to_external_api(val));
+    });
 }
 
 void error_history_consumer_API::generate_api_cmd_active_errors() {
     using namespace API_types_ext;
-    subscribe_api_topic("active_errors", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
+    helper.subscribe_api_topic("active_errors", [=](std::string const& data) {
+        std::string reply_to;
+        if (deserialize_request(data, reply_to)) {
             types::error_history::FilterArguments&& filter{};
             filter.state_filter = types::error_history::State::Active;
             auto active_errors = r_error_history->call_get_errors(std::move(filter));
             auto reply = to_external_api(active_errors);
-            mqtt.publish(msg.replyTo, serialize(reply));
+            mqtt_v.publish(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -73,16 +73,14 @@ void error_history_consumer_API::generate_api_cmd_active_errors() {
 
 void error_history_consumer_API::generate_api_cmd_get_errors() {
     using namespace API_types_ext;
-    subscribe_api_topic("get_errors", [=](std::string const& data) {
-        API_generic::RequestReply msg;
-        if (deserialize(data, msg)) {
-            API_types_ext::FilterArguments_External payload;
-            if (deserialize(msg.payload, payload)) {
-                auto errors = r_error_history->call_get_errors(to_internal_api(payload));
-                auto reply = to_external_api(errors);
-                mqtt.publish(msg.replyTo, serialize(reply));
-                return true;
-            }
+    helper.subscribe_api_topic("get_errors", [=](std::string const& data) {
+        std::string reply_to;
+        API_types_ext::FilterArguments_External payload;
+        if (deserialize_request(data, reply_to, payload)) {
+            auto errors = r_error_history->call_get_errors(to_internal_api(payload));
+            auto reply = to_external_api(errors);
+            mqtt_v.publish(reply_to, serialize(reply));
+            return true;
         }
         return false;
     });
@@ -92,43 +90,8 @@ void error_history_consumer_API::generate_api_var_error_events() {
     auto convert = [](auto const& ftor) {
         return [ftor](auto&& elem) { return ftor(error_converter::framework_to_internal_api(elem)); };
     };
-    subscribe_global_all_errors(convert(forward_api_var("error_raised")), convert(forward_api_var("error_cleared")));
-}
-
-void error_history_consumer_API::generate_api_var_communication_check() {
-    subscribe_api_topic("communication_check", [this](std::string const& data) {
-        bool val = false;
-        if (deserialize(data, val)) {
-            comm_check.set_value(val);
-            return true;
-        }
-        return false;
-    });
-}
-
-void error_history_consumer_API::setup_heartbeat_generator() {
-    auto topic = topics.everest_to_extern("heartbeat");
-    auto action = [this, topic]() {
-        mqtt.publish(topic, API_generic::serialize(hb_id++));
-        return true;
-    };
-    comm_check.heartbeat(config.cfg_heartbeat_interval_ms, action);
-}
-
-void error_history_consumer_API::subscribe_api_topic(std::string const& var,
-                                                     ParseAndPublishFtor const& parse_and_publish) {
-    auto topic = topics.extern_to_everest(var);
-    mqtt.subscribe(topic, [=](std::string const& data) {
-        try {
-            if (not parse_and_publish(data)) {
-                EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
-            }
-        } catch (const std::exception& e) {
-            EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
-        } catch (...) {
-            EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
-        }
-    });
+    subscribe_global_all_errors(convert(forward_and_cache_api_var("error_raised")),
+                                convert(forward_and_cache_api_var("error_cleared")));
 }
 
 } // namespace module

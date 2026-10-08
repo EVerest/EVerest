@@ -54,8 +54,12 @@
         "SeccLeafSubjectOrganization": "Pionix",
         "ConnectorEvseIds": "DE*PNX*100001,DE*PNX*100002",
         "AllowChargingProfileWithoutStartSchedule": false,
+        "RejectRemoteStartTransactionWithoutConnectorId": false,
+        "RemoteStartTransactionWithoutConnectorIdFindFirst": false,
         "WaitForStopTransactionsOnResetTimeout": 60,
+        "SwitchSecurityProfileConnectionTimeout": 30,
         "QueueAllMessages": true,
+        "ReportClearedErrors": false,
         "MessageTypesDiscardForQueueing": "Heartbeat",
         "MessageQueueSizeThreshold": 5000,
         "SupportedMeasurands": "Energy.Active.Import.Register,Energy.Active.Export.Register,Power.Active.Import,Voltage,Current.Import,Frequency,Current.Offered,Power.Offered,SoC",
@@ -137,20 +141,16 @@
     "CostAndPrice": {
         "CustomDisplayCostAndPrice": true,
         "NumberOfDecimalsForCostValues": 4,
-        "DefaultPrice":
-        {
+        "DefaultPrice": {
             "priceText": "This is the price",
             "priceTextOffline": "Show this price text when offline!",
-            "chargingPrice":
-            {
+            "chargingPrice": {
                 "kWhPrice": 3.14,
                 "hourPrice": 0.42
             }
         },
-        "DefaultPriceText":
-        {
-            "priceTexts":
-            [
+        "DefaultPriceText": {
+            "priceTexts": [
                 {
                     "priceText": "This is the price",
                     "priceTextOffline": "Show this price text when offline!",

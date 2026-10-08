@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
+#include <chrono>
 #include <cstddef>
 
 #include <everest/database/exceptions.hpp>
@@ -11,7 +12,7 @@
 
 namespace everest::db::sqlite {
 
-Statement::Statement(sqlite3* db, const std::string& query) : db(db), stmt(nullptr) {
+Statement::Statement(sqlite3* db, const std::string& query) : stmt(nullptr), db(db) {
     if (sqlite3_prepare_v2(db, query.c_str(), clamp_to<int>(query.size()), &this->stmt, nullptr) != SQLITE_OK) {
         EVLOG_error << sqlite3_errmsg(db);
         throw QueryExecutionException("Could not prepare statement for database.");
@@ -100,6 +101,19 @@ int Statement::bind_null(const std::string& param) {
     return bind_null(index);
 }
 
+int Statement::bind_datetime(const int idx, const std::chrono::system_clock::time_point& val) {
+    const auto ms = std::chrono::duration_cast<std::chrono::milliseconds>(val.time_since_epoch()).count();
+    return bind_int64(idx, ms);
+}
+
+int Statement::bind_datetime(const std::string& param, const std::chrono::system_clock::time_point& val) {
+    const int index = sqlite3_bind_parameter_index(this->stmt, param.c_str());
+    if (index <= 0) {
+        throw std::out_of_range("Parameter not found in SQL query");
+    }
+    return bind_datetime(index, val);
+}
+
 int Statement::get_number_of_rows() {
     return sqlite3_data_count(this->stmt);
 }
@@ -141,7 +155,17 @@ SqliteVariant Statement::column_variant(const std::string& name) {
 }
 
 std::string Statement::column_text(const int idx) {
-    return reinterpret_cast<const char*>(sqlite3_column_text(this->stmt, idx));
+    const auto* p = sqlite3_column_text(this->stmt, idx);
+    if (p == nullptr) {
+        // sqlite3_column_text returns NULL for a NULL column value, or when the statement
+        // is not positioned on a row (e.g. step() returned SQLITE_BUSY/ERROR/MISUSE and a
+        // caller misuses the result). Constructing std::string from nullptr is undefined
+        // and aborts the process; surface as a typed exception instead so callers can log
+        // and recover.
+        throw QueryExecutionException("column_text(" + std::to_string(idx) +
+                                      ") returned NULL; use column_text_nullable for nullable columns");
+    }
+    return reinterpret_cast<const char*>(p);
 }
 
 std::optional<std::string> Statement::column_text_nullable(const int idx) {
@@ -162,6 +186,10 @@ int64_t Statement::column_int64(const int idx) {
 
 double Statement::column_double(const int idx) {
     return sqlite3_column_double(this->stmt, idx);
+}
+
+std::chrono::system_clock::time_point Statement::column_datetime(const int idx) {
+    return std::chrono::system_clock::time_point(std::chrono::milliseconds(column_int64(idx)));
 }
 
 } // namespace everest::db::sqlite

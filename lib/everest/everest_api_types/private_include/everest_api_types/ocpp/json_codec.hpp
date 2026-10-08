@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -39,6 +39,10 @@ create_json_interface(SetVariableRequestList);
 create_json_interface(SetVariableResultList);
 create_json_interface(SecurityEvent);
 create_json_interface(StatusInfoType);
+create_json_interface(OperationalStatusEnumType);
+create_json_interface(ChangeAvailabilityStatusEnumType);
+create_json_interface(ChangeAvailabilityRequest);
+create_json_interface(ChangeAvailabilityResponse);
 create_json_interface(BootNotificationResponse);
 create_json_interface(OcppTransactionEvent);
 create_json_interface(MonitorVariableRequestList);
@@ -52,6 +56,7 @@ create_json_interface(V2XSignalWattPointCurve);
 create_json_interface(V2XFreqWattPointType);
 create_json_interface(MessageDirection);
 create_json_interface(Message);
+create_json_interface(ConnectionStatus);
 
 #undef create_json_interface
 

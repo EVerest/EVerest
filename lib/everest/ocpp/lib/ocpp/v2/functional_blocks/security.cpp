@@ -3,9 +3,12 @@
 
 #include <ocpp/v2/functional_blocks/security.hpp>
 
+#include <boost/algorithm/string/join.hpp>
+#include <limits>
+
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
-#include <ocpp/v2/connectivity_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
@@ -23,13 +26,29 @@ constexpr std::int32_t minimum_cert_signing_wait_time_seconds = 10;
 
 namespace ocpp::v2 {
 
-Security::Security(const FunctionalBlockContext& functional_block_context, MessageLogging& logging,
-                   OcspUpdaterInterface& ocsp_updater, SecurityEventCallback security_event_callback) :
+namespace {
+const CiString<20> reason_code_missing_device_model_info{"MissingDevModelInfo"};
+const CiString<20> reason_code_unspecified{"Unspecified"};
+const CiString<20> reason_code_unsupported_request{"UnsupportedRequest"};
+
+StatusInfo make_status_info(const CiString<20>& reason_code, const std::string& additional_info) {
+    StatusInfo status_info;
+    status_info.reasonCode = reason_code;
+    status_info.additionalInfo = additional_info;
+    return status_info;
+}
+} // namespace
+
+Security::Security(const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
+                   MessageLogging& logging, OcspUpdaterInterface& ocsp_updater,
+                   SecurityEventCallback security_event_callback) :
     context(functional_block_context),
+    message_queue(message_queue),
     logging(logging),
     ocsp_updater(ocsp_updater),
     security_event_callback(security_event_callback),
     csr_attempt(1),
+    next_sign_certificate_request_id(0),
     client_certificate_expiration_check_timer([this]() { this->scheduled_check_client_certificate_expiration(); }),
     v2g_certificate_expiration_check_timer([this]() { this->scheduled_check_v2g_certificate_expiration(); }) {
 }
@@ -100,7 +119,12 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
         const ocpp::CallResult<Get15118EVCertificateResponse> call_result = response_message.message;
         return call_result.msg;
     } catch (const EnumConversionException& e) {
-        EVLOG_error << "EnumConversionException during handling of message: " << e.what();
+        EVLOG_error << "EnumConversionException during handling of Get15118EVCertificateResponse: " << e.what();
+        auto call_error = CallError(response_message.uniqueId, "FormationViolation", e.what(), json({}));
+        this->context.message_dispatcher.dispatch_call_error(call_error);
+        return response;
+    } catch (const json::exception& e) {
+        EVLOG_error << "json::exception during handling of Get15118EVCertificateResponse: " << e.what();
         auto call_error = CallError(response_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return response;
@@ -156,61 +180,116 @@ void Security::security_event_notification_req(const CiString<50>& event_type,
     }
 }
 
-void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
-                                    const bool initiated_by_trigger_message) {
-    if (this->awaited_certificate_signing_use_enum.has_value()) {
-        EVLOG_warning
-            << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
-        return;
-    }
-
-    SignCertificateRequest req;
-
+std::variant<Security::CsrInputs, StatusInfo>
+Security::get_csr_inputs(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
     std::optional<std::string> common;
     std::optional<std::string> country;
     std::optional<std::string> organization;
-    bool should_use_tpm = false;
 
     if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate;
         common = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ChargeBoxSerialNumber);
         organization =
             this->context.device_model.get_optional_value<std::string>(ControllerComponentVariables::OrganizationName);
         country = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrCountryName);
-        should_use_tpm =
-            this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
     } else {
-        req.certificateType = ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         common = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrSeccId);
         organization = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrOrganizationName);
         country = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::ISO15118CtrlrCountryName);
+    }
+
+    std::vector<std::string> missing;
+    if (!common.has_value()) {
+        missing.push_back("commonName");
+    }
+    if (!country.has_value()) {
+        missing.push_back("country");
+    }
+    if (!organization.has_value()) {
+        missing.push_back("organizationName");
+    }
+
+    if (!missing.empty()) {
+        const std::string missing_inputs = "Missing " + boost::algorithm::join(missing, ", ");
+        EVLOG_warning << missing_inputs << " to generate CSR";
+        return make_status_info(reason_code_missing_device_model_info, missing_inputs);
+    }
+
+    return CsrInputs{common.value(), organization.value(), country.value()};
+}
+
+std::optional<StatusInfo>
+Security::is_sign_certificate_possible(const ocpp::CertificateSigningUseEnum& certificate_signing_use) const {
+    if (this->awaiting_certificate_signed) {
+        EVLOG_warning << "Cannot send a SignCertificate.req while still waiting for CertificateSigned.req from CSMS";
+        return make_status_info(reason_code_unspecified, "Awaiting CertificateSigned.req from the CSMS");
+    }
+
+    const auto csr_inputs = this->get_csr_inputs(certificate_signing_use);
+    if (const auto* rejection = std::get_if<StatusInfo>(&csr_inputs)) {
+        return *rejection;
+    }
+
+    return std::nullopt;
+}
+
+void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
+                                    const bool initiated_by_trigger_message) {
+    this->send_sign_certificate_req(certificate_signing_use, initiated_by_trigger_message);
+}
+
+bool Security::send_sign_certificate_req(const ocpp::CertificateSigningUseEnum& certificate_signing_use,
+                                         const bool initiated_by_trigger_message) {
+    if (this->awaiting_certificate_signed) {
+        EVLOG_warning
+            << "Not sending new SignCertificate.req because still waiting for CertificateSigned.req from CSMS";
+        return false;
+    }
+    if (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate and
+        this->context.ocpp_version != OcppProtocolVersion::v21) {
+        // e.g. a retry or queued renewal that fires after a switch to an OCPP 2.0.1 connection
+        EVLOG_warning << "Not sending SignCertificate.req for V2G20Certificate, which OCPP 2.0.1 does not know";
+        return false;
+    }
+
+    const auto csr_inputs_or_rejection = this->get_csr_inputs(certificate_signing_use);
+    const auto* csr_inputs = std::get_if<CsrInputs>(&csr_inputs_or_rejection);
+    if (csr_inputs == nullptr) {
+        return false;
+    }
+
+    SignCertificateRequest req;
+    bool should_use_tpm = false;
+
+    if (certificate_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate) {
+        req.certificateType = ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate;
+        should_use_tpm =
+            this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false);
+    } else {
+        // Both SECC leaf types (ISO 15118-2 V2GCertificate, ISO 15118-20 V2G20Certificate) share the SECC key
+        // store and hence the TPM setting
+        req.certificateType = (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate)
+                                  ? ocpp::v2::CertificateSigningUseEnum::V2G20Certificate
+                                  : ocpp::v2::CertificateSigningUseEnum::V2GCertificate;
         should_use_tpm =
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::UseTPMSeccLeafCertificate)
                 .value_or(false);
-    }
-
-    if (!common.has_value()) {
-        EVLOG_warning << "Missing configuration of commonName to generate CSR";
-        return;
-    }
-
-    if (!country.has_value()) {
-        EVLOG_warning << "Missing configuration country to generate CSR";
-        return;
-    }
-
-    if (!organization.has_value()) {
-        EVLOG_warning << "Missing configuration of organizationName to generate CSR";
-        return;
+        if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+            // A02.FR.27: name the PKI the SECC leaf shall be issued under (2.0.1 lacks the field)
+            const auto root_hash = this->get_secc_root_certificate_hash(certificate_signing_use);
+            if (root_hash.has_value()) {
+                req.hashRootCertificate = ocpp::evse_security_conversions::to_ocpp_v2(root_hash.value());
+            }
+        }
     }
 
     const auto result = this->context.evse_security.generate_certificate_signing_request(
-        certificate_signing_use, country.value(), organization.value(), common.value(), should_use_tpm);
+        certificate_signing_use, csr_inputs->country, csr_inputs->organization, csr_inputs->common_name,
+        should_use_tpm);
 
     if (result.status != GetCertificateSignRequestStatus::Accepted or !result.csr.has_value()) {
         EVLOG_error << "CSR generation was unsuccessful for sign request: "
@@ -220,42 +299,98 @@ void Security::sign_certificate_req(const ocpp::CertificateSigningUseEnum& certi
                                 ocpp::conversions::generate_certificate_signing_request_status_to_string(result.status);
         this->security_event_notification_req(ocpp::security_events::CSRGENERATIONFAILED,
                                               std::optional<CiString<255>>(gen_error), true, true);
-        return;
+        return false;
     }
 
     req.csr = result.csr.value();
 
-    this->awaited_certificate_signing_use_enum = certificate_signing_use;
+    if (this->context.ocpp_version == OcppProtocolVersion::v21) {
+        // A02.FR.24: tag the request so the resulting CertificateSigned.req can be matched to it. The 2.0.1 schema
+        // does not know the field, so it is only sent on a 2.1 connection.
+        req.requestId = this->next_sign_certificate_request_id;
+        this->next_sign_certificate_request_id =
+            (this->next_sign_certificate_request_id == std::numeric_limits<std::int32_t>::max())
+                ? 0
+                : this->next_sign_certificate_request_id + 1;
+    }
+
+    this->requested_certificate_signing_use = certificate_signing_use;
+    this->sign_certificate_request_id = req.requestId;
+    this->awaiting_certificate_signed = true;
 
     const ocpp::Call<SignCertificateRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
+    return true;
 }
 
 void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call) {
-    // reset these parameters
-    this->csr_attempt = 1;
-    this->awaited_certificate_signing_use_enum = std::nullopt;
-    this->certificate_signed_timer.stop();
-
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnum::Rejected;
+
+    const auto requested_signing_use = this->requested_certificate_signing_use;
+    const bool request_id_matches =
+        call.msg.requestId.has_value() and call.msg.requestId == this->sign_certificate_request_id;
+
+    if (call.msg.requestId.has_value() and not request_id_matches) {
+        // A02.FR.26: a CertificateSigned.req with an unknown requestId is rejected. The outstanding request (if any)
+        // stays outstanding, so the CSMS can still answer it.
+        EVLOG_warning << "Rejecting CertificateSigned.req with unknown requestId " << call.msg.requestId.value()
+                      << (this->sign_certificate_request_id.has_value()
+                              ? ", expected requestId " + std::to_string(this->sign_certificate_request_id.value())
+                              : ", no SignCertificate.req with a requestId is outstanding");
+        response.statusInfo = make_status_info(reason_code_unspecified, "Unknown requestId");
+        const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
+        this->context.message_dispatcher.dispatch_call_result(call_result);
+        return;
+    }
 
     const auto certificate_chain = call.msg.certificateChain.get();
     ocpp::CertificateSigningUseEnum cert_signing_use; // NOLINT(cppcoreguidelines-init-variables): initialized below
 
-    if (!call.msg.certificateType.has_value() or
-        call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
+    if (!call.msg.certificateType.has_value()) {
+        // The CSMS is only recommended to echo the type (A02.FR.14). Without it, the certificate answers the last
+        // SignCertificate.req; the spec's "used for both connections" fallback only applies when there is none, and
+        // then the CSMS client certificate is the only leaf a chain could be for that was not requested with a type.
+        cert_signing_use = requested_signing_use.value_or(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (requested_signing_use.has_value()) {
+            EVLOG_info << "CertificateSigned.req without certificateType, installing as the requested "
+                       << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use);
+        }
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::ChargingStationCertificate) {
         cert_signing_use = ocpp::CertificateSigningUseEnum::ChargingStationCertificate;
+    } else if (call.msg.certificateType.value() == CertificateSigningUseEnum::V2G20Certificate) {
+        cert_signing_use = ocpp::CertificateSigningUseEnum::V2G20Certificate;
     } else {
         cert_signing_use = ocpp::CertificateSigningUseEnum::V2GCertificate;
     }
+
+    if (request_id_matches and requested_signing_use.has_value() and
+        cert_signing_use != requested_signing_use.value()) {
+        // Installing the chain under either type could leave a leaf that does not match the key or PKI it is used
+        // with. The outstanding request stays outstanding, so the CSMS can still answer it correctly.
+        EVLOG_warning << "Rejecting CertificateSigned.req with requestId " << call.msg.requestId.value()
+                      << " and certificateType "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(cert_signing_use)
+                      << ", it answers a SignCertificate.req for "
+                      << ocpp::conversions::certificate_signing_use_enum_to_string(requested_signing_use.value());
+        response.statusInfo = make_status_info(reason_code_unspecified, "certificateType does not match requestId");
+        const ocpp::CallResult<CertificateSignedResponse> call_result(response, call.uniqueId);
+        this->context.message_dispatcher.dispatch_call_result(call_result);
+        return;
+    }
+
+    this->reset_certificate_signing_state();
+    this->certificate_signed_timer.stop();
+
+    const bool is_secc_leaf = (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) or
+                              (cert_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate);
 
     const auto result = this->context.evse_security.update_leaf_certificate(certificate_chain, cert_signing_use);
 
     if (result == ocpp::InstallCertificateResult::Accepted) {
         response.status = CertificateSignedStatusEnum::Accepted;
-        // For V2G certificates, also trigger an OCSP cache update
-        if (cert_signing_use == ocpp::CertificateSigningUseEnum::V2GCertificate) {
+        // For SECC (V2G / V2G20) certificates, also trigger an OCSP cache update
+        if (is_secc_leaf) {
             this->ocsp_updater.trigger_ocsp_cache_update();
         }
     }
@@ -280,17 +415,22 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     if (response.status == CertificateSignedStatusEnum::Accepted and
         cert_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate and
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile) == 3) {
-        this->context.connectivity_manager.on_charging_station_certificate_changed();
+        this->message_queue.run_when_idle([this]() {
+            this->context.connectivity_manager.on_charging_station_certificate_changed();
+            return this->context.connectivity_manager.is_websocket_connected();
+        });
 
         const auto& security_event = ocpp::security_events::RECONFIGURATIONOFSECURITYPARAMETERS;
         const std::string tech_info = "Changed charging station certificate";
         this->security_event_notification_req(CiString<50>(security_event), CiString<255>(tech_info), true,
                                               utils::is_critical(security_event));
     }
+
+    this->request_queued_secc_renewal();
 }
 
 void Security::handle_sign_certificate_response(CallResult<SignCertificateResponse> call_result) {
-    if (!this->awaited_certificate_signing_use_enum.has_value()) {
+    if (!this->awaiting_certificate_signed) {
         EVLOG_warning
             << "Received SignCertificate.conf while not awaiting a CertificateSigned.req . This should not happen.";
         return;
@@ -306,18 +446,19 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
         if (!cert_signing_wait_minimum.has_value()) {
             EVLOG_warning << "No CertSigningWaitMinimum is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
+            this->stop_awaiting_certificate_signed();
             return;
         }
         if (!cert_signing_repeat_times.has_value()) {
             EVLOG_warning << "No CertSigningRepeatTimes is configured, will not attempt to retry SignCertificate.req "
                              "in case CSMS doesn't send CertificateSigned.req";
+            this->stop_awaiting_certificate_signed();
             return;
         }
 
         if (this->csr_attempt > cert_signing_repeat_times.value()) {
-            this->csr_attempt = 1;
             this->certificate_signed_timer.stop();
-            this->awaited_certificate_signing_use_enum = std::nullopt;
+            this->stop_awaiting_certificate_signed();
             return;
         }
         const int retry_backoff_seconds = clamp_to<int>(
@@ -325,19 +466,87 @@ void Security::handle_sign_certificate_response(CallResult<SignCertificateRespon
             std::pow(2, std::max(0, this->csr_attempt - 1))); // first wait = CertSigningWaitMinimum * 2^0
         this->certificate_signed_timer.timeout(
             [this]() {
+                if (!this->awaiting_certificate_signed) {
+                    return;
+                }
                 EVLOG_info << "Did not receive CertificateSigned.req in time. Will retry with SignCertificate.req";
+                const auto certificate_signing_use = this->requested_certificate_signing_use.value();
                 this->csr_attempt++;
-                const auto current_awaited_certificate_signing_use_enum =
-                    this->awaited_certificate_signing_use_enum.value();
-                this->awaited_certificate_signing_use_enum.reset();
-                this->sign_certificate_req(current_awaited_certificate_signing_use_enum);
+                this->awaiting_certificate_signed = false;
+                if (!this->send_sign_certificate_req(certificate_signing_use)) {
+                    // not sent: the previous request stays the one a CertificateSigned.req answers
+                    this->csr_attempt = 1;
+                }
             },
             std::chrono::seconds(retry_backoff_seconds));
     } else {
-        this->awaited_certificate_signing_use_enum = std::nullopt;
-        this->csr_attempt = 1;
+        this->reset_certificate_signing_state();
         EVLOG_warning << "SignCertificate.req has not been accepted by CSMS";
+        this->request_queued_secc_renewal();
     }
+}
+
+namespace {
+// ISO 15118-2 Table F.1 puts the V2G root on secp256r1, ISO 15118-20 Table B.5 on secp521r1 or Ed448, so a root of
+// the other generation can never issue the requested SECC leaf. A root of unknown key algorithm is kept.
+bool root_can_issue(const ocpp::CertificateHashDataChain& root,
+                    const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    if (!root.publicKeyAlgorithm.has_value()) {
+        return true;
+    }
+    const bool v2g20_root = root.publicKeyAlgorithm == "secp521r1" or root.publicKeyAlgorithm == "ED448";
+    return v2g20_root == (certificate_signing_use == ocpp::CertificateSigningUseEnum::V2G20Certificate);
+}
+} // namespace
+
+std::optional<ocpp::CertificateHashDataType>
+Security::get_secc_root_certificate_hash(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    auto roots = this->context.evse_security.get_installed_certificates({CertificateType::V2GRootCertificate});
+    const auto installed_root_count = roots.size();
+    roots.erase(std::remove_if(roots.begin(), roots.end(),
+                               [&](const auto& root) { return !root_can_issue(root, certificate_signing_use); }),
+                roots.end());
+    if (roots.empty()) {
+        EVLOG_info << "None of the " << installed_root_count << " installed V2G roots can issue a "
+                   << ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use)
+                   << " leaf, leaving the PKI choice to the CSMS (no hashRootCertificate)";
+        return std::nullopt;
+    }
+
+    // Renewal: the leaf's chain identifies the root. The OCSP hash data of every chain element carries the hashes of
+    // its issuer's name and key; for the topmost element that is the root, and a self-signed root's own hash data
+    // holds the same two hashes.
+    const auto leaf = this->context.evse_security.get_leaf_certificate_info(certificate_signing_use, true);
+    if (leaf.status == GetCertificateInfoStatus::Accepted and leaf.info.has_value()) {
+        for (const auto& chain_element : leaf.info->ocsp) {
+            for (const auto& root : roots) {
+                if (root.certificateHashData.issuerNameHash == chain_element.hash.issuerNameHash and
+                    root.certificateHashData.issuerKeyHash == chain_element.hash.issuerKeyHash) {
+                    return root.certificateHashData;
+                }
+            }
+        }
+    }
+
+    // Initial provisioning (or a leaf under a root that is no longer installed): only unambiguous with one root
+    if (roots.size() == 1) {
+        return roots.front().certificateHashData;
+    }
+    EVLOG_info << roots.size() << " eligible V2G roots installed and none identified as the issuer of the "
+               << ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use)
+               << " leaf, leaving the PKI choice to the CSMS (no hashRootCertificate)";
+    return std::nullopt;
+}
+
+void Security::reset_certificate_signing_state() {
+    this->requested_certificate_signing_use = std::nullopt;
+    this->sign_certificate_request_id = std::nullopt;
+    this->stop_awaiting_certificate_signed();
+}
+
+void Security::stop_awaiting_certificate_signed() {
+    this->awaiting_certificate_signed = false;
+    this->csr_attempt = 1;
 }
 
 void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertificateIdsRequest> call) {
@@ -386,11 +595,9 @@ void Security::handle_install_certificate_req(Call<InstallCertificateRequest> ca
     const auto msg = call.msg;
     InstallCertificateResponse response;
 
-    if (!should_allow_certificate_install(msg.certificateType)) {
+    if (auto refusal = check_certificate_install_allowed(msg.certificateType); refusal.has_value()) {
         response.status = InstallCertificateStatusEnum::Rejected;
-        response.statusInfo = StatusInfo();
-        response.statusInfo->reasonCode = "UnsecureConnection";
-        response.statusInfo->additionalInfo = "CertificateInstallationNotAllowedWithUnsecureConnection";
+        response.statusInfo = std::move(refusal);
     } else {
         const auto result = this->context.evse_security.install_ca_certificate(
             msg.certificate.get(), ocpp::evse_security_conversions::from_ocpp_v2(msg.certificateType));
@@ -431,31 +638,45 @@ void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call
     this->context.message_dispatcher.dispatch_call_result(call_result);
 }
 
-bool Security::should_allow_certificate_install(InstallCertificateUseEnum cert_type) const {
+std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const {
+    if (cert_type == InstallCertificateUseEnum::OEMRootCertificate) {
+        // FIXME: Implement OEMRootCertificate. Refused independently of the security profile, because the conversion
+        // towards evse_security has no OEM equivalent and throws.
+        return make_status_info(reason_code_unsupported_request, "OEMRootCertificateInstallationNotSupported");
+    }
+
     const int security_profile =
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
 
     if (security_profile > 1) {
-        return true;
+        return std::nullopt;
     }
+
     switch (cert_type) {
     case InstallCertificateUseEnum::CSMSRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
-            .value_or(true);
-
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::ManufacturerRootCertificate:
-        return this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
-            .value_or(true);
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
+                 .value_or(true)) {
+            return make_status_info(reason_code_unspecified,
+                                    "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }
+        return std::nullopt;
     case InstallCertificateUseEnum::MORootCertificate:
     case InstallCertificateUseEnum::V2GRootCertificate:
-        return true;
+        return std::nullopt;
     case InstallCertificateUseEnum::OEMRootCertificate:
-        // FIXME: Implement OEMRootCertificate
-        return false;
+        break; // handled above
     }
-    return false;
+    // Unknown certificate types stay refused, as they were before.
+    return make_status_info(reason_code_unsupported_request, "CertificateTypeNotSupported");
 }
 
 void Security::scheduled_check_client_certificate_expiration() {
@@ -476,27 +697,76 @@ void Security::scheduled_check_client_certificate_expiration() {
             .value_or(12 * 60 * 60)));
 }
 
-void Security::scheduled_check_v2g_certificate_expiration() {
-    if (this->context.device_model
-            .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
-            .value_or(false)) {
-        EVLOG_info << "Checking if V2GCertificate has expired";
-        const int expiry_days_count =
-            this->context.evse_security.get_leaf_expiry_days_count(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        if (expiry_days_count < 30) {
-            EVLOG_info << "V2GCertificate is invalid in " << expiry_days_count
-                       << " days. Requesting new certificate with certificate signing request";
-            this->sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate);
-        } else {
-            EVLOG_info << "V2GCertificate is still valid.";
-        }
-    } else {
+bool Security::v2g20_certificate_installation_enabled() const {
+    // The ISO 15118-20 SECC leaf (TLS 1.3, secp521r1) is requested with the OCPP 2.1 certificateType
+    // V2G20Certificate, which a 2.0.1 CSMS does not know. ISO15118Ctrlr.V2GCertificateInstallationEnabled governs
+    // use cases A02 and A03 for both SECC leafs.
+    return this->context.ocpp_version == OcppProtocolVersion::v21 and
+           this->context.device_model
+               .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+               .value_or(false);
+}
+
+bool Security::renew_secc_certificate_if_due(const ocpp::CertificateSigningUseEnum& certificate_signing_use) {
+    const auto name = ocpp::conversions::certificate_signing_use_enum_to_string(certificate_signing_use);
+    EVLOG_info << "Checking if " << name << " has expired";
+    // 0 also when no leaf of that type is installed yet, so the initial certificate is requested the same way
+    const int expiry_days_count = this->context.evse_security.get_leaf_expiry_days_count(certificate_signing_use);
+    if (expiry_days_count >= 30) {
+        EVLOG_info << name << " is still valid.";
+        return false;
+    }
+    EVLOG_info << name << " is invalid in " << expiry_days_count
+               << " days. Requesting new certificate with certificate signing request";
+    return this->send_sign_certificate_req(certificate_signing_use);
+}
+
+void Security::check_secc_certificates_expiration() {
+    if (!this->context.device_model
+             .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+             .value_or(false)) {
         if (this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::PnCEnabled)
                 .value_or(false)) {
             EVLOG_warning << "PnC is enabled but V2G certificate installation is not, so no certificate expiration "
                              "check is performed.";
         }
+        return;
     }
+
+    if (!this->v2g20_certificate_installation_enabled()) {
+        this->renew_secc_certificate_if_due(ocpp::CertificateSigningUseEnum::V2GCertificate);
+        return;
+    }
+
+    // The ISO 15118-2 and ISO 15118-20 SECC leafs are renewed independently. Only one SignCertificate.req can be
+    // outstanding at a time, so the second one is queued until the CSMS has answered the first. When the CSMS may
+    // still answer the first (no retries configured or retries exhausted), the second waits for the next check
+    // instead; the leaf that goes first alternates, so that a leaf the CSMS never issues cannot starve the other.
+    const auto first = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2G20Certificate
+                                                    : ocpp::CertificateSigningUseEnum::V2GCertificate;
+    const auto second = this->check_v2g20_leaf_first ? ocpp::CertificateSigningUseEnum::V2GCertificate
+                                                     : ocpp::CertificateSigningUseEnum::V2G20Certificate;
+    this->check_v2g20_leaf_first = !this->check_v2g20_leaf_first;
+    // queued before the first request is sent, as the CSMS may answer it before this returns
+    this->queued_secc_renewal = second;
+    if (this->renew_secc_certificate_if_due(first)) {
+        return;
+    }
+    this->queued_secc_renewal.reset();
+    this->renew_secc_certificate_if_due(second);
+}
+
+void Security::request_queued_secc_renewal() {
+    if (!this->queued_secc_renewal.has_value()) {
+        return;
+    }
+    const auto certificate_signing_use = this->queued_secc_renewal.value();
+    this->queued_secc_renewal.reset();
+    this->renew_secc_certificate_if_due(certificate_signing_use);
+}
+
+void Security::scheduled_check_v2g_certificate_expiration() {
+    this->check_secc_certificates_expiration();
 
     this->v2g_certificate_expiration_check_timer.interval(std::chrono::seconds(
         this->context.device_model

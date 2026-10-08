@@ -1,9 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
 #include <arpa/inet.h>
 #include <asm-generic/socket.h>
+#include <cerrno>
 #include <chrono>
 #include <cstring>
 #include <fcntl.h>
@@ -23,8 +24,13 @@
 #include <sys/socket.h>
 #include <unistd.h>
 
+// Nothing includes this translation unit, so the complete poll_events is available here where
+// socket/socket.hpp can only declare it opaquely.
+#include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/mdns/mdns.hpp>
 #include <everest/io/socket/socket.hpp>
+#include <everest/io/udp/endpoint.hpp>
 
 namespace {
 // a simple raii wrapper, which will call the given c-like deleter
@@ -74,7 +80,172 @@ namespace socket {
 // socket.hpp implementations
 //
 
-event::unique_fd open_udp_server_socket(std::uint16_t port) {
+namespace {
+[[noreturn]] void throw_error(std::string const& msg, int error) {
+    std::stringstream str;
+    str << msg << ": " << strerror(error) << " (" << error << ")";
+    throw socket_error(str.str(), error);
+}
+
+// Capture errno before the unwind, where cleanup may overwrite it.
+[[noreturn]] void throw_errno(std::string const& msg) {
+    const int error = errno;
+    throw_error(msg, error);
+}
+
+// getaddrinfo reports through its return value and leaves errno meaningful only
+// for EAI_SYSTEM, so the result is mapped instead of read off errno. The resolver
+// verdicts reachable here (EAI_NONAME, EAI_AGAIN, EAI_FAIL, EAI_SERVICE and the
+// like) name no errno of their own and become EHOSTUNREACH: an unresolvable
+// endpoint is an unreachable one. A zero errno on the EAI_SYSTEM leg says nothing
+// a caller can act on and would fail the descriptor guard in tcp_socket::open, so
+// it takes the same fallback.
+// Untested: EAI_SYSTEM is the only leg that yields a value other than
+// EHOSTUNREACH and cannot be forced without fault injection. The
+// open_udp_server_socket resolver leg has no forceable failure mode either.
+[[noreturn]] void throw_resolver_error(int result) {
+    const int sys_errno = errno;
+    const int error = (result == EAI_SYSTEM and sys_errno != 0) ? sys_errno : EHOSTUNREACH;
+    throw socket_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(result)), error);
+}
+
+// Returns true when SO_BINDTODEVICE succeeded. Returns false on EPERM/EACCES
+// (caller decides on a fallback). Throws on any other failure.
+bool apply_so_bindtodevice(int fd, std::string const& device) {
+    if (setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, device.c_str(), device.length()) == 0) {
+        return true;
+    }
+    if (errno == EPERM || errno == EACCES) {
+        return false;
+    }
+    throw_errno("Failed to bind socket to device " + device);
+}
+
+// True when the string is an IPv6 link-local (fe80::/10) literal without %scope suffix.
+bool is_link_local_v6_literal(std::string const& addr) {
+    in6_addr parsed{};
+    return inet_pton(AF_INET6, addr.c_str(), &parsed) == 1 && IN6_IS_ADDR_LINKLOCAL(&parsed);
+}
+
+// Returns the socket's address family via getsockname(). Returns AF_UNSPEC if unknown.
+sa_family_t get_socket_family(int fd) {
+    sockaddr_storage ss{};
+    socklen_t len = sizeof(ss);
+    if (getsockname(fd, reinterpret_cast<struct sockaddr*>(&ss), &len) < 0) {
+        return AF_UNSPEC;
+    }
+    return ss.ss_family;
+}
+
+// Restrict the outgoing interface for unicast packets without requiring CAP_NET_RAW.
+// IPv4: IP_UNICAST_IF takes uint32_t (ifindex in network byte order via in_addr layout).
+// IPv6: IPV6_UNICAST_IF takes int (ifindex in host byte order).
+// Returns true on success; false if the socket family is neither AF_INET nor AF_INET6.
+// Throws if the interface lookup fails or if setsockopt fails with a non-permission error.
+bool apply_unicast_if(int fd, std::string const& device) {
+    unsigned int ifindex = if_nametoindex(device.c_str());
+    if (ifindex == 0) {
+        throw_errno("if_nametoindex(\"" + device + "\") failed");
+    }
+    sa_family_t family = get_socket_family(fd);
+    if (family == AF_INET) {
+        std::uint32_t opt = htonl(ifindex);
+        if (setsockopt(fd, IPPROTO_IP, IP_UNICAST_IF, &opt, sizeof(opt)) == 0) {
+            return true;
+        }
+        throw_errno("setsockopt(IP_UNICAST_IF, " + device + ") failed");
+    }
+    if (family == AF_INET6) {
+        int opt = static_cast<int>(ifindex);
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_UNICAST_IF, &opt, sizeof(opt)) == 0) {
+            return true;
+        }
+        throw_errno("setsockopt(IPV6_UNICAST_IF, " + device + ") failed");
+    }
+    return false;
+}
+
+// Steer multicast egress to @p device. SO_BINDTODEVICE and IP[V6]_UNICAST_IF do not
+// affect the multicast TX path; the kernel needs IP_MULTICAST_IF / IPV6_MULTICAST_IF
+// independently. For IPv6 we additionally populate sin6_scope_id on the destination
+// sockaddr so connect()/sendto() can resolve scope bound groups (ff02::/16). For IPv4
+// we use ip_mreqn so the interface is selected by index, avoiding the need for the
+// iface IPv4 address up front (works even before DHCP has assigned one). Returns
+// without action when not a multicast destination or device is empty.
+void set_multicast_if(int fd, std::string const& device, struct sockaddr* ai_addr) {
+    if (device.empty() || ai_addr == nullptr) {
+        return;
+    }
+    if (ai_addr->sa_family == AF_INET6) {
+        auto* sin6 = reinterpret_cast<sockaddr_in6*>(ai_addr);
+        if (!IN6_IS_ADDR_MULTICAST(&sin6->sin6_addr)) {
+            return;
+        }
+        unsigned int ifindex = if_nametoindex(device.c_str());
+        if (ifindex == 0) {
+            throw_errno("if_nametoindex(\"" + device + "\") failed");
+        }
+        if (setsockopt(fd, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) != 0) {
+            throw_errno("setsockopt(IPV6_MULTICAST_IF, " + device + ") failed");
+        }
+        sin6->sin6_scope_id = ifindex;
+        return;
+    }
+    if (ai_addr->sa_family == AF_INET) {
+        auto* sin = reinterpret_cast<sockaddr_in*>(ai_addr);
+        if (!IN_MULTICAST(ntohl(sin->sin_addr.s_addr))) {
+            return;
+        }
+        unsigned int ifindex = if_nametoindex(device.c_str());
+        if (ifindex == 0) {
+            throw_errno("if_nametoindex(\"" + device + "\") failed");
+        }
+        struct ip_mreqn mreq {};
+        mreq.imr_ifindex = static_cast<int>(ifindex);
+        if (setsockopt(fd, IPPROTO_IP, IP_MULTICAST_IF, &mreq, sizeof(mreq)) != 0) {
+            throw_errno("setsockopt(IP_MULTICAST_IF, " + device + ") failed");
+        }
+    }
+}
+
+// IPv4 source-IP bind to the address belonging to @p device. Used as a fallback
+// when SO_BINDTODEVICE is not permitted. @p port == 0 picks an ephemeral port.
+void bind_socket_to_interface_address(int fd, std::string const& device, std::uint16_t port) {
+    std::string ip = get_interface_address(device);
+    if (ip.empty()) {
+        throw std::runtime_error("Cannot bind socket to device " + device +
+                                 ": no IPv4 address on interface (and SO_BINDTODEVICE not permitted)");
+    }
+    sockaddr_in local{};
+    local.sin_family = AF_INET;
+    local.sin_port = htons(port);
+    if (inet_pton(AF_INET, ip.c_str(), &local.sin_addr) != 1) {
+        throw std::runtime_error("Failed to parse interface address " + ip);
+    }
+    if (::bind(fd, reinterpret_cast<struct sockaddr*>(&local), sizeof(local)) < 0) {
+        throw_errno("Fallback bind to interface " + device + " (" + ip + ":" + std::to_string(port) + ") failed");
+    }
+}
+} // namespace
+
+void bind_socket_to_device(int fd, std::string const& device) {
+    if (device.empty()) {
+        return;
+    }
+    if (apply_so_bindtodevice(fd, device)) {
+        return;
+    }
+    // Try IP[_V6]_UNICAST_IF for outgoing unicast routing without privilege. Works for both
+    // IPv4 and IPv6 client sockets.
+    if (apply_unicast_if(fd, device)) {
+        return;
+    }
+    // Last resort for IPv4 sockets with an unusable family: bind a source IP belonging to the
+    // interface (IPv4 only).
+    bind_socket_to_interface_address(fd, device, 0);
+}
+
+event::unique_fd open_udp_server_socket(std::uint16_t port, std::string const& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -84,30 +255,38 @@ event::unique_fd open_udp_server_socket(std::uint16_t port) {
 
     const auto err = getaddrinfo(nullptr, std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
     // open the first possible socket
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
-        const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
-        set_reuse_address(socket_fd);
+        auto socket_fd = event::unique_fd(::socket(p->ai_family, p->ai_socktype, p->ai_protocol));
         if (socket_fd == -1) {
             continue;
         }
+        set_reuse_address(socket_fd);
+
+        if (!device.empty()) {
+            if (!apply_so_bindtodevice(socket_fd, device)) {
+                // SO_BINDTODEVICE not permitted: bind to (interface_ip:port) instead of wildcard,
+                // so the server only receives traffic addressed to that interface's IPv4.
+                bind_socket_to_interface_address(socket_fd, device, port);
+                return socket_fd;
+            }
+        }
 
         if (bind(socket_fd, p->ai_addr, p->ai_addrlen) == -1) {
-            close(socket_fd);
             continue;
         }
 
-        return event::unique_fd{socket_fd};
+        return socket_fd;
     }
     throw std::runtime_error(std::string("Could not open a socket for localhost:") + std::to_string(port));
 }
 
-event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t port) {
+event::unique_fd open_udp_client_socket(std::string const& host, std::uint16_t port, std::string const& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_DGRAM;
@@ -116,19 +295,32 @@ event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t p
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
     // open the first possible socket
+    int last_error = 0;
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
         const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
 
-        if (socket_fd == -1)
+        if (socket_fd == -1) {
+            last_error = errno;
             continue;
+        }
+
+        try {
+            bind_socket_to_device(socket_fd, device);
+            set_multicast_if(socket_fd, device, p->ai_addr);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
 
         if (-1 == ::connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
+            // Read before close(), which may overwrite errno.
+            last_error = errno;
             close(socket_fd);
             continue;
         }
@@ -136,10 +328,11 @@ event::unique_fd open_udp_client_socket(const std::string& host, std::uint16_t p
         return event::unique_fd{socket_fd};
     }
 
-    throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
+    throw_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port), last_error);
 }
 
-event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms) {
+event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint16_t port, unsigned int timeout_ms,
+                                              const std::string& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -148,20 +341,32 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
     // open the first possible socket
+    int last_error = 0;
     for (auto* p = servinfo; p != NULL; p = p->ai_next) {
         const auto socket_fd = ::socket(p->ai_family, p->ai_socktype, p->ai_protocol);
 
-        if (socket_fd == -1)
+        if (socket_fd == -1) {
+            last_error = errno;
             continue;
+        }
+
+        try {
+            bind_socket_to_device(socket_fd, device);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
 
         if (-1 == connect_with_timeout(socket_fd, p->ai_addr, p->ai_addrlen, timeout_ms)) {
-            //        if (-1 == ::connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
+            // connect_with_timeout forwards the genuine errno; read it before
+            // close(), which may overwrite it.
+            last_error = errno;
             close(socket_fd);
             continue;
         }
@@ -169,10 +374,10 @@ event::unique_fd open_tcp_socket_with_timeout(const std::string& host, std::uint
         return event::unique_fd{socket_fd};
     }
 
-    throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
+    throw_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port), last_error);
 }
 
-event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
+event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port, const std::string& device) {
     struct addrinfo hints {};
     hints.ai_family = AF_UNSPEC;
     hints.ai_socktype = SOCK_STREAM;
@@ -181,8 +386,8 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
 
     const auto err = getaddrinfo(host.c_str(), std::to_string(port).c_str(), &hints, &servinfo);
     if (err) {
-        throw std::runtime_error("Failed to resolve endpoint (getaddrinfo): " + std::string(gai_strerror(err)));
-    };
+        throw_resolver_error(err);
+    }
 
     handle_disposer<addrinfo, freeaddrinfo> addrinfo_disposer(servinfo);
 
@@ -192,6 +397,13 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
 
         if (socket_fd == -1)
             continue;
+
+        try {
+            bind_socket_to_device(socket_fd, device);
+        } catch (...) {
+            close(socket_fd);
+            throw;
+        }
 
         if (-1 == connect(socket_fd, p->ai_addr, p->ai_addrlen)) {
             close(socket_fd);
@@ -202,6 +414,66 @@ event::unique_fd open_tcp_socket(const std::string& host, std::uint16_t port) {
     }
 
     throw std::runtime_error(std::string("Could not open a socket for ") + host + ":" + std::to_string(port));
+}
+
+event::unique_fd open_tcp_server_socket(std::string const& bind_addr, std::uint16_t port, bool ipv6_only) {
+    const bool is_ipv6 = ipv6_only || (bind_addr.find(':') != std::string::npos);
+    const int family = is_ipv6 ? AF_INET6 : AF_INET;
+
+    const int raw_fd = ::socket(family, SOCK_STREAM | SOCK_NONBLOCK | SOCK_CLOEXEC, 0);
+    if (raw_fd < 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket socket(): ") + std::strerror(errno));
+    }
+    // Own the fd immediately so any throw below auto-closes it.
+    event::unique_fd fd(raw_fd);
+
+    const int opt = 1;
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &opt, sizeof(opt)) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(SO_REUSEADDR): ") +
+                                 std::strerror(errno));
+    }
+    if (::setsockopt(fd, SOL_SOCKET, SO_REUSEPORT, &opt, sizeof(opt)) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(SO_REUSEPORT): ") +
+                                 std::strerror(errno));
+    }
+
+    if (is_ipv6) {
+        const int v6only = ipv6_only ? 1 : 0;
+        if (::setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) != 0) {
+            throw std::runtime_error(std::string("open_tcp_server_socket setsockopt(IPV6_V6ONLY): ") +
+                                     std::strerror(errno));
+        }
+    }
+
+    sockaddr_storage sa{};
+    socklen_t sa_len = 0;
+    if (is_ipv6) {
+        auto* sa6 = reinterpret_cast<sockaddr_in6*>(&sa);
+        sa6->sin6_family = AF_INET6;
+        sa6->sin6_port = htons(port);
+        if (::inet_pton(AF_INET6, bind_addr.c_str(), &sa6->sin6_addr) != 1) {
+            throw std::runtime_error(std::string("open_tcp_server_socket inet_pton IPv6: ") + bind_addr);
+        }
+        sa_len = sizeof(sockaddr_in6);
+    } else {
+        auto* sa4 = reinterpret_cast<sockaddr_in*>(&sa);
+        sa4->sin_family = AF_INET;
+        sa4->sin_port = htons(port);
+        if (::inet_pton(AF_INET, bind_addr.c_str(), &sa4->sin_addr) != 1) {
+            throw std::runtime_error(std::string("open_tcp_server_socket inet_pton IPv4: ") + bind_addr);
+        }
+        sa_len = sizeof(sockaddr_in);
+    }
+
+    if (::bind(fd, reinterpret_cast<sockaddr*>(&sa), sa_len) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket bind(): ") + std::strerror(errno));
+    }
+
+    if (::listen(fd, SOMAXCONN) != 0) {
+        throw std::runtime_error(std::string("open_tcp_server_socket listen(): ") + std::strerror(errno));
+    }
+
+    return fd;
 }
 
 #ifndef EVEREST_NO_PACKET_IGNORE_OUTGOING
@@ -317,6 +589,19 @@ int get_pending_error(int fd) {
         return errno;
     }
     return error;
+}
+
+int consume_poll_error(int fd, event::poll_events kind, int fallback) {
+    int so_error = 0;
+    socklen_t len = sizeof(so_error);
+    // Consumes the pending socket error. Non sockets fail here and fall through.
+    if (::getsockopt(fd, SOL_SOCKET, SO_ERROR, &so_error, &len) == 0 and so_error != 0) {
+        return so_error;
+    }
+    if (fallback != 0) {
+        return fallback;
+    }
+    return kind == event::poll_events::hungup ? ENOTCONN : EIO;
 }
 
 bool is_tcp_socket_alive(int sock_fd) {
@@ -542,9 +827,8 @@ std::string get_interface_address(std::string const& name) {
     throw std::runtime_error("Interface: " + name + " not found or has no IPv4");
 }
 
-std::vector<if_info> get_all_interaces() {
+std::vector<if_info> get_all_interfaces() {
     struct ifaddrs* ifaddr{nullptr};
-    struct ifaddrs* ifa{nullptr};
     if (getifaddrs(&ifaddr) == -1) {
         throw std::runtime_error("Cannot get interfaces: " + std::string(strerror(errno)));
     }
@@ -552,14 +836,154 @@ std::vector<if_info> get_all_interaces() {
     handle_disposer<ifaddrs, freeifaddrs> ifaddr_disposer(ifaddr);
 
     std::vector<if_info> interfaces;
+    auto entry_for = [&](char const* name) -> if_info& {
+        auto it = std::find_if(interfaces.begin(), interfaces.end(), [&](auto const& e) { return e.name == name; });
+        if (it != interfaces.end()) {
+            return *it;
+        }
+        interfaces.push_back({name, "", ""});
+        return interfaces.back();
+    };
 
-    for (ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
-        if (ifa->ifa_addr == nullptr || ifa->ifa_addr->sa_family != AF_INET) {
+    for (auto* ifa = ifaddr; ifa != nullptr; ifa = ifa->ifa_next) {
+        if (ifa->ifa_addr == nullptr) {
             continue;
         }
-        interfaces.push_back({ifa->ifa_name, get_interface_address(ifa->ifa_name)});
+        auto const family = ifa->ifa_addr->sa_family;
+        if (family == AF_INET) {
+            auto& entry = entry_for(ifa->ifa_name);
+            if (not entry.ipv4.empty()) {
+                continue;
+            }
+            char host[INET_ADDRSTRLEN]{};
+            auto const* sin = reinterpret_cast<sockaddr_in const*>(ifa->ifa_addr);
+            if (inet_ntop(AF_INET, &sin->sin_addr, host, sizeof(host))) {
+                entry.ipv4 = host;
+            }
+        } else if (family == AF_INET6) {
+            auto& entry = entry_for(ifa->ifa_name);
+            auto const* sin6 = reinterpret_cast<sockaddr_in6 const*>(ifa->ifa_addr);
+            // prefer a global address; keep a link-local one only until a global shows up
+            if (not entry.ipv6.empty() &&
+                (not is_link_local_v6_literal(entry.ipv6) || IN6_IS_ADDR_LINKLOCAL(&sin6->sin6_addr))) {
+                continue;
+            }
+            char host[INET6_ADDRSTRLEN]{};
+            if (inet_ntop(AF_INET6, &sin6->sin6_addr, host, sizeof(host))) {
+                entry.ipv6 = host;
+            }
+        }
     }
     return interfaces;
+}
+
+event::unique_fd open_udp_unconnected_socket(udp::endpoint const& target, std::string const& iface) {
+    const auto family = target.family();
+    if (family != AF_INET && family != AF_INET6) {
+        throw std::runtime_error("open_udp_unconnected_socket: target has no usable address family");
+    }
+
+    event::unique_fd sock(::socket(family, SOCK_DGRAM, 0));
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(SOCK_DGRAM) failed"));
+    }
+    set_non_blocking(sock);
+
+    // Wildcard bind on the target's family, ephemeral port. RX is by destination
+    // address and port; interface confinement (if any) comes from the options below.
+    if (family == AF_INET6) {
+        sockaddr_in6 local{};
+        local.sin6_family = AF_INET6;
+        local.sin6_addr = in6addr_any;
+        if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind([::]:0) failed"));
+        }
+    } else {
+        sockaddr_in local{};
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind(0.0.0.0:0) failed"));
+        }
+    }
+
+    const std::string& device = iface.empty() ? target.iface() : iface;
+
+    // Best-effort link confinement. Not required for the unicast-reply RX path
+    // (delivery is by destination address and port on the wildcard bind).
+    // Defense-in-depth only on multi-NIC hosts; unprivileged failure is tolerated.
+    if (not device.empty()) {
+        try {
+            bind_socket_to_device(sock, device);
+        } catch (const std::exception&) {
+            // ignore: multicast TX interface is pinned by set_multicast_if below
+        }
+    }
+
+    // Pin multicast egress to the chosen interface (no-op for unicast targets).
+    // A mutable copy is required: set_multicast_if writes sin6_scope_id, which
+    // is irrelevant here since the socket option is what matters.
+    sockaddr_storage ss{};
+    std::memcpy(&ss, target.sa(), target.sa_len());
+    set_multicast_if(sock, device, reinterpret_cast<sockaddr*>(&ss));
+
+    // No ::connect(), no group join: a connected datagram socket would drop a
+    // unicast reply whose source differs from the configured target; a group
+    // join is a receiver-side concern and is not needed to send to the group.
+    return sock;
+}
+
+event::unique_fd open_udp_dualstack_server_socket(std::uint16_t port, std::string const& device) {
+    event::unique_fd sock(::socket(AF_INET6, SOCK_DGRAM, 0));
+    if (not sock.is_fd() && errno == EAFNOSUPPORT) {
+        // IPv6 unavailable on this host: v4-only fallback.
+        event::unique_fd v4(::socket(AF_INET, SOCK_DGRAM, 0));
+        if (not v4.is_fd()) {
+            throw std::runtime_error(build_errno_string("socket(AF_INET, SOCK_DGRAM) failed"));
+        }
+        set_reuse_address(v4);
+        set_non_blocking(v4);
+        sockaddr_in local{};
+        local.sin_family = AF_INET;
+        local.sin_addr.s_addr = htonl(INADDR_ANY);
+        local.sin_port = htons(port);
+        if (::bind(v4, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+            throw std::runtime_error(build_errno_string("bind(0.0.0.0:" + std::to_string(port) + ") failed"));
+        }
+        if (not device.empty()) {
+            try {
+                bind_socket_to_device(v4, device);
+            } catch (const std::exception&) {
+                // best-effort; wildcard bind retained
+            }
+        }
+        return v4;
+    }
+
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(AF_INET6, SOCK_DGRAM) failed"));
+    }
+    int v6only = 0;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_V6ONLY=0) failed"));
+    }
+    set_reuse_address(sock);
+    set_non_blocking(sock);
+    sockaddr_in6 local{};
+    local.sin6_family = AF_INET6;
+    local.sin6_addr = in6addr_any;
+    local.sin6_port = htons(port);
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+        throw std::runtime_error(build_errno_string("bind([::]:" + std::to_string(port) + ") failed"));
+    }
+    if (not device.empty()) {
+        try {
+            bind_socket_to_device(sock, device);
+        } catch (const std::exception&) {
+            // best-effort; wildcard bind retained
+        }
+    }
+    return sock;
 }
 
 event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, std::uint16_t port,
@@ -581,7 +1005,57 @@ event::unique_fd open_udp_multicast_socket(std::string const& multicast_group, s
 
 event::unique_fd open_mdns_socket(std::string const& interface_name) {
     auto ip = get_interface_address(interface_name);
-    auto sock = open_udp_multicast_socket("224.0.0.251", 5353, ip, "0.0.0.0", true, true);
+    auto sock = open_udp_multicast_socket(mdns::mdns_multicast_ipv4, mdns::mdns_port, ip, "0.0.0.0", true, true);
+    if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) < 0) {
+        throw std::runtime_error("Failed to bind socket to device " + interface_name + " -> " + strerror(errno));
+    }
+    return sock;
+}
+
+event::unique_fd open_mdns_socket6(std::string const& interface_name) {
+    event::unique_fd sock(::socket(AF_INET6, SOCK_DGRAM, IPPROTO_UDP));
+    if (not sock.is_fd()) {
+        throw std::runtime_error(build_errno_string("socket(AF_INET6, SOCK_DGRAM) failed"));
+    }
+    // v6-transport only; the IPv4 mDNS traffic is handled by a separate open_mdns_socket
+    int v6only = 1;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_V6ONLY, &v6only, sizeof(v6only)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_V6ONLY=1) failed"));
+    }
+    set_non_blocking(sock);
+    // reuse flags must be set before bind: other mDNS stacks (avahi, resolved) share the mDNS port
+    set_reuse_address(sock);
+    set_reuse_port(sock);
+
+    sockaddr_in6 local{};
+    local.sin6_family = AF_INET6;
+    local.sin6_addr = in6addr_any;
+    local.sin6_port = htons(mdns::mdns_port);
+    if (::bind(sock, reinterpret_cast<sockaddr*>(&local), sizeof(local)) < 0) {
+        throw std::runtime_error(build_errno_string("bind([::]:" + std::to_string(mdns::mdns_port) + ") failed"));
+    }
+
+    unsigned int const ifindex = if_nametoindex(interface_name.c_str());
+    if (ifindex == 0) {
+        throw std::runtime_error(build_errno_string("if_nametoindex(\"" + interface_name + "\") failed"));
+    }
+    ipv6_mreq mreq{};
+    if (inet_pton(AF_INET6, mdns::mdns_multicast_ipv6, &mreq.ipv6mr_multiaddr) != 1) {
+        throw std::runtime_error(std::string("inet_pton(") + mdns::mdns_multicast_ipv6 + ") failed");
+    }
+    mreq.ipv6mr_interface = ifindex;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq)) < 0) {
+        throw std::runtime_error(build_errno_string(std::string("setsockopt(IPV6_JOIN_GROUP, ") +
+                                                    mdns::mdns_multicast_ipv6 + "%" + interface_name + ") failed"));
+    }
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_IF, &ifindex, sizeof(ifindex)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_IF, " + interface_name + ") failed"));
+    }
+    // RFC 6762 section 11: mDNS senders SHOULD use a hop limit of 255
+    int hops = 255;
+    if (setsockopt(sock, IPPROTO_IPV6, IPV6_MULTICAST_HOPS, &hops, sizeof(hops)) < 0) {
+        throw std::runtime_error(build_errno_string("setsockopt(IPV6_MULTICAST_HOPS) failed"));
+    }
     if (setsockopt(sock, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length()) < 0) {
         throw std::runtime_error("Failed to bind socket to device " + interface_name + " -> " + strerror(errno));
     }
@@ -646,6 +1120,36 @@ std::uint32_t ip_to_s_addr(std::string const& ip) {
         throw std::runtime_error("Invalid IP address: " + ip);
     }
     return s_addr;
+}
+
+MacAddress get_mac_address(int fd, std::string const& if_name) {
+    struct ifreq ifr;
+    std::memset(&ifr, 0, sizeof(ifr));
+    std::strncpy(ifr.ifr_name, if_name.c_str(), IFNAMSIZ - 1);
+
+    if (ioctl(fd, SIOCGIFHWADDR, &ifr) == -1) {
+        throw std::runtime_error("Cannot get MAC address for interface: " + if_name + " with given socket");
+    }
+
+    MacAddress addr;
+    std::memcpy(addr.data(), ifr.ifr_hwaddr.sa_data, 6);
+    return addr;
+}
+
+MacAddress get_mac_address(std::string const& if_name) {
+    // dummy socket for ioctl
+    auto temp_fd = event::unique_fd(::socket(AF_INET, SOCK_DGRAM, 0));
+    if (not temp_fd.is_fd()) {
+        throw std::runtime_error("Cannot get MAC address for interface: " + if_name + ". Failed to open dummy socket");
+    }
+
+    try {
+        auto addr = get_mac_address(temp_fd, if_name);
+        return addr;
+
+    } catch (std::exception const& e) {
+        throw std::runtime_error("Cannot get MAC address for interface: " + if_name + ": " + e.what());
+    }
 }
 
 } // namespace socket

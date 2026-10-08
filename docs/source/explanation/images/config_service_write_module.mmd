@@ -1,0 +1,29 @@
+sequenceDiagram
+    participant Client as EVerest Module
+    participant Manager as MqttConfigServiceHandler + ConfigServiceCore
+    participant TargetModule as EVerest Module (target)
+ 
+    Client->>Manager: [Internal API] SetRequest(identifier, value)
+    Manager->Manager: Validate request, Access control
+    alt is invalid or not allowed
+      Manager-->>Client: [Internal API] SetResponse(status: Rejected)
+    else is valid and allowed
+      Manager->Manager: Persist change to database
+      note right of Manager: Default result: RebootRequired
+      alt Target module is running AND param is ReadWrite
+          Manager->>TargetModule: [Internal API] set_request(identifier, value)
+          alt Module replies Accepted
+              TargetModule-->>Manager: [Internal API] set_response(Accepted)
+              Manager->Manager: Update in-memory config
+              note right of Manager: Final result: Accepted
+          else Module replies RebootRequired
+              TargetModule-->>Manager: [Internal API] set_response(RebootRequired)
+              note right of Manager: Final result: RebootRequired
+          else Module replies Rejected
+              TargetModule-->>Manager: [Internal API] set_response(Rejected)
+              note right of Manager: Final result: RebootRequired<br/>(runtime change rejected)
+          end
+      end
+      Manager->Manager: publish ConfigurationUpdate
+      Manager-->>Client: [Internal API] SetResponse(status)
+    end

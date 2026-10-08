@@ -1,0 +1,32 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_test(
+    name = "test_remote_transaction_control",
+    srcs = [
+        "lib/ocpp/common/evse_security_mock.hpp",
+        "lib/ocpp/v2/device_model_test_helper.cpp",
+        "lib/ocpp/v2/device_model_test_helper.hpp",
+        "lib/ocpp/v2/functional_blocks/test_remote_transaction_control.cpp",
+    ] + glob([
+        "lib/ocpp/v2/mocks/*.hpp",
+        "lib/ocpp/common/mocks/*.hpp",
+    ]),
+    data = ["//lib/everest/ocpp:config"],
+    includes = [
+        "lib/ocpp/common",
+        "lib/ocpp/common/mocks",
+        "lib/ocpp/v2",
+        "lib/ocpp/v2/mocks",
+    ],
+    linkstatic = True,
+    local_defines = [
+        'DEVICE_MODEL_MIGRATION_FILES_PATH=\\"lib/everest/ocpp/config/common/device_model_migrations\\"',
+        'DEVICE_MODEL_CONFIG_PATH=\\"lib/everest/ocpp/config/common/component_config\\"',
+    ],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        "//lib/everest/ocpp:libocpp",
+        "@googletest//:gtest_main",
+    ],
+)

@@ -1,10 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
+#include <iso15118/d20/state/ac_der_sae_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/service_selection.hpp>
 
 #include <algorithm>
+#include <cstdint>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/service_detail.hpp>
@@ -65,7 +68,8 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     message_20::ServiceSelectionResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     bool energy_service_found = false;
@@ -79,7 +83,8 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     }
 
     if (!energy_service_found) {
-        return response_with_code(res, dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected);
+        set_response_code(res, dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected);
+        return res;
     }
 
     if (req.selected_vas_list.has_value()) {
@@ -95,13 +100,15 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
         }
 
         if (not vas_services_found) {
-            return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+            set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+            return res;
         }
     }
 
     if (not session.find_energy_parameter_set_id(req.selected_energy_transfer_service.service_id,
                                                  req.selected_energy_transfer_service.parameter_set_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+        return res;
     }
 
     session.selected_service_parameters(req.selected_energy_transfer_service.service_id,
@@ -112,17 +119,19 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
 
         for (auto& vas_service : selected_vas_list) {
             if (not session.find_vas_parameter_set_id(vas_service.service_id, vas_service.parameter_set_id)) {
-                return response_with_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+                set_response_code(res, dt::ResponseCode::FAILED_ServiceSelectionInvalid);
+                return res;
             }
             session.selected_service_parameters(vas_service.service_id, vas_service.parameter_set_id);
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceSelection::enter() {
-    m_ctx.log.enter_state("ServiceSelection");
+    logf_debug("Enter state: ServiceSelection");
 }
 
 Result ServiceSelection::feed(Event ev) {
@@ -137,12 +146,13 @@ Result ServiceSelection::feed(Event ev) {
         logf_info("Requested info about ServiceID: %d", req->service);
 
         using Service = dt::ServiceCategory;
-        const std::vector<uint16_t> energy_services{
+        const std::vector<std::uint16_t> energy_services{
             message_20::to_underlying_value(Service::AC),          message_20::to_underlying_value(Service::DC),
             message_20::to_underlying_value(Service::WPT),         message_20::to_underlying_value(Service::DC_ACDP),
             message_20::to_underlying_value(Service::AC_BPT),      message_20::to_underlying_value(Service::DC_BPT),
             message_20::to_underlying_value(Service::DC_ACDP_BPT), message_20::to_underlying_value(Service::MCS),
-            message_20::to_underlying_value(Service::MCS_BPT)};
+            message_20::to_underlying_value(Service::MCS_BPT),     message_20::to_underlying_value(Service::AC_DER_IEC),
+            message_20::to_underlying_value(Service::AC_DER_SAE)};
 
         std::optional<dt::ServiceParameterList> custom_vas_parameters{std::nullopt};
 
@@ -201,11 +211,17 @@ Result ServiceSelection::feed(Event ev) {
         if (m_ctx.session.is_ac_charger()) {
             return m_ctx.create_state<AC_ChargeParameterDiscovery>();
         }
+        if (m_ctx.session.is_ac_der_iec_charger()) {
+            return m_ctx.create_state<AC_DER_IEC_ChargeParameterDiscovery>();
+        }
+        if (m_ctx.session.is_ac_der_sae_charger()) {
+            return m_ctx.create_state<AC_DER_SAE_ChargeParameterDiscovery>();
+        }
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeParameterDiscovery>();
         }
-        m_ctx.log("expected selected_energy_service AC, AC_BPT, DC, DC_BPT, MCS, MCS_BPT! But code type id: %d",
-                  static_cast<int>(selected_energy_service));
+        logf_warning("Expected selected_energy_service AC, AC_BPT, DC, DC_BPT, MCS, MCS_BPT! But code type id: %d",
+                     static_cast<int>(selected_energy_service));
 
         m_ctx.session_stopped = true;
         return {};
@@ -214,11 +230,12 @@ Result ServiceSelection::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
     } else {
-        m_ctx.log("expected ServiceDetailReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected ServiceDetailReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

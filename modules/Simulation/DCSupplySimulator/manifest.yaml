@@ -55,6 +55,15 @@ provides:
   powermeter:
     interface: powermeter
     description: Power meter interface for simulation
+    config:
+      min_import_current_A:
+        description: Simulated meter minimum current capability in Ampere in import direction (charging). 0 disables publishing capabilities.
+        type: number
+        default: 0
+      min_export_current_A:
+        description: Simulated meter minimum current capability in Ampere in export direction (discharging). 0 disables publishing capabilities.
+        type: number
+        default: 0
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

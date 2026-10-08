@@ -1,0 +1,27 @@
+load("@rules_cc//cc:defs.bzl", "cc_library")
+
+# Hermetic counterpart of the cmake generated version information.  The values are fixed here on
+# purpose - a git derived string would invalidate the action cache on every commit.
+genrule(
+    name = "version_information",
+    outs = ["include/generated/version_information.hpp"],
+    cmd = """
+    echo "#pragma once" > $@
+    echo "#define PROJECT_NAME \\"everest-core\\"" >> $@
+    echo "#define PROJECT_DESCRIPTION \\"\\"" >> $@
+    echo "#define PROJECT_VERSION \\"\\"" >> $@
+    echo "#define GIT_VERSION \\"\\"" >> $@
+  """,
+)
+
+cc_library(
+    name = "project_info",
+    srcs = ["src/project_info.cpp"],
+    hdrs = [
+        "include/everest/project_info.hpp",
+        ":version_information",
+    ],
+    cxxopts = ["-std=c++17"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+)

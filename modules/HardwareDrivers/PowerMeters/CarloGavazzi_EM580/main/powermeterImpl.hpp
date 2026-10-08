@@ -1,11 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWERMETER_IMPL_HPP
 #define MAIN_POWERMETER_IMPL_HPP
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/powermeter/Implementation.hpp>
@@ -35,6 +35,7 @@ struct Conf {
     int live_measurement_interval_ms;
     int device_state_read_interval_ms;
     std::string public_key_format;
+    bool monitor_transaction_state;
 };
 
 class powermeterImpl : public powermeterImplBase {
@@ -43,12 +44,11 @@ public:
     powermeterImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<CarloGavazzi_EM580>& mod, Conf& config) :
         powermeterImplBase(ev, "main"), mod(mod), config(config){};
 
+    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
     // Marker used to append the transaction id to the tariff text (TT field).
     // Format: "<tariff_text><=><transaction_id>"
     static constexpr std::string_view TARIFF_TEXT_TRANSACTION_ID_MARKER = "<=>";
 
-    // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
-    // insert your public definitions here
     ~powermeterImpl() override;
     // Test-only access helpers (used by unit tests to avoid spinning up the full
     // EVerest runtime). These are intentionally narrow: inject transport + tweak
@@ -60,11 +60,22 @@ public:
         }
 
         static void set_pending_closed_transaction(powermeterImpl& self, bool pending) {
-            self.m_pending_closed_transaction = pending;
+            self.m_pending_closed_transaction.store(pending);
+        }
+
+        static bool pending_closed_transaction(const powermeterImpl& self) {
+            return self.m_pending_closed_transaction.load();
+        }
+
+        static void monitor_transaction_ocmf_state(powermeterImpl& self, std::uint16_t ocmf_state) {
+            self.monitor_transaction_ocmf_state(ocmf_state);
         }
 
         static void set_transaction_id(powermeterImpl& self, std::string transaction_id) {
-            self.m_transaction_id = std::move(transaction_id);
+            {
+                std::lock_guard<std::mutex> lock(self.m_transaction_mutex);
+                self.m_transaction_id = std::move(transaction_id);
+            }
             self.m_transaction_active.store(true);
         }
 
@@ -104,6 +115,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     std::unique_ptr<transport::AbstractModbusTransport> p_modbus_transport;
@@ -121,7 +133,8 @@ private:
 
     std::atomic_bool m_transaction_active{false};
     std::atomic_bool m_pending_time_sync{false};
-    bool m_pending_closed_transaction{false};
+    std::atomic_bool m_pending_closed_transaction{false};
+    std::mutex m_transaction_mutex;
 
     // Background threads (started in ready(), joined on destruction)
     std::atomic_bool stop_requested_{false};
@@ -130,15 +143,22 @@ private:
     std::thread live_measure_thread_;
     std::thread time_sync_thread_;
 
-    void configure_device();
+    // flag whether transactions are supported
+    bool m_transaction_support{true};
 
+    void configure_device();
     void read_signature_config();
     types::units_signed::SignedMeterValue read_signed_meter_value();
     void read_powermeter_values();
     void dump_device_state(void);
+    void read_identification();
     void read_firmware_versions();
     void read_serial_number();
     void read_transaction_state_and_id();
+    [[nodiscard]] std::uint16_t read_ocmf_state();
+    void apply_ocmf_state_on_configure(std::uint16_t ocmf_state);
+    void monitor_transaction_ocmf_state(std::uint16_t ocmf_state);
+    void clear_ocmf_transaction_closed_error();
     std::string read_ocmf_file();
     void synchronize_time();
     void set_timezone(int offset_minutes);

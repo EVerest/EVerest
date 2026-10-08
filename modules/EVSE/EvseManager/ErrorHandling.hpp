@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 /*
  The ErrorHandling class handles all errors from BSP/ConnectorLock etc
@@ -19,8 +19,13 @@
 
 #include <chrono>
 #include <mutex>
-#include <optional>
 #include <queue>
+#include <set>
+#include <tuple>
+#include <utility>
+#include <vector>
+
+#include <everest/util/async/monitor.hpp>
 
 #include <generated/interfaces/ISO15118_charger/Interface.hpp>
 #include <generated/interfaces/ac_rcd/Interface.hpp>
@@ -32,6 +37,7 @@
 #include <generated/interfaces/over_voltage_monitor/Interface.hpp>
 #include <generated/interfaces/power_supply_DC/Interface.hpp>
 #include <generated/interfaces/powermeter/Interface.hpp>
+#include <generated/interfaces/slac/Interface.hpp>
 #include <sigslot/signal.hpp>
 
 #include "Timeout.hpp"
@@ -67,6 +73,7 @@ public:
                            const std::vector<std::unique_ptr<isolation_monitorIntf>>& _r_imd,
                            const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply,
                            const std::vector<std::unique_ptr<powermeterIntf>>& _r_powermeter,
+                           const std::vector<std::unique_ptr<slacIntf>>& _r_slac,
                            const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& _r_over_voltage_monitor,
                            bool _inoperative_error_use_vendor_id);
 
@@ -101,12 +108,22 @@ public:
     void clear_voltage_plausibility_fault();
 
 protected:
-    void raise_inoperative_error(const Everest::error::Error& caused_by);
+    // Orders errors by (type, sub_type) only, so inoperative_causes tracks the identity of the active fatal set
+    // regardless of detection order.
+    struct ErrorCauseLess {
+        bool operator()(const Everest::error::Error& a, const Everest::error::Error& b) const {
+            return std::tie(a.type, a.sub_type) < std::tie(b.type, b.sub_type);
+        }
+    };
+    using InoperativeCauses = std::set<Everest::error::Error, ErrorCauseLess>;
+
+    void raise_inoperative_error(const std::vector<Everest::error::Error>& causes,
+                                 InoperativeCauses& inoperative_causes);
 
 private:
     void process_error();
-    void clear_inoperative_error();
-    std::optional<Everest::error::Error> errors_prevent_charging();
+    void clear_inoperative_error(InoperativeCauses& inoperative_causes);
+    std::vector<Everest::error::Error> errors_prevent_charging();
 
     const std::unique_ptr<evse_board_supportIntf>& r_bsp;
     const std::vector<std::unique_ptr<ISO15118_chargerIntf>>& r_hlc;
@@ -116,8 +133,16 @@ private:
     const std::vector<std::unique_ptr<isolation_monitorIntf>>& r_imd;
     const std::vector<std::unique_ptr<power_supply_DCIntf>>& r_powersupply;
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter;
+    const std::vector<std::unique_ptr<slacIntf>>& r_slac;
     const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& r_over_voltage_monitor;
     const bool inoperative_error_use_vendor_id;
+
+    // The fatal causes the raised Inoperative error currently describes; empty while Inoperative is not raised. Used
+    // to refresh that error when the active fatal set changes. The monitor bundles the state with the mutex that
+    // guards it: process_error() holds the handle across the whole read-compare-clear-raise sequence, which runs from
+    // every requirement's error callbacks (potentially on different threads). Passing the guarded set explicitly into
+    // raise_/clear_inoperative_error() also makes it impossible to mutate it without holding the lock.
+    everest::lib::util::monitor<InoperativeCauses> inoperative_causes;
 };
 
 } // namespace module

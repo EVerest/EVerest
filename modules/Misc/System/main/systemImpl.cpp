@@ -2,10 +2,15 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "systemImpl.hpp"
+#include "everest/logging.hpp"
+#include "generated/types/system.hpp"
 
 #include <chrono>
 #include <cstdlib>
+#include <ctime>
 #include <fstream>
+#include <iomanip>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -24,9 +29,26 @@ const std::string CONSTANTS = "constants.env";
 const std::string DIAGNOSTICS_UPLOADER = "diagnostics_uploader.sh";
 const std::string FIRMWARE_UPDATER = "firmware_updater.sh";
 const std::string SIGNED_FIRMWARE_DOWNLOADER = "signed_firmware_downloader.sh";
+const std::string SIGNED_FIRMWARE_METADATA_PARSER = "signed_firmware_metadata_parser.sh";
 const std::string SIGNED_FIRMWARE_INSTALLER = "signed_firmware_installer.sh";
 
+// A published status cannot be observed reaching its consumers, so it gets this long before the reset stops the stack.
+constexpr auto INSTALL_REBOOTING_NOTIFICATION_GRACE = std::chrono::seconds(2);
+
 namespace fs = std::filesystem;
+
+std::string systemImpl::create_logs_filename(const std::string& type) {
+    const auto now = std::chrono::system_clock::now();
+    const std::time_t t = std::chrono::system_clock::to_time_t(now);
+
+    std::tm tm{};
+    gmtime_r(&t, &tm);
+
+    std::ostringstream oss;
+    oss << std::put_time(&tm, "%Y-%m-%dT%H-%M-%SZ");
+
+    return type + "-" + oss.str();
+}
 
 // FIXME (aw): this function needs to be refactored into some kind of utility library
 fs::path create_temp_file(const fs::path& dir, const std::string& prefix) {
@@ -48,10 +70,15 @@ fs::path create_temp_file(const fs::path& dir, const std::string& prefix) {
     return fn_template_buffer.data();
 }
 
+bool split_key_value(const std::string& key_value, std::string& key, std::string& value) {
+    std::stringstream line_stream(key_value);
+    bool split_ok = !std::getline(line_stream, key, '=').fail();
+    split_ok = split_ok && !std::getline(line_stream, value, '=').fail();
+    return split_ok;
+}
+
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
-    this->log_upload_running = false;
-    this->firmware_download_running = false;
     this->firmware_installation_running = false;
     this->standard_firmware_update_running = false;
     this->boot_reason_key = "ocpp_boot_reason";
@@ -80,8 +107,12 @@ void systemImpl::standard_firmware_update(const types::system::FirmwareUpdateReq
     this->update_firmware_thread = std::thread([this, firmware_update_request, firmware_file_path, constants]() {
         const auto firmware_updater = this->scripts_path / FIRMWARE_UPDATER;
 
-        const std::vector<std::string> args = {constants.string(), firmware_update_request.location,
-                                               firmware_file_path.string()};
+        const auto separator = firmware_update_request.location.find('#');
+        const auto location = firmware_update_request.location.substr(0, separator);
+        const auto metadata_fragment =
+            separator == std::string::npos ? std::string() : firmware_update_request.location.substr(separator + 1);
+
+        const std::vector<std::string> args = {constants.string(), location, firmware_file_path.string()};
         int32_t retries = 0;
         const auto total_retries = firmware_update_request.retries.value_or(this->mod->config.DefaultRetries);
         const auto retry_interval =
@@ -91,6 +122,22 @@ void systemImpl::standard_firmware_update(const types::system::FirmwareUpdateReq
         types::system::FirmwareUpdateStatus firmware_status;
         firmware_status.request_id = -1;
         firmware_status.firmware_update_status = firmware_status_enum;
+
+        std::map<std::string, std::string> parsed_fragment;
+        std::stringstream fragment_stream(metadata_fragment);
+        std::string fragment_key_value;
+        while (std::getline(fragment_stream, fragment_key_value, '&')) {
+            std::string key;
+            std::string value;
+            if (split_key_value(fragment_key_value, key, value)) {
+                parsed_fragment[key] = value;
+            }
+        }
+        if (parsed_fragment.count("disable_connectors_during_install") != 0) {
+            types::system::FirmwareUpdateMetadata metadata;
+            metadata.disable_connectors_during_install = parsed_fragment["disable_connectors_during_install"] == "true";
+            firmware_status.firmware_update_metadata.emplace(metadata);
+        }
 
         while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
                retries < total_retries) {
@@ -157,6 +204,25 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
 
     EVLOG_info << "Executing signed firmware update download callback";
 
+    // Capture the running state before (potentially) launching the worker thread. The
+    // worker (download_signed_firmware) sets firmware_download_state once it starts;
+    // deciding the response from the value captured here - rather than re-reading the
+    // state after the thread is spawned - avoids a race in which the worker flips the
+    // state first and we report AcceptedCanceled for what is actually a fresh request.
+    bool download_already_running = false;
+    bool installation_running = false;
+    {
+        auto state = this->firmware_download_state.handle();
+        download_already_running = *state == FirmwareDownloadState::Downloading;
+        installation_running = this->firmware_installation_running.load();
+
+        if (download_already_running) {
+            EVLOG_info
+                << "Received Firmware update request and firmware update already running, cancelling firmware update";
+            this->interrupt_firmware_download->store(true);
+        }
+    }
+
     if (firmware_update_request.retrieve_timestamp.has_value() &&
         Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value()) > date::utc_clock::now()) {
         const auto retrieve_timestamp = Everest::Date::from_rfc3339(firmware_update_request.retrieve_timestamp.value());
@@ -177,9 +243,9 @@ systemImpl::handle_signed_fimware_update(const types::system::FirmwareUpdateRequ
         this->update_firmware_thread.detach();
     }
 
-    if (this->firmware_download_running) {
+    if (download_already_running) {
         return types::system::UpdateFirmwareResponse::AcceptedCanceled;
-    } else if (this->firmware_installation_running) {
+    } else if (installation_running) {
         return types::system::UpdateFirmwareResponse::Rejected;
     } else {
         return types::system::UpdateFirmwareResponse::Accepted;
@@ -201,26 +267,24 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
         return;
     }
 
-    if (this->firmware_download_running) {
-        EVLOG_info
-            << "Received Firmware update request and firmware update already running - cancelling firmware update";
-        this->interrupt_firmware_download.exchange(true);
-        EVLOG_info << "Waiting for other firmware download to finish...";
-        std::unique_lock<std::mutex> lk(this->firmware_update_mutex);
-        this->firmware_update_cv.wait(lk, [this]() { return !this->firmware_download_running; });
-        EVLOG_info << "Previous Firmware download finished!";
+    {
+        auto state = this->firmware_download_state.handle();
+        if (*state != FirmwareDownloadState::Idle) {
+            EVLOG_info << "Waiting for other firmware download to finish...";
+            state.wait([&state]() { return *state == FirmwareDownloadState::Idle; });
+            EVLOG_info << "Previous Firmware download finished!";
+        }
+        *state = FirmwareDownloadState::Downloading;
+        this->interrupt_firmware_download->store(false);
     }
-
-    std::lock_guard<std::mutex> lg(this->firmware_update_mutex);
     EVLOG_info << "Starting Firmware update";
-    this->interrupt_firmware_download.exchange(false);
-    this->firmware_download_running = true;
 
     // // create temporary file
     const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
     const auto firmware_file_path = create_temp_file(fs::temp_directory_path(), "signed_firmware-" + date_time);
 
     const auto firmware_downloader = this->scripts_path / SIGNED_FIRMWARE_DOWNLOADER;
+    const auto firmware_metadata_parser = this->scripts_path / SIGNED_FIRMWARE_METADATA_PARSER;
     const auto constants = this->scripts_path / CONSTANTS;
 
     const std::vector<std::string> download_args = {
@@ -236,32 +300,112 @@ void systemImpl::download_signed_firmware(const types::system::FirmwareUpdateReq
     firmware_status.request_id = firmware_update_request.request_id;
     firmware_status.firmware_update_status = firmware_status_enum;
 
-    while (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-           retries < total_retries && !this->interrupt_firmware_download) {
-        run_application(
-            firmware_downloader.string(), download_args, [this, &firmware_status](const std::string& output_line) {
-                firmware_status.firmware_update_status =
-                    types::system::string_to_firmware_update_status_enum(output_line);
-                this->publish_firmware_update_status(firmware_status);
-                if (this->interrupt_firmware_download) {
-                    EVLOG_info << "Updating firmware was interrupted, terminating firmware update script, requestId: "
-                               << firmware_status.request_id;
-                    return CmdControl::Terminate;
-                }
-                return CmdControl::Continue;
-            });
+    bool download_failed_published = false;
+    bool verdict_published = false;
+    RunOptions options;
+    options.stop_requested = this->interrupt_firmware_download;
+    options.callback = [this, &firmware_status, &download_failed_published,
+                        &verdict_published](const std::string& output_line) {
+        if (this->interrupt_firmware_download->load()) {
+            return CmdControl::Terminate;
+        }
+        firmware_status.firmware_update_status = types::system::string_to_firmware_update_status_enum(output_line);
+        // Defer sending the SignatureVerified message because it needs to have the metadata attached to it
+        if (firmware_status.firmware_update_status != types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+            this->publish_firmware_update_status(firmware_status);
+            download_failed_published =
+                firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+            if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::InvalidSignature) {
+                verdict_published = true;
+            }
+        }
+        return CmdControl::Continue;
+    };
+    bool cancelled = false;
+    while (retries < total_retries) {
         retries += 1;
-        if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::DownloadFailed &&
-            retries < total_retries) {
-            std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
+        download_failed_published = false;
+        run_application(firmware_downloader.string(), download_args, options);
+        if (verdict_published) {
+            break;
+        }
+        cancelled = this->interrupt_firmware_download->load();
+        if (!cancelled &&
+            firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
+            break;
+        }
+        if (!cancelled && retries < total_retries) {
+            const auto retry_at = std::chrono::steady_clock::now() + std::chrono::seconds(retry_interval);
+            while (!cancelled && std::chrono::steady_clock::now() < retry_at) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                cancelled = this->interrupt_firmware_download->load();
+            }
+        }
+        if (cancelled) {
+            EVLOG_info << "Firmware download was interrupted, requestId: " << firmware_status.request_id;
+            break;
         }
     }
-    if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::SignatureVerified) {
-        this->initialize_firmware_installation(firmware_update_request, firmware_file_path);
+    const bool parse_metadata = !cancelled && firmware_status.firmware_update_status ==
+                                                  types::system::FirmwareUpdateStatusEnum::SignatureVerified;
+    std::map<std::string, std::string> parsed_metadata;
+    bool metadata_parsed = false;
+    if (parse_metadata) {
+        const std::vector<std::string> parser_args = {constants.string(), firmware_update_request.location,
+                                                      firmware_file_path.string()};
+        auto terminated = false;
+        run_application(firmware_metadata_parser.string(), parser_args,
+                        [&parsed_metadata, &terminated](const std::string& output_line) {
+                            if (output_line.rfind('#', 0) == 0) {
+                                return CmdControl::Continue;
+                            }
+
+                            std::string key;
+                            std::string value;
+                            if (!split_key_value(output_line, key, value)) {
+                                EVLOG_error << "Firmware metadata parser returned invalid data: " << output_line;
+                                terminated = true;
+                                return CmdControl::Terminate;
+                            }
+                            parsed_metadata[key] = value;
+                            return CmdControl::Continue;
+                        });
+        metadata_parsed = !terminated;
     }
 
-    this->firmware_download_running = false;
-    this->firmware_update_cv.notify_one();
+    bool handed_over = false;
+    {
+        auto state = this->firmware_download_state.handle();
+        cancelled = this->interrupt_firmware_download->load();
+        // Handed over to installation, a later request no longer cancels it
+        handed_over = !cancelled && metadata_parsed;
+        *state = FirmwareDownloadState::Reporting;
+    }
+
+    if (handed_over) {
+        types::system::FirmwareUpdateMetadata metadata;
+        if (parsed_metadata.count("disable_connectors_during_install") != 0) {
+            metadata.disable_connectors_during_install = parsed_metadata["disable_connectors_during_install"] == "true";
+        }
+        firmware_status.firmware_update_metadata.emplace(metadata);
+        this->publish_firmware_update_status(firmware_status);
+        verdict_published = true;
+        this->initialize_firmware_installation(firmware_update_request, firmware_file_path);
+    } else if (parse_metadata && cancelled) {
+        EVLOG_info << "Firmware download was interrupted before SignatureVerified, requestId: "
+                   << firmware_status.request_id;
+    }
+    if (!verdict_published && !download_failed_published) {
+        firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::DownloadFailed;
+        this->publish_firmware_update_status(firmware_status);
+    }
+
+    {
+        auto state = this->firmware_download_state.handle();
+        *state = FirmwareDownloadState::Idle;
+    }
+    this->firmware_download_state.notify_all();
+
     EVLOG_info << "Firmware update thread finished";
 }
 
@@ -299,7 +443,8 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
         this->firmware_installation_running = true;
         const auto firmware_installer = this->scripts_path / SIGNED_FIRMWARE_INSTALLER;
         const auto constants = this->scripts_path / CONSTANTS;
-        const std::vector<std::string> install_args = {constants.string()};
+        const std::vector<std::string> install_args = {constants.string(), firmware_update_request.location,
+                                                       firmware_file_path.string()};
         run_application(firmware_installer.string(), install_args,
                         [this, &firmware_status](const std::string& output_line) {
                             firmware_status.firmware_update_status =
@@ -308,14 +453,28 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
                             return CmdControl::Continue;
                         });
         if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::Installed) {
-            if (!this->mod->r_store.empty()) {
-                this->mod->r_store.at(0)->call_store(boot_reason_key,
-                                                     boot_reason_to_string(types::system::BootReason::FirmwareUpdate));
-            }
+            if (this->mod->config.ResetAfterUpdate) {
+                firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
+                this->publish_firmware_update_status(firmware_status);
+                std::this_thread::sleep_for(INSTALL_REBOOTING_NOTIFICATION_GRACE);
 
-            auto reset_type = types::system::ResetType::Hard;
-            bool firmware_installation_running_copy = this->firmware_installation_running;
-            this->handle_reset(reset_type, firmware_installation_running_copy);
+                if (!this->mod->r_store.empty()) {
+                    this->mod->r_store.at(0)->call_store(
+                        boot_reason_key, boot_reason_to_string(types::system::BootReason::FirmwareUpdate));
+                }
+
+                auto reset_type = types::system::ResetType::Hard;
+                bool firmware_installation_running_copy = this->firmware_installation_running;
+                this->handle_reset(reset_type, firmware_installation_running_copy);
+            } else {
+                EVLOG_info << "Firmware installed but ResetAfterUpdate is false - skipping reset.";
+                this->firmware_installation_running = false;
+            }
+        } else {
+            // Installation finished without reaching Installed, so no reset is triggered.
+            // Clear the flag so that a subsequent firmware update request is not rejected
+            // by the firmware_installation_running guard above.
+            this->firmware_installation_running = false;
         }
     } else {
         firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallationFailed;
@@ -341,15 +500,20 @@ systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_req
 
     types::system::UploadLogsResponse response;
 
-    if (this->log_upload_running) {
-        response.upload_logs_status = types::system::UploadLogsStatus::AcceptedCanceled;
-    } else {
-        response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
+    {
+        auto state = this->log_upload_state.handle();
+        if (*state == LogUploadState::Uploading) {
+            EVLOG_info << "Received Log upload request and log upload already running - cancelling current upload";
+            this->interrupt_log_upload->store(true);
+            response.upload_logs_status = types::system::UploadLogsStatus::AcceptedCanceled;
+        } else {
+            response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
+        }
     }
 
-    const auto date_time = Everest::Date::to_rfc3339(date::utc_clock::now());
     // TODO(piet): consider start time and end time
-    const auto diagnostics_file_path = create_temp_file(fs::temp_directory_path(), "diagnostics-" + date_time);
+    const auto diagnostics_file_path =
+        create_temp_file(fs::temp_directory_path(), this->create_logs_filename("diagnostics"));
     const auto diagnostics_file_name = diagnostics_file_path.filename().string();
 
     response.file_name = diagnostics_file_name;
@@ -359,64 +523,80 @@ systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_req
     diagnostics_file << fake_diagnostics_file.dump();
 
     this->upload_logs_thread = std::thread([this, upload_logs_request, diagnostics_file_name, diagnostics_file_path]() {
-        if (this->log_upload_running) {
-            EVLOG_info << "Received Log upload request and log upload already running - cancelling current upload";
-            this->interrupt_log_upload.exchange(true);
-            EVLOG_info << "Waiting for other log upload to finish...";
-            std::unique_lock<std::mutex> lk(this->log_upload_mutex);
-            this->log_upload_cv.wait(lk, [this]() { return !this->log_upload_running; });
-            EVLOG_info << "Previous Log upload finished!";
+        {
+            auto state = this->log_upload_state.handle();
+            if (*state != LogUploadState::Idle) {
+                EVLOG_info << "Waiting for other log upload to finish...";
+                state.wait([&state]() { return *state == LogUploadState::Idle; });
+                EVLOG_info << "Previous Log upload finished!";
+            }
+            *state = LogUploadState::Uploading;
+            this->interrupt_log_upload->store(false);
         }
-
-        std::lock_guard<std::mutex> lg(this->log_upload_mutex);
         EVLOG_info << "Starting upload of log file";
-        this->interrupt_log_upload.exchange(false);
-        this->log_upload_running = true;
         const auto diagnostics_uploader = this->scripts_path / DIAGNOSTICS_UPLOADER;
         const auto constants = this->scripts_path / CONSTANTS;
 
         std::vector<std::string> args = {constants.string(), upload_logs_request.location, diagnostics_file_name,
                                          diagnostics_file_path.string()};
-        bool uploaded = false;
         int32_t retries = 0;
         const auto total_retries = upload_logs_request.retries.value_or(this->mod->config.DefaultRetries);
         const auto retry_interval =
             upload_logs_request.retry_interval_s.value_or(this->mod->config.DefaultRetryInterval);
 
-        types::system::LogStatus log_status;
-        while (!uploaded && retries < total_retries && !this->interrupt_log_upload) {
-            retries += 1;
-            log_status.request_id = upload_logs_request.request_id.value_or(-1);
-            run_application(diagnostics_uploader.string(), args, [this, &log_status](const std::string& output_line) {
-                if (output_line == "Uploaded") {
-                    log_status.log_status = types::system::string_to_log_status_enum(output_line);
-                } else if (output_line == "UploadFailure" || output_line == "PermissionDenied" ||
-                           output_line == "BadMessage" || output_line == "NotSupportedOperation") {
-                    log_status.log_status = types::system::LogStatusEnum::UploadFailure;
-                } else {
-                    log_status.log_status = types::system::LogStatusEnum::Uploading;
-                }
-                this->publish_log_status(log_status);
-                if (this->interrupt_log_upload) {
-                    return CmdControl::Terminate;
-                }
-                return CmdControl::Continue;
-            });
-            if (this->interrupt_log_upload) {
-                EVLOG_info << "Uploading Logs was interrupted, terminating upload script, requestId: "
-                           << log_status.request_id;
-                // N01.FR.20
-                log_status.log_status = types::system::LogStatusEnum::AcceptedCanceled;
-                this->publish_log_status(log_status);
-            } else if (log_status.log_status != types::system::LogStatusEnum::Uploaded && retries < total_retries) {
-                // command finished, but neither interrupted nor uploaded
-                std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
+        types::system::LogStatus log_status{types::system::LogStatusEnum::Idle,
+                                            upload_logs_request.request_id.value_or(-1)};
+        RunOptions options;
+        options.stop_requested = this->interrupt_log_upload;
+        options.callback = [this, &log_status](const std::string& output_line) {
+            if (this->interrupt_log_upload->load()) {
+                return CmdControl::Terminate;
+            }
+            if (output_line == "Uploaded") {
+                log_status.log_status = types::system::string_to_log_status_enum(output_line);
+            } else if (output_line == "UploadFailure" || output_line == "PermissionDenied" ||
+                       output_line == "BadMessage" || output_line == "NotSupportedOperation") {
+                log_status.log_status = types::system::LogStatusEnum::UploadFailure;
             } else {
-                uploaded = true;
+                log_status.log_status = types::system::LogStatusEnum::Uploading;
+            }
+            this->publish_log_status(log_status);
+            return CmdControl::Continue;
+        };
+        while (retries < total_retries) {
+            retries += 1;
+            run_application(diagnostics_uploader.string(), args, options);
+            if (log_status.log_status == types::system::LogStatusEnum::Uploaded) {
+                break;
+            }
+            bool cancelled = this->interrupt_log_upload->load();
+            if (!cancelled && retries < total_retries) {
+                // command finished, but neither interrupted nor uploaded
+                const auto retry_at = std::chrono::steady_clock::now() + std::chrono::seconds(retry_interval);
+                while (!cancelled && std::chrono::steady_clock::now() < retry_at) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+                    cancelled = this->interrupt_log_upload->load();
+                }
+            }
+            if (cancelled) {
+                break;
             }
         }
-        this->log_upload_running = false;
-        this->log_upload_cv.notify_one();
+        bool cancelled = false;
+        {
+            auto state = this->log_upload_state.handle();
+            cancelled =
+                log_status.log_status != types::system::LogStatusEnum::Uploaded && this->interrupt_log_upload->load();
+            *state = LogUploadState::Idle;
+        }
+        this->log_upload_state.notify_all();
+        if (cancelled) {
+            EVLOG_info << "Uploading Logs was interrupted, terminating upload script, requestId: "
+                       << log_status.request_id;
+            // N01.FR.20
+            log_status.log_status = types::system::LogStatusEnum::AcceptedCanceled;
+            this->publish_log_status(log_status);
+        }
         EVLOG_info << "Log upload thread finished";
     });
     this->upload_logs_thread.detach();
@@ -444,10 +624,10 @@ void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
 
         if (type == types::system::ResetType::Soft) {
             EVLOG_info << "Performing soft reset now.";
-            kill(getpid(), SIGINT);
+            kill(getpid(), SIGTERM);
         } else {
             EVLOG_info << "Performing hard reset now.";
-            kill(getpid(), SIGINT); // FIXME(piet): Define appropriate behavior for hard reset
+            kill(getpid(), SIGTERM); // FIXME(piet): Define appropriate behavior for hard reset
         }
     }).detach();
 }
@@ -469,6 +649,13 @@ types::system::BootReason systemImpl::handle_get_boot_reason() {
     }
     this->mod->r_store.at(0)->call_delete(boot_reason_key);
     return types::system::string_to_boot_reason(final_reason);
+}
+
+types::network::ConfigureNetworkResponse
+systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
+    types::network::ConfigureNetworkResponse response;
+    response.status = types::network::ConfigureNetworkStatusEnum::NotSupported;
+    return response;
 }
 
 } // namespace main

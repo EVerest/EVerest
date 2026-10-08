@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <filesystem>
 #include <fstream>
 
@@ -129,8 +129,10 @@ PYBIND11_MODULE(everestpy, m) {
         .def(py::init<const RuntimeSession&>())
         .def(py::init<const std::string&, const RuntimeSession&>())
         .def("say_hello", &Module::say_hello)
+        .def("close", &Module::close)
         .def("init_done", py::overload_cast<>(&Module::init_done))
         .def("init_done", py::overload_cast<const std::function<void()>&>(&Module::init_done))
+        .def("shutdown_handler", py::overload_cast<const std::function<void()>&>(&Module::shutdown_handler))
         .def("call_command", &Module::call_command)
         .def("publish_variable", &Module::publish_variable)
         .def("implement_command", &Module::implement_command)
@@ -153,6 +155,12 @@ PYBIND11_MODULE(everestpy, m) {
         .def("subscribe_error", &Module::subscribe_error)
         .def("subscribe_all_errors", &Module::subscribe_all_errors)
         .def("get_error_state_monitor_req", &Module::get_error_state_monitor_req)
+        .def("set_config_value", &Module::set_config_value, py::arg("module_id"), py::arg("param_name"),
+             py::arg("value"), py::arg("impl_id") = py::none())
+        .def("get_config_value", &Module::get_config_value, py::arg("module_id"), py::arg("param_name"),
+             py::arg("impl_id") = py::none())
+        .def("register_config_change_handler", &Module::register_config_change_handler, py::arg("impl_id"),
+             py::arg("param_name"), py::arg("handler"))
         .def_property_readonly("fulfillments", &Module::get_fulfillments)
         .def_property_readonly("implementations", &Module::get_implementations)
         .def_property_readonly("requirements", &Module::get_requirements)
@@ -169,5 +177,5 @@ PYBIND11_MODULE(everestpy, m) {
     log_submodule.def("error", [](const std::string& message) { EVLOG_error << message; });
     log_submodule.def("critical", [](const std::string& message) { EVLOG_critical << message; });
 
-    m.attr("__version__") = "0.25.0";
+    m.attr("__version__") = "0.26.0";
 }

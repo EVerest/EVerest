@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <iso15118/io/stream_view.hpp>
@@ -16,6 +16,8 @@ enum class Type {
     AuthorizationSetupRes,
     AuthorizationReq,
     AuthorizationRes,
+    CertificateInstallationReq,
+    CertificateInstallationRes,
     ServiceDiscoveryReq,
     ServiceDiscoveryRes,
     ServiceDetailReq,
@@ -42,6 +44,14 @@ enum class Type {
     AC_ChargeParameterDiscoveryRes,
     AC_ChargeLoopReq,
     AC_ChargeLoopRes,
+    DER_AC_ChargeParameterDiscoveryReq, // TODO(SL): Add IEC
+    DER_AC_ChargeParameterDiscoveryRes,
+    DER_AC_ChargeLoopReq,
+    DER_AC_ChargeLoopRes,
+    DER_SAE_AC_ChargeParameterDiscoveryReq,
+    DER_SAE_AC_ChargeParameterDiscoveryRes,
+    DER_SAE_AC_ChargeLoopReq,
+    DER_SAE_AC_ChargeLoopRes,
 };
 
 template <typename T> struct TypeTrait {
@@ -55,10 +65,6 @@ template <typename MessageType> size_t serialize(const MessageType&, const io::S
 //
 // definitions of type traits
 //
-#ifdef CREATE_TYPE_TRAIT
-#define CREATE_TYPE_TRAIT_PUSHED CREATE_TYPE_TRAIT
-#endif
-
 #define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
     struct struct_name;                                                                                                \
     template <> struct TypeTrait<struct_name> {                                                                        \
@@ -73,6 +79,8 @@ CREATE_TYPE_TRAIT(AuthorizationSetupRequest, AuthorizationSetupReq);
 CREATE_TYPE_TRAIT(AuthorizationSetupResponse, AuthorizationSetupRes);
 CREATE_TYPE_TRAIT(AuthorizationRequest, AuthorizationReq);
 CREATE_TYPE_TRAIT(AuthorizationResponse, AuthorizationRes);
+CREATE_TYPE_TRAIT(CertificateInstallationRequest, CertificateInstallationReq);
+CREATE_TYPE_TRAIT(CertificateInstallationResponse, CertificateInstallationRes);
 CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
 CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
 CREATE_TYPE_TRAIT(ServiceDetailRequest, ServiceDetailReq);
@@ -99,11 +107,16 @@ CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, AC_ChargeParameterDiscover
 CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryResponse, AC_ChargeParameterDiscoveryRes);
 CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, AC_ChargeLoopReq);
 CREATE_TYPE_TRAIT(AC_ChargeLoopResponse, AC_ChargeLoopRes);
+CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryRequest, DER_AC_ChargeParameterDiscoveryReq); // TODO(SL): Add IEC
+CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryResponse, DER_AC_ChargeParameterDiscoveryRes);
+CREATE_TYPE_TRAIT(DER_AC_ChargeLoopRequest, DER_AC_ChargeLoopReq);
+CREATE_TYPE_TRAIT(DER_AC_ChargeLoopResponse, DER_AC_ChargeLoopRes);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryRequest, DER_SAE_AC_ChargeParameterDiscoveryReq);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryResponse, DER_SAE_AC_ChargeParameterDiscoveryRes);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopRequest, DER_SAE_AC_ChargeLoopReq);
+CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopResponse, DER_SAE_AC_ChargeLoopRes);
 
-#ifdef CREATE_TYPE_TRAIT_PUSHED
-#define CREATE_TYPE_TRAIT CREATE_TYPE_TRAIT_PUSHED
-#else
+// header-local macro: drop it so the type-trait headers of the other protocols can redefine it
 #undef CREATE_TYPE_TRAIT
-#endif
 
 } // namespace iso15118::message_20

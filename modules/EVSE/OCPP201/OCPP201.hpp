@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -34,16 +34,40 @@
 #include <tuple>
 #include <variant>
 
-#include <device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/transaction_handler.hpp>
 #include <everest/util/async/monitor.hpp>
 #include <generated/types/evse_board_support.hpp>
 #include <ocpp/v2/charge_point.hpp>
-#include <transaction_handler.hpp>
 
 using EventQueue =
     std::map<int32_t,
              std::queue<std::variant<types::evse_manager::SessionEvent, Everest::error::Error, ocpp::v2::MeterValue,
                                      types::system::FirmwareUpdateStatus, types::system::LogStatus>>>;
+namespace module {
+
+// Shared OCPP module support code lives in lib/everest/ocpp_module_common;
+// pull the names into the module namespace to keep call sites unchanged.
+namespace conversions = ocpp_module_common::conversions;
+namespace device_model = ocpp_module_common::device_model;
+using ocpp_module_common::CHARGING_STATION_COMPONENT_NAME;
+using ocpp_module_common::CONNECTOR_COMPONENT_NAME;
+using ocpp_module_common::EVSE_COMPONENT_NAME;
+using ocpp_module_common::EVSE_MANAGER_INOPERATIVE_ERROR;
+using ocpp_module_common::get_component_from_error;
+using ocpp_module_common::get_event_data;
+using ocpp_module_common::load_mrec_error_map_overrides;
+using ocpp_module_common::MREC_ERROR_MAP;
+using ocpp_module_common::MREC_ERROR_MAP_TYPE;
+using ocpp_module_common::PROBLEM_VARIABLE_NAME;
+using ocpp_module_common::TransactionData;
+using ocpp_module_common::TransactionHandler;
+using ocpp_module_common::TxEvent;
+using ocpp_module_common::TxEventEffect;
+using ocpp_module_common::TxStartStopPoint;
+} // namespace module
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -62,6 +86,7 @@ struct Conf {
     std::string RequestCompositeScheduleUnit;
     int DelayOcppStart;
     int ResetStopDelay;
+    std::string CustomMrecErrorMapPath;
 };
 
 class OCPP201 : public Everest::ModuleBase {
@@ -131,6 +156,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
@@ -153,7 +179,12 @@ private:
     int32_t event_id_counter{0};
     std::mutex session_event_mutex;
     std::atomic_bool started{false};
+    // Serialize + coalesce the charging-schedule recompute: it fires concurrently from the interval timer,
+    // the libocpp message thread, and the K28 on_deadline/reaper callbacks.
+    std::mutex recompute_mutex;
+    std::atomic<bool> recompute_pending{false};
     EventQueue event_queue;
+    MREC_ERROR_MAP_TYPE mrec_error_map;
     void init_evse_maps();
     void init_evse_subscriptions();
     void init_module_configuration();
@@ -191,10 +222,10 @@ private:
     void process_reservation_end(const int32_t evse_id, const int32_t connector_id);
 
     /// \brief This function publishes the given \p composite_schedules via the ocpp interface
-    void publish_charging_schedules(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules);
+    void publish_charging_schedules(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
 
     /// \brief This function applies given \p composite_schedules for each connected evse_energy_sink
-    void set_external_limits(const std::vector<ocpp::v2::CompositeSchedule>& composite_schedules);
+    void set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules);
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 

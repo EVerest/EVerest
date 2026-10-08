@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
 #include <atomic>
@@ -7,6 +7,7 @@
 #include <condition_variable>
 #include <cstdint>
 #include <mutex>
+#include <set>
 #include <stdexcept>
 #include <thread>
 #include <utility>
@@ -24,6 +25,7 @@ using em580::registers::MODBUS_BASE_ADDRESS;
 using em580::registers::MODBUS_DEVICE_STATE_ADDRESS;
 using em580::registers::MODBUS_FIRMWARE_COMMUNICATION_MODULE_ADDRESS;
 using em580::registers::MODBUS_FIRMWARE_MEASURE_MODULE_ADDRESS;
+using em580::registers::MODBUS_IDENTIFICATION_CODE_ADDRESS;
 using em580::registers::MODBUS_OCMF_CHARGING_POINT_ID_START_ADDRESS;
 using em580::registers::MODBUS_OCMF_CHARGING_POINT_ID_TYPE_ADDRESS;
 using em580::registers::MODBUS_OCMF_CHARGING_POINT_ID_WORD_COUNT;
@@ -53,12 +55,15 @@ using em580::registers::MODBUS_OCMF_TARIFF_TEXT_WORD_COUNT;
 using em580::registers::MODBUS_OCMF_TIME_SYNC_STATUS_ADDRESS;
 using em580::registers::MODBUS_OCMF_TRANSACTION_ID_GENERATION_ADDRESS;
 using em580::registers::MODBUS_PRODUCTION_YEAR_ADDRESS;
+using em580::registers::MODBUS_PRODUCTION_YEAR_ADDRESS_EM300_SERIES;
 using em580::registers::MODBUS_PUBLIC_KEY_ADDRESS;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_ADDRESS;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_WORD_COUNT_256;
 using em580::registers::MODBUS_PUBLIC_KEY_DER_WORD_COUNT_384;
 using em580::registers::MODBUS_REAL_TIME_ENERGY_ADDRESS;
+using em580::registers::MODBUS_REAL_TIME_ENERGY_ADDRESS_EM300_SERIES;
 using em580::registers::MODBUS_REAL_TIME_ENERGY_COUNT;
+using em580::registers::MODBUS_REAL_TIME_ENERGY_COUNT_EM300_SERIES;
 using em580::registers::MODBUS_REAL_TIME_VALUES_ADDRESS;
 using em580::registers::MODBUS_REAL_TIME_VALUES_COUNT;
 using em580::registers::MODBUS_SERIAL_NUMBER_REGISTER_COUNT;
@@ -117,10 +122,15 @@ constexpr std::size_t PHASE_SEQUENCE = 100; // 300051 (0032h)
 // Frequency register (INT16, 2 bytes)
 constexpr std::size_t FREQUENCY = 102; // 300052 (0033h)
 
-// Energy registers (INT32, 4 bytes each) - within extended read range
-// (300001-300080)
+// Energy registers (INT64, 8 bytes each) - within extended read range
 constexpr std::size_t ENERGY_IMPORT = 0;  // 301281 (0500h) - kWh (+) TOT, byte offset 0 (52*2)
 constexpr std::size_t ENERGY_EXPORT = 56; // 301309 (051Ch) - kWh (-) TOT, byte offset 28 (28*2)
+
+// Energy registers (INT32, 4 bytes each) — Table 2.5-1 EM/ET300 Modbus (rev 2.17)
+constexpr std::size_t ENERGY_IMPORT_INT = 0;  // 301025 (0400h) - kWh (+) TOT INT, byte offset 0 (0*2)
+constexpr std::size_t ENERGY_IMPORT_DEC = 4;  // 301027 (0402h) - kWh (+) TOT DEC, byte offset 4 (2*2)
+constexpr std::size_t ENERGY_EXPORT_INT = 16; // 301033 (0408h) - kWh (-) TOT INT, byte offset 16 (8*2)
+constexpr std::size_t ENERGY_EXPORT_DEC = 20; // 301035 (040Ah) - kWh (-) TOT DEC, byte offset 20 (10*2)
 } // namespace Offsets
 
 // Scaling factors from Modbus document
@@ -131,11 +141,82 @@ constexpr float POWER = 0.1F;          // Value weight: Watt*10
 constexpr float REACTIVE_POWER = 0.1F; // Value weight: var*10
 constexpr float FREQUENCY = 0.1F;      // Value weight: Hz*10
 constexpr float TEMPERATURE = 0.1F;    // Value weight: Temperature*10
+constexpr float ENERGY_INT = 1000.0F;  // Value weight: kWh*1
+constexpr float ENERGY_DEC = 1.0F;     // Value weight: kWh*1000
 } // namespace Factors
 
 namespace module::main {
 
+namespace {
+
+/// Build a stop-transaction reply with explicit fields (avoids brace-init field-order mistakes vs
+/// types/powermeter.yaml).
+[[nodiscard]] types::powermeter::TransactionStopResponse
+make_transaction_stop_response(types::powermeter::TransactionRequestStatus status) {
+    types::powermeter::TransactionStopResponse response;
+    response.status = status;
+    return response;
+}
+
+[[nodiscard]] types::powermeter::TransactionStopResponse
+make_transaction_stop_response(types::powermeter::TransactionRequestStatus status, std::string error) {
+    types::powermeter::TransactionStopResponse response;
+    response.status = status;
+    response.error = std::move(error);
+    return response;
+}
+
+/// Build a start-transaction reply with explicit fields (types/powermeter.yaml: status, error, min/max stop time).
+[[nodiscard]] types::powermeter::TransactionStartResponse
+make_transaction_start_response(types::powermeter::TransactionRequestStatus status) {
+    types::powermeter::TransactionStartResponse response;
+    response.status = status;
+    return response;
+}
+
+[[nodiscard]] types::powermeter::TransactionStartResponse
+make_transaction_start_response(types::powermeter::TransactionRequestStatus status, std::string error) {
+    types::powermeter::TransactionStartResponse response;
+    response.status = status;
+    response.error = std::move(error);
+    return response;
+}
+
+// Each driver-level Modbus attempt may already block for ~1.5 s at SerialCommHub (default: 3 attempts ×
+// 500 ms initial_timeout_ms). We cannot tune that per device. Too large communication_retry_count and/or
+// communication_retry_delay_ms can then treat a power outage (meter rebooting ~6 s) as a minor fault: the
+// driver keeps retrying instead of raising CommunicationFault and reconfiguring.
+constexpr std::int64_t LOW_LEVEL_MODBUS_TIMEOUT_MS = 1500;
+constexpr std::int64_t CGEM_TYPICAL_REBOOT_TIME_MS = 6000;
+constexpr std::int64_t CGEM_REBOOT_COMM_RETRY_BUDGET_MS = CGEM_TYPICAL_REBOOT_TIME_MS * 3 / 4; // 75%, 25% margin
+
+void warn_if_comm_retry_delay_exceeds_reboot_budget(int retry_count, int retry_delay_ms) {
+    if (retry_count <= 0) {
+        return;
+    }
+
+    const auto total_backoff_ms =
+        static_cast<std::int64_t>(retry_count) * LOW_LEVEL_MODBUS_TIMEOUT_MS +
+        static_cast<std::int64_t>(std::max(retry_count - 1, 0)) * static_cast<std::int64_t>(retry_delay_ms);
+    if (total_backoff_ms <= CGEM_REBOOT_COMM_RETRY_BUDGET_MS) {
+        return;
+    }
+
+    EVLOG_warning << "communication_retry_count (" << retry_count << ") and communication_retry_delay_ms ("
+                  << retry_delay_ms << ") can defer CommunicationFault for up to ~" << total_backoff_ms
+                  << " ms, which exceeds 75% of the typical EM580 reboot time (~" << CGEM_REBOOT_COMM_RETRY_BUDGET_MS
+                  << " ms). A power outage may look like a transient fault instead of triggering "
+                     "reconfigure. Consider lowering these values.";
+}
+
+} // namespace
+
 powermeterImpl::~powermeterImpl() {
+    shutdown();
+}
+
+void powermeterImpl::shutdown() {
+    // idempotent, so it does not matter whether the framework got here first or the destructor did
     stop_requested_.store(true);
     stop_cv_.notify_all();
     if (live_measure_thread_.joinable()) {
@@ -147,7 +228,7 @@ powermeterImpl::~powermeterImpl() {
 }
 
 void powermeterImpl::init() {
-    m_pending_closed_transaction = false;
+    m_pending_closed_transaction.store(false);
     // Set up error handler for CommunicationFault
     transport::ErrorHandler error_handler = [this](const std::string& error_message) {
         // Check if error is already active to avoid duplicate errors
@@ -175,6 +256,9 @@ void powermeterImpl::init() {
         config.communication_retry_delay_ms,
     };
 
+    warn_if_comm_retry_delay_exceeds_reboot_budget(config.communication_retry_count,
+                                                   config.communication_retry_delay_ms);
+
     const transport::SerialCommHubTransport::TransportConfig transport_config{
         config.powermeter_device_id,
         MODBUS_BASE_ADDRESS,
@@ -186,7 +270,7 @@ void powermeterImpl::init() {
 }
 
 void powermeterImpl::read_signature_config() {
-    EVLOG_info << "Read the signature public key...";
+    EVLOG_debug << "Read the signature public key...";
 
     enum SignatureType {
         SIGNATURE_256_BIT,
@@ -258,8 +342,23 @@ void powermeterImpl::read_signature_config() {
     publish_public_key_ocmf(m_public_key_hex);
 }
 
+void powermeterImpl::read_identification() {
+    static const std::set<std::uint16_t> em300_series_ids = {331, 332, 335, 336, 340, 341, 345, 346, 355};
+
+    // Read the identification code to detect meter model
+    transport::DataVector cgc_id_data = p_modbus_transport->fetch(MODBUS_IDENTIFICATION_CODE_ADDRESS, 1);
+    std::uint16_t cgc_id = modbus_utils::to_uint16(cgc_id_data, modbus_utils::ByteOffset{0});
+
+    EVLOG_info << "Carlo Gavazzi Controls identification code: " << (int)cgc_id;
+
+    // check for EM300/ET300 series
+    if (em300_series_ids.count(cgc_id)) {
+        m_transaction_support = false;
+    }
+}
+
 void powermeterImpl::read_firmware_versions() {
-    EVLOG_info << "Read the firmware versions...";
+    EVLOG_debug << "Read the firmware versions...";
 
     // Read measure module firmware version/revision (register 300771)
     transport::DataVector measure_fw_data = p_modbus_transport->fetch(MODBUS_FIRMWARE_MEASURE_MODULE_ADDRESS, 1);
@@ -291,29 +390,47 @@ void powermeterImpl::read_firmware_versions() {
 }
 
 void powermeterImpl::read_serial_number() {
-    EVLOG_info << "Read the serial number...";
+    EVLOG_debug << "Read the serial number...";
+
     // Read serial number (registers 320481-320487, 7 UINT16 registers = 14 bytes)
     transport::DataVector serial_data =
         p_modbus_transport->fetch(MODBUS_SERIAL_NUMBER_START_ADDRESS, MODBUS_SERIAL_NUMBER_REGISTER_COUNT);
 
-    // Convert bytes to string (serial number is stored as ASCII)
-    // Modbus returns data in big-endian format: each UINT16 register is [MSB,
-    // LSB] So for 7 registers, we get: [reg0_MSB, reg0_LSB, reg1_MSB, reg1_LSB,
-    // ...] We assume the string contains only printable characters and null
-    // terminator is correctly set or at the end
     std::string serial_str;
-    serial_str.reserve(14);
-    for (const auto& byte : serial_data) {
-        char byte_char = static_cast<char>(byte);
-        // Stop at null terminator if present
-        if (byte_char == '\0') {
-            break;
+    if (m_transaction_support) {
+        // Convert bytes to string (serial number is stored as ASCII)
+        // Modbus returns data in big-endian format: each UINT16 register is [MSB,
+        // LSB] So for 7 registers, we get: [reg0_MSB, reg0_LSB, reg1_MSB, reg1_LSB,
+        // ...] We assume the string contains only printable characters and null
+        // terminator is correctly set or at the end
+        serial_str.reserve(14);
+        for (const auto& byte : serial_data) {
+            char byte_char = static_cast<char>(byte);
+            // Stop at null terminator if present
+            if (byte_char == '\0') {
+                break;
+            }
+            serial_str += byte_char;
         }
-        serial_str += byte_char;
+    } else {
+        // on older devices like EM300 series, only the LSB is used
+        serial_str.reserve(7);
+        for (auto byte = serial_data.begin() + 1; byte < serial_data.end(); byte += 2) {
+            char byte_char = static_cast<char>(*byte);
+            // Stop at null terminator if present
+            if (byte_char == '\0') {
+                break;
+            }
+            serial_str += byte_char;
+        }
     }
 
-    // Read production year (register 320488, 1 UINT16 register)
-    transport::DataVector year_data = p_modbus_transport->fetch(MODBUS_PRODUCTION_YEAR_ADDRESS, 1);
+    // production year register moved in newer devices:
+    // register 320488 on newer device like EM580,
+    // register 320497 on EM300 series
+    // we coupled it here to the transaction support to keep things simple
+    transport::DataVector year_data = p_modbus_transport->fetch(
+        m_transaction_support ? MODBUS_PRODUCTION_YEAR_ADDRESS : MODBUS_PRODUCTION_YEAR_ADDRESS_EM300_SERIES, 1);
     std::uint16_t production_year = modbus_utils::to_uint16(year_data, modbus_utils::ByteOffset{0});
 
     // Combine serial number and production year with a dot separator
@@ -322,8 +439,7 @@ void powermeterImpl::read_serial_number() {
 }
 
 void powermeterImpl::read_transaction_state_and_id() {
-    transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
-    std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
+    const std::uint16_t ocmf_state = read_ocmf_state();
 
     // Read transaction id from the tariff text (6900h, TT) which we write as:
     // "<tariff_text><=><transaction_id>".
@@ -335,38 +451,96 @@ void powermeterImpl::read_transaction_state_and_id() {
         const auto tx_id_opt =
             ocmf::extract_transaction_id_from_tariff_text(tt_str, powermeterImpl::TARIFF_TEXT_TRANSACTION_ID_MARKER);
         if (tx_id_opt.has_value()) {
-            m_transaction_id = *tx_id_opt;
-            EVLOG_info << "Recovered transaction id from tariff text (6900h): " << m_transaction_id;
+            {
+                std::lock_guard<std::mutex> lock(m_transaction_mutex);
+                m_transaction_id = *tx_id_opt;
+            }
+            EVLOG_info << "Recovered transaction id from tariff text (6900h): " << *tx_id_opt;
         }
     } catch (const std::exception& e) {
         EVLOG_warning << "Failed to read tariff text (6900h): " << e.what();
     }
 
+    apply_ocmf_state_on_configure(ocmf_state);
+}
+
+std::uint16_t powermeterImpl::read_ocmf_state() {
+    transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
+    return modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
+}
+
+void powermeterImpl::apply_ocmf_state_on_configure(std::uint16_t ocmf_state) {
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
-        m_pending_closed_transaction = true;
+        m_pending_closed_transaction.store(true);
         EVLOG_info << "Detected a closed transaction with data pending to be read";
     }
     if (ocmf_state == MODBUS_OCMF_STATE_RUNNING) {
+        std::string transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            transaction_id = m_transaction_id;
+        }
         EVLOG_info << "Detected a running transaction, waiting for a stop transaction command with transaction id: "
-                   << m_transaction_id << " or an empty transaction id";
+                   << transaction_id << " or an empty transaction id";
         m_transaction_active.store(true);
+    }
+    monitor_transaction_ocmf_state(ocmf_state);
+}
+
+void powermeterImpl::monitor_transaction_ocmf_state(std::uint16_t ocmf_state) {
+    if (!config.monitor_transaction_state) {
+        return;
+    }
+    if (!m_transaction_active.load()) {
+        return;
+    }
+    if (ocmf_state != MODBUS_OCMF_STATE_READY) {
+        return;
+    }
+
+    m_pending_closed_transaction.store(true);
+    std::string transaction_id;
+    {
+        std::lock_guard<std::mutex> lock(m_transaction_mutex);
+        transaction_id = m_transaction_id;
+    }
+    const std::string error_description =
+        fmt::format("OCMF transaction closed unexpectedly on device (state READY) while transaction {} is still active",
+                    transaction_id);
+    EVLOG_error << error_description;
+    if (error_state_monitor != nullptr && error_factory != nullptr &&
+        !error_state_monitor->is_error_active("powermeter/VendorError", "OcmfTransactionClosed")) {
+        auto error = error_factory->create_error("powermeter/VendorError", "OcmfTransactionClosed", error_description);
+        raise_error(error);
+    }
+}
+
+void powermeterImpl::clear_ocmf_transaction_closed_error() {
+    if (error_state_monitor != nullptr &&
+        error_state_monitor->is_error_active("powermeter/VendorError", "OcmfTransactionClosed")) {
+        clear_error("powermeter/VendorError", "OcmfTransactionClosed");
     }
 }
 
 void powermeterImpl::configure_device() {
     EVLOG_info << "Configure the device...";
+    p_modbus_transport->enter_initial_connection_mode();
+    read_identification();
     read_firmware_versions();
     read_serial_number();
-    read_signature_config();
-    // need a delay here because if the device comes from a power outage, the time
-    // sync will fail
-    std::this_thread::sleep_for(std::chrono::seconds(2));
-    // Initial time synchronization
-    synchronize_time();
-    // Set timezone offset
-    set_timezone(config.timezone_offset_minutes);
-    // see if there is a pending closed transaction that needs to be read
-    read_transaction_state_and_id();
+    if (m_transaction_support) {
+        read_signature_config();
+        // need a delay here because if the device comes from a power outage, the time
+        // sync will fail
+        std::this_thread::sleep_for(std::chrono::seconds(2));
+        // Initial time synchronization
+        synchronize_time();
+        // Set timezone offset
+        set_timezone(config.timezone_offset_minutes);
+        // see if there is a pending closed transaction that needs to be read
+        read_transaction_state_and_id();
+    }
+    p_modbus_transport->mark_normal_operation_mode();
     EVLOG_info << "Device configured";
 }
 
@@ -374,22 +548,27 @@ void powermeterImpl::ready() {
     // Retry logic is now handled by SerialCommHubTransport
     live_measure_thread_ = std::thread([this] {
         std::atomic_bool device_not_configured = true;
-        auto last_device_state_read = std::chrono::steady_clock::time_point{};
+        auto last_state_read = std::chrono::steady_clock::time_point{};
         while (!stop_requested_.load()) {
             const auto measurement_interval = std::chrono::milliseconds{config.live_measurement_interval_ms};
-            const auto device_state_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
+            const auto state_read_interval = std::chrono::milliseconds{config.device_state_read_interval_ms};
             try {
                 if (device_not_configured.load()) {
                     configure_device();
                     device_not_configured = false;
-                    last_device_state_read = std::chrono::steady_clock::time_point{}; // force state read
+                    last_state_read = std::chrono::steady_clock::time_point{}; // force state read
                 }
                 read_powermeter_values();
-                const auto now = std::chrono::steady_clock::now();
-                if (last_device_state_read == std::chrono::steady_clock::time_point{} ||
-                    (now - last_device_state_read) >= device_state_interval) {
-                    read_device_state();
-                    last_device_state_read = now;
+                if (m_transaction_support) {
+                    const auto now = std::chrono::steady_clock::now();
+                    if (last_state_read == std::chrono::steady_clock::time_point{} ||
+                        (now - last_state_read) >= state_read_interval) {
+                        read_device_state();
+                        if (config.monitor_transaction_state && m_transaction_active.load()) {
+                            monitor_transaction_ocmf_state(read_ocmf_state());
+                        }
+                        last_state_read = now;
+                    }
                 }
             } catch (const std::invalid_argument& e) {
                 EVLOG_error << "Configuration error (will not retry): " << e.what();
@@ -397,6 +576,7 @@ void powermeterImpl::ready() {
             } catch (const std::exception& e) {
                 EVLOG_error << "Failed to communicate with the device, try again in "
                             << config.communication_error_pause_delay_s << " seconds: " << e.what();
+                p_modbus_transport->enter_initial_connection_mode();
                 device_not_configured = true;
                 {
                     std::unique_lock<std::mutex> lock(stop_mutex_);
@@ -494,12 +674,11 @@ std::string powermeterImpl::read_ocmf_file() {
 }
 
 void powermeterImpl::clear_transaction_states() {
-    transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
-    std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
+    const std::uint16_t ocmf_state = read_ocmf_state();
 
     if (ocmf_state == MODBUS_OCMF_STATE_READY) {
-        EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
-        EVLOG_info << "Cleanup necessary ...";
+        EVLOG_debug << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
+        EVLOG_debug << "Cleanup necessary ...";
         read_ocmf_file();
         // write 0 to the OCMF state to confirm the reading of the OCMF file
         std::vector<std::uint16_t> ocmf_confirmation_data = {MODBUS_OCMF_STATE_NOT_READY};
@@ -510,6 +689,11 @@ void powermeterImpl::clear_transaction_states() {
 
 types::powermeter::TransactionStartResponse
 powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq) {
+    if (not m_transaction_support) {
+        EVLOG_info << "start transaction rejected: meter model does not support transactions";
+        return make_transaction_start_response(types::powermeter::TransactionRequestStatus::NOT_SUPPORTED,
+                                               "This meter model does not support transactions.");
+    }
     try {
         EVLOG_info << "Starting transaction with transaction id: " << treq.transaction_id
                    << " evse id: " << treq.evse_id << " identification status: " << treq.identification_status
@@ -520,25 +704,25 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
                           treq.identification_level.value_or(types::powermeter::OCMFIdentificationLevel::NONE))
                    << " identification data: " << treq.identification_data.value_or("")
                    << " tariff text: " << treq.tariff_text.value_or("none");
-        // Check OCMF state and ensure it's NOT_READY before starting a transaction
-        // According to the Modbus document, the OCMF state must be NOT_READY (0) to
-        // start a new transaction
-        transport::DataVector state_data = p_modbus_transport->fetch(MODBUS_OCMF_STATE_ADDRESS, 1);
-        std::uint16_t ocmf_state = modbus_utils::to_uint16(state_data, modbus_utils::ByteOffset{0});
+        // If OCMF is not NOT_READY, clear stale device state before starting (see docs).
+        // For READY, clear_transaction_states() confirms the pending file on the device
+        // but does not return it — stop_transaction should be used when billing data matters.
+        const std::uint16_t ocmf_state = read_ocmf_state();
         EVLOG_info << "Current OCMF state: " << ocmf_state_to_string(ocmf_state) << "(" << ocmf_state << ")";
 
         if (ocmf_state != MODBUS_OCMF_STATE_NOT_READY) {
-            EVLOG_warning << "Spurious transaction detected, clearing transaction states ...";
+            EVLOG_warning << "Non-NOT_READY OCMF state at start, clearing device state before new transaction ...";
             clear_transaction_states();
-            m_pending_closed_transaction = false;
-            return {types::powermeter::TransactionRequestStatus::OK};
+            m_pending_closed_transaction.store(false);
+            m_transaction_active.store(false);
+            clear_ocmf_transaction_closed_error();
         }
 
         // Write transaction registers first
-        EVLOG_info << "Write transaction registers...";
+        EVLOG_debug << "Write transaction registers...";
         write_transaction_registers(treq);
 
-        EVLOG_info << "Write session modality ... to charging vehicle";
+        EVLOG_debug << "Write session modality ... to charging vehicle";
         std::vector<std::uint16_t> session_modality_data = {MODBUS_OCMF_SESSION_MODALITY_CHARGING_VEHICLE};
         p_modbus_transport->write_multiple_registers(MODBUS_OCMF_SESSION_MODALITY_ADDRESS, session_modality_data);
 
@@ -549,40 +733,53 @@ powermeterImpl::handle_start_transaction(types::powermeter::TransactionReq& treq
 
         // Track local state (only used internally, not in device dump)
         m_transaction_active.store(true);
-        m_transaction_id = treq.transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            m_transaction_id = treq.transaction_id;
+        }
+        clear_ocmf_transaction_closed_error();
 
         // Capture signed meter value for transaction start (returned on stop)
         m_start_signed_meter_value.emplace(read_signed_meter_value());
 
-        return {types::powermeter::TransactionRequestStatus::OK};
+        return make_transaction_start_response(types::powermeter::TransactionRequestStatus::OK);
     } catch (const std::exception& e) {
-        EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
-        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't start transaction"};
+        EVLOG_error << e.what();
+        return make_transaction_start_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                               fmt::format("can't start transaction: {}", e.what()));
     }
 }
 
 types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transaction(std::string& transaction_id) {
+    if (not m_transaction_support) {
+        EVLOG_info << "stop transaction rejected: meter model does not support transactions";
+        return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::NOT_SUPPORTED,
+                                              "This meter model does not support transactions.");
+    }
+
     EVLOG_info << "Stopping transaction with transaction id: " << (transaction_id.empty() ? "empty" : transaction_id);
     // if the transaction id is empty, we need to clean up the transaction states
     // we do our best to clean up the transaction states
     if (transaction_id.empty()) {
-        EVLOG_info << "Cleaning up the transaction request.";
+        EVLOG_debug << "Cleaning up the transaction request.";
         try {
-            if (!m_pending_closed_transaction and m_transaction_active.load()) {
+            if (!m_pending_closed_transaction.load() and m_transaction_active.load()) {
                 std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
                 p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
                 EVLOG_info << "Transaction " << transaction_id << " stopped";
             }
-            m_pending_closed_transaction = false;
+            m_pending_closed_transaction.store(false);
             clear_transaction_states();
         } catch (const std::exception& e) {
-            EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
+            EVLOG_error << e.what();
         }
-        m_pending_closed_transaction = false;
-        return {types::powermeter::TransactionRequestStatus::OK, {}, {}};
+        m_pending_closed_transaction.store(false);
+        m_transaction_active.store(false);
+        clear_ocmf_transaction_closed_error();
+        return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::OK);
     }
     try {
-        if (m_pending_closed_transaction) {
+        if (m_pending_closed_transaction.load()) {
             // the received transaction id is different from the current transaction
             // id since there is a pending closed transaction, I assume a power loss
             // occurred we need to check if the transaction id is equal to the
@@ -593,68 +790,83 @@ types::powermeter::TransactionStopResponse powermeterImpl::handle_stop_transacti
             const auto ocmf_file_transaction_id_opt = ocmf::extract_transaction_id_from_ocmf_record(ocmf_file);
             if (!ocmf_file_transaction_id_opt.has_value()) {
                 EVLOG_error << "Failed to extract transaction id from OCMF file TT field";
-                return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
-                        {},
-                        {},
-                        "Failed to extract transaction id from OCMF file"};
+                return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                                      "Failed to extract transaction id from OCMF file");
             }
             const std::string& ocmf_file_transaction_id = *ocmf_file_transaction_id_opt;
             EVLOG_info << "OCMF file transaction id: " << ocmf_file_transaction_id;
             if (ocmf_file_transaction_id != transaction_id) {
-                return {
-                    types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "Transaction id mismatch"};
+                return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                                      "Transaction id mismatch");
             }
             EVLOG_info << "Transaction id matches, sending successful transaction "
                           "stop response with OCMF file";
-            m_pending_closed_transaction = false;
+            m_pending_closed_transaction.store(false);
+            m_transaction_active.store(false);
             auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_file, "", "OCMF"};
             signed_meter_value.public_key.emplace(m_public_key_hex);
             ocmf::confirm_file_read(*p_modbus_transport);
+            clear_ocmf_transaction_closed_error();
             return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
                                                               {}, // Empty start_signed_meter_value
                                                               signed_meter_value};
-        } else if (m_transaction_id == transaction_id) {
-            EVLOG_info << "Sending the end transaction command to the device";
-            // Write 'E' command to end transaction (Table 4.35, register 328737)
-            std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
-            p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
-            EVLOG_info << "Transaction " << transaction_id << " stopped";
-            m_transaction_active.store(false);
-
-            // check if the OCMF state is ready (Table 4.36, register 328742)
-            if (!ocmf::wait_for_ready(*p_modbus_transport)) {
-                return {
-                    types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't stop transaction"};
-            }
-
-            // For Eichrecht, return the OCMF file as the signed meter value report.
-            const std::string ocmf_data = read_ocmf_file();
-            auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_data, "", "OCMF"};
-            signed_meter_value.public_key.emplace(m_public_key_hex);
-
-            // write 0 to the OCMF state to confirm the reading of the OCMF file
-            ocmf::confirm_file_read(*p_modbus_transport);
-            m_pending_closed_transaction = false;
-            return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
-                                                              m_start_signed_meter_value, signed_meter_value};
-        } else {
-            EVLOG_error << "No open transaction or unknown transaction id: " << transaction_id;
-            return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
-                    {},
-                    {},
-                    "No open transaction or unknown transaction id"};
         }
+
+        std::string active_transaction_id;
+        {
+            std::lock_guard<std::mutex> lock(m_transaction_mutex);
+            active_transaction_id = m_transaction_id;
+        }
+        if (active_transaction_id != transaction_id) {
+            EVLOG_error << "No open transaction or unknown transaction id: " << transaction_id;
+            return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                                  "No open transaction or unknown transaction id");
+        }
+
+        EVLOG_info << "Sending the end transaction command to the device";
+        // Write 'E' command to end transaction (Table 4.35, register 328737)
+        std::vector<std::uint16_t> command_data = {MODBUS_OCMF_COMMAND_END};
+        p_modbus_transport->write_multiple_registers(MODBUS_OCMF_COMMAND_ADDRESS, command_data);
+        EVLOG_info << "Transaction " << transaction_id << " stopped";
+        m_transaction_active.store(false);
+
+        // check if the OCMF state is ready (Table 4.36, register 328742)
+        if (!ocmf::wait_for_ready(*p_modbus_transport)) {
+            return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                                  "can't stop transaction: OCMF did not reach ready state");
+        }
+
+        // For Eichrecht, return the OCMF file as the signed meter value report.
+        const std::string ocmf_data = read_ocmf_file();
+        auto signed_meter_value = types::units_signed::SignedMeterValue{ocmf_data, "", "OCMF"};
+        signed_meter_value.public_key.emplace(m_public_key_hex);
+
+        // write 0 to the OCMF state to confirm the reading of the OCMF file
+        ocmf::confirm_file_read(*p_modbus_transport);
+        m_pending_closed_transaction.store(false);
+        clear_ocmf_transaction_closed_error();
+        return types::powermeter::TransactionStopResponse{types::powermeter::TransactionRequestStatus::OK,
+                                                          m_start_signed_meter_value, signed_meter_value};
     } catch (const std::exception& e) {
-        EVLOG_error << __PRETTY_FUNCTION__ << " Error: " << e.what() << std::endl;
-        return {types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, "can't stop transaction"};
+        EVLOG_error << e.what();
+        return make_transaction_stop_response(types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR,
+                                              fmt::format("can't stop transaction: {}", e.what()));
     }
 }
 
 void powermeterImpl::read_powermeter_values() {
-    // Read a compact range starting at 300001 containing all instantaneous values we use
-    // up to 300052 (frequency). Energy totals are read separately from 301281+ (INT64, Wh).
-    transport::DataVector data =
-        p_modbus_transport->fetch(MODBUS_REAL_TIME_VALUES_ADDRESS, MODBUS_REAL_TIME_VALUES_COUNT);
+    transport::DataVector data;
+
+    if (m_transaction_support) {
+        // Read a compact range starting at 300001 containing all instantaneous values we use
+        // up to 300052 (frequency). Energy totals are read separately from 301281+ (INT64, Wh).
+        data = p_modbus_transport->fetch(MODBUS_REAL_TIME_VALUES_ADDRESS, MODBUS_REAL_TIME_VALUES_COUNT);
+    } else {
+        // older models/firmwares are nasty when reading the whole block, so we split the request manually
+        data = p_modbus_transport->fetch(MODBUS_REAL_TIME_VALUES_ADDRESS, MODBUS_REAL_TIME_VALUES_COUNT - 2);
+        auto data2 = p_modbus_transport->fetch(MODBUS_REAL_TIME_VALUES_ADDRESS + MODBUS_REAL_TIME_VALUES_COUNT - 2, 2);
+        data.insert(data.end(), data2.begin(), data2.end());
+    }
 
     types::powermeter::Powermeter powermeter{};
     powermeter.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
@@ -739,36 +951,73 @@ void powermeterImpl::read_powermeter_values() {
         powermeter.phase_seq_error = false; // L1-L2-L3 is correct (clockwise)
     }
 
-    transport::DataVector dataEnergy =
-        p_modbus_transport->fetch(MODBUS_REAL_TIME_ENERGY_ADDRESS, MODBUS_REAL_TIME_ENERGY_COUNT);
+    if (m_transaction_support) {
+        transport::DataVector dataEnergy =
+            p_modbus_transport->fetch(MODBUS_REAL_TIME_ENERGY_ADDRESS, MODBUS_REAL_TIME_ENERGY_COUNT);
 
-    // Energy import: register 301281 (kWh (+) TOT) - INT64, 4 words
-    // Spec (Table 4.3): value weight is Wh.
-    // Note: energy_Wh_import is a required field, not optional
-    powermeter.energy_Wh_import.total =
-        static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT}));
+        // Energy import: register 301281 (kWh (+) TOT) - INT64, 4 words
+        // Spec (Table 4.3): value weight is Wh.
+        // Note: energy_Wh_import is a required field, not optional
+        powermeter.energy_Wh_import.total =
+            static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT}));
 
-    // Energy export: register 301309 (kWh (-) TOT) - INT64, 4 words
-    // Spec (Table 4.3): value weight is Wh.
-    types::units::Energy energy_Wh_export;
-    energy_Wh_export.total =
-        static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT}));
-    powermeter.energy_Wh_export = energy_Wh_export;
+        // Energy export: register 301309 (kWh (-) TOT) - INT64, 4 words
+        // Spec (Table 4.3): value weight is Wh.
+        types::units::Energy energy_Wh_export;
+        energy_Wh_export.total =
+            static_cast<float>(modbus_utils::to_int64(dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT}));
+        powermeter.energy_Wh_export = energy_Wh_export;
+    } else {
+        transport::DataVector dataEnergy = p_modbus_transport->fetch(MODBUS_REAL_TIME_ENERGY_ADDRESS_EM300_SERIES,
+                                                                     MODBUS_REAL_TIME_ENERGY_COUNT_EM300_SERIES);
 
-    // Disable for now the temperature reading, since I can't read it in the above
-    // block read Read internal temperature (INT16, weight: Temperature*10) -
-    // register 300776 (0307h) - 1 word transport::DataVector temperature_data =
-    // p_modbus_transport->fetch(MODBUS_TEMPERATURE_ADDRESS, 1);
-    // types::temperature::Temperature temperature;
-    // temperature.temperature = Factors::TEMPERATURE *
-    //                           static_cast<float>(modbus_utils::to_int16(temperature_data,
-    //                           modbus_utils::ByteOffset{0}));
-    // temperature.location = "Internal";
-    // std::vector<types::temperature::Temperature> temperatures;
-    // temperatures.push_back(temperature);
-    // powermeter.temperatures = temperatures;
+        // Energy import: register 301025 (kWh (+) TOT) - INT32, 2 words -> INT part
+        // Spec (Table 2.5.1): value weight is kWh*1.
+        // Note: energy_Wh_import is a required field, not optional
+        powermeter.energy_Wh_import.total =
+            Factors::ENERGY_INT * static_cast<float>(modbus_utils::to_int32(
+                                      dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT_INT}));
+        // Energy import: register 301027 (kWh (+) TOT) - INT32, 2 words -> DEC part
+        // Spec (Table 2.5.1): value weight is kWh*1000.
+        powermeter.energy_Wh_import.total +=
+            Factors::ENERGY_DEC * static_cast<float>(modbus_utils::to_int32(
+                                      dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_IMPORT_DEC}));
 
-    powermeter.signed_meter_value = read_signed_meter_value();
+        // Energy export: register 301033 (kWh (-) TOT) - INT32, 2 words -> INT part
+        // Spec (Table 2.5.1): value weight is kWh*1.
+        types::units::Energy energy_Wh_export;
+        energy_Wh_export.total =
+            Factors::ENERGY_INT * static_cast<float>(modbus_utils::to_int32(
+                                      dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT_INT}));
+        // Energy export: register 301035 (kWh (-) TOT) - INT32, 2 words -> DEC part
+        // Spec (Table 2.5.1): value weight is kWh*1000.
+        energy_Wh_export.total +=
+            Factors::ENERGY_DEC * static_cast<float>(modbus_utils::to_int32(
+                                      dataEnergy, modbus_utils::ByteOffset{Offsets::ENERGY_EXPORT_DEC}));
+        powermeter.energy_Wh_export = energy_Wh_export;
+    }
+
+    if (m_transaction_support) {
+        // Read internal temperature (INT16, weight: Temperature*10) - register 300776 (0307h).
+        // Not available on EM300/ET300 series (e.g. EM340).
+        try {
+            const transport::DataVector temperature_data = p_modbus_transport->fetch(MODBUS_TEMPERATURE_ADDRESS, 1);
+            types::temperature::Temperature temperature;
+            temperature.temperature =
+                Factors::TEMPERATURE *
+                static_cast<float>(modbus_utils::to_int16(temperature_data, modbus_utils::ByteOffset{0}));
+            temperature.location = "Body";
+            temperature.identification = "Powermeter";
+            mod->p_temperature_sensor->publish_temperatures({temperature});
+            std::vector<types::temperature::Temperature> temperatures;
+            temperatures.push_back(temperature);
+            powermeter.temperatures = temperatures;
+        } catch (const std::exception& e) {
+            EVLOG_debug << "Failed to read internal temperature: " << e.what();
+        }
+
+        powermeter.signed_meter_value = read_signed_meter_value();
+    }
     publish_powermeter(powermeter);
 }
 
@@ -846,14 +1095,18 @@ void powermeterImpl::synchronize_time() {
 }
 
 void powermeterImpl::set_timezone(int offset_minutes) {
-    EVLOG_info << "Try to set the timezone ... ";
-
+    EVLOG_debug << "Try to set the timezone ... ";
     // Convert to INT16 (signed 16-bit integer)
     // Timezone offset range: -1440 to +1440 minutes is validated by the manifest.
     std::int16_t offset_int16 = static_cast<std::int16_t>(offset_minutes);
     std::vector<std::uint16_t> data;
     data.push_back(static_cast<std::uint16_t>(offset_int16));
-    p_modbus_transport->write_multiple_registers(MODBUS_TIMEZONE_OFFSET_ADDRESS, data);
+    try {
+        p_modbus_transport->write_multiple_registers(MODBUS_TIMEZONE_OFFSET_ADDRESS, data);
+    } catch (const std::exception& e) {
+        EVLOG_error << "Failed to set the timezone: " << e.what();
+        throw e;
+    }
 
     EVLOG_info << "Timezone set to: " << (offset_minutes >= 0 ? "+" : "") << offset_minutes << " minutes";
 }
@@ -868,6 +1121,10 @@ void powermeterImpl::time_sync_thread() {
             stop_cv_.wait_until(lock, next_sync_time, [this] { return stop_requested_.load(); });
         }
         if (stop_requested_.load()) {
+            break;
+        }
+        if (!m_transaction_support) {
+            EVLOG_debug << "Time synchronization skipped: meter model does not support transactions";
             break;
         }
 

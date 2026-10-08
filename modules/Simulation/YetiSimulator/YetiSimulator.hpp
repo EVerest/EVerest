@@ -16,6 +16,7 @@
 #include <generated/interfaces/ev_board_support/Implementation.hpp>
 #include <generated/interfaces/evse_board_support/Implementation.hpp>
 #include <generated/interfaces/powermeter/Implementation.hpp>
+#include <generated/interfaces/temperature_sensor/Implementation.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 #include "util/errors.hpp"
@@ -27,6 +28,18 @@ namespace module {
 struct Conf {
     int connector_id;
     bool reset_powermeter_on_session_start;
+    bool dummy_meter_value_send_on_transaction_start;
+    std::string dummy_meter_value_blob_start;
+    std::string dummy_meter_value_blob_stop;
+    double ac_nominal_voltage;
+    double ac_nominal_frequency;
+    double ac_line_impedance_ohm;
+    double measurement_noise_percent;
+    double frequency_noise_percent;
+    double max_current_A_import;
+    double min_current_A_import;
+    int caps_min_current_A;
+    int caps_max_current_A;
 };
 
 class YetiSimulator : public Everest::ModuleBase {
@@ -34,6 +47,7 @@ public:
     YetiSimulator() = delete;
     YetiSimulator(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Everest::TelemetryProvider& telemetry,
                   std::unique_ptr<powermeterImplBase> p_powermeter,
+                  std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor,
                   std::unique_ptr<evse_board_supportImplBase> p_board_support,
                   std::unique_ptr<ev_board_supportImplBase> p_ev_board_support, std::unique_ptr<ac_rcdImplBase> p_rcd,
                   std::unique_ptr<connector_lockImplBase> p_connector_lock, Conf& config) :
@@ -41,6 +55,7 @@ public:
         mqtt(mqtt_provider),
         telemetry(telemetry),
         p_powermeter(std::move(p_powermeter)),
+        p_temperature_sensor(std::move(p_temperature_sensor)),
         p_board_support(std::move(p_board_support)),
         p_ev_board_support(std::move(p_ev_board_support)),
         p_rcd(std::move(p_rcd)),
@@ -50,6 +65,7 @@ public:
     Everest::MqttProvider& mqtt;
     Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<powermeterImplBase> p_powermeter;
+    const std::unique_ptr<temperature_sensorImplBase> p_temperature_sensor;
     const std::unique_ptr<evse_board_supportImplBase> p_board_support;
     const std::unique_ptr<ev_board_supportImplBase> p_ev_board_support;
     const std::unique_ptr<ac_rcdImplBase> p_rcd;
@@ -60,7 +76,29 @@ public:
     std::unique_ptr<state::ModuleState> module_state;
 
     void reset_module_state() {
-        module_state = std::make_unique<state::ModuleState>();
+        auto new_state = std::make_unique<state::ModuleState>();
+        const auto nominal_voltage = config.ac_nominal_voltage;
+        new_state->simdata_setting.voltages.L1 = nominal_voltage;
+        new_state->simdata_setting.voltages.L2 = nominal_voltage;
+        new_state->simdata_setting.voltages.L3 = nominal_voltage;
+        new_state->simulation_data.voltages.L1 = nominal_voltage;
+        new_state->simulation_data.voltages.L2 = nominal_voltage;
+        new_state->simulation_data.voltages.L3 = nominal_voltage;
+        new_state->powermeter_data.vrmsL1 = nominal_voltage;
+        new_state->powermeter_data.vrmsL2 = nominal_voltage;
+        new_state->powermeter_data.vrmsL3 = nominal_voltage;
+        const auto nominal_frequency = config.ac_nominal_frequency;
+        new_state->simdata_setting.frequencies.L1 = nominal_frequency;
+        new_state->simdata_setting.frequencies.L2 = nominal_frequency;
+        new_state->simdata_setting.frequencies.L3 = nominal_frequency;
+        new_state->simdata_setting.impedance_ohm = config.ac_line_impedance_ohm;
+        new_state->simulation_data.frequencies.L1 = nominal_frequency;
+        new_state->simulation_data.frequencies.L2 = nominal_frequency;
+        new_state->simulation_data.frequencies.L3 = nominal_frequency;
+        new_state->powermeter_data.freqL1 = nominal_frequency;
+        new_state->powermeter_data.freqL2 = nominal_frequency;
+        new_state->powermeter_data.freqL3 = nominal_frequency;
+        module_state = std::move(new_state);
     }
 
     void pwm_on(const double dutycycle);

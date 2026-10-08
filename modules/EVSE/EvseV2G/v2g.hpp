@@ -27,6 +27,10 @@
 #include <event2/event.h>
 #include <event2/thread.h>
 
+namespace module {
+class V2gTelemetryPublisher;
+} // namespace module
+
 /* timeouts in milliseconds */
 #define V2G_SEQUENCE_TIMEOUT_60S              60000 /* [V2G2-443] et.al. */
 #define V2G_SEQUENCE_TIMEOUT_10S              10000
@@ -225,6 +229,8 @@ struct v2g_context {
     } tls_socket;
     tls::Server* tls_server;
 
+    module::V2gTelemetryPublisher* telemetry_publisher;
+
     bool tls_key_logging;
 
     pthread_mutex_t mqtt_lock;
@@ -243,6 +249,7 @@ struct v2g_context {
     int state;                         /* holds the current state id */
     bool is_dc_charger; /* Is set to true if it is a DC charger. Value is configured after configuration of the
                            supported energy type */
+    bool is_fake_dc;    /* Is set to true if fake DC (AC with SoC) is active */
     bool debugMode;     /* To activate/deactivate the debug mode */
     std::atomic<int8_t>
         supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
@@ -420,6 +427,16 @@ struct v2g_connection {
     } exi_out;
 
     dLinkAction d_link_action; /* signaled data-link action after connection is closed */
+
+    /* Armed by the session-stop handlers when a positive SessionStopRes is pending; consumed right
+     * after the response hit the wire to publish session_stop_res_sent ([V2G-DC-968] retain anchor).
+     * v2g_connection is calloc'd, so NONE must stay 0. */
+    enum class SessionStopResPending {
+        NONE = 0,
+        TERMINATE,
+        PAUSE
+    };
+    SessionStopResPending session_stop_res_pending;
 };
 
 #endif /* V2G_H */

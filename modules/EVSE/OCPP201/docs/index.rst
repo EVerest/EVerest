@@ -4,6 +4,14 @@
 .. OCPP 2.1 and 2.0.1 Module
 .. *************************
 
+.. warning::
+
+   **Deprecated:** This module is deprecated in favor of the combined OCPP module
+   :ref:`OCPPmulti <everest_modules_OCPPmulti>`, which supports OCPP 1.6, 2.0.1 and 2.1
+   in one module. New integrations should use it — see the
+   :ref:`combined module tutorial <tutorial-ocpp-combined>` and the
+   :ref:`migration guide <howto-ocpp-storage-migration>`.
+
 This module implements and integrates OCPP 2.0.1 and OCPP 2.1 within EVerest. A connection to a Charging Station Management System (CSMS) can be
 established by loading this module as part of the EVerest configuration. This module leverages `libocpp <https://github.com/EVerest/libocpp>`_,
 EVerest's OCPP library.
@@ -39,6 +47,14 @@ characteristics, attributes, and monitors. Please see `the documentation for the
 <https://github.com/EVerest/libocpp/blob/main/doc/v2/ocpp_201_device_model_initialization.md>`_ for further information on how it is set up.
 
 To add a custom component, you can simply add another JSON configuration file for it, and it will automatically be applied and reported.
+
+The ``OCPP16LegacyCtrlr`` component (``standardized/OCPP16LegacyCtrlr.json``) is always required, also for pure OCPP 2.x
+operation. The device model is shared between all supported OCPP versions so that a station can switch between OCPP 1.6 and
+OCPP 2.x seamlessly, and this requires the full set of components for every version to be present. If the component is absent
+from **DeviceModelConfigPath** (for example in a directory copied from a release before this component existed), the module
+injects a built-in default schema for it automatically.
+``InternalCtrlr/NumberOfConnectors`` and ``InternalCtrlr/ChargePointId`` are no longer part of the device model; leftover entries
+in custom component configs are tolerated but not used.
 
 Configuring the OCPP2 version
 =============================
@@ -276,6 +292,13 @@ The interface is used to receive the following variables:
 
 * **iso15118_certificate_request** to trigger a **DataTransfer.req(Get15118EVCertificateRequest)** as part of the Plug&Charge process
 
+Each connection mapped to a served EVSE provisions an **ISO15118Ctrlr** component. Its **Enabled** variable is derived from the
+`hlc_capable` field reported by the serving EvseManager via **get_evse**, collapsed per EVSE by **any** of its connectors, because the
+session runs on whichever plug can carry it. **Enabled** is provisioned read-only, so it states a static capability of the station rather
+than offering a CSMS runtime control: a station with an `extensions_15118` provider mapped but HLC switched off now reports **false** where
+it previously reported a hardcoded **true**. This module shares the same device model storage implementation as the
+:ref:`OCPPmulti <everest_modules_OCPPmulti>` module, so the same behavior applies in that module.
+
 Error Handling
 ==============
 
@@ -294,6 +317,18 @@ A **StatusNotification.req** with status **Faulted** will be set to faulted only
 This indicates that the EVSE is inoperative (not ready for energy transfer).
 
 In OCPP2 errors can be reported using the **NotifyEventRequest.req**. This message is used to report all other errros received.  
+
+NotifyEvent
+^^^^^^^^^^^
+
+The **eventData** property of the **NotifyEvent.req** carries the details of the reported error:
+
+* ``techCode`` is set to the MREC techCode if the EVerest error type has an MREC mapping, and to the EVerest error
+  type itself otherwise.
+* ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
+  without a message, the description of the error type is sent instead.
+* ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
+  property is set accordingly.
 
 Current Limitation
 ^^^^^^^^^^^^^^^^^^

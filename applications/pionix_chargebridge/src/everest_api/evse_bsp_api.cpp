@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "protocol/evse_bsp_cb_to_host.h"
 #include <charge_bridge/everest_api/evse_bsp_api.hpp>
+#include <charge_bridge/mcs_bsp.hpp>
 #include <charge_bridge/utilities/logging.hpp>
 #include <charge_bridge/utilities/string.hpp>
 #include <chrono>
@@ -24,6 +25,26 @@ using namespace everest::lib::API::V1_0::types::generic;
 using namespace everest::lib::API;
 
 namespace charge_bridge::evse_bsp {
+
+namespace {
+// The type 2 PP state machine (see handle_pp_type2) is the single owner of
+// MREC23ProximityFault. The safety flag 'pp_invalid' describes the same physical condition but
+// is reported as VendorError/PPINVALID instead of a second MREC23ProximityFault instance:
+// OCPP 2.0.1 reporting maps the error type to a techCode and drops the sub_type, so clearing
+// one instance would tell the CSMS that CX023 is gone while the other source is still faulted.
+constexpr auto pp_invalid_subtype = "PPINVALID";
+constexpr auto pp_fault_subtype_state = "PPSTATE";
+
+// There is exactly one source for the communication fault, so it does not need a sub_type to
+// tell instances apart. Raise and clear must agree on it, otherwise the clear does not match
+// the raised instance.
+constexpr auto comm_fault_subtype = "";
+
+// The MCS basic-signalling faults. Separate sub_types because CE and ID are separate conductors
+// with separate failure modes, and an operator has to know which one dropped.
+constexpr auto ce_fault_subtype = "CEFAULT";
+constexpr auto id_fault_subtype = "IDFAULT";
+} // namespace
 
 evse_bsp_api::evse_bsp_api(evse_bsp_config const& config, std::string const& cb_identifier,
                            evse_bsp_host_to_cb& host_status) :
@@ -47,7 +68,17 @@ bool evse_bsp_api::register_events(everest::lib::io::event::fd_event_handler& ha
     // clang-format off
     return
         handler.register_event_handler(&m_capabilities_timer, [this](auto&) {
+            // The capabilities are static configuration and do not depend on a ChargeBridge, so
+            // they are re-sent unconditionally: EVerest needs them even before one shows up.
             send_capabilities();
+            // The PP state on the other hand comes from 'cb_status', which is zero (or a stale
+            // snapshot of a device that is gone) without a live ChargeBridge. Replaying it would
+            // publish ampacity 'None' (state NC is 0) and clear a latched proximity fault for a
+            // device that is not there, so it is only replayed while one is connected.
+            // ... and not at all on an MCS board, which has no PP conductor (see set_cb_message).
+            if (m_cb_connected and not is_mcs_technology(m_link_technology.value())) {
+                handle_pp_type2(cb_status.pp_state_type2);
+            }
         });
     // clang-format on
 }
@@ -80,6 +111,27 @@ inline static bool operator!=(const SafetyErrorFlags& a, const SafetyErrorFlags&
     return a.raw != b.raw;
 }
 
+void evse_bsp_api::set_link_technology(std::uint8_t technology) {
+    switch (m_link_technology.offer(technology)) {
+    case technology_latch::result::conflict:
+        // The board class is not supposed to change under a running host, and acting on a change
+        // would mean re-enabling PP publication on a connector that may not have the conductor. The
+        // first value stands until the endpoint changes; say so once.
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", -1)
+            << "ChargeBridge now reports link technology " << static_cast<int>(technology) << " but "
+            << static_cast<int>(m_link_technology.value())
+            << " was latched: keeping the latched board class until the endpoint changes" << std::endl;
+        break;
+    case technology_latch::result::latched:
+    case technology_latch::result::ignored:
+        break;
+    }
+}
+
+void evse_bsp_api::forget_link_technology() {
+    m_link_technology.reset();
+}
+
 void evse_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
     if (cb_status.reset_reason not_eq msg.reset_reason) {
     }
@@ -92,11 +144,17 @@ void evse_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
     if (cb_status.error_flags not_eq msg.error_flags) {
         handle_error(msg.error_flags);
     }
-    if (cb_status.pp_state_type1 not_eq msg.pp_state_type1) {
-        handle_pp_type1(msg.pp_state_type1);
-    }
-    if (cb_status.pp_state_type2 not_eq msg.pp_state_type2) {
-        handle_pp_type2(msg.pp_state_type2);
+    // The PP conductor does not exist on an MCS connector: the contact that would carry it is
+    // Insertion Detection instead, which is a voltage-coded line reported in id_state and has no
+    // ampacity coding at all. Publishing a PP-derived ampacity there would be inventing a cable
+    // rating, and a PP fault would name hardware that is not fitted - so both paths stay shut.
+    if (not is_mcs_technology(m_link_technology.value())) {
+        if (cb_status.pp_state_type1 not_eq msg.pp_state_type1) {
+            handle_pp_type1(msg.pp_state_type1);
+        }
+        if (cb_status.pp_state_type2 not_eq msg.pp_state_type2) {
+            handle_pp_type2(msg.pp_state_type2);
+        }
     }
     if (cb_status.stop_charging not_eq msg.stop_charging) {
         handle_stop_button(msg.stop_charging);
@@ -107,6 +165,13 @@ void evse_bsp_api::set_cb_message(evse_bsp_cb_to_host const& msg) {
 }
 
 void evse_bsp_api::dispatch(std::string const& operation, std::string const& payload) {
+    // RX trace (bring-up): successful reception used to be silent, which made a broken
+    // command chain indistinguishable from a broken switch at the bench. The periodic
+    // heartbeat stays untraced so the console is not flooded.
+    if (operation != "heartbeat") {
+        utilities::print_info(m_cb_identifier, "EVSE/EVEREST")
+            << "RECEIVE " << operation << " " << payload << std::endl;
+    }
     if (operation == "enable") {
         receive_enable(payload);
     } else if (operation == "pwm_on") {
@@ -132,16 +197,28 @@ void evse_bsp_api::dispatch(std::string const& operation, std::string const& pay
     } else if (operation == "heartbeat") {
         receive_heartbeat(payload);
     } else {
-        std::cerr << "evse_bsp: RECEIVE invalid operation: " << operation << std::endl;
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", -1)
+            << "RECEIVE invalid operation: " << operation << std::endl;
     }
 }
 
 void evse_bsp_api::raise_comm_fault() {
-    send_raise_error(API_BSP::ErrorEnum::CommunicationFault, "ChargeBridge not available", "");
+    send_raise_error(API_BSP::ErrorEnum::CommunicationFault, comm_fault_subtype, "ChargeBridge not available");
 }
 
 void evse_bsp_api::clear_comm_fault() {
-    send_clear_error(API_BSP::ErrorEnum::CommunicationFault, "ChargeBridge not available", "");
+    send_clear_error(API_BSP::ErrorEnum::CommunicationFault, comm_fault_subtype, "");
+}
+
+void evse_bsp_api::clear_raised_errors() {
+    clear_comm_fault();
+    publish_error_flag_edges(cb_status.error_flags.raw, 0);
+    send_clear_error(API_BSP::ErrorEnum::MREC14PilotFault, "", "");
+    send_clear_error(API_BSP::ErrorEnum::DiodeFault, "", "");
+    if (m_pp_fault_raised) {
+        send_clear_error(API_BSP::ErrorEnum::MREC23ProximityFault, pp_fault_subtype_state, "");
+        m_pp_fault_raised = false;
+    }
 }
 
 void evse_bsp_api::handle_event_cp(std::uint8_t cp) {
@@ -204,7 +281,11 @@ void evse_bsp_api::handle_event_relay(std::uint8_t relay) {
     }
 }
 
-void evse_bsp_api::handle_pp_type2(std::uint8_t data) {
+// 'republish' re-sends an already latched proximity fault (used when EVerest reconnected and
+// lost it). The latch itself is never reset from the outside: an out-of-range 'data' hits the
+// default case below, which neither raises nor clears, and would leave an active fault with a
+// dropped latch unclearable.
+void evse_bsp_api::handle_pp_type2(std::uint8_t data, bool republish) {
     API_BSP::Ampacity bc_ampacity;
     bool bc_ampacity_valid = true;
     switch (data) {
@@ -226,12 +307,21 @@ void evse_bsp_api::handle_pp_type2(std::uint8_t data) {
     case PpState_Type2_STATE_FAULT:
         // Raise error check state
         bc_ampacity_valid = false;
-        send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, "", "Proximity Pilot Fault State");
+        if (not m_pp_fault_raised or republish) {
+            send_raise_error(API_BSP::ErrorEnum::MREC23ProximityFault, pp_fault_subtype_state,
+                             "Proximity Pilot Fault State");
+            m_pp_fault_raised = true;
+        }
         break;
     default:
         bc_ampacity_valid = false;
     }
     if (bc_ampacity_valid) {
+        // Firmware reports a non-fault state again: clear a previously raised proximity fault
+        if (m_pp_fault_raised) {
+            send_clear_error(API_BSP::ErrorEnum::MREC23ProximityFault, pp_fault_subtype_state, "");
+            m_pp_fault_raised = false;
+        }
         send_ac_pp_amapcity(bc_ampacity);
     }
 }
@@ -246,68 +336,71 @@ void evse_bsp_api::handle_pp_type1(std::uint8_t data) {
     }
 }
 
-// Error handling
-// Define bit masks
-enum class SafetyErrorMask : std::uint32_t {
-    cp_not_state_c = (1 << 0),
-    pwm_not_enabled = (1 << 1),
-    pp_invalid = (1 << 2),
-    plug_temperature_too_high = (1 << 3),
-    internal_temperature_too_high = (1 << 4),
-    emergency_input_latched = (1 << 5),
-    relay_health_latched = (1 << 6),
-    vdd_3v3_out_of_range = (1 << 7),
-    vdd_core_out_of_range = (1 << 8),
-    vdd_12V_out_of_range = (1 << 9),
-    vdd_N12V_out_of_range = (1 << 10),
-    vdd_refint_out_of_range = (1 << 11),
-    external_allow_power_on = (1 << 12),
-    config_mem_error = (1 << 13),
-    dc_hv_ov = (1 << 14),
-};
+// Error handling. The bit positions live in charge_bridge/mcs_bsp.hpp - they used to be duplicated
+// here and in ev_bsp_api.cpp, and both copies had fallen behind the wire header.
+using safety_error_mask = charge_bridge::safety_error_mask;
 
 // Table that maps a mask to our API error + message
 struct FlagSpec {
-    SafetyErrorMask mask;
+    safety_error_mask mask;
     API_BSP::ErrorEnum error;
     const char* subtype;
     const char* message;
 };
 
 static constexpr FlagSpec error_specs[] = {
-    {SafetyErrorMask::pp_invalid, API_BSP::ErrorEnum::MREC23ProximityFault, "", "PP invalid"},
-    {SafetyErrorMask::plug_temperature_too_high, API_BSP::ErrorEnum::MREC19CableOverTempStop, "",
+    {safety_error_mask::pp_invalid, API_BSP::ErrorEnum::VendorError, pp_invalid_subtype, "PP invalid"},
+    {safety_error_mask::plug_temperature_too_high, API_BSP::ErrorEnum::MREC19CableOverTempStop, "",
      "Plug temperature too high"},
-    {SafetyErrorMask::internal_temperature_too_high, API_BSP::ErrorEnum::VendorError, "INTTEMP",
+    {safety_error_mask::internal_temperature_too_high, API_BSP::ErrorEnum::VendorError, "INTTEMP",
      "ChargeBridge internal over temperature"},
-    {SafetyErrorMask::emergency_input_latched, API_BSP::ErrorEnum::VendorError, "EMGINPUT", "Emergency input latched"},
-    {SafetyErrorMask::relay_health_latched, API_BSP::ErrorEnum::VendorError, "RELAYS", "Relay welded error"},
-    {SafetyErrorMask::vdd_3v3_out_of_range, API_BSP::ErrorEnum::VendorError, "3V3", "Supply voltage 3.3V out of range"},
-    {SafetyErrorMask::vdd_core_out_of_range, API_BSP::ErrorEnum::VendorError, "VDDCORE",
+    {safety_error_mask::emergency_input_latched, API_BSP::ErrorEnum::VendorError, "EMGINPUT",
+     "Emergency input latched"},
+    {safety_error_mask::relay_health_latched, API_BSP::ErrorEnum::VendorError, "RELAYS", "Relay welded error"},
+    {safety_error_mask::vdd_3v3_out_of_range, API_BSP::ErrorEnum::VendorError, "3V3",
+     "Supply voltage 3.3V out of range"},
+    {safety_error_mask::vdd_core_out_of_range, API_BSP::ErrorEnum::VendorError, "VDDCORE",
      "Internal supply core voltage out of range"},
-    {SafetyErrorMask::vdd_12V_out_of_range, API_BSP::ErrorEnum::VendorError, "VCC12",
-     "Internal supply 12V voltage out of range"},
-    {SafetyErrorMask::vdd_N12V_out_of_range, API_BSP::ErrorEnum::VendorError, "VCCN12",
+    {safety_error_mask::vdd_12V_out_of_range, API_BSP::ErrorEnum::VendorError, "VCC12",
+     "Supply 12V (CCS) / 5V front end (MCS) voltage out of range"},
+    {safety_error_mask::vdd_N12V_out_of_range, API_BSP::ErrorEnum::VendorError, "VCCN12",
      "Internal supply -12V voltage out of range"},
-    {SafetyErrorMask::vdd_refint_out_of_range, API_BSP::ErrorEnum::VendorError, "VCCREF",
+    {safety_error_mask::vdd_refint_out_of_range, API_BSP::ErrorEnum::VendorError, "VCCREF",
      "Internal supply VREF voltage out of range"},
-    {SafetyErrorMask::config_mem_error, API_BSP::ErrorEnum::VendorError, "CONFIGMEM", "Internal config memory error"},
-    {SafetyErrorMask::dc_hv_ov, API_BSP::ErrorEnum::VendorError, "DV_HV",
+    {safety_error_mask::config_mem_error, API_BSP::ErrorEnum::VendorError, "CONFIGMEM", "Internal config memory error"},
+    {safety_error_mask::dc_hv_ov_emergency, API_BSP::ErrorEnum::VendorError, "DV_HV",
      "DC HV OVM. FIXME: This should be on OVM not EVSE interface"},
+    {safety_error_mask::rcd_error, API_BSP::ErrorEnum::MREC2GroundFailure, "", "RCD error detected"},
+    // MCS basic signalling. VendorError with a distinct sub_type, which is what 11 of the 13 entries
+    // above already do for a condition the standard error set does not name.
+    //
+    // On wording alone the two adjacent MRECs arguably fit: errors/evse_board_support.yaml defines
+    // MREC14PilotFault as "control pilot voltage out of range" and MREC23ProximityFault as
+    // "proximity voltage out of range", and CE and ID are exactly voltage-coded lines on those two
+    // contacts. What argues against them is the other end: those codes name the CP and PP conductors
+    // of a CCS connector, and a CSMS maps the error type to a techCode carrying CCS remediation - so
+    // an MCS fault would arrive with advice about hardware that is not fitted. VendorError keeps the
+    // fault attributable without making that claim.
+    //
+    // Chosen pending Jan's ruling; switching to the MRECs is a one-line change here if he prefers the
+    // standard codes. (DiodeFault is rejected outright either way: an MCS board has no diode to
+    // fault.)
+    {safety_error_mask::ce_fault, API_BSP::ErrorEnum::VendorError, ce_fault_subtype,
+     "MCS Charge Enable signal integrity lost"},
+    {safety_error_mask::id_fault, API_BSP::ErrorEnum::VendorError, id_fault_subtype, "MCS Insertion Detection lost"},
 };
 
 static constexpr FlagSpec print_warning_specs[] = {
-    {SafetyErrorMask::cp_not_state_c, API_BSP::ErrorEnum::VendorWarning, "", "CP is not state C"},
-    {SafetyErrorMask::pwm_not_enabled, API_BSP::ErrorEnum::VendorWarning, "", "PWM not enabled"},
-    {SafetyErrorMask::external_allow_power_on, API_BSP::ErrorEnum::VendorWarning, "",
+    {safety_error_mask::cp_not_state_c, API_BSP::ErrorEnum::VendorWarning, "", "CP is not state C"},
+    {safety_error_mask::pwm_not_enabled, API_BSP::ErrorEnum::VendorWarning, "", "PWM not enabled"},
+    {safety_error_mask::external_allow_power_on, API_BSP::ErrorEnum::VendorWarning, "",
      "Allow power on from EVerest missing"},
 };
 
-// 4) Edge-driven handler
-void evse_bsp_api::handle_error(const SafetyErrorFlags& data) {
-    std::uint32_t prev = cb_status.error_flags.raw; // cached raw value from before
-    std::uint32_t next = data.raw;                  // current raw value
-
+// Raise/clear all errors whose flag changed between 'prev' and 'next'.
+// Passing prev = 0 turns every active flag into a rising edge and therefore re-raises all
+// currently active errors without clearing anything.
+void evse_bsp_api::publish_error_flag_edges(std::uint32_t prev, std::uint32_t next) {
     std::uint32_t became_active = next & ~prev;   // rising edges
     std::uint32_t became_inactive = prev & ~next; // falling edges
 
@@ -319,6 +412,13 @@ void evse_bsp_api::handle_error(const SafetyErrorFlags& data) {
             send_clear_error(s.error, s.subtype, "");
         }
     }
+}
+
+// 4) Edge-driven handler
+void evse_bsp_api::handle_error(const SafetyErrorFlags& data) {
+    std::uint32_t next = data.raw; // current raw value
+
+    publish_error_flag_edges(cb_status.error_flags.raw, next);
 
     std::stringstream log;
 
@@ -344,17 +444,30 @@ void evse_bsp_api::handle_error(const SafetyErrorFlags& data) {
     }
 }
 
-void evse_bsp_api::handle_stop_button([[maybe_unused]] std::uint8_t data) {
+void evse_bsp_api::handle_stop_button(std::uint8_t data) {
+    // Only react to the pressed edge, not to the release (or any other toggle)
+    // of the stop_charging flag in the status frame.
+    if (data == 0) {
+        return;
+    }
+    utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0)
+        << "Stop charging button pressed -> requesting local stop transaction." << std::endl;
     auto reason = API_EVM::StopTransactionReason::Local;
     send_request_stop_transaction(reason);
 }
 
 void evse_bsp_api::receive_enable(std::string const& payload) {
     if (everest::lib::API::deserialize(payload, m_enabled)) {
-        handle_event_cp(cb_status.cp_state);
-        handle_event_relay(cb_status.relay_state);
+        // Re-derive the reported state from 'cb_status' only while a ChargeBridge is actually
+        // connected. Otherwise the snapshot is zero or stale and replaying it would report CP
+        // state A and clear MREC14PilotFault/DiodeFault for a device that is not there.
+        if (m_cb_connected) {
+            handle_event_cp(cb_status.cp_state);
+            handle_event_relay(cb_status.relay_state);
+        }
     } else {
-        std::cerr << "evse_bsp_api::receive_enabled: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", -1)
+            << "receive_enabled: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -364,7 +477,8 @@ void evse_bsp_api::receive_pwm_on(std::string const& payload) {
         host_status.pwm_duty_cycle = pwm * 100;
         tx(host_status);
     } else {
-        std::cerr << "evse_bsp_api::receive_pwm_on: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", -1)
+            << "receive_pwm_on: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -384,7 +498,8 @@ void evse_bsp_api::receive_allow_power_on(std::string const& payload) {
         host_status.allow_power_on = obj.allow_power_on;
         tx(host_status);
     } else {
-        std::cerr << "evse_bsp_api::receive_allow_power_on: payload invalid -> " << payload << std::endl;
+        utilities::print_error(m_cb_identifier, "EVSE/EVEREST", -1)
+            << "receive_allow_power_on: payload invalid -> " << payload << std::endl;
     }
 }
 
@@ -494,6 +609,33 @@ void evse_bsp_api::handle_everest_connection_state() {
         if (status) {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 0) << "EVerest connected" << std::endl;
             send_capabilities();
+            // A freshly (re)started EVerest lost every error raised before it came up, while the
+            // MCU keeps its latched errors. Re-publish all currently active errors instead of
+            // assuming they are still known. Raising an already active error is ignored by the
+            // EVerest error framework, so this is harmless if EVerest did not actually restart
+            // (e.g. a short heartbeat gap).
+            if (m_cb_connected) {
+                // All active safety flags (treating "nothing known before" as the previous
+                // state) plus an active proximity fault state.
+                publish_error_flag_edges(0, cb_status.error_flags.raw);
+                if (not is_mcs_technology(m_link_technology.value())) {
+                    handle_pp_type2(cb_status.pp_state_type2, true);
+                }
+                // CP and relay state are published on change only, so a restarted EVerest would
+                // otherwise see no BSP event (and no MREC14PilotFault/DiodeFault) until the MCU
+                // happens to change state or EvseManager re-sends 'enable'. Neither handler
+                // latches on a previous state, so both replay the current state unconditionally.
+                handle_event_cp(cb_status.cp_state);
+                handle_event_relay(cb_status.relay_state);
+            } else {
+                // Without a live ChargeBridge 'cb_status' is zero or a stale snapshot of a
+                // device that is gone (or has been replaced), so it must not be replayed: that
+                // would attribute errors to the wrong device and report the connector as
+                // available. The communication fault is edge triggered on the ChargeBridge
+                // connection and equally unknown to a restarted EVerest, so re-assert it here.
+                // The real state is published as soon as the ChargeBridge reports it again.
+                raise_comm_fault();
+            }
         } else {
             utilities::print_error(m_cb_identifier, "EVSE/EVEREST", 1) << "Waiting for EVerest...." << std::endl;
             host_status.allow_power_on = 0;

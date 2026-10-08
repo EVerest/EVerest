@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/tbd_controller.hpp>
 
 #include <algorithm>
 #include <chrono>
-#include <cstdio>
+#include <fcntl.h>
+#include <unistd.h>
 
 #include <iso15118/io/connection_plain.hpp>
 #include <iso15118/io/connection_ssl.hpp>
@@ -15,11 +16,39 @@
 
 namespace iso15118 {
 
-TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_, d20::EvseSetupConfig setup_) :
+static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
+
+namespace {
+bool fd_is_open(int fd) {
+    return fd >= 0 and fcntl(fd, F_GETFD) != -1;
+}
+
+// Resets the driver-running flag on scope exit, so it is released even if an exception
+// propagates out of a driver.
+struct DriverRunningGuard {
+    std::atomic_bool& flag;
+    ~DriverRunningGuard() {
+        flag.store(false);
+    }
+};
+} // namespace
+
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
+                             session::EvseSetupConfig setup_) :
+    TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
+                  [](io::PollManager& poll_manager_, const std::string& interface_name_) {
+                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
+                  }) {
+}
+
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
+                             session::EvseSetupConfig setup_, ConnectionFactory connection_factory_) :
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
-    interface_name(config.interface_name) {
+    interface_name(config.interface_name),
+    connection_factory(std::move(connection_factory_)),
+    m_ssl_config(config.ssl) {
 
     const auto result_interface_check = io::check_and_update_interface(interface_name);
     if (result_interface_check) {
@@ -30,66 +59,249 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
 
     if (config.enable_sdp_server) {
         sdp_server = std::make_unique<io::SdpServer>(interface_name);
-        poll_manager.register_fd(sdp_server->get_fd(), [this]() { handle_sdp_server_input(); });
+        // The SDP fd is registered once and never re-registered, so the poll manager's throw-containment,
+        // which unregisters the offending fd, must never see an exception from here -- it would silently
+        // kill SDP discovery until a process restart. get_peer_request() has already consumed the datagram.
+        poll_manager.register_fd(sdp_server->get_fd(), [this]() {
+            try {
+                handle_sdp_server_input();
+            } catch (const std::exception& e) {
+                logf_error("SDP request handling failed: %s; dropping this request", e.what());
+            }
+        });
+    }
+}
+
+TbdController::~TbdController() {
+    if (config.enable_sdp_server) {
+        poll_manager.unregister_fd(sdp_server->get_fd());
+        sdp_server->close();
+    }
+}
+
+bool TbdController::poll_once() {
+    const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
+
+    try {
+        poll_manager.poll(poll_timeout_ms);
+    } catch (const std::runtime_error& e) {
+        logf_error("Shutting down poll loop because of: %s", e.what());
+        return false;
+    }
+
+    return true;
+}
+
+void TbdController::update_communication_setup_timeout() {
+    // The loop thread owns communication_setup_timeout; the command thread only publishes its request
+    // via the generation counter / flag pair, so the std::optional<Timeout> is never touched across threads.
+    const auto dlink_generation = dlink_ready_generation.load();
+    if (dlink_generation != dlink_ready_applied) {
+        dlink_ready_applied = dlink_generation;
+        communication_setup_uses_tcp_anchor = false;
+        if (dlink_ready_requested.load()) {
+            communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+            communication_setup_dlink_deadline = communication_setup_timeout->get_timeout_point();
+            logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
+        } else {
+            communication_setup_timeout.reset();
+            communication_setup_dlink_deadline.reset();
+        }
+    }
+
+    if (not session or not communication_setup_timeout or not communication_setup_dlink_deadline) {
+        return;
+    }
+
+    const auto tcp_anchor = session->get_tcp_setup_timer_anchor();
+    if (tcp_anchor.has_value() == communication_setup_uses_tcp_anchor) {
+        return;
+    }
+
+    communication_setup_uses_tcp_anchor = tcp_anchor.has_value();
+    const auto deadline = tcp_anchor.has_value()
+                              ? offset_time_point_by_ms(*tcp_anchor, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)
+                              : *communication_setup_dlink_deadline;
+    communication_setup_timeout.emplace(
+        static_cast<uint32_t>(get_timeout_ms_until(deadline, V2G_COMMUNICATION_SETUP_TIMEOUT_MS)));
+    logf_info("V2G communication setup timeout anchored at %s",
+              communication_setup_uses_tcp_anchor ? "TCP/TLS establishment" : "D-LINK ready");
+}
+
+void TbdController::service_active_session() {
+    next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
+
+    update_communication_setup_timeout();
+
+    if (session and shutdown_active.load() and not shutdown_signaled) {
+        session->request_shutdown(); // Stopping the session
+        shutdown_signaled = true;
+    }
+
+    // Consume the flag unconditionally so a request raised while no session is
+    // active cannot tear down a later session.
+    const bool terminate = terminate_session_requested.exchange(false);
+    if (session and terminate) {
+        logf_info("Data link lost; terminating active V2G session");
+        session->close();
+    }
+
+    // BEFORE evaluating the communication-setup timeout: a SessionSetupReq received in the last poll
+    // cycle is only processed here, and evaluating the timeout first would tear down a session whose
+    // request arrived just in time at the 18 s boundary.
+    if (session) {
+        try {
+            const auto next_session_event = session->poll();
+            next_event = std::min(next_event, next_session_event);
+        } catch (const std::runtime_error& e) {
+            logf_error("Shutting down session because of: %s", e.what());
+            logf_info("Restarting session ...");
+            session->close();
+        }
+
+        if (session->is_finished()) {
+            std::lock_guard<std::mutex> lock(session_mutex);
+            session.reset();
+        }
     }
 }
 
 void TbdController::loop() {
-    static constexpr auto POLL_MANAGER_TIMEOUT_MS = 50;
-
-    if (not config.enable_sdp_server) {
-        auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-        session =
-            std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+    if (driver_running.exchange(true)) {
+        logf_error("Another driver (loop/start_session) is already running; refusing concurrent entry");
+        return;
     }
+    DriverRunningGuard driver_guard{driver_running};
 
-    auto next_event = get_current_time_point();
+    shutdown_active.store(false);
+    shutdown_signaled = false;
 
-    while (true) {
-        const auto poll_timeout_ms = get_timeout_ms_until(next_event, POLL_MANAGER_TIMEOUT_MS);
+    next_event = get_current_time_point();
 
-        try {
-            poll_manager.poll(poll_timeout_ms);
-        } catch (const std::runtime_error& e) {
-            logf_error("Shutdown loop() because of: %s", e.what());
+    while (session or not shutdown_active.load()) {
+        if (not poll_once()) {
+            if (session) {
+                session->close();
+                std::lock_guard<std::mutex> lock(session_mutex);
+                session.reset();
+            }
             break;
         }
 
-        next_event = offset_time_point_by_ms(get_current_time_point(), POLL_MANAGER_TIMEOUT_MS);
+        tick();
+    }
+    logf_info("Exiting TbdController loop gracefully");
+}
 
-        if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
-            logf_warning("V2G communication setup timeout (18s) expired before session was established");
-            communication_setup_timeout.reset();
-            if (sdp_server) {
-                sdp_server->set_dlink_ready(false);
-            }
-            callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+// The caller of this function needs to provide a non-blocking, keepalive fd.
+// ConnectionPlain::read() depends on the socket being non-blocking
+StartSessionResult TbdController::start_session(int connected_fd, const StartSessionOptions& start_options) {
+    if (driver_running.exchange(true)) {
+        logf_error("Another driver (loop/start_session) is already running; refusing concurrent entry");
+        return StartSessionResult::KeepFdOpen;
+    }
+    DriverRunningGuard driver_guard{driver_running};
+
+    if (not fd_is_open(connected_fd)) {
+        logf_error("Passed fd is not open and valid, returning...");
+        return StartSessionResult::FdNotValid;
+    }
+
+    if (config.enable_sdp_server) {
+        logf_error("SDP server is active; incompatible with externally-provided-fd mode. Not starting a session and "
+                   "keeping fd open");
+        return StartSessionResult::KeepFdOpen;
+    }
+
+    if (session) {
+        logf_error("Session already exists; not overwriting the existing session; keeping fd open");
+        return StartSessionResult::KeepFdOpen;
+    }
+
+    // Reseting because this could cancel service_active_session.
+    terminate_session_requested.store(false);
+
+    auto connection =
+        std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd, start_options.vehicle_cert_hash);
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session =
+            std::make_unique<Session>(std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks,
+                                      pause_ctx, d2_pause_ctx, start_options.skip_app_protocol_negotiation);
+    }
+    shutdown_active.store(false);
+    shutdown_signaled = false;
+
+    next_event = get_current_time_point();
+
+    while (session) {
+        if (not poll_once()) {
+            session->close();
+            std::lock_guard<std::mutex> lock(session_mutex);
+            session.reset();
+            return StartSessionResult::FdClosed;
         }
 
-        if (session) {
-            try {
-                const auto next_session_event = session->poll();
-                next_event = std::min(next_event, next_session_event);
-            } catch (const std::runtime_error& e) {
-                logf_error("Shutting down session because of: %s", e.what());
-                logf_info("Restarting session ...");
-                session->close();
-            }
+        service_active_session();
+    }
 
-            if (session->is_finished()) {
-                session.reset();
+    logf_info("Session is closed");
+    return StartSessionResult::SessionComplete;
+}
 
-                if (not config.enable_sdp_server) {
-                    auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
-                                                        callbacks, pause_ctx);
-                }
-            }
+void TbdController::tick() {
+    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
+        logf_warning("V2G communication setup timeout (18s) expired before session was established");
+        communication_setup_timeout.reset();
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(false);
         }
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+
+    service_active_session();
+
+    if (session and communication_setup_timeout and session->is_v2g_session_established()) {
+        // The communication-setup phase is over and the per-message sequence timeout takes over; left armed
+        // it would fire mid-session and tear down an active connection. The cancel point is SessionSetupReq,
+        // not TCP-accept: the wait for SupportedAppProtocolReq is still part of communication setup.
+        communication_setup_timeout.reset();
+        logf_info("V2G session established (SessionSetupReq received); communication setup timeout cancelled");
+    }
+
+    if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
+        logf_warning("V2G communication setup timeout (18s) expired before the V2G session was established");
+        communication_setup_timeout.reset();
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(false);
+        }
+        {
+            // The timeout is cancelled on establishment above, so any session still here has NOT established:
+            // the EV never connected (resetting closes the still-listening socket, so a late connect is refused
+            // rather than accepted), connected but sent no SupportedAppProtocolReq, or completed the handshake
+            // but sent no SessionSetupReq. For the connected cases this closes within the termination budget
+            // instead of waiting out the 60 s sequence timeout.
+            std::lock_guard<std::mutex> lock(session_mutex);
+            session.reset();
+        }
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+
+    if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session =
+            std::make_unique<Session>(connection_factory(poll_manager, interface_name),
+                                      session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx);
     }
 }
 
+void TbdController::shutdown() {
+    logf_info("Trigger graceful shutdown");
+    shutdown_active.store(true);
+}
+
 void TbdController::send_control_event(const d20::ControlEvent& event) {
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(event);
     }
@@ -98,31 +310,61 @@ void TbdController::send_control_event(const d20::ControlEvent& event) {
 void TbdController::update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
                                                   bool cert_install_service) {
 
-    evse_setup.enable_certificate_install_service = cert_install_service;
+    {
+        auto s = evse_setup.handle();
+        s->enable_certificate_install_service = cert_install_service;
 
-    if (services.empty()) {
-        logf_warning("The authorization services are not updated because services are empty!");
-        return;
+        if (services.empty()) {
+            logf_warning("The authorization services are not updated because services are empty!");
+            return;
+        }
+        s->authorization_services = services;
     }
-    evse_setup.authorization_services = services;
+}
+
+void TbdController::update_iso2_pnc_config(bool pnc_enabled, bool central_contract_validation_allowed) {
+    auto s = evse_setup.handle();
+    s->iso2_pnc_enabled = pnc_enabled;
+    s->central_contract_validation_allowed = central_contract_validation_allowed;
 }
 
 void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 
-    evse_setup.dc_limits = limits;
+    {
+        auto s = evse_setup.handle();
+        s->dc_limits = limits;
+    }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(limits);
     }
 }
 
 void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limits) {
-    evse_setup.powersupply_limits = limits;
+    {
+        auto s = evse_setup.handle();
+        s->powersupply_limits = limits;
+    }
+
+    // They feed the ChargeParameterDiscoveryRes offer, which a renegotiation re-sends mid-session.
+    std::lock_guard<std::mutex> lock(session_mutex);
+    if (session) {
+        session->push_control_event(d20::UpdatePowersupplyLimits{limits});
+    }
+}
+
+void TbdController::update_receipt_required(bool receipt_required) {
+    evse_setup.handle()->iso2_receipt_required = receipt_required;
 }
 
 void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
-    evse_setup.supported_energy_services = modes;
+    {
+        auto s = evse_setup.handle();
+        s->supported_energy_services = modes;
+    }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(modes);
     }
@@ -130,19 +372,121 @@ void TbdController::update_energy_modes(const std::vector<message_20::datatypes:
 
 void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_services) {
 
-    evse_setup.supported_vas_services = vas_services;
+    {
+        auto s = evse_setup.handle();
+        s->supported_vas_services = vas_services;
+    }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(vas_services);
     }
 }
 
+void TbdController::update_pre20_energy_transfer_modes(const std::vector<shared_datatypes::EnergyTransferMode>& modes) {
+    evse_setup.handle()->pre20_energy_transfer_modes = modes;
+}
+
+void TbdController::update_ac_setup_config(const d20::AcSetupConfig& ac_setup_config) {
+    evse_setup.handle()->ac_setup_config = ac_setup_config;
+}
+
+void TbdController::update_pre20_vas_services(const std::vector<session::VasService>& services) {
+    evse_setup.handle()->pre20_vas_services = services;
+}
+
+void TbdController::update_supported_protocols(const std::vector<ProtocolId>& protocols) {
+    evse_setup.handle()->supported_protocols = protocols;
+}
+
 void TbdController::update_ac_limits(const d20::AcTransferLimits& limits) {
 
-    evse_setup.ac_limits = limits;
+    {
+        auto s = evse_setup.handle();
+        s->ac_limits = limits;
+    }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(limits);
+    }
+}
+
+void TbdController::update_iso2_ac_max_current(float ampere) {
+
+    {
+        auto s = evse_setup.handle();
+        s->iso2_ac_max_current = ampere;
+    }
+
+    std::lock_guard<std::mutex> lock(session_mutex);
+    if (session) {
+        session->push_control_event(d20::UpdateAcMaxCurrent{ampere});
+    }
+}
+
+void TbdController::update_physical_values(const d20::PhysicalValues& values) {
+
+    {
+        auto s = evse_setup.handle();
+        s->physical_values = values;
+    }
+
+    std::lock_guard<std::mutex> lock(session_mutex);
+    if (session) {
+        session->push_control_event(values);
+    }
+}
+
+void TbdController::update_no_energy_pause(d20::NoEnergyPauseMode mode) {
+
+    {
+        auto s = evse_setup.handle();
+        s->no_energy_pause = mode;
+    }
+
+    std::lock_guard<std::mutex> lock(session_mutex);
+    if (session) {
+        session->push_control_event(d20::NoEnergyPause{mode});
+    }
+}
+
+void TbdController::set_ssl_config(config::SSLConfig new_config) {
+    auto handle = m_ssl_config.handle();
+    *handle = std::move(new_config);
+}
+
+config::SSLConfig TbdController::ssl_config_snapshot() const {
+    auto handle = m_ssl_config.handle();
+    return *handle;
+}
+
+config::SSLConfig TbdController::connection_ssl_config() const {
+    return ssl_config_snapshot();
+}
+
+void TbdController::update_der_iec_limits(const std::optional<d20::IecDerTransferLimits>& limits) {
+    // Applies to the next session: SessionConfig reads the DER limits at construction.
+    auto s = evse_setup.handle();
+    s->der_iec_limits = limits;
+}
+
+void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransferLimits>& limits,
+                                          const std::optional<d20::DerSaeSetupConfig>& setup_config) {
+    // The limits apply to the next session. A setup config also reaches a running session, which validates it
+    // against its own limits before installing it; a withdrawn config does not.
+    bool withdrawn = false;
+    {
+        auto s = evse_setup.handle();
+        withdrawn = s->der_sae_setup_config.has_value() and not setup_config.has_value();
+        s->der_sae_limits = limits;
+        s->der_sae_setup_config = setup_config;
+    }
+
+    if (session and setup_config.has_value()) {
+        session->push_control_event(setup_config.value());
+    } else if (session and withdrawn) {
+        logf_info("SAE grid code withdrawn; the running session keeps its grid code until it ends");
     }
 }
 
@@ -151,11 +495,30 @@ void TbdController::set_dlink_ready(bool ready) {
         sdp_server->set_dlink_ready(ready);
     }
 
-    if (ready) {
-        communication_setup_timeout.emplace(V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
-        logf_info("V2G communication setup timeout started (%u ms)", V2G_COMMUNICATION_SETUP_TIMEOUT_MS);
-    } else {
-        communication_setup_timeout.reset();
+    // Called from a module command thread, so the timeout object itself must not be touched here.
+    dlink_ready_requested.store(ready);
+    dlink_ready_generation.fetch_add(1);
+
+    if (not ready) {
+        terminate_session_requested.store(true);
+    }
+}
+
+void TbdController::update_supported_der_functions(iec::DERControlName der_control,
+                                                   const iec::DERControlFunction& function) {
+    auto s = evse_setup.handle();
+    auto& der_setup =
+        s->der_iec_setup_config.has_value() ? s->der_iec_setup_config.value() : s->der_iec_setup_config.emplace();
+
+    der_setup.supported_der_control_functions[der_control] = function;
+}
+
+void TbdController::update_unsupported_der_functions(iec::DERControlName der_control) {
+    auto s = evse_setup.handle();
+    if (s->der_iec_setup_config.has_value()) {
+        logf_info("Removing supported DER control function: %u", static_cast<uint32_t>(der_control));
+        auto& der_setup = s->der_iec_setup_config.value();
+        der_setup.supported_der_control_functions.erase(der_control);
     }
 }
 
@@ -167,8 +530,8 @@ void TbdController::handle_sdp_server_input() {
         return;
     }
 
-    if (session) {
-        logf_warning("Ignoring sdp request message because a session is already created and running");
+    if (shutdown_active.load()) {
+        logf_warning("Ignoring sdp request message because the TbdController loop is being shutdown");
         return;
     }
 
@@ -188,17 +551,50 @@ void TbdController::handle_sdp_server_input() {
         break;
     }
 
-    auto connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
+    if (session) {
+        // The EV repeats its SDP request until it gets a response. As long as it has not connected, the
+        // previous response may have been lost (e.g. the EV did not answer neighbour discovery for the
+        // unicast reply in time), so announce the same endpoint again instead of going silent until the
+        // communication setup timeout.
+        if (sdp_offer and session->awaiting_connection() and request.security == sdp_offer->requested) {
+            logf_info("Repeated SDP request before the EV connected; sending the SDP response again");
+            request.security = sdp_offer->offered;
+            sdp_server->send_response(request, sdp_offer->endpoint);
+            return;
+        }
+        // A reconnect SDP arriving in the same poll cycle as a pending teardown
+        // is dropped here; the EVCC retransmits its SDP request (~250 ms) and
+        // recovers.
+        logf_warning("Ignoring sdp request message because a session is already created and running");
+        return;
+    }
+
+    const auto requested_security = request.security;
+
+    auto make_connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, config.ssl);
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config());
             }
             return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
         } catch (const std::runtime_error& e) {
             logf_error("%s", e.what());
             return nullptr;
         }
-    }(request.security == io::v2gtp::Security::TLS);
+    };
+
+    auto connection = make_connection(request.security == io::v2gtp::Security::TLS);
+
+    if (not connection and request.security == io::v2gtp::Security::TLS and
+        config.tls_negotiation_strategy == config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER) {
+        // The TLS endpoint cannot be set up (e.g. the SECC leaf certificate was deleted via OCPP). Under
+        // ACCEPT_CLIENT_OFFER, answer with an unsecured endpoint rather than stay silent, so the EV can run
+        // an EIM session over plain TCP -- or abort -- instead of exhausting its SDP retries against a mute
+        // SECC. The session sees a plain connection, so Contract payment is not offered on this fallback.
+        logf_warning("TLS endpoint could not be set up; offering the EV a plain TCP endpoint instead");
+        request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+        connection = make_connection(false);
+    }
 
     if (not connection) {
         logf_error("A TCP/TLS connection could not be established. Ignoring this SDP request for now");
@@ -206,10 +602,31 @@ void TbdController::handle_sdp_server_input() {
     }
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
+    sdp_offer = SdpOffer{requested_security, request.security, ipv6_endpoint};
 
-    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
-    communication_setup_timeout.reset();
+    // One-shot: handing it to this session and clearing it keeps it from silently pausing every later
+    // session too. Built before taking session_mutex so the two locks are never held at once.
+    auto session_config = [this] {
+        auto setup = evse_setup.handle();
+        session::SessionConfig config(*setup);
+        setup->no_energy_pause = d20::NoEnergyPauseMode::None;
+        return config;
+    }();
 
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session = std::make_unique<Session>(std::move(connection), std::move(session_config), callbacks, pause_ctx,
+                                            d2_pause_ctx);
+    }
+    // Deliberately NOT cancelled here: sending the SDP response does not end the communication-setup
+    // phase, since the EV has not yet opened TCP. Leaving it running is what tears the session down in
+    // tick() if the EV never gets as far as a SessionSetupReq.
+
+    // Deliberately do not clear terminate_session_requested here. A data-link
+    // loss that races this session creation must win: tick() consumes the flag
+    // and reaps whatever session exists, fresh or not. The EVCC retransmits its
+    // SDP request (~250 ms) so a session torn down this way recovers, whereas
+    // swallowing the flag would strand a session on a dead link.
     sdp_server->send_response(request, ipv6_endpoint);
 }
 

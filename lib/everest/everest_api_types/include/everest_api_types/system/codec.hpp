@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include "API.hpp"
 #include <optional>
 #include <string>
+#include <string_view>
 
 namespace everest::lib::API::V1_0::types::system {
 
@@ -18,8 +19,19 @@ std::string serialize(FirmwareUpdateRequest const& val) noexcept;
 std::string serialize(UploadLogsRequest const& val) noexcept;
 std::string serialize(UploadLogsResponse const& val) noexcept;
 std::string serialize(LogStatus const& val) noexcept;
+std::string serialize(FirmwareUpdateMetadata const& val) noexcept;
 std::string serialize(FirmwareUpdateStatus const& val) noexcept;
 std::string serialize(ResetRequest const& val) noexcept;
+std::string serialize(InterfaceClassEnum val) noexcept;
+std::string serialize(APNAuthenticationEnum val) noexcept;
+std::string serialize(VPNTypeEnum val) noexcept;
+std::string serialize(ConfigureNetworkStatusEnum val) noexcept;
+std::string serialize(ConfigureNetworkFinalStatusEnum val) noexcept;
+std::string serialize(APN const& val) noexcept;
+std::string serialize(VPN const& val) noexcept;
+std::string serialize(ConfigureNetworkRequest const& val) noexcept;
+std::string serialize(ConfigureNetworkResponse const& val) noexcept;
+std::string serialize(ConfigureNetworkStatus const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, UpdateFirmwareResponse const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsStatus const& val);
@@ -30,25 +42,21 @@ std::ostream& operator<<(std::ostream& os, BootReason const& val);
 std::ostream& operator<<(std::ostream& os, FirmwareUpdateRequest const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsRequest const& val);
 std::ostream& operator<<(std::ostream& os, LogStatus const& val);
+std::ostream& operator<<(std::ostream& os, FirmwareUpdateMetadata const& val);
 std::ostream& operator<<(std::ostream& os, FirmwareUpdateStatus const& val);
 std::ostream& operator<<(std::ostream& os, UploadLogsResponse const& val);
 std::ostream& operator<<(std::ostream& os, ResetRequest const& val);
+std::ostream& operator<<(std::ostream& os, InterfaceClassEnum const& val);
+std::ostream& operator<<(std::ostream& os, APNAuthenticationEnum const& val);
+std::ostream& operator<<(std::ostream& os, VPNTypeEnum const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatusEnum const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkFinalStatusEnum const& val);
+std::ostream& operator<<(std::ostream& os, APN const& val);
+std::ostream& operator<<(std::ostream& os, VPN const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkRequest const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkResponse const& val);
+std::ostream& operator<<(std::ostream& os, ConfigureNetworkStatus const& val);
 
-template <class T> T deserialize(std::string const& val);
-template <class T> std::optional<T> try_deserialize(std::string const& val) {
-    try {
-        return deserialize<T>(val);
-    } catch (...) {
-        return std::nullopt;
-    }
-}
-template <class T> bool adl_deserialize(std::string const& json_data, T& obj) {
-    auto opt = try_deserialize<T>(json_data);
-    if (opt) {
-        obj = opt.value();
-        return true;
-    }
-    return false;
-}
+#include <everest_api_types/utilities/deserialize_templates.inc>
 
 } // namespace everest::lib::API::V1_0::types::system

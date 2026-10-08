@@ -1,0 +1,13 @@
+load("@rules_cc//cc:defs.bzl", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_test(
+    name = "enum_serialization_test",
+    srcs = ["enum_serialization_test.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        "//types:types_lib",
+        "@catch2//:catch2_main",
+        "@com_github_nlohmann_json//:json",
+    ],
+)

@@ -12,8 +12,9 @@ OCPP 2.x.
 Prerequisites
 *************
 
-- An EVerest deployment with an OCPP module (``OCPP`` for 1.6 or ``OCPP201``
-  for 2.x) and the ``Auth`` module and the relevant API modules (see next section).
+- An EVerest deployment with an OCPP module — OCPPmulti (recommended,
+  supports 1.6 and 2.x) or the deprecated ``OCPP`` (1.6) / ``OCPP201``
+  (2.x) modules — and the ``Auth`` module and the relevant API modules (see next section).
 - An API client that connects via MQTT and subscribes to the relevant
   consumer API topics.
 
@@ -79,13 +80,14 @@ OCPP configuration
 ******************
 
 If you plan to use session cost information from OCPP (e.g. according to the California
-Pricing requirements), you need to configure the OCPP modules to receive tariff and
-cost information from the CSMS.
+Pricing requirements), you need to configure your OCPP module to receive tariff and
+cost information from the CSMS. The following settings are protocol-level and
+apply to OCPPmulti and the deprecated modules alike.
 
 OCPP 1.6
 =========
 
-Enable the ``CostAndPrice`` profile in the OCPP 1.6 module configuration.
+Enable the ``CostAndPrice`` profile in the OCPP 1.6 configuration.
 Once enabled, the OCPP module registers the tariff message and session cost
 callbacks. The relevant configuration keys are:
 

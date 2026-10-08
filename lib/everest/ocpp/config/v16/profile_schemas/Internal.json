@@ -320,6 +320,16 @@
             "type": "boolean",
             "readOnly": false
         },
+        "RejectRemoteStartTransactionWithoutConnectorId": {
+            "$comment": "If set to true, RemoteStartTransaction.req messages that do not contain a connectorId are rejected.",
+            "type": "boolean",
+            "readOnly": false
+        },
+        "RemoteStartTransactionWithoutConnectorIdFindFirst": {
+            "$comment": "If set to true, RemoteStartTransaction.req messages that do not contain a connectorId only reference the first connector available for remote start instead of all connectors. RejectRemoteStartTransactionWithoutConnectorId takes precedence over this key.",
+            "type": "boolean",
+            "readOnly": false
+        },
         "WaitForStopTransactionsOnResetTimeout": {
             "$comment": "Specifies the timeout that is used when transactions are stopped because of a Reset.req . If timeout exceeds, the reset callback is executed even if StopTransaction.conf messages not yet received for transactions that have been active.",
             "type": "integer",
@@ -327,15 +337,32 @@
             "minimum": 0,
             "default": 60
         },
+        "SwitchSecurityProfileConnectionTimeout": {
+            "$comment": "Timeout in seconds for a security profile switch to establish a connection before reverting to the previous profile. When unset, the built-in default is used.",
+            "type": "integer",
+            "readOnly": false,
+            "minimum": 1
+        },
         "QueueAllMessages": {
             "$comment": "If set to true, also non-transactional messages are queued in memory in case they cannot be sent immediately.",
             "type": "boolean",
             "readOnly": true
         },
+        "ReportClearedErrors": {
+            "$comment": "Enables sending a StatusNotification.req with information about cleared errors, even when the connector remains faulted. Defaults to false.",
+            "type": "boolean",
+            "readOnly": true
+        },
+        "ReportSuspendedEVSEReasonChange": {
+            "$comment": "Resend StatusNotification when the SuspendedEVSE reason changes while the status stays SuspendedEVSE",
+            "type": "boolean",
+            "readOnly": false,
+            "default": false
+        },
         "MessageTypesDiscardForQueueing": {
             "$comment": "Comma seperated list of message types that shall not be queued (when offline) even in case QueueAllMessages is true. If QueueAllMessages is false, the configuration of this paramater has no effect.",
             "type": "string",
-            "readOnly": true   
+            "readOnly": true
         },
         "MessageQueueSizeThreshold": {
             "$comment": "Threshold for the size of in-memory message queues used to buffer messages (and store e.g. while offline). If threshold is exceeded, messages  will be dropped according to OCPP specification to avoid memory issues.",

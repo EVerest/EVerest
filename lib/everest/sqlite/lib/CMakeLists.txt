@@ -11,7 +11,7 @@ target_sources(everest_sqlite
 
 target_link_libraries(everest_sqlite
     PRIVATE
-        SQLite::SQLite3
+        SQLite3::SQLite3
 )
 
 if (EVEREST_SQLITE_USE_BOOST_FILESYSTEM)
@@ -75,4 +75,4 @@ endif()
 # End logging configuration
 #############
 
-target_compile_features(everest_sqlite PRIVATE cxx_std_17)
+target_compile_features(everest_sqlite PUBLIC cxx_std_17)

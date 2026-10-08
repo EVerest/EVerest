@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "extensions/status_request.hpp"
 #include "helpers.hpp"
@@ -44,7 +44,7 @@ OCSP_RESPONSE* load_ocsp(const char* filename) {
         }
 
         if (resp == nullptr) {
-            log_error("d2i_OCSP_RESPONSE_bio");
+            log_error(std::string("d2i_OCSP_RESPONSE_bio: ") + filename);
         }
     }
 
@@ -140,7 +140,6 @@ ServerStatusRequestV2::ServerStatusRequestV2(OcspCache& cache) : m_cache(cache) 
 
 bool ServerStatusRequestV2::init_ssl(SSL_CTX* ctx) {
     bool bRes{true};
-    SSL_CTX_set_client_hello_cb(ctx, &client_hello_cb, nullptr);
 
     if (SSL_CTX_set_tlsext_status_cb(ctx, &status_request_cb) != 1) {
         log_error("SSL_CTX_set_tlsext_status_cb");
@@ -368,7 +367,7 @@ int ServerStatusRequestV2::status_request_v2_cb(Ssl* ctx, unsigned int ext_type,
     return 1;
 }
 
-int ServerStatusRequestV2::client_hello_cb(SSL* ctx, int* alert, void* object) {
+int ServerStatusRequestV2::handle_client_hello(SSL* ctx, int* alert) {
     /*
      * return values:
      * - fatal, abort handshake and sent TLS Alert: result = 0 or negative and *alert = alert value

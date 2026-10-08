@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef DEVICE_MODEL_STORAGE_SQLITE_HPP
 #define DEVICE_MODEL_STORAGE_SQLITE_HPP
@@ -33,7 +33,9 @@ public:
     /// \param db_path              Path to database
     /// \param migration_files_path Path to the migration files to initialize the database (only needs to be set if
     ///                             `init_db` is true)
-    /// \param config_path          Path to the device model config used to initialize the database
+    /// \param config_path          Path to the device model config used to initialize the database. If the config
+    ///                             does not contain the OCPP16LegacyCtrlr component, the built-in default schema for
+    ///                             it is injected (see InitDeviceModelDb::initialize_database).
     ///
     explicit DeviceModelStorageSqlite(const fs::path& db_path, const std::filesystem::path& migration_files_path,
                                       const std::filesystem::path& config_path);
@@ -78,6 +80,8 @@ public:
     std::int32_t clear_custom_variable_monitors() final;
 
     void check_integrity() final;
+
+    bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) final;
 };
 
 } // namespace v2

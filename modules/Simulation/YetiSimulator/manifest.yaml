@@ -7,10 +7,85 @@ config:
     description: Reset absolute powermeter readings to zero when CP changes from state A to B
     type: boolean
     default: true
+  dummy_meter_value_send_on_transaction_start:
+    description: Send dummy meter start value blob on transaction start
+    type: boolean
+    default: true
+  dummy_meter_value_blob_start:
+    description: Dummy meter value blob sent on transaction start to be used for testing
+    type: string
+    default: "test start value"
+  dummy_meter_value_blob_stop:
+    description: Dummy meter value blob sent on transaction stop to be used for testing
+    type: string
+    default: "test stop value"
+  ac_nominal_voltage:
+    description: Nominal AC voltage between phase and neutral in Volt, reported per phase by the simulated power meter
+    type: number
+    default: 230.0
+    minimum: 99.0
+  ac_nominal_frequency:
+    description: Nominal AC grid frequency in Hertz, reported per phase by the simulated power meter
+    type: number
+    default: 50.0
+    minimum: 50.0
+    maximum: 60.0
+  ac_line_impedance_ohm:
+    description: >-
+      Line impedance in Ohm per phase between the grid and the simulated power meter. The reported phase voltage
+      drops by ac_line_impedance_ohm * current, so the reported power is below ac_nominal_voltage * current while
+      charging. Set to 0 to always report the nominal voltage.
+    type: number
+    minimum: 0
+    default: 0.5
+  measurement_noise_percent:
+    description: >-
+      Peak amplitude in percent of the uniformly distributed random noise applied to the simulated voltages,
+      currents, CP voltage, PP resistor and RCD current. Set to 0 for deterministic readings. The CP voltage is
+      decoded with a +-1.1 V window, so values above a few percent break the CP state detection.
+    type: number
+    minimum: 0
+    default: 1.0
+  frequency_noise_percent:
+    description: >-
+      Peak amplitude in percent of the uniformly distributed random noise applied to the simulated grid frequency.
+      Set to 0 for a deterministic frequency reading.
+    type: number
+    minimum: 0
+    default: 0.25
+  max_current_A_import:
+    description: >-
+      Maximum import current in amps reported as a hardware capability. The default matches a 32 A AC wallbox. DC
+      configurations must raise this, since the energy manager derives the available power from
+      max_current_A_import * max_phase_count_import * nominal_voltage_V and would otherwise cap a high-power DC
+      supply at the AC-side figure.
+    type: number
+    minimum: 0
+    default: 32.0
+  min_current_A_import:
+    description: Minimum import current in amps reported as a hardware capability
+    type: number
+    minimum: 0
+    default: 6.0
+  caps_min_current_A:
+    description: >-
+      Minimal current on AC side reported in hardware capabilities.
+      -1 means use min_current_A_import for import and the built-in default for export (0 A).
+    type: integer
+    default: -1
+  caps_max_current_A:
+    description: >-
+      Maximum current on AC side reported in hardware capabilities.
+      -1 means use max_current_A_import for import and the built-in default for export (16 A).
+    type: integer
+    default: -1
 provides:
   powermeter:
     interface: powermeter
     description: provides the Yeti Internal Power Meter
+  temperature_sensor:
+    interface: temperature_sensor
+    description: Simulated internal temperature derived from powermeter load
   board_support:
     interface: evse_board_support
     description: provides the EVSE board support Interface to low level control pilot, relais, rcd, motor lock

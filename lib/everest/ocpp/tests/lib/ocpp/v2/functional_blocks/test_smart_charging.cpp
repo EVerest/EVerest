@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "connectivity_manager_mock.hpp"
 #include "date/tz.h"
 #include "everest/logging.hpp"
 #include "lib/ocpp/common/database_testing_utils.hpp"
+#include "lib/ocpp/test_temp_paths.hpp"
 #include "message_dispatcher_mock.hpp"
 #include "ocpp/common/types.hpp"
 #include "ocpp/v2/ctrlr_component_variables.hpp"
@@ -83,7 +84,7 @@ protected:
 
     TestSmartCharging create_smart_charging(const std::optional<std::string> ac_phase_switching_supported = "true") {
         std::unique_ptr<everest::db::sqlite::Connection> database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         database_handler =
             std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
         database_handler->open_connection();
@@ -1476,8 +1477,10 @@ TEST_F(SmartChargingTest, K10_ClearChargingProfile_ClearsId) {
     auto profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Contains(profile));
 
-    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(DEFAULT_PROFILE_ID));
+    std::vector<std::int32_t> cleared_ids;
+    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(DEFAULT_PROFILE_ID), cleared_ids);
     EXPECT_THAT(sut.status, testing::Eq(ClearChargingProfileStatusEnum::Accepted));
+    EXPECT_THAT(cleared_ids, testing::ElementsAre(DEFAULT_PROFILE_ID));
 
     profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Not(testing::Contains(profile)));
@@ -1489,10 +1492,14 @@ TEST_F(SmartChargingTest, K10_ClearChargingProfile_ClearsStackLevelPurposeCombin
     auto profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Not(testing::IsEmpty()));
 
-    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(
-        std::nullopt, create_clear_charging_profile(std::nullopt, ChargingProfilePurposeEnum::TxDefaultProfile,
-                                                    DEFAULT_STACK_LEVEL)));
+    std::vector<std::int32_t> cleared_ids;
+    auto sut = smart_charging.clear_profiles(
+        create_clear_charging_profile_request(
+            std::nullopt, create_clear_charging_profile(std::nullopt, ChargingProfilePurposeEnum::TxDefaultProfile,
+                                                        DEFAULT_STACK_LEVEL)),
+        cleared_ids);
     EXPECT_THAT(sut.status, testing::Eq(ClearChargingProfileStatusEnum::Accepted));
+    EXPECT_THAT(cleared_ids, testing::ElementsAre(DEFAULT_PROFILE_ID));
 
     profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::IsEmpty());
@@ -1504,10 +1511,14 @@ TEST_F(SmartChargingTest, K10_ClearChargingProfile_UnknownStackLevelPurposeCombi
     auto profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Not(testing::IsEmpty()));
 
-    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(
-        std::nullopt, create_clear_charging_profile(std::nullopt, ChargingProfilePurposeEnum::ChargingStationMaxProfile,
-                                                    STATION_WIDE_ID)));
+    std::vector<std::int32_t> cleared_ids;
+    auto sut = smart_charging.clear_profiles(
+        create_clear_charging_profile_request(
+            std::nullopt, create_clear_charging_profile(
+                              std::nullopt, ChargingProfilePurposeEnum::ChargingStationMaxProfile, STATION_WIDE_ID)),
+        cleared_ids);
     EXPECT_THAT(sut.status, testing::Eq(ClearChargingProfileStatusEnum::Unknown));
+    EXPECT_THAT(cleared_ids, testing::IsEmpty());
 
     profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Not(testing::IsEmpty()));
@@ -1524,8 +1535,10 @@ TEST_F(SmartChargingTest, K10_ClearChargingProfile_UnknownId) {
     auto profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Contains(profile));
 
-    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(178));
+    std::vector<std::int32_t> cleared_ids;
+    auto sut = smart_charging.clear_profiles(create_clear_charging_profile_request(178), cleared_ids);
     EXPECT_THAT(sut.status, testing::Eq(ClearChargingProfileStatusEnum::Unknown));
+    EXPECT_THAT(cleared_ids, testing::IsEmpty());
 
     profiles = database_handler->get_all_charging_profiles();
     EXPECT_THAT(profiles, testing::Contains(profile));

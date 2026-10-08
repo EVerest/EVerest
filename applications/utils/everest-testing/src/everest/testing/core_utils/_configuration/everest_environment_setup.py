@@ -1,7 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+# Copyright Pionix GmbH and Contributors to EVerest
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 from dataclasses import dataclass, field
@@ -24,7 +25,8 @@ from .everest_configuration_strategies.persistent_store_configuration_strategy i
 from .everest_configuration_strategies.probe_module_configuration_strategy import \
     ProbeModuleConfigurationStrategy
 from .libocpp_configuration_helper import \
-    LibOCPP2XConfigurationHelper, LibOCPP16ConfigurationHelper
+    LibOCPP2XConfigurationHelper, LibOCPP16ConfigurationHelper, \
+    OCPPConfigAdjustmentStrategy, _OCPP16ComponentConfigCsmsUrlAdjustment
 
 
 @dataclass
@@ -38,6 +40,9 @@ class EverestEnvironmentOCPPConfiguration:
     device_model_component_config_path: Optional[
         Path] = None  # Path of the OCPP device model json schemas.
     configuration_strategies: list[OCPPModuleConfigurationStrategy] | None = None
+    # OCPP1.6 device-model (component config) adjustment strategies; applied to the copied
+    # NetworkConfiguration/OCPPCommCtrlr component config JSONs before the DB is migrated.
+    ocpp16_component_config_strategies: list[OCPPConfigAdjustmentStrategy] | None = None
 
 
 @dataclass
@@ -70,6 +75,7 @@ class EverestEnvironmentCoreConfiguration:
 class EverestEnvironmentProbeModuleConfiguration:
     connections: Dict[str, List[Requirement]] = field(default_factory=dict)
     module_id: str = "probe"
+    access: Optional[Dict] = None
 
 
 class EverestTestEnvironmentSetup:
@@ -94,6 +100,9 @@ class EverestTestEnvironmentSetup:
         ocpp_config_file: Path
         ocpp_user_config_file: Path
         ocpp_database_dir: Path
+        ocpp_device_model_database_file: Path
+        ocpp_device_model_migration_path: Path
+        ocpp_device_model_config_path: Path
         ocpp_message_log_directory: Path
         persistent_store_db_path: Path
 
@@ -104,6 +113,7 @@ class EverestTestEnvironmentSetup:
                  evse_security_config: Optional[EverestEnvironmentEvseSecurityConfiguration] = None,
                  persistent_store_config: Optional[EverestEnvironmentPersistentStoreConfiguration] = None,
                  standalone_module: Optional[Union[str, List[str]]] = None,
+                 manager_extra_args: Optional[List[str]] = None,
                  everest_config_strategies: Optional[List[EverestConfigAdjustmentStrategy]] = None
                  ) -> None:
         self._core_config = core_config
@@ -112,6 +122,7 @@ class EverestTestEnvironmentSetup:
         self._evse_security_config = evse_security_config
         self._persistent_store_config = persistent_store_config
         self._standalone_module = standalone_module
+        self._manager_extra_args = manager_extra_args or []
         if not self._standalone_module and self._probe_config:
             self._standalone_module = self._probe_config.module_id
         self._additional_everest_config_strategies = everest_config_strategies if everest_config_strategies else []
@@ -130,9 +141,12 @@ class EverestTestEnvironmentSetup:
                                          everest_configuration_adjustment_strategies=configuration_strategies +
                                          self._additional_everest_config_strategies,
                                          standalone_module=self._standalone_module,
+                                         manager_extra_args=self._manager_extra_args,
                                          tmp_path=tmp_path)
 
         if self._ocpp_config:
+            if self._ocpp_config.ocpp_version == OCPPVersion.ocpp16:
+                self._setup_ocpp16_device_model_resources(temporary_paths)
             self._ocpp_configuration = self._setup_libocpp_configuration(
                 temporary_paths=temporary_paths
             )
@@ -174,6 +188,9 @@ class EverestTestEnvironmentSetup:
             ocpp_config_file=ocpp_config_dir / "config.json",
             ocpp_user_config_file=ocpp_config_dir / "user_config.json",
             ocpp_database_dir=ocpp_config_dir,
+            ocpp_device_model_database_file=ocpp_config_dir / "device_model_storage.db",
+            ocpp_device_model_migration_path=ocpp_config_dir / "device_model_migrations",
+            ocpp_device_model_config_path=ocpp_config_dir / "component_config",
             certs_dir=certs_dir,
             ocpp_message_log_directory=ocpp_logs_dir,
             persistent_store_db_path=persistent_store_dir / "persistent_store.db"
@@ -187,7 +204,10 @@ class EverestTestEnvironmentSetup:
                 ChargePointConfigPath=str(temporary_paths.ocpp_config_file),
                 MessageLogPath=str(temporary_paths.ocpp_message_log_directory),
                 UserConfigPath=str(temporary_paths.ocpp_user_config_file),
-                DatabasePath=str(temporary_paths.ocpp_database_dir)
+                DatabasePath=str(temporary_paths.ocpp_database_dir),
+                DeviceModelDatabasePath=str(temporary_paths.ocpp_device_model_database_file),
+                DeviceModelDatabaseMigrationPath=str(temporary_paths.ocpp_device_model_migration_path),
+                DeviceModelConfigPath=str(temporary_paths.ocpp_device_model_config_path)
             )
         elif self._ocpp_config.ocpp_version == OCPPVersion.ocpp201 or self._ocpp_config.ocpp_version == OCPPVersion.ocpp21:
             ocpp_paths = OCPPModulePaths2X(
@@ -237,7 +257,8 @@ class EverestTestEnvironmentSetup:
         if self._probe_config:
             configuration_strategies.append(
                 ProbeModuleConfigurationStrategy(connections=self._probe_config.connections,
-                                                 module_id=self._probe_config.module_id))
+                                                 module_id=self._probe_config.module_id,
+                                                 access=self._probe_config.access))
 
         if self._evse_security_config:
             configuration_strategies.append(
@@ -284,3 +305,69 @@ class EverestTestEnvironmentSetup:
                 f"Will use certificates from local installation {source_certs_directory}', which might lead to flaky tests.")
         shutil.copytree(source_certs_directory,
                         temporary_paths.certs_dir, dirs_exist_ok=True)
+
+    def _setup_ocpp16_device_model_resources(self, temporary_paths: _EverestEnvironmentTemporaryPaths):
+        """Copies default OCPP1.6 migration resources into temporary test paths."""
+        ocpp_module_share_path = self._everest_core.prefix_path / "share/everest/modules/OCPP"
+        source_component_config_dir = ocpp_module_share_path / "component_config"
+        source_migration_dir = ocpp_module_share_path / "device_model_migrations"
+
+        if not source_component_config_dir.exists():
+            raise ValueError(f"Missing OCPP component config directory: {source_component_config_dir}")
+        if not source_migration_dir.exists():
+            raise ValueError(f"Missing OCPP device model migration directory: {source_migration_dir}")
+
+        shutil.copytree(source_component_config_dir,
+                        temporary_paths.ocpp_device_model_config_path,
+                        dirs_exist_ok=True)
+        shutil.copytree(source_migration_dir,
+                        temporary_paths.ocpp_device_model_migration_path,
+                        dirs_exist_ok=True)
+
+        self._adjust_ocpp16_component_config(temporary_paths)
+
+    def _adjust_ocpp16_component_config(self, temporary_paths: _EverestEnvironmentTemporaryPaths):
+        """Applies component config adjustment strategies to the copied OCPP1.6 device-model config.
+
+        Loads the copied component config JSONs (standardized/ and custom/ subdirs, keyed by file
+        stem - same shape as LibOCPP2XConfigurationHelper._get_config), applies any user strategies
+        from the ``ocpp16_component_config_adaptions`` marker, then a default strategy that rewrites
+        every configured NetworkConfiguration_N OcppCsmsUrl to the test CSMS URL, and writes the
+        JSONs back to their original locations.
+        """
+        component_config_dir = temporary_paths.ocpp_device_model_config_path
+
+        config_files: Dict[str, Path] = {}
+        component_config: Dict[str, dict] = {}
+        for subdir in ("standardized", "custom"):
+            subdir_path = component_config_dir / subdir
+            if not subdir_path.is_dir():
+                continue
+            for config_file in sorted(subdir_path.glob("*.json")):
+                stem = config_file.stem
+                config_files[stem] = config_file
+                component_config[stem] = json.loads(config_file.read_text())
+
+        strategies: List[OCPPConfigAdjustmentStrategy] = list(
+            self._ocpp_config.ocpp16_component_config_strategies or [])
+        # Default strategy runs last so it also normalizes URLs set by user strategies (e.g. a
+        # placeholder OcppCsmsUrl) to the mock CSMS.
+        strategies.append(_OCPP16ComponentConfigCsmsUrlAdjustment(
+            central_system_host=self._ocpp_config.central_system_host,
+            central_system_port=self._ocpp_config.central_system_port,
+            charge_point_id=self._determine_ocpp16_charge_point_id()))
+
+        for strategy in strategies:
+            component_config = strategy.adjust_ocpp_configuration(component_config)
+
+        for stem, data in component_config.items():
+            config_files[stem].write_text(json.dumps(data))
+
+    def _determine_ocpp16_charge_point_id(self) -> str:
+        """Reads the ChargePointId from the legacy OCPP1.6 config (same source LibOCPP16ConfigurationHelper uses)."""
+        if self._ocpp_config.template_ocpp_config:
+            source_ocpp_config = self._ocpp_config.template_ocpp_config
+        else:
+            source_ocpp_config = self._determine_configured_charge_point_config_path_from_everest_config()
+        return json.loads(source_ocpp_config.read_text())["Internal"]["ChargePointId"]
+

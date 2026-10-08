@@ -20,6 +20,12 @@ alias(
 )
 
 alias(
+    name = "ocpp_module_common",
+    actual = "//lib/everest/ocpp_module_common:ocpp_module_common",
+    visibility = ["//visibility:public"],
+)
+
+alias(
     name = "evse_security_conversions",
     actual = "//lib/everest/conversions/evse_security:evse_security_conversions",
     visibility = ["//visibility:public"],

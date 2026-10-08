@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 
 #include <type_traits>
@@ -100,6 +100,7 @@ template <> void insert_type(VariantAccess& va, const struct iso20_ac_AC_ChargeP
     va.insert_type<AC_ChargeParameterDiscoveryResponse>(in);
 }
 
+namespace {
 struct ModeResponseVisitor {
 public:
     ModeResponseVisitor(iso20_ac_AC_ChargeParameterDiscoveryResType& res_) : res(res_){};
@@ -146,6 +147,7 @@ public:
 private:
     iso20_ac_AC_ChargeParameterDiscoveryResType& res;
 };
+} // namespace
 
 template <>
 void convert(const AC_ChargeParameterDiscoveryResponse& in, struct iso20_ac_AC_ChargeParameterDiscoveryResType& out) {
@@ -178,6 +180,7 @@ template <> void insert_type(VariantAccess& va, const struct iso20_ac_AC_ChargeP
     va.insert_type<AC_ChargeParameterDiscoveryRequest>(in);
 }
 
+namespace {
 struct ModeRequestVisitor {
 public:
     ModeRequestVisitor(iso20_ac_AC_ChargeParameterDiscoveryReqType& req_) : req(req_){};
@@ -213,6 +216,7 @@ public:
 private:
     iso20_ac_AC_ChargeParameterDiscoveryReqType& req;
 };
+} // namespace
 
 template <>
 void convert(const AC_ChargeParameterDiscoveryRequest& in, struct iso20_ac_AC_ChargeParameterDiscoveryReqType& out) {

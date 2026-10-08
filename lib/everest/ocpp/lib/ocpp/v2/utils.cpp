@@ -111,6 +111,19 @@ MeterValue set_meter_value_reading_context(const MeterValue& meter_value, const 
     return return_value;
 }
 
+SampledValue* find_sampled_value_by_context(std::vector<MeterValue>& meter_values, ReadingContextEnum reading_context) {
+    for (auto& meter_value : meter_values) {
+        for (auto& sampled_value : meter_value.sampledValue) {
+            if (sampled_value.context == reading_context &&
+                (sampled_value.signedMeterValue.has_value() ||
+                 sampled_value.measurand == MeasurandEnum::Energy_Active_Import_Register)) {
+                return &sampled_value;
+            }
+        }
+    }
+    return nullptr;
+}
+
 std::string sha256(const std::string& str) {
     std::array<unsigned char, SHA256_DIGEST_LENGTH> hash;
     EVP_Digest(str.c_str(), str.size(), hash.data(), nullptr, EVP_sha256(), nullptr);

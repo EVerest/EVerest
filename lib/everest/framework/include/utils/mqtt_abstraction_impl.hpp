@@ -49,14 +49,20 @@ public:
 
     bool connect() override;
     void disconnect() override;
+    void stop_message_handling() override;
     void publish(const std::string& topic, const nlohmann::json& json) override;
-    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override;
+    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                 bool record_retained = true) override;
     void publish(const std::string& topic, const std::string& data) override;
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) override;
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                 bool record_retained = true) override;
     void subscribe(const std::string& topic) override;
     void subscribe(const std::string& topic, QOS qos) override;
     void unsubscribe(const std::string& topic) override;
     void clear_retained_topics() override;
+    bool set_lwt(const std::string& topic, const nlohmann::json& json, QOS qos = QOS::QOS2,
+                 bool retain = true) override;
+    bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2, bool retain = true) override;
     nlohmann::json get(const MQTTRequest& request, std::size_t retries = 0) override;
     nlohmann::json get(const std::string& topic, QOS qos, std::size_t retries = 0) override;
     const std::string& get_everest_prefix() const override;
@@ -83,6 +89,7 @@ private:
 
     std::atomic_bool mqtt_is_connected;
     std::atomic_bool running;
+    std::atomic_bool lwt_set{false};
     MessageHandler message_handler;
     everest::lib::util::simple_queue<Message> message_queue;
 
@@ -109,7 +116,7 @@ private:
     void on_mqtt_connect();
     void handle_mqtt_message(const Message& message);
 
-    static void on_mqtt_disconnect();
+    void on_mqtt_disconnect();
     nlohmann::json get_internal(const MQTTRequest& request);
 };
 } // namespace Everest

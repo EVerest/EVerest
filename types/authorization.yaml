@@ -39,6 +39,10 @@ types:
       - UsedToStart
       - UsedToStop
       - Withdrawn
+      # Occurs when the token (or its parent id token) matches an ongoing transaction and the implementation is
+      # configured to not stop the transaction on a renewed presentation of the token. Consumers can use this event
+      # e.g. to allow the user to stop the transaction manually
+      - UsedToReauthorize
   CustomIdToken:
     description: Type for a custom id token with a free-form type
     type: object
@@ -211,12 +215,14 @@ types:
 
       SelectionAlgorithm enum:
         UserInput: This algorithm waits for a user to input for which connector the authorization is provided
-        PlugEvents: This algorithms derives the selected connector based on the order of plug in events of EVs
+        PlugEvents: This algorithm derives the selected connector based on the order of plug in events of EVs and selects the connector whose EV plugged in first (the earliest plug in still waiting for authorization)
+        PlugEventsLIFO: Like PlugEvents, but selects the connector whose EV plugged in most recently instead of the earliest
         FindFirst: This algorithm chooses the first referenced EVSE that is available
     type: string
     enum:
       - UserInput
       - PlugEvents
+      - PlugEventsLIFO
       - FindFirst
   AuthorizationType:
     description: >-

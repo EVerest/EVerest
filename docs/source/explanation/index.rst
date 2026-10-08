@@ -29,6 +29,18 @@ Below that, you will be presented with a categorized list of all articles.
 
         Learn about the module concept of EVerest.
 
+    .. grid-item-card:: Manager Lifecycle
+        :link: manager-lifecycle
+        :link-type: doc
+
+        How the manager starts, restarts and shuts down module processes.
+
+    .. grid-item-card:: Configuration Service
+        :link: configuration-service
+        :link-type: doc
+
+        How module configuration is stored in slots, booted from and changed at runtime.
+
     .. grid-item-card:: Tier Module Mapping
         :link: tier-module-mappings
         :link-type: doc
@@ -52,6 +64,12 @@ Below that, you will be presented with a categorized list of all articles.
        :link-type: doc
 
         Command line tool to generate C++ code from interface and manifest definitions.
+
+    .. grid-item-card:: The Management API Client
+       :link: dev-tools/management-api-cli
+       :link-type: doc
+
+        Command line client for the lifecycle and configuration APIs of the manager.
 
     .. grid-item-card:: The Plug&Charge Process in EVerest
        :link: pnc-process
@@ -103,11 +121,14 @@ Below that, you will be presented with a categorized list of all articles.
     high-level-overview
     error-framework
     detail-module-concept
+    manager-lifecycle
+    configuration-service
     tier-module-mappings
     adapt-everest/index
     energymanagement/index
     dev-tools/edm
     dev-tools/ev-cli
+    dev-tools/management-api-cli
     pnc-process
     linux-yocto/index
     hardware-architecture

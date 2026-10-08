@@ -99,8 +99,8 @@ void init_iso2_KeyValueType(struct iso2_KeyValueType* KeyValueType) {
     KeyValueType->ANY_isUsed = 0u;
 }
 
-void init_iso2_PhysicalValueType(struct iso2_PhysicalValueType* PhysicalValueType) {
-    (void) PhysicalValueType;
+void init_iso2_PMaxScheduleType(struct iso2_PMaxScheduleType* PMaxScheduleType) {
+    PMaxScheduleType->PMaxScheduleEntry.arrayLen = 0u;
 }
 
 void init_iso2_ParameterType(struct iso2_ParameterType* ParameterType) {
@@ -110,10 +110,6 @@ void init_iso2_ParameterType(struct iso2_ParameterType* ParameterType) {
     ParameterType->intValue_isUsed = 0u;
     ParameterType->physicalValue_isUsed = 0u;
     ParameterType->stringValue_isUsed = 0u;
-}
-
-void init_iso2_PMaxScheduleType(struct iso2_PMaxScheduleType* PMaxScheduleType) {
-    PMaxScheduleType->PMaxScheduleEntry.arrayLen = 0u;
 }
 
 void init_iso2_ReferenceType(struct iso2_ReferenceType* ReferenceType) {
@@ -159,24 +155,24 @@ void init_iso2_SignedInfoType(struct iso2_SignedInfoType* SignedInfoType) {
     SignedInfoType->Id_isUsed = 0u;
 }
 
-void init_iso2_ProfileEntryType(struct iso2_ProfileEntryType* ProfileEntryType) {
-    ProfileEntryType->ChargingProfileEntryMaxNumberOfPhasesInUse_isUsed = 0u;
-}
-
-void init_iso2_DC_EVStatusType(struct iso2_DC_EVStatusType* DC_EVStatusType) {
-    (void) DC_EVStatusType;
-}
-
-void init_iso2_ParameterSetType(struct iso2_ParameterSetType* ParameterSetType) {
-    ParameterSetType->Parameter.arrayLen = 0u;
-}
-
 void init_iso2_SAScheduleTupleType(struct iso2_SAScheduleTupleType* SAScheduleTupleType) {
     SAScheduleTupleType->SalesTariff_isUsed = 0u;
 }
 
+void init_iso2_AC_EVSEStatusType(struct iso2_AC_EVSEStatusType* AC_EVSEStatusType) {
+    (void) AC_EVSEStatusType;
+}
+
 void init_iso2_SelectedServiceType(struct iso2_SelectedServiceType* SelectedServiceType) {
     SelectedServiceType->ParameterSetID_isUsed = 0u;
+}
+
+void init_iso2_ProfileEntryType(struct iso2_ProfileEntryType* ProfileEntryType) {
+    ProfileEntryType->ChargingProfileEntryMaxNumberOfPhasesInUse_isUsed = 0u;
+}
+
+void init_iso2_ParameterSetType(struct iso2_ParameterSetType* ParameterSetType) {
+    ParameterSetType->Parameter.arrayLen = 0u;
 }
 
 void init_iso2_ServiceType(struct iso2_ServiceType* ServiceType) {
@@ -190,6 +186,10 @@ void init_iso2_SignatureValueType(struct iso2_SignatureValueType* SignatureValue
 
 void init_iso2_SubCertificatesType(struct iso2_SubCertificatesType* SubCertificatesType) {
     SubCertificatesType->Certificate.arrayLen = 0u;
+}
+
+void init_iso2_PhysicalValueType(struct iso2_PhysicalValueType* PhysicalValueType) {
+    (void) PhysicalValueType;
 }
 
 void init_iso2_KeyInfoType(struct iso2_KeyInfoType* KeyInfoType) {
@@ -215,9 +215,8 @@ void init_iso2_SupportedEnergyTransferModeType(struct iso2_SupportedEnergyTransf
     SupportedEnergyTransferModeType->EnergyTransferMode.arrayLen = 0u;
 }
 
-void init_iso2_CertificateChainType(struct iso2_CertificateChainType* CertificateChainType) {
-    CertificateChainType->Id_isUsed = 0u;
-    CertificateChainType->SubCertificates_isUsed = 0u;
+void init_iso2_DC_EVStatusType(struct iso2_DC_EVStatusType* DC_EVStatusType) {
+    (void) DC_EVStatusType;
 }
 
 void init_iso2_BodyBaseType(struct iso2_BodyBaseType* BodyBaseType) {
@@ -230,6 +229,15 @@ void init_iso2_NotificationType(struct iso2_NotificationType* NotificationType) 
 
 void init_iso2_DC_EVSEStatusType(struct iso2_DC_EVSEStatusType* DC_EVSEStatusType) {
     DC_EVSEStatusType->EVSEIsolationStatus_isUsed = 0u;
+}
+
+void init_iso2_ListOfRootCertificateIDsType(struct iso2_ListOfRootCertificateIDsType* ListOfRootCertificateIDsType) {
+    ListOfRootCertificateIDsType->RootCertificateID.arrayLen = 0u;
+}
+
+void init_iso2_CertificateChainType(struct iso2_CertificateChainType* CertificateChainType) {
+    CertificateChainType->Id_isUsed = 0u;
+    CertificateChainType->SubCertificates_isUsed = 0u;
 }
 
 void init_iso2_EVSEStatusType(struct iso2_EVSEStatusType* EVSEStatusType) {
@@ -248,18 +256,6 @@ void init_iso2_SignatureType(struct iso2_SignatureType* SignatureType) {
     SignatureType->Id_isUsed = 0u;
     SignatureType->KeyInfo_isUsed = 0u;
     SignatureType->Object_isUsed = 0u;
-}
-
-void init_iso2_ChargingProfileType(struct iso2_ChargingProfileType* ChargingProfileType) {
-    ChargingProfileType->ProfileEntry.arrayLen = 0u;
-}
-
-void init_iso2_ServiceParameterListType(struct iso2_ServiceParameterListType* ServiceParameterListType) {
-    ServiceParameterListType->ParameterSet.arrayLen = 0u;
-}
-
-void init_iso2_ListOfRootCertificateIDsType(struct iso2_ListOfRootCertificateIDsType* ListOfRootCertificateIDsType) {
-    ListOfRootCertificateIDsType->RootCertificateID.arrayLen = 0u;
 }
 
 void init_iso2_EVChargeParameterType(struct iso2_EVChargeParameterType* EVChargeParameterType) {
@@ -287,17 +283,17 @@ void init_iso2_SAScheduleListType(struct iso2_SAScheduleListType* SAScheduleList
     SAScheduleListType->SAScheduleTuple.arrayLen = 0u;
 }
 
+void init_iso2_ChargingProfileType(struct iso2_ChargingProfileType* ChargingProfileType) {
+    ChargingProfileType->ProfileEntry.arrayLen = 0u;
+}
+
+void init_iso2_ServiceParameterListType(struct iso2_ServiceParameterListType* ServiceParameterListType) {
+    ServiceParameterListType->ParameterSet.arrayLen = 0u;
+}
+
 void init_iso2_ChargeServiceType(struct iso2_ChargeServiceType* ChargeServiceType) {
     ChargeServiceType->ServiceName_isUsed = 0u;
     ChargeServiceType->ServiceScope_isUsed = 0u;
-}
-
-void init_iso2_EVPowerDeliveryParameterType(struct iso2_EVPowerDeliveryParameterType* EVPowerDeliveryParameterType) {
-    (void) EVPowerDeliveryParameterType;
-}
-
-void init_iso2_DC_EVPowerDeliveryParameterType(struct iso2_DC_EVPowerDeliveryParameterType* DC_EVPowerDeliveryParameterType) {
-    DC_EVPowerDeliveryParameterType->BulkChargingComplete_isUsed = 0u;
 }
 
 void init_iso2_ContractSignatureEncryptedPrivateKeyType(struct iso2_ContractSignatureEncryptedPrivateKeyType* ContractSignatureEncryptedPrivateKeyType) {
@@ -317,20 +313,20 @@ void init_iso2_DC_EVSEChargeParameterType(struct iso2_DC_EVSEChargeParameterType
     DC_EVSEChargeParameterType->EVSEEnergyToBeDelivered_isUsed = 0u;
 }
 
+void init_iso2_EVPowerDeliveryParameterType(struct iso2_EVPowerDeliveryParameterType* EVPowerDeliveryParameterType) {
+    (void) EVPowerDeliveryParameterType;
+}
+
+void init_iso2_DC_EVPowerDeliveryParameterType(struct iso2_DC_EVPowerDeliveryParameterType* DC_EVPowerDeliveryParameterType) {
+    DC_EVPowerDeliveryParameterType->BulkChargingComplete_isUsed = 0u;
+}
+
 void init_iso2_ServiceListType(struct iso2_ServiceListType* ServiceListType) {
     ServiceListType->Service.arrayLen = 0u;
 }
 
 void init_iso2_DiffieHellmanPublickeyType(struct iso2_DiffieHellmanPublickeyType* DiffieHellmanPublickeyType) {
     (void) DiffieHellmanPublickeyType;
-}
-
-void init_iso2_EMAIDType(struct iso2_EMAIDType* EMAIDType) {
-    (void) EMAIDType;
-}
-
-void init_iso2_AC_EVSEStatusType(struct iso2_AC_EVSEStatusType* AC_EVSEStatusType) {
-    (void) AC_EVSEStatusType;
 }
 
 void init_iso2_MeterInfoType(struct iso2_MeterInfoType* MeterInfoType) {
@@ -340,29 +336,13 @@ void init_iso2_MeterInfoType(struct iso2_MeterInfoType* MeterInfoType) {
     MeterInfoType->TMeter_isUsed = 0u;
 }
 
+void init_iso2_EMAIDType(struct iso2_EMAIDType* EMAIDType) {
+    (void) EMAIDType;
+}
+
 void init_iso2_MessageHeaderType(struct iso2_MessageHeaderType* MessageHeaderType) {
     MessageHeaderType->Notification_isUsed = 0u;
     MessageHeaderType->Signature_isUsed = 0u;
-}
-
-void init_iso2_PowerDeliveryReqType(struct iso2_PowerDeliveryReqType* PowerDeliveryReqType) {
-    PowerDeliveryReqType->ChargingProfile_isUsed = 0u;
-    PowerDeliveryReqType->DC_EVPowerDeliveryParameter_isUsed = 0u;
-    PowerDeliveryReqType->EVPowerDeliveryParameter_isUsed = 0u;
-}
-
-void init_iso2_CurrentDemandResType(struct iso2_CurrentDemandResType* CurrentDemandResType) {
-    CurrentDemandResType->EVSEMaximumVoltageLimit_isUsed = 0u;
-    CurrentDemandResType->EVSEMaximumCurrentLimit_isUsed = 0u;
-    CurrentDemandResType->EVSEMaximumPowerLimit_isUsed = 0u;
-    CurrentDemandResType->MeterInfo_isUsed = 0u;
-    CurrentDemandResType->ReceiptRequired_isUsed = 0u;
-}
-
-void init_iso2_ChargingStatusResType(struct iso2_ChargingStatusResType* ChargingStatusResType) {
-    ChargingStatusResType->EVSEMaxCurrent_isUsed = 0u;
-    ChargingStatusResType->MeterInfo_isUsed = 0u;
-    ChargingStatusResType->ReceiptRequired_isUsed = 0u;
 }
 
 void init_iso2_AuthorizationReqType(struct iso2_AuthorizationReqType* AuthorizationReqType) {
@@ -370,24 +350,16 @@ void init_iso2_AuthorizationReqType(struct iso2_AuthorizationReqType* Authorizat
     AuthorizationReqType->GenChallenge_isUsed = 0u;
 }
 
-void init_iso2_PreChargeReqType(struct iso2_PreChargeReqType* PreChargeReqType) {
-    (void) PreChargeReqType;
+void init_iso2_AuthorizationResType(struct iso2_AuthorizationResType* AuthorizationResType) {
+    (void) AuthorizationResType;
 }
 
-void init_iso2_ServiceDetailResType(struct iso2_ServiceDetailResType* ServiceDetailResType) {
-    ServiceDetailResType->ServiceParameterList_isUsed = 0u;
+void init_iso2_CableCheckReqType(struct iso2_CableCheckReqType* CableCheckReqType) {
+    (void) CableCheckReqType;
 }
 
-void init_iso2_PaymentServiceSelectionResType(struct iso2_PaymentServiceSelectionResType* PaymentServiceSelectionResType) {
-    (void) PaymentServiceSelectionResType;
-}
-
-void init_iso2_CertificateUpdateReqType(struct iso2_CertificateUpdateReqType* CertificateUpdateReqType) {
-    (void) CertificateUpdateReqType;
-}
-
-void init_iso2_SessionSetupResType(struct iso2_SessionSetupResType* SessionSetupResType) {
-    SessionSetupResType->EVSETimeStamp_isUsed = 0u;
+void init_iso2_CableCheckResType(struct iso2_CableCheckResType* CableCheckResType) {
+    (void) CableCheckResType;
 }
 
 void init_iso2_CertificateInstallationReqType(struct iso2_CertificateInstallationReqType* CertificateInstallationReqType) {
@@ -398,8 +370,37 @@ void init_iso2_CertificateInstallationResType(struct iso2_CertificateInstallatio
     (void) CertificateInstallationResType;
 }
 
-void init_iso2_WeldingDetectionResType(struct iso2_WeldingDetectionResType* WeldingDetectionResType) {
-    (void) WeldingDetectionResType;
+void init_iso2_CertificateUpdateReqType(struct iso2_CertificateUpdateReqType* CertificateUpdateReqType) {
+    (void) CertificateUpdateReqType;
+}
+
+void init_iso2_CertificateUpdateResType(struct iso2_CertificateUpdateResType* CertificateUpdateResType) {
+    CertificateUpdateResType->RetryCounter_isUsed = 0u;
+}
+
+void init_iso2_ChargeParameterDiscoveryReqType(struct iso2_ChargeParameterDiscoveryReqType* ChargeParameterDiscoveryReqType) {
+    ChargeParameterDiscoveryReqType->MaxEntriesSAScheduleTuple_isUsed = 0u;
+    ChargeParameterDiscoveryReqType->AC_EVChargeParameter_isUsed = 0u;
+    ChargeParameterDiscoveryReqType->DC_EVChargeParameter_isUsed = 0u;
+    ChargeParameterDiscoveryReqType->EVChargeParameter_isUsed = 0u;
+}
+
+void init_iso2_ChargeParameterDiscoveryResType(struct iso2_ChargeParameterDiscoveryResType* ChargeParameterDiscoveryResType) {
+    ChargeParameterDiscoveryResType->SAScheduleList_isUsed = 0u;
+    ChargeParameterDiscoveryResType->SASchedules_isUsed = 0u;
+    ChargeParameterDiscoveryResType->AC_EVSEChargeParameter_isUsed = 0u;
+    ChargeParameterDiscoveryResType->DC_EVSEChargeParameter_isUsed = 0u;
+    ChargeParameterDiscoveryResType->EVSEChargeParameter_isUsed = 0u;
+}
+
+void init_iso2_ChargingStatusReqType(struct iso2_ChargingStatusReqType* ChargingStatusReqType) {
+    (void) ChargingStatusReqType;
+}
+
+void init_iso2_ChargingStatusResType(struct iso2_ChargingStatusResType* ChargingStatusResType) {
+    ChargingStatusResType->EVSEMaxCurrent_isUsed = 0u;
+    ChargingStatusResType->MeterInfo_isUsed = 0u;
+    ChargingStatusResType->ReceiptRequired_isUsed = 0u;
 }
 
 void init_iso2_CurrentDemandReqType(struct iso2_CurrentDemandReqType* CurrentDemandReqType) {
@@ -411,58 +412,17 @@ void init_iso2_CurrentDemandReqType(struct iso2_CurrentDemandReqType* CurrentDem
     CurrentDemandReqType->RemainingTimeToBulkSoC_isUsed = 0u;
 }
 
-void init_iso2_PreChargeResType(struct iso2_PreChargeResType* PreChargeResType) {
-    (void) PreChargeResType;
-}
-
-void init_iso2_CertificateUpdateResType(struct iso2_CertificateUpdateResType* CertificateUpdateResType) {
-    CertificateUpdateResType->RetryCounter_isUsed = 0u;
+void init_iso2_CurrentDemandResType(struct iso2_CurrentDemandResType* CurrentDemandResType) {
+    CurrentDemandResType->EVSEMaximumVoltageLimit_isUsed = 0u;
+    CurrentDemandResType->EVSEMaximumCurrentLimit_isUsed = 0u;
+    CurrentDemandResType->EVSEMaximumPowerLimit_isUsed = 0u;
+    CurrentDemandResType->MeterInfo_isUsed = 0u;
+    CurrentDemandResType->ReceiptRequired_isUsed = 0u;
 }
 
 void init_iso2_MeteringReceiptReqType(struct iso2_MeteringReceiptReqType* MeteringReceiptReqType) {
     MeteringReceiptReqType->Id_isUsed = 0u;
     MeteringReceiptReqType->SAScheduleTupleID_isUsed = 0u;
-}
-
-void init_iso2_ChargingStatusReqType(struct iso2_ChargingStatusReqType* ChargingStatusReqType) {
-    (void) ChargingStatusReqType;
-}
-
-void init_iso2_SessionStopResType(struct iso2_SessionStopResType* SessionStopResType) {
-    (void) SessionStopResType;
-}
-
-void init_iso2_ChargeParameterDiscoveryReqType(struct iso2_ChargeParameterDiscoveryReqType* ChargeParameterDiscoveryReqType) {
-    ChargeParameterDiscoveryReqType->MaxEntriesSAScheduleTuple_isUsed = 0u;
-    ChargeParameterDiscoveryReqType->AC_EVChargeParameter_isUsed = 0u;
-    ChargeParameterDiscoveryReqType->DC_EVChargeParameter_isUsed = 0u;
-    ChargeParameterDiscoveryReqType->EVChargeParameter_isUsed = 0u;
-}
-
-void init_iso2_CableCheckReqType(struct iso2_CableCheckReqType* CableCheckReqType) {
-    (void) CableCheckReqType;
-}
-
-void init_iso2_WeldingDetectionReqType(struct iso2_WeldingDetectionReqType* WeldingDetectionReqType) {
-    (void) WeldingDetectionReqType;
-}
-
-void init_iso2_PowerDeliveryResType(struct iso2_PowerDeliveryResType* PowerDeliveryResType) {
-    PowerDeliveryResType->AC_EVSEStatus_isUsed = 0u;
-    PowerDeliveryResType->DC_EVSEStatus_isUsed = 0u;
-    PowerDeliveryResType->EVSEStatus_isUsed = 0u;
-}
-
-void init_iso2_ChargeParameterDiscoveryResType(struct iso2_ChargeParameterDiscoveryResType* ChargeParameterDiscoveryResType) {
-    ChargeParameterDiscoveryResType->SAScheduleList_isUsed = 0u;
-    ChargeParameterDiscoveryResType->SASchedules_isUsed = 0u;
-    ChargeParameterDiscoveryResType->AC_EVSEChargeParameter_isUsed = 0u;
-    ChargeParameterDiscoveryResType->DC_EVSEChargeParameter_isUsed = 0u;
-    ChargeParameterDiscoveryResType->EVSEChargeParameter_isUsed = 0u;
-}
-
-void init_iso2_PaymentServiceSelectionReqType(struct iso2_PaymentServiceSelectionReqType* PaymentServiceSelectionReqType) {
-    (void) PaymentServiceSelectionReqType;
 }
 
 void init_iso2_MeteringReceiptResType(struct iso2_MeteringReceiptResType* MeteringReceiptResType) {
@@ -471,24 +431,48 @@ void init_iso2_MeteringReceiptResType(struct iso2_MeteringReceiptResType* Meteri
     MeteringReceiptResType->EVSEStatus_isUsed = 0u;
 }
 
-void init_iso2_CableCheckResType(struct iso2_CableCheckResType* CableCheckResType) {
-    (void) CableCheckResType;
+void init_iso2_PaymentDetailsReqType(struct iso2_PaymentDetailsReqType* PaymentDetailsReqType) {
+    (void) PaymentDetailsReqType;
 }
 
-void init_iso2_ServiceDiscoveryResType(struct iso2_ServiceDiscoveryResType* ServiceDiscoveryResType) {
-    ServiceDiscoveryResType->ServiceList_isUsed = 0u;
+void init_iso2_PaymentDetailsResType(struct iso2_PaymentDetailsResType* PaymentDetailsResType) {
+    (void) PaymentDetailsResType;
+}
+
+void init_iso2_PaymentServiceSelectionReqType(struct iso2_PaymentServiceSelectionReqType* PaymentServiceSelectionReqType) {
+    (void) PaymentServiceSelectionReqType;
+}
+
+void init_iso2_PaymentServiceSelectionResType(struct iso2_PaymentServiceSelectionResType* PaymentServiceSelectionResType) {
+    (void) PaymentServiceSelectionResType;
+}
+
+void init_iso2_PowerDeliveryReqType(struct iso2_PowerDeliveryReqType* PowerDeliveryReqType) {
+    PowerDeliveryReqType->ChargingProfile_isUsed = 0u;
+    PowerDeliveryReqType->DC_EVPowerDeliveryParameter_isUsed = 0u;
+    PowerDeliveryReqType->EVPowerDeliveryParameter_isUsed = 0u;
+}
+
+void init_iso2_PowerDeliveryResType(struct iso2_PowerDeliveryResType* PowerDeliveryResType) {
+    PowerDeliveryResType->AC_EVSEStatus_isUsed = 0u;
+    PowerDeliveryResType->DC_EVSEStatus_isUsed = 0u;
+    PowerDeliveryResType->EVSEStatus_isUsed = 0u;
+}
+
+void init_iso2_PreChargeReqType(struct iso2_PreChargeReqType* PreChargeReqType) {
+    (void) PreChargeReqType;
+}
+
+void init_iso2_PreChargeResType(struct iso2_PreChargeResType* PreChargeResType) {
+    (void) PreChargeResType;
 }
 
 void init_iso2_ServiceDetailReqType(struct iso2_ServiceDetailReqType* ServiceDetailReqType) {
     (void) ServiceDetailReqType;
 }
 
-void init_iso2_SessionSetupReqType(struct iso2_SessionSetupReqType* SessionSetupReqType) {
-    (void) SessionSetupReqType;
-}
-
-void init_iso2_SessionStopReqType(struct iso2_SessionStopReqType* SessionStopReqType) {
-    (void) SessionStopReqType;
+void init_iso2_ServiceDetailResType(struct iso2_ServiceDetailResType* ServiceDetailResType) {
+    ServiceDetailResType->ServiceParameterList_isUsed = 0u;
 }
 
 void init_iso2_ServiceDiscoveryReqType(struct iso2_ServiceDiscoveryReqType* ServiceDiscoveryReqType) {
@@ -496,16 +480,32 @@ void init_iso2_ServiceDiscoveryReqType(struct iso2_ServiceDiscoveryReqType* Serv
     ServiceDiscoveryReqType->ServiceCategory_isUsed = 0u;
 }
 
-void init_iso2_AuthorizationResType(struct iso2_AuthorizationResType* AuthorizationResType) {
-    (void) AuthorizationResType;
+void init_iso2_ServiceDiscoveryResType(struct iso2_ServiceDiscoveryResType* ServiceDiscoveryResType) {
+    ServiceDiscoveryResType->ServiceList_isUsed = 0u;
 }
 
-void init_iso2_PaymentDetailsReqType(struct iso2_PaymentDetailsReqType* PaymentDetailsReqType) {
-    (void) PaymentDetailsReqType;
+void init_iso2_SessionSetupReqType(struct iso2_SessionSetupReqType* SessionSetupReqType) {
+    (void) SessionSetupReqType;
 }
 
-void init_iso2_PaymentDetailsResType(struct iso2_PaymentDetailsResType* PaymentDetailsResType) {
-    (void) PaymentDetailsResType;
+void init_iso2_SessionSetupResType(struct iso2_SessionSetupResType* SessionSetupResType) {
+    SessionSetupResType->EVSETimeStamp_isUsed = 0u;
+}
+
+void init_iso2_SessionStopReqType(struct iso2_SessionStopReqType* SessionStopReqType) {
+    (void) SessionStopReqType;
+}
+
+void init_iso2_SessionStopResType(struct iso2_SessionStopResType* SessionStopResType) {
+    (void) SessionStopResType;
+}
+
+void init_iso2_WeldingDetectionReqType(struct iso2_WeldingDetectionReqType* WeldingDetectionReqType) {
+    (void) WeldingDetectionReqType;
+}
+
+void init_iso2_WeldingDetectionResType(struct iso2_WeldingDetectionResType* WeldingDetectionResType) {
+    (void) WeldingDetectionResType;
 }
 
 void init_iso2_BodyType(struct iso2_BodyType* BodyType) {
@@ -548,6 +548,11 @@ void init_iso2_BodyType(struct iso2_BodyType* BodyType) {
 
 void init_iso2_V2G_Message(struct iso2_V2G_Message* V2G_Message) {
     (void) V2G_Message;
+}
+// init for element fragment eMAID
+void init_iso2_eMAIDElementFragment(struct iso2_eMAIDElementFragment* eMAIDElementFragment) {
+    eMAIDElementFragment->Id_isUsed = 0u;
+    eMAIDElementFragment->CONTENT_isUsed = 0u;
 }
 
 // init for fragment

@@ -46,6 +46,10 @@ impl Manager {
         cmd.arg("--prefix").arg(prefix);
         cmd.arg("--config").arg(config);
 
+        // No --db: each manager process then uses its own in-memory configuration database
+        // seeded from the config file on every start, so parallel test instances cannot race
+        // each other on a shared database file and no leftover state survives between runs.
+
         if let Some(mqtt_prefix) = mqtt_everest_prefix {
             cmd.arg("--mqtt_everest_prefix").arg(mqtt_prefix);
         }

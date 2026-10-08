@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/d20/context_helper.hpp>
@@ -15,21 +15,24 @@ message_20::SessionStopResponse handle_request(const message_20::SessionStopRequ
     message_20::SessionStopResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (req.charging_session == dt::ChargingSession::ServiceRenegotiation &&
         session.service_renegotiation_supported == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_NoServiceRenegotiationSupported);
+        set_response_code(res, dt::ResponseCode::FAILED_NoServiceRenegotiationSupported);
+        return res;
     }
 
     // Todo(sl): Check req.charging_session
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void SessionStop::enter() {
-    m_ctx.log.enter_state("SessionStop");
+    logf_debug("Enter state: SessionStop");
 }
 
 Result SessionStop::feed(Event ev) {
@@ -68,14 +71,17 @@ Result SessionStop::feed(Event ev) {
                 return {};
             }
             m_ctx.pause_ctx->selected_service_parameters = m_ctx.session.get_selected_services();
+            m_ctx.pause_ctx->authorization = m_ctx.session.authorization;
         } else if (req->charging_session == message_20::datatypes::ChargingSession::Terminate) {
             m_ctx.session_stopped = true;
             m_ctx.pause_ctx.reset();
         }
 
+        mark_session_stop_response(m_ctx, *req, res);
+
         return {};
     } else {
-        m_ctx.log("expected SessionStop! But code type id: %d", variant->get_type());
+        logf_warning("Expected SessionStop! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();
@@ -83,6 +89,23 @@ Result SessionStop::feed(Event ev) {
 
         m_ctx.session_stopped = true;
         return {};
+    }
+}
+
+void mark_session_stop_response(d20::Context& ctx, const message_20::SessionStopRequest& req,
+                                const message_20::SessionStopResponse& res) {
+    // Only a positive Res that ends the session anchors the CP-oscillator retain time (a
+    // ServiceRenegotiation keeps the session running); a FAILED Res ends the session with
+    // immediate oscillator-off + SECC-side TCP close instead. Reported once the response
+    // actually hit the wire (Session::send_response).
+    if (res.response_code == dt::ResponseCode::OK) {
+        if (req.charging_session != dt::ChargingSession::ServiceRenegotiation) {
+            ctx.session_stop_res_pending = (req.charging_session == dt::ChargingSession::Pause)
+                                               ? session::feedback::SessionStopAction::Pause
+                                               : session::feedback::SessionStopAction::Terminate;
+        }
+    } else {
+        ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
     }
 }
 

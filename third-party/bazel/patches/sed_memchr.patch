@@ -1,0 +1,12 @@
+--- lib/memchr.c	2022-07-02 20:22:03.000000000 +0200
++++ lib/memchr.c	2026-05-19 11:15:15.821363047 +0200
+@@ -51,6 +51,9 @@
+ #endif
+ 
+ #ifndef weak_alias
++#ifdef memchr
++# undef memchr
++#endif
+ # define __memchr memchr
+ #endif
+ 

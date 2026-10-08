@@ -7,6 +7,7 @@
 
 #include <cstddef>
 #include <netinet/in.h>
+#include <string>
 
 #include "v2g_ctx.hpp"
 
@@ -16,6 +17,13 @@
  * \return 0 on success
  */
 int connection_init(struct v2g_context* ctx);
+int connection_init(struct v2g_context* ctx, std::string* failure_detail);
+
+/*!
+ * \brief clean up TCP/TLS server state, sockets and bound addresses
+ * \param ctx the V2G context
+ */
+void connection_cleanup(struct v2g_context* ctx);
 
 /*!
  * \brief start TCP/TLS servers

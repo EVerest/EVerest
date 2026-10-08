@@ -3,7 +3,7 @@
 
 #include <ocpp/v2/functional_blocks/remote_transaction_control.hpp>
 
-#include <ocpp/v2/connectivity_manager.hpp>
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
@@ -33,7 +33,7 @@ namespace {
 /// \param evse Evse to check.
 /// \return True if at least one connector is not faulted or unavailable.
 ///
-bool is_evse_connector_available(EvseInterface& evse) {
+bool is_evse_connector_available(const EvseInterface& evse) {
     if (evse.has_active_transaction()) {
         // If an EV is connected and has no authorization yet then the status is 'Occupied' and the
         // RemoteStartRequest should still be accepted. So this is the 'occupied' check instead.
@@ -125,10 +125,14 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
     RequestStartTransactionResponse response;
     response.status = RequestStartStopStatusEnum::Rejected;
 
+    const bool is_smart_charging_enabled =
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SmartChargingCtrlrEnabled)
+            .value_or(false);
+
     // Check if evse id is given.
     if (msg.evseId.has_value()) {
         const std::int32_t evse_id = msg.evseId.value();
-        auto& evse = this->context.evse_manager.get_evse(evse_id);
+        const auto& evse = this->context.evse_manager.get_evse(evse_id);
 
         // F01.FR.23: Faulted or unavailable. F01.FR.24 / F02.FR.25: Occupied. Send rejected.
         const bool available = is_evse_connector_available(evse);
@@ -158,10 +162,6 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
         // RequestStartTransactionRequest with an invalid ChargingProfile: The Charging Station SHALL respond
         // with RequestStartTransactionResponse with status = Rejected and optionally with reasonCode =
         // "InvalidProfile" or "InvalidSchedule".
-
-        const bool is_smart_charging_enabled =
-            this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SmartChargingCtrlrEnabled)
-                .value_or(false);
 
         if (is_smart_charging_enabled) {
             if (msg.chargingProfile.has_value()) {
@@ -193,11 +193,32 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
             }
         }
     } else {
-        // F01.FR.07 RequestStartTransactionRequest does not contain an evseId. The Charging Station MAY reject the
-        // RequestStartTransactionRequest. We do this for now (send rejected) (TODO: eventually support the charging
-        // station to accept no evse id. If so: add token and remote start id for evse id 0 to
-        // remote_start_id_per_evse, so we know for '0' it means 'all evse id's').
-        EVLOG_warning << "No evse id given. Can not remote start transaction.";
+        // F01.FR.07 RequestStartTransactionRequest does not contain an evseId. Accept the request when at least
+        // one evse can start a new transaction. The token and remote start id are stored for evse id 0, meaning
+        // 'all evse id's': the first transaction event with a matching id token will get trigger reason
+        // 'RemoteStart' and the remote start id, regardless of the evse the transaction starts on.
+        if (is_smart_charging_enabled and msg.chargingProfile.has_value()) {
+            // A charging profile can not be validated and applied without knowing the evse.
+            EVLOG_warning << "No evse id given. Can not remote start transaction with a charging profile.";
+        } else {
+            for (const auto& evse : this->context.evse_manager) {
+                const bool is_reserved = is_evse_reserved_for_other(evse, msg.idToken, msg.groupIdToken) ==
+                                         ocpp::ReservationCheckStatus::ReservedForOtherToken;
+
+                if (is_evse_connector_available(evse) and !is_reserved) {
+                    response.status = RequestStartStopStatusEnum::Accepted;
+                    this->transaction.set_remote_start_id_for_evse(0, msg.idToken, msg.remoteStartId);
+                    break;
+                }
+            }
+
+            if (response.status == RequestStartStopStatusEnum::Rejected) {
+                response.statusInfo = StatusInfo{
+                    "NoEvseAvailable",
+                    " RequestStartTransactionRequest requested without providing an EVSE, but no EVSE is available."};
+                EVLOG_info << "Remote start transaction requested without evse id, but no evse is available.";
+            }
+        }
     }
 
     if (response.status == RequestStartStopStatusEnum::Accepted) {
@@ -301,28 +322,72 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
         }
         break;
 
-    case MessageTriggerEnum::SignChargingStationCertificate:
-        response.status = TriggerMessageStatusEnum::Accepted;
-        break;
-    case MessageTriggerEnum::SignV2GCertificate:
-        if (this->context.device_model
-                .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
-                .value_or(false)) {
-            response.status = TriggerMessageStatusEnum::Accepted;
+    case MessageTriggerEnum::SignChargingStationCertificate: {
+        const auto rejection =
+            this->security.is_sign_certificate_possible(ocpp::CertificateSigningUseEnum::ChargingStationCertificate);
+        if (rejection.has_value()) {
+            EVLOG_warning << "CSMS requested SignChargingStationCertificate but the SignCertificate.req cannot be sent "
+                             "right now, so the TriggerMessage is rejected: "
+                          << rejection->reasonCode.get();
+            response.status = TriggerMessageStatusEnum::Rejected;
+            response.statusInfo = rejection;
         } else {
-            EVLOG_warning << "CSMS requested SignV2GCertificate but V2GCertificateInstallationEnabled is configured as "
+            response.status = TriggerMessageStatusEnum::Accepted;
+        }
+        break;
+    }
+    case MessageTriggerEnum::SignV2GCertificate:
+    case MessageTriggerEnum::SignV2G20Certificate: {
+        const bool v2g20 = (msg.requestedMessage == MessageTriggerEnum::SignV2G20Certificate);
+        const auto trigger_name = v2g20 ? "SignV2G20Certificate" : "SignV2GCertificate";
+        const auto certificate_signing_use =
+            v2g20 ? ocpp::CertificateSigningUseEnum::V2G20Certificate : ocpp::CertificateSigningUseEnum::V2GCertificate;
+
+        if (!this->context.device_model
+                 .get_optional_value<bool>(ControllerComponentVariables::V2GCertificateInstallationEnabled)
+                 .value_or(false)) {
+            EVLOG_warning << "CSMS requested " << trigger_name
+                          << " but V2GCertificateInstallationEnabled is configured as "
                              "false, so the TriggerMessage is rejected!";
             response.status = TriggerMessageStatusEnum::Rejected;
+            StatusInfo status_info;
+            status_info.reasonCode = "NotEnabled";
+            status_info.additionalInfo = "V2GCertificateInstallationEnabled is false";
+            response.statusInfo = status_info;
+            break;
         }
 
+        // The ISO 15118-20 SECC leaf exists on OCPP 2.1 only
+        if (v2g20 and !this->security.v2g20_certificate_installation_enabled()) {
+            EVLOG_warning << "CSMS requested SignV2G20Certificate on a connection that is not OCPP 2.1, so the "
+                             "TriggerMessage is rejected!";
+            response.status = TriggerMessageStatusEnum::Rejected;
+            StatusInfo status_info;
+            status_info.reasonCode = "NotSupported";
+            status_info.additionalInfo = "V2G20Certificate requires OCPP 2.1";
+            response.statusInfo = status_info;
+            break;
+        }
+
+        const auto rejection = this->security.is_sign_certificate_possible(certificate_signing_use);
+        if (rejection.has_value()) {
+            EVLOG_warning << "CSMS requested " << trigger_name
+                          << " but the SignCertificate.req cannot be sent right now, "
+                             "so the TriggerMessage is rejected: "
+                          << rejection->reasonCode.get();
+            response.status = TriggerMessageStatusEnum::Rejected;
+            response.statusInfo = rejection;
+        } else {
+            response.status = TriggerMessageStatusEnum::Accepted;
+        }
         break;
+    }
         // TODO:
         // PublishFirmwareStatusNotification
         // SignCombinedCertificate
 
     case MessageTriggerEnum::PublishFirmwareStatusNotification:
     case MessageTriggerEnum::SignCombinedCertificate:
-    case MessageTriggerEnum::SignV2G20Certificate:
     case MessageTriggerEnum::CustomTrigger:
         response.status = TriggerMessageStatusEnum::NotImplemented;
         break;
@@ -423,9 +488,12 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
         this->security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2GCertificate, true);
     } break;
 
+    case MessageTriggerEnum::SignV2G20Certificate: {
+        this->security.sign_certificate_req(ocpp::CertificateSigningUseEnum::V2G20Certificate, true);
+    } break;
+
     case MessageTriggerEnum::PublishFirmwareStatusNotification:
     case MessageTriggerEnum::SignCombinedCertificate:
-    case MessageTriggerEnum::SignV2G20Certificate:
     case MessageTriggerEnum::CustomTrigger:
         EVLOG_error << "Sent a TriggerMessageResponse::Accepted while not following up with a message";
         break;
@@ -433,7 +501,7 @@ void RemoteTransactionControl::handle_trigger_message(Call<TriggerMessageRequest
 }
 
 ReservationCheckStatus
-RemoteTransactionControl::is_evse_reserved_for_other(EvseInterface& evse, const IdToken& id_token,
+RemoteTransactionControl::is_evse_reserved_for_other(const EvseInterface& evse, const IdToken& id_token,
                                                      const std::optional<IdToken>& group_id_token) const {
     if (this->reservation != nullptr) {
         return this->reservation->is_evse_reserved_for_other(evse, id_token, group_id_token);

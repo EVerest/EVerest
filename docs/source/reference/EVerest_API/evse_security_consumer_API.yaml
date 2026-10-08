@@ -4,7 +4,11 @@ id: pionix:de:everest:evse_security_consumer_API
 info:
   title: EVerest API definition for evse_security consumer
   version: 1.0.0
-  description: API for EVerest API clients that use the EvseSecurity module.
+  description: >-
+    API for EVerest API clients that use the EvseSecurity module.
+    Experimental: this API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0

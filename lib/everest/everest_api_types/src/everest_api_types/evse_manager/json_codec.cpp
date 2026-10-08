@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "evse_manager/json_codec.hpp"
 #include "auth/API.hpp"
@@ -83,6 +83,9 @@ void to_json(json& j, StopTransactionReason const& k) noexcept {
         return;
     case StopTransactionReason::ReqEnergyTransferRejected:
         j = "ReqEnergyTransferRejected";
+        return;
+    case StopTransactionReason::EVSEDisabled:
+        j = "EVSEDisabled";
         return;
     }
 
@@ -179,6 +182,10 @@ void from_json(json const& j, StopTransactionReason& k) {
         k = StopTransactionReason::ReqEnergyTransferRejected;
         return;
     }
+    if (s == "EVSEDisabled") {
+        k = StopTransactionReason::EVSEDisabled;
+        return;
+    }
 
     throw std::out_of_range("Provided string " + s +
                             " could not be converted to enum of type API_V1_0_StopTransactionReason");
@@ -223,6 +230,32 @@ void from_json(json const& j, StartSessionReason& k) {
 
     throw std::out_of_range("Provided string " + s +
                             " could not be converted to enum of type API_V1_0_StartSessionReason");
+}
+
+void to_json(json& j, ChargeMode const& k) noexcept {
+    switch (k) {
+    case ChargeMode::AC:
+        j = "AC";
+        return;
+    case ChargeMode::DC:
+        j = "DC";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_manger::ChargeMode";
+}
+
+void from_json(json const& j, ChargeMode& k) {
+    std::string s = j;
+    if (s == "AC") {
+        k = ChargeMode::AC;
+        return;
+    }
+    if (s == "DC") {
+        k = ChargeMode::DC;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s + " could not be converted to enum of type API_V1_0_ChargeMode");
 }
 
 void to_json(json& j, SessionEventEnum const& k) noexcept {
@@ -1133,6 +1166,12 @@ void to_json(json& j, Connector const& k) noexcept {
     if (k.type) {
         j["type"] = k.type.value();
     }
+    if (k.charge_mode) {
+        j["charge_mode"] = k.charge_mode.value();
+    }
+    if (k.hlc_capable) {
+        j["hlc_capable"] = k.hlc_capable.value();
+    }
 }
 
 void from_json(json const& j, Connector& k) {
@@ -1141,6 +1180,12 @@ void from_json(json const& j, Connector& k) {
     if (j.contains("type")) {
         k.type.emplace(j.at("type"));
     }
+    if (j.contains("charge_mode")) {
+        k.charge_mode.emplace(j.at("charge_mode"));
+    }
+    if (j.contains("hlc_capable")) {
+        k.hlc_capable.emplace(j.at("hlc_capable"));
+    }
 }
 
 void to_json(json& j, Evse const& k) noexcept {
@@ -1148,12 +1193,25 @@ void to_json(json& j, Evse const& k) noexcept {
         {"id", k.id},
         {"connectors", k.connectors},
     };
+    if (k.evse_id) {
+        j["evse_id"] = k.evse_id.value();
+    }
+    if (k.evse_id_din) {
+        j["evse_id_din"] = k.evse_id_din.value();
+    }
 }
 
 void from_json(json const& j, Evse& k) {
     k.id = j.at("id");
     for (auto val : j.at("connectors")) {
         k.connectors.push_back(val);
+    }
+
+    if (j.contains("evse_id")) {
+        k.evse_id.emplace(j.at("evse_id"));
+    }
+    if (j.contains("evse_id_din")) {
+        k.evse_id_din.emplace(j.at("evse_id_din"));
     }
 }
 
@@ -1424,6 +1482,7 @@ void to_json(json& j, SessionInfo const& k) noexcept {
         {"session_duration_s", k.session_duration_s},
         {"latest_total_w", k.latest_total_w},
         {"timestamp", k.timestamp},
+        {"reserved", k.reserved},
     };
 
     if (k.selected_protocol.has_value()) {
@@ -1453,6 +1512,7 @@ void from_json(json const& j, SessionInfo& k) {
     k.session_duration_s = j.at("session_duration_s");
     k.latest_total_w = j.at("latest_total_w");
     k.timestamp = j.at("timestamp");
+    k.reserved = j.value("reserved", false);
 
     if (j.contains("selected_protocol")) {
         k.selected_protocol = j.at("selected_protocol");

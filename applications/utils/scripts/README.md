@@ -6,12 +6,18 @@ _cargolock2bb.py_ converts a Cargo.lock file, that can also be loaded via an URL
 
 _check_dependency_versions.py_ parses a snapshot.yaml file and checks if there are new versions of the listed dependencies available
 
+_check_mod_update.py_ runs `ev-cli mod update --force` on every module and reports modules whose generated files do not regenerate cleanly
+
+_check_rust_pins.py_ checks that the git crates of the Rust modules are fetched by the Yocto recipe at the revision Cargo.toml or Cargo.lock pins them to
+
 _config2cmake.py_ parses a EVerest yaml config and prints a CMake command line to only include the modules needed by this config
 
 _create_snapshot.py_ uses EDM to create an snapshot in a temporary subdirectory and postprocesses it to fix common problems
 
 _parsebb.py_ parses .bb files and returns a json object containing the repository link, branch, revision and direct link to a file relative to the repo link
 
-_replace_license.py_ parses C++ files and replaces license headers with up2date Apache 2.0 headers used in EVerest
+_replace_license.py_ parses C++ files and replaces license headers with up2date Apache 2.0 headers used in EVerest, without years. With `--strip-years` it only removes the years from existing Pionix copyright notices in all tracked files
+
+_set_module_capabilities.py_ parses the manifest.yaml of every installed module and grants the Linux capabilities listed under `capabilities` as file capabilities on the module binary using setcap
 
 _snapshot2bb.py_ parses a snapshot.yaml file and modifies the corresponding recipe .bb files

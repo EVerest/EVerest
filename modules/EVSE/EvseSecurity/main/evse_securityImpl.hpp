@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/evse_security/Implementation.hpp>
@@ -71,6 +71,7 @@ protected:
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
+    void publish_cert_telemetry();
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
 
 private:
@@ -79,6 +80,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

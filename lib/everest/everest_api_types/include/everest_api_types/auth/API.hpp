@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 #include <cstdint>
@@ -44,11 +44,13 @@ enum class TokenValidationStatus {
     UsedToStart,
     UsedToStop,
     Withdrawn,
+    UsedToReauthorize,
 };
 
 enum class SelectionAlgorithm {
     UserInput,
     PlugEvents,
+    PlugEventsLIFO,
     FindFirst,
 };
 

@@ -8,6 +8,7 @@
 #include <nlohmann/json.hpp>
 
 #include <everest/logging.hpp>
+#include <utils/date.hpp>
 
 #include "command_api.hpp"
 #include "ipc.hpp"
@@ -30,6 +31,8 @@ int run_controller() {
     const auto config_params = message.json.at("params");
 
     Everest::Logging::init(config_params.at("logging_config_file"), "everest_ctrl");
+
+    Everest::Date::preload_tzdb();
 
     EVLOG_debug << "everest controller process started ...";
 

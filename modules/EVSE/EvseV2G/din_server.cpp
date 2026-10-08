@@ -4,14 +4,22 @@
 
 #include <cbv2g/din/din_msgDefDatatypes.h>
 
+#include <everest/util/misc/change_tracker.hpp>
 #include <inttypes.h>
 #include <string.h>
 
 #include "din_server.hpp"
 #include "log.hpp"
+#include "telemetry_publisher.hpp"
 #include "tools.hpp"
 #include "v2g_ctx.hpp"
 #include "v2g_server.hpp"
+
+namespace telemetry_types = everest::lib::API::V1_0::types::telemetry;
+using V2gTransportTracker = everest::lib::util::change_tracker<telemetry_types::V2gTransport>;
+using V2gEvElectricalTracker = everest::lib::util::change_tracker<telemetry_types::V2gEvElectrical>;
+using V2gPaymentServiceTracker = everest::lib::util::change_tracker<telemetry_types::V2gPaymentService>;
+using V2gChargerStatusTracker = everest::lib::util::change_tracker<telemetry_types::V2gChargerStatus>;
 
 #define SASCHEDULETUPLEID 1
 
@@ -126,6 +134,14 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
  * \param din_ev_status the structure the holds the EV Status elements.
  */
 static void publish_DIN_DcEvStatus(struct v2g_context* ctx, const struct din_DC_EVStatusType& din_ev_status) {
+    if (ctx->telemetry_publisher) {
+        ctx->telemetry_publisher->update_ev_electrical([&](V2gEvElectricalTracker& telemetry) {
+            telemetry.set(&telemetry_types::V2gEvElectrical::error_code,
+                          static_cast<telemetry_types::V2gEvErrorCode>(din_ev_status.EVErrorCode));
+            telemetry.set(&telemetry_types::V2gEvElectrical::battery_soc_percent, din_ev_status.EVRESSSOC);
+        });
+    }
+
     if ((ctx->ev_v2g_data.din_dc_ev_status.EVErrorCode != din_ev_status.EVErrorCode) ||
         (ctx->ev_v2g_data.din_dc_ev_status.EVReady != din_ev_status.EVReady) ||
         (ctx->ev_v2g_data.din_dc_ev_status.EVRESSSOC != din_ev_status.EVRESSSOC)) {
@@ -164,6 +180,22 @@ publish_din_service_discovery_req(struct v2g_context* ctx,
 static void publish_din_service_payment_selection_req(
     struct v2g_context* ctx, struct din_ServicePaymentSelectionReqType const* const v2g_payment_service_selection_req) {
     // V2G values that can be published: selected_payment_option, SelectedServiceList
+    if (ctx->telemetry_publisher) {
+        ctx->telemetry_publisher->update_payment_service([&](V2gPaymentServiceTracker& payment) {
+            payment.set(&telemetry_types::V2gPaymentService::external_payment_requested,
+                        v2g_payment_service_selection_req->SelectedPaymentOption ==
+                            din_paymentOptionType_ExternalPayment);
+            payment.set(&telemetry_types::V2gPaymentService::contract_payment_requested,
+                        v2g_payment_service_selection_req->SelectedPaymentOption == din_paymentOptionType_Contract);
+            for (uint16_t idx = 0;
+                 idx < v2g_payment_service_selection_req->SelectedServiceList.SelectedService.arrayLen; idx++) {
+                if (v2g_payment_service_selection_req->SelectedServiceList.SelectedService.array[idx].ServiceID ==
+                    V2G_SERVICE_ID_CHARGING) {
+                    payment.set(&telemetry_types::V2gPaymentService::charging_service_requested, true);
+                }
+            }
+        });
+    }
 }
 
 /*!
@@ -231,6 +263,40 @@ static void publish_din_charge_parameter_discovery_req(
         float evMaximumVoltageLimit = calc_physical_value(
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Value,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumVoltageLimit.Multiplier);
+
+        if (ctx->telemetry_publisher) {
+            ctx->telemetry_publisher->update_ev_electrical([&](V2gEvElectricalTracker& telemetry) {
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_current_A, evMaximumCurrentLimit);
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_power_W, evMaximumPowerLimit);
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_voltage_V, evMaximumVoltageLimit);
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_rated_current_A,
+                                           evMaximumCurrentLimit);
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_rated_power_W,
+                                           evMaximumPowerLimit);
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_rated_voltage_V,
+                                           evMaximumVoltageLimit);
+                if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity_isUsed == 1) {
+                    telemetry.set_almost_eq<2>(
+                        &telemetry_types::V2gEvElectrical::energy_capacity_Wh,
+                        calc_physical_value(
+                            v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Value,
+                            v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyCapacity.Multiplier));
+                }
+                if (v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest_isUsed == 1) {
+                    telemetry.set_almost_eq<2>(
+                        &telemetry_types::V2gEvElectrical::energy_request_Wh,
+                        calc_physical_value(
+                            v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Value,
+                            v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVEnergyRequest.Multiplier));
+                }
+                telemetry.set(&telemetry_types::V2gEvElectrical::error_code,
+                              static_cast<telemetry_types::V2gEvErrorCode>(
+                                  v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVErrorCode));
+                telemetry.set(&telemetry_types::V2gEvElectrical::battery_soc_percent,
+                              v2g_charge_parameter_discovery_req->DC_EVChargeParameter.DC_EVStatus.EVRESSSOC);
+            });
+        }
+
         publish_dc_ev_maximum_limits(
             ctx, evMaximumCurrentLimit, (unsigned int)1, evMaximumPowerLimit,
             v2g_charge_parameter_discovery_req->DC_EVChargeParameter.EVMaximumPowerLimit_isUsed, evMaximumVoltageLimit,
@@ -246,6 +312,14 @@ static void publish_din_charge_parameter_discovery_req(
 static void publish_din_power_delivery_req(struct v2g_context* ctx,
                                            struct din_PowerDeliveryReqType const* const v2g_power_delivery_req) {
     // V2G values that can be published: ReadyToChargeState
+    if (ctx->telemetry_publisher) {
+        ctx->telemetry_publisher->update_ev_electrical([&](V2gEvElectricalTracker& telemetry) {
+            telemetry.set(&telemetry_types::V2gEvElectrical::charge_progress,
+                          v2g_power_delivery_req->ReadyToChargeState == 1 ? telemetry_types::ChargeProgress::Start
+                                                                          : telemetry_types::ChargeProgress::Stop);
+        });
+    }
+
     if (v2g_power_delivery_req->DC_EVPowerDeliveryParameter_isUsed == (unsigned int)1) {
         ctx->p_charger->publish_dc_charging_complete(
             v2g_power_delivery_req->DC_EVPowerDeliveryParameter.ChargingComplete);
@@ -264,10 +338,23 @@ static void publish_din_power_delivery_req(struct v2g_context* ctx,
  */
 static void publish_din_precharge_req(struct v2g_context* ctx,
                                       struct din_PreChargeReqType const* const v2g_precharge_req) {
-    publish_dc_ev_target_voltage_current(
-        ctx,
-        calc_physical_value(v2g_precharge_req->EVTargetVoltage.Value, v2g_precharge_req->EVTargetVoltage.Multiplier),
-        calc_physical_value(v2g_precharge_req->EVTargetCurrent.Value, v2g_precharge_req->EVTargetCurrent.Multiplier));
+    const auto target_voltage =
+        calc_physical_value(v2g_precharge_req->EVTargetVoltage.Value, v2g_precharge_req->EVTargetVoltage.Multiplier);
+    const auto target_current =
+        calc_physical_value(v2g_precharge_req->EVTargetCurrent.Value, v2g_precharge_req->EVTargetCurrent.Multiplier);
+
+    if (ctx->telemetry_publisher) {
+        ctx->telemetry_publisher->update_ev_electrical([&](V2gEvElectricalTracker& telemetry) {
+            telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::target_voltage_V, target_voltage);
+            telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::target_current_A, target_current);
+            telemetry.set(&telemetry_types::V2gEvElectrical::error_code,
+                          static_cast<telemetry_types::V2gEvErrorCode>(v2g_precharge_req->DC_EVStatus.EVErrorCode));
+            telemetry.set(&telemetry_types::V2gEvElectrical::battery_soc_percent,
+                          v2g_precharge_req->DC_EVStatus.EVRESSSOC);
+        });
+    }
+
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
     publish_DIN_DcEvStatus(ctx, v2g_precharge_req->DC_EVStatus);
 }
 
@@ -289,11 +376,12 @@ static void publish_din_current_demand_req(struct v2g_context* ctx,
 
     publish_DIN_DcEvStatus(ctx, v2g_current_demand_req->DC_EVStatus);
 
-    publish_dc_ev_target_voltage_current(ctx,
-                                         calc_physical_value(v2g_current_demand_req->EVTargetVoltage.Value,
-                                                             v2g_current_demand_req->EVTargetVoltage.Multiplier),
-                                         calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
-                                                             v2g_current_demand_req->EVTargetCurrent.Multiplier));
+    const auto target_voltage = calc_physical_value(v2g_current_demand_req->EVTargetVoltage.Value,
+                                                    v2g_current_demand_req->EVTargetVoltage.Multiplier);
+    const auto target_current = calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
+                                                    v2g_current_demand_req->EVTargetCurrent.Multiplier);
+
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
 
     float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
@@ -315,6 +403,35 @@ static void publish_din_current_demand_req(struct v2g_context* ctx,
     publish_dc_ev_remaining_time(
         ctx, v2g_dc_ev_remaining_time_to_full_soc, v2g_current_demand_req->RemainingTimeToFullSoC_isUsed,
         v2g_dc_ev_remaining_time_to_bulk_soc, v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed);
+
+    if (ctx->telemetry_publisher) {
+        ctx->telemetry_publisher->update_ev_electrical([&](V2gEvElectricalTracker& telemetry) {
+            telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::target_voltage_V, target_voltage);
+            telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::target_current_A, target_current);
+            if (v2g_current_demand_req->EVMaximumCurrentLimit_isUsed == 1) {
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_current_A, evMaximumCurrentLimit);
+            }
+            if (v2g_current_demand_req->EVMaximumPowerLimit_isUsed == 1) {
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_power_W, evMaximumPowerLimit);
+            }
+            if (v2g_current_demand_req->EVMaximumVoltageLimit_isUsed == 1) {
+                telemetry.set_almost_eq<2>(&telemetry_types::V2gEvElectrical::maximum_voltage_V, evMaximumVoltageLimit);
+            }
+            if (v2g_current_demand_req->RemainingTimeToFullSoC_isUsed == 1) {
+                telemetry.set(&telemetry_types::V2gEvElectrical::remaining_time_full_min,
+                              static_cast<int>(v2g_dc_ev_remaining_time_to_full_soc));
+            }
+            if (v2g_current_demand_req->RemainingTimeToBulkSoC_isUsed == 1) {
+                telemetry.set(&telemetry_types::V2gEvElectrical::remaining_time_bulk_min,
+                              static_cast<int>(v2g_dc_ev_remaining_time_to_bulk_soc));
+            }
+            telemetry.set(
+                &telemetry_types::V2gEvElectrical::error_code,
+                static_cast<telemetry_types::V2gEvErrorCode>(v2g_current_demand_req->DC_EVStatus.EVErrorCode));
+            telemetry.set(&telemetry_types::V2gEvElectrical::battery_soc_percent,
+                          v2g_current_demand_req->DC_EVStatus.EVRESSSOC);
+        });
+    }
 }
 
 //=============================================
@@ -339,6 +456,15 @@ enum v2g_event handle_din_session_setup(struct v2g_connection* conn) {
     const auto mac_addr = to_mac_address_str(&req->EVCCID.bytes[0], req->EVCCID.bytesLen);
 
     conn->ctx->p_charger->publish_evcc_id(mac_addr); // publish EVCC ID
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::session_setup_requested, true);
+        });
+        conn->ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set(&telemetry_types::V2gChargerStatus::evcc_id, mac_addr);
+            charger_status.set(&telemetry_types::V2gChargerStatus::param_discovery_finished, false);
+        });
+    }
 
     dlog(DLOG_LEVEL_INFO, "SessionSetupReq.EVCCID: %s",
          (mac_addr.empty()) ? "(zero length provided)" : mac_addr.c_str());
@@ -478,6 +604,11 @@ enum v2g_event states::handle_din_contract_authentication(struct v2g_connection*
         &conn->exi_out.dinEXIDocument->V2G_Message.Body.ContractAuthenticationRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
 
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport(
+            [](auto& transport) { transport.set(&telemetry_types::V2gTransport::authorization_requested, true); });
+    }
+
     /* Fill the EVSE response message */
     if (conn->ctx->session.authorization_rejected == true) {
         res->ResponseCode = din_responseCodeType_FAILED;
@@ -513,6 +644,13 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
         &conn->exi_out.dinEXIDocument->V2G_Message.Body.ChargeParameterDiscoveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
 
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::charge_parameter_discovery_requested, true);
+        });
+    }
+    const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
+
     /* At first, publish the received EV request message to the customer MQTT interface */
     publish_din_charge_parameter_discovery_req(conn->ctx, req);
 
@@ -520,14 +658,14 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
     res->AC_EVSEChargeParameter_isUsed = 0u;
 
-    if (((req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_core) &&
-         (req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_extended)) ||
-        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] !=
+    if (((req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_core) ||
+         (req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_extended)) &&
+        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] ==
             (iso2_EnergyTransferModeType)req->EVRequestedEnergyTransferType) {
+        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
+    } else if (conn->ctx->is_fake_dc == false) {
         res->ResponseCode = din_responseCodeType_FAILED_WrongEnergyTransferType; // [V2G-DC-397] Failed reponse code is
                                                                                  // logged at the end of the function
-    } else {
-        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
     }
 
     res->ResponseCode = (req->AC_EVChargeParameter_isUsed == (unsigned int)1)
@@ -622,10 +760,44 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     // res->SASchedules.noContent
     res->SASchedules_isUsed = (unsigned int)0;
 
+    constexpr auto physical_value_to_float = [](const din_PhysicalValueType& pv) {
+        return calc_physical_value(pv.Value, pv.Multiplier);
+    };
+
+    const auto ev_maximum_current_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumCurrentLimit);
+    const auto ev_maximum_voltage_limit = physical_value_to_float(req->DC_EVChargeParameter.EVMaximumVoltageLimit);
+    const auto evse_minimum_current_limit =
+        physical_value_to_float(res->DC_EVSEChargeParameter.EVSEMinimumCurrentLimit);
+    const auto evse_minimum_voltage_limit =
+        physical_value_to_float(res->DC_EVSEChargeParameter.EVSEMinimumVoltageLimit);
+
+    if (ev_maximum_current_limit <= evse_minimum_current_limit ||
+        ev_maximum_voltage_limit <= evse_minimum_voltage_limit) {
+        res->ResponseCode = din_responseCodeType_FAILED_WrongChargeParameter;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+    }
+
     if (res->EVSEProcessing == din_EVSEProcessingType_Finished and
         conn->ctx->evse_v2g_data.no_energy_pause != NoEnergyPauseStatus::None) {
         res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = din_EVSENotificationType_StopCharging;
         res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+    }
+
+    /* If fake HLC DC is active, try to stop the charging session over EVSENotification and EVSEStatusCode first.
+     * If the EV is ignoring the shutdown request, stop the charging session in the next response message with a failed
+     * response code.
+     */
+    if (conn->ctx->is_fake_dc) {
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = din_EVSENotificationType_StopCharging;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+
+        if (first_req == true) {
+            dlog(DLOG_LEVEL_INFO, "Initiate stop of the fake HLC DIN DC session");
+            res->EVSEProcessing = din_EVSEProcessingType_Ongoing;
+        } else {
+            res->ResponseCode = din_responseCodeType_FAILED;
+        }
     }
 
     /* Check the current response code and check if no external error has occurred */
@@ -633,7 +805,8 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
 
     /* Set next expected req msg */
     if (res->EVSEProcessing == din_EVSEProcessingType_Finished) {
-        if (res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) {
+        if ((res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) &&
+            (conn->ctx->is_fake_dc == false)) {
             dlog(DLOG_LEVEL_WARNING,
                  "EVSE wants to finish charge parameter phase, but status code is not set to 'ready' (1)");
         }
@@ -648,6 +821,13 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
         conn->ctx->state = WAIT_FOR_CHARGEPARAMETERDISCOVERY; // [V2G-DC-498]
     }
 
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_charger_status([&](V2gChargerStatusTracker& charger_status) {
+            charger_status.set(&telemetry_types::V2gChargerStatus::param_discovery_finished,
+                               res->EVSEProcessing == din_EVSEProcessingType_Finished);
+        });
+    }
+
     return nextEvent;
 }
 
@@ -658,7 +838,7 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
     struct din_PowerDeliveryReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.PowerDeliveryReq;
     struct din_PowerDeliveryResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.PowerDeliveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
@@ -667,6 +847,16 @@ static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
     publish_din_power_delivery_req(conn->ctx, req);
 
     if (req->ReadyToChargeState == (int)0) {
+        /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
+         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.5.19]. More
+         * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
+        for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+            uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];
+            if ((status_code == din_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+                (status_code == din_DC_EVSEStatusCodeType_EVSE_Ready)) {
+                status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+            }
+        }
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
@@ -748,6 +938,12 @@ static enum v2g_event handle_din_cable_check(struct v2g_connection* conn) {
     struct din_CableCheckResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.CableCheckRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
 
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::cable_check_requested, true);
+        });
+    }
+
     /* At first, publish the received EV request message to the MQTT interface */
     publish_DIN_DcEvStatus(conn->ctx, req->DC_EVStatus);
 
@@ -811,6 +1007,12 @@ static enum v2g_event handle_din_pre_charge(struct v2g_connection* conn) {
     struct din_PreChargeResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.PreChargeRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
 
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::pre_charge_requested, true);
+        });
+    }
+
     /* At first, publish the received EV request message to the customer MQTT interface */
     publish_din_precharge_req(conn->ctx, req);
 
@@ -848,6 +1050,12 @@ static enum v2g_event handle_din_current_demand(struct v2g_connection* conn) {
     struct din_CurrentDemandReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.CurrentDemandReq;
     struct din_CurrentDemandResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.CurrentDemandRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::current_demand_requested, true);
+        });
+    }
 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_din_current_demand_req(conn->ctx, req);
@@ -898,10 +1106,16 @@ static enum v2g_event handle_din_current_demand(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_welding_detection(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn) {
     struct din_WeldingDetectionReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct din_WeldingDetectionResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+
+    if (conn->ctx->telemetry_publisher) {
+        conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
+            transport.set(&telemetry_types::V2gTransport::welding_detection_requested, true);
+        });
+    }
 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_DIN_DcEvStatus(conn->ctx, req->DC_EVStatus);
@@ -946,6 +1160,12 @@ static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
 
     /* Check the current response code and check if no external error has occurred */
     utils::din_validate_response_code(&res->ResponseCode, conn);
+
+    /* A positive SessionStopRes anchors the CP-oscillator retain time [V2G-DC-968]; DIN has no
+     * pause, so this is always a terminate */
+    if (res->ResponseCode == din_responseCodeType_OK) {
+        conn->session_stop_res_pending = v2g_connection::SessionStopResPending::TERMINATE;
+    }
 
     /* Setuo dlink action */
     conn->d_link_action = dLinkAction::D_LINK_ACTION_TERMINATE;
@@ -1059,7 +1279,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 1u;
         init_din_PowerDeliveryResType(&exi_out->V2G_Message.Body.PowerDeliveryRes);
-        next_v2g_event = handle_din_power_delivery(conn);
+        next_v2g_event = states::handle_din_power_delivery(conn);
     } else if (exi_in->V2G_Message.Body.ChargingStatusReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "ChargingStatus request is not supported in DIN 70121");
         conn->ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
@@ -1088,7 +1308,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed = 1u;
         init_din_WeldingDetectionResType(&exi_out->V2G_Message.Body.WeldingDetectionRes);
-        next_v2g_event = handle_din_welding_detection(conn);
+        next_v2g_event = states::handle_din_welding_detection(conn);
     } else if (exi_in->V2G_Message.Body.SessionStopReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "Handling SessionStopReq");
         conn->ctx->current_v2g_msg = V2G_SESSION_STOP_MSG;

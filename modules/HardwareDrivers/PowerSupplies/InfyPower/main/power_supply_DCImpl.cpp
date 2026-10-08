@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
 #include <iomanip>
@@ -78,7 +78,10 @@ void power_supply_DCImpl::init() {
         new_caps.max_export_voltage_V = min_max_output_voltage;
         new_caps.min_export_voltage_V = max_min_output_voltage;
         new_caps.conversion_efficiency_export = mod->config.conversion_efficiency_export;
-        caps = new_caps;
+        {
+            std::lock_guard<std::mutex> lock(caps_mutex);
+            caps = new_caps;
+        }
         EVLOG_info << "Infy: Capabilities updated: " << new_caps.max_export_voltage_V << "V / "
                    << new_caps.min_export_voltage_V << "V, " << new_caps.max_export_current_A << "A, power "
                    << new_caps.max_export_power_W << "W";
@@ -139,30 +142,47 @@ void power_supply_DCImpl::ready() {
 
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
+    std::lock_guard<std::mutex> command_lock(command_mutex);
     EVLOG_info << "Set mode via CAN: " << mode << " with phase " << phase;
     if (mode == types::power_supply_DC::Mode::Off) {
         mod->acdc->switch_on_off(false);
     } else if (mode == types::power_supply_DC::Mode::Export) {
-        mod->acdc->switch_on_off(true);
+        mod->acdc->switch_on_off(not off_for_zero_current);
     } else if (mode == types::power_supply_DC::Mode::Import) {
         mod->acdc->switch_on_off(true);
     } else if (mode == types::power_supply_DC::Mode::Fault) {
         mod->acdc->switch_on_off(false);
+    }
+    if (mode != types::power_supply_DC::Mode::Export) {
+        off_for_zero_current = false;
     }
     this->mode.store(mode);
     this->phase.store(phase);
 };
 
 void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double& current) {
-    if (voltage > caps.max_export_voltage_V)
-        voltage = caps.max_export_voltage_V;
-    else if (voltage < caps.min_export_voltage_V)
-        voltage = caps.min_export_voltage_V;
+    std::lock_guard<std::mutex> command_lock(command_mutex);
+    if (current <= 0. and mode.load() == types::power_supply_DC::Mode::Export) {
+        exportCurrentLimit.store(0.);
+        if (not off_for_zero_current) {
+            EVLOG_info << "Infy: 0 A requested, switching DC output off";
+            off_for_zero_current = true;
+            mod->acdc->switch_on_off(false);
+        }
+        return;
+    }
+    {
+        std::lock_guard<std::mutex> caps_lock(caps_mutex);
+        if (voltage > caps.max_export_voltage_V)
+            voltage = caps.max_export_voltage_V;
+        else if (voltage < caps.min_export_voltage_V)
+            voltage = caps.min_export_voltage_V;
 
-    if (current > caps.max_export_current_A)
-        current = caps.max_export_current_A;
-    else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+        if (current > caps.max_export_current_A)
+            current = caps.max_export_current_A;
+        else if (current < caps.min_export_current_A)
+            current = caps.min_export_current_A;
+    }
 
     exportVoltage.store(voltage);
     exportCurrentLimit.store(current);
@@ -178,21 +198,37 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
                    << exportCurrentLimit.load() << "A (but no active modules detected)";
     }
     mod->acdc->set_voltage_current(exportVoltage.load(), exportCurrentLimit.load());
+
+    if (off_for_zero_current) {
+        off_for_zero_current = false;
+        if (mode.load() == types::power_supply_DC::Mode::Export) {
+            EVLOG_info << "Infy: current above 0 A requested, switching DC output on";
+            mod->acdc->switch_on_off(true);
+        }
+    }
 };
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
-    if (caps.min_import_voltage_V.has_value() && caps.max_import_voltage_V.has_value() &&
-        caps.min_import_current_A.has_value() && caps.max_import_current_A.has_value()) {
-        if (voltage > caps.max_import_voltage_V.value())
-            voltage = caps.max_import_voltage_V.value();
-        else if (voltage < caps.min_import_voltage_V.value())
-            voltage = caps.min_import_voltage_V.value();
+    std::lock_guard<std::mutex> command_lock(command_mutex);
+    bool has_import_caps = false;
+    {
+        std::lock_guard<std::mutex> caps_lock(caps_mutex);
+        has_import_caps = caps.min_import_voltage_V.has_value() && caps.max_import_voltage_V.has_value() &&
+                          caps.min_import_current_A.has_value() && caps.max_import_current_A.has_value();
+        if (has_import_caps) {
+            if (voltage > caps.max_import_voltage_V.value())
+                voltage = caps.max_import_voltage_V.value();
+            else if (voltage < caps.min_import_voltage_V.value())
+                voltage = caps.min_import_voltage_V.value();
 
-        if (current > caps.max_import_current_A.value())
-            current = caps.max_import_current_A.value();
-        else if (current < caps.min_import_current_A.value())
-            current = caps.min_import_current_A.value();
+            if (current > caps.max_import_current_A.value())
+                current = caps.max_import_current_A.value();
+            else if (current < caps.min_import_current_A.value())
+                current = caps.min_import_current_A.value();
+        }
+    }
 
+    if (has_import_caps) {
         minImportVoltage.store(voltage);
         importCurrentLimit.store(current);
 

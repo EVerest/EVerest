@@ -18,8 +18,8 @@ Let's start with the EVerest configuration file. If you haven't read
 now it's the right time to do it before you go on!
 
 It's a good idea to start with a base of a configuration file and talk about the changes required to enable
-Plug&Charge. The base config we use is the "config-sil-ocpp201.yaml", which already contains the configuration
-for OCPP2.x.
+Plug&Charge. The base config we use is the "config-sil-ocpp-multi.yaml", which uses the recommended
+OCPPmulti module, which supports OCPP 1.6 and OCPP 2.x.
 
 Module Configurations
 ---------------------
@@ -61,8 +61,11 @@ for information on the ISO15118 configuration. It describes how to configure the
 OCPP 1.6 and OCPP 2.x configuration
 -----------------------------------
 
-For a general introduction to how to configure OCPP in EVerest, please refer to :ref:`the OCPP1.6 tutorial <tutorial-ocpp16>`
-or :ref:`the OCPP2.x tutorial <tutorial-ocpp2>`.
+For a general introduction to how to configure OCPP in EVerest, please refer to
+:ref:`the combined-module tutorial <tutorial-ocpp-combined>` (recommended). For the deprecated
+single-version modules, see :ref:`the OCPP1.6 tutorial <tutorial-ocpp16>` or
+:ref:`the OCPP2.x tutorial <tutorial-ocpp2>`. The configuration keys below are
+protocol-level and apply to OCPPmulti and the deprecated modules alike.
 
 Since Plug&Charge has been backported from OCPP 2.x to OCPP 1.6, the
 configuration options to control the process are mostly identical.

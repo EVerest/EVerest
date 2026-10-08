@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/variant.hpp>
 
 #include <cassert>
@@ -9,6 +9,8 @@
 #include <iso15118/detail/variant_access.hpp>
 
 #include <cbv2g/app_handshake/appHand_Decoder.h>
+#include <cbv2g/iso_20/iso20_AC_DER_IEC_Decoder.h>
+#include <cbv2g/iso_20/iso20_AC_DER_SAE_Decoder.h>
 #include <cbv2g/iso_20/iso20_AC_Decoder.h>
 #include <cbv2g/iso_20/iso20_CommonMessages_Decoder.h>
 #include <cbv2g/iso_20/iso20_DC_Decoder.h>
@@ -29,6 +31,8 @@ static void handle_sap(VariantAccess& va) {
 
     if (doc.supportedAppProtocolReq_isUsed) {
         insert_type(va, doc.supportedAppProtocolReq);
+    } else if (doc.supportedAppProtocolRes_isUsed) {
+        insert_type(va, doc.supportedAppProtocolRes);
     } else {
         va.error = "chosen message type unhandled";
     }
@@ -56,6 +60,10 @@ static void handle_main(VariantAccess& va) {
         insert_type(va, doc.AuthorizationReq);
     } else if (doc.AuthorizationRes_isUsed) {
         insert_type(va, doc.AuthorizationRes);
+    } else if (doc.CertificateInstallationReq_isUsed) {
+        insert_type(va, doc.CertificateInstallationReq);
+    } else if (doc.CertificateInstallationRes_isUsed) {
+        insert_type(va, doc.CertificateInstallationRes);
     } else if (doc.ServiceDiscoveryReq_isUsed) {
         insert_type(va, doc.ServiceDiscoveryReq);
     } else if (doc.ServiceDiscoveryRes_isUsed) {
@@ -143,10 +151,65 @@ static void handle_ac(VariantAccess& va) {
     }
 }
 
+static void handle_ac_iec_der(VariantAccess& va) {
+    iso20_ac_der_iec_exiDocument doc{};
+
+    const auto decode_status = decode_iso20_ac_der_iec_exiDocument(&va.input_stream, &doc);
+
+    if (decode_status != 0) {
+        va.error = "decode_iso20_ac_der_iec_exiDocument failed with " + std::to_string(decode_status);
+        return;
+    }
+
+    if (doc.AC_ChargeParameterDiscoveryReq_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryReq);
+    } else if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
+    } else if (doc.AC_ChargeLoopReq_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopReq);
+    } else if (doc.AC_ChargeLoopRes_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopRes);
+    } else {
+        va.error = "chosen message type unhandled";
+    }
+}
+
+static void handle_ac_sae_der(VariantAccess& va) {
+    iso20_ac_der_sae_exiDocument doc{};
+
+    const auto decode_status = decode_iso20_ac_der_sae_exiDocument(&va.input_stream, &doc);
+
+    if (decode_status != 0) {
+        va.error = "decode_iso20_ac_der_sae_exiDocument failed with " + std::to_string(decode_status);
+        return;
+    }
+
+    if (doc.AC_ChargeParameterDiscoveryReq_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryReq);
+    } else if (doc.AC_ChargeParameterDiscoveryRes_isUsed) {
+        insert_type(va, doc.AC_ChargeParameterDiscoveryRes);
+    } else if (doc.AC_ChargeLoopReq_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopReq);
+    } else if (doc.AC_ChargeLoopRes_isUsed) {
+        insert_type(va, doc.AC_ChargeLoopRes);
+    } else {
+        va.error = "chosen message type unhandled";
+    }
+}
+
 Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView& buffer_view) {
 
+    if (buffer_view.payload == nullptr or buffer_view.payload_len == 0) {
+        error = "empty EXI payload";
+        logf_error("Failed due to: %s\n", error.c_str());
+        return;
+    }
+
     VariantAccess va{
-        get_exi_input_stream(buffer_view), this->data, this->type, this->custom_deleter, this->error,
+        get_exi_input_stream(buffer_view),
+        this->data,
+        this->type,
+        this->error,
     };
 
     if (payload_type == PayloadType::SAP) {
@@ -157,22 +220,23 @@ Variant::Variant(io::v2gtp::PayloadType payload_type, const io::StreamInputView&
         handle_dc(va);
     } else if (payload_type == PayloadType::Part20AC) {
         handle_ac(va);
+    } else if (payload_type == io::v2gtp::PayloadType::Part20DerIec) {
+        handle_ac_iec_der(va);
+    } else if (payload_type == io::v2gtp::PayloadType::Part20DerSae) {
+        handle_ac_sae_der(va);
     } else {
         logf_warning("Unknown type");
     }
 
-    if (data) {
-        // in case data was set, make sure the custom deleter and the type were set!
-        assert(custom_deleter != nullptr);
+    if (data != nullptr) {
+        // in case data was set, make sure the type were set!
         assert(type != Type::None);
     } else {
         logf_error("Failed due to: %s\n", error.c_str());
     }
-}
 
-Variant::~Variant() {
-    if (data) {
-        custom_deleter(data);
+    if (type == Type::AuthorizationReq or type == Type::CertificateInstallationReq) {
+        exi_payload.assign(buffer_view.payload, buffer_view.payload + buffer_view.payload_len);
     }
 }
 

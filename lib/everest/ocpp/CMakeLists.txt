@@ -31,8 +31,10 @@ endif()
 
 if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
     set(LIBOCPP_BUILD_TESTING ON)
-    evc_include(CodeCoverage)
+endif()
 
+if(LIBOCPP_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+    evc_include(CodeCoverage)
     append_coverage_compiler_flags()
 endif()
 
@@ -42,8 +44,12 @@ if(POLICY CMP0167)
 endif()
 
 # dependencies
-find_package(Boost COMPONENTS program_options regex thread REQUIRED)
+find_package(Boost COMPONENTS program_options thread REQUIRED)
 find_package(SQLite3 REQUIRED)
+if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
+  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
+  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
+endif()
 find_package(OpenSSL 3 REQUIRED)
 
 if(NOT DISABLE_EDM)
@@ -55,6 +61,7 @@ else()
     find_package(date REQUIRED)
     find_package(nlohmann_json REQUIRED)
     find_package(nlohmann_json_schema_validator REQUIRED)
+    find_package(ryml REQUIRED)
     find_package(libwebsockets REQUIRED)
 endif()
 
@@ -87,6 +94,7 @@ if (OCPP_INSTALL)
         NAMESPACE everest
         EXPORT ocpp-targets
         ADDITIONAL_CONTENT
+            "find_dependency(everest-util)"
             "find_dependency(OpenSSL)"
             "find_dependency(SQLite3)"
             "find_dependency(libwebsockets)"

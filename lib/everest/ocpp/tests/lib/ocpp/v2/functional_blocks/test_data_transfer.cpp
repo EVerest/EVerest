@@ -36,7 +36,7 @@ public:
 protected: // Members
     MockMessageDispatcher mock_dispatcher;
     DeviceModel* device_model;
-    ::testing::NiceMock<ConnectivityManagerMock> connectivity_manager;
+    ::testing::NiceMock<ocpp::ConnectivityManagerMock> connectivity_manager;
     ::testing::NiceMock<DatabaseHandlerMock> database_handler_mock;
     ocpp::EvseSecurityMock evse_security;
     EvseManagerFake evse_manager;

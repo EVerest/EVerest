@@ -1,0 +1,19 @@
+sequenceDiagram
+    participant Client as Configuration API Client
+    participant Manager as EVerest Manager + ConfigServiceCore
+    participant Modules as EVerest Modules
+
+    Client->>Manager: [Configuration API] MarkActiveSlotRequest(slot_id)
+    Manager->Manager: Persist next_boot_slot change
+    Manager-->>Client: [Configuration API] MarkActiveSlotResult(Success)
+    Manager-->>Client: [Configuration API] ActiveSlotUpdate(active, next_boot, status)
+    Client->>Manager: [Lifecycle API] RestartModulesRequest
+    Note over Manager,Modules: with --graceful-shutdown the MQTT shutdown signal is published first
+    Manager->>Modules: Terminate module processes (SIGTERM, escalating to SIGKILL)
+    Note over Modules: Modules stopped
+    Note over Manager: Configuration API still available
+    Manager->Manager: Load new slot configuration (reinitialize_from_db)
+    Manager->Manager: Validate configuration
+    Manager->>Modules: Spawn modules with new config
+    Note over Modules: Modules running
+    Manager-->>Client: [Configuration API] ActiveSlotUpdate(status: Running)

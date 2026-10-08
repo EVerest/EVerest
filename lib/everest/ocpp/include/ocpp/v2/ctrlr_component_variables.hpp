@@ -1,15 +1,20 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 -  Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_V2_CTRLR_COMPONENT_VARIABLES
 #define OCPP_V2_CTRLR_COMPONENT_VARIABLES
 
+#include <cstdint>
+#include <optional>
 #include <set>
 
 #include <ocpp/v2/ocpp_types.hpp>
 
 namespace ocpp {
 namespace v2 {
+
+class DeviceModelInterface;
+
 ///
 /// \brief Required ComponentVariable.
 ///
@@ -103,7 +108,6 @@ extern const Variable Fallback;
 // Provides access to standardized variables of OCPP2.0.1 spec
 namespace ControllerComponentVariables {
 extern const ComponentVariable InternalCtrlrEnabled;
-extern const RequiredComponentVariable ChargePointId;
 extern const RequiredComponentVariable NetworkConnectionProfiles;
 extern const RequiredComponentVariable ChargeBoxSerialNumber;
 extern const RequiredComponentVariable ChargePointModel;
@@ -130,11 +134,13 @@ extern const ComponentVariable RoundClockAlignedTimestamps;
 extern const ComponentVariable NetworkConfigTimeout;
 extern const ComponentVariable MaxCompositeScheduleDuration;
 extern const RequiredComponentVariable NumberOfConnectors;
+extern const ComponentVariable ConnectorEvseIds;
 extern const ComponentVariable UseSslDefaultVerifyPaths;
 extern const ComponentVariable VerifyCsmsCommonName;
 extern const ComponentVariable UseTPM;
 extern const ComponentVariable UseTPMSeccLeafCertificate;
 extern const ComponentVariable VerifyCsmsAllowWildcards;
+extern const ComponentVariable ReportSuspendedEVSEReasonChange;
 extern const ComponentVariable IFace;
 extern const ComponentVariable EnableTLSKeylog;
 extern const ComponentVariable TLSKeylogFile;
@@ -151,6 +157,7 @@ extern const ComponentVariable MessageQueueSizeThreshold;
 extern const ComponentVariable MaxMessageSize;
 extern const ComponentVariable ResumeTransactionsOnBoot;
 extern const ComponentVariable AllowSecurityLevelZeroConnections;
+extern const ComponentVariable DeferFirmwareDownloadDuringTransaction;
 extern const RequiredComponentVariable SupportedOcppVersions;
 extern const ComponentVariable AlignedDataCtrlrEnabled;
 extern const ComponentVariable AlignedDataCtrlrAvailable;
@@ -241,6 +248,7 @@ extern const RequiredComponentVariable NetworkProfileConnectionAttempts;
 extern const RequiredComponentVariable OfflineThreshold;
 extern const ComponentVariable QueueAllMessages;
 extern const ComponentVariable MessageTypesDiscardForQueueing;
+extern const ComponentVariable QueueNotifyEventMessages;
 extern const RequiredComponentVariable ResetRetries;
 extern const RequiredComponentVariable RetryBackOffRandomRange;
 extern const RequiredComponentVariable RetryBackOffRepeatTimes;
@@ -329,10 +337,12 @@ extern const RequiredComponentVariable SupportedFeatureProfiles;
 extern const ComponentVariable SupportedFeatureProfilesMaxLength;
 extern const RequiredComponentVariable UnlockConnectorOnEVSideDisconnect;
 extern const ComponentVariable ReserveConnectorZeroSupported;
-extern const ComponentVariable HostName;
 extern const ComponentVariable AllowChargingProfileWithoutStartSchedule;
 extern const ComponentVariable WaitForStopTransactionsOnResetTimeout;
+extern const ComponentVariable SwitchSecurityProfileConnectionTimeout;
 extern const ComponentVariable StopTransactionIfUnlockNotSupported;
+extern const ComponentVariable RejectRemoteStartTransactionWithoutConnectorId;
+extern const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst;
 extern const ComponentVariable MeterPublicKeys;
 extern const ComponentVariable DisableSecurityEventNotifications;
 extern const ComponentVariable ISO15118CertificateManagementEnabled;
@@ -344,9 +354,7 @@ extern const ComponentVariable SupportedLanguages;
 extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
-extern const ComponentVariable AuthorizationKey16;
-extern const RequiredComponentVariable CentralSystemURI16;
-extern const RequiredComponentVariable SecurityProfile16;
+extern const ComponentVariable ReportClearedErrors;
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {
@@ -409,6 +417,51 @@ extern const Variable VehicleCertificateRoot;
 Variable get_protocol_supported_by_ev(const std::int32_t priority);
 ComponentVariable get_component_variable(const std::int32_t evse_id, const Variable& variable);
 } // namespace ConnectedEvComponentVariables
+
+namespace NetworkConfigurationComponentVariables {
+extern const Variable OcppCsmsUrl;
+extern const Variable SecurityProfile;
+extern const Variable OcppInterface;
+extern const Variable OcppTransport;
+extern const Variable MessageTimeout;
+extern const Variable Identity;
+extern const Variable BasicAuthPassword;
+extern const Variable ApnEnabled;
+extern const Variable VpnEnabled;
+extern const Variable Apn;
+extern const Variable ApnUserName;
+extern const Variable ApnPassword;
+extern const Variable SimPin;
+extern const Variable PreferredNetwork;
+extern const Variable UseOnlyPreferredNetwork;
+extern const Variable ApnAuthentication;
+extern const Variable VpnServer;
+extern const Variable VpnUser;
+extern const Variable VpnPassword;
+extern const Variable VpnKey;
+extern const Variable VpnType;
+extern const Variable VpnGroup;
+extern const Variable OcppVersion;
+extern const Variable CsmsRootCertificateHashAlgorithm;
+extern const Variable CsmsRootCertificateIssuerKeyHash;
+extern const Variable CsmsRootCertificateIssuerNameHash;
+extern const Variable CsmsRootCertificateSerialNumber;
+extern const Variable HostName;
+ComponentVariable get_component_variable(const std::int32_t slot, const Variable& variable);
+std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelInterface& dm, int32_t slot);
+bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const NetworkConnectionProfile& profile,
+                                   const std::string& source);
+void migrate_from_blob_if_needed(DeviceModelInterface& dm);
+void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
+} // namespace NetworkConfigurationComponentVariables
+
+namespace DERComponentVariables {
+extern const Variable Available;
+extern const Variable Enabled;
+extern const Variable ModesSupported;
+ComponentVariable get_dc_component_variable(const std::int32_t evse_id, const Variable& variable);
+ComponentVariable get_ac_component_variable(const std::int32_t evse_id, const Variable& variable);
+} // namespace DERComponentVariables
 
 } // namespace v2
 } // namespace ocpp

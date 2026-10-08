@@ -14,6 +14,10 @@ config:
     default: 550
     minimum: 1
     maximum: 550
+  latch_variable_values:
+    description: "Determines whether variables published by this module are cached and made available for `get` requests."
+    type: boolean
+    default: true
 
 provides:
   main:

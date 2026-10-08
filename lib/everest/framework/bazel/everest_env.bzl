@@ -46,21 +46,25 @@ def _everest_env(ctx):
         ][0]
         prefix = manifest.dirname
 
-        symlinks.update(
-            {
-                "libexec/everest/modules/{0}{1}".format(
-                    mod.label.name,
-                    file.path.removeprefix(prefix),
-                ): file
-                for file in mod[DefaultInfo].data_runfiles.files.to_list()
-                if file.path.startswith(prefix)
-            },
-        )
-        [
-            files.append(file)
-            for file in mod[DefaultInfo].default_runfiles.files.to_list()
-            if not file.path.startswith(prefix)
-        ]
+        for file in mod[DefaultInfo].data_runfiles.files.to_list():
+            # Only consider files staged inside the module subdir (next to the
+            # manifest). The trailing "/" avoids matching siblings such as the
+            # raw `<name>__binary` output.
+            if not file.path.startswith(prefix + "/"):
+                continue
+            rel = file.path.removeprefix(prefix + "/")
+
+            # The module binary and its manifest are loaded from libexec; every
+            # other staged module file (e.g. a `models/` folder) belongs in the
+            # module's share directory, where the framework looks it up at
+            # runtime as `data_dir/modules/<name>/...` (see runtime.cpp).
+            if file.basename in ["manifest.yaml", "manifest.yml"] or file.basename == mod.label.name:
+                symlinks["libexec/everest/modules/{0}/{1}".format(mod.label.name, rel)] = file
+            else:
+                symlinks["share/everest/modules/{0}/{1}".format(mod.label.name, rel)] = file
+        for file in mod[DefaultInfo].default_runfiles.files.to_list():
+            if not file.path.startswith(prefix):
+                files.append(file)
 
     config_file = ctx.attr.config_file[DefaultInfo].files.to_list()[0]
     config_path = "etc/everest/{0}".format(config_file.basename)
@@ -87,6 +91,15 @@ def _everest_env(ctx):
         {
             "share/everest/schemas/{0}".format(file.basename): file
             for file in ctx.attr.schemas[DefaultInfo].files.to_list()
+        },
+    )
+    # The manager boots its configuration from a SQLite database and applies the
+    # migration files from `data_dir/migrations` on startup (see
+    # init_database_bootstrap()); without them it aborts with "SQL migration failed".
+    symlinks.update(
+        {
+            "share/everest/migrations/{0}".format(file.basename): file
+            for file in ctx.attr.migrations[DefaultInfo].files.to_list()
         },
     )
     symlinks.update(
@@ -177,6 +190,12 @@ The EVerest configuration file. It will be linked to
     "schemas": attr.label(
         doc = "The target with the EVerest schemas.",
         default = Label("//lib/everest/framework/schemas"),
+    ),
+    "migrations": attr.label(
+        doc = """
+The target with the SQL migration files for the configuration database. The
+manager applies them on startup and refuses to boot without them.""",
+        default = Label("//lib/everest/framework/schemas/migrations"),
     ),
     "interfaces": attr.label_list(
         doc = "A list of targets with EVerest interfaces.",

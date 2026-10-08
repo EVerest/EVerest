@@ -1,10 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "SerializationTestHelpers.hpp"
 #include "everest_api_types/generic/codec.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
+#include <string_view>
 
 using namespace everest::lib::API::V1_0::types::generic;
 
@@ -14,7 +15,8 @@ using namespace everest::lib::API::V1_0::types;
 // than other serializations because the to_json function may throw an error
 template <>
 everest::lib::API::V1_0::types::generic::RequestReply
-generate<everest::lib::API::V1_0::types::generic::RequestReply>(bool set_optional_fields) {
+generate<everest::lib::API::V1_0::types::generic::RequestReply>(bool set_optional_fields, int seed) {
+    (void)seed; // Not used in this generator, but silence the compiler warning;
     RequestReply generated_object;
     generated_object.replyTo = "mdvChgNGIuAZPRzFEkDOLnsMUcJYyl";
     generated_object.payload = "{\"data\": { \"inner\" : 23, \"inner_str\":\"string\"}}";
@@ -100,4 +102,15 @@ TEST(generic, RequestReply_back_and_forth_2) {
     EXPECT_EQ(rr.payload, des.payload);
     EXPECT_EQ(rr.replyTo, des2.replyTo);
     EXPECT_EQ(rr.payload, des2.payload);
+}
+
+TEST(generic, deserialize_accepts_string_view_subrange) {
+    std::string payload = "xxtrueyy";
+    std::string_view json_data(payload.data() + 2, 4);
+
+    EXPECT_TRUE(deserialize<bool>(json_data));
+
+    bool result = false;
+    EXPECT_TRUE(everest::lib::API::deserialize(json_data, result));
+    EXPECT_TRUE(result);
 }

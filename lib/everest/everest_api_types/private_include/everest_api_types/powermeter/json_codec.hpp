@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -78,5 +78,8 @@ void to_json(json& j, const ReplyStopTransaction& k) noexcept;
 
 void from_json(const json& j, RequestStartTransaction& k);
 void to_json(json& j, const RequestStartTransaction& k) noexcept;
+
+void from_json(const json& j, Capabilities& k);
+void to_json(json& j, const Capabilities& k) noexcept;
 
 } // namespace everest::lib::API::V1_0::types::powermeter

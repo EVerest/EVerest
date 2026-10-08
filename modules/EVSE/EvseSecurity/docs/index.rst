@@ -124,3 +124,22 @@ More about CSMS, V2G, MO and MF Bundles
 
 New root certificates can be installed in the specified domain using the
 ``install_ca_certificate`` command.
+
+Storage Limits and Garbage Collection
+-------------------------------------
+
+Every ``garbage_collect_time_s`` seconds, the module checks whether the
+certificates and keys in the configured bundles and directories exceed
+``max_fs_certificate_store_entries`` files or ``max_fs_usage_bytes`` bytes.
+Only if one of the limits is exceeded, it deletes:
+
+* expired leaf certificates and their keys, always keeping the newest ten
+  certificate chains per leaf directory,
+* keys without a matching certificate,
+* keys of CSRs that did not receive a signed certificate within
+  ``csr_expiry_s`` seconds.
+
+``max_fs_certificate_store_entries`` also limits the installation of CA
+certificates: ``install_ca_certificate`` with the V2G or MO domain is rejected
+with ``CertificateStoreMaxLengthExceeded`` if the V2G and MO bundles together
+already hold more certificates than this value.

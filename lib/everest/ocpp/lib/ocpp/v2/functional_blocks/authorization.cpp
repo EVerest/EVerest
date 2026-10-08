@@ -3,9 +3,9 @@
 
 #include <ocpp/v2/functional_blocks/authorization.hpp>
 
+#include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/evse_security.hpp>
-#include <ocpp/v2/connectivity_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/database_handler.hpp>
 #include <ocpp/v2/device_model.hpp>
@@ -95,9 +95,12 @@ ocpp::v2::Authorization::authorize_req(const IdToken id_token, const std::option
         const ocpp::CallResult<AuthorizeResponse> call_result = enhanced_message.message;
         return call_result.msg;
     } catch (const EnumConversionException& e) {
-        // We don't get here normally, because the future.get() already throws. Code was not removed, because something
-        // might be overseen here.
-        EVLOG_error << "EnumConversionException during handling of message: " << e.what();
+        EVLOG_error << "EnumConversionException during handling of AuthorizeResponse: " << e.what();
+        auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
+        this->context.message_dispatcher.dispatch_call_error(call_error);
+        return response;
+    } catch (const json::exception& e) {
+        EVLOG_error << "json::exception during handling of AuthorizeResponse: " << e.what();
         auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
         this->context.message_dispatcher.dispatch_call_error(call_error);
         return response;
@@ -310,6 +313,13 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                 EVLOG_info << "Found invalid entry in local authorization list but not sending Authorize.req because "
                               "RemoteAuthorization is disabled";
                 response.idTokenInfo.status = AuthorizationStatusEnum::Unknown;
+            } else if (is_online and
+                       this->context.device_model
+                           .get_optional_value<bool>(ControllerComponentVariables::LocalAuthListDisablePostAuthorize)
+                           .value_or(false)) {
+                EVLOG_info << "Found invalid entry in local authorization list: Not sending Authorize.req because "
+                              "LocalAuthListDisablePostAuthorize is enabled";
+                response.idTokenInfo = id_token_info.value();
             } else if (is_online) {
                 // C14.FR.03: If a value found but not valid we shall send an authorize request
                 EVLOG_info << "Found invalid entry in local authorization list: Sending Authorize.req";

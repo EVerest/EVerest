@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_pre_charge.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
 
@@ -18,16 +18,18 @@ message_20::DC_PreChargeResponse handle_request(const message_20::DC_PreChargeRe
     message_20::DC_PreChargeResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     res.present_voltage = dt::from_float(present_voltage);
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_PreCharge::enter() {
-    m_ctx.log.enter_state("DC_PreCharge");
+    logf_debug("Enter state: DC_PreCharge");
 }
 
 Result DC_PreCharge::feed(Event ev) {
@@ -66,17 +68,22 @@ Result DC_PreCharge::feed(Event ev) {
             return {};
         }
 
-        return m_ctx.create_state<PowerDelivery>();
+        if (req->processing == dt::Processing::Finished) {
+            return m_ctx.create_state<PowerDelivery>();
+        }
+
+        return {};
 
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
     } else {
-        m_ctx.log("expected DC_PreChargeReq! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_PreChargeReq! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

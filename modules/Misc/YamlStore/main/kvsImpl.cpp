@@ -4,8 +4,9 @@
 #include "kvsImpl.hpp"
 #include <filesystem>
 #include <string>
-#include <utils/yaml_loader.hpp>
 #include <variant>
+
+#include <everest/utils/yaml_loader.hpp>
 
 namespace module {
 namespace main {

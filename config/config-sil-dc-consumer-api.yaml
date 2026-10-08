@@ -10,6 +10,18 @@ active_modules:
       evse_manager:
         - module_id: evse_manager
           implementation_id: evse
+      evse_bsp:
+        - module_id: yeti_driver
+          implementation_id: board_support
+      slac:
+        - module_id: slac
+          implementation_id: evse
+      imd:
+        - module_id: imd
+          implementation_id: main
+      ps_dc:
+        - module_id: powersupply_dc
+          implementation_id: main
 
   auth_api:
     module: auth_consumer_API
@@ -52,10 +64,11 @@ active_modules:
           module_id: evse_manager
 
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_DIN70121: true
+      supported_ISO15118_2: true
     connections:
       security:
         - module_id: evse_security
@@ -69,6 +82,7 @@ active_modules:
   evse_manager:
     module: EvseManager
     config_module:
+      enable_nodered_interface: true
       connector_id: 1
       evse_id: DE*PNX*E12345*1
       evse_id_din: 49A80737A45678

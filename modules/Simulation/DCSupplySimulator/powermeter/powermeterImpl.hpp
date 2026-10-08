@@ -19,7 +19,10 @@
 namespace module {
 namespace powermeter {
 
-struct Conf {};
+struct Conf {
+    double min_import_current_A;
+    double min_export_current_A;
+};
 
 class powermeterImpl : public powermeterImplBase {
 public:

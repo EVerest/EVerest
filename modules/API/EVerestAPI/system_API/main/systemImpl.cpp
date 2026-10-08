@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "systemImpl.hpp"
 
@@ -9,7 +9,7 @@
 #include <everest_api_types/system/wrapper.hpp>
 #include <everest_api_types/utilities/AsyncApiRequestReply.hpp>
 
-#include <generated/types/system.hpp> // TODO(CB): IS THIS THE PROBLEM?! - SINCE THERE IS NO using namespace directive anywhere?
+#include <generated/types/system.hpp>
 
 namespace API_types_ext = ev_API::V1_0::types::system;
 namespace {
@@ -32,11 +32,12 @@ template <class T, class ReqT>
 auto systemImpl::generic_request_reply(T const& default_value, ReqT const& request, std::string const& topic) {
     using namespace API_types_ext;
     using ExtT = decltype(to_external_api(std::declval<T>()));
-    auto result = ev_API::request_reply_handler<ExtT>(mod->mqtt, mod->get_topics(), request, topic, timeout_s);
+    auto result = everest::lib::API::request_reply_handler<ExtT>(mod->mqtt_v, mod->helper.get_topics(), request, topic,
+                                                                 timeout_s);
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::system::UpdateFirmwareResponse
@@ -48,8 +49,8 @@ systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmwar
 }
 
 void systemImpl::handle_allow_firmware_installation() {
-    auto topic = mod->get_topics().everest_to_extern("allow_firmware_installation");
-    mod->mqtt.publish(topic, "");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("allow_firmware_installation");
+    mod->mqtt_v.publish(topic, "");
 }
 
 types::system::UploadLogsResponse
@@ -65,9 +66,9 @@ bool systemImpl::handle_is_reset_allowed(types::system::ResetType& type) {
 }
 
 void systemImpl::handle_reset(types::system::ResetType& type, bool& scheduled) {
-    auto topic = mod->get_topics().everest_to_extern("reset");
+    static const auto topic = mod->helper.get_topics().everest_to_extern("reset");
     json args = API_types_ext::ResetRequest{API_types_ext::to_external_api(type), scheduled};
-    mod->mqtt.publish(topic, args.dump());
+    mod->mqtt_v.publish(topic, args.dump());
 }
 
 bool systemImpl::handle_set_system_time(std::string& timestamp) {
@@ -78,6 +79,14 @@ bool systemImpl::handle_set_system_time(std::string& timestamp) {
 types::system::BootReason systemImpl::handle_get_boot_reason() {
     static const types::system::BootReason default_respone = types::system::BootReason::Unknown;
     return generic_request_reply(default_respone, ev_API::internal::empty_payload, "get_boot_reason");
+}
+
+types::network::ConfigureNetworkResponse
+systemImpl::handle_configure_network(types::network::ConfigureNetworkRequest& request) {
+    // Absent/non-answering external agent degrades to NotSupported after cfg_request_reply_to_s.
+    static const types::network::ConfigureNetworkResponse default_response =
+        types::network::ConfigureNetworkResponse{types::network::ConfigureNetworkStatusEnum::NotSupported, {}};
+    return generic_request_reply(default_response, API_types_ext::to_external_api(request), "configure_network");
 }
 
 } // namespace main

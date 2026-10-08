@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <everest/logging.hpp>
 
 #include <ocpp/common/websocket/websocket.hpp>
@@ -16,6 +16,11 @@ namespace ocpp {
 Websocket::Websocket(const WebsocketConnectionOptions& connection_options, std::shared_ptr<EvseSecurity> evse_security,
                      std::shared_ptr<MessageLogging> logging) :
     logging(logging) {
+
+    if (logging == nullptr) {
+        throw std::runtime_error("Websocket requires a valid MessageLogging instance");
+    }
+
     this->websocket = std::make_unique<WebsocketLibwebsockets>(connection_options, evse_security);
 }
 
@@ -31,6 +36,10 @@ void Websocket::set_connection_options(const WebsocketConnectionOptions& connect
 void Websocket::disconnect(const WebsocketCloseReason code) {
     this->logging->sys("Disconnecting");
     this->websocket->disconnect(code);
+}
+
+void Websocket::suppress_reconnect() {
+    this->websocket->suppress_reconnect();
 }
 
 void Websocket::reconnect(long delay) {

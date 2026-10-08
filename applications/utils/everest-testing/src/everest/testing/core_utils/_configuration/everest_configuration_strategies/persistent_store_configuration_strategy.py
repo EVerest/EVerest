@@ -25,13 +25,16 @@ class PersistentStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
         self._sqlite_db_file_path = sqlite_db_file_path
 
     def _determine_module_id(self, everest_config: Dict):
+        # An empty config file parses to None, and a config may legitimately have no active_modules
+        # at all; treat both as "no modules present" so parametrized test classes can include them.
+        active_modules = (everest_config or {}).get("active_modules") or {}
         if self._module_id:
-            assert self._module_id in everest_config[
-                "active_modules"], f"Module id {self._module_id} not found in EVerest configuration"
+            assert self._module_id in active_modules, \
+                f"Module id {self._module_id} not found in EVerest configuration"
             return self._module_id
         else:
             try:
-                return next(k for k, v in everest_config["active_modules"].items() if v["module"] == "PersistentStore")
+                return next(k for k, v in active_modules.items() if v["module"] == "PersistentStore")
             except StopIteration:
                 raise ValueError("No PersistentStore module found in EVerest configuration")
 
@@ -39,7 +42,15 @@ class PersistentStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
 
         adjusted_config = deepcopy(everest_config)
 
-        module_cfg = adjusted_config["active_modules"][self._determine_module_id(adjusted_config)]
+        try:
+            module_id = self._determine_module_id(adjusted_config)
+        except ValueError:
+            # No PersistentStore module in this configuration; nothing to adjust. This allows
+            # applying use_temporary_persistent_store to whole test classes that are parametrized
+            # over configs with and without a PersistentStore module.
+            return adjusted_config
+
+        module_cfg = adjusted_config["active_modules"][module_id]
 
         module_cfg.setdefault("config_module", {})["sqlite_db_file_path"] = str(self._sqlite_db_file_path)
 

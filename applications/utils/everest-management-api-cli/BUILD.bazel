@@ -1,0 +1,33 @@
+load("@rules_python//python:defs.bzl", "py_library", "py_test")
+load("//applications/utils:requirements.bzl", "requirement")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
+
+exports_files(
+    ["BUILD.bazel"],
+)
+
+py_library(
+    name = "everest-management-api-cli",
+    srcs = glob(["src/**/*.py"]),
+    imports = ["src"],
+    target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+    visibility = ["//visibility:public"],
+    deps = [
+        requirement("paho-mqtt"),
+        requirement("pyyaml"),
+    ],
+)
+
+py_test(
+    name = "test_commands",
+    size = "small",
+    srcs = ["tests/test_commands.py"],
+    legacy_create_init = False,
+    main = "tests/test_commands.py",
+    target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+    deps = [
+        ":everest-management-api-cli",
+        requirement("pytest"),
+        requirement("pyyaml"),
+    ],
+)

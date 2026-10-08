@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "auth/json_codec.hpp"
 #include "auth/API.hpp"
@@ -196,6 +196,9 @@ void to_json(json& j, TokenValidationStatus const& k) noexcept {
     case TokenValidationStatus::UsedToStop:
         j = "UsedToStop";
         return;
+    case TokenValidationStatus::UsedToReauthorize:
+        j = "UsedToReauthorize";
+        return;
     }
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::auth::TokenValidationStatus";
 }
@@ -230,6 +233,10 @@ void from_json(const json& j, TokenValidationStatus& k) {
         k = TokenValidationStatus::UsedToStop;
         return;
     }
+    if (s == "UsedToReauthorize") {
+        k = TokenValidationStatus::UsedToReauthorize;
+        return;
+    }
     throw std::out_of_range(
         "Provided string " + s +
         " could not be converted to enum of type everest::lib::API::V1_0::types::auth::TokenValidationStatus");
@@ -242,6 +249,9 @@ void to_json(json& j, SelectionAlgorithm const& k) noexcept {
         return;
     case SelectionAlgorithm::PlugEvents:
         j = "PlugEvents";
+        return;
+    case SelectionAlgorithm::PlugEventsLIFO:
+        j = "PlugEventsLIFO";
         return;
     case SelectionAlgorithm::FindFirst:
         j = "FindFirst";
@@ -259,6 +269,10 @@ void from_json(const json& j, SelectionAlgorithm& k) {
     }
     if (s == "PlugEvents") {
         k = SelectionAlgorithm::PlugEvents;
+        return;
+    }
+    if (s == "PlugEventsLIFO") {
+        k = SelectionAlgorithm::PlugEventsLIFO;
         return;
     }
     if (s == "FindFirst") {

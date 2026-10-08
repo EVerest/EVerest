@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "powermeter/wrapper.hpp"
 #include "generated/types/units_signed.hpp"
@@ -624,6 +624,9 @@ ReplyStartTransaction_Internal to_internal_api(ReplyStartTransaction_External co
     internal.error = val.error;
     internal.transaction_min_stop_time = val.transaction_min_stop_time;
     internal.transaction_max_stop_time = val.transaction_max_stop_time;
+    if (val.signed_meter_value) {
+        internal.signed_meter_value = to_internal_api(*val.signed_meter_value);
+    }
     return internal;
 }
 
@@ -633,6 +636,9 @@ ReplyStartTransaction_External to_external_api(ReplyStartTransaction_Internal co
     result.error = val.error;
     result.transaction_min_stop_time = val.transaction_min_stop_time;
     result.transaction_max_stop_time = val.transaction_max_stop_time;
+    if (val.signed_meter_value) {
+        result.signed_meter_value = to_external_api(*val.signed_meter_value);
+    }
     return result;
 }
 
@@ -640,20 +646,10 @@ ReplyStopTransaction_Internal to_internal_api(ReplyStopTransaction_External cons
     auto internal = ReplyStopTransaction_Internal();
     internal.status = to_internal_api(val.status);
     if (val.start_signed_meter_value) {
-        internal.start_signed_meter_value.emplace();
-        internal.start_signed_meter_value->signed_meter_data = val.start_signed_meter_value->signed_meter_data;
-        internal.start_signed_meter_value->signing_method = val.start_signed_meter_value->signing_method;
-        internal.start_signed_meter_value->encoding_method = val.start_signed_meter_value->encoding_method;
-        internal.start_signed_meter_value->public_key = val.start_signed_meter_value->public_key;
-        internal.start_signed_meter_value->timestamp = val.start_signed_meter_value->timestamp;
+        internal.start_signed_meter_value = to_internal_api(*val.start_signed_meter_value);
     }
     if (val.signed_meter_value) {
-        internal.signed_meter_value.emplace();
-        internal.signed_meter_value->signed_meter_data = val.signed_meter_value->signed_meter_data;
-        internal.signed_meter_value->signing_method = val.signed_meter_value->signing_method;
-        internal.signed_meter_value->encoding_method = val.signed_meter_value->encoding_method;
-        internal.signed_meter_value->public_key = val.signed_meter_value->public_key;
-        internal.signed_meter_value->timestamp = val.signed_meter_value->timestamp;
+        internal.signed_meter_value = to_internal_api(*val.signed_meter_value);
     }
     internal.error = val.error;
     return internal;
@@ -663,20 +659,10 @@ ReplyStopTransaction_External to_external_api(ReplyStopTransaction_Internal cons
     auto result = ReplyStopTransaction_External();
     result.status = to_external_api(val.status);
     if (val.start_signed_meter_value) {
-        result.start_signed_meter_value.emplace();
-        result.start_signed_meter_value->signed_meter_data = val.start_signed_meter_value->signed_meter_data;
-        result.start_signed_meter_value->signing_method = val.start_signed_meter_value->signing_method;
-        result.start_signed_meter_value->encoding_method = val.start_signed_meter_value->encoding_method;
-        result.start_signed_meter_value->public_key = val.start_signed_meter_value->public_key;
-        result.start_signed_meter_value->timestamp = val.start_signed_meter_value->timestamp;
+        result.start_signed_meter_value = to_external_api(*val.start_signed_meter_value);
     }
     if (val.signed_meter_value) {
-        result.signed_meter_value.emplace();
-        result.signed_meter_value->signed_meter_data = val.signed_meter_value->signed_meter_data;
-        result.signed_meter_value->signing_method = val.signed_meter_value->signing_method;
-        result.signed_meter_value->encoding_method = val.signed_meter_value->encoding_method;
-        result.signed_meter_value->public_key = val.signed_meter_value->public_key;
-        result.signed_meter_value->timestamp = val.signed_meter_value->timestamp;
+        result.signed_meter_value = to_external_api(*val.signed_meter_value);
     }
     result.error = val.error;
     return result;
@@ -698,6 +684,20 @@ RequestStartTransaction_External to_external_api(const RequestStartTransaction_I
         result.identification_data = val.identification_data;
     }
     result.tariff_text = val.tariff_text;
+    return result;
+}
+
+Capabilities_Internal to_internal_api(Capabilities_External const& val) {
+    Capabilities_Internal result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
+    return result;
+}
+
+Capabilities_External to_external_api(Capabilities_Internal const& val) {
+    Capabilities_External result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
     return result;
 }
 

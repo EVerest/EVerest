@@ -168,8 +168,12 @@ std::vector<EnergyTransferModeEnum> iso15118_energy_transfer_modes_to_json_rpc_a
             tmp.push_back(EnergyTransferModeEnum::AC_BPT_DER);
             is_ac_transfer_mode = true;
             break;
-        case types::iso15118::EnergyTransferMode::AC_DER:
-            tmp.push_back(EnergyTransferModeEnum::AC_DER);
+        case types::iso15118::EnergyTransferMode::AC_DER_IEC:
+            tmp.push_back(EnergyTransferModeEnum::AC_DER_IEC);
+            is_ac_transfer_mode = true;
+            break;
+        case types::iso15118::EnergyTransferMode::AC_DER_SAE:
+            tmp.push_back(EnergyTransferModeEnum::AC_DER_SAE);
             is_ac_transfer_mode = true;
             break;
         case types::iso15118::EnergyTransferMode::DC_BPT:
@@ -197,11 +201,6 @@ std::vector<EnergyTransferModeEnum> iso15118_energy_transfer_modes_to_json_rpc_a
     }
 
     return tmp;
-}
-
-void to_json(json& j, const EnergyTransferModeEnum& k) {
-    // the required parts of the type
-    j = energy_transfer_mode_enum_to_string(k);
 }
 
 } // namespace json_rpc_api

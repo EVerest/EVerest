@@ -1,4 +1,5 @@
-name: Build, Lint and Test
+name: PR
+
 on:
   pull_request: {}
   merge_group: {}
@@ -15,19 +16,24 @@ on:
   schedule:
     - cron: '37 13,1 * * *'
 
+# Let pushes to PRs cancel already running CI runs on that PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
 
   setup-env:
-    name: Setup Environment
+    name: Setup
     uses: ./.github/workflows/job_setup-env.yml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
-      ref_everest_ci: v1.5.5
+      ref_everest_ci: v1.6.0
 
 
   build-build-kit:
-    name: Build the build-kit
+    name: Build-kit
     uses: ./.github/workflows/job_build-build-kit.yml
     needs:
       - setup-env
@@ -37,7 +43,7 @@ jobs:
 
 
   build-cmake-gcc:
-    name: Build with CMake and GCC
+    name: CMake GCC
     uses: ./.github/workflows/job_build-cmake-gcc.yml
     needs:
       - setup-env
@@ -54,7 +60,7 @@ jobs:
 
 
   integration-tests:
-    name: Run Integration Tests
+    name: Integration
     uses: ./.github/workflows/job_integrations-tests.yml
     needs:
       - setup-env
@@ -69,7 +75,7 @@ jobs:
 
 
   ocpp-tests:
-    name: Run OCPP Tests
+    name: OCPP
     uses: ./.github/workflows/job_ocpp-tests.yml
     needs:
       - setup-env
@@ -84,7 +90,7 @@ jobs:
 
 
   lint:
-    name: Lint Repository
+    name: Lint
     uses: ./.github/workflows/job_lint.yml
     needs:
       - setup-env
@@ -94,7 +100,7 @@ jobs:
 
 
   build-docs:
-    name: Call Build Documentation
+    name: Docs
     needs:
       - setup-env
       - build-build-kit
@@ -107,24 +113,41 @@ jobs:
       build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
       build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
       deploy_docs: false
+      instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
+
+
+  ev-cli-mod-update:
+    name: Modules (ev-cli)
+    uses: ./.github/workflows/job_ev-cli-mod-update.yaml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
 
 
   dco-check:
-    name: DCO Check
+    name: DCO
     uses: ./.github/workflows/job_dco-check.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
   bazel-build-and-test:
-    name: Bazel Build And Test
+    name: Bazel
     uses: ./.github/workflows/job_bazel-build-test.yaml
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
+  # The cross builds run in the merge queue and the nightly run,
+  # not on every PR push since they use too many resources.
+  # A manual run of this workflow on a branch includes them.
   bazel-cross-build:
-    name: Bazel Cross-Build (${{ matrix.platform }})
+    name: Bazel Cross (${{ matrix.platform }})
+    if: ${{ github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:

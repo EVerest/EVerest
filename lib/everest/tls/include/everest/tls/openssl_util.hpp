@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OPENSSL_UTIL_HPP_
 #define OPENSSL_UTIL_HPP_
@@ -165,6 +165,9 @@ using chain_info_list_t = std::vector<chain_info_t>;
 struct chain_t {
     chain_info_t chain{{nullptr, nullptr}, {}, {}};
     pkey_ptr private_key{nullptr, nullptr};
+    /// negotiated TLS version this chain is meant for: 0 = any version,
+    /// otherwise TLS1_2_VERSION or TLS1_3_VERSION (see tls::Server::certificate_config_t::tls_version)
+    int tls_version{0};
 };
 
 using chain_list = std::vector<chain_t>;
@@ -263,6 +266,11 @@ bool sha_512(const void* data, std::size_t len, sha_512_digest_t& digest);
  * \param[in] text the base64 string (does not need to be \0 terminated)
  * \param[in] len the length of the string (excluding any terminating \0)
  * \return binary array or empty on error
+ * \note tolerates stray '\t', '\n', '\v', '\f', '\r', ' ' (matching
+ *       EVP_Decode*'s B64_WS set); other non-alphabet bytes cause the
+ *       underlying BIO_f_base64 to fail and an empty vector is returned.
+ *       An embedded '\0' terminates the scan: anything past the first
+ *       '\0' is ignored.
  */
 std::vector<std::uint8_t> base64_decode(const char* text, std::size_t len);
 
@@ -309,6 +317,14 @@ template <typename T> constexpr void zero(T& mem) {
  * \param mem the structure to zero
  */
 pkey_ptr load_private_key(const char* filename, const char* password);
+
+/**
+ * \brief load a private key from a PEM string
+ * \param[in] pem the PEM encoded key
+ * \param[in] password the key's password, nullptr when it is not encrypted
+ * \return the key or empty unique_ptr on error
+ */
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password);
 
 /**
  * \brief convert R, S BIGNUM to DER signature
@@ -491,10 +507,15 @@ pkey_ptr certificate_public_key(x509_st* cert);
 bool certificate_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 
 /**
- * \brief calculate SHA1 hash over the DER certificate's subject public key
+ * \brief calculate the RFC 6066 key_sha1_hash of the certificate's subject public key
  * \param[out] digest the SHA1 digest of the public key
  * \param[in] cert the certificate
  * \return true on success
+ * \note RFC 6066 6: for DSA and ECDSA keys the hash covers the subjectPublicKey
+ *       BIT STRING contents, for RSA keys the big-endian modulus without leading
+ *       zero bytes. The SubjectPublicKeyInfo wrapper (algorithm and curve OIDs) is
+ *       not included, so for EC keys the result equals an RFC 5280 4.2.1.2 (1)
+ *       Subject Key Identifier.
  */
 bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const x509_st* cert);
 
@@ -538,6 +559,14 @@ using log_handler_t = void (*)(log_level_t level, const std::string& err);
  *         where there is no previous handler
  */
 log_handler_t set_log_handler(log_handler_t handler);
+
+/**
+ * \brief return true when the supported_versions extension payload lists TLS 1.3
+ * \param[in] in pointer to the extension payload (1-byte length prefix followed by 2-byte version IDs)
+ * \param[in] inlen length of the payload in bytes
+ * \return true when the payload advertises TLS 1.3
+ */
+bool is_tls_1_3(const std::uint8_t* in, std::size_t inlen);
 
 } // namespace openssl
 

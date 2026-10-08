@@ -1,8 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <cmath>
+#include <cstdint>
+#include <limits>
 
 #include <everest/database/exceptions.hpp>
+#include <ocpp/common/constants.hpp>
 #include <ocpp/common/utils.hpp>
+#include <ocpp/common/websocket/websocket_uri.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
@@ -80,6 +86,20 @@ bool component_variables_match(const std::vector<ComponentVariable>& component_v
                            (component.instance == v.component.instance) and (variable == v.variable)); // B08.FR.23
                }) != component_variables.end();
 }
+
+std::string format_missing_required_variable(const RequiredComponentVariable& required_variable,
+                                             const std::string& reason) {
+    std::stringstream ss;
+    ss << required_variable.component.name << "/"
+       << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>") << ": "
+       << reason;
+    if (required_variable.component.name == ControllerComponents::OCPP16LegacyCtrlr.name) {
+        ss << " (the OCPP16LegacyCtrlr component is required for every OCPP version so the device model supports "
+              "switching between OCPP 1.6 and 2.x; add standardized/OCPP16LegacyCtrlr.json to the device model "
+              "config directory or initialize the database with the built-in OCPP16LegacyCtrlr fallback enabled)";
+    }
+    return ss.str();
+}
 } // namespace
 
 void DeviceModel::check_variable_has_value(const ComponentVariable& component_variable, const AttributeEnum attribute) {
@@ -138,11 +158,7 @@ void DeviceModel::check_required_variables() {
         try {
             check_required_variable(required_variable, supported_versions);
         } catch (const std::exception& e) {
-            std::stringstream ss;
-            ss << required_variable.component.name << "/"
-               << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-               << ": " << e.what();
-            missing_var_errors.push_back(ss.str());
+            missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
         }
     }
 
@@ -157,11 +173,7 @@ void DeviceModel::check_required_variables() {
             try {
                 check_required_variable(required_variable, supported_versions);
             } catch (const std::exception& e) {
-                std::stringstream ss;
-                ss << required_variable.component.name << "/"
-                   << (required_variable.variable.has_value() ? required_variable.variable.value().name : "<unnamed>")
-                   << ": " << e.what();
-                missing_var_errors.push_back(ss.str());
+                missing_var_errors.push_back(format_missing_required_variable(required_variable, e.what()));
             }
         }
     }
@@ -260,6 +272,17 @@ bool validate_value(const VariableCharacteristics& characteristics, const std::s
     return false;
 }
 
+/// \brief Converts a monitor \p value to a string suitable for validate_value() given the variable's \p data_type.
+/// std::to_string(float) always renders six decimals (e.g. "950.000000"), which would fail integer validation even
+/// for integral values, so integral values for integer-typed variables are rendered without decimals.
+std::string monitor_value_to_string(const float value, const DataEnum data_type) {
+    if (data_type == DataEnum::integer and std::rint(value) == value and
+        std::abs(value) < static_cast<float>(std::numeric_limits<std::int32_t>::max())) {
+        return std::to_string(static_cast<std::int32_t>(value));
+    }
+    return std::to_string(value);
+}
+
 bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAttribute& attribute) {
     if (cv == ControllerComponentVariables::ChargingStationAvailabilityState) {
         return true;
@@ -288,6 +311,8 @@ GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, c
 GetVariableStatusEnum DeviceModel::request_value_internal(const Component& component_id, const Variable& variable_id,
                                                           const AttributeEnum& attribute_enum, std::string& value,
                                                           bool allow_write_only) const {
+    // Choke point for all value reads (get_variable and the get_*_value/request_value templates).
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto component_it = this->device_model_map.find(component_id);
     if (component_it == this->device_model_map.end()) {
         EVLOG_debug << "unknown component in " << component_id.name << "." << variable_id.name;
@@ -320,6 +345,7 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
 
 std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& component, const Variable& variable,
                                                           const AttributeEnum& attribute_enum) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
     if (!attribute.has_value()) {
         return std::nullopt;
@@ -331,6 +357,7 @@ std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& compo
 SetVariableStatusEnum DeviceModel::set_value(const Component& component, const Variable& variable,
                                              const AttributeEnum& attribute_enum, const std::string& value,
                                              const std::string& source, bool allow_read_only) {
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
 
     if (this->device_model_map.find(component) == this->device_model_map.end()) {
         return SetVariableStatusEnum::UnknownComponent;
@@ -380,7 +407,12 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
         const std::string& value_current = value;
 
         if (value_previous != value_current) {
-            for (const auto& listener : variable_listener) {
+            // Copy the listeners and release the lock before invoking them: a listener taking its own lock
+            // would otherwise invert lock order against a thread calling register_variable_listener while
+            // holding that lock.
+            const auto listeners = variable_listener;
+            lock.unlock();
+            for (const auto& listener : listeners) {
                 listener(monitors, component, variable, characteristics, attribute.value(), value_previous,
                          value_current);
             }
@@ -395,10 +427,33 @@ DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_mod
     this->device_model_map = this->device_model->get_device_model();
 }
 
+bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int32_t new_slot) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    if (this->device_model == nullptr) {
+        return false;
+    }
+    if (!this->device_model->create_network_configuration_slot_from_default_schema(new_slot)) {
+        return false;
+    }
+    try {
+        // Reload the cached map so the freshly created component is visible to subsequent
+        // get_variable / set_value calls; the cache is built once at construction.
+        this->device_model_map = this->device_model->get_device_model();
+    } catch (const std::exception& e) {
+        EVLOG_error << "DeviceModel::create_network_configuration_slot_from_default_schema: storage "
+                       "committed slot "
+                    << new_slot << " but in-memory device-model reload failed (" << e.what()
+                    << "); restart required to pick up the new component";
+        throw;
+    }
+    return true;
+}
+
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,
                                                        const AttributeEnum& attribute_enum, const std::string& value,
                                                        const std::string& source) {
-
+    // No lock: allow_set_read_only_value is a pure check and set_value locks itself. Holding the
+    // recursive mutex here would keep it owned while set_value invokes the listeners.
     if (allow_set_read_only_value(component, variable, attribute_enum)) {
         return this->set_value(component, variable, attribute_enum, value, source, true);
     }
@@ -406,8 +461,51 @@ SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& componen
                                 " and variable " + variable.name.get());
 }
 
+SetVariableStatusEnum DeviceModel::clear_value(const Component& component, const Variable& variable,
+                                               const AttributeEnum& attribute_enum, const std::string& source) {
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
+    if (this->device_model_map.find(component) == this->device_model_map.end()) {
+        return SetVariableStatusEnum::UnknownComponent;
+    }
+    auto& variable_map = this->device_model_map[component];
+    if (variable_map.find(variable) == variable_map.end()) {
+        return SetVariableStatusEnum::UnknownVariable;
+    }
+    const auto attribute = this->device_model->get_variable_attribute(component, variable, attribute_enum);
+    if (!attribute.has_value()) {
+        return SetVariableStatusEnum::NotSupportedAttributeType;
+    }
+
+    const auto& attribute_value = attribute.value();
+
+    // Bypass validate_value: empty-string clears can violate length/range characteristics
+    // by design (the cleared row is the sentinel for "no value").
+    const std::string empty;
+    const auto result =
+        this->device_model->set_variable_attribute_value(component, variable, attribute_enum, empty, source);
+
+    // Fire variable_listener for value change observers, mirroring set_value's behavior.
+    if ((attribute_enum == AttributeEnum::Actual) && (result == SetVariableStatusEnum::Accepted) &&
+        !variable_listener.empty()) {
+        static const std::string EMPTY_VALUE{};
+        const std::string value_previous = attribute_value.value.value_or(EMPTY_VALUE);
+        if (value_previous != empty) {
+            // Copy listeners and payload, then release the lock before invoking: see set_value.
+            const auto listeners = variable_listener;
+            const auto monitors = variable_map[variable].monitors;
+            const auto characteristics = variable_map[variable].characteristics;
+            lock.unlock();
+            for (const auto& listener : listeners) {
+                listener(monitors, component, variable, characteristics, attribute_value, value_previous, empty);
+            }
+        }
+    }
+    return result;
+}
+
 std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Component& component,
                                                                     const Variable& variable) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     if ((this->device_model_map.count(component) != 0) and
         (this->device_model_map.at(component).count(variable) != 0)) {
         return this->device_model_map.at(component).at(variable);
@@ -416,6 +514,7 @@ std::optional<VariableMetaData> DeviceModel::get_variable_meta_data(const Compon
 }
 
 std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& report_base) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -461,6 +560,7 @@ std::vector<ReportData> DeviceModel::get_base_report_data(const ReportBaseEnum& 
 std::vector<ReportData>
 DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVariable>>& component_variables,
                                     const std::optional<std::vector<ComponentCriterionEnum>>& component_criteria) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<ReportData> report_data_vec;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -492,6 +592,7 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
 }
 
 void DeviceModel::check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     EVLOG_debug << "Checking integrity of device model in storage";
     try {
         this->check_required_variables();
@@ -593,6 +694,7 @@ void DeviceModel::check_integrity(const std::map<std::int32_t, std::int32_t>& ev
 }
 
 bool DeviceModel::update_monitor_reference(std::int32_t monitor_id, const std::string& reference_value) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     bool found_monitor = false;
     VariableMonitoringMeta* monitor_meta = nullptr;
 
@@ -651,11 +753,14 @@ bool DeviceModel::update_monitor_reference(std::int32_t monitor_id, const std::s
 
 std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<SetMonitoringData>& requests,
                                                            const VariableMonitorType type) {
+    std::unique_lock<std::recursive_mutex> lock(this->mutex);
     if (requests.empty()) {
         return {};
     }
 
     std::vector<SetMonitoringResult> set_monitors_res;
+    // Listener notifications deferred until the lock is released: see set_value.
+    std::vector<std::function<void()>> pending_notifications;
 
     for (auto& request : requests) {
         SetMonitoringResult result;
@@ -747,7 +852,8 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
                 valid_value = true;
             } else {
                 try {
-                    valid_value = validate_value(characteristics, std::to_string(request.value),
+                    valid_value = validate_value(characteristics,
+                                                 monitor_value_to_string(request.value, characteristics.dataType),
                                                  allow_zero(request.component, request.variable));
                 } catch (const std::exception& e) {
                     EVLOG_warning << "Could not validate monitor value: " << request.value
@@ -796,10 +902,14 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
 
                     if (attribute.has_value()) {
                         static const std::string empty_value{};
-                        const auto& current_value = attribute.value().value.value_or(empty_value);
+                        const std::string current_value = attribute.value().value.value_or(empty_value);
 
-                        monitor_update_listener(monitor_meta.value(), component_it->first, variable_it->first,
-                                                characteristics, attribute.value(), current_value);
+                        pending_notifications.push_back(
+                            [listener = monitor_update_listener, monitor_meta = monitor_meta.value(),
+                             component = component_it->first, variable = variable_it->first, characteristics,
+                             attribute = attribute.value(), current_value]() {
+                                listener(monitor_meta, component, variable, characteristics, attribute, current_value);
+                            });
                     } else {
                         EVLOG_warning << "Could not notify monitor update listener, missing variable attribute: "
                                       << variable_it->first;
@@ -822,10 +932,16 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
         set_monitors_res.push_back(result);
     }
 
+    lock.unlock();
+    for (const auto& notify : pending_notifications) {
+        notify();
+    }
+
     return set_monitors_res;
 }
 
 std::vector<VariableMonitoringPeriodic> DeviceModel::get_periodic_monitors() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<VariableMonitoringPeriodic> periodics;
 
     for (const auto& [component, variable_map] : this->device_model_map) {
@@ -850,6 +966,7 @@ std::vector<VariableMonitoringPeriodic> DeviceModel::get_periodic_monitors() {
 
 std::vector<MonitoringData> DeviceModel::get_monitors(const std::vector<MonitoringCriterionEnum>& criteria,
                                                       const std::vector<ComponentVariable>& component_variables) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     std::vector<MonitoringData> get_monitors_res{};
 
     if (!component_variables.empty()) {
@@ -930,6 +1047,7 @@ std::vector<MonitoringData> DeviceModel::get_monitors(const std::vector<Monitori
 }
 std::vector<ClearMonitoringResult> DeviceModel::clear_monitors(const std::vector<int>& request_ids,
                                                                bool allow_protected) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     if (request_ids.empty()) {
         return {};
     }
@@ -964,6 +1082,7 @@ std::vector<ClearMonitoringResult> DeviceModel::clear_monitors(const std::vector
 }
 
 std::int32_t DeviceModel::clear_custom_monitors() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
     try {
         const std::int32_t deleted = this->device_model->clear_custom_variable_monitors();
 
@@ -988,6 +1107,177 @@ std::int32_t DeviceModel::clear_custom_monitors() {
     }
 
     return 0;
+}
+
+// ConnectivityManagerConfiguration implementations
+
+std::string DeviceModel::get_network_configuration_priority() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    return get_optional_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority).value_or("");
+}
+
+// The write-path wrappers below take no lock: the setters they delegate to lock themselves, and holding
+// the recursive mutex here would keep it owned while the setters invoke the listeners.
+
+void DeviceModel::set_network_configuration_priority(const std::string& priority, const std::string& source) {
+    if (!ControllerComponentVariables::NetworkConfigurationPriority.variable.has_value()) {
+        EVLOG_warning << "NetworkConfigurationPriority variable is not defined in the device model, cannot set value";
+        return;
+    }
+    set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+              ControllerComponentVariables::NetworkConfigurationPriority.variable.value(), AttributeEnum::Actual,
+              priority, source);
+}
+
+std::optional<ocpp::v2::NetworkConnectionProfile> DeviceModel::read_network_connection_profile(int32_t slot) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    return NetworkConfigurationComponentVariables::read_profile_from_device_model(*this, slot);
+}
+
+bool DeviceModel::write_network_connection_profile(int32_t slot, const ocpp::v2::NetworkConnectionProfile& profile,
+                                                   const std::string& source) {
+    return NetworkConfigurationComponentVariables::write_profile_to_device_model(*this, slot, profile, source);
+}
+
+void DeviceModel::clear_network_connection_profile(int32_t slot) {
+    NetworkConfigurationComponentVariables::clear_slot_in_device_model(*this, slot);
+}
+
+bool DeviceModel::get_allow_security_level_zero_connections() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    return get_optional_value<bool>(ControllerComponentVariables::AllowSecurityLevelZeroConnections).value_or(false);
+}
+
+int32_t DeviceModel::get_security_profile() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    return get_value<int>(ControllerComponentVariables::SecurityProfile);
+}
+
+std::optional<int32_t> DeviceModel::get_network_config_timeout() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    return get_optional_value<int>(ControllerComponentVariables::NetworkConfigTimeout);
+}
+
+std::string DeviceModel::resolve_identity(int32_t slot) {
+    std::string identity = get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity);
+    const auto slot_identity_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::Identity);
+    if (const auto slot_identity = get_optional_value<std::string>(slot_identity_cv);
+        slot_identity.has_value() && !slot_identity->empty()) {
+        identity = *slot_identity;
+        EVLOG_debug << "Using per-slot Identity for slot " << slot;
+    }
+    return identity;
+}
+
+std::optional<std::string> DeviceModel::resolve_basic_auth_password(int32_t slot) {
+    const auto slot_pwd_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::BasicAuthPassword);
+    if (const auto slot_pwd = get_optional_value<std::string>(slot_pwd_cv);
+        slot_pwd.has_value() && !slot_pwd->empty()) {
+        EVLOG_debug << "Using per-slot BasicAuthPassword for slot " << slot;
+        return *slot_pwd;
+    }
+    return get_optional_value<std::string>(ControllerComponentVariables::BasicAuthPassword);
+}
+
+std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_options(int32_t slot) {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    const auto charge_point_id = get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity);
+    if (charge_point_id.find(':') != std::string::npos) {
+        EVLOG_AND_THROW(std::runtime_error("ChargePointId must not contain ':'"));
+    }
+
+    const auto profile_opt = read_network_connection_profile(slot);
+    if (!profile_opt.has_value()) {
+        EVLOG_critical << "Could not retrieve NetworkProfile of configurationSlot: " << slot;
+        return std::nullopt;
+    }
+    const auto& profile = *profile_opt;
+
+    const std::string identity = resolve_identity(slot);
+    const std::optional<std::string> basic_auth_password = resolve_basic_auth_password(slot);
+
+    try {
+        auto uri = Uri::parse_and_validate(profile.ocppCsmsUrl.get(), identity, profile.securityProfile);
+        const auto ocpp_versions = utils::get_ocpp_protocol_versions(
+            get_value<std::string>(ControllerComponentVariables::SupportedOcppVersions));
+
+        WebsocketConnectionOptions opts{
+            ocpp_versions,
+            uri,
+            profile.securityProfile,
+            basic_auth_password,
+            std::chrono::seconds(std::max(profile.messageTimeout, 1)),
+            get_value<int>(ControllerComponentVariables::RetryBackOffRandomRange),
+            get_value<int>(ControllerComponentVariables::RetryBackOffRepeatTimes),
+            get_value<int>(ControllerComponentVariables::RetryBackOffWaitMinimum),
+            get_value<int>(ControllerComponentVariables::NetworkProfileConnectionAttempts),
+            get_value<std::string>(ControllerComponentVariables::SupportedCiphers12),
+            get_value<std::string>(ControllerComponentVariables::SupportedCiphers13),
+            get_value<int>(ControllerComponentVariables::WebSocketPingInterval),
+            get_optional_value<std::string>(ControllerComponentVariables::WebsocketPingPayload).value_or("payload"),
+            get_optional_value<int>(ControllerComponentVariables::WebsocketPongTimeout)
+                .value_or(DEFAULT_WEBSOCKET_PONG_TIMEOUT_S),
+            get_optional_value<bool>(ControllerComponentVariables::UseSslDefaultVerifyPaths).value_or(true),
+            get_optional_value<bool>(ControllerComponentVariables::AdditionalRootCertificateCheck).value_or(false),
+            std::nullopt, // hostName
+            get_optional_value<bool>(ControllerComponentVariables::VerifyCsmsCommonName).value_or(true),
+            get_optional_value<bool>(ControllerComponentVariables::UseTPM).value_or(false),
+            get_optional_value<bool>(ControllerComponentVariables::VerifyCsmsAllowWildcards).value_or(false),
+            get_optional_value<std::string>(ControllerComponentVariables::IFace),
+            get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
+            get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        return opts;
+    } catch (const std::invalid_argument& e) {
+        EVLOG_error << "Could not configure the connection options for slot " << slot << ": " << e.what();
+        return std::nullopt;
+    }
+}
+
+void DeviceModel::set_active_security_profile(int32_t security_profile, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::SecurityProfile;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(security_profile),
+                            source);
+    }
+}
+
+void DeviceModel::set_active_message_timeout(std::int32_t message_timeout_s, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::MessageTimeout;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(message_timeout_s),
+                            source);
+    }
+}
+
+void DeviceModel::set_active_network_profile_slot(int32_t slot, const std::string& source) {
+    const auto& cv = ControllerComponentVariables::ActiveNetworkProfile;
+    if (cv.variable.has_value()) {
+        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(slot), source);
+    }
+}
+
+std::optional<std::int32_t> DeviceModel::get_active_network_profile_slot() {
+    return this->get_optional_value<std::int32_t>(ControllerComponentVariables::ActiveNetworkProfile);
+}
+
+void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& version, const std::string& source) {
+    const auto nc_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        slot, NetworkConfigurationComponentVariables::OcppVersion);
+    if (nc_cv.variable.has_value()) {
+        set_value(nc_cv.component, nc_cv.variable.value(), AttributeEnum::Actual, version, source);
+    }
+}
+
+void DeviceModel::set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) {
+    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::SecurityProfile,
+                        AttributeEnum::Actual, std::to_string(security_profile), source);
+}
+
+void DeviceModel::set_security_ctrl_identity(const std::string& identity, const std::string& source) {
+    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::Identity,
+                        AttributeEnum::Actual, identity, source);
 }
 
 } // namespace v2

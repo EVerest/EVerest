@@ -1,14 +1,17 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <array>
+#include <bitset>
 #include <cstdint>
 #include <optional>
 #include <string>
 #include <vector>
 
 #include <everest/util/vector/fixed_vector.hpp>
+
+struct iso20_ContractCertificateChainType;
 
 namespace iso15118::message_20 {
 
@@ -29,13 +32,14 @@ using Description = std::string; // MaxLength: 160
 static constexpr auto SESSION_ID_LENGTH = 8;
 using SessionId = std::array<uint8_t, SESSION_ID_LENGTH>;
 
-using MeterId = std::string;        // MaxLength: 32
-using MeterSignature = std::string; // Base64 encoded, MaxLength: 64
+using MeterId = std::string; // MaxLength: 32
+static constexpr auto METER_SIGNATURE_LENGTH = 64;
+using MeterSignature = std::array<uint8_t, METER_SIGNATURE_LENGTH>; // Base64 encoded, MaxLength: 64
 
 static constexpr auto GEN_CHALLENGE_LENGTH = 16;
 using GenChallenge = std::array<uint8_t, GEN_CHALLENGE_LENGTH>; // Base64 encoded, MaxLength: 16
 
-using Certificate = std::string;                                         // Base64 encoded, MaxLength: 1600
+using Certificate = std::vector<uint8_t>;                                // DER, MaxLength: 1600
 using SubCertificate = everest::lib::util::fixed_vector<Certificate, 3>; // Max: 3
 
 enum class ResponseCode {
@@ -102,7 +106,8 @@ enum class ServiceCategory : uint16_t {
     DC_ACDP_BPT = 7,
     MCS = 8,
     MCS_BPT = 9,
-    AC_DER = 10,
+    AC_DER_IEC = 10,
+    AC_DER_SAE = 11,
     Internet = 65,
     ParkingStatus = 66,
 };
@@ -124,7 +129,7 @@ enum class ChargingSession {
 
 enum class AcConnector {
     SinglePhase = 1,
-    ThreePhase = 3,
+    ThreePhase = 2,
 };
 enum class DcConnector {
     Core = 1,
@@ -218,6 +223,10 @@ struct AcBptParameterList : AcParameterList {
     BptChannel bpt_channel;
     GeneratorMode generator_mode;
     GridCodeIslandingDetectionMethod grid_code_detection_method;
+};
+
+struct AcDerParameterList : AcParameterList {
+    std::bitset<12> der_control_functions;
 };
 
 struct DcParameterList {
@@ -335,9 +344,29 @@ struct ListOfRootCertificateIDs {
     everest::lib::util::fixed_vector<X509IssuerSerial, 20> root_certificate_id;
 };
 
-// TODO(sl): Adding content to following structs
-struct SignedInfo {};
-struct SignatureValue {};
+// xmldsig as carried in the message header; [V2G20-771] bars KeyInfo, Object and the optional attributes.
+// Decoded for inspection only, the signature check re-encodes the cbexigen structs from the raw EXI.
+struct Reference {
+    std::optional<std::string> id;
+    std::optional<std::string> type;
+    std::optional<std::string> uri;
+    std::optional<std::string> transform_algorithm;
+    std::string digest_method;
+    std::vector<uint8_t> digest_value;
+};
+
+struct SignedInfo {
+    std::optional<std::string> id;
+    std::string canonicalization_method;
+    std::string signature_method;
+    everest::lib::util::fixed_vector<Reference, 4> references;
+};
+
+struct SignatureValue {
+    std::optional<std::string> id;
+    std::vector<uint8_t> value;
+};
+
 struct KeyInfo {};
 struct Object {};
 
@@ -367,10 +396,13 @@ std::string from_mobility_needs_mode(const MobilityNeedsMode& in);
 struct Header {
     datatypes::SessionId session_id{};
     uint64_t timestamp;
-    // std::optional<datatypes::Signature> signature;
+    std::optional<datatypes::Signature> signature{};
 };
 
 template <typename cb_HeaderType> void convert(const cb_HeaderType& in, Header& out);
+
+template <> void convert(const struct iso20_ContractCertificateChainType& in, datatypes::ContractCertificateChain& out);
+template <> void convert(const datatypes::ContractCertificateChain& in, iso20_ContractCertificateChainType& out);
 
 template <typename cb_RationalNumberType> void convert(const cb_RationalNumberType& in, datatypes::RationalNumber& out);
 template <typename cb_RationalNumberType> void convert(const datatypes::RationalNumber& in, cb_RationalNumberType& out);

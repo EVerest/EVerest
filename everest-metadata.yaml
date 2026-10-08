@@ -145,6 +145,10 @@ everest-testing:
   name: "EVerest Testing"
   description: "This python package provides utilities for testing EVerest with pytest"
   license: "Apache-2.0"
+everest-management-api-cli:
+  name: "EVerest Management API CLI"
+  description: "Command line client for the lifecycle and configuration APIs of the EVerest manager; the management API integration tests use its client modules"
+  license: "Apache-2.0"
 # dependencies of everest-testing
 pytest:
   description: "pytest: simple powerful testing with Python"
@@ -167,13 +171,6 @@ ocpp:
 websockets:
   description: "An implementation of the WebSocket Protocol (RFC 6455 & 7692)"
   license: "BSD-3-Clause"
-pyOpenSSL:
-  description: "Python wrapper module around the OpenSSL library"
-  license: "Apache-2.0"
-
-libfsm:
-  description: "A tiny C++14 library for writing maintainable finite state machines"
-  license: "Apache-2.0"
 
 liblog:
   description: "C++ logging and exceptions library for the EVerest framework"
@@ -214,11 +211,6 @@ libevse-security:
 libslac:
   description: "Simple ISO15118-3 SLAC library"
   license: "Apache-2.0"
-# dependencies of libslac
-hash-library:
-  description: "Portable C++ hashing library"
-  license: "Zlib"
-
 libtimer:
   description: "C++ timer library for the EVerest framework"
   license: "Apache-2.0"

@@ -80,6 +80,7 @@ mod ffi {
         );
 
         fn on_ready(&self);
+        fn on_shutdown(&self);
     }
 
     struct JsonBlob {
@@ -443,6 +444,12 @@ pub trait Subscriber: Sync + Send {
     );
 
     fn on_ready(&self) {}
+
+    /// Called when the global shutdown signal is received. Module communication stays up until
+    /// this handler returns; afterwards the MQTT connection is disconnected. The module is
+    /// responsible for ending its own work (threads, loops) so the process can exit before the
+    /// manager's shutdown timeout escalates to SIGTERM.
+    fn on_shutdown(&self) {}
 }
 
 enum PanicStrategy {
@@ -505,6 +512,16 @@ impl Runtime {
     fn on_ready(&self) {
         if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.sub_impl.get().unwrap().on_ready();
+        })) {
+            self.handle_panic(payload);
+        }
+    }
+
+    fn on_shutdown(&self) {
+        if let Err(payload) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            if let Some(sub_impl) = self.sub_impl.get() {
+                sub_impl.on_shutdown();
+            }
         })) {
             self.handle_panic(payload);
         }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2021 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef EVEREST_TIMER_HPP
 #define EVEREST_TIMER_HPP
 
@@ -55,16 +55,22 @@ public:
         work(boost::asio::make_work_guard(*io_context)) {
     }
 
+    /// \brief Cancel the asio timer and join the io_context thread.
+    ///
+    /// The mutex is released BEFORE joining the io_context thread. A timer callback running on
+    /// that thread may re-enter \ref at, \ref timeout, \ref interval, or \ref stop — each of which
+    /// takes the mutex; if the destructor still held it, \c join would deadlock waiting for the
+    /// callback to exit while the callback waited for the mutex.
     ~Timer() {
-        std::lock_guard<std::mutex> lock(this->mutex);
-        if (this->timer) {
-            // stop asio timer
-            this->timer->cancel();
-
-            if (this->timer_thread) {
-                this->io_context.stop();
-                this->timer_thread->join();
+        {
+            std::lock_guard<std::mutex> lock(this->mutex);
+            if (this->timer) {
+                this->timer->cancel();
             }
+        }
+        if (this->timer_thread) {
+            this->io_context.stop();
+            this->timer_thread->join();
         }
     }
 
@@ -151,13 +157,14 @@ private:
             running = true;
 
             // use asio timer
+            const auto callback = this->timer_callback;
             this->timer->expires_at(time_point);
-            this->timer->async_wait([this](const boost::system::error_code& e) {
+            this->timer->async_wait([this, callback](const boost::system::error_code& e) {
                 if (e) {
                     return;
                 }
 
-                this->timer_callback();
+                callback();
                 running = false;
             });
         }
@@ -177,7 +184,8 @@ private:
             running = true;
 
             // use asio timer
-            this->callback_wrapper = [this](const boost::system::error_code& error) {
+            const auto callback = this->timer_callback;
+            this->callback_wrapper = [this, callback](const boost::system::error_code& error) {
                 if (error) {
                     running = false;
                     return;
@@ -190,7 +198,7 @@ private:
                     this->timer->async_wait(this->callback_wrapper);
                 }
 
-                this->timer_callback();
+                callback();
             };
 
             this->timer->expires_after(
@@ -208,14 +216,15 @@ private:
             running = true;
 
             // use asio timer
+            const auto callback = this->timer_callback;
             this->timer->expires_after(interval);
-            this->timer->async_wait([this](const boost::system::error_code& error) {
+            this->timer->async_wait([this, callback](const boost::system::error_code& error) {
                 if (error) {
                     running = false;
                     return;
                 }
 
-                this->timer_callback();
+                callback();
                 running = false;
             });
         }

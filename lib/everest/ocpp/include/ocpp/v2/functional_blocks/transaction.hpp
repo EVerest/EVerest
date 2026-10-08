@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -55,11 +57,11 @@ public:
     /// \param id_token
     /// \param signed_meter_value
     /// \param charging_state
-    virtual void on_transaction_finished(const std::int32_t evse_id, const DateTime& timestamp,
-                                         const MeterValue& meter_stop, const ReasonEnum reason,
-                                         const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
-                                         const std::optional<std::string>& signed_meter_value,
-                                         const ChargingStateEnum charging_state) = 0;
+    virtual void on_transaction_finished(
+        const std::int32_t evse_id, const DateTime& timestamp, const MeterValue& meter_stop, const ReasonEnum reason,
+        const TriggerReasonEnum trigger_reason, const std::optional<IdToken>& id_token,
+        const std::optional<std::string>& signed_meter_value, const ChargingStateEnum charging_state,
+        const std::optional<SignedMeterValue>& start_signed_meter_value = std::nullopt) = 0;
 
     /* OCPP message requests */
 
@@ -100,7 +102,8 @@ public:
                                  const ReasonEnum reason, const TriggerReasonEnum trigger_reason,
                                  const std::optional<IdToken>& id_token,
                                  const std::optional<std::string>& signed_meter_value,
-                                 const ChargingStateEnum charging_state) override;
+                                 const ChargingStateEnum charging_state,
+                                 const std::optional<SignedMeterValue>& start_signed_meter_value) override;
     void transaction_event_req(const TransactionEventEnum& event_type, const DateTime& timestamp,
                                const Transaction& transaction, const TriggerReasonEnum& trigger_reason,
                                const std::int32_t seq_no, const std::optional<std::int32_t>& cable_max_current,
@@ -127,7 +130,9 @@ private:
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback;
     ResetCallback reset_callback;
 
-    std::map<std::int32_t, std::pair<IdToken, std::int32_t>> remote_start_id_per_evse;
+    /// \brief Written by the message-handler thread (handle_remote_start_transaction_request), read and
+    /// erased by the EVerest module thread (on_authorized / on_charging_state_changed via transaction_event_req).
+    everest::lib::util::monitor<std::map<std::int32_t, std::pair<IdToken, std::int32_t>>> remote_start_id_per_evse;
     /// \brief Used when an 'OnIdle' reset is requested, to perform the reset after the charging has stopped.
     bool reset_scheduled;
     /// \brief If `reset_scheduled` is true and the reset is for a specific evse id, it will be stored in this member.

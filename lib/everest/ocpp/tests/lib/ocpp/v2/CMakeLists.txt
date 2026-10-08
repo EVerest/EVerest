@@ -1,5 +1,6 @@
 target_include_directories(libocpp_unit_tests PUBLIC 
         mocks
+        ${CMAKE_CURRENT_SOURCE_DIR}/../common/mocks
         ${CMAKE_CURRENT_SOURCE_DIR})
 
 target_sources(libocpp_unit_tests PRIVATE
@@ -14,11 +15,14 @@ target_sources(libocpp_unit_tests PRIVATE
         test_component_state_manager.cpp
         test_database_handler.cpp
         test_device_model.cpp
+        test_device_model_concurrency.cpp
         test_init_device_model_db.cpp
+        test_network_config_sync.cpp
         comparators.cpp
         test_message_queue.cpp
         test_composite_schedule.cpp
         test_profile.cpp
+        test_ocpp16_custom_config_mappings.cpp
         )
 
 # Copy the json files used for testing to the destination directory

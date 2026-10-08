@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
-#include <ctime>
+// Copyright Pionix GmbH and Contributors to EVerest
+#include <chrono>
+#include <limits>
 
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/helper.hpp>
@@ -8,6 +9,7 @@
 #include <iso15118/message/ac_charge_parameter_discovery.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/certificate_installation.hpp>
 #include <iso15118/message/dc_cable_check.hpp>
 #include <iso15118/message/dc_charge_loop.hpp>
 #include <iso15118/message/dc_charge_parameter_discovery.hpp>
@@ -23,8 +25,44 @@
 
 namespace iso15118::d20 {
 
-static inline void setup_timestamp(message_20::Header& header) {
-    header.timestamp = static_cast<uint64_t>(std::time(nullptr));
+namespace {
+constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
+
+template <typename Response> Response handle_sequence_error(const d20::Session& session) {
+    Response res;
+    setup_header(res.header, session);
+    set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+    return res;
+}
+
+} // namespace
+
+uint64_t now_in_secc_time() {
+    return static_cast<uint64_t>(
+        std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::system_clock::now().time_since_epoch())
+            .count());
+}
+
+std::optional<uint32_t> departure_time_offset(const std::optional<uint64_t>& departure_time,
+                                              uint64_t header_timestamp) {
+    if (not departure_time.has_value()) {
+        return std::nullopt;
+    }
+
+    // [V2G20-2104] The offset is measured from the timestamp this very message carries, not from a
+    // fresh clock reading, which could already have crossed a second boundary.
+    const auto sent_at = header_timestamp / MICROSECONDS_PER_SECOND;
+
+    if (departure_time.value() <= sent_at) {
+        return std::nullopt; // [V2G20-2103]
+    }
+
+    const auto offset = departure_time.value() - sent_at;
+    if (offset > std::numeric_limits<uint32_t>::max()) {
+        return std::nullopt;
+    }
+
+    return static_cast<uint32_t>(offset);
 }
 
 bool validate_and_setup_header(message_20::Header& header, const Session& cur_session,
@@ -37,13 +75,22 @@ bool validate_and_setup_header(message_20::Header& header, const Session& cur_se
 
 void setup_header(message_20::Header& header, const Session& cur_session) {
     header.session_id = cur_session.get_id();
-    setup_timestamp(header);
+    header.timestamp = now_in_secc_time();
 }
 
-template <typename Response> Response handle_sequence_error(const d20::Session& session) {
-    Response res;
-    setup_header(res.header, session);
-    return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
+void set_certificate_installation_placeholders(message_20::CertificateInstallationResponse& res) {
+    constexpr std::size_t DH_PUBLIC_KEY_SIZE = 133;
+    constexpr std::size_t SECP521_ENCRYPTED_PRIVATE_KEY_SIZE = 94;
+
+    auto& data = res.signed_installation_data;
+    data.id = "id1";
+    // ContractCertificateChain requires at least one SubCertificate.
+    data.contract_certificate_chain.sub_certificates.emplace_back();
+    data.ecdh_curve = message_20::datatypes::EcdhCurve::SECP521;
+    data.dh_public_key.assign(DH_PUBLIC_KEY_SIZE, 0x00);
+    data.secp521_encrypted_private_key.emplace(SECP521_ENCRYPTED_PRIVATE_KEY_SIZE, 0x00);
+    data.x448_encrypted_private_key.reset();
+    data.tpm_encrypted_private_key.reset();
 }
 
 // Todo(sl): Not happy at all. Need refactoring. Only ctx.respond and Session is needed. Not the whole Context.
@@ -57,6 +104,12 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
         ctx.respond(res);
     } else if (req_type == message_20::Type::AuthorizationReq) {
         const auto res = handle_sequence_error<message_20::AuthorizationResponse>(ctx.session);
+        ctx.respond(res);
+    } else if (req_type == message_20::Type::CertificateInstallationReq) {
+        message_20::CertificateInstallationResponse res;
+        setup_header(res.header, ctx.session);
+        set_certificate_installation_placeholders(res);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_SequenceError);
         ctx.respond(res);
     } else if (req_type == message_20::Type::ServiceDiscoveryReq) {
         const auto res = handle_sequence_error<message_20::ServiceDiscoveryResponse>(ctx.session);
@@ -91,6 +144,12 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
     } else if (req_type == message_20::Type::AC_ChargeLoopReq) {
         const auto res = handle_sequence_error<message_20::AC_ChargeLoopResponse>(ctx.session);
         ctx.respond(res);
+    } else if (req_type == message_20::Type::DER_AC_ChargeParameterDiscoveryReq) {
+        const auto res = handle_sequence_error<message_20::DER_AC_ChargeParameterDiscoveryResponse>(ctx.session);
+        ctx.respond(res);
+    } else if (req_type == message_20::Type::DER_AC_ChargeLoopReq) {
+        const auto res = handle_sequence_error<message_20::DER_AC_ChargeLoopResponse>(ctx.session);
+        ctx.respond(res);
     } else if (req_type == message_20::Type::DC_WeldingDetectionReq) {
         const auto res = handle_sequence_error<message_20::DC_WeldingDetectionResponse>(ctx.session);
         ctx.respond(res);
@@ -100,6 +159,10 @@ void send_sequence_error(const message_20::Type req_type, d20::Context& ctx) {
     } else {
         logf_warning("Unknown code type id: %d ", req_type);
     }
+
+    // Session ends with a FAILED response: oscillator off without delay + SECC-side TCP close
+    // ([V2G-DC-942]/[V2G-DC-940] semantics), reported once the response hit the wire.
+    ctx.session_stop_res_pending = session::feedback::SessionStopAction::FailedTermination;
 }
 
 } // namespace iso15118::d20

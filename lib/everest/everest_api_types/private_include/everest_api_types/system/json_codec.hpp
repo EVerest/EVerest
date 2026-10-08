@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -21,6 +21,9 @@ void from_json(const json& j, UploadLogsResponse& k);
 
 void to_json(json& j, const LogStatus& k) noexcept;
 void from_json(const json& j, LogStatus& k);
+
+void to_json(json& j, const FirmwareUpdateMetadata& k) noexcept;
+void from_json(const json& j, FirmwareUpdateMetadata& k);
 
 void to_json(json& j, const FirmwareUpdateStatus& k) noexcept;
 void from_json(const json& j, FirmwareUpdateStatus& k);
@@ -45,5 +48,35 @@ void from_json(const json& j, ResetType& k);
 
 void to_json(json& j, const BootReason& k) noexcept;
 void from_json(const json& j, BootReason& k);
+
+void to_json(json& j, const InterfaceClassEnum& k) noexcept;
+void from_json(const json& j, InterfaceClassEnum& k);
+
+void to_json(json& j, const APNAuthenticationEnum& k) noexcept;
+void from_json(const json& j, APNAuthenticationEnum& k);
+
+void to_json(json& j, const VPNTypeEnum& k) noexcept;
+void from_json(const json& j, VPNTypeEnum& k);
+
+void to_json(json& j, const ConfigureNetworkStatusEnum& k) noexcept;
+void from_json(const json& j, ConfigureNetworkStatusEnum& k);
+
+void to_json(json& j, const ConfigureNetworkFinalStatusEnum& k) noexcept;
+void from_json(const json& j, ConfigureNetworkFinalStatusEnum& k);
+
+void to_json(json& j, const APN& k) noexcept;
+void from_json(const json& j, APN& k);
+
+void to_json(json& j, const VPN& k) noexcept;
+void from_json(const json& j, VPN& k);
+
+void to_json(json& j, const ConfigureNetworkRequest& k) noexcept;
+void from_json(const json& j, ConfigureNetworkRequest& k);
+
+void to_json(json& j, const ConfigureNetworkResponse& k) noexcept;
+void from_json(const json& j, ConfigureNetworkResponse& k);
+
+void to_json(json& j, const ConfigureNetworkStatus& k) noexcept;
+void from_json(const json& j, ConfigureNetworkStatus& k);
 
 } // namespace everest::lib::API::V1_0::types::system

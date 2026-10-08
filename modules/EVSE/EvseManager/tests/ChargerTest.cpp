@@ -6,6 +6,11 @@
 
 #include <Charger.hpp>
 #include <memory>
+#include <optional>
+
+namespace module {
+std::vector<std::string> observed_cp_state_commands;
+}
 
 namespace {
 using namespace module;
@@ -18,7 +23,10 @@ using namespace types::evse_manager;
 struct ChargerDerived : public Charger {
     using Charger::Charger;
     using Charger::get_enable_disable_source_table;
+    using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
+    using Charger::process_event;
+    using Charger::run_state_machine;
 
     // updated when a non-zero connector is used to enable_disable()
     constexpr const auto& connector_enabled() {
@@ -31,6 +39,10 @@ struct ChargerDerived : public Charger {
 
     constexpr void current_state(EvseState state) {
         get_shared_context().current_state = state;
+    }
+
+    constexpr const auto& flag_disable_requested() {
+        return get_shared_context().flag_disable_requested;
     }
 };
 
@@ -51,6 +63,7 @@ struct ChargerTest : public testing::Test {
     std::vector<std::unique_ptr<isolation_monitorIntf>> error_handler_imd;
     std::vector<std::unique_ptr<power_supply_DCIntf>> error_handler_powersupply;
     std::vector<std::unique_ptr<powermeterIntf>> error_handler_powermeter;
+    std::vector<std::unique_ptr<slacIntf>> error_handler_slac;
     std::vector<std::unique_ptr<over_voltage_monitorIntf>> error_handler_over_voltage_monitor;
 
     std::unique_ptr<ChargerDerived> charger;
@@ -59,11 +72,12 @@ struct ChargerTest : public testing::Test {
         charger_error_handling(std::make_unique<ErrorHandling>(
             error_handler_bsp, error_handler_hlc, error_handler_connector_lock, error_handler_ac_rcd,
             error_handler_evse, error_handler_imd, error_handler_powersupply, error_handler_powermeter,
-            error_handler_over_voltage_monitor, false)) {
+            error_handler_slac, error_handler_over_voltage_monitor, false)) {
     }
 
     void SetUp() override {
         reset_last_event();
+        observed_cp_state_commands.clear();
         charger = std::make_unique<ChargerDerived>(
             charger_bsp, charger_error_handling, charger_powermeter_billing, charger_store,
             types::evse_board_support::Connector_type::IEC62196Type2Socket, "EVSETEST");
@@ -668,11 +682,312 @@ TEST_F(ChargerTest, DelayedAuthorizeAfterCancelTransactionIsIgnored) {
     types::authorization::ValidationResult validation_result;
     validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
 
-    charger->authorize(true, token, validation_result);
+    EXPECT_FALSE(charger->authorize(true, token, validation_result));
 
     // The delayed response must not restore authorization
     EXPECT_FALSE(ctx.flag_authorized);
     EXPECT_TRUE(ctx.flag_externally_cancelled);
+}
+
+TEST_F(ChargerTest, AuthorizeWhileDisableRequestedIsIgnored) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_disable_requested = true;
+
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::ISO14443;
+    token.authorization_type = types::authorization::AuthorizationType::RFID;
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    EXPECT_FALSE(charger->authorize(true, token, validation_result));
+    EXPECT_FALSE(ctx.flag_authorized);
+}
+
+TEST_F(ChargerTest, AuthorizeAppliesToken) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+
+    types::authorization::ProvidedIdToken token;
+    token.id_token.value = "TOKEN";
+    token.id_token.type = types::authorization::IdTokenType::ISO14443;
+    token.authorization_type = types::authorization::AuthorizationType::RFID;
+    types::authorization::ValidationResult validation_result;
+    validation_result.authorization_status = types::authorization::AuthorizationStatus::Accepted;
+
+    reset_last_event();
+    EXPECT_TRUE(charger->authorize(true, token, validation_result));
+    EXPECT_TRUE(ctx.flag_authorized);
+    EXPECT_EQ(last_event, SessionEventEnum::Authorized);
+}
+
+// Test that disabling while a transaction is active goes through the proper
+// StoppingCharging->Finished->Disabled sequence instead of jumping directly.
+TEST_F(ChargerTest, DisableDuringActiveTransaction) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate an active charging session with contactors closed
+    ctx.current_state = Charger::EvseState::Charging;
+    ctx.flag_transaction_active = true;
+    ctx.session_active = true;
+    ctx.flag_authorized = true;
+    ctx.contactor_open = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // enable_disable calls run_state_machine synchronously: Charging->StoppingCharging.
+    // Must NOT immediately jump to Disabled — session needs proper teardown.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::StoppingCharging);
+    EXPECT_TRUE(charger->flag_disable_requested());
+    EXPECT_EQ(ctx.last_stop_transaction_reason, StopTransactionReason::EVSEDisabled);
+
+    // Simulate relay opening and transaction already stopped
+    ctx.contactor_open = true;
+    ctx.flag_transaction_active = false;
+
+    // State machine: StoppingCharging->Finished->Disabled (all in one loop)
+    reset_last_event();
+    charger->run_state_machine();
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// Test that disabling while in WaitingForAuthentication (no transaction yet)
+// ends the session and transitions to Disabled without going through StoppingCharging.
+TEST_F(ChargerTest, DisableDuringWaitingForAuthentication) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate EV plugged in, waiting for auth — no transaction started yet
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    ctx.session_active = true;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // run_state_machine is called synchronously inside enable_disable, so by
+    // the time enable_disable returns the state machine has already driven
+    // WaitingForAuthentication -> Finished -> Disabled.
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// Test that disabling while in Idle (no session) immediately transitions to Disabled
+TEST_F(ChargerTest, DisableDuringIdle) {
+    constexpr EnableDisableSource disable_source{Enable_source::CSMS, Enable_state::Disable, 100};
+
+    auto& ctx = charger->get_shared_context();
+
+    // Simulate EV plugged in, no session active
+    ctx.current_state = Charger::EvseState::Idle;
+    ctx.session_active = false;
+    ctx.flag_ev_plugged_in = true;
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    reset_last_event();
+    EXPECT_FALSE(charger->enable_disable(1, disable_source));
+
+    // Must immediately transition to Disabled
+    EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
+    EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// ----------------------------------------------------------------------------
+// tests for dlink_error()
+// A D-LINK_ERROR normally restarts SLAC matching according to the ISO 15118-3
+// error recovery sequence ([V2G3-M07-05]). For an HLC session, CP is first
+// switched to X1 before the state machine starts the configured reinitialization
+// (defaulting to T_step_EF).
+// When the session is being stopped for good or is already finished, the
+// D-LINK_ERROR is just the consequence of the HLC session shutting down and
+// matching must NOT be restarted, so the session can end in
+// StoppingCharging -> Finished.
+
+struct ChargerDlinkErrorTest : public ChargerTest {
+    // never dereferenced: the IECStateMachine used here is the no-op stub below
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
+        ChargerTest::SetUp();
+    }
+
+    void setup_hlc_session_in(Charger::EvseState state) {
+        auto& ctx = charger->get_shared_context();
+        ctx.current_state = state;
+        ctx.pwm_running = true;
+        ctx.hlc_charging_active = true;
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        charger->get_hlc_use_5percent_current_session() = true;
+    }
+};
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingDeauthorized) {
+    // Transaction stopped on request during cable check: auth is withdrawn and the
+    // charger is in StoppingCharging when the dying HLC session reports D-LINK_ERROR
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_authorized = false;
+
+    charger->dlink_error();
+
+    // Matching must not be restarted; PWM is switched off so the state machine can
+    // proceed to Finished
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingWithoutTransaction) {
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenStoppingForDisable) {
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_disable_requested = true;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenFinished) {
+    // The EV may drop to state B quickly after a requested stop, in which case the
+    // charger reaches Finished (with PWM still running) before the dying HLC session
+    // reports D-LINK_ERROR. This must not resurrect the finished session.
+    setup_hlc_session_in(Charger::EvseState::Finished);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_transaction_active = false;
+    ctx.flag_authorized = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+    EXPECT_FALSE(ctx.pwm_running);
+}
+
+TEST_F(ChargerDlinkErrorTest, MatchingRestartDuringActiveSession) {
+    // A D-LINK_ERROR during an active session (e.g. HLC communication error during
+    // cable check with the transaction still running) switches CP to X1 before
+    // the configured reinitialization starts.
+    setup_hlc_session_in(Charger::EvseState::PrepareCharging);
+
+    charger->dlink_error();
+
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(charger->get_shared_context().pwm_running);
+    EXPECT_TRUE(charger->get_shared_context().reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+}
+
+TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
+    // StoppingCharging is also a transit state for EVSE-initiated pause: the session
+    // continues afterwards, so the error recovery must still restart matching
+    setup_hlc_session_in(Charger::EvseState::StoppingCharging);
+    auto& ctx = charger->get_shared_context();
+    ctx.flag_paused_by_evse = true;
+
+    charger->dlink_error();
+
+    // A pause continues the session, so it follows the same X1-before-reinit
+    // recovery sequence as an active session.
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(ctx.pwm_running);
+    EXPECT_TRUE(ctx.reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+}
+
+// ----------------------------------------------------------------------------
+// An EVSE-initiated HLC pause that is lifted resumes in PrepareCharging and restarts SLAC. Not when the
+// pause is lifted by the unplug itself: the CP event's facts (flag_ev_plugged_in) are applied before the
+// state machine runs, so the pass sees the EV gone and stops instead. Bench-found on MCS, where the
+// resume restarted the data link on an empty wire and spent its whole restart budget there.
+
+struct ChargerEvsePauseTest : public ChargerDlinkErrorTest {
+    int slac_starts{0};
+
+    /// Settled in ChargingPausedEVSE on an EVSE-initiated pause that is still held by NoEnergy.
+    void setup_held_evse_pause() {
+        setup_hlc_session_in(Charger::EvseState::ChargingPausedEVSE);
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_ev_plugged_in = true;
+        ctx.hlc_session_paused_by_evse = true;
+        ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Terminate;
+        charger->signal_slac_start.connect([this] { ++slac_starts; });
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+        slac_starts = 0;
+    }
+
+    /// Energy is back: the next pass resumes, unless the EV is gone.
+    void lift_pause() {
+        // The socket caps at the cable rating, which is unset in this fixture.
+        charger->get_shared_context().max_current_cable = 32.0f;
+        charger->set_max_current(16.0f, std::chrono::steady_clock::now() + std::chrono::hours(1));
+    }
+};
+
+TEST_F(ChargerEvsePauseTest, LiftedPauseResumesAndRestartsSlacWhilePluggedIn) {
+    setup_held_evse_pause();
+    lift_pause();
+
+    // PowerOff only records the open contactor; the pass itself does the resuming.
+    charger->process_event(CPEvent::PowerOff);
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_GE(slac_starts, 1);
+}
+
+TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
+    setup_held_evse_pause();
+    lift_pause();
+
+    charger->process_event(CPEvent::CarUnplugged);
+
+    EXPECT_FALSE(charger->get_shared_context().flag_ev_plugged_in);
+    EXPECT_NE(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
+}
+
+TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
+    // [V2G3-M07-12]: in nominal PWM mode (AC with HLC on nominal duty cycle), basic
+    // charging continues and matching is not restarted on a D-LINK_ERROR
+    setup_hlc_session_in(Charger::EvseState::Charging);
+    charger->get_hlc_use_5percent_current_session() = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
 }
 
 } // namespace
@@ -696,8 +1011,8 @@ namespace module {
 
 // ----------------------------------------------------------------------------
 // IECStateMachine stub
-IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_,
-                                 bool lock_connector_in_state_b_) :
+IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& r_bsp_, bool lock_connector_in_state_b_,
+                                 bool use_authorized_, bool keep_cable_locked_, int keep_cable_locked_lock_delay_ms_) :
     r_bsp(r_bsp_) {
 }
 void IECStateMachine::process_bsp_event(const types::board_support_common::BspEvent& bsp_event) {
@@ -705,8 +1020,8 @@ void IECStateMachine::process_bsp_event(const types::board_support_common::BspEv
 void IECStateMachine::allow_power_on(bool value, types::evse_board_support::Reason reason) {
 }
 
-double IECStateMachine::read_pp_ampacity() {
-    return 0.0;
+std::optional<double> IECStateMachine::read_pp_ampacity() {
+    return std::nullopt;
 }
 void IECStateMachine::switch_three_phases_while_charging(bool n) {
 }
@@ -719,14 +1034,24 @@ void IECStateMachine::set_overcurrent_limit(double amps) {
 void IECStateMachine::set_pwm(double value) {
 }
 void IECStateMachine::set_cp_state_X1() {
+    observed_cp_state_commands.emplace_back("X1");
 }
+
+void IECStateMachine::set_cp_state_E() {
+    observed_cp_state_commands.emplace_back("E");
+}
+
 void IECStateMachine::set_cp_state_F() {
+    observed_cp_state_commands.emplace_back("F");
 }
 
 void IECStateMachine::enable(bool en) {
 }
 
 void IECStateMachine::connector_force_unlock() {
+}
+
+void IECStateMachine::set_authorized(bool a) {
 }
 
 const std::string cpevent_to_string(CPEvent e) {
@@ -763,6 +1088,7 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& r_bs
                              const std::vector<std::unique_ptr<isolation_monitorIntf>>& _r_imd,
                              const std::vector<std::unique_ptr<power_supply_DCIntf>>& _r_powersupply,
                              const std::vector<std::unique_ptr<powermeterIntf>>& _r_powermeter,
+                             const std::vector<std::unique_ptr<slacIntf>>& _r_slac,
                              const std::vector<std::unique_ptr<over_voltage_monitorIntf>>& _r_over_voltage_monitor,
                              bool _inoperative_error_use_vendor_id) :
     r_bsp(r_bsp),
@@ -773,6 +1099,7 @@ ErrorHandling::ErrorHandling(const std::unique_ptr<evse_board_supportIntf>& r_bs
     r_imd(_r_imd),
     r_powersupply(r_powersupply),
     r_powermeter(_r_powermeter),
+    r_slac(_r_slac),
     r_over_voltage_monitor(_r_over_voltage_monitor),
     inoperative_error_use_vendor_id(_inoperative_error_use_vendor_id) {
 }

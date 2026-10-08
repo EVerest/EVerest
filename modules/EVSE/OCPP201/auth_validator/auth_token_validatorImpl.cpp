@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <conversions.hpp>
+#include <everest/ocpp_module_common/conversions.hpp>
 #include <generated/interfaces/ISO15118_charger/Implementation.hpp>
 #include <generated/types/session_cost.hpp>
 #include <ocpp/v2/messages/Authorize.hpp>
@@ -15,6 +15,10 @@ void auth_token_validatorImpl::init() {
 }
 
 void auth_token_validatorImpl::ready() {
+}
+
+void auth_token_validatorImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
 }
 
 types::authorization::ValidationResult

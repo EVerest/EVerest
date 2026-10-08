@@ -1,0 +1,4 @@
+description: >-
+  Make sure that errors from an interface/group with capitalized letters in its name are correctly parsed
+errors:
+  - reference: /errors/errors_CAPITALIZED

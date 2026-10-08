@@ -8,7 +8,7 @@ from unittest.mock import ANY
 
 from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.fixtures import charge_point_v201
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
@@ -16,7 +16,7 @@ from everest_test_utils import *
 
 from ocpp.v201.enums import (IdTokenEnumType as IdTokenTypeEnum, ReserveNowStatusEnumType, ConnectorStatusEnumType,
                              OperationalStatusEnumType, CancelReservationStatusEnumType, SetVariableStatusEnumType,
-                             RequestStartStopStatusEnumType)
+                             RequestStartStopStatusEnumType, ConnectorEnumType)
 from ocpp.v201.datatypes import *
 from ocpp.v201 import call as call_201
 from ocpp.v201 import call_result as call_result201
@@ -66,13 +66,15 @@ async def test_reservation_local_start_tx(
         ),
     )
 
+    test_utility.messages.clear()
+
     # swipe invalid id tag
     test_controller.swipe(test_config.authorization_info.invalid_id_tag)
 
     # swipe valid id tag to authorize
     test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
 
-    # expect StatusNotification with status available (reservation is now used)
+    # expect StatusNotification with status available before plug in (reservation is now used, H03.FR.10)
     assert await wait_for_and_validate(
         test_utility,
         charge_point_v201,
@@ -1032,6 +1034,294 @@ async def test_reservation_non_evse_specific_accepted_multiple(
 
 @pytest.mark.asyncio
 @pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [
+            (
+                OCPP2XConfigVariableIdentifier(
+                    "ReservationCtrlr", "ReservationCtrlrNonEvseSpecific", "Actual"
+                ),
+                "true",
+            ),
+            (
+                OCPP2XConfigVariableIdentifier(
+                    "TxCtrlr", "TxStartPoint", "Actual"
+                ),
+                "Authorized",
+            )
+        ]
+    )
+)
+async def test_reservation_connector_type_authorize_first(
+        test_config: OcppTestConfiguration,
+        charge_point_v201: ChargePoint201,
+        test_utility: TestUtility,
+        test_controller: TestController,
+):
+    """
+    Make reservations by connector type for all evse's, so all evse's are reserved without a reservation id.
+    Authorize with the id token of one of them before plugging in: the transaction must start with that reservation
+    id (H01.FR.15).
+    """
+    logging.info(
+        "######### test_reservation_connector_type_authorize_first #########")
+
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    await charge_point_v201.reserve_now_req(
+        id=8,
+        id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_1,
+                             type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=t.isoformat(),
+        connector_type=ConnectorEnumType.s_type2
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "ReserveNow",
+        call_result201.ReserveNow(ReserveNowStatusEnumType.accepted),
+    )
+
+    await charge_point_v201.reserve_now_req(
+        id=9,
+        id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_2,
+                             type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=t.isoformat(),
+        connector_type=ConnectorEnumType.s_type2
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "ReserveNow",
+        call_result201.ReserveNow(ReserveNowStatusEnumType.accepted),
+    )
+
+    # There are now as many reservations as evse's, so all evse's go to 'reserved'.
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.reserved, 1, 1
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.reserved, 2, 1
+        ),
+    )
+
+    # swipe valid id tag to authorize
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
+
+    # start charging session
+    test_controller.plug_in()
+
+    # expect TransactionEvent 'Started' with the id of the reservation that was used.
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"eventType": "Started", "reservationId": 8}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [
+            (
+                OCPP2XConfigVariableIdentifier(
+                    "ReservationCtrlr", "ReservationCtrlrNonEvseSpecific", "Actual"
+                ),
+                "true",
+            ),
+            (
+                OCPP2XConfigVariableIdentifier(
+                    "TxCtrlr", "TxStartPoint", "Actual"
+                ),
+                "Authorized",
+            )
+        ]
+    )
+)
+async def test_reservation_connector_type_plug_in_first(
+        test_config: OcppTestConfiguration,
+        charge_point_v201: ChargePoint201,
+        test_utility: TestUtility,
+        test_controller: TestController,
+):
+    """
+    Make reservations by connector type for all evse's, so all evse's are reserved without a reservation id.
+    Plug in, then authorize with the id token of one of them: the transaction must start with that reservation id
+    (H01.FR.15).
+    """
+    logging.info(
+        "######### test_reservation_connector_type_plug_in_first #########")
+
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    await charge_point_v201.reserve_now_req(
+        id=8,
+        id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_1,
+                             type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=t.isoformat(),
+        connector_type=ConnectorEnumType.s_type2
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "ReserveNow",
+        call_result201.ReserveNow(ReserveNowStatusEnumType.accepted),
+    )
+
+    await charge_point_v201.reserve_now_req(
+        id=9,
+        id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_2,
+                             type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=t.isoformat(),
+        connector_type=ConnectorEnumType.s_type2
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "ReserveNow",
+        call_result201.ReserveNow(ReserveNowStatusEnumType.accepted),
+    )
+
+    # There are now as many reservations as evse's, so all evse's go to 'reserved'.
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.reserved, 1, 1
+        ),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.reserved, 2, 1
+        ),
+    )
+
+    # start charging session
+    test_controller.plug_in()
+
+    await asyncio.sleep(2)
+
+    # swipe valid id tag to authorize
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
+
+    # expect TransactionEvent 'Started' with the id of the reservation that was used.
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"eventType": "Started", "reservationId": 8}
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP2XConfigAdjustment(
+        [
+            (
+                OCPP2XConfigVariableIdentifier(
+                    "TxCtrlr", "EVConnectionTimeOut", "Actual"
+                ),
+                "5",
+            )
+        ]
+    )
+)
+async def test_reservation_authorize_connection_timeout(
+        test_config: OcppTestConfiguration,
+        charge_point_v201: ChargePoint201,
+        test_controller: TestController,
+        test_utility: TestUtility,
+):
+    """
+    Authorize with the id token of an evse specific reservation and never plug in: when the authorization times out,
+    the reservation is consumed and the evse becomes available.
+    """
+    logging.info(
+        "######### test_reservation_authorize_connection_timeout #########")
+
+    t = datetime.now(timezone.utc) + timedelta(minutes=10)
+
+    await charge_point_v201.reserve_now_req(
+        id=3,
+        id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_1,
+                             type=IdTokenTypeEnum.iso14443),
+        expiry_date_time=t.isoformat(),
+        evse_id=1
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "ReserveNow",
+        call_result201.ReserveNow(ReserveNowStatusEnumType.accepted),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.reserved, 1, 1
+        ),
+    )
+
+    # only a StatusNotification sent from here on counts
+    test_utility.messages.clear()
+
+    # swipe valid id tag to authorize, but never plug in
+    test_controller.swipe(test_config.authorization_info.valid_id_tag_1)
+
+    # expect StatusNotification with status available once the authorization timed out
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call_201.StatusNotification(
+            ANY, ConnectorStatusEnumType.available, 1, 1
+        ),
+    )
+
+    # the evse accepts a new reservation once the timeout ended the old one
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + 30
+    while True:
+        r: call_result201.ReserveNow = await charge_point_v201.reserve_now_req(
+            id=4,
+            id_token=IdTokenType(id_token=test_config.authorization_info.valid_id_tag_1,
+                                 type=IdTokenTypeEnum.iso14443),
+            expiry_date_time=t.isoformat(),
+            evse_id=1
+        )
+        if r.status == ReserveNowStatusEnumType.accepted:
+            break
+        assert loop.time() < deadline
+        await asyncio.sleep(1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
 async def test_reservation_faulted_state(
     test_config: OcppTestConfiguration,
     charge_point_v201: ChargePoint201,
@@ -1365,7 +1655,7 @@ async def test_reservation_with_parentid(
 
     # Authorize was accepted because of the correct group id token, transaction is started.
     r: call_201.TransactionEvent = call_201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",

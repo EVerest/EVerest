@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "powermeter/json_codec.hpp"
 #include "nlohmann/json.hpp"
@@ -959,6 +959,9 @@ void from_json(const json& j, ReplyStartTransaction& k) {
     if (j.contains("transaction_max_stop_time")) {
         k.transaction_max_stop_time.emplace(j.at("transaction_max_stop_time"));
     }
+    if (j.contains("signed_meter_value")) {
+        k.signed_meter_value.emplace(j.at("signed_meter_value"));
+    }
 }
 void to_json(json& j, const ReplyStartTransaction& k) noexcept {
     j = json{
@@ -972,6 +975,9 @@ void to_json(json& j, const ReplyStartTransaction& k) noexcept {
     }
     if (k.transaction_max_stop_time) {
         j["transaction_max_stop_time"] = k.transaction_max_stop_time.value();
+    }
+    if (k.signed_meter_value) {
+        j["signed_meter_value"] = k.signed_meter_value.value();
     }
 }
 
@@ -1042,6 +1048,25 @@ void to_json(json& j, const RequestStartTransaction& k) noexcept {
     }
     if (k.tariff_text) {
         j["tariff_text"] = k.tariff_text.value();
+    }
+}
+
+void from_json(const json& j, Capabilities& k) {
+    if (j.contains("min_export_current_A")) {
+        k.min_export_current_A.emplace(j.at("min_export_current_A"));
+    }
+    if (j.contains("min_import_current_A")) {
+        k.min_import_current_A.emplace(j.at("min_import_current_A"));
+    }
+}
+
+void to_json(json& j, const Capabilities& k) noexcept {
+    j = json({});
+    if (k.min_export_current_A) {
+        j["min_export_current_A"] = k.min_export_current_A.value();
+    }
+    if (k.min_import_current_A) {
+        j["min_import_current_A"] = k.min_import_current_A.value();
     }
 }
 

@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include <optional>
+
+#include <date/date.h>
 
 #include <ocpp/common/constants.hpp>
-#include <ocpp/v2/ocpp_types.hpp>
+#include <ocpp/v2/types.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -23,8 +27,11 @@ struct IntermediatePeriod {
     PeriodLimit power_discharge_limit;
     PeriodLimit current_setpoint;
     PeriodLimit power_setpoint;
+    std::int32_t stack_level_current;
+    std::int32_t stack_level_power;
     std::optional<std::int32_t> numberPhases;
     std::optional<std::int32_t> phaseToUse;
+    std::optional<OperationModeEnum> operationMode;
 };
 
 using IntermediateProfile = std::vector<IntermediatePeriod>;
@@ -49,16 +56,10 @@ struct period_entry_t {
     PeriodLimit setpoint;
     std::optional<std::int32_t> number_phases;
     std::optional<std::int32_t> phase_to_use;
+    std::optional<OperationModeEnum> operationMode;
     std::int32_t stack_level;
     ChargingRateUnitEnum charging_rate_unit;
     std::optional<float> min_charging_rate;
-
-    bool equals(const period_entry_t& other) const {
-        return (start == other.start) && (end == other.end) && (limit == other.limit) &&
-               (discharge_limit == other.discharge_limit) && (setpoint == other.setpoint) &&
-               (number_phases == other.number_phases) && (stack_level == other.stack_level) &&
-               (charging_rate_unit == other.charging_rate_unit) && (min_charging_rate == other.min_charging_rate);
-    }
 };
 
 /// \brief Calculate the number of seconds elapsed between \param to and \param from
@@ -66,6 +67,29 @@ std::int32_t elapsed_seconds(const ocpp::DateTime& to, const ocpp::DateTime& fro
 
 /// \brief Rounds down the \param dt to the nearest second
 ocpp::DateTime floor_seconds(const ocpp::DateTime& dt);
+
+/// \brief K28.FR.13 single source of the Dynamic-profile expiry invariant.
+/// \return \c dynUpdateTime + \c chargingSchedule[0].duration, or \c std::nullopt when the profile
+/// is not Dynamic, has no positive schedule duration, or has no \c dynUpdateTime.
+std::optional<date::utc_clock::time_point> dynamic_expiry_deadline(const ChargingProfile& profile);
+
+/// \brief K28.FR.10 single source of the Dynamic-profile adaptive-pull deadline.
+/// \return \c dynUpdateTime + \c dynUpdateInterval, "now" on bootstrap (Dynamic with a positive
+/// interval but no \c dynUpdateTime yet), or \c std::nullopt when the profile is not Dynamic or
+/// has no positive \c dynUpdateInterval.
+std::optional<date::utc_clock::time_point> dynamic_pull_deadline(const ChargingProfile& profile);
+
+/// \brief True when \p profile is a Dynamic profile past its expiry deadline at \p now.
+/// Boundary is inclusive (\c now \>= deadline) so the composite filter and the manager timer
+/// agree at the exact deadline instant.
+bool dynamic_profile_expired(const ChargingProfile& profile, date::utc_clock::time_point now);
+
+/// \brief Map an optional OperationMode to its effective value.
+///
+/// An absent operationMode behaves as ChargingOnly. Use this helper in every
+/// comparator and dedup site so that nullopt and an explicit ChargingOnly are
+/// not treated as different.
+OperationModeEnum effective_mode(const std::optional<OperationModeEnum>& mode);
 
 /// \brief calculate the start times for the profile
 /// \param now the current date and time
@@ -145,7 +169,7 @@ void fill_gaps_with_defaults(IntermediateProfile& schedule, float default_limit,
 /// \brief Convert an intermediate profile into a final charging schedule.
 /// This will fill in defaults and convert merge the current and power limits into the final \p charging_rate_unit based
 /// limit
-std::vector<ChargingSchedulePeriod>
+std::vector<EnhancedChargingSchedulePeriod>
 convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingRateUnitEnum charging_rate_unit,
                                    float default_limit, std::int32_t default_number_phases, float supply_voltage);
 

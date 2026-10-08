@@ -22,7 +22,8 @@ types:
       - DC
       - AC_BPT
       - AC_BPT_DER
-      - AC_DER
+      - AC_DER_IEC
+      - AC_DER_SAE
       - DC_BPT
       - DC_ACDP
       - DC_ACDP_BPT
@@ -69,6 +70,34 @@ types:
       - Error_UtilityInterruptEvent
       - Error_Malfunction
       - Error_EmergencyShutdown
+  SessionStopAction:
+    description: >-
+      How the V2G session ended on the wire. Terminate/Pause map to the
+      ChargingSession requested by the EVCC in SessionStopReq (DIN 70121 has no
+      ChargingSession parameter; DIN sessions always map to Terminate).
+      FailedTermination means the SECC ended the session with a FAILED_*
+      response (sequence error, unknown session): per DIN 70121 [V2G-DC-942]
+      the CP oscillator must then be switched off without delay.
+    type: string
+    enum:
+      - Terminate
+      - Pause
+      - FailedTermination
+  CpState:
+    description: >-
+      IEC 61851-1 control pilot state as measured by the EVSE. Forwarded to
+      the HLC stack for the SECC-side CP checks tied to the message sequence,
+      e.g. DIN 70121 [V2G-DC-988]/[V2G-DC-556] (CP State B required within
+      V2G_SECC_CPState_Detection_Timeout after the request following
+      PowerDelivery(off)).
+    type: string
+    enum:
+      - A
+      - B
+      - C
+      - D
+      - E
+      - F
   V2gMessageId:
     description: This element contains the id of the v2g message body
     type: string
@@ -123,6 +152,14 @@ types:
       - AcChargeLoopRes
       - AcChargeParameterDiscoveryReq
       - AcChargeParameterDiscoveryRes
+      - AcDerChargeParameterDiscoveryReq
+      - AcDerChargeParameterDiscoveryRes
+      - AcDerChargeLoopReq
+      - AcDerChargeLoopRes
+      - AcDerSaeChargeParameterDiscoveryReq
+      - AcDerSaeChargeParameterDiscoveryRes
+      - AcDerSaeChargeLoopReq
+      - AcDerSaeChargeLoopRes
       - DcCableCheckReq
       - DcCableCheckRes
       - DcChargeLoopReq
@@ -513,7 +550,7 @@ types:
           Raw CertificateInstallationRes or CertificateUpdateRes message
           as exi stream (Base64 encoded)
         type: string
-        maxLength: 5600
+        maxLength: 17000
       certificate_action:
         description: Type of the certificate request
         type: string
@@ -532,7 +569,7 @@ types:
           Raw CertificateInstallationReq or CertificateUpdateReq message as
           exi stream (Base64 encoded)
         type: string
-        maxLength: 5600
+        maxLength: 11000
       iso15118_schema_version:
         description: Schema Version used for CertificateReq message between EV and Charger
         type: string
@@ -696,33 +733,6 @@ types:
           range dedicated for cycling activity.
         type: number
         minimum: 0
-  DERControl:
-    description: >-
-      Name of control settings to clear. Not used when _controlId_ is provided.
-    type: string
-    enum:
-      - EnterService
-      - FreqDroop
-      - FreqWatt
-      - FixedPFAbsorb
-      - FixedPFInject
-      - FixedVar
-      - Gradients
-      - HFMustTrip
-      - HFMayTrip
-      - HVMustTrip
-      - HVMomCess
-      - HVMayTrip
-      - LimitMaxDischarge
-      - LFMustTrip
-      - LVMustTrip
-      - LVMomCess
-      - LVMayTrip
-      - PowerMonitoringMustTrip
-      - VoltVar
-      - VoltWatt
-      - WattPF
-      - WattVar
   ServiceCategory:
     description: Different service (energy and VAS) in ISO15118-20
     type: string
@@ -736,6 +746,8 @@ types:
       - DC_ACDP_BPT
       - MCS
       - MCS_BPT
+      - AC_DER_IEC
+      - AC_DER_SAE
       - Internet
       - ParkingStatus
   Connector:
@@ -1125,7 +1137,7 @@ types:
         type: array
         items:
           type: string
-          $ref: /iso15118#/DERControl
+          $ref: /grid_support#/DirectiveType
         minItems: 1
       ev_over_excited_max_discharge_power:
         description: >-
@@ -1572,6 +1584,10 @@ types:
           type: string
           $ref: /iso15118#/Connector
         minItems: 1
+      evse_max_reactive_power:
+        description: Maximum reactive power the EVSE supports in var; de-normalization base for AC_DER_IEC percentage control curves
+        type: number
+        minimum: 0
   AcEvseMaximumPower:
     description: Maximum ac power values (charge and discharge) the EVSE can deliver
     type: object
