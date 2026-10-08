@@ -650,7 +650,10 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
             const auto active_slot_opt =
                 this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
             if (active_slot_opt.has_value() and active_slot_opt.value() == slot) {
-                this->message_queue.update_message_timeout(std::stoi(set_variable_data.attributeValue.get()));
+                const auto message_timeout = std::stoi(set_variable_data.attributeValue.get());
+                this->message_queue.update_message_timeout(message_timeout);
+                this->context.device_model.set_active_message_timeout(message_timeout,
+                                                                      VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
                 this->context.connectivity_manager.set_websocket_connection_options_without_reconnect();
             }
         } catch (const std::exception& e) {

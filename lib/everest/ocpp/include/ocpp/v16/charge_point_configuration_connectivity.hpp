@@ -31,6 +31,7 @@ public:
     void set_per_slot_ocpp_version(int32_t slot, const std::string& version, const std::string& source) override;
     void set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) override;
     void set_security_ctrl_identity(const std::string& identity, const std::string& source) override;
+    void set_active_message_timeout(int32_t message_timeout_s, const std::string& source) override;
 
 protected:
     /// \brief Legacy single-profile synthesis from the global v1.6 getters (slot-agnostic): CentralSystemURI,
