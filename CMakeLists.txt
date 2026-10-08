@@ -228,13 +228,6 @@ else()
     endif()
 endif()
 
-# every in-tree library exports into this one set; the EDM-built dependencies do not
-# install their exports, so in EDM mode the set is populated but never installed
-if(DISABLE_EDM)
-    set(EVEREST_EXPORT_SET everest-core-targets)
-else()
-    set(EVEREST_EXPORT_SET everest-core-build-only)
-endif()
 add_subdirectory(lib)
 
 if(NOT EVEREST_LIBS_ONLY)
@@ -246,7 +239,9 @@ if(NOT EVEREST_LIBS_ONLY)
       add_subdirectory(applications)
     endif()
 
-    ev_install_project()
+    if(DISABLE_EDM)
+        ev_install_project()
+    endif()
 endif()
 
 # configure clang-tidy if requested

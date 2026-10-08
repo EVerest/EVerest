@@ -37,7 +37,7 @@ set_target_properties(everest_system PROPERTIES EXPORT_NAME system)
 
 install(
     TARGETS everest_system
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
 )
 
 install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest

@@ -25,7 +25,7 @@ install(
         cbv2g_iso2
         cbv2g_iso20
         cbv2g_tp
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )
 

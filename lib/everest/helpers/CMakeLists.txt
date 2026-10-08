@@ -64,6 +64,6 @@ endif()
 install(
     TARGETS
         everest_helpers
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )

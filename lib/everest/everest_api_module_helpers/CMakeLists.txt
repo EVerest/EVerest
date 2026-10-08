@@ -26,7 +26,7 @@ target_link_libraries(everest_api_module_helpers
 )
 
 install(TARGETS everest_api_module_helpers
-  EXPORT ${EVEREST_EXPORT_SET}
+  EXPORT everest-core-targets
   LIBRARY
 )
 

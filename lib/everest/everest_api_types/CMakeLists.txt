@@ -165,7 +165,7 @@ if (EVEREST_API_JSON_INDENT)
 endif ()
 
 install(TARGETS everest_api_types
-  EXPORT ${EVEREST_EXPORT_SET}
+  EXPORT everest-core-targets
   LIBRARY
 )
 

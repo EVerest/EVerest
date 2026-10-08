@@ -44,6 +44,6 @@ endif()
 install(
     TARGETS
         tls
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )

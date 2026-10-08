@@ -28,7 +28,7 @@ endif()
 install(
     TARGETS
         ieee2030
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
 )
 
 install(

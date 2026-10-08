@@ -115,7 +115,6 @@ if(EVEREST_IO_WITH_MQTT)
       libmosquitto
     )
     install(TARGETS libmosquitto
-        EXPORT everest-core-targets
         ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
         LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}

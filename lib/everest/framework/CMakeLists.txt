@@ -229,7 +229,7 @@ endif()
 
 # packaging
 install(TARGETS framework
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )
 

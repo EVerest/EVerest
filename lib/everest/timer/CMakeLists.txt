@@ -48,7 +48,7 @@ endif()
 # packaging
 install(
     TARGETS timer
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
 )
 
 install(

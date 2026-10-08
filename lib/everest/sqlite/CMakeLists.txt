@@ -46,7 +46,7 @@ set_target_properties(everest_sqlite PROPERTIES EXPORT_NAME sqlite)
 
 install(
     TARGETS everest_sqlite
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )
 

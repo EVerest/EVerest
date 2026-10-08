@@ -58,7 +58,7 @@ add_subdirectory(lib)
 # packaging
 install(
     TARGETS evse_security
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
     LIBRARY
 )
 

@@ -65,7 +65,7 @@ add_subdirectory(lib)
 # packaging
 install(
     TARGETS ocpp
-    EXPORT ${EVEREST_EXPORT_SET}
+    EXPORT everest-core-targets
 )
 
 install(
