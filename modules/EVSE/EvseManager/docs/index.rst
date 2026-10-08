@@ -106,7 +106,9 @@ reported, else the power supply minimum, raised to the power meter minimum) is
 set to 0 A on the power supply, as required by IEC 61851-23:2023 CC.5.5.7. The
 EV target is compared before EVSE-side maximum limits are applied to it, and
 only from the first target the EV sends during current demand on: the precharge
-target is not compared. An energy management limit below the offered minimum
+target is not compared. The HLC module marks each target with its origin
+(``current_demand`` in ``DcEvTargetValues``), so this does not depend on the
+order in which ``current_demand_started`` and the target are delivered. An energy management limit below the offered minimum
 gives 0 A as well, and the EV is sent 0 A and 0 W as EVSE maximum limits. For
 an EV target at or above that minimum, the current ramp starts at the minimum
 and the current set on the power supply is never below the power supply

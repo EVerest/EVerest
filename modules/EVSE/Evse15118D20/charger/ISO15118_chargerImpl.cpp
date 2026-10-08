@@ -301,7 +301,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     feedback::Callbacks callbacks;
 
     callbacks.dc_pre_charge_target_voltage = [this](float target_voltage) {
-        publish_dc_ev_target_voltage_current({target_voltage, 0});
+        publish_dc_ev_target_voltage_current({target_voltage, 0, false});
     };
 
     callbacks.notify_ev_charging_needs =
@@ -382,7 +382,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 const auto target_voltage = dt::from_RationalNumber(scheduled_mode->target_voltage);
                 const auto target_current = dt::from_RationalNumber(scheduled_mode->target_current);
 
-                publish_dc_ev_target_voltage_current({target_voltage, target_current});
+                publish_dc_ev_target_voltage_current({target_voltage, target_current, true});
 
                 if (scheduled_mode->max_charge_current and scheduled_mode->max_voltage and
                     scheduled_mode->max_charge_power) {
@@ -395,7 +395,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             } else if (const auto* bpt_scheduled_mode = std::get_if<BPT_ScheduleReqControlModeDC>(dc_control_mode)) {
                 const auto target_voltage = dt::from_RationalNumber(bpt_scheduled_mode->target_voltage);
                 const auto target_current = dt::from_RationalNumber(bpt_scheduled_mode->target_current);
-                publish_dc_ev_target_voltage_current({target_voltage, target_current});
+                publish_dc_ev_target_voltage_current({target_voltage, target_current, true});
 
                 if (bpt_scheduled_mode->max_charge_current and bpt_scheduled_mode->max_voltage and
                     bpt_scheduled_mode->max_charge_power) {

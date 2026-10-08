@@ -347,8 +347,12 @@ private:
     std::atomic<double> raw_ev_target_voltage{0.};
     std::atomic<double> raw_ev_target_current{0.};
     // The precharge target stays in raw_ev_target_* until the EV sends its first current demand target
+    // True once a target the EV sent during current demand has been received; the current demand rules of
+    // powersupply_DC_set apply from then on. Reset at cable check and precharge start.
     std::atomic<bool> current_demand_target_received{false};
-    void set_raw_ev_target(double voltage, double current);
+    // current_demand: origin of the target as published by the HLC module (true: current demand, false:
+    // precharge); falls back to current_demand_active if the publisher does not set it.
+    void set_raw_ev_target(double voltage, double current, std::optional<bool> current_demand);
     // EVSE maximum limits the raw EV target was last clamped with
     std::atomic<double> latest_evse_max_current{0.};
     std::atomic<double> latest_evse_max_discharge_current{0.};
