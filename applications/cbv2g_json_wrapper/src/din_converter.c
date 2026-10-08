@@ -224,7 +224,9 @@ int din_encode(const char* json_str, uint8_t* out, size_t out_size, size_t* out_
         return CBV2G_ERROR_JSON_PARSE;
     }
 
+    /* The init_din_* helpers leave nested _isUsed flags untouched. */
     struct din_exiDocument doc;
+    memset(&doc, 0, sizeof(doc));
     init_din_exiDocument(&doc);
 
     cJSON* header = cJSON_GetObjectItemCaseSensitive(v2g_msg, "Header");
@@ -450,6 +452,7 @@ int din_decode(const uint8_t* exi, size_t exi_len, char* out, size_t out_size) {
     exi_bitstream_init(&stream, (uint8_t*)exi, exi_len, 0, NULL);
 
     struct din_exiDocument doc;
+    memset(&doc, 0, sizeof(doc));
     init_din_exiDocument(&doc);
 
     int exi_result = decode_din_exiDocument(&stream, &doc);
@@ -467,6 +470,10 @@ int din_decode(const uint8_t* exi, size_t exi_len, char* out, size_t out_size) {
     cJSON_AddItemToObject(root, "V2G_Message", v2g_msg);
 
     cJSON* header_json = din_header_to_json(&doc.V2G_Message.Header);
+    if (header_json == NULL) {
+        cJSON_Delete(root);
+        return CBV2G_ERROR_JSON_GENERATE;
+    }
     cJSON_AddItemToObject(v2g_msg, "Header", header_json);
 
     cJSON* body_json = cJSON_CreateObject();
@@ -499,6 +506,17 @@ int din_decode(const uint8_t* exi, size_t exi_len, char* out, size_t out_size) {
 
 /* ============== Helper Functions ============== */
 
+static int add_hex_string(cJSON* json, const char* key, const uint8_t* bytes, size_t len) {
+    /* EVSEID is the largest hexBinary field in DIN. */
+    char hex[din_evseIDType_BYTES_SIZE * 2 + 1];
+    if (len > din_evseIDType_BYTES_SIZE || hex_encode(bytes, len, hex, sizeof(hex)) != len * 2) {
+        set_error("Failed to hex-encode %s (%zu bytes)", key, len);
+        return CBV2G_ERROR_JSON_GENERATE;
+    }
+    cJSON_AddStringToObject(json, key, hex);
+    return CBV2G_SUCCESS;
+}
+
 static int json_to_din_header(cJSON* json, struct din_MessageHeaderType* header) {
     init_din_MessageHeaderType(header);
 
@@ -524,12 +542,10 @@ static int json_to_din_header(cJSON* json, struct din_MessageHeaderType* header)
 
 static cJSON* din_header_to_json(const struct din_MessageHeaderType* header) {
     cJSON* json = cJSON_CreateObject();
-
-    /* SessionID is hexBinary in XSD - use hex encoding */
-    char hex[17]; /* 8 bytes * 2 + null terminator */
-    hex_encode(header->SessionID.bytes, header->SessionID.bytesLen, hex, sizeof(hex));
-    cJSON_AddStringToObject(json, "SessionID", hex);
-
+    if (add_hex_string(json, "SessionID", header->SessionID.bytes, header->SessionID.bytesLen) != CBV2G_SUCCESS) {
+        cJSON_Delete(json);
+        return NULL;
+    }
     return json;
 }
 
@@ -537,7 +553,13 @@ static int json_to_din_physical_value(cJSON* json, struct din_PhysicalValueType*
     pv->Multiplier = json_get_int(json, "Multiplier");
     pv->Value = json_get_int(json, "Value");
 
-    const char* unit = json_get_string(json, "Unit");
+    cJSON* unit_json = cJSON_GetObjectItemCaseSensitive(json, "Unit");
+    pv->Unit_isUsed = cJSON_IsString(unit_json) ? 1 : 0;
+    if (!pv->Unit_isUsed) {
+        return CBV2G_SUCCESS;
+    }
+
+    const char* unit = unit_json->valuestring;
     if (strcmp(unit, "h") == 0) {
         pv->Unit = din_unitSymbolType_h;
     } else if (strcmp(unit, "m") == 0) {
@@ -564,6 +586,9 @@ static cJSON* din_physical_value_to_json(const struct din_PhysicalValueType* pv)
 
     cJSON_AddNumberToObject(json, "Multiplier", pv->Multiplier);
     cJSON_AddNumberToObject(json, "Value", pv->Value);
+    if (!pv->Unit_isUsed) {
+        return json;
+    }
 
     const char* unit;
     switch (pv->Unit) {
@@ -626,17 +651,6 @@ static cJSON* din_dc_ev_status_to_json(const struct din_DC_EVStatusType* status)
     return json;
 }
 
-static int json_to_din_dc_evse_status(cJSON* json, struct din_DC_EVSEStatusType* status) {
-    status->EVSEIsolationStatus_isUsed = json_has_key(json, "EVSEIsolationStatus");
-    if (status->EVSEIsolationStatus_isUsed) {
-        status->EVSEIsolationStatus = json_get_int(json, "EVSEIsolationStatus");
-    }
-    status->EVSEStatusCode = json_get_int(json, "EVSEStatusCode");
-    status->NotificationMaxDelay = json_get_int(json, "NotificationMaxDelay");
-    status->EVSENotification = json_get_int(json, "EVSENotification");
-    return CBV2G_SUCCESS;
-}
-
 static const char* din_isolation_level_to_string(din_isolationLevelType level) {
     switch (level) {
     case din_isolationLevelType_Invalid:
@@ -696,6 +710,58 @@ static const char* din_evse_notification_to_string(din_EVSENotificationType noti
     }
 }
 
+static int din_string_to_isolation_level(const char* str, din_isolationLevelType* out) {
+    for (int v = din_isolationLevelType_Invalid; v <= din_isolationLevelType_Fault; v++) {
+        if (strcmp(str, din_isolation_level_to_string((din_isolationLevelType)v)) == 0) {
+            *out = (din_isolationLevelType)v;
+            return CBV2G_SUCCESS;
+        }
+    }
+    set_error("Unknown DIN EVSEIsolationStatus: '%s'", str);
+    return CBV2G_ERROR_JSON_PARSE;
+}
+
+static int din_string_to_dc_evse_status_code(const char* str, din_DC_EVSEStatusCodeType* out) {
+    for (int v = din_DC_EVSEStatusCodeType_EVSE_NotReady; v <= din_DC_EVSEStatusCodeType_Reserved_C; v++) {
+        if (strcmp(str, din_dc_evse_status_code_to_string((din_DC_EVSEStatusCodeType)v)) == 0) {
+            *out = (din_DC_EVSEStatusCodeType)v;
+            return CBV2G_SUCCESS;
+        }
+    }
+    set_error("Unknown DIN EVSEStatusCode: '%s'", str);
+    return CBV2G_ERROR_JSON_PARSE;
+}
+
+static int din_string_to_evse_notification(const char* str, din_EVSENotificationType* out) {
+    for (int v = din_EVSENotificationType_None; v <= din_EVSENotificationType_ReNegotiation; v++) {
+        if (strcmp(str, din_evse_notification_to_string((din_EVSENotificationType)v)) == 0) {
+            *out = (din_EVSENotificationType)v;
+            return CBV2G_SUCCESS;
+        }
+    }
+    set_error("Unknown DIN EVSENotification: '%s'", str);
+    return CBV2G_ERROR_JSON_PARSE;
+}
+
+static int json_to_din_dc_evse_status(cJSON* json, struct din_DC_EVSEStatusType* status) {
+    status->EVSEIsolationStatus_isUsed = json_has_key(json, "EVSEIsolationStatus");
+    if (status->EVSEIsolationStatus_isUsed &&
+        din_string_to_isolation_level(json_get_string(json, "EVSEIsolationStatus"), &status->EVSEIsolationStatus) !=
+            CBV2G_SUCCESS) {
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    if (din_string_to_dc_evse_status_code(json_get_string(json, "EVSEStatusCode"), &status->EVSEStatusCode) !=
+        CBV2G_SUCCESS) {
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    status->NotificationMaxDelay = json_get_int(json, "NotificationMaxDelay");
+    if (din_string_to_evse_notification(json_get_string(json, "EVSENotification"), &status->EVSENotification) !=
+        CBV2G_SUCCESS) {
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    return CBV2G_SUCCESS;
+}
+
 static cJSON* din_dc_evse_status_to_json(const struct din_DC_EVSEStatusType* status) {
     cJSON* json = cJSON_CreateObject();
     if (status->EVSEIsolationStatus_isUsed) {
@@ -749,6 +815,65 @@ static cJSON* din_sa_schedule_list_to_json(const struct din_SAScheduleListType* 
 
     cJSON_AddItemToObject(json, "SAScheduleTuple", schedule_tuple_array);
     return json;
+}
+
+static int json_to_din_pmax_schedule_entry(cJSON* json, struct din_PMaxScheduleEntryType* entry) {
+    /* RelativeTimeInterval is the only TimeInterval substitute DIN defines. */
+    cJSON* rel_time = cJSON_GetObjectItemCaseSensitive(json, "RelativeTimeInterval");
+    if (!cJSON_IsObject(rel_time)) {
+        set_error("PMaxScheduleEntry.RelativeTimeInterval missing");
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    entry->RelativeTimeInterval_isUsed = 1;
+    entry->RelativeTimeInterval.start = json_get_int(rel_time, "start");
+    entry->RelativeTimeInterval.duration_isUsed = json_has_key(rel_time, "duration");
+    if (entry->RelativeTimeInterval.duration_isUsed) {
+        entry->RelativeTimeInterval.duration = json_get_int(rel_time, "duration");
+    }
+    entry->PMax = json_get_int(json, "PMax");
+    return CBV2G_SUCCESS;
+}
+
+static int json_to_din_sa_schedule_tuple(cJSON* json, struct din_SAScheduleTupleType* tuple) {
+    tuple->SAScheduleTupleID = json_get_int(json, "SAScheduleTupleID");
+
+    cJSON* pmax_schedule = cJSON_GetObjectItemCaseSensitive(json, "PMaxSchedule");
+    tuple->PMaxSchedule.PMaxScheduleID = json_get_int(pmax_schedule, "PMaxScheduleID");
+
+    cJSON* entries = cJSON_GetObjectItemCaseSensitive(pmax_schedule, "PMaxScheduleEntry");
+    int count = cJSON_IsArray(entries) ? cJSON_GetArraySize(entries) : 0;
+    if (count < 1 || count > din_PMaxScheduleEntryType_5_ARRAY_SIZE) {
+        set_error("PMaxSchedule.PMaxScheduleEntry needs 1 to %d entries, got %d", din_PMaxScheduleEntryType_5_ARRAY_SIZE,
+                  count);
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    tuple->PMaxSchedule.PMaxScheduleEntry.arrayLen = (uint16_t)count;
+    for (int i = 0; i < count; i++) {
+        int rc = json_to_din_pmax_schedule_entry(cJSON_GetArrayItem(entries, i),
+                                                 &tuple->PMaxSchedule.PMaxScheduleEntry.array[i]);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
+    }
+    return CBV2G_SUCCESS;
+}
+
+static int json_to_din_sa_schedule_list(cJSON* json, struct din_SAScheduleListType* sa_list) {
+    cJSON* tuples = cJSON_GetObjectItemCaseSensitive(json, "SAScheduleTuple");
+    int count = cJSON_IsArray(tuples) ? cJSON_GetArraySize(tuples) : 0;
+    if (count < 1 || count > din_SAScheduleTupleType_5_ARRAY_SIZE) {
+        set_error("SAScheduleList.SAScheduleTuple needs 1 to %d entries, got %d", din_SAScheduleTupleType_5_ARRAY_SIZE,
+                  count);
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    sa_list->SAScheduleTuple.arrayLen = (uint16_t)count;
+    for (int i = 0; i < count; i++) {
+        int rc = json_to_din_sa_schedule_tuple(cJSON_GetArrayItem(tuples, i), &sa_list->SAScheduleTuple.array[i]);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
+    }
+    return CBV2G_SUCCESS;
 }
 
 /*
@@ -1010,10 +1135,10 @@ static int json_to_din_session_setup_req(cJSON* json, struct din_SessionSetupReq
 
 static cJSON* din_session_setup_req_to_json(const struct din_SessionSetupReqType* msg) {
     cJSON* json = cJSON_CreateObject();
-    /* EVCCID is hexBinary in XSD - use hex encoding */
-    char hex[13]; /* 6 bytes * 2 + null terminator */
-    hex_encode(msg->EVCCID.bytes, msg->EVCCID.bytesLen, hex, sizeof(hex));
-    cJSON_AddStringToObject(json, "EVCCID", hex);
+    if (add_hex_string(json, "EVCCID", msg->EVCCID.bytes, msg->EVCCID.bytesLen) != CBV2G_SUCCESS) {
+        cJSON_Delete(json);
+        return NULL;
+    }
     return json;
 }
 
@@ -1046,10 +1171,10 @@ static cJSON* din_session_setup_res_to_json(const struct din_SessionSetupResType
         return NULL;
     }
 
-    /* EVSEID is hexBinary in XSD - use hex encoding */
-    char hex[65]; /* 32 bytes * 2 + null terminator */
-    hex_encode(msg->EVSEID.bytes, msg->EVSEID.bytesLen, hex, sizeof(hex));
-    cJSON_AddStringToObject(json, "EVSEID", hex);
+    if (add_hex_string(json, "EVSEID", msg->EVSEID.bytes, msg->EVSEID.bytesLen) != CBV2G_SUCCESS) {
+        cJSON_Delete(json);
+        return NULL;
+    }
 
     if (msg->DateTimeNow_isUsed) {
         cJSON_AddNumberToObject(json, "DateTimeNow", msg->DateTimeNow);
@@ -1368,14 +1493,14 @@ static int json_to_din_charge_parameter_discovery_req(cJSON* json, struct din_Ch
         }
 
         cJSON* energy_cap = cJSON_GetObjectItemCaseSensitive(dc_params, "EVEnergyCapacity");
+        msg->DC_EVChargeParameter.EVEnergyCapacity_isUsed = energy_cap != NULL;
         if (energy_cap) {
-            msg->DC_EVChargeParameter.EVEnergyCapacity_isUsed = 1;
             json_to_din_physical_value(energy_cap, &msg->DC_EVChargeParameter.EVEnergyCapacity);
         }
 
         cJSON* energy_req = cJSON_GetObjectItemCaseSensitive(dc_params, "EVEnergyRequest");
+        msg->DC_EVChargeParameter.EVEnergyRequest_isUsed = energy_req != NULL;
         if (energy_req) {
-            msg->DC_EVChargeParameter.EVEnergyRequest_isUsed = 1;
             json_to_din_physical_value(energy_req, &msg->DC_EVChargeParameter.EVEnergyRequest);
         }
 
@@ -1439,12 +1564,24 @@ static int json_to_din_charge_parameter_discovery_res(cJSON* json, struct din_Ch
     msg->EVSEProcessing =
         (strcmp(processing, "Finished") == 0) ? din_EVSEProcessingType_Finished : din_EVSEProcessingType_Ongoing;
 
+    cJSON* sa_list = cJSON_GetObjectItemCaseSensitive(json, "SAScheduleList");
+    msg->SAScheduleList_isUsed = sa_list != NULL;
+    if (sa_list) {
+        int rc = json_to_din_sa_schedule_list(sa_list, &msg->SAScheduleList);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
+    }
+
     cJSON* dc_params = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEChargeParameter");
     if (dc_params) {
         msg->DC_EVSEChargeParameter_isUsed = 1;
         cJSON* status = cJSON_GetObjectItemCaseSensitive(dc_params, "DC_EVSEStatus");
         if (status) {
-            json_to_din_dc_evse_status(status, &msg->DC_EVSEChargeParameter.DC_EVSEStatus);
+            int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEChargeParameter.DC_EVSEStatus);
+            if (rc != CBV2G_SUCCESS) {
+                return rc;
+            }
         }
 
         cJSON* max_current = cJSON_GetObjectItemCaseSensitive(dc_params, "EVSEMaximumCurrentLimit");
@@ -1458,8 +1595,8 @@ static int json_to_din_charge_parameter_discovery_res(cJSON* json, struct din_Ch
         }
 
         cJSON* max_power = cJSON_GetObjectItemCaseSensitive(dc_params, "EVSEMaximumPowerLimit");
+        msg->DC_EVSEChargeParameter.EVSEMaximumPowerLimit_isUsed = max_power != NULL;
         if (max_power) {
-            msg->DC_EVSEChargeParameter.EVSEMaximumPowerLimit_isUsed = 1;
             json_to_din_physical_value(max_power, &msg->DC_EVSEChargeParameter.EVSEMaximumPowerLimit);
         }
 
@@ -1541,7 +1678,10 @@ static int json_to_din_cable_check_res(cJSON* json, struct din_CableCheckResType
     }
     cJSON* status = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEStatus");
     if (status) {
-        json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
     }
     const char* processing = json_get_string(json, "EVSEProcessing");
     msg->EVSEProcessing =
@@ -1596,7 +1736,10 @@ static int json_to_din_pre_charge_res(cJSON* json, struct din_PreChargeResType* 
     }
     cJSON* status = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEStatus");
     if (status) {
-        json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
     }
 
     cJSON* present_voltage = cJSON_GetObjectItemCaseSensitive(json, "EVSEPresentVoltage");
@@ -1617,12 +1760,54 @@ static cJSON* din_pre_charge_res_to_json(const struct din_PreChargeResType* msg)
     return json;
 }
 
+static int json_to_din_charging_profile(cJSON* json, struct din_ChargingProfileType* profile) {
+    profile->SAScheduleTupleID = json_get_int(json, "SAScheduleTupleID");
+
+    cJSON* entries = cJSON_GetObjectItemCaseSensitive(json, "ProfileEntry");
+    int count = cJSON_IsArray(entries) ? cJSON_GetArraySize(entries) : 0;
+    if (count < 1 || count > din_ProfileEntryType_24_ARRAY_SIZE) {
+        set_error("ChargingProfile.ProfileEntry needs 1 to %d entries, got %d", din_ProfileEntryType_24_ARRAY_SIZE,
+                  count);
+        return CBV2G_ERROR_JSON_PARSE;
+    }
+    profile->ProfileEntry.arrayLen = (uint16_t)count;
+    for (int i = 0; i < count; i++) {
+        cJSON* entry_json = cJSON_GetArrayItem(entries, i);
+        struct din_ProfileEntryType* entry = &profile->ProfileEntry.array[i];
+        entry->ChargingProfileEntryStart = json_get_int(entry_json, "ChargingProfileEntryStart");
+        entry->ChargingProfileEntryMaxPower = json_get_int(entry_json, "ChargingProfileEntryMaxPower");
+    }
+    return CBV2G_SUCCESS;
+}
+
+static cJSON* din_charging_profile_to_json(const struct din_ChargingProfileType* profile) {
+    cJSON* json = cJSON_CreateObject();
+    cJSON_AddNumberToObject(json, "SAScheduleTupleID", profile->SAScheduleTupleID);
+
+    cJSON* entries = cJSON_CreateArray();
+    for (uint16_t i = 0; i < profile->ProfileEntry.arrayLen; i++) {
+        const struct din_ProfileEntryType* entry = &profile->ProfileEntry.array[i];
+        cJSON* entry_json = cJSON_CreateObject();
+        cJSON_AddNumberToObject(entry_json, "ChargingProfileEntryStart", entry->ChargingProfileEntryStart);
+        cJSON_AddNumberToObject(entry_json, "ChargingProfileEntryMaxPower", entry->ChargingProfileEntryMaxPower);
+        cJSON_AddItemToArray(entries, entry_json);
+    }
+    cJSON_AddItemToObject(json, "ProfileEntry", entries);
+    return json;
+}
+
 /* PowerDeliveryReq */
 static int json_to_din_power_delivery_req(cJSON* json, struct din_PowerDeliveryReqType* msg) {
     msg->ReadyToChargeState = json_get_bool(json, "ReadyToChargeState");
 
-    msg->ChargingProfile_isUsed = json_has_key(json, "ChargingProfile");
-    /* ChargingProfile parsing would go here if needed */
+    cJSON* profile = cJSON_GetObjectItemCaseSensitive(json, "ChargingProfile");
+    msg->ChargingProfile_isUsed = profile != NULL;
+    if (profile) {
+        int rc = json_to_din_charging_profile(profile, &msg->ChargingProfile);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
+    }
 
     cJSON* dc_params = cJSON_GetObjectItemCaseSensitive(json, "DC_EVPowerDeliveryParameter");
     if (dc_params) {
@@ -1643,6 +1828,10 @@ static int json_to_din_power_delivery_req(cJSON* json, struct din_PowerDeliveryR
 static cJSON* din_power_delivery_req_to_json(const struct din_PowerDeliveryReqType* msg) {
     cJSON* json = cJSON_CreateObject();
     cJSON_AddBoolToObject(json, "ReadyToChargeState", msg->ReadyToChargeState);
+
+    if (msg->ChargingProfile_isUsed) {
+        cJSON_AddItemToObject(json, "ChargingProfile", din_charging_profile_to_json(&msg->ChargingProfile));
+    }
 
     if (msg->DC_EVPowerDeliveryParameter_isUsed) {
         cJSON* dc_params = cJSON_CreateObject();
@@ -1667,7 +1856,10 @@ static int json_to_din_power_delivery_res(cJSON* json, struct din_PowerDeliveryR
     cJSON* status = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEStatus");
     if (status) {
         msg->DC_EVSEStatus_isUsed = 1;
-        json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
     }
     return CBV2G_SUCCESS;
 }
@@ -1778,7 +1970,10 @@ static int json_to_din_current_demand_res(cJSON* json, struct din_CurrentDemandR
 
     cJSON* status = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEStatus");
     if (status) {
-        json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
     }
 
     cJSON* present_voltage = cJSON_GetObjectItemCaseSensitive(json, "EVSEPresentVoltage");
@@ -1866,7 +2061,10 @@ static int json_to_din_welding_detection_res(cJSON* json, struct din_WeldingDete
     }
     cJSON* status = cJSON_GetObjectItemCaseSensitive(json, "DC_EVSEStatus");
     if (status) {
-        json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        int rc = json_to_din_dc_evse_status(status, &msg->DC_EVSEStatus);
+        if (rc != CBV2G_SUCCESS) {
+            return rc;
+        }
     }
 
     cJSON* present_voltage = cJSON_GetObjectItemCaseSensitive(json, "EVSEPresentVoltage");
