@@ -10,10 +10,6 @@ ev_setup_cpp_module()
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 find_package(SQLite3 REQUIRED)
 
-if(NOT COMMAND collect_migration_files)
-    include(${everest-sqlite_SOURCE_DIR}/cmake/CollectMigrationFiles.cmake)
-endif()
-
 collect_migration_files(
     LOCATION ${CMAKE_CURRENT_SOURCE_DIR}/migrations
     INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/${MODULE_NAME}/migrations
