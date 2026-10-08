@@ -931,6 +931,12 @@ function(ev_install_project)
             EVEREST_DATADIR
     )
 
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config-version.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMinorVersion
+    )
+
     install(
         EXPORT everest-core-targets
         FILE "everest-core-targets.cmake"
@@ -941,6 +947,7 @@ function(ev_install_project)
     install(
         FILES
             ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config.cmake
+            ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config-version.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/everest-generate.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/ev-cli.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/project-config.cmake.in
