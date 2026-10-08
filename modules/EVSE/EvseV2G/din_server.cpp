@@ -3,7 +3,6 @@
 // Copyright (C) 2023 Contributors to EVerest
 
 #include <cbv2g/din/din_msgDefDatatypes.h>
-#include <limits>
 
 #include <everest/util/misc/change_tracker.hpp>
 #include <inttypes.h>
@@ -379,7 +378,7 @@ static void publish_din_precharge_req(struct v2g_context* ctx,
         });
     }
 
-    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current, false);
     publish_DIN_DcEvStatus(ctx, v2g_precharge_req->DC_EVStatus);
 }
 
@@ -406,7 +405,7 @@ static void publish_din_current_demand_req(struct v2g_context* ctx,
     const auto target_current = calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
                                                     v2g_current_demand_req->EVTargetCurrent.Multiplier);
 
-    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current);
+    publish_dc_ev_target_voltage_current(ctx, target_voltage, target_current, true);
 
     float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);
@@ -1233,10 +1232,6 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         if (conn->ctx->last_v2g_msg == V2G_POWER_DELIVERY_MSG) {
             conn->ctx->p_charger->publish_current_demand_started(nullptr);
             conn->ctx->session.is_charging = true;
-            // The first current demand target is published even if it equals the precharge target: EvseManager
-            // applies the current demand rules only from the first target the EV sends in current demand on.
-            conn->ctx->ev_v2g_data.v2g_target_voltage = std::numeric_limits<float>::quiet_NaN();
-            conn->ctx->ev_v2g_data.v2g_target_current = std::numeric_limits<float>::quiet_NaN();
         }
         conn->ctx->current_v2g_msg = V2G_CURRENT_DEMAND_MSG;
         exi_out->V2G_Message.Body.CurrentDemandRes_isUsed = 1u;
