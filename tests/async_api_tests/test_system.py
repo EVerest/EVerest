@@ -3,6 +3,7 @@ import pytest
 import pytest_asyncio
 import json
 import asyncio
+import threading
 from queue import Empty
 from typing import Callable, Dict
 import paho.mqtt.client as mqtt
@@ -20,13 +21,23 @@ class AsyncApiMqttHandler:
         self.client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
         self.client.on_connect = self._on_connect
         self.client.on_message = self._on_message
+        self.client.on_subscribe = self._on_subscribe
         self.loop = None
         self._connected = None
+        self._pending_subscriptions: Dict[int, asyncio.Future] = {}
+        self._pending_subscriptions_lock = threading.Lock()
         
-    def register_handler(self, topic: str, handler: Callable):
-        """Register a command handler for a topic"""
+    async def register_handler(self, topic: str, handler: Callable):
+        """Register a command handler for a topic and wait until the broker acknowledged the subscription"""
         self.handlers[topic] = handler
-        self.client.subscribe(topic)
+        acknowledged = self.loop.create_future()
+        # held across subscribe() so the SUBACK callback cannot look up the mid before it is stored
+        with self._pending_subscriptions_lock:
+            result, mid = self.client.subscribe(topic)
+            assert result == mqtt.MQTT_ERR_SUCCESS, f"subscribing to {topic} failed: {result}"
+            self._pending_subscriptions[mid] = acknowledged
+        reason_codes = await asyncio.wait_for(acknowledged, timeout=5.0)
+        assert not any(code.is_failure for code in reason_codes), f"broker rejected subscription to {topic}"
         
     async def publish(self, topic: str, payload: str):
         """Publish data to a topic"""
@@ -41,6 +52,13 @@ class AsyncApiMqttHandler:
         if self._connected:
             self.loop.call_soon_threadsafe(self._connected.set)
             
+    def _on_subscribe(self, client, userdata, mid, reason_code_list, properties):
+        with self._pending_subscriptions_lock:
+            acknowledged = self._pending_subscriptions.pop(mid, None)
+        if acknowledged:
+            self.loop.call_soon_threadsafe(
+                lambda: acknowledged.done() or acknowledged.set_result(reason_code_list))
+
     def _on_message(self, client, userdata, msg):
         """Dispatch message to handler in asyncio loop"""
         if msg.topic in self.handlers:
@@ -125,11 +143,11 @@ async def test_api_cmds(everest_core: EverestCore, async_api_mqtt_handler: Async
         response_payload = True
         await async_api_mqtt_handler.publish(f"{mqtt_prefix}{response_topic}", json.dumps(response_payload))
 
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/get_boot_reason", on_get_boot_reason)
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/set_system_time", on_set_system_time)
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/update_firmware", on_update_firmware)
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/upload_logs", on_upload_logs)
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/is_reset_allowed", on_is_reset_allowed)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/get_boot_reason", on_get_boot_reason)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/set_system_time", on_set_system_time)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/update_firmware", on_update_firmware)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/upload_logs", on_upload_logs)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/is_reset_allowed", on_is_reset_allowed)
 
     result = await probe_module.call_command(
         'system',
@@ -218,7 +236,7 @@ async def test_configure_network_cmd(everest_core: EverestCore, async_api_mqtt_h
         response_payload = {"status": "Processing"}
         await async_api_mqtt_handler.publish(f"{mqtt_prefix}{response_topic}", json.dumps(response_payload))
 
-    async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/configure_network", on_configure_network)
+    await async_api_mqtt_handler.register_handler(f"{everest_core.mqtt_external_prefix}everest_api/1/system/system_api/e2m/configure_network", on_configure_network)
 
     result = await probe_module.call_command(
         'system',
