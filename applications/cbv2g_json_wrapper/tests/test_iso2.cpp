@@ -229,11 +229,7 @@ TEST(test_iso2_authorization_req_round_trip) {
 }
 
 /* ChargingStatusReq (no payload) + ChargingStatusRes with EVSEID,
- * SAScheduleTupleID, ReceiptRequired. Note: EVSEMaxCurrent / MeterInfo /
- * AC_EVSEStatus are listed in the addendum but are NOT all populated by
- * the ChargingStatusRes converter — only ResponseCode, EVSEID,
- * SAScheduleTupleID, and ReceiptRequired survive round-trip via the
- * current converter, so we assert on those. */
+ * SAScheduleTupleID, ReceiptRequired and the mandatory AC_EVSEStatus. */
 TEST(test_iso2_charging_status_round_trip) {
     /* Req half — empty body. */
     const char* req_json = "{\"V2G_Message\":{"
@@ -265,7 +261,8 @@ TEST(test_iso2_charging_status_round_trip) {
                            "\"ResponseCode\":\"OK\","
                            "\"EVSEID\":\"DE*PNX*ETM*1234\","
                            "\"SAScheduleTupleID\":1,"
-                           "\"ReceiptRequired\":false"
+                           "\"ReceiptRequired\":false,"
+                           "\"AC_EVSEStatus\":{\"NotificationMaxDelay\":0,\"EVSENotification\":\"None\",\"RCD\":false}"
                            "}}"
                            "}}";
 

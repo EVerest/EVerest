@@ -20,7 +20,7 @@ target_include_directories(cjson PUBLIC
 target_compile_features(cjson PRIVATE c_std_99)
 set_property(TARGET cjson PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-# Wrapper. Per-protocol converters are added in subsequent PRs.
+# Wrapper with one converter per protocol.
 add_library(cbv2g_json_wrapper SHARED)
 target_sources(cbv2g_json_wrapper
     PRIVATE
@@ -43,7 +43,7 @@ target_compile_features(cbv2g_json_wrapper PRIVATE c_std_99)
 set_property(TARGET cbv2g_json_wrapper PROPERTY POSITION_INDEPENDENT_CODE ON)
 
 # cbv2g::din carries the app_handshake/ sources; libcbv2g exposes no
-# standalone apphand target. Subsequent PRs add cbv2g::iso2 and cbv2g::iso20.
+# standalone apphand target.
 target_link_libraries(cbv2g_json_wrapper
     PRIVATE
         cjson

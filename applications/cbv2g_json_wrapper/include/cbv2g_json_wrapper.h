@@ -48,9 +48,7 @@ extern "C" {
 #define CBV2G_ERROR_UNKNOWN_MESSAGE     -8
 #define CBV2G_ERROR_INTERNAL            -9
 
-/* Namespace constants matching Josev's Namespace enum.
- * Additional namespaces are added in subsequent PRs together with their
- * converter implementations. */
+/* Namespace constants matching Josev's Namespace enum. */
 #define NS_SAP                  "urn:iso:15118:2:2010:AppProtocol"
 #define NS_DIN_MSG_DEF          "urn:din:70121:2012:MsgDef"
 #define NS_ISO_V2_MSG_DEF       "urn:iso:15118:2:2013:MsgDef"
