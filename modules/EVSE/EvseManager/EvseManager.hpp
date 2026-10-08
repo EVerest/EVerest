@@ -8,7 +8,6 @@
 // template version 3
 //
 
-#include "cable_check/PowerSupplyMeasurementWaiter.hpp"
 #include "ld-ev.hpp"
 
 // headers for provided interface implementations
@@ -53,6 +52,7 @@
 #include "SessionLog.hpp"
 #include "VarContainer.hpp"
 #include "bsp_capabilities_store.hpp"
+#include "cable_check/PowerSupplyMeasurementWaiter.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "pp_ampacity_forwarder.hpp"
 #include "scoped_lock_timeout.hpp"
