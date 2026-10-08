@@ -961,6 +961,12 @@ function(ev_install_project)
     )
 
     install(
+        DIRECTORY ${EV_CORE_CMAKE_SCRIPT_DIR}/assets
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
+        PATTERN BUILD.bazel EXCLUDE
+    )
+
+    install(
         FILES ${EV_CORE_CMAKE_SCRIPT_DIR}/compat/everest-everest_system-config.cmake
         DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/everest-everest_system
     )
