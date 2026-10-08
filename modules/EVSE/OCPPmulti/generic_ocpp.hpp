@@ -49,6 +49,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -227,6 +228,15 @@ private:
     std::mutex recompute_mutex;
     std::atomic_bool recompute_pending{false};
 
+    struct ResetState {
+        std::thread thread;
+        bool running{false};
+    };
+    // Runs the stop and system reset of an accepted Reset off the caller's thread, which on OCPP 2.x is
+    // libocpp's websocket receive thread; stopping the charge point may join that thread.
+    everest::lib::util::monitor<ResetState> m_reset;
+    void join_reset_thread();
+
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
     bool enqueue_if_not_started(std::int32_t evse_id, const Event& event);
 
@@ -241,6 +251,8 @@ public:
         mv_mrec_error_map =
             (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
     }
+
+    ~GenericOcpp() override;
 
     void set_mode(GenericChargePointInterface::modes_t new_mode) {
         mv_mode = new_mode;
