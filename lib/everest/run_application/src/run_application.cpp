@@ -21,6 +21,7 @@ namespace everest_boost_process = boost::process;
 #ifdef __linux__
 #include <sys/prctl.h>
 #endif
+#include <unistd.h>
 
 #include <atomic>
 #include <cerrno>
@@ -137,7 +138,11 @@ CmdOutput run_application(const std::string& name, std::vector<std::string> args
 
     everest_boost_process::ipstream stream;
     const bool kill_child_on_parent_death = opts.kill_child_on_parent_death;
-    auto on_child_setup = [kill_child_on_parent_death](auto&) {
+    const bool own_process_group = opts.stop_requested != nullptr;
+    auto on_child_setup = [kill_child_on_parent_death, own_process_group](auto&) {
+        if (own_process_group) {
+            ::setpgid(0, 0);
+        }
 #ifdef __linux__
         if (kill_child_on_parent_death) {
             ::prctl(PR_SET_PDEATHSIG, SIGKILL);
@@ -148,10 +153,46 @@ CmdOutput run_application(const std::string& name, std::vector<std::string> args
     };
     everest_boost_process::child cmd(path, everest_boost_process::args(args), everest_boost_process::std_out > stream,
                                      everest_boost_process::extend::on_exec_setup(on_child_setup));
+    const auto pid = cmd.id();
+    // Also set from the parent so the group exists before the watcher starts, whatever the executor. EACCES means the
+    // child already exec'd, after setting the group itself.
+    if (own_process_group && ::setpgid(pid, pid) != 0 && errno != EACCES && errno != ESRCH) {
+        EVLOG_warning << fmt::format("run_application: failed to put {} in its own process group: {}", pid,
+                                     std::error_code(errno, std::generic_category()).message());
+    }
 
-    // On cancel: SIGTERM, then SIGKILL after the terminate_grace, which closes stdout and unblocks the read loop.
     const auto terminate_grace = opts.terminate_grace;
     std::atomic<bool> read_finished{false};
+    // The child itself is signalled too, in case it moved to another process group.
+    auto signal_group = [pid](int sig, const char* sig_name) {
+        const bool group_signalled = ::kill(-pid, sig) == 0;
+        const bool child_signalled = ::kill(pid, sig) == 0;
+        if (!group_signalled && !child_signalled) {
+            EVLOG_warning << fmt::format("run_application: failed to send {} to {} or its group: {}", sig_name, pid,
+                                         std::error_code(errno, std::generic_category()).message());
+        }
+    };
+    // The child is reaped only after the group's last signal: until then it holds the group id, even as a zombie, so
+    // no signal reaches a recycled group. Called from the watcher, then from this thread once the watcher is joined.
+    bool child_reaped = false;
+    auto stop_group = [&](bool sigterm_first) {
+        using namespace std::chrono_literals;
+        if (child_reaped || pid <= 0) {
+            return;
+        }
+        if (sigterm_first) {
+            signal_group(SIGTERM, "SIGTERM");
+            const auto deadline = std::chrono::steady_clock::now() + terminate_grace;
+            while (!read_finished.load() && std::chrono::steady_clock::now() < deadline) {
+                std::this_thread::sleep_for(50ms);
+            }
+        }
+        signal_group(SIGKILL, "SIGKILL");
+        std::error_code ec;
+        cmd.wait(ec); // exit_code() then reflects the terminating signal
+        child_reaped = true;
+    };
+
     std::thread stop_watcher;
     if (opts.stop_requested != nullptr) {
         auto stop_requested = opts.stop_requested;
@@ -159,25 +200,11 @@ CmdOutput run_application(const std::string& name, std::vector<std::string> args
             using namespace std::chrono_literals;
             try {
                 while (!read_finished.load()) {
-                    if (!stop_requested->load()) {
-                        std::this_thread::sleep_for(100ms);
-                        continue;
+                    if (stop_requested->load()) {
+                        stop_group(true);
+                        return;
                     }
-                    std::error_code ec;
-                    const auto pid = cmd.id();
-                    if (pid > 0 && ::kill(pid, SIGTERM) != 0) {
-                        EVLOG_warning << fmt::format("run_application: failed to send SIGTERM to {}: {}", pid,
-                                                     std::error_code(errno, std::generic_category()).message());
-                    }
-                    const auto deadline = std::chrono::steady_clock::now() + terminate_grace;
-                    while (cmd.running(ec) && std::chrono::steady_clock::now() < deadline) {
-                        std::this_thread::sleep_for(50ms);
-                    }
-                    if (cmd.running(ec)) {
-                        cmd.terminate(ec); // SIGKILL
-                        cmd.wait(ec);      // reap so exit_code() reflects the kill signal
-                    }
-                    return;
+                    std::this_thread::sleep_for(100ms);
                 }
             } catch (const std::exception& e) {
                 EVLOG_error << "run_application stop watcher failed: " << e.what();
@@ -212,6 +239,8 @@ CmdOutput run_application(const std::string& name, std::vector<std::string> args
     }
     if (condition == CmdControl::Continue) {
         cmd.wait();
+    } else if (own_process_group) {
+        stop_group(false);
     } else {
         cmd.terminate();
     }

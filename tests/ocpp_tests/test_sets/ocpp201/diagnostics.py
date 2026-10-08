@@ -60,10 +60,6 @@ async def test_N01_get_log_cancels_running_upload(
         r = await charge_point_v201.get_log_req(log=log, log_type=LogEnumType.diagnostics_log, request_id=2)
         assert LogStatusEnumType(r.status) == LogStatusEnumType.accepted_canceled
 
-        # The cancel stops the uploader script, but its curl keeps the output pipe open until the held
-        # upload ends, so release it.
-        release_first_upload.set()
-
         assert await wait_for_and_validate(
             test_utility,
             charge_point_v201,
