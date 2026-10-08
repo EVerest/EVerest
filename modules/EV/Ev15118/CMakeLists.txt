@@ -25,6 +25,7 @@ target_sources(${MODULE_NAME}
     PRIVATE
         "ev/der_publish_names.cpp"
         "ev/sae_profile_config.cpp"
+        "ev/v2g_message_id.cpp"
 )
 
 if(EVEREST_CORE_BUILD_TESTING)

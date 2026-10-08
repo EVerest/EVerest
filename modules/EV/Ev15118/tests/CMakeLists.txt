@@ -15,8 +15,10 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     DerPublishNamesTest.cpp
     SaeProfileConfigTest.cpp
+    V2gMessageIdTest.cpp
     ../ev/der_publish_names.cpp
     ../ev/sae_profile_config.cpp
+    ../ev/v2g_message_id.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE

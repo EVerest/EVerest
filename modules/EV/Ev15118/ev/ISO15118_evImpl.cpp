@@ -33,6 +33,7 @@
 
 #include "der_publish_names.hpp"
 #include "sae_profile_config.hpp"
+#include "v2g_message_id.hpp"
 
 namespace {
 template <class F> class ScopeGuard {
@@ -242,108 +243,6 @@ const char* signal_to_string(iso15118::ev::feedback::Signal signal) {
     return "unknown";
 }
 
-constexpr types::iso15118::V2gMessageId message_20_type_to_id(iso15118::message_20::Type type) {
-    using Type = iso15118::message_20::Type;
-    using Id = types::iso15118::V2gMessageId;
-
-    switch (type) {
-    case Type::None:
-        return Id::UnknownMessage;
-    case Type::SupportedAppProtocolReq:
-        return Id::SupportedAppProtocolReq;
-    case Type::SupportedAppProtocolRes:
-        return Id::SupportedAppProtocolRes;
-    case Type::SessionSetupReq:
-        return Id::SessionSetupReq;
-    case Type::SessionSetupRes:
-        return Id::SessionSetupRes;
-    case Type::AuthorizationSetupReq:
-        return Id::AuthorizationSetupReq;
-    case Type::AuthorizationSetupRes:
-        return Id::AuthorizationSetupRes;
-    case Type::AuthorizationReq:
-        return Id::AuthorizationReq;
-    case Type::AuthorizationRes:
-        return Id::AuthorizationRes;
-    case Type::ServiceDiscoveryReq:
-        return Id::ServiceDiscoveryReq;
-    case Type::ServiceDiscoveryRes:
-        return Id::ServiceDiscoveryRes;
-    case Type::ServiceDetailReq:
-        return Id::ServiceDetailReq;
-    case Type::ServiceDetailRes:
-        return Id::ServiceDetailRes;
-    case Type::ServiceSelectionReq:
-        return Id::ServiceSelectionReq;
-    case Type::ServiceSelectionRes:
-        return Id::ServiceSelectionRes;
-    case Type::DC_ChargeParameterDiscoveryReq:
-        return Id::DcChargeParameterDiscoveryReq;
-    case Type::DC_ChargeParameterDiscoveryRes:
-        return Id::DcChargeParameterDiscoveryRes;
-    case Type::ScheduleExchangeReq:
-        return Id::ScheduleExchangeReq;
-    case Type::ScheduleExchangeRes:
-        return Id::ScheduleExchangeRes;
-    case Type::DC_CableCheckReq:
-        return Id::DcCableCheckReq;
-    case Type::DC_CableCheckRes:
-        return Id::DcCableCheckRes;
-    case Type::DC_PreChargeReq:
-        return Id::DcPreChargeReq;
-    case Type::DC_PreChargeRes:
-        return Id::DcPreChargeRes;
-    case Type::PowerDeliveryReq:
-        return Id::PowerDeliveryReq;
-    case Type::PowerDeliveryRes:
-        return Id::PowerDeliveryRes;
-    case Type::DC_ChargeLoopReq:
-        return Id::DcChargeLoopReq;
-    case Type::DC_ChargeLoopRes:
-        return Id::DcChargeLoopRes;
-    case Type::DC_WeldingDetectionReq:
-        return Id::DcWeldingDetectionReq;
-    case Type::DC_WeldingDetectionRes:
-        return Id::DcWeldingDetectionRes;
-    case Type::SessionStopReq:
-        return Id::SessionStopReq;
-    case Type::SessionStopRes:
-        return Id::SessionStopRes;
-    case Type::AC_ChargeParameterDiscoveryReq:
-        return Id::AcChargeParameterDiscoveryReq;
-    case Type::AC_ChargeParameterDiscoveryRes:
-        return Id::AcChargeParameterDiscoveryRes;
-    case Type::AC_ChargeLoopReq:
-        return Id::AcChargeLoopReq;
-    case Type::AC_ChargeLoopRes:
-        return Id::AcChargeLoopRes;
-    case Type::DER_AC_ChargeParameterDiscoveryReq:
-        return Id::AcDerChargeParameterDiscoveryReq;
-    case Type::DER_AC_ChargeParameterDiscoveryRes:
-        return Id::AcDerChargeParameterDiscoveryRes;
-    case Type::DER_AC_ChargeLoopReq:
-        return Id::AcDerChargeLoopReq;
-    case Type::DER_AC_ChargeLoopRes:
-        return Id::AcDerChargeLoopRes;
-    case Type::DER_SAE_AC_ChargeParameterDiscoveryReq:
-        return Id::AcDerSaeChargeParameterDiscoveryReq;
-    case Type::DER_SAE_AC_ChargeParameterDiscoveryRes:
-        return Id::AcDerSaeChargeParameterDiscoveryRes;
-    case Type::DER_SAE_AC_ChargeLoopReq:
-        return Id::AcDerSaeChargeLoopReq;
-    case Type::DER_SAE_AC_ChargeLoopRes:
-        return Id::AcDerSaeChargeLoopRes;
-    }
-    return Id::UnknownMessage;
-}
-
-// ISO 15118-2 and DIN 70121 have no V2gMessageId mapping here yet.
-types::iso15118::V2gMessageId v2g_message_id(const iso15118::V2gMessageType& type) {
-    if (const auto* type_20 = std::get_if<iso15118::message_20::Type>(&type)) {
-        return message_20_type_to_id(*type_20);
-    }
-    return types::iso15118::V2gMessageId::UnknownMessage;
-}
 } // namespace
 
 namespace module {

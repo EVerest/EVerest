@@ -7,6 +7,10 @@ EV-side ISO 15118 EVCC built on the ``libiso15118`` ``ev::Controller``. It
 provides the ``ISO15118_ev`` interface and drives a DC or AC session against a
 SECC such as ``Evse15118D20`` or ``EvseV2G``.
 
+The ``v2g_messages`` notification identifies received responses for all three
+protocol generations, including ``PowerDeliveryRes`` before welding detection.
+It does not report transmitted requests.
+
 Protocols
 ---------
 
