@@ -1249,19 +1249,6 @@ void Charger::run_state_machine() {
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
             }
 
-            if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
-                not shared_context.max_current_cable.has_value()) {
-                // retry if the value is not yet available. Some BSPs may take some time to measure the PP.
-                shared_context.max_current_cable = bsp->read_pp_ampacity();
-                if (not shared_context.max_current_cable.has_value()) {
-                    if (not internal_context.pp_warning_printed) {
-                        EVLOG_warning << "PP ampacity is zero, still waiting for BSP to report it...";
-                        internal_context.pp_warning_printed = true;
-                    }
-                    break;
-                }
-            }
-
             bool should_stay_in_finished = false;
             if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
                 config_context.wait_cable_removed_before_going_idle) {
