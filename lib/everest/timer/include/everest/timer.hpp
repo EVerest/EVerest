@@ -157,13 +157,14 @@ private:
             running = true;
 
             // use asio timer
+            const auto callback = this->timer_callback;
             this->timer->expires_at(time_point);
-            this->timer->async_wait([this](const boost::system::error_code& e) {
+            this->timer->async_wait([this, callback](const boost::system::error_code& e) {
                 if (e) {
                     return;
                 }
 
-                this->timer_callback();
+                callback();
                 running = false;
             });
         }
@@ -183,7 +184,8 @@ private:
             running = true;
 
             // use asio timer
-            this->callback_wrapper = [this](const boost::system::error_code& error) {
+            const auto callback = this->timer_callback;
+            this->callback_wrapper = [this, callback](const boost::system::error_code& error) {
                 if (error) {
                     running = false;
                     return;
@@ -196,7 +198,7 @@ private:
                     this->timer->async_wait(this->callback_wrapper);
                 }
 
-                this->timer_callback();
+                callback();
             };
 
             this->timer->expires_after(
@@ -214,14 +216,15 @@ private:
             running = true;
 
             // use asio timer
+            const auto callback = this->timer_callback;
             this->timer->expires_after(interval);
-            this->timer->async_wait([this](const boost::system::error_code& error) {
+            this->timer->async_wait([this, callback](const boost::system::error_code& error) {
                 if (error) {
                     running = false;
                     return;
                 }
 
-                this->timer_callback();
+                callback();
                 running = false;
             });
         }
