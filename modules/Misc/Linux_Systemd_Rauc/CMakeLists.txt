@@ -14,6 +14,7 @@ target_link_libraries(${MODULE_NAME}
         Pal::Sigslot
         everest::run_application
         everest::system
+        everest::util
 )
 
 target_sources(${MODULE_NAME}
