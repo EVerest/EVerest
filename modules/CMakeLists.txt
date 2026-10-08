@@ -1,3 +1,7 @@
+if(NOT EVEREST_BUILD_RUNTIME)
+    return()
+endif()
+
 add_subdirectory(API)
 add_subdirectory(BringUp)
 add_subdirectory(EnergyManagement)

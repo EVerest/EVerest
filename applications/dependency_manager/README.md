@@ -124,8 +124,8 @@ Here *cmake_condition* can be any string that CMake can use in an if() block. Pl
 
 ## Selective package builds
 
-everest-core is built as four packages: `base`, `iso15118`, `ocpp` and `core` (with the
-modules). `EVEREST_PACKAGES` selects the ones to build; for example, only libocpp and what it
+everest-core is built in five packages: `base`, `iso15118`, `ocpp`, `core` and `runtime`
+(the modules). `EVEREST_PACKAGES` selects the ones to build; for example, only libocpp and what it
 needs:
 
 ```yaml

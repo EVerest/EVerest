@@ -240,8 +240,8 @@ The ``dependencies_modified.yaml`` file can contain something along these lines:
 Selective package builds
 ########################
 
-everest-core is built and installed as four CMake packages. ``EVEREST_PACKAGES`` selects the
-ones built from the tree; packages that are needed but not listed are taken from an installed
+everest-core is built and installed in five packages. ``EVEREST_PACKAGES`` selects the ones
+built from the tree; packages that are needed but not listed are taken from an installed
 prefix with ``find_package()``.
 
 .. list-table::
@@ -256,10 +256,12 @@ prefix with ``find_package()``.
    * - ``ocpp``
      - libocpp
    * - ``core``
-     - the framework libraries, code generation, interface definitions, and the in-tree modules
-       and applications
+     - the framework libraries, code generation and the interface definitions; this is what
+       out-of-tree module projects build against
+   * - ``runtime``
+     - the in-tree modules, applications and configurations (no CMake package)
 
-The default builds all four. Only ``libocpp`` and what it needs, for example:
+The default builds all five. Only ``libocpp`` and what it needs, for example:
 
 .. code-block:: bash
 
@@ -284,6 +286,8 @@ the same prefix:
   cmake -S . -B b2 -DDISABLE_EDM=ON -DEVEREST_PACKAGES="iso15118;ocpp" \
     -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
   cmake -S . -B b3 -DDISABLE_EDM=ON -DEVEREST_PACKAGES=core \
+    -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
+  cmake -S . -B b4 -DDISABLE_EDM=ON -DEVEREST_PACKAGES=runtime \
     -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
 
 Framework thread pool scaling policy

@@ -83,8 +83,8 @@ option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
 # pytest workers would otherwise clobber shared .gcda files in the build tree.
 option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverage targets" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
-set(EVEREST_PACKAGES "base;iso15118;ocpp;core" CACHE STRING
-    "Packages built from this tree (base, iso15118, ocpp, core with the modules); the others are taken from an installed prefix")
+set(EVEREST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
+    "Packages built from this tree (base, iso15118, ocpp, core, runtime); the others are taken from an installed prefix")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")
@@ -109,12 +109,12 @@ include(ev-packages)
 # tests requires hardware.
 option(BUILD_DEV_TESTS "Build dev tests" OFF)
 
-if(EVEREST_BUILD_CORE)
+if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
     ev_setup_cmake_variables_python_wheel()
     option(${PROJECT_NAME}_INSTALL_EV_CLI_IN_PYTHON_VENV "Install ev-cli in python venv instead of using system" ON)
 endif()
 
-if(EVEREST_BUILD_CORE OR NOT DISABLE_EDM)
+if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME OR NOT DISABLE_EDM)
     set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
     ev_setup_python_executable(
         USE_PYTHON_VENV ${${PROJECT_NAME}_USE_PYTHON_VENV}
@@ -138,7 +138,7 @@ endif()
 include(ev-define-dependency)
 include(ev-packaging)
 
-if(EVEREST_BUILD_CORE)
+if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
     include("module-dependencies.cmake")
 endif()
 
@@ -147,7 +147,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
-if(EVEREST_BUILD_CORE)
+if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
   find_package(Boost
       COMPONENTS
           filesystem
@@ -184,11 +184,11 @@ if(NOT DISABLE_EDM)
     endif()
 
     # ev-cli and everest-testing
-    if(EVEREST_BUILD_CORE)
+    if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
         add_subdirectory(applications/utils)
     endif()
 else()
-    if(EVEREST_BUILD_CORE)
+    if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
         find_package(PalSigslot REQUIRED)
         if(EVEREST_DEPENDENCY_ENABLED_LIBNFC_NCI)
             find_package(libnfc-nci REQUIRED)
@@ -214,14 +214,17 @@ if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
     add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif()
 
-if(NOT EVEREST_BUILD_BASE AND (EVEREST_BUILD_ISO15118 OR EVEREST_BUILD_OCPP OR EVEREST_BUILD_CORE))
+if(NOT EVEREST_BUILD_BASE AND NOT EVEREST_PACKAGES STREQUAL "")
     find_package(everest-base REQUIRED)
 endif()
-if(EVEREST_BUILD_CORE AND NOT EVEREST_BUILD_ISO15118)
+if(EVEREST_BUILD_RUNTIME AND NOT EVEREST_BUILD_ISO15118)
     find_package(everest-iso15118 REQUIRED)
 endif()
-if(EVEREST_BUILD_CORE AND NOT EVEREST_BUILD_OCPP)
+if(EVEREST_BUILD_RUNTIME AND NOT EVEREST_BUILD_OCPP)
     find_package(everest-ocpp REQUIRED)
+endif()
+if(EVEREST_BUILD_RUNTIME AND NOT EVEREST_BUILD_CORE)
+    find_package(everest-core REQUIRED)
 endif()
 
 if(EVEREST_BUILD_DOCS)
@@ -231,13 +234,9 @@ endif()
 include(ev-targets)
 if(EVEREST_BUILD_CORE)
     include(ev-project-bootstrap)
-
     ev_add_project()
-
-    # create MF_ROOT_CA if not available
-    if (ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES)
-        file(TOUCH config/certs/ca/mf/MF_ROOT_CA.pem)
-    endif()
+elseif(EVEREST_BUILD_RUNTIME)
+    add_subdirectory(modules)
 endif()
 
 add_subdirectory(lib)
@@ -246,17 +245,22 @@ if(DISABLE_EDM)
     ev_install_library_packages()
 endif()
 
-if(EVEREST_BUILD_CORE)
+if(EVEREST_BUILD_CORE AND DISABLE_EDM)
+    ev_install_project()
+endif()
+
+if(EVEREST_BUILD_RUNTIME)
+    # create MF_ROOT_CA if not available
+    if (ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES)
+        file(TOUCH config/certs/ca/mf/MF_ROOT_CA.pem)
+    endif()
+
     # config
     # FIXME (aw): this should be optional
     add_subdirectory(config)
 
     if(EVEREST_BUILD_APPLICATIONS)
       add_subdirectory(applications)
-    endif()
-
-    if(DISABLE_EDM)
-        ev_install_project()
     endif()
 endif()
 
@@ -274,14 +278,18 @@ if(DOXYGEN_FOUND)
 endif()
 
 # testing
-if(EVEREST_CORE_BUILD_TESTING AND EVEREST_BUILD_CORE)
-    add_subdirectory(types)
-    add_subdirectory(tests)
+if(EVEREST_CORE_BUILD_TESTING)
+    if(EVEREST_BUILD_CORE)
+        add_subdirectory(types)
+    endif()
+    if(EVEREST_BUILD_RUNTIME)
+        add_subdirectory(tests)
+    endif()
 else()
     message("Not running unit tests")
 endif()
 
-if(EVEREST_BUILD_CORE)
+if(EVEREST_BUILD_RUNTIME)
     # convenience target for integration tests
     add_custom_target(install_everest_testing
         COMMAND

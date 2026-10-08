@@ -1,5 +1,5 @@
 # checks EVEREST_PACKAGES and sets EVEREST_BUILD_<PACKAGE>
-set(_everest_packages base iso15118 ocpp core)
+set(_everest_packages base iso15118 ocpp core runtime)
 
 function(_ev_check_packages LIST_VAR)
     set(unknown ${${LIST_VAR}})
