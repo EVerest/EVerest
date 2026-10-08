@@ -597,18 +597,22 @@ void EvseManager::ready() {
             r_hlc[0]->subscribe_start_cable_check([this] {
                 // current_demand_finished may be missing if the previous session was aborted
                 current_demand_active = false;
+                current_demand_target_received = false;
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::CableCheck;
                 cable_check();
             });
 
             // Cable check for DC charging
-            r_hlc[0]->subscribe_start_pre_charge(
-                [this] { power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge; });
+            r_hlc[0]->subscribe_start_pre_charge([this] {
+                current_demand_target_received = false;
+                power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::PreCharge;
+            });
 
             // Notification that current demand has started
+            // Not ordered with respect to dc_ev_target_voltage_current: the framework delivers different vars on
+            // different threads. current_demand_target_received is therefore derived from the target itself.
             r_hlc[0]->subscribe_current_demand_started([this] {
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Charging;
-                current_demand_target_received = false;
                 current_demand_active = true;
                 apply_new_target_voltage_current();
                 charger->notify_currentdemand_started();
@@ -767,7 +771,7 @@ void EvseManager::ready() {
             // (signal_dc_enforce_target_limits) in case the EV doesnt respect the
             // limits or does not change the target values for some time.
             r_hlc[0]->subscribe_dc_ev_target_voltage_current([this](types::iso15118::DcEvTargetValues v) {
-                set_raw_ev_target(v.dc_ev_target_voltage, v.dc_ev_target_current);
+                set_raw_ev_target(v.dc_ev_target_voltage, v.dc_ev_target_current, v.current_demand);
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
@@ -848,7 +852,8 @@ void EvseManager::ready() {
                                      ? max_charge_current
                                      : std::min((max_charge_power / actual_voltage), max_charge_current);
 
-                set_raw_ev_target(target_voltage, target_current);
+                // Dynamic mode values are only sent in the charge loop
+                set_raw_ev_target(target_voltage, target_current, true);
                 process_dc_ev_target_voltage_current(charger->get_evse_max_hlc_limits());
             });
 
@@ -2310,8 +2315,9 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // Read once so that a transition during this call cannot mix the rule sets
     const bool demand_active = current_demand_active.load();
     // The offered minimum and the 0 A rule apply to the current the EV requests during current demand. Until the
-    // first request arrives, the precharge target is still in effect.
-    const bool current_demand = demand_active and current_demand_target_received;
+    // first target the EV sent in current demand arrives, the precharge target is still in effect. Derived from
+    // the target itself, not from current_demand_started, so the delivery order of the two does not matter.
+    const bool current_demand = current_demand_target_received.load();
     const DcSetpointInputs inputs{_voltage,
                                   _current,
                                   std::abs(raw_ev_target_current.load()),
@@ -2567,10 +2573,10 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
     return ev_info;
 }
 
-void EvseManager::set_raw_ev_target(double voltage, double current) {
+void EvseManager::set_raw_ev_target(double voltage, double current, std::optional<bool> current_demand) {
     raw_ev_target_voltage = voltage;
     raw_ev_target_current = current;
-    current_demand_target_received = current_demand_active.load();
+    current_demand_target_received = current_demand.value_or(current_demand_active.load());
 }
 
 void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {

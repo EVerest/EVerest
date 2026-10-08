@@ -257,6 +257,7 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
 
     // Init EV received v2g-data to an invalid state
     memset(&ctx->ev_v2g_data, 0xff, sizeof(ctx->ev_v2g_data));
+    ctx->ev_v2g_data.v2g_target_current_demand = false;
 
     /* Init session values */
     if (ctx->hlc_pause_active != true) {
@@ -406,15 +407,18 @@ void publish_dc_ev_maximum_limits(struct v2g_context* ctx, const float& v2g_dc_e
 }
 
 void publish_dc_ev_target_voltage_current(struct v2g_context* ctx, const float& v2g_dc_ev_target_voltage,
-                                          const float& v2g_dc_ev_target_current) {
+                                          const float& v2g_dc_ev_target_current, bool current_demand) {
     if ((ctx->ev_v2g_data.v2g_target_voltage != v2g_dc_ev_target_voltage) ||
-        (ctx->ev_v2g_data.v2g_target_current != v2g_dc_ev_target_current)) {
+        (ctx->ev_v2g_data.v2g_target_current != v2g_dc_ev_target_current) ||
+        (ctx->ev_v2g_data.v2g_target_current_demand != current_demand)) {
         types::iso15118::DcEvTargetValues dc_ev_target_values;
         dc_ev_target_values.dc_ev_target_voltage = v2g_dc_ev_target_voltage;
         dc_ev_target_values.dc_ev_target_current = v2g_dc_ev_target_current;
+        dc_ev_target_values.current_demand = current_demand;
 
         ctx->ev_v2g_data.v2g_target_voltage = v2g_dc_ev_target_voltage;
         ctx->ev_v2g_data.v2g_target_current = v2g_dc_ev_target_current;
+        ctx->ev_v2g_data.v2g_target_current_demand = current_demand;
 
         ctx->p_charger->publish_dc_ev_target_voltage_current(dc_ev_target_values);
     }
