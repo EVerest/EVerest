@@ -15,10 +15,14 @@ cmake --build build --target install --parallel -j$(nproc)
 . build/venv/bin/activate
 cmake --build build --target everestpy_pip_install_dist # install everestpy
 cmake --build build --target everest-testing_pip_install_dist # install everest-testing
-cmake --build build --target iso15118_pip_install_dist # install iso15118 for OCPP integration tests
 python3 -m pip install "aiofile>=3.7.4"
 python3 -m pip install "netifaces>=0.11.0"
 ```
+
+The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`,
+so keep `EVEREST_BUILD_APPLICATIONS=ON` (the default). The OCPP 2.0.1 suite
+includes `test_exi_generator.py`, which checks the response bytes, four signed
+fragment digests and SignedInfo signature against an independent wire capture.
 
 ## Execute locally
 

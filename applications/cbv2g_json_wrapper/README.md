@@ -3,12 +3,12 @@
 A native C shared library that wraps [libcbv2g](https://github.com/EVerest/libcbv2g)
 with a JSON-based API for EXI encode/decode.
 
-The wrapper is designed to replace the Java-based EXIficient codec used by the
-EVerest EV-side simulation in [Josev](https://github.com/EVerest/ext-switchev-iso15118).
-The intended consumer is `iso15118.shared.cbv2g_exi_codec.Cbv2gEXICodec`, which
-loads `libcbv2g_json_wrapper.so` via `ctypes`.
-
-See RFC [EVerest/ext-switchev-iso15118#58](https://github.com/EVerest/ext-switchev-iso15118/issues/58).
+It lets Python and other non-C code encode and decode ISO 15118 and DIN 70121
+messages without binding libcbv2g's structs, by loading `libcbv2g_json_wrapper.so`
+through `ctypes` or another FFI. The OCPP Plug and Charge tests use it to build EXI
+payloads. It was first written as the EXI codec for
+[Josev](https://github.com/EVerest/ext-switchev-iso15118)
+([RFC #58](https://github.com/EVerest/ext-switchev-iso15118/issues/58)).
 
 ## Public API
 
