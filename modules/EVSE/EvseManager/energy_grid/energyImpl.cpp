@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "energyImpl.hpp"
+#include "random_delay/random_delay_duration.hpp"
 
 #include <everest/util/misc/container.hpp>
 
@@ -475,9 +476,9 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
             if (not mod->random_delay_running and random_delay_needed(last_enforced_limit, limit)) {
                 mod->random_delay_running = true;
                 mod->random_delay_start_time = date::utc_clock::now();
-                auto random_delay_s = std::rand() % mod->random_delay_max_duration.load().count();
-                mod->random_delay_end_time = std::chrono::steady_clock::now() + std::chrono::seconds(random_delay_s);
-                EVLOG_info << "UK Smart Charging regulations: Starting random delay of " << random_delay_s << "s";
+                const auto random_delay = random_delay_duration(mod->random_delay_max_duration.load(), std::rand());
+                mod->random_delay_end_time = std::chrono::steady_clock::now() + random_delay;
+                EVLOG_info << "UK Smart Charging regulations: Starting random delay of " << random_delay.count() << "s";
                 limit_when_random_delay_started = last_enforced_limit;
             }
 
