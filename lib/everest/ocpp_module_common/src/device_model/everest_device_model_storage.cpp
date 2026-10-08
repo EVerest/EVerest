@@ -1053,8 +1053,7 @@ EverestDeviceModelStorage::get_variable_attributes(const ocpp::v2::Component& co
 }
 
 std::optional<ocpp::v2::Component>
-EverestDeviceModelStorage::get_component_for_module(const std::string& module_id,
-                                                    const std::string& implementation_id) const {
+EverestDeviceModelStorage::get_component_for_module(const std::string& module_id) const {
     const auto module_config_it =
         std::find_if(this->module_configs.begin(), this->module_configs.end(),
                      [&module_id](const auto& entry) { return entry.first.module_id == module_id; });
@@ -1063,21 +1062,20 @@ EverestDeviceModelStorage::get_component_for_module(const std::string& module_id
     }
 
     Component component;
-    component.name = module_config_it->first.module_type;
-    component.instance = module_id;
+    try {
+        component.name = module_config_it->first.module_type;
+        component.instance = module_id;
+    } catch (const ocpp::StringConversionException& e) {
+        EVLOG_warning << "Module " << module_id << " does not fit into a device model component: " << e.what();
+        return std::nullopt;
+    }
 
     const auto mapping_it = this->mappings.find(module_id);
     if (mapping_it == this->mappings.end()) {
         return component;
     }
 
-    auto mapping = mapping_it->second.module;
-    const auto implementation_mapping_it = mapping_it->second.implementations.find(implementation_id);
-    if (implementation_mapping_it != mapping_it->second.implementations.end() and
-        implementation_mapping_it->second.has_value()) {
-        mapping = implementation_mapping_it->second;
-    }
-
+    const auto& mapping = mapping_it->second.module;
     // in OCPP2.x the id and connectorId of the EVSEType must be > 0
     if (mapping.has_value() and mapping->evse > 0) {
         EVSE evse;

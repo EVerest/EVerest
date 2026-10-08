@@ -188,12 +188,12 @@ int32_t get_connector_id_from_error(const Everest::error::Error& error) {
 ocpp::v2::Component OCPP201::get_component_from_error(const Everest::error::Error& error) const {
     // the device model storage is created in ready(); error handlers registered in init() can fire earlier
     if (this->everest_device_model_storage != nullptr) {
-        const auto component = this->everest_device_model_storage->get_component_for_module(
-            error.origin.module_id, error.origin.implementation_id);
+        const auto component = this->everest_device_model_storage->get_component_for_module(error.origin.module_id);
         if (component.has_value()) {
             return component.value();
         }
-        EVLOG_warning << "Failed to map the error to a valid component; Using fallback for error mapping";
+        EVLOG_debug << "Failed to map the error from module " << error.origin.module_id
+                    << " to a valid component; Using fallback for error mapping";
     } else {
         EVLOG_warning << "No device_model configured; Using fallback for error mapping";
     }
