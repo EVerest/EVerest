@@ -9,21 +9,14 @@ project(iso15118
 find_package(OpenSSL 3 REQUIRED)
 
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 
 # list of compile options
 set(ISO15118_COMPILE_OPTIONS_WARNING "-Wall;-Wextra;-Wno-unused-function;-Werror" CACHE STRING "A list of compile options used")
 message(STATUS "Building libiso15118 with the following compile options: ${ISO15118_COMPILE_OPTIONS_WARNING}")
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(ISO15118_BUILD_TESTING ON)
-endif()
-
 add_subdirectory(src)
 
-if (ISO15118_BUILD_TESTING)
-    include(CTest)
+if (BUILD_TESTING)
     add_subdirectory(test)
 endif()
 

@@ -97,11 +97,11 @@ gtest:
   # GoogleTest now follows the Abseil Live at Head philosophy. We recommend updating to the latest commit in the main branch as often as possible.
   git: https://github.com/google/googletest.git
   git_tag: release-1.12.1
-  cmake_condition: "EVEREST_CORE_BUILD_TESTING OR LIBEVSE_SECURITY_BUILD_TESTING OR EVEREST_FRAMEWORK_BUILD_TESTING OR EVEREST_LIBLOG_BUILD_TESTING OR EVEREST_SQLITE_BUILD_TESTING OR LIBOCPP_BUILD_TESTING OR LIBTIMER_BUILD_TESTING"
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
 catch2:
   git: https://github.com/catchorg/Catch2.git
   git_tag: v3.10.0
-  cmake_condition: "EVEREST_CORE_BUILD_TESTING OR CB_V2G_BUILD_TESTS OR EVEREST_FRAMEWORK_BUILD_TESTING OR IEEE2030_BUILD_TESTING OR ISO15118_BUILD_TESTING"
+  cmake_condition: "EVEREST_CORE_BUILD_TESTING"
 # everest/io library
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto

@@ -7,14 +7,10 @@ project(everest-timer
 )
 
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(LIBTIMER_BUILD_TESTING ON)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 

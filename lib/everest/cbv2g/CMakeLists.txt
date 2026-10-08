@@ -12,8 +12,7 @@ add_subdirectory(lib)
 message(STATUS "library code based on cbexigen generator version: merge of 074de6417 and 1693dd510")
 
 # tests
-if (CB_V2G_BUILD_TESTS)
-    include(CTest)
+if (BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 

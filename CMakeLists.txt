@@ -85,6 +85,8 @@ option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverag
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
 set(EVEREST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
     "Packages built from this tree (base, iso15118, ocpp, core, runtime); the others are taken from an installed prefix")
+set(EVEREST_TEST_PACKAGES "base;iso15118;ocpp;core;runtime" CACHE STRING
+    "Packages whose tests are built when BUILD_TESTING is on")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")
@@ -93,16 +95,6 @@ if(EVEREST_ENABLE_GLOBAL_COMPILE_WARNINGS)
 endif()
 if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
     set(EVEREST_CORE_BUILD_TESTING ON)
-    set(everest-framework_BUILD_TESTING ON)
-    set(ISO15118_BUILD_TESTING ON)
-    set(ocpp_BUILD_TESTING ON)
-    set(LIBEVSE_SECURITY_BUILD_TESTING ON)
-    set(everest-evse_security_BUILD_TESTING ON)
-    set(everest-sqlite_BUILD_TESTING ON)
-    set(everest-timer_BUILD_TESTING ON)
-    set(everest-log_BUILD_TESTING ON)
-    set(IEEE2030_BUILD_TESTING ON)
-    set(BUILD_CBV2G_JSON_WRAPPER_TESTS ON)
 endif()
 include(ev-packages)
 # This is a flag for building development tests, but not necessarily to run them, for expample in case
@@ -280,10 +272,10 @@ endif()
 
 # testing
 if(EVEREST_CORE_BUILD_TESTING)
-    if(EVEREST_BUILD_CORE)
+    if(EVEREST_TEST_CORE)
         add_subdirectory(types)
     endif()
-    if(EVEREST_BUILD_RUNTIME)
+    if(EVEREST_TEST_RUNTIME)
         add_subdirectory(tests)
     endif()
 else()

@@ -7,8 +7,6 @@ project(ocpp
 )
 
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(LIBOCPP16_BUILD_EXAMPLES "Build charge_point binary" OFF)
 option(LIBOCPP_ENABLE_DEPRECATED_WEBSOCKETPP "Websocket++ has been removed from the project" OFF)
@@ -24,11 +22,7 @@ if(LIBOCPP_ENABLE_DEPRECATED_WEBSOCKETPP)
     message(FATAL_ERROR "Websocket++ has been removed")
 endif()
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(LIBOCPP_BUILD_TESTING ON)
-endif()
-
-if(LIBOCPP_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+if(BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags()
 endif()
@@ -102,8 +96,7 @@ if(CMAKE_RUN_CLANG_TIDY)
     -export-fixes=clang-tidy-fixes.yaml)
 endif()
 
-if(LIBOCPP_BUILD_TESTING)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 

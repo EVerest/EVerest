@@ -1,4 +1,4 @@
-# checks EVEREST_PACKAGES and sets EVEREST_BUILD_<PACKAGE>
+# checks EVEREST_PACKAGES / EVEREST_TEST_PACKAGES and sets EVEREST_BUILD_<PACKAGE> / EVEREST_TEST_<PACKAGE>
 set(_everest_packages base iso15118 ocpp core runtime)
 
 function(_ev_check_packages LIST_VAR)
@@ -10,6 +10,7 @@ function(_ev_check_packages LIST_VAR)
 endfunction()
 
 _ev_check_packages(EVEREST_PACKAGES)
+_ev_check_packages(EVEREST_TEST_PACKAGES)
 
 foreach(_pkg IN LISTS _everest_packages)
     string(TOUPPER ${_pkg} _PKG)
@@ -17,5 +18,10 @@ foreach(_pkg IN LISTS _everest_packages)
         set(EVEREST_BUILD_${_PKG} ON)
     else()
         set(EVEREST_BUILD_${_PKG} OFF)
+    endif()
+    if(EVEREST_CORE_BUILD_TESTING AND EVEREST_BUILD_${_PKG} AND _pkg IN_LIST EVEREST_TEST_PACKAGES)
+        set(EVEREST_TEST_${_PKG} ON)
+    else()
+        set(EVEREST_TEST_${_PKG} OFF)
     endif()
 endforeach()

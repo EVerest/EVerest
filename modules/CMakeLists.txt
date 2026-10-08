@@ -1,6 +1,7 @@
 if(NOT EVEREST_BUILD_RUNTIME)
     return()
 endif()
+set(BUILD_TESTING ${EVEREST_TEST_RUNTIME})
 
 add_subdirectory(API)
 add_subdirectory(BringUp)

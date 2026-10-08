@@ -8,21 +8,18 @@ project(everest-log
 
 # options
 option(BUILD_BACKTRACE_SUPPORT "Build with backtrace support from libbacktrace" OFF)
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Run unit tests" OFF)
 option(BUILD_EXAMPLES "Build liblog example binaries." OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(LIBLOG_USE_BOOST_FILESYSTEM "Usage of boost/filesystem.hpp instead of std::filesystem" OFF)
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(EVEREST_LIBLOG_BUILD_TESTING ON)
+if(BUILD_TESTING)
     # this policy allows us to link gcov to targets defined in other directories
     if(POLICY CMP0079)
         set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
     endif()
 endif()
 
-if (DISABLE_EDM AND EVEREST_LIBLOG_BUILD_TESTING)
+if (DISABLE_EDM AND BUILD_TESTING)
     include(FetchContent)
     FetchContent_Declare(
         googletest
@@ -77,8 +74,7 @@ endif()
 
 
 # testing
-if(EVEREST_LIBLOG_BUILD_TESTING)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
     set(CMAKE_BUILD_TYPE Debug)
 endif()

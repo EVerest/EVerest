@@ -6,16 +6,10 @@ project(everest-evse_security VERSION 0.10.1
 )
 
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(USING_TPM2 "Include code for using OpenSSL 3 and the tpm2 provider" OFF)
 option(USING_CUSTOM_PROVIDER "Include code for using OpenSSL 3 and the custom provider" OFF)
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(LIBEVSE_SECURITY_BUILD_TESTING ON)
-endif()
-
-if(LIBEVSE_SECURITY_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+if(BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags()
 endif()
@@ -73,8 +67,7 @@ install(
     TYPE INCLUDE
 )
 
-if(LIBEVSE_SECURITY_BUILD_TESTING)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
     set(CMAKE_BUILD_TYPE Debug)
 endif()

@@ -7,8 +7,6 @@ project(everest-framework
 )
 
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(EVEREST_ENABLE_JS_SUPPORT "Enable everestjs for JavaScript modules" OFF)
 option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
@@ -102,18 +100,10 @@ ev_setup_python_executable(
     PYTHON_VENV_PATH ${${PROJECT_NAME}_PYTHON_VENV_PATH}
 )
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(EVEREST_FRAMEWORK_BUILD_TESTING ON)
+if(BUILD_TESTING)
     # this policy allows us to link gcov to targets defined in other directories
     if(POLICY CMP0079)
         set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
-    endif()
-    if (NOT CMAKE_BUILD_TYPE)
-        if(EVEREST_ENABLE_DEBUG_BUILD)
-            set(CMAKE_BUILD_TYPE Debug CACHE STRING "Build type" FORCE)
-        else()
-            set(CMAKE_BUILD_TYPE MinSizeRel CACHE STRING "Build type" FORCE)
-        endif()
     endif()
 endif()
 
@@ -240,8 +230,7 @@ install(
 )
 
 # testing
-if(EVEREST_FRAMEWORK_BUILD_TESTING)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 else()
     message(STATUS "Not running unit tests")

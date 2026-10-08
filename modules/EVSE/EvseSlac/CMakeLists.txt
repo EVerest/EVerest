@@ -35,7 +35,7 @@ target_sources(${MODULE_NAME}
 # CM_AMP_MAP amplitude map is loaded from an operator YAML file (see amp_map_file.cpp).
 target_link_libraries(${MODULE_NAME} PRIVATE everest::yaml)
 
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

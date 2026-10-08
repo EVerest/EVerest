@@ -38,7 +38,7 @@ set_target_properties(tls
         POSITION_INDEPENDENT_CODE ON
 )
 
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 

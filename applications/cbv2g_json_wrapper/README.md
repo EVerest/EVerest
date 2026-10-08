@@ -98,19 +98,14 @@ external dependency setup is required.
 
 ## Tests
 
-Tests use GoogleTest and are gated behind `BUILD_CBV2G_JSON_WRAPPER_TESTS`
-so a non-test build does not require GTest. An EVerest build with
-`-DBUILD_TESTING=ON` turns it on, so the tests run with the rest of the unit
-tests:
+Tests use GoogleTest and are built with the rest of the unit tests when
+`-DBUILD_TESTING=ON` is set:
 
 ```bash
 cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build --target cbv2g_test_apphand cbv2g_test_din cbv2g_test_iso2
 ctest --test-dir build -R cbv2g_test_ --output-on-failure
 ```
-
-A standalone build of this directory needs `-DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON`
-instead, as shown under Build.
 
 ## Third-party
 

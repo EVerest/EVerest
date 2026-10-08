@@ -44,7 +44,7 @@ target_link_libraries(${MODULE_NAME}
     everest::ocpp_module_common
 )
 
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

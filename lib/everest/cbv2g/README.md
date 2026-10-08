@@ -4,15 +4,13 @@ libcbv2g is a library to encode and decode EXI messages and is able to process D
 
 All documentation and the issue tracking can be found in our main repository here: https://github.com/EVerest/everest
 
-## Dependencies
-
-To build this library you need [everest-cmake](https://github.com/EVerest/everest-cmake) checkout in the same directory as libcbV2G.
-
 ## Getting started
 
+libcbv2g is built from the everest-core root as part of the `iso15118` package:
+
 ```
-# Run cmake (CB_V2G_BUILD_TESTS to enable/disable unit tests)
-cmake -S . -B build -G Ninja -DCB_V2G_BUILD_TESTS=1 -DCMAKE_EXPORT_COMPILE_COMMANDS=1
+# Configure from the everest-core root, only the packages libcbv2g needs, with its tests
+cmake -S . -B build -G Ninja -DEVEREST_PACKAGES="base;iso15118" -DBUILD_TESTING=ON
 
 # Build
 ninja -C build

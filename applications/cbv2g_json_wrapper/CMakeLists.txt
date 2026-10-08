@@ -65,12 +65,7 @@ install(FILES include/cbv2g_json_wrapper.h
     DESTINATION include
 )
 
-# Optional: Build test executables. GTest is only required when this
-# option is on, so production builds do not pull it in.
-option(BUILD_CBV2G_JSON_WRAPPER_TESTS "Build cbv2g_json_wrapper test executables" OFF)
-if(BUILD_CBV2G_JSON_WRAPPER_TESTS)
-    enable_testing()
-
+if(BUILD_TESTING)
     if(NOT TARGET GTest::gtest_main)
         find_package(GTest REQUIRED)
     endif()

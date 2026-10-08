@@ -41,6 +41,6 @@ target_link_libraries(ocpp_module_common
         everest::ocpp_conversions
 )
 
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

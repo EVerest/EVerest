@@ -18,7 +18,7 @@ target_sources(everest_helpers
         src/phase_rotation.cpp
 )
 
-if (EVEREST_CORE_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+if (BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     target_compile_definitions(everest_helpers PUBLIC EVEREST_COVERAGE_ENABLED)
 endif()
 
