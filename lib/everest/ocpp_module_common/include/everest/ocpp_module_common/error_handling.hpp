@@ -26,7 +26,8 @@ extern const std::string PROBLEM_VARIABLE_NAME;
 /// parse, or is not a JSON object of string values.
 MREC_ERROR_MAP_TYPE load_mrec_error_map_overrides(const std::filesystem::path& file);
 
-/// \brief Returns simplified mapping from error origin to OCPP component based on evse and connector ids
+/// \brief Returns simplified mapping from error origin to OCPP component based on evse and connector ids. An origin
+///        without a mapping or mapped to EVSE 0 is reported on the ChargingStation component without an EVSE.
 ocpp::v2::Component get_component_from_error(const Everest::error::Error& error);
 
 /// \brief Derives the EventData from the given \p error, \p cleared and \p event_id parameters. The

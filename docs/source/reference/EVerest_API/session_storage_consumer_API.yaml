@@ -7,6 +7,10 @@ info:
   description: |
     API for EVerest API clients to read and clear persistently stored session records.
 
+    **Experimental.** This API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
+
     **Pagination.** get_sessions returns records oldest first, one page per request.
     A reply carries a continuation_token if more matching records follow; pass it in
     the next request and iterate until a reply has no token. A page can hold fewer

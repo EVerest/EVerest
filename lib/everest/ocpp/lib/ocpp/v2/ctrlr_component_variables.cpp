@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 -  Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
@@ -854,6 +854,12 @@ const ComponentVariable MessageTypesDiscardForQueueing = {
     ControllerComponents::OCPPCommCtrlr,
     std::optional<Variable>({
         "MessageTypesDiscardForQueueing",
+    }),
+};
+const ComponentVariable QueueNotifyEventMessages = {
+    ControllerComponents::OCPPCommCtrlr,
+    std::optional<Variable>({
+        "QueueNotifyEventMessages",
     }),
 };
 const RequiredComponentVariable ResetRetries = {

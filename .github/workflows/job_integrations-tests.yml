@@ -86,7 +86,7 @@ jobs:
           mkdir scripts
           rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
       - name: Download build-kit image
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ inputs.build_kit_artifact_name }}
       - name: Load build-kit image
@@ -103,11 +103,17 @@ jobs:
       - name: Run integration tests
         id: run_integration_tests
         run: |
+          # One worker per core: with more, the load delays the ISO 15118 sessions so that EIM can
+          # arrive after SLAC matching, and EvseManager then starts charging through the X1 step, a
+          # timing-dependent path the tests do not intend to cover. The ISO15118 tests are CPU-heavy
+          # and limited to one per core.
           docker compose \
           -f source/${{ inputs.docker_compose_file_path }} \
           run \
           ${{ inputs.test_service_name }} \
           tests/run-tests.sh integration \
+          -j "$(nproc)" \
+          --iso15118-parallel "$(nproc)" \
           --everest-prefix /ext/dist \
           --junitxml /ext/${{ inputs.result_xml_path }} \
           --html /ext/${{ inputs.report_html_path }}

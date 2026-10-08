@@ -85,6 +85,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
   manual_tests/serialization/evse_board_support.cpp
+  manual_tests/serialization/evse_manager.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
@@ -113,7 +114,7 @@ set(
     ${Python3_EXECUTABLE} -B "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/main.py"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/"
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
-     "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv"
+     "${TEST_DISABLE_FILE}"
      "${GENERATED_TESTS_LOCATION}"
 )
 

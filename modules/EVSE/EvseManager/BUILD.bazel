@@ -34,9 +34,11 @@ cc_test(
     name = "EvseManager_tests",
     srcs = [
         # Test sources
+        "tests/BspCapabilitiesStoreTest.cpp",
         "tests/EventQueueTest.cpp",
         "tests/ErrorHandlingTest.cpp",
         "tests/IECStateMachineTest.cpp",
+        "tests/PpAmpacityForwarderTest.cpp",
         "tests/OverVoltageMonitorTest.cpp",
         "tests/VoltagePlausibilityMonitorTest.cpp",
         # Test stub headers

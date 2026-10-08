@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "session_storage_consumer_API.hpp"
 
+#include <everest/logging.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/session_storage/API.hpp>
 #include <everest_api_types/session_storage/codec.hpp>
@@ -21,6 +22,9 @@ using ev_API::deserialize;
 using ev_API::deserialize_request;
 
 void session_storage_consumer_API::init() {
+    EVLOG_warning << "This session_storage_consumer_API module is currently experimental! Its AsyncAPI channels, "
+                     "operations and message payloads may change without further notice";
+
     invoke_init(*p_main);
 
     API_types_entry::CommunicationParameters comm_params{};

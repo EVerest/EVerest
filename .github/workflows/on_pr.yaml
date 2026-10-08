@@ -16,6 +16,11 @@ on:
   schedule:
     - cron: '37 13,1 * * *'
 
+# Let pushes to PRs cancel already running CI runs on that PR.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
 
 
@@ -110,6 +115,19 @@ jobs:
       deploy_docs: false
       instance_name: ${{ format('{0} @ {1}', github.ref_name, github.sha) }}
 
+
+  ev-cli-mod-update:
+    name: Modules (ev-cli)
+    uses: ./.github/workflows/job_ev-cli-mod-update.yaml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+
+
   dco-check:
     name: DCO
     uses: ./.github/workflows/job_dco-check.yaml
@@ -124,8 +142,12 @@ jobs:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
 
 
+  # The cross builds run in the merge queue and the nightly run,
+  # not on every PR push since they use too many resources.
+  # A manual run of this workflow on a branch includes them.
   bazel-cross-build:
     name: Bazel Cross (${{ matrix.platform }})
+    if: ${{ github.event_name != 'pull_request' }}
     strategy:
       fail-fast: false
       matrix:

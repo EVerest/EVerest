@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest_api_module_helpers/ApiHelper.hpp>
 
@@ -32,6 +32,9 @@ void ApiHelper::init(V1_0::types::entrypoint::CommunicationParameters const& com
 }
 
 void ApiHelper::init_entrypoint_API(V1_0::types::entrypoint::CommunicationParameters const& comm_parameters) {
+    EVLOG_warning << "The entrypoint_API (discover, query-modules, ready_beacon) is currently experimental and "
+                     "exempt from the EVerest stability guarantees; it may change without further notice";
+
     const auto& module_configs = config_service_client->get_module_configs();
 
     const std::string api_module_type_ending = "_API";

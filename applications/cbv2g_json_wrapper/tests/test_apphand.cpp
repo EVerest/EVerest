@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright 2026 Pionix GmbH and Contributors to EVerest
+ * Copyright Pionix GmbH and Contributors to EVerest
  *
  * test_apphand.cpp - Round-trip tests for the App Handshake (SAP) converter.
  *

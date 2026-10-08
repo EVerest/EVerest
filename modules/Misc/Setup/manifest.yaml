@@ -38,6 +38,10 @@ requires:
   store:
     interface: kvs
 enable_external_mqtt: true
+capabilities:
+  - CAP_NET_ADMIN
+  - CAP_NET_RAW
+  - CAP_DAC_OVERRIDE
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

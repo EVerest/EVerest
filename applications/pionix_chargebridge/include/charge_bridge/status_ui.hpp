@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -64,7 +64,12 @@ private:
         std::optional<bool> io;
         std::optional<int> mcu_resets;
         std::optional<utilities::chargebridge_telemetry> telemetry;
+        std::optional<utilities::chargebridge_link_status> link_status;
+        std::optional<utilities::chargebridge_role_status> role;
         std::optional<std::string> cp_state;
+        std::optional<std::string> ce_state;
+        std::optional<std::string> id_state;
+        std::optional<std::string> lock_state;
         std::optional<std::vector<int>> gpio;
         std::optional<std::vector<int>> adc;
         std::optional<std::vector<std::pair<std::string, int>>> io_telemetry;

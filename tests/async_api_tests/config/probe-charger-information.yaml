@@ -1,0 +1,11 @@
+active_modules:
+  charger_information_api:
+    module: charger_information_API
+    config_module:
+      cfg_communication_check_to_s: 0
+  probe:
+    module: ProbeModule
+    connections:
+      charger_information:
+        - module_id: charger_information_api
+          implementation_id: main

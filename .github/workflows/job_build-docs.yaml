@@ -110,8 +110,9 @@ jobs:
         run: |
           BRANCH_NAME_FOR_CACHE="${GITHUB_REF_NAME//-/_}"
           echo "branch_name_for_cache=${BRANCH_NAME_FOR_CACHE}" >> "$GITHUB_ENV"
-      - name: Setup cache
-        uses: actions/cache@v6
+      # Restore only: the compile cache is written by the CMake GCC job on main.
+      - name: Restore cache
+        uses: actions/cache/restore@v6
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
@@ -156,7 +157,6 @@ jobs:
           --volume "${{ github.workspace }}:/ext" \
           --name build-docs-container \
           build-kit run-script build_docs
-          docker commit build-docs-container build-docs-image
       - name: Upload Documentation Artifact
         uses: actions/upload-artifact@v7.0.1
         with:

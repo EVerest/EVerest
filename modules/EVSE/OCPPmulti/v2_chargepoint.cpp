@@ -300,9 +300,12 @@ void ChargePointV2::cb_variable_listener(
     const std::string& value_previous, const std::string& value_current) {
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
-    if (listener != nullptr) {
-        listener(component, variable, value_current);
+    if (listener == nullptr) {
+        return;
     }
+    const bool write_only =
+        attribute.mutability.value_or(ocpp::v2::MutabilityEnum::ReadWrite) == ocpp::v2::MutabilityEnum::WriteOnly;
+    listener(component, variable, write_only ? std::string{} : value_current);
 }
 
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
@@ -606,7 +609,15 @@ void ChargePointV2::on_event_deauthorised(std::int32_t evse_id, std::int32_t con
     check_configured("on_event_deauthorised");
     auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = get_ev_connection_timeout();
+        // E03.FR.05
+        if (ev_connection_timeout.has_value() and m_callbacks_ptr->transaction_is_ev_connect_timeout(
+                                                      evse_id, std::chrono::seconds(ev_connection_timeout.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::DEAUTHORIZED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
@@ -761,6 +772,9 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
         if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
             m_charge_point->on_session_started(evse_id, connector_id);
+        } else if (reservation_id.has_value()) {
+            // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+            m_charge_point->on_reservation_cleared(evse_id, connector_id);
         }
         result = tx_event == module::TxEvent::EV_CONNECTED;
     } else {
@@ -893,6 +907,10 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             transaction_data->trigger_reason = trigger_reason;
             const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
+            if (transaction_started.reservation_id.has_value()) {
+                // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+                m_charge_point->on_reservation_cleared(evse_id, connector_id);
+            }
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
     } else {

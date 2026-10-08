@@ -16,27 +16,62 @@ jobs:
       - run: echo branch name is ${{ github.ref }}
       - name: Checkout
         uses: actions/checkout@v7
-      - name: Mount bazel repo cache
-        uses: actions/cache@v6
+      - name: Authenticate GitHub downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          for host in github.com codeload.github.com; do
+            printf 'machine %s\nlogin x-access-token\npassword %s\n' "$host" "$GITHUB_TOKEN"
+          done > "$HOME/.netrc"
+      - name: Restore bazel repo cache
+        id: repo-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-repo-cache"
           key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
             ${{ runner.os }}-bazel-repo-
-      - name: Mount bazel disk cache
-        uses: actions/cache@v6
+      - name: Restore bazel disk cache
+        id: disk-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-disk-cache"
-          key: ${{ runner.os }}-bazel-disk-native-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          key: ${{ runner.os }}-bazel-disk-native-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-bazel-disk-native-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-
             ${{ runner.os }}-bazel-disk-native-
       - name: Install and start mosquitto
         run: |
           sudo apt-get update
           sudo apt-get install -y mosquitto
           sudo systemctl start mosquitto
+      - name: Record build start
+        run: echo "BAZEL_BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Build all
         run: >
           bazelisk build --config=ci //...
       - name: Test all
         run: bazelisk test --config=ci //... --test_output=errors
+      - name: Save bazel repo cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-repo-cache"
+          key: ${{ steps.repo-cache.outputs.cache-primary-key }}
+      - name: Prune bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        # Relies on Bazel refreshing the mtime of every disk cache entry it reads or writes (verified
+        # with Bazel 9.0.0). Restored files keep their archived mtime, so without that refresh every
+        # cache hit would be deleted here; the sizes in the notice show how much was kept.
+        run: |
+          before=$(du -sm ~/.cache/bazel-disk-cache | cut -f1)
+          find ~/.cache/bazel-disk-cache -type f ! -newermt "@$BAZEL_BUILD_START" -delete
+          after=$(du -sm ~/.cache/bazel-disk-cache | cut -f1)
+          echo "::notice title=Bazel disk cache::pruned from ${before} MB to ${after} MB"
+      - name: Save bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-disk-cache"
+          key: ${{ steps.disk-cache.outputs.cache-primary-key }}

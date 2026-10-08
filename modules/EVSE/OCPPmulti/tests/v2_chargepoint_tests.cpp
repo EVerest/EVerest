@@ -165,6 +165,70 @@ TEST_F(ChargePointV2Test, transactionStopForwardsStartSignedMeterValue) {
     m_chargepoint.on_event_transaction_finished(EVSE_ID, CONNECTOR_ID, session_event);
 }
 
+types::evse_manager::SessionEvent deauthorized_event() {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::Deauthorized;
+    session_event.connector_id = CONNECTOR_ID;
+    session_event.authorization_event = types::evse_manager::AuthorizationEvent{meter_value_wh(0.0F)};
+    return session_event;
+}
+
+std::vector<ocpp::v2::GetVariableResult> ev_connection_timeout_result(const std::string& value) {
+    ocpp::v2::GetVariableResult result;
+    result.attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
+    result.attributeValue = value;
+    return {result};
+}
+
+// E03.FR.05: deauthorized with no EV once EVConnectionTimeOut elapsed ends the transaction with Timeout
+TEST_F(ChargePointV2Test, deauthorisedAfterEvConnectTimeoutEndsWithTimeout) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(ev_connection_timeout_result("30")));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(EVSE_ID, std::chrono::seconds(30)))
+        .WillOnce(Return(true));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Timeout,
+                                                    ocpp::v2::TriggerReasonEnum::EVConnectTimeout, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
+// deauthorized before EVConnectionTimeOut elapsed ends the transaction with StopAuthorized
+TEST_F(ChargePointV2Test, deauthorisedBeforeEvConnectTimeoutEndsWithStopAuthorized) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(ev_connection_timeout_result("30")));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(EVSE_ID, std::chrono::seconds(30)))
+        .WillOnce(Return(false));
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Other,
+                                                    ocpp::v2::TriggerReasonEnum::StopAuthorized, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
+// deauthorized with no EV ends the transaction with StopAuthorized when EVConnectionTimeOut cannot be read
+TEST_F(ChargePointV2Test, deauthorisedWithUnreadableEvConnectionTimeoutEndsWithStopAuthorized) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::Authorized, ocpp::v2::ChargingStateEnum::Idle);
+    ON_CALL(*m_libocpp, get_variables(_)).WillByDefault(Return(std::vector<ocpp::v2::GetVariableResult>{}));
+
+    EXPECT_CALL(m_callbacks, transaction_is_ev_connect_timeout(_, _)).Times(0);
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::DEAUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::STOP_TRANSACTION));
+    EXPECT_CALL(*m_libocpp, on_transaction_finished(EVSE_ID, _, _, ocpp::v2::ReasonEnum::Other,
+                                                    ocpp::v2::TriggerReasonEnum::StopAuthorized, _, _, _, _));
+    EXPECT_CALL(m_callbacks, transaction_reset(EVSE_ID));
+
+    m_chargepoint.on_event_deauthorised(EVSE_ID, CONNECTOR_ID, deauthorized_event());
+}
+
 // RequestStartTransaction forwards the group id token to the token sink
 TEST_F(ChargePointV2Test, remoteStartForwardsGroupIdToken) {
     auto callbacks = m_chargepoint.configure_callbacks();
@@ -248,6 +312,89 @@ TEST_F(ChargePointV2Test, sessionStartedCreatesTransactionData) {
     EXPECT_EQ(transaction_data->remote_start_id, 77);
 }
 
+types::evse_manager::SessionEvent session_started_event(types::evse_manager::StartSessionReason reason,
+                                                        const std::optional<std::int32_t>& reservation_id) {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::SessionStarted;
+    session_event.connector_id = CONNECTOR_ID;
+    types::evse_manager::SessionStarted session_started;
+    session_started.reason = reason;
+    session_started.meter_value = meter_value_wh(0.0F);
+    if (reason == types::evse_manager::StartSessionReason::Authorized) {
+        session_started.id_tag = provided_id_token("TOKEN123");
+    }
+    session_started.reservation_id = reservation_id;
+    session_event.session_started = session_started;
+    return session_event;
+}
+
+// H03.FR.09/10: authorizing with the reserving token consumes the reservation; H01.FR.15: its id still reaches
+// TransactionEvent(Started)
+TEST_F(ChargePointV2Test, sessionStartedWithReservationClearsReservation) {
+    std::shared_ptr<module::TransactionData> transaction_data;
+    EXPECT_CALL(m_callbacks, transaction_add(EVSE_ID, _)).WillOnce(SaveArg<1>(&transaction_data));
+    ON_CALL(m_callbacks, transaction_data(EVSE_ID)).WillByDefault([&transaction_data] { return transaction_data; });
+    EXPECT_CALL(m_callbacks, transaction_event(EVSE_ID, module::TxEvent::AUTHORIZED))
+        .WillOnce(Return(module::TxEventEffect::START_TRANSACTION));
+
+    EXPECT_CALL(*m_libocpp, on_transaction_started(EVSE_ID, CONNECTOR_ID, SESSION_ID, _, _, _, _, _,
+                                                   std::optional<std::int32_t>{5}, _, _));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(EVSE_ID, CONNECTOR_ID)).Times(1);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID, session_started_event(types::evse_manager::StartSessionReason::Authorized, 5));
+}
+
+TEST_F(ChargePointV2Test, sessionStartedWithoutReservationKeepsReservation) {
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID,
+        session_started_event(types::evse_manager::StartSessionReason::Authorized, std::nullopt));
+}
+
+TEST_F(ChargePointV2Test, sessionStartedByPlugInKeepsReservation) {
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_session_started(
+        EVSE_ID, CONNECTOR_ID, session_started_event(types::evse_manager::StartSessionReason::EVConnected, 5));
+}
+
+types::evse_manager::SessionEvent transaction_started_event(const std::optional<std::int32_t>& reservation_id) {
+    types::evse_manager::SessionEvent session_event;
+    session_event.uuid = SESSION_ID;
+    session_event.timestamp = TIMESTAMP;
+    session_event.event = types::evse_manager::SessionEventEnum::TransactionStarted;
+    session_event.connector_id = CONNECTOR_ID;
+    types::evse_manager::TransactionStarted transaction_started;
+    transaction_started.id_tag = provided_id_token("TOKEN123");
+    transaction_started.meter_value = meter_value_wh(0.0F);
+    transaction_started.reservation_id = reservation_id;
+    session_event.transaction_started = transaction_started;
+    return session_event;
+}
+
+// H03.FR.09/10: the reserving token authorizing after plug-in consumes the reservation
+TEST_F(ChargePointV2Test, transactionStartedWithReservationClearsReservation) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::CablePluggedIn, ocpp::v2::ChargingStateEnum::EVConnected);
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(EVSE_ID, CONNECTOR_ID)).Times(1);
+
+    m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, transaction_started_event(5));
+}
+
+TEST_F(ChargePointV2Test, transactionStartedWithoutReservationKeepsReservation) {
+    make_transaction_data(ocpp::v2::TriggerReasonEnum::CablePluggedIn, ocpp::v2::ChargingStateEnum::EVConnected);
+    ON_CALL(m_callbacks, transaction_event(EVSE_ID, _)).WillByDefault(Return(module::TxEventEffect::NONE));
+    EXPECT_CALL(*m_libocpp, on_reservation_cleared(_, _)).Times(0);
+
+    m_chargepoint.on_event_transaction_started(EVSE_ID, CONNECTOR_ID, transaction_started_event(std::nullopt));
+}
+
 // a registered variable listener receives changes reported by libocpp
 TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
     stubs::Ocpp2ChargePointMock::variable_listener_t libocpp_listener;
@@ -266,6 +413,27 @@ TEST_F(ChargePointV2Test, variableListenerForwardsChanges) {
 
     ASSERT_TRUE(reported_value.has_value());
     EXPECT_EQ(reported_value.value(), "60");
+}
+
+TEST_F(ChargePointV2Test, variableListenerMasksWriteOnlyValues) {
+    stubs::Ocpp2ChargePointMock::variable_listener_t libocpp_listener;
+    EXPECT_CALL(*m_libocpp, register_variable_listener(_))
+        .WillOnce([&libocpp_listener](stubs::Ocpp2ChargePointMock::variable_listener_t&& listener) {
+            libocpp_listener = std::move(listener);
+        });
+
+    std::optional<std::string> reported_value;
+    m_chargepoint.register_variable_listener({"SecurityCtrlr"}, {"BasicAuthPassword"},
+                                             [&reported_value](const ocpp::v2::Component&, const ocpp::v2::Variable&,
+                                                               const std::string& value) { reported_value = value; });
+
+    ASSERT_TRUE(libocpp_listener);
+    ocpp::v2::VariableAttribute attribute;
+    attribute.mutability = ocpp::v2::MutabilityEnum::WriteOnly;
+    libocpp_listener({}, {"SecurityCtrlr"}, {"BasicAuthPassword"}, {}, attribute, "old-secret", "new-secret");
+
+    ASSERT_TRUE(reported_value.has_value());
+    EXPECT_EQ(reported_value.value(), "");
 }
 
 // key-only (empty component) get request is passed through unchanged; rejection comes from libocpp

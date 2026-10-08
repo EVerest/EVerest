@@ -11,6 +11,10 @@ cd tests
 pytest --everest-prefix ../build/dist eebus_tests/eebus_tests.py -v
 ```
 
+Tests that cross the 120 s LPC timeouts advance the module's monotonic clock with the
+`everest_clockshift` LD_PRELOAD shim instead of waiting. The shim is only installed with
+`BUILD_TESTING=ON`; without it these tests are skipped.
+
 ## Reference control box end-to-end test
 
 Starts the real [eebus-go](https://github.com/enbility/eebus-go) reference control box alongside EVerest and verifies that a power consumption limit is received over a real EEBUS/SHIP connection.

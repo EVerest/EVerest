@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <algorithm>
 
 #include <iso15118/d20/state/service_detail.hpp>
@@ -63,12 +63,19 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     message_20::ServiceDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     // Service renegotiation is not yet supported
     res.service_renegotiation_supported = false;
     session.service_renegotiation_supported = false;
+
+    // A DER session may re-enter service discovery from the schedule exchange state, so the offers of the
+    // previous pass are reset here and rebuilt below instead of accumulating.
+    session.offered_services.energy_services.clear();
+    session.offered_services.vas_services.clear();
+    ev_energy_services.clear();
 
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
@@ -116,7 +123,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     if (energy_services_list.empty()) {
         logf_error("No energy transfer service is configured, rejecting service discovery. Sending the default AC "
                    "service to avoid encoding issues");
-        return response_with_code(res, dt::ResponseCode::FAILED);
+        set_response_code(res, dt::ResponseCode::FAILED);
+        return res;
     }
 
     // Reset default value
@@ -137,7 +145,8 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
         }
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void ServiceDiscovery::enter() {
@@ -175,6 +184,7 @@ Result ServiceDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
 
@@ -71,14 +71,16 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
     message_20::AC_ChargeParameterDiscoveryResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto selected_energy_service = session.get_selected_services().selected_energy_service;
 
     if (std::holds_alternative<AC_ModeReq>(req.transfer_mode)) {
         if (selected_energy_service != message_20::datatypes::ServiceCategory::AC) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<AC_ModeRes>();
@@ -86,17 +88,20 @@ handle_request(const message_20::AC_ChargeParameterDiscoveryRequest& req, const 
 
     } else if (std::holds_alternative<BPT_AC_ModeReq>(req.transfer_mode)) {
         if (selected_energy_service != message_20::datatypes::ServiceCategory::AC_BPT) {
-            return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+            return res;
         }
 
         auto& mode = res.transfer_mode.emplace<BPT_AC_ModeRes>();
         convert(mode, limits, powers);
 
     } else {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    set_response_code(res, message_20::datatypes::ResponseCode::OK);
+    return res;
 }
 
 void AC_ChargeParameterDiscovery::enter() {
@@ -144,6 +149,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};

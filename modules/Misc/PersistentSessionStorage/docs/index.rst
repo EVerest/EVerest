@@ -6,6 +6,14 @@
 
 Persists a session record for every charging session of the connected EvseManagers in a SQLite database and provides read and clear access to the stored records. Records survive restarts and power cycles, so they can be read out after the fact, for example by an EVerest API client.
 
+.. warning::
+
+   This module is currently **experimental**: its configuration parameters, the
+   stored record format and its integration in EVerest may change without
+   further notice. It is exempt from the stability guarantees and the deprecation
+   period of the EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
+
 Record lifecycle
 =================
 

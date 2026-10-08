@@ -72,21 +72,14 @@ struct ModuleStartInfo {
         javascript,
         python
     };
-    ModuleStartInfo(const std::string& name_, const std::string& printable_name_, Language lang_, const fs::path& path_,
-                    std::vector<std::string> capabilities_) :
-        name(name_),
-        printable_name(printable_name_),
-        language(lang_),
-        path(path_),
-        capabilities(std::move(capabilities_)) {
+    ModuleStartInfo(const std::string& name_, const std::string& printable_name_, Language lang_,
+                    const fs::path& path_) :
+        name(name_), printable_name(printable_name_), language(lang_), path(path_) {
     }
     std::string name;
     std::string printable_name;
     Language language;
     fs::path path;
-
-    // required capabilities of this module
-    std::vector<std::string> capabilities;
 };
 
 namespace {
@@ -260,11 +253,9 @@ void spawn_modules(const std::vector<ModuleStartInfo>& modules, const ManagerSet
 
     for (const auto& module : modules) {
 
-        auto proc_handle = system::SubProcess::create(ms.run_as_user, module.capabilities);
+        auto proc_handle = system::SubProcess::create(ms.run_as_user);
 
         if (proc_handle.is_child()) {
-            // first, check if we need any capabilities
-
             try {
                 exec_module(rs, ms.mqtt_settings, module, proc_handle);
             } catch (const std::exception& err) {
@@ -834,8 +825,9 @@ void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::p
 /// Manager options that are experimental per the EVerest deprecation policy: they are part of the
 /// public surface but exempt from the stability guarantees, and may change or be removed in any
 /// release. Keep in sync with docs/source/project/releases/experimental-index.rst.
-constexpr std::array<std::string_view, 5> EXPERIMENTAL_OPTIONS{
-    "graceful-shutdown", "into-idle", "recover-module-crashes", "reset-from-yaml", "idle-on-failure"};
+constexpr std::array<std::string_view, 7> EXPERIMENTAL_OPTIONS{
+    "graceful-shutdown", "into-idle",         "recover-module-crashes", "reset-from-yaml",
+    "idle-on-failure",   "configuration-api", "lifecycle-api"};
 
 /// Emit a single warning naming the experimental options that were actually passed, so an operator
 /// sees at startup that this run depends on unstable surface. Emits nothing when none are used.
@@ -1015,21 +1007,22 @@ int Manager::run() {
         return EXIT_SUCCESS;
     }
 
+    // Set when the YAML config failed to load or validate: the bootstrap then wrote an empty placeholder
+    // boot slot, and the boot decision below reports this reason instead of a bare "no modules".
+    std::optional<std::string> seed_failure;
     {
         auto bs = init_database_bootstrap(ms, reset_from_yaml);
         m_db_connection = std::move(bs.db_connection);
         if (not bs.module_configs_initialized) {
-            // No valid database entry and it is impossible to write one, so exiting is the default.
-            // --idle-on-failure / --into-idle continue into the lifecycle instead, where the
-            // Configuration API can be used to push a corrected configuration. The database is left
-            // untouched (no empty slot is seeded), so the boot arrives below with no modules.
-            if (not m_idle_on_failure and not boot_into_idle) {
-                EVLOG_critical << "Couldn't initialize the configuration database!";
-                return EXIT_FAILURE;
-            }
-            EVLOG_warning << "Couldn't initialize the configuration database; continuing without a configuration "
-                             "because --idle-on-failure or --into-idle was given. No modules will be started.";
+            // The boot slot could not be written (or --reset-from-yaml met an invalid YAML and kept the
+            // existing slot). Nothing downstream can work without a boot slot, so this aborts regardless
+            // of --idle-on-failure / --into-idle. An invalid YAML alone never ends up here: it seeds an
+            // empty placeholder slot and is handled like a configuration without modules below.
+            EVLOG_critical << "Couldn't initialize the configuration database!"
+                           << (bs.seed_failure.has_value() ? " " + *bs.seed_failure : std::string{});
+            return EXIT_FAILURE;
         }
+        seed_failure = std::move(bs.seed_failure);
     }
 
     // Without --db the database is in-memory and dies with the process; runtime configuration
@@ -1297,16 +1290,22 @@ int Manager::run() {
     } module_process_guard{*this};
 
     if (boot_into_idle) {
+        if (seed_failure.has_value()) {
+            EVLOG_warning << *seed_failure << " Entering Idle without modules.";
+        }
         EVLOG_info << "Requested by command-line-parameter -> entering Idle";
         transition_to(ManagerState::Idle);
     } else if (not runtime_ctx_has_valid_config or runtime_ctx.config->get_module_configurations().empty()) {
         // Both "nothing startable at boot" outcomes - a configuration that does not load or validate,
-        // and one without modules - share one decision: exit by default, or stay in Idle and report
-        // FailedToStart with --idle-on-failure so a corrected configuration can be pushed.
+        // and one without modules (including the empty placeholder slot seeded for an invalid YAML) -
+        // share one decision: exit by default, or stay in Idle and report FailedToStart with
+        // --idle-on-failure so a corrected configuration can be pushed.
         // The emptiness check must stay behind the short circuit: config is null when the load failed.
-        const std::string_view failure_reason =
-            runtime_ctx_has_valid_config ? "Module configuration contains no modules (empty or missing active_modules)."
-                                         : "Failed to load and validate config!";
+        const std::string failure_reason =
+            not runtime_ctx_has_valid_config ? std::string{"Failed to load and validate config!"}
+            : seed_failure.has_value()
+                ? fmt::format("Module configuration contains no modules: {}", *seed_failure)
+                : std::string{"Module configuration contains no modules (empty or missing active_modules)."};
         if (not m_idle_on_failure) {
             EVLOG_error << failure_reason;
             EVLOG_error << "Manager is exiting. Pass --idle-on-failure (or --into-idle) to keep the manager "
@@ -1669,12 +1668,12 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
             return m_modules_ready.emplace(module_id, ModuleReadyInfo{}).first;
         }();
 
-        std::vector<std::string> capabilities =
-            module_configurations.at(module_id).capabilities.value_or(std::vector<std::string>{});
-
-        if (not capabilities.empty()) {
-            EVLOG_info << fmt::format("Module {} wants to acquire the following capabilities: {}", module_name,
-                                      fmt::join(capabilities.begin(), capabilities.end(), " "));
+        const auto& capabilities = module_configurations.at(module_id).capabilities;
+        if (capabilities.has_value() and not capabilities->empty()) {
+            EVLOG_warning << fmt::format(
+                "Module {} ({}) sets 'capabilities' in the config. This is no longer supported and ignored, declare "
+                "them in the module manifest and grant them as file capabilities on the module binary instead.",
+                module_id, module_name);
         }
 
         const Handler module_ready_handler = [this, module_id, &mqtt_abstraction, standalone_modules,
@@ -1748,16 +1747,16 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
 
         if (fs::exists(binary_path)) {
             EVLOG_debug << fmt::format("module: {} ({}) provided as binary", module_id, module_name);
-            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp, binary_path,
-                                          capabilities);
+            modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::cpp,
+                                          binary_path);
         } else if (fs::exists(javascript_library_path)) {
             EVLOG_debug << fmt::format("module: {} ({}) provided as javascript library", module_id, module_name);
             modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::javascript,
-                                          fs::canonical(javascript_library_path), capabilities);
+                                          fs::canonical(javascript_library_path));
         } else if (fs::exists(python_module_path)) {
             EVLOG_verbose << fmt::format("module: {} ({}) provided as python module", module_id, module_name);
             modules_to_spawn.emplace_back(module_id, printable_module_name, ModuleStartInfo::Language::python,
-                                          fs::canonical(python_module_path), capabilities);
+                                          fs::canonical(python_module_path));
         } else {
             if (module_id == "probe" || module_name == "ProbeModule") {
                 EVLOG_error << "You are trying to start the probe module as binary, please check "
@@ -2118,22 +2117,25 @@ int main(int argc, char* argv[]) {
                        "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
-                       "Start the ConfigurationAPI. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
+                       "Experimental: Start the configuration_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' "
+                       "for read-write)");
     desc.add_options()("lifecycle-api", po::value<std::string>()->implicit_value("ro"),
-                       "Start the lifecycle_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for read-write)");
+                       "Experimental: Start the lifecycle_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' for "
+                       "read-write)");
     desc.add_options()("db", po::value<std::string>(),
                        "Full path to the configuration database file. Optional: without --db an in-memory database "
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "
-                       "database wins when it holds a valid configuration; otherwise it is seeded from the YAML "
-                       "config.");
+                       "database wins when its boot slot holds at least one module; a missing or module-less boot "
+                       "slot is seeded from the YAML config. An invalid YAML seeds an empty placeholder slot whose "
+                       "description records the error.");
     desc.add_options()("db-init",
-                       "Deprecated, no effect: seeding the database from YAML when it holds no valid configuration "
+                       "Deprecated, no effect: seeding the database from YAML when its boot slot holds no modules "
                        "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "
                        "to force re-seeding.");
     desc.add_options()("reset-from-yaml",
-                       "Experimental: Discard the existing database slot and re-seed from the YAML config file. "
-                       "Intended for development use when you want to reset to a known YAML state. "
-                       "Requires --config.");
+                       "Experimental: Replace the contents of the boot slot with the YAML config file, even if it "
+                       "holds modules; aborts without touching the database if the YAML is invalid. Intended for "
+                       "development use when you want to reset to a known YAML state. Requires --config.");
     desc.add_options()("into-idle",
                        "Experimental: Boot into idle state (no modules are started). Also enters Idle instead of "
                        "exiting when the configuration is invalid, missing or contains no modules.");

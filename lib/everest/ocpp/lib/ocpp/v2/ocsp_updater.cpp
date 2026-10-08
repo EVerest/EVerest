@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <chrono>
 #include <condition_variable>
@@ -7,7 +7,6 @@
 
 #include <everest/logging.hpp>
 
-#include <ocpp/v2/charge_point.hpp>
 #include <ocpp/v2/messages/GetCertificateStatus.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
@@ -72,25 +71,37 @@ void OcspUpdater::updater_thread_loop() {
             continue;
         }
 
-        // Perform the OCPP cache update
+        // The update waits on CSMS round trips; the lock is released meanwhile so that trigger_ocsp_cache_update
+        // (called from the message handlers, e.g. right after a CertificateSigned.req) and stop do not block on it
+        const auto deadline_before_update = this->update_deadline;
+        lock.unlock();
+        std::chrono::time_point<std::chrono::steady_clock> next_deadline;
         try {
             this->execute_ocsp_update();
             // Successful update, set the deadline at a week from now and go back to sleep
-            this->update_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_interval;
+            next_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_interval;
         } catch (OcspUpdateFailedException& e) {
             // Unsuccessful update
             if (e.allows_retry()) {
                 // Can be retried - go to sleep for a short time then retry
                 EVLOG_warning << "libocpp: OCSP status update failed: " << e.what() << ", will retry.";
-                this->update_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_retry_interval;
+                next_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_retry_interval;
             } else {
                 // Cannot be retried - rethrow the exception. This will terminate the updater thread.
                 EVLOG_error << "libocpp FATAL: OCSP status update failed: " << e.what();
                 throw;
             }
-        } catch (UnexpectedMessageTypeFromCSMS& e) {
-            EVLOG_warning << "libocpp: " << e.what() << ", will retry.";
-            this->update_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_retry_interval;
+        } catch (const std::exception& e) {
+            EVLOG_warning << "libocpp: OCSP status update failed: " << e.what() << ", will retry.";
+            next_deadline = std::chrono::steady_clock::now() + this->ocsp_cache_update_retry_interval;
+        }
+        lock.lock();
+        if (!this->running) {
+            break;
+        }
+        // A trigger that arrived during the update moved the deadline to "now": that update is still owed
+        if (this->update_deadline == deadline_before_update) {
+            this->update_deadline = next_deadline;
         }
     }
 }

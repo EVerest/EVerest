@@ -1033,13 +1033,24 @@ struct iso20_ac_ReceiptType {
     } TaxCosts;
 };
 
-// Element: definition=complex; name={urn:iso:std:iso:15118:-20:AC}Scheduled_AC_CLResControlMode; type={urn:iso:std:iso:15118:-20:AC}Scheduled_AC_CLResControlModeType; base type=Scheduled_CLResControlModeType; content type=ELEMENT-ONLY;
+// Element: definition=complex; name={urn:iso:std:iso:15118:-20:AC}Dynamic_AC_CLResControlMode; type={urn:iso:std:iso:15118:-20:AC}Dynamic_AC_CLResControlModeType; base type=Dynamic_CLResControlModeType; content type=ELEMENT-ONLY;
 //          abstract=False; final=False; derivation=extension;
-// Particle: EVSETargetActivePower, RationalNumberType (0, 1); EVSETargetActivePower_L2, RationalNumberType (0, 1); EVSETargetActivePower_L3, RationalNumberType (0, 1); EVSETargetReactivePower, RationalNumberType (0, 1); EVSETargetReactivePower_L2, RationalNumberType (0, 1); EVSETargetReactivePower_L3, RationalNumberType (0, 1); EVSEPresentActivePower, RationalNumberType (0, 1); EVSEPresentActivePower_L2, RationalNumberType (0, 1); EVSEPresentActivePower_L3, RationalNumberType (0, 1);
-struct iso20_ac_Scheduled_AC_CLResControlModeType {
+// Particle: DepartureTime, unsignedInt (0, 1); MinimumSOC, percentValueType (0, 1); TargetSOC, percentValueType (0, 1); AckMaxDelay, unsignedShort (0, 1); EVSETargetActivePower, RationalNumberType (1, 1); EVSETargetActivePower_L2, RationalNumberType (0, 1); EVSETargetActivePower_L3, RationalNumberType (0, 1); EVSETargetReactivePower, RationalNumberType (0, 1); EVSETargetReactivePower_L2, RationalNumberType (0, 1); EVSETargetReactivePower_L3, RationalNumberType (0, 1); EVSEPresentActivePower, RationalNumberType (0, 1); EVSEPresentActivePower_L2, RationalNumberType (0, 1); EVSEPresentActivePower_L3, RationalNumberType (0, 1);
+struct iso20_ac_Dynamic_AC_CLResControlModeType {
+    // DepartureTime, unsignedInt (base: unsignedLong)
+    uint32_t DepartureTime;
+    unsigned int DepartureTime_isUsed:1;
+    // MinimumSOC, percentValueType (base: byte)
+    int8_t MinimumSOC;
+    unsigned int MinimumSOC_isUsed:1;
+    // TargetSOC, percentValueType (base: byte)
+    int8_t TargetSOC;
+    unsigned int TargetSOC_isUsed:1;
+    // AckMaxDelay, unsignedShort (base: unsignedInt)
+    uint16_t AckMaxDelay;
+    unsigned int AckMaxDelay_isUsed:1;
     // EVSETargetActivePower, RationalNumberType
     struct iso20_ac_RationalNumberType EVSETargetActivePower;
-    unsigned int EVSETargetActivePower_isUsed:1;
     // EVSETargetActivePower_L2, RationalNumberType
     struct iso20_ac_RationalNumberType EVSETargetActivePower_L2;
     unsigned int EVSETargetActivePower_L2_isUsed:1;
@@ -1067,24 +1078,13 @@ struct iso20_ac_Scheduled_AC_CLResControlModeType {
 
 };
 
-// Element: definition=complex; name={urn:iso:std:iso:15118:-20:AC}Dynamic_AC_CLResControlMode; type={urn:iso:std:iso:15118:-20:AC}Dynamic_AC_CLResControlModeType; base type=Dynamic_CLResControlModeType; content type=ELEMENT-ONLY;
+// Element: definition=complex; name={urn:iso:std:iso:15118:-20:AC}Scheduled_AC_CLResControlMode; type={urn:iso:std:iso:15118:-20:AC}Scheduled_AC_CLResControlModeType; base type=Scheduled_CLResControlModeType; content type=ELEMENT-ONLY;
 //          abstract=False; final=False; derivation=extension;
-// Particle: DepartureTime, unsignedInt (0, 1); MinimumSOC, percentValueType (0, 1); TargetSOC, percentValueType (0, 1); AckMaxDelay, unsignedShort (0, 1); EVSETargetActivePower, RationalNumberType (1, 1); EVSETargetActivePower_L2, RationalNumberType (0, 1); EVSETargetActivePower_L3, RationalNumberType (0, 1); EVSETargetReactivePower, RationalNumberType (0, 1); EVSETargetReactivePower_L2, RationalNumberType (0, 1); EVSETargetReactivePower_L3, RationalNumberType (0, 1); EVSEPresentActivePower, RationalNumberType (0, 1); EVSEPresentActivePower_L2, RationalNumberType (0, 1); EVSEPresentActivePower_L3, RationalNumberType (0, 1);
-struct iso20_ac_Dynamic_AC_CLResControlModeType {
-    // DepartureTime, unsignedInt (base: unsignedLong)
-    uint32_t DepartureTime;
-    unsigned int DepartureTime_isUsed:1;
-    // MinimumSOC, percentValueType (base: byte)
-    int8_t MinimumSOC;
-    unsigned int MinimumSOC_isUsed:1;
-    // TargetSOC, percentValueType (base: byte)
-    int8_t TargetSOC;
-    unsigned int TargetSOC_isUsed:1;
-    // AckMaxDelay, unsignedShort (base: unsignedInt)
-    uint16_t AckMaxDelay;
-    unsigned int AckMaxDelay_isUsed:1;
+// Particle: EVSETargetActivePower, RationalNumberType (0, 1); EVSETargetActivePower_L2, RationalNumberType (0, 1); EVSETargetActivePower_L3, RationalNumberType (0, 1); EVSETargetReactivePower, RationalNumberType (0, 1); EVSETargetReactivePower_L2, RationalNumberType (0, 1); EVSETargetReactivePower_L3, RationalNumberType (0, 1); EVSEPresentActivePower, RationalNumberType (0, 1); EVSEPresentActivePower_L2, RationalNumberType (0, 1); EVSEPresentActivePower_L3, RationalNumberType (0, 1);
+struct iso20_ac_Scheduled_AC_CLResControlModeType {
     // EVSETargetActivePower, RationalNumberType
     struct iso20_ac_RationalNumberType EVSETargetActivePower;
+    unsigned int EVSETargetActivePower_isUsed:1;
     // EVSETargetActivePower_L2, RationalNumberType
     struct iso20_ac_RationalNumberType EVSETargetActivePower_L2;
     unsigned int EVSETargetActivePower_L2_isUsed:1;
@@ -1576,7 +1576,9 @@ struct iso20_ac_exiDocument {
         struct iso20_ac_AC_CPDResEnergyTransferModeType AC_CPDResEnergyTransferMode;
         struct iso20_ac_BPT_AC_CPDReqEnergyTransferModeType BPT_AC_CPDReqEnergyTransferMode;
         struct iso20_ac_BPT_AC_CPDResEnergyTransferModeType BPT_AC_CPDResEnergyTransferMode;
+        struct iso20_ac_CLReqControlModeType CLReqControlMode;
         struct iso20_ac_Scheduled_AC_CLReqControlModeType Scheduled_AC_CLReqControlMode;
+        struct iso20_ac_CLResControlModeType CLResControlMode;
         struct iso20_ac_Scheduled_AC_CLResControlModeType Scheduled_AC_CLResControlMode;
         struct iso20_ac_BPT_Scheduled_AC_CLReqControlModeType BPT_Scheduled_AC_CLReqControlMode;
         struct iso20_ac_BPT_Scheduled_AC_CLResControlModeType BPT_Scheduled_AC_CLResControlMode;
@@ -1584,8 +1586,6 @@ struct iso20_ac_exiDocument {
         struct iso20_ac_Dynamic_AC_CLResControlModeType Dynamic_AC_CLResControlMode;
         struct iso20_ac_BPT_Dynamic_AC_CLReqControlModeType BPT_Dynamic_AC_CLReqControlMode;
         struct iso20_ac_BPT_Dynamic_AC_CLResControlModeType BPT_Dynamic_AC_CLResControlMode;
-        struct iso20_ac_CLReqControlModeType CLReqControlMode;
-        struct iso20_ac_CLResControlModeType CLResControlMode;
         struct iso20_ac_SignatureType Signature;
         struct iso20_ac_SignatureValueType SignatureValue;
         struct iso20_ac_SignedInfoType SignedInfo;
@@ -1616,7 +1616,9 @@ struct iso20_ac_exiDocument {
     unsigned int AC_CPDResEnergyTransferMode_isUsed:1;
     unsigned int BPT_AC_CPDReqEnergyTransferMode_isUsed:1;
     unsigned int BPT_AC_CPDResEnergyTransferMode_isUsed:1;
+    unsigned int CLReqControlMode_isUsed:1;
     unsigned int Scheduled_AC_CLReqControlMode_isUsed:1;
+    unsigned int CLResControlMode_isUsed:1;
     unsigned int Scheduled_AC_CLResControlMode_isUsed:1;
     unsigned int BPT_Scheduled_AC_CLReqControlMode_isUsed:1;
     unsigned int BPT_Scheduled_AC_CLResControlMode_isUsed:1;
@@ -1624,8 +1626,6 @@ struct iso20_ac_exiDocument {
     unsigned int Dynamic_AC_CLResControlMode_isUsed:1;
     unsigned int BPT_Dynamic_AC_CLReqControlMode_isUsed:1;
     unsigned int BPT_Dynamic_AC_CLResControlMode_isUsed:1;
-    unsigned int CLReqControlMode_isUsed:1;
-    unsigned int CLResControlMode_isUsed:1;
     unsigned int Signature_isUsed:1;
     unsigned int SignatureValue_isUsed:1;
     unsigned int SignedInfo_isUsed:1;
@@ -1719,7 +1719,9 @@ void init_iso20_ac_AC_CPDReqEnergyTransferModeType(struct iso20_ac_AC_CPDReqEner
 void init_iso20_ac_AC_CPDResEnergyTransferModeType(struct iso20_ac_AC_CPDResEnergyTransferModeType* AC_CPDResEnergyTransferMode);
 void init_iso20_ac_BPT_AC_CPDReqEnergyTransferModeType(struct iso20_ac_BPT_AC_CPDReqEnergyTransferModeType* BPT_AC_CPDReqEnergyTransferMode);
 void init_iso20_ac_BPT_AC_CPDResEnergyTransferModeType(struct iso20_ac_BPT_AC_CPDResEnergyTransferModeType* BPT_AC_CPDResEnergyTransferMode);
+void init_iso20_ac_CLReqControlModeType(struct iso20_ac_CLReqControlModeType* CLReqControlMode);
 void init_iso20_ac_Scheduled_AC_CLReqControlModeType(struct iso20_ac_Scheduled_AC_CLReqControlModeType* Scheduled_AC_CLReqControlMode);
+void init_iso20_ac_CLResControlModeType(struct iso20_ac_CLResControlModeType* CLResControlMode);
 void init_iso20_ac_Scheduled_AC_CLResControlModeType(struct iso20_ac_Scheduled_AC_CLResControlModeType* Scheduled_AC_CLResControlMode);
 void init_iso20_ac_BPT_Scheduled_AC_CLReqControlModeType(struct iso20_ac_BPT_Scheduled_AC_CLReqControlModeType* BPT_Scheduled_AC_CLReqControlMode);
 void init_iso20_ac_BPT_Scheduled_AC_CLResControlModeType(struct iso20_ac_BPT_Scheduled_AC_CLResControlModeType* BPT_Scheduled_AC_CLResControlMode);
@@ -1727,8 +1729,6 @@ void init_iso20_ac_Dynamic_AC_CLReqControlModeType(struct iso20_ac_Dynamic_AC_CL
 void init_iso20_ac_Dynamic_AC_CLResControlModeType(struct iso20_ac_Dynamic_AC_CLResControlModeType* Dynamic_AC_CLResControlMode);
 void init_iso20_ac_BPT_Dynamic_AC_CLReqControlModeType(struct iso20_ac_BPT_Dynamic_AC_CLReqControlModeType* BPT_Dynamic_AC_CLReqControlMode);
 void init_iso20_ac_BPT_Dynamic_AC_CLResControlModeType(struct iso20_ac_BPT_Dynamic_AC_CLResControlModeType* BPT_Dynamic_AC_CLResControlMode);
-void init_iso20_ac_CLReqControlModeType(struct iso20_ac_CLReqControlModeType* CLReqControlMode);
-void init_iso20_ac_CLResControlModeType(struct iso20_ac_CLResControlModeType* CLResControlMode);
 void init_iso20_ac_SignatureType(struct iso20_ac_SignatureType* Signature);
 void init_iso20_ac_SignatureValueType(struct iso20_ac_SignatureValueType* SignatureValue);
 void init_iso20_ac_SignedInfoType(struct iso20_ac_SignedInfoType* SignedInfo);

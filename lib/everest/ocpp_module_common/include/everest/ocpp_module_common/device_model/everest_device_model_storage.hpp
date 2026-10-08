@@ -75,6 +75,10 @@ std::map<int32_t, DerCtrlrComponent> decide_der_ctrlr_components(const std::vect
 std::optional<std::pair<ocpp::v2::ComponentKey, std::vector<ocpp::v2::DeviceModelVariable>>>
 build_der_ctrlr_component_config(int32_t evse_id, DerCtrlrComponent component);
 
+/// \brief Joins the OCPP EnergyTransferModeEnum names of \p modes with ',', each name once in first-seen order.
+std::string
+supported_energy_transfer_modes_vector_to_string(const std::vector<types::iso15118::EnergyTransferMode>& modes);
+
 /// \brief Assembles the DER controller and ISO 15118 component configs of the station.
 ///
 /// \param evses The EVSEs as reported by their evse_manager.

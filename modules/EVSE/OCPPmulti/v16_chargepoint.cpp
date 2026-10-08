@@ -26,7 +26,7 @@ namespace {
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_CONFIG_KEY = "CentralContractValidationAllowed";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_COMPONENT = "ISO15118Ctrlr";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE = "CentralContractValidationAllowed";
-constexpr const auto CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeout";
+constexpr const auto CONNECTION_TIMEOUT_CONFIG_KEY = "ConnectionTimeOut";
 constexpr const auto CONNECTION_TIMEOUT_COMPONENT = "TxCtrlr";
 constexpr const auto CONNECTION_TIMEOUT_VARIABLE = "EVConnectionTimeOut";
 constexpr const auto ISO15118_PNC_ENABLED_CONFIG_KEY = "ISO15118PnCEnabled";
@@ -389,6 +389,10 @@ ocpp::v16::GetLogResponse ChargePointV16::cb_upload_logs(ocpp::v16::GetLogReques
 }
 
 void ChargePointV16::cb_variable_listener(const ocpp::v16::KeyValue& key_value) {
+    // In ocpp::v16::ChargePoint a key-specific callback replaces the generic one; forward so other modules (e.g.
+    // EvseManager, Auth) still receive the change
+    cb_generic_configuration_key_changed(key_value);
+
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
     // fired key -> canonical CV
@@ -718,7 +722,7 @@ ChargePointV16::data_transfer_req(const ocpp::v2::DataTransferRequest& request) 
 
 std::optional<bool> ChargePointV16::get_central_contract_validation_allowed() {
     check_configured("get_central_contract_validation_allowed");
-    return get<bool>(*m_charge_point, "CentralContractValidationAllowed");
+    return get<bool>(*m_charge_point, CENTRAL_CONTRACT_VALIDATION_ALLOWED_VARIABLE);
 }
 
 std::optional<bool> ChargePointV16::get_contract_certificate_installation_enabled() {
@@ -727,12 +731,12 @@ std::optional<bool> ChargePointV16::get_contract_certificate_installation_enable
 
 std::optional<bool> ChargePointV16::get_pnc_enabled() {
     check_configured("get_pnc_enabled");
-    return get<bool>(*m_charge_point, "ISO15118PnCEnabled");
+    return get<bool>(*m_charge_point, ISO15118_PNC_ENABLED_CONFIG_KEY);
 }
 
 std::optional<std::int32_t> ChargePointV16::get_ev_connection_timeout() {
     check_configured("get_ev_connection_timeout");
-    return get<std::int32_t>(*m_charge_point, "ConnectionTimeout");
+    return get<std::int32_t>(*m_charge_point, CONNECTION_TIMEOUT_CONFIG_KEY);
 }
 
 std::optional<std::string> ChargePointV16::get_setpoint_priority() {

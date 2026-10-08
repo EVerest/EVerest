@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <chrono>
@@ -40,6 +40,7 @@ public:
 
     void raise_comm_fault();
     void clear_comm_fault();
+    void clear_raised_errors();
     void sync(bool cb_connected);
 
 private:

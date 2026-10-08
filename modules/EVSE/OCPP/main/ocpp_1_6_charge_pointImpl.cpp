@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "ocpp_1_6_charge_pointImpl.hpp"
 
 namespace module {
@@ -9,6 +9,10 @@ void ocpp_1_6_charge_pointImpl::init() {
 }
 
 void ocpp_1_6_charge_pointImpl::ready() {
+}
+
+void ocpp_1_6_charge_pointImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
 }
 
 bool ocpp_1_6_charge_pointImpl::handle_stop() {

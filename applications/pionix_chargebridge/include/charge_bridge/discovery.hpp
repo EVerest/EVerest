@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <chrono>
@@ -16,7 +16,8 @@ namespace charge_bridge {
 
 enum class discovery_device_type {
     CB_EVSE,
-    CB_EV
+    CB_EV,
+    CB_ANY
 };
 
 class discovery : public everest::lib::io::event::fd_event_register_interface {

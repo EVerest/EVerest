@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -319,6 +319,7 @@ struct SessionInfo {
     std::optional<std::string> transaction_start_time;
     std::optional<std::string> session_end_time;
     std::optional<std::string> transaction_end_time;
+    bool reserved{false};
 };
 
 } // namespace everest::lib::API::V1_0::types::evse_manager

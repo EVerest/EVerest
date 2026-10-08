@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_der_iec_charge_loop.hpp>
 
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
@@ -11,6 +11,10 @@
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::d20::state {
+
+// Secc performance timer for PowerDelivery is 1.5s.
+// 100ms is resevered for polling timeout and sending the response.
+constexpr uint32_t AC_OPEN_CONTACTOR_TIMEOUT = 1400;
 
 namespace dt = message_20::datatypes;
 
@@ -139,7 +143,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
     message_20::DER_AC_ChargeLoopResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     const auto& selected_services = session.get_selected_services();
@@ -152,7 +157,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // If the ev sends a false control mode other than the previous selected ones, then the charger should terminate
         // the session
         if (selected_control_mode != dt::ControlMode::Scheduled or not der_limits.has_value()) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Scheduled_DER_Res>();
@@ -163,7 +169,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // If the ev sends a false control mode other than the previous selected ones, then the charger should terminate
         // the session
         if (selected_control_mode != dt::ControlMode::Dynamic or not der_limits.has_value()) {
-            return response_with_code(res, dt::ResponseCode::FAILED);
+            set_response_code(res, dt::ResponseCode::FAILED);
+            return res;
         }
 
         auto& res_mode = res.control_mode.emplace<Dynamic_DER_Res>();
@@ -191,7 +198,8 @@ handle_request(const message_20::DER_AC_ChargeLoopRequest& req, const d20::Sessi
         // pause
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 } // namespace
 
@@ -215,9 +223,49 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             target_powers = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<AcPresentPower>()) {
             present_powers = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
+            ac_connector_closed = *control_data;
+
+            if (ac_connector_closed) {
+                logf_warning(
+                    "Got ClosedContactor event, but contactor is not opened. Waiting until the contactor is opened");
+                return {};
+            }
+
+            const auto* active_timeout = m_ctx.get_active_timeout();
+            if (active_timeout != nullptr and *active_timeout == d20::TimeoutType::CONTACTOR) {
+                m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            }
+
+            if (not previous_req.has_value()) {
+                return {};
+            }
+
+            const auto& res = handle_request(previous_req.value(), m_ctx.session, false, false);
+            m_ctx.respond(res);
+
+            if (res.response_code >= dt::ResponseCode::FAILED) {
+                m_ctx.session_stopped = true;
+                return {};
+            }
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+            return m_ctx.create_state<SessionStop>();
         }
 
         // Ignore control message
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_error("AC contactor is not opened within %ums, sending failure response code and stop the session",
+                       AC_OPEN_CONTACTOR_TIMEOUT);
+            const auto& res =
+                handle_request(previous_req.value_or(message_20::PowerDeliveryRequest{}), m_ctx.session, true, false);
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+        }
         return {};
     }
 
@@ -230,6 +278,20 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
     if (const auto* const req = variant->get_if<message_20::PowerDeliveryRequest>()) {
         const auto shutdown_requested = m_ctx.shutdown_requested();
 
+        // If the car wants to stop the session and the contactor is closed
+        if (req->charge_progress == dt::Progress::Stop and ac_connector_closed) {
+            previous_req = *req;
+            // Open the AC contactor
+            m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
+
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, AC_OPEN_CONTACTOR_TIMEOUT);
+
+            logf_info("Waiting for contactor is opened"); // [V2G20-863]
+            return {};
+        }
+
+        // The contactor is already opened
         const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
 
         m_ctx.respond(res);
@@ -239,10 +301,8 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             return {};
         }
 
-        // V2G20-3210 -> state machine direct transition (skipped PowerDelivery)
-        if (req->charge_progress == dt::Progress::Stop or shutdown_requested) {
+        if (req->charge_progress == dt::Progress::Stop and not ac_connector_closed) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-            m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
             return m_ctx.create_state<SessionStop>();
         }
 
@@ -281,9 +341,10 @@ Result AC_DER_IEC_ChargeLoop::feed(Event ev) {
             }
         }
 
-        const auto res = handle_request(*req, m_ctx.session, stop, pause, target_frequency, target_powers,
+        const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
+        const auto res = handle_request(*req, m_ctx.session, stop, notify_pause, target_frequency, target_powers,
                                         present_powers, dynamic_parameters, m_ctx.session_config.ac_limits,
-                                        m_ctx.session_config.der_limits, dso_q_setpoint, dso_cos_phi_setpoint);
+                                        m_ctx.session_config.der_iec_limits, dso_q_setpoint, dso_cos_phi_setpoint);
 
         m_ctx.respond(res);
 

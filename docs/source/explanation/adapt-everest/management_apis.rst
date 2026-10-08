@@ -16,6 +16,15 @@ running, they are implemented as part of the central manager process. They are
 disabled by default and need to be enabled explicitly by adding the respective
 command line argument to the EVerest startup command.
 
+.. warning::
+
+   The configuration_API and the lifecycle_API, and the manager options
+   ``--configuration-api`` and ``--lifecycle-api`` that enable them, are
+   :ref:`experimental <project-experimental-components>`: they are exempt from
+   the EVerest stability guarantees and may change or be removed in any release.
+   The manager logs a warning at startup when one of them is used. See
+   :ref:`reference-manager-cli` for the full option reference.
+
 The APIs
 ========
 

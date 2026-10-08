@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+# Copyright Pionix GmbH and Contributors to EVerest
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-import OpenSSL.crypto as crypto
 import logging
 import time
 import asyncio
@@ -12,6 +11,8 @@ from dataclasses import dataclass, field
 from typing import Optional, Any, Union
 from typing import Optional
 
+from cryptography import x509
+from cryptography.hazmat.primitives import hashes, serialization
 from ocpp.messages import unpack
 from ocpp.charge_point import ChargePoint as CP
 from ocpp.charge_point import snake_to_camel_case, camel_to_snake_case, asdict, remove_nones
@@ -97,14 +98,17 @@ async def wait_for_and_validate(meta_data: TestUtility, charge_point: CP, exp_ac
         timeout (int, optional): time in seconds until waiting for the exp_payload times out. Defaults to 30.
 
     Returns:
-        Union[bool, Any]: True if valid message found, response if applicable, else False.
+        Union[bool, Any]: the payload of the matching message, whether found in the message history or received
+        while waiting, or what validate_payload_func returned for it if given; True if a message received while
+        waiting matched with an empty result; False on timeout.
     """
 
     logging.debug(f"Waiting for {exp_action}")
 
     # check if expected message has been sent already
-    if (exp_message_has_already_been_sent(meta_data, exp_action, exp_payload, validate_payload_func)):
-        return True
+    old_response = exp_message_has_already_been_sent(meta_data, exp_action, exp_payload, validate_payload_func)
+    if old_response:
+        return old_response
 
     response = await validate_incoming_messages(
         meta_data, charge_point, exp_action, exp_payload, validate_payload_func, timeout, False
@@ -116,6 +120,18 @@ async def wait_for_and_validate(meta_data: TestUtility, charge_point: CP, exp_ac
     logging.info("This is the message history")
     charge_point.message_history.log_history()
     return False
+
+
+async def wait_for_payload(meta_data: TestUtility, charge_point: CP, exp_action: str,
+                           exp_payload, timeout: int = 30) -> dict:
+    """Wait for exp_action matching exp_payload and return its payload;
+    raise AssertionError on timeout or on a match without one."""
+    response = await wait_for_and_validate(meta_data, charge_point, exp_action, exp_payload, timeout=timeout)
+    if isinstance(response, dict):
+        return response
+    if response is False:
+        raise AssertionError(f"timed out after {timeout} s waiting for {exp_action} {exp_payload}")
+    raise AssertionError(f"matched {exp_action} {exp_payload} but it carried no payload")
 
 
 async def wait_for_and_validate_next_message_only_with_specific_action(meta_data: TestUtility, charge_point: CP, exp_action: str,
@@ -135,14 +151,17 @@ async def wait_for_and_validate_next_message_only_with_specific_action(meta_data
         timeout (int, optional): time in seconds until waiting for the exp_payload times out. Defaults to 30.
 
     Returns:
-        Union[bool, Any]: True if valid message found, response if applicable, else False.
+        Union[bool, Any]: the payload of the matching message, whether found in the message history or received
+        while waiting, or what validate_payload_func returned for it if given; True if a message received while
+        waiting matched with an empty result; False on timeout.
     """
 
     logging.debug(f"Waiting for {exp_action}")
 
     # check if expected message has been sent already
-    if (exp_message_has_already_been_sent(meta_data, exp_action, exp_payload, validate_payload_func)):
-        return True
+    old_response = exp_message_has_already_been_sent(meta_data, exp_action, exp_payload, validate_payload_func)
+    if old_response:
+        return old_response
 
     response = await validate_incoming_messages(
         meta_data, charge_point, exp_action, exp_payload, validate_payload_func, timeout, False
@@ -157,14 +176,14 @@ async def wait_for_and_validate_next_message_only_with_specific_action(meta_data
 
 
 def exp_message_has_already_been_sent(meta_data: TestUtility, exp_action: str, exp_payload, validate_payload_func=None):
-    if (meta_data.validation_mode == ValidationMode.EASY and
-        validate_against_old_messages(meta_data,
-                                      exp_action, exp_payload, validate_payload_func)):
+    if meta_data.validation_mode != ValidationMode.EASY:
+        return False
+    response = validate_against_old_messages(meta_data, exp_action, exp_payload, validate_payload_func)
+    if response:
         logging.debug(
             f"Found correct message {exp_action} with payload {exp_payload} in old messages")
         logging.debug("OK!")
-        return True
-    return False
+    return response
 
 
 async def validate_incoming_messages(meta_data: TestUtility, charge_point: CP, exp_action: str, exp_payload, validate_payload_func=None, timeout: int = 30, check_next_only=False):
@@ -289,14 +308,28 @@ class MessageHistory:
             logging.info(f"{time} {message.initiator}: {message.message}")
 
 
-def create_cert(serial_no, not_before, not_after, ca_cert, csr, ca_private_key):
-    cert = crypto.X509()
-    cert.set_serial_number(serial_no)
-    cert.gmtime_adj_notBefore(0)
-    cert.gmtime_adj_notAfter(not_after)
-    cert.set_issuer(ca_cert.get_subject())
-    cert.set_subject(csr.get_subject())
-    cert.set_pubkey(csr.get_pubkey())
-    cert.sign(ca_private_key, 'SHA256')
+def load_private_key(data: bytes, passphrase: Optional[bytes] = None):
+    """Load a PEM private key. As with OpenSSL, the passphrase is ignored for unencrypted keys."""
+    try:
+        return serialization.load_pem_private_key(data, passphrase)
+    except TypeError:
+        if passphrase is None:
+            raise
+        return serialization.load_pem_private_key(data, None)
 
-    return crypto.dump_certificate(crypto.FILETYPE_PEM, cert)
+
+def create_cert(serial_no, not_before, not_after, ca_cert: x509.Certificate,
+                csr: x509.CertificateSigningRequest, ca_private_key):
+    now = datetime.now(timezone.utc)
+    cert = (
+        x509.CertificateBuilder()
+        .serial_number(serial_no)
+        .not_valid_before(now)
+        .not_valid_after(now + timedelta(seconds=not_after))
+        .issuer_name(ca_cert.subject)
+        .subject_name(csr.subject)
+        .public_key(csr.public_key())
+        .sign(ca_private_key, hashes.SHA256())
+    )
+
+    return cert.public_bytes(serialization.Encoding.PEM)

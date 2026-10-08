@@ -7,6 +7,10 @@ info:
   description: >-
     API for EVerest modules and clients to control the modules lifecycle.
     Provides facilities to (re)start and stop modules and monitor their status.
+
+    **Experimental.** This API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0

@@ -23,10 +23,12 @@ genrule(
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CONSERVATIVE 3" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_FIXED_SIZE 4" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM 5" >> $@
-    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_LATENCY" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_GREEDY" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS 50" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS 5" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD 3" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT 1" >> $@
+    echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT 6" >> $@
     echo "#define EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY_CUSTOM_TYPE void" >> $@
     $(location :collect_migration_files) --migration-files $(locations //lib/everest/framework/schemas/migrations) --output $@
   """,
@@ -138,7 +140,6 @@ cc_binary(
         "//lib/everest/log:liblog",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_warmcatt_libwebsockets//:libwebsockets",
-        "@libcap",
     ],
 )
 
@@ -177,6 +178,5 @@ cc_binary(
         "@boost.program_options",
         "@com_github_fmtlib_fmt//:fmt",
         "@com_github_pboettch_json-schema-validator//:json-schema-validator",
-        "@libcap",
     ],
 )

@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include <cstdint>
+#include <optional>
 #include <set>
 #include <string>
 
@@ -15,6 +16,10 @@ std::string& replace_all_in_place(std::string& source, std::string const& placeh
 std::string replace_all(std::string const& source, std::string const& placeholder, std::string const& substitute);
 
 std::set<std::string> csv_to_set(std::string const& str);
+
+// The mDNS discovery sentinel ("ANY_EVSE", "ANY_EV" or "ANY") an `ip:` value starts with. A bare ANY
+// counts only on its own or followed by an interface list, so a hostname like "ANYCB01.lan" is not one.
+std::optional<std::string_view> discovery_sentinel(std::string_view const& endpoint);
 
 // "[fd00::1]" -> "fd00::1"; anything else is returned unchanged (including a
 // "%scope" suffix inside the brackets). Accepts the bracketed IPv6 spelling in

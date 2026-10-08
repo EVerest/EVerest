@@ -56,6 +56,58 @@ dt::ParameterSet convert_parameter_set(const types::iso15118_vas::ParameterSet& 
 }
 } // namespace
 
+std::string to_hex_string(const iso15118::io::StreamInputView& frame) {
+    static constexpr char HEX_DIGITS[] = "0123456789abcdef";
+
+    std::string out;
+    if (frame.payload == nullptr) {
+        return out;
+    }
+    out.reserve(frame.payload_len * 2);
+    for (std::size_t i = 0; i < frame.payload_len; ++i) {
+        out.push_back(HEX_DIGITS[frame.payload[i] >> 4]);
+        out.push_back(HEX_DIGITS[frame.payload[i] & 0x0f]);
+    }
+    return out;
+}
+
+std::string to_base64_string(const iso15118::io::StreamInputView& frame) {
+    static constexpr char ALPHABET[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    std::string out;
+    if (frame.payload == nullptr) {
+        return out;
+    }
+    out.reserve(((frame.payload_len + 2) / 3) * 4);
+
+    std::size_t i = 0;
+    for (; i + 2 < frame.payload_len; i += 3) {
+        const uint32_t triple = (static_cast<uint32_t>(frame.payload[i]) << 16) |
+                                (static_cast<uint32_t>(frame.payload[i + 1]) << 8) |
+                                static_cast<uint32_t>(frame.payload[i + 2]);
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 6) & 0x3f]);
+        out.push_back(ALPHABET[triple & 0x3f]);
+    }
+
+    const auto remaining = frame.payload_len - i;
+    if (remaining == 1) {
+        const uint32_t triple = static_cast<uint32_t>(frame.payload[i]) << 16;
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.append("==");
+    } else if (remaining == 2) {
+        const uint32_t triple =
+            (static_cast<uint32_t>(frame.payload[i]) << 16) | (static_cast<uint32_t>(frame.payload[i + 1]) << 8);
+        out.push_back(ALPHABET[(triple >> 18) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 12) & 0x3f]);
+        out.push_back(ALPHABET[(triple >> 6) & 0x3f]);
+        out.push_back('=');
+    }
+    return out;
+}
+
 types::iso15118::AppProtocol convert_app_protocol(const iso15118::message_20::SupportedAppProtocol& app_protocol) {
     types::iso15118::AppProtocol result;
     result.protocol_namespace = app_protocol.protocol_namespace;
@@ -364,6 +416,40 @@ types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::DER_Dynamic_A
         make_ac_power(mode.max_discharge_power, mode.max_discharge_power_L2, mode.max_discharge_power_L3);
     limits.min_discharge_power =
         make_ac_power(mode.min_discharge_power, mode.min_discharge_power_L2, mode.min_discharge_power_L3);
+    return limits;
+}
+
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode& mode) {
+    // The apparent, reactive and excitation limits have no AcEvPowerLimits counterpart and are not surfaced.
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
+    return limits;
+}
+
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_Scheduled_AC_CLReqControlMode& mode) {
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
+    return limits;
+}
+
+types::iso15118::AcEvPowerLimits fill_ac_ev_power_limits(const dt::sae::DER_Dynamic_AC_CLReqControlMode& mode) {
+    types::iso15118::AcEvPowerLimits limits;
+    limits.max_charge_power = make_ac_power(mode.max_charge_power, mode.max_charge_power_L2, mode.max_charge_power_L3);
+    limits.min_charge_power = make_ac_power(mode.min_charge_power, mode.min_charge_power_L2, mode.min_charge_power_L3);
+    limits.max_discharge_power =
+        make_ac_power(mode.maximum_discharge_power, mode.maximum_discharge_power_L2, mode.maximum_discharge_power_L3);
+    limits.min_discharge_power =
+        make_ac_power(mode.minimum_discharge_power, mode.minimum_discharge_power_L2, mode.minimum_discharge_power_L3);
     return limits;
 }
 

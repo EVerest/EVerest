@@ -34,4 +34,8 @@ target_sources(${MODULE_NAME}
     "evse_manager_consumer_API.cpp"
     "session_info.cpp"
 )
+
+if(BUILD_TESTING)
+    add_subdirectory(tests)
+endif()
 # ev@c55432ab-152c-45a9-9d2e-7281d50c69c3:v1

@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_charge_loop.hpp>
 #include <iso15118/d20/state/ac_der_iec_charge_loop.hpp>
+#include <iso15118/d20/state/ac_der_sae_charge_loop.hpp>
 #include <iso15118/d20/state/dc_charge_loop.hpp>
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 #include <iso15118/d20/state/power_delivery.hpp>
@@ -28,11 +29,13 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
     message_20::PowerDeliveryResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (contactor_error) {
-        return response_with_code(res, dt::ResponseCode::FAILED_ContactorError);
+        set_response_code(res, dt::ResponseCode::FAILED_ContactorError);
+        return res;
     }
 
     if (shutdown_requested) {
@@ -45,10 +48,12 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 
     // Todo(sl): Add standby feature and define as everest module config
     if (req.charge_progress == dt::Progress::Standby) {
-        return response_with_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        set_response_code(res, dt::ResponseCode::WARNING_StandbyNotAllowed);
+        return res;
     }
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void PowerDelivery::enter() {
@@ -66,8 +71,17 @@ Result PowerDelivery::feed(Event ev) {
             ac_connector_closed = *control_data;
 
             if (not ac_connector_closed) {
-                logf_warning(
-                    "Got ClosedContactor event, but contactor is not closed.  Waiting until the contactor is closed");
+                if (not m_ctx.shutdown_requested()) {
+                    logf_warning("Got ClosedContactor event, but contactor is not closed.  Waiting until the "
+                                 "contactor is closed");
+                } else if (previous_req.has_value()) {
+                    // The contactor will never close now, and the timeout is what answers the saved
+                    // PowerDeliveryReq. Cancel it and answer here, terminating rather than failing.
+                    m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                    m_ctx.respond(handle_request(previous_req.value(), m_ctx.session, /*contactor_error=*/false,
+                                                 /*shutdown_requested=*/true));
+                    m_ctx.session_stopped = true;
+                }
                 return {};
             }
 
@@ -86,19 +100,23 @@ Result PowerDelivery::feed(Event ev) {
                 return {};
             }
 
+            if (m_ctx.session.is_ac_charger()) {
+                return m_ctx.create_state<AC_ChargeLoop>();
+            }
             if (m_ctx.session.is_ac_der_iec_charger()) {
                 return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
             }
-
-            return m_ctx.create_state<AC_ChargeLoop>();
+            if (m_ctx.session.is_ac_der_sae_charger()) {
+                return m_ctx.create_state<AC_DER_SAE_ChargeLoop>();
+            }
         }
 
         return {};
     }
 
     if (ev == Event::TIMEOUT) {
-        const auto timeout = m_ctx.get_active_timeout();
-        if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
             logf_error("AC contactor is not closed within %ums, sending failure response code and stop the session",
                        AC_CLOSE_CONTACTOR_TIMEOUT);
             // TODO(SL): Check if value_or is the correct way
@@ -116,7 +134,12 @@ Result PowerDelivery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
-    if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
+    if (const auto* const req = variant->get_if<message_20::PowerDeliveryRequest>()) {
+
+        if (req->power_profile.has_value()) {
+            m_ctx.session.ev_power_profile =
+                EvPowerProfile::from(req->power_profile->time_anchor, req->power_profile->entries);
+        }
 
         const auto shutdown_requested = m_ctx.shutdown_requested();
 
@@ -126,8 +149,9 @@ Result PowerDelivery::feed(Event ev) {
                 m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
             }
 
-            if ((m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) and not ac_connector_closed and
-                req->charge_progress == dt::Progress::Start) {
+            if ((m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+                 m_ctx.session.is_ac_der_sae_charger()) and
+                not ac_connector_closed and req->charge_progress == dt::Progress::Start) {
                 // Save req
                 previous_req = *req;
                 // Close the AC contactor so that charging can start
@@ -149,7 +173,8 @@ Result PowerDelivery::feed(Event ev) {
 
         if (shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
-            if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger()) {
+            if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+                m_ctx.session.is_ac_der_sae_charger()) {
                 m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
                 return m_ctx.create_state<SessionStop>();
             }
@@ -164,6 +189,9 @@ Result PowerDelivery::feed(Event ev) {
         }
         if (m_ctx.session.is_ac_der_iec_charger()) {
             return m_ctx.create_state<AC_DER_IEC_ChargeLoop>();
+        }
+        if (m_ctx.session.is_ac_der_sae_charger()) {
+            return m_ctx.create_state<AC_DER_SAE_ChargeLoop>();
         }
         if (m_ctx.session.is_dc_charger()) {
             return m_ctx.create_state<DC_ChargeLoop>();

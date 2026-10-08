@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "OCPP.hpp"
 
 #include "charge_point_config_factory.hpp"
@@ -1146,6 +1146,15 @@ void OCPP::ready() {
     }
     this->started = true;
     this->p_ocpp_generic->publish_ready(true);
+}
+
+void OCPP::shutdown() {
+    invoke_shutdown(*p_main);
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
 }
 
 int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {

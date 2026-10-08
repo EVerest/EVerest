@@ -17,6 +17,15 @@ void Evse15118D20::ready() {
     invoke_ready(*p_charger);
 }
 
+void Evse15118D20::shutdown() {
+    // FIXME: non-functional at the moment.
+    // The libiso15118 controller event loop must be shutdown before this actually does anything.
+    // However the current everest-framework shutdown timeout of 5s could be too little time to actually do this.
+    invoke_shutdown(*p_charger);
+    invoke_shutdown(*p_extensions);
+    invoke_shutdown(*p_grid_support);
+}
+
 void Evse15118D20::set_active_der_directives(const types::grid_support::ActiveDirectiveSet& directives) {
     *active_der_directives.handle() = directives;
 }

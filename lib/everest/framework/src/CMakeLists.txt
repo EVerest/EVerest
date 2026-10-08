@@ -19,7 +19,6 @@ target_link_libraries(manager
         everest::framework
         Boost::program_options
         management_api
-        PkgConfig::libcap
 )
 
 if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "API.hpp"
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/utils/yaml_loader.hpp>
@@ -304,6 +304,11 @@ SessionInfo::operator std::string() {
 }
 
 void API::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : API\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : use the EVerest API modules (evse_manager_consumer_API and others)";
+
     // ensure all evse_energy_sink(s) that are connected have an evse id mapping
     for (const auto& evse_sink : this->r_evse_energy_sink) {
         if (not evse_sink->get_mapping().has_value()) {

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "protocol/cb_common.h"
 #include "protocol/evse_bsp_cb_to_host.h"
@@ -107,6 +107,12 @@ void ovm_api::raise_comm_fault() {
 
 void ovm_api::clear_comm_fault() {
     send_clear_error(API_OVM::ErrorEnum::CommunicationFault, comm_fault_subtype);
+}
+
+void ovm_api::clear_raised_errors() {
+    clear_comm_fault();
+    send_clear_error(API_OVM::ErrorEnum::MREC5OverVoltage, "Emergency");
+    send_clear_error(API_OVM::ErrorEnum::MREC5OverVoltage, "Error");
 }
 
 void ovm_api::handle_dc_hv_ov_emergency(bool high) {

@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright (C) 2022 - 2026 Contributors to EVerest
  */
 
 /*****************************************************
@@ -631,6 +631,7 @@ void init_iso20_exiFragment(struct iso20_exiFragment* exiFrag) {
     exiFrag->AbsolutePriceSchedule_isUsed = 0u;
     exiFrag->CertificateInstallationReq_isUsed = 0u;
     exiFrag->MeteringConfirmationReq_isUsed = 0u;
+    exiFrag->OEMProvisioningCertificateChain_isUsed = 0u;
     exiFrag->PnC_AReqAuthorizationMode_isUsed = 0u;
     exiFrag->SignedInfo_isUsed = 0u;
     exiFrag->SignedInstallationData_isUsed = 0u;

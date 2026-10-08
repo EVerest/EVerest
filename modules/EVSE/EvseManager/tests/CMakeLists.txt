@@ -15,14 +15,18 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 )
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
+    BspCapabilitiesStoreTest.cpp
+    CpStateFrameEmitterTest.cpp
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
+    PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
     SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../SessionLog.cpp

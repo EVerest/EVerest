@@ -17,10 +17,14 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     DerChargingParametersTest.cpp
     DerControlsTest.cpp
     DerRelayTest.cpp
+    DerSaeRelayTest.cpp
     GridEventTest.cpp
+    AcEvFeedbackTest.cpp
     ../charger/der_setup.cpp
     ../charger/der_relay.cpp
+    ../charger/der_relay_sae.cpp
     ../charger/grid_event.cpp
+    ../charger/utils.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE

@@ -1158,6 +1158,14 @@ void OCPP201::ready() {
     }
 }
 
+void OCPP201::shutdown() {
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
+}
+
 void OCPP201::charging_schedules_timer_callback() {
     // Single-flight + coalesce: the recompute body publishes schedules within EVerest and applies the
     // external limits. It now fires concurrently from the interval timer, the libocpp message thread,
@@ -1544,6 +1552,9 @@ void OCPP201::process_session_started(const int32_t evse_id, const int32_t conne
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
     if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
         this->charge_point->on_session_started(evse_id, connector_id);
+    } else if (reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
     }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
@@ -1625,6 +1636,10 @@ void OCPP201::process_transaction_started(const int32_t evse_id, const int32_t c
     transaction_data->trigger_reason = trigger_reason;
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, tx_event);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
+    if (transaction_started.reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
+    }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
     }
@@ -1771,7 +1786,19 @@ void OCPP201::process_deauthorized(const int32_t evse_id, const int32_t connecto
                                    const types::evse_manager::SessionEvent& session_event) {
     auto transaction_data = this->transaction_handler->get_transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = this->charge_point->request_value<int32_t>(
+            ocpp::v2::ControllerComponents::TxCtrlr, ocpp::v2::Variable{EV_CONNECTION_TIMEOUT_VAR_NAME},
+            ocpp::v2::AttributeEnum::Actual);
+        // E03.FR.05
+        if (ev_connection_timeout.status == ocpp::v2::GetVariableStatusEnum::Accepted and
+            ev_connection_timeout.value.has_value() and
+            this->transaction_handler->is_ev_connect_timeout(
+                evse_id, std::chrono::seconds(ev_connection_timeout.value.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, TxEvent::DEAUTHORIZED);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);

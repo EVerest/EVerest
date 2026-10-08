@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2022 - 2022 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "auth_token_providerImpl.hpp"
 
@@ -10,6 +10,10 @@ void auth_token_providerImpl::init() {
 }
 
 void auth_token_providerImpl::ready() {
+}
+
+void auth_token_providerImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
 }
 
 } // namespace auth_provider

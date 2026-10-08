@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "protocol/cb_config.h"
+#include <charge_bridge/bridge_failure.hpp>
 #include <charge_bridge/charge_bridge.hpp>
 #include <charge_bridge/discovery.hpp>
 #include <charge_bridge/firmware_update/sync_fw_updater.hpp>
@@ -41,7 +42,7 @@ constexpr int liveness_probe_failure_limit = 2;
 constexpr std::uint16_t liveness_probe_timeout_ms = 200;
 constexpr std::uint16_t liveness_probe_retries = 3;
 
-std::pair<bool, std::set<std::string>> make_interface_list(std::string const& str, std::string const& pattern) {
+std::pair<bool, std::set<std::string>> make_interface_list(std::string const& str, std::string_view const& pattern) {
     auto const raw = utilities::string_after_pattern(str, pattern);
     if (raw.size() < 3 || raw.front() != '(' || raw.back() != ')') {
         return {false, {}};
@@ -97,15 +98,25 @@ private:
 // the missing bridge is simply retried on the next attempt. An existing object is left untouched.
 // Failures are reported once per bridge (see failures_reported) because the retry runs on the ~10 s
 // manager cadence and a permanently missing capability would otherwise flood the log.
+// A permanent_bridge_failure is different in kind: the host can never satisfy the configuration (a
+// kernel that does not implement an ioctl the config asks for), so retrying would recreate and
+// destroy the bridge's host-local device every cadence for the rest of the session with no chance of
+// ever succeeding. Such a bridge is disabled for the lifetime of the process; the config-driven
+// status entry keeps reporting it as unavailable.
 template <class BridgeT, class FactoryT>
 void create_bridge(std::string const& cb_name, std::string const& bridge_name, std::unique_ptr<BridgeT>& bridge,
-                   std::set<std::string>& failures_reported, FactoryT&& factory) {
-    if (bridge) {
+                   std::set<std::string>& failures_reported, std::set<std::string>& permanently_disabled,
+                   FactoryT&& factory) {
+    if (bridge or permanently_disabled.count(bridge_name) > 0) {
         return;
     }
     try {
         bridge = factory();
         failures_reported.erase(bridge_name);
+    } catch (permanent_bridge_failure const& e) {
+        permanently_disabled.insert(bridge_name);
+        utilities::print_error(cb_name, "RUNTIME", -1)
+            << bridge_name << " permanently disabled: " << e.what() << std::endl;
     } catch (std::exception const& e) {
         if (failures_reported.insert(bridge_name).second) {
             utilities::print_error(cb_name, "RUNTIME", -1)
@@ -158,17 +169,20 @@ void activate_late_bridge(everest::lib::io::event::fd_event_handler& handler, st
 endpoint_intent_info parse_endpoint_intent(std::string const& cb_remote) {
     endpoint_intent_info result;
 
-    if (utilities::string_starts_with(cb_remote, "ANY_EVSE")) {
-        auto params = make_interface_list(cb_remote, "ANY_EVSE");
-        result.value = endpoint_intent::any_evse_mdns;
-        result.excluding_interfaces = params.first;
-        result.interfaces = params.second;
-    } else if (utilities::string_starts_with(cb_remote, "ANY_EV")) {
-        auto params = make_interface_list(cb_remote, "ANY_EV");
-        result.value = endpoint_intent::any_ev_mdns;
-        result.excluding_interfaces = params.first;
-        result.interfaces = params.second;
+    auto const sentinel = utilities::discovery_sentinel(cb_remote);
+    if (not sentinel.has_value()) {
+        return result;
     }
+    if (*sentinel == "ANY_EVSE") {
+        result.value = endpoint_intent::any_evse_mdns;
+    } else if (*sentinel == "ANY_EV") {
+        result.value = endpoint_intent::any_ev_mdns;
+    } else {
+        result.value = endpoint_intent::any_mdns;
+    }
+    auto params = make_interface_list(cb_remote, *sentinel);
+    result.excluding_interfaces = params.first;
+    result.interfaces = params.second;
 
     return result;
 }
@@ -198,8 +212,14 @@ bool charge_bridge::is_mdns_endpoint() const {
 }
 
 discovery_device_type charge_bridge::mdns_device_type() const {
-    if (m_endpoint_intent.value == endpoint_intent::any_evse_mdns) {
+    switch (m_endpoint_intent.value) {
+    case endpoint_intent::any_evse_mdns:
         return discovery_device_type::CB_EVSE;
+    case endpoint_intent::any_mdns:
+        return discovery_device_type::CB_ANY;
+    case endpoint_intent::any_ev_mdns:
+    case endpoint_intent::fixed_ip:
+        break;
     }
     return discovery_device_type::CB_EV;
 }
@@ -311,6 +331,9 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     if (m_config.bsp) {
         m_config.bsp->cb_remote = ip;
     }
+    if (m_config.bsp_alternate) {
+        m_config.bsp_alternate->cb_remote = ip;
+    }
     if (m_config.heartbeat) {
         m_config.heartbeat->cb_remote = ip;
     }
@@ -319,6 +342,7 @@ void charge_bridge::handle_discovery(everest::lib::io::mdns::mDNS_discovery cons
     }
 
     m_config.firmware.cb_remote = ip;
+    select_bsp_for_board(info);
 
     m_event_handler->add_action([this]() {
         std::unique_ptr<discovery> tmp;
@@ -348,6 +372,18 @@ void charge_bridge::set_discovery_pending(charge_bridge_status& status, bool pen
 void charge_bridge::set_bridges_cb_connection_status(bool connected) {
     if (m_plc) {
         m_plc->set_cb_connection_status(connected);
+    }
+    if (m_pty_1) {
+        m_pty_1->set_cb_connection_status(connected);
+    }
+    if (m_pty_2) {
+        m_pty_2->set_cb_connection_status(connected);
+    }
+    if (m_pty_3) {
+        m_pty_3->set_cb_connection_status(connected);
+    }
+    if (m_bsp) {
+        m_bsp->set_cb_connection_status(connected);
     }
     if (m_io) {
         m_io->set_cb_connection_status(connected);
@@ -484,71 +520,166 @@ std::future<bool> charge_bridge::start_internal_runtime() {
 // host-local device does not suppress the others, and is retried on the next call.
 void charge_bridge::create_internal_runtime() {
     if (m_config.can0.has_value()) {
-        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported, [this]() {
-            auto cfg = m_config.can0.value();
-            // Bus-rate pacing needs the CB's CAN bitrate; the heartbeat config carries it.
-            if (m_config.heartbeat.has_value()) {
-                switch (m_config.heartbeat->cb_config.can.baudrate) {
-                case CBCBR_125000:
-                    cfg.can_bitrate_bps = 125000;
-                    break;
-                case CBCBR_250000:
-                    cfg.can_bitrate_bps = 250000;
-                    break;
-                case CBCBR_500000:
-                    cfg.can_bitrate_bps = 500000;
-                    break;
-                case CBCBR_1000000:
-                    cfg.can_bitrate_bps = 1000000;
-                    break;
-                default:
-                    break;
-                }
-            }
-            return std::make_unique<can_bridge>(cfg, m_ready_notify);
-        });
+        create_bridge(m_config.cb_name, "can bridge", m_can_0_client, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled, [this]() {
+                          auto cfg = m_config.can0.value();
+                          // Bus-rate pacing needs the CB's CAN bitrate; the heartbeat config carries it.
+                          if (m_config.heartbeat.has_value()) {
+                              switch (m_config.heartbeat->cb_config.can.baudrate) {
+                              case CBCBR_125000:
+                                  cfg.can_bitrate_bps = 125000;
+                                  break;
+                              case CBCBR_250000:
+                                  cfg.can_bitrate_bps = 250000;
+                                  break;
+                              case CBCBR_500000:
+                                  cfg.can_bitrate_bps = 500000;
+                                  break;
+                              case CBCBR_1000000:
+                                  cfg.can_bitrate_bps = 1000000;
+                                  break;
+                              default:
+                                  break;
+                              }
+                          }
+                          return std::make_unique<can_bridge>(cfg, m_ready_notify);
+                      });
     }
     if (m_config.serial1.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 1", m_pty_1, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial1.value(), m_ready_notify); });
     }
     if (m_config.serial2.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 2", m_pty_2, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial2.value(), m_ready_notify); });
     }
     if (m_config.serial3.has_value()) {
         create_bridge(m_config.cb_name, "serial bridge 3", m_pty_3, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<serial_bridge>(m_config.serial3.value(), m_ready_notify); });
     }
     if (m_config.plc.has_value()) {
         create_bridge(m_config.cb_name, "plc bridge", m_plc, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<plc_bridge>(m_config.plc.value(), m_ready_notify); });
     }
     if (m_config.bsp.has_value()) {
-        create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
-                      [this]() { return std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify); });
+        create_bsp_bridge();
     }
     if (m_config.io.has_value()) {
         create_bridge(m_config.cb_name, "io bridge", m_io, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled,
                       [this]() { return std::make_unique<io_bridge>(m_config.io.value(), m_ready_notify); });
     }
     if (m_config.heartbeat.has_value()) {
-        create_bridge(m_config.cb_name, "heartbeat service", m_heartbeat, m_bridge_create_failures_reported, [this]() {
-            auto heartbeat_cb = [this](bool connected) {
-                {
-                    auto handle = m_cb_status.handle();
-                    handle->is_connected = connected;
-                }
-                set_bridges_cb_connection_status(connected);
-                m_cb_status.notify_one();
-            };
+        create_bridge(m_config.cb_name, "heartbeat service", m_heartbeat, m_bridge_create_failures_reported,
+                      m_bridge_permanently_disabled, [this]() {
+                          auto heartbeat_cb = [this](bool connected) {
+                              {
+                                  auto handle = m_cb_status.handle();
+                                  handle->is_connected = connected;
+                              }
+                              set_bridges_cb_connection_status(connected);
+                              m_cb_status.notify_one();
+                          };
 
-            return std::make_unique<heartbeat_service>(m_config.heartbeat.value(), heartbeat_cb, m_ready_notify);
-        });
+                          // The MCU's link-status reports arrive on the heartbeat connection but belong to the plc
+                          // bridge, which owns the tap and its carrier. Both callbacks run on the event loop
+                          // thread, the same thread that owns m_plc.
+                          auto link_status_cb = [this](CbLinkStatusPacket const& status) {
+                              if (m_plc) {
+                                  m_plc->set_link_status(status);
+                              }
+                              // The BSP side needs only the board class, and only the real value:
+                              // the reboot path synthesizes an all-zero report, and letting that
+                              // reset the class to "assume CCS" would re-enable PP publication on an
+                              // MCS connector for a heartbeat. The MCU latches the technology at
+                              // plc_init, so a real value never becomes UNKNOWN again either.
+                              if (m_bsp and status.technology not_eq CB_LINK_TECH_UNKNOWN) {
+                                  m_bsp->set_link_technology(status.technology);
+                              }
+                          };
+
+                          return std::make_unique<heartbeat_service>(m_config.heartbeat.value(), heartbeat_cb,
+                                                                     link_status_cb, m_ready_notify);
+                      });
     }
 }
 
 // True if the config asks for at least one bridge, i.e. if an empty runtime means something failed.
+void charge_bridge::create_bsp_bridge() {
+    create_bridge(m_config.cb_name, "bsp bridge", m_bsp, m_bridge_create_failures_reported,
+                  m_bridge_permanently_disabled, [this]() {
+                      auto bsp = std::make_unique<bsp_bridge>(m_config.bsp.value(), m_ready_notify);
+                      bsp->set_ce_state_listener([this](std::uint8_t ce_state) {
+                          if (m_plc) {
+                              m_plc->set_ce_state(ce_state);
+                          }
+                      });
+                      bsp->publish_once_everest_connected(std::move(m_retired_bsp_clears));
+                      m_retired_bsp_clears.clear();
+                      return bsp;
+                  });
+}
+
+void charge_bridge::select_bsp_for_board(everest::lib::io::mdns::mDNS_discovery const& info) {
+    auto const txt = info.txt.find("board_type");
+    auto role = txt == info.txt.end() ? std::nullopt : board_type_role(txt->second);
+    // A configured charge_bridge.type decides everything this instance does with the board: the BSP
+    // flavour here and the role the heartbeat provisions. An MCS board adopts that role from the first
+    // config heartbeat whatever it announced; a strapped CCS board of the other role cannot, and
+    // shows up as a role mismatch with the strapping remedy, exactly as it does on a fixed address.
+    if (m_config.type != cb_role::unspecified) {
+        role = m_config.type;
+    }
+    // Only a config with both BSP flavours has a choice to make (see charge_bridge_config::bsp_alternate).
+    auto const can_switch_bsp = m_config.bsp_alternate.has_value() and m_config.bsp.has_value();
+    if (not role.has_value()) {
+        if (can_switch_bsp) {
+            utilities::print_error(m_config.cb_name, "DISCOVERY", 1)
+                << "board_type '" << (txt == info.txt.end() ? std::string{} : txt->second)
+                << "' does not decide the role, keeping the " << (m_config.bsp->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+                << std::endl;
+        }
+        return;
+    }
+    auto const want_ev = role.value() == cb_role::ev;
+    // charge_bridge.type is absent, so the station_id default follows the board: an EV left on
+    // station 0 would claim the EVSE's PLCA coordinator slot.
+    if (m_config.type == cb_role::unspecified and m_config.heartbeat.has_value() and
+        m_config.heartbeat->station_id_derived) {
+        auto const station_id = static_cast<std::int8_t>(decide_station_id(role.value(), std::nullopt).station_id);
+        m_config.heartbeat->cb_config.station_id = station_id;
+        if (m_heartbeat) {
+            m_heartbeat->set_station_id(station_id);
+        }
+    }
+    if (not can_switch_bsp or m_config.bsp->api.ev.enabled == want_ev) {
+        return;
+    }
+    utilities::print_error(m_config.cb_name, "DISCOVERY", 0)
+        << (m_config.type != cb_role::unspecified ? "charge_bridge.type is " : "Board is an ")
+        << (want_ev ? "EV" : "EVSE") << ": activating the " << (want_ev ? "ev_bsp" : "evse_bsp") << " (module "
+        << (want_ev ? m_config.bsp_alternate->api.ev.module_id : m_config.bsp_alternate->api.evse.module_id) << ")"
+        << std::endl;
+    // The replaced BSP's EVerest module stays in the system, so its errors must not outlive the
+    // bridge that raised them. That bridge is not registered with the event loop (discovery only runs
+    // while the runtime is stopped), so the replacing bridge sends the clears once it is.
+    if (m_bsp) {
+        m_retired_bsp_clears = m_bsp->render_clear_messages();
+    }
+    std::swap(m_config.bsp, m_config.bsp_alternate);
+    m_bsp.reset();
+    create_bsp_bridge();
+    // Same state as after create_internal_runtime_eagerly(): connecting is the manager loop's
+    // business, once the firmware probe has approved the device.
+    if (m_bsp) {
+        m_bsp->disconnect_cb_endpoint();
+    }
+}
+
 bool charge_bridge::has_configured_bridge() const {
     return m_config.can0.has_value() or m_config.serial1.has_value() or m_config.serial2.has_value() or
            m_config.serial3.has_value() or m_config.plc.has_value() or m_config.bsp.has_value() or
@@ -624,7 +755,7 @@ void charge_bridge::retry_missing_bridges() {
 
         // A bridge created here missed every set_bridges_cb_connection_status() that ran while it did
         // not exist, and nothing repeats that call for it: on a config without a heartbeat block the
-        // state is published once per connection edge, so a late can/plc/io bridge would report
+        // state is published once per connection edge, so a late can/plc/io/serial/bsp bridge would report
         // available() == false for the rest of the session. (Heartbeat configs heal themselves only
         // because the heartbeat republishes the state on every tick.) Apply the current state the way
         // heartbeat_cb does: read it under the monitor, then publish to the bridges with the lock
@@ -1292,14 +1423,40 @@ utilities::chargebridge_status charge_bridge::get_status() {
         auto available = m_bsp->available();
         status.bsp.emplace(available);
         status.cp_state = m_bsp->cp_state();
+        status.ce_state = m_bsp->ce_state();
+        status.id_state = m_bsp->id_state();
+        status.lock_state = m_bsp->lock_state();
     } else if (m_config.bsp.has_value()) {
         status.bsp.emplace(false);
     }
     if (m_plc) {
         auto available = m_plc->available();
         status.plc.emplace(available);
+        status.link_status = m_plc->link_status();
     } else if (m_config.plc.has_value()) {
         status.plc.emplace(false);
+    }
+    // The configured role is always known; what the MCU latched only ever arrives in a heartbeat
+    // reply, so without a heartbeat service there is nothing to compare it against and the latch
+    // reads as unlatched.
+    if (m_config.heartbeat.has_value()) {
+        auto const configured = to_wire(m_config.type);
+        auto const latched = m_heartbeat ? m_heartbeat->latched_cb_type() : cb_type_not_latched;
+        auto const technology =
+            m_heartbeat ? m_heartbeat->link_technology() : static_cast<std::uint8_t>(CB_LINK_TECH_UNKNOWN);
+        auto const state = evaluate_role_latch(configured, latched);
+        utilities::chargebridge_role_status role;
+        role.configured = cb_type_name(normalize_cb_type(configured));
+        role.latched = cb_type_name(latched);
+        role.not_configured = state == role_latch_state::not_configured;
+        role.awaiting_latch = state == role_latch_state::not_latched;
+        role.mismatch = state == role_latch_state::mismatched;
+        if (role.mismatch) {
+            // The remedy is board-specific, and the board class is only known from the reply's link
+            // technology - so it is resolved here, where that is in reach, rather than in the UI.
+            role.remedy = role_mismatch_remedy(technology);
+        }
+        status.role.emplace(std::move(role));
     }
     if (m_heartbeat) {
         auto available = m_heartbeat->available();
@@ -1350,11 +1507,13 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
     }
 
     bool result = true;
-    auto publish = [this](std::string_view component, std::string_view item, bool status) {
+    auto publish_str = [this](std::string_view component, std::string_view item, std::string_view payload) {
         std::stringstream topic;
         topic << m_config.telemetry->telemetry_topic << "/" << m_config.cb_name << "/" << component << "/" << item;
-        std::string_view payload = status ? "true" : "false";
         m_mqtt->publish(topic.str(), payload);
+    };
+    auto publish = [publish_str](std::string_view component, std::string_view item, bool status) {
+        publish_str(component, item, status ? "true" : "false");
     };
 
     publish("chargebridge", "connected", status.connected);
@@ -1362,6 +1521,24 @@ void charge_bridge::publish_status(utilities::chargebridge_status const& status)
         auto discovered = status.discovered.value();
         publish("chargebridge", "discovered", discovered);
         result = result && discovered;
+    }
+    // The board_type follows discovery, not the connection: the record describes the board that was
+    // found, including one whose firmware probe is still running, and reads empty while discovery is
+    // pending so a swapped board can never be mistaken for its predecessor.
+    if (status.discovered.has_value() and status.network.has_value()) {
+        std::string board_type;
+        if (status.discovered.value()) {
+            for (auto const& [key, value] : status.network->mdns_txt) {
+                if (key == "board_type") {
+                    board_type = value;
+                    break;
+                }
+            }
+        }
+        publish_str("chargebridge", "board_type", board_type);
+    }
+    if (status.role.has_value()) {
+        publish_str("chargebridge", "role", status.role->latched);
     }
 
     auto publish_status = [publish](std::string_view component, bool status) { publish(component, "status", status); };
@@ -1528,6 +1705,7 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
     using namespace utilities;
     std::cout << "ChargeBridge: " << c.cb_name << std::endl;
     std::cout << " * remote:    " << c.cb_remote << std::endl;
+    std::cout << " * type:      " << to_string(c.type) << std::endl;
     if (c.serial1) {
         std::cout << " * serial 1:  " << c.serial1->serial_device;
         if (c.heartbeat.has_value() && CB_NUMBER_OF_UARTS >= 1) {
@@ -1560,13 +1738,22 @@ void print_charge_bridge_config(charge_bridge_config const& c) {
         std::cout << " " << format_host_port(c.cb_remote, c.plc->cb_port);
         std::cout << " adress " << c.plc->plc_ip;
         std::cout << " netmask " << c.plc->plc_netmaks;
-        std::cout << " MTU " << c.plc->plc_mtu << std::endl;
+        std::cout << " MTU " << c.plc->plc_mtu;
+        if (c.plc->carrier == carrier_mode::firmware) {
+            std::cout << " carrier firmware (fallback "
+                      << (c.plc->carrier_fallback_policy == carrier_fallback::warn ? "warn" : "fail") << ")";
+        }
+        std::cout << std::endl;
     }
     if (c.bsp) {
         if (c.bsp->api.evse.enabled) {
             std::cout << " * evse_bsp:  ";
         } else if (c.bsp->api.ev.enabled) {
             std::cout << " * ev_bsp:    ";
+        }
+        if (c.bsp_alternate) {
+            std::cout << "(" << (c.bsp_alternate->api.ev.enabled ? "ev_bsp" : "evse_bsp")
+                      << " configured too, the discovered board selects the flavour) ";
         }
         std::cout << format_host_port(c.bsp->cb_remote, c.bsp->cb_port);
         std::cout << " module " << c.bsp->api.evse.module_id;

@@ -47,8 +47,12 @@ enum class MutexDescription {
     Charger_dlink_pause,
     Charger_dlink_terminate,
     Charger_dlink_error,
+    Charger_notify_session_stop_res_sent,
+    Charger_notify_hlc_session_started_by_ev,
+    Charger_notify_hlc_pause_notified,
     Charger_set_hlc_charging_active,
     Charger_set_hlc_allow_close_contactor,
+    Charger_dc_renegotiation_started,
     Charger_errors_prevent_charging,
     Charger_set_max_current,
     Charger_switch_three_phases_while_charging,
@@ -63,6 +67,9 @@ enum class MutexDescription {
     IEC_set_cp_state_F,
     IEC_allow_power_on,
     IEC_force_unlock,
+    IEC_set_pp_ampacity,
+    IEC_set_keep_cable_locked,
+    IEC_captive_lock_debounce_reached,
     EVSE_charger_ready,
     EVSE_set_ev_info,
     EVSE_publish_ev_info,
@@ -84,8 +91,9 @@ enum class MutexDescription {
     EVSE_subscribe_evcc_id,
     EVSE_subscribe_powermeter,
     EVSE_get_latest_powermeter_data_billing,
-    EVSE_get_reservation_id,
+    EVSE_get_reservation_id_to_report,
     EVSE_reserve,
+    EVSE_use_reservation,
     EVSE_cancel_reservation,
     EVSE_is_reserved,
     EVSE_get_ev_info
@@ -155,10 +163,18 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: dlink_dlink_terminate";
     case MutexDescription::Charger_dlink_error:
         return "Charger.cpp: dlink_error";
+    case MutexDescription::Charger_notify_session_stop_res_sent:
+        return "Charger.cpp: notify_session_stop_res_sent";
+    case MutexDescription::Charger_notify_hlc_session_started_by_ev:
+        return "Charger.cpp: notify_hlc_session_started_by_ev";
+    case MutexDescription::Charger_notify_hlc_pause_notified:
+        return "Charger.cpp: notify_hlc_pause_notified";
     case MutexDescription::Charger_set_hlc_charging_active:
         return "Charger.cpp: set_hlc_charging_active";
     case MutexDescription::Charger_set_hlc_allow_close_contactor:
         return "Charger.cpp: set_hlc_allow_close_contactor";
+    case MutexDescription::Charger_dc_renegotiation_started:
+        return "Charger.cpp: dc_renegotiation_started";
     case MutexDescription::Charger_errors_prevent_charging:
         return "Charger.cpp: errors_prevent_charging";
     case MutexDescription::Charger_set_max_current:
@@ -187,6 +203,12 @@ static std::string to_string(MutexDescription d) {
         return "IECStateMachine::allow_power_on";
     case MutexDescription::IEC_force_unlock:
         return "IECStateMachine::force_unlock";
+    case MutexDescription::IEC_set_pp_ampacity:
+        return "IECStateMachine::set_pp_ampacity";
+    case MutexDescription::IEC_set_keep_cable_locked:
+        return "IECStateMachine::set_keep_cable_locked";
+    case MutexDescription::IEC_captive_lock_debounce_reached:
+        return "IECStateMachine::captive_lock_debounce_reached";
     case MutexDescription::EVSE_charger_ready:
         return "EvseManager.cpp: charger_ready";
     case MutexDescription::EVSE_set_ev_info:
@@ -229,10 +251,12 @@ static std::string to_string(MutexDescription d) {
         return "EvseManager.cpp: subscribe_powermeter";
     case MutexDescription::EVSE_get_latest_powermeter_data_billing:
         return "EvseManager.cpp: get_latest_powermeter_data_billing";
-    case MutexDescription::EVSE_get_reservation_id:
-        return "EvseManager.cpp: get_reservation_id";
+    case MutexDescription::EVSE_get_reservation_id_to_report:
+        return "EvseManager.cpp: get_reservation_id_to_report";
     case MutexDescription::EVSE_reserve:
         return "EvseManager.cpp: reserve";
+    case MutexDescription::EVSE_use_reservation:
+        return "EvseManager.cpp: use_reservation";
     case MutexDescription::EVSE_cancel_reservation:
         return "EvseManager.cpp: cancel_reservation";
     case MutexDescription::EVSE_is_reserved:

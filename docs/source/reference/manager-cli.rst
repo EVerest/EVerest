@@ -60,8 +60,10 @@ Configuration and Storage
 ``--db <path>``
   Full path to the configuration database file. Optional: without ``--db`` an
   in-memory database is used and the YAML config is authoritative on every
-  start. With ``--db`` and ``--config``, the database wins when it holds a valid
-  configuration; otherwise it is seeded from the YAML config.
+  start. With ``--db`` and ``--config``, the database wins when its boot slot
+  holds at least one module; a missing or module-less boot slot is seeded from
+  the YAML config. An invalid YAML seeds an empty placeholder slot whose
+  description records the error.
 
   The database holds module configurations only, never the manager
   ``settings:`` block. With ``--db`` alone, the settings (installation paths,
@@ -71,14 +73,35 @@ Configuration and Storage
   ``settings:`` block is then applied on every start.
 
 ``--reset-from-yaml``
-  **Experimental.** Discard the existing database slot and re-seed from the YAML
-  config file. Intended for development use when you want to reset to a known
-  YAML state. Requires ``--config``.
+  **Experimental.** Replace the contents of the boot slot with the YAML config
+  file, even if it holds modules; aborts without touching the database if the
+  YAML is invalid. Intended for development use when you want to reset to a
+  known YAML state. Requires ``--config``.
 
 ``--db-init``
-  **Deprecated, no effect.** Seeding the database from YAML when it holds no
-  valid configuration is now the default. Ignored unless both ``--config`` and
+  **Deprecated, no effect.** Seeding the database from YAML when its boot slot
+  holds no modules is now the default. Ignored unless both ``--config`` and
   ``--db`` are given. Use ``--reset-from-yaml`` to force re-seeding.
+
+***************
+Management APIs
+***************
+
+Both options start a :ref:`management API <exp_management_apis>` inside the
+manager process, so it stays reachable while no modules are running. Each takes
+an optional value: ``ro`` (the default when the option is given without a
+value) or ``rw``, as in ``--configuration-api=rw``. Any other value is rejected
+and the manager exits with an error.
+
+``--configuration-api[=ro|rw]``
+  **Experimental.** Start the configuration_API. In ``ro`` mode only queries are
+  served; ``rw`` also enables managing configuration slots, loading YAML and
+  changing configuration parameters.
+
+``--lifecycle-api[=ro|rw]``
+  **Experimental.** Start the lifecycle_API. In ``ro`` mode only the module
+  status and version queries are served; ``rw`` also enables requests to start
+  and stop the modules.
 
 ****************
 Module Lifecycle

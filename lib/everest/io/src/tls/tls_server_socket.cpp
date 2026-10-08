@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/io/tls/detail/tls_result_from_libtls.hpp>
 #include <everest/io/tls/tls_server_socket.hpp>

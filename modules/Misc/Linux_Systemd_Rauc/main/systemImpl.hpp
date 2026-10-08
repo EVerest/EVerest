@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_SYSTEM_IMPL_HPP
 #define MAIN_SYSTEM_IMPL_HPP
 
@@ -59,6 +59,7 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
+    std::string create_logs_filename(const std::string& type);
     std::filesystem::path scripts_path;
     bool log_upload_running{false};
     std::atomic_bool interrupt_log_upload;

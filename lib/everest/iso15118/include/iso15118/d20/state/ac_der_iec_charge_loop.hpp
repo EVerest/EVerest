@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
 #include "../states.hpp"
 
 #include <iso15118/d20/ac_powers.hpp>
 #include <iso15118/d20/dynamic_mode_parameters.hpp>
+#include <iso15118/d20/pause_notification.hpp>
+#include <iso15118/message/power_delivery.hpp>
 
 namespace iso15118::d20::state {
 struct AC_DER_IEC_ChargeLoop : public StateBase {
@@ -20,12 +22,16 @@ private:
     std::optional<float> target_frequency; // TODO(SL): Adding updating feature
     bool stop{false};
     bool pause{false};
+    PauseNotification pause_notification;
 
     UpdateDynamicModeParameters dynamic_parameters{};
     AcTargetPower target_powers{};
     AcPresentPower present_powers{};
 
     bool first_entry_in_charge_loop{true};
+
+    bool ac_connector_closed{true}; // In this state, we assume that the contactor is closed
+    std::optional<message_20::PowerDeliveryRequest> previous_req{std::nullopt};
 };
 
 } // namespace iso15118::d20::state

@@ -11,6 +11,7 @@
 #include <fmt/core.h>
 
 #include "SessionLog.hpp"
+#include "energy_transfer_modes.hpp"
 
 namespace module {
 
@@ -167,12 +168,7 @@ void evse_managerImpl::ready() {
             const auto session_uuid = this->mod->charger->get_session_id();
             session_started.meter_value = mod->get_latest_powermeter_data_billing();
             session_started.id_tag = provided_id_token;
-            if (mod->is_reserved()) {
-                session_started.reservation_id = mod->get_reservation_id();
-                if (start_reason == types::evse_manager::StartSessionReason::Authorized) {
-                    this->mod->cancel_reservation(false);
-                }
-            }
+            session_started.reservation_id = mod->get_reservation_id_to_report();
 
             const auto logging_path = session_log.startSession(
                 mod->config.logfile_suffix == "session_uuid" ? session_uuid : mod->config.logfile_suffix);
@@ -206,8 +202,8 @@ void evse_managerImpl::ready() {
         transaction_started.meter_value = mod->get_latest_powermeter_data_billing();
         transaction_started.signed_meter_value = mod->charger->get_start_signed_meter_value();
 
+        transaction_started.reservation_id = mod->get_reservation_id_to_report();
         if (mod->is_reserved()) {
-            transaction_started.reservation_id.emplace(mod->get_reservation_id());
             mod->cancel_reservation(false); // this allows OCPP1.6 to not move back to available.
         }
 
@@ -453,18 +449,20 @@ void evse_managerImpl::handle_authorize_response(types::authorization::ProvidedI
             return;
         }
 
-        this->mod->charger->authorize(true, provided_token, validation_result);
-        mod->charger_was_authorized();
         if (validation_result.reservation_id.has_value()) {
-            EVLOG_debug << "Reserve evse manager reservation id for id " << validation_result.reservation_id.value();
-            // The validation result returns a reservation id. If this was a reservation for a specific evse, the
-            // evse manager probably already stored the reservation id (and this call is not really necessary). But if
-            // the reservation was not for a specific evse, the evse manager still has to send the reservation id in the
-            // transaction event request. So that is why we call 'reserve' here, so the evse manager knows the
-            // reservation id that belongs to this specific session and can send it accordingly.
-            // As this is not a new reservation but an existing one, we don't signal a reservation event for this.
-            mod->reserve(validation_result.reservation_id.value(), false);
+            EVLOG_debug << "Use reservation id " << validation_result.reservation_id.value() << " for this session";
+            // A reservation by connector type is only bound to this evse once authorization matches it, and the EV
+            // may already be plugged in, so it is recorded whatever the session state.
+            mod->use_reservation(validation_result.reservation_id.value());
         }
+        if (!this->mod->charger->authorize(true, provided_token, validation_result)) {
+            if (validation_result.reservation_id.has_value()) {
+                // Auth consumed the reservation for this token, so it ends here although no session uses it.
+                mod->cancel_reservation(true);
+            }
+            return;
+        }
+        mod->charger_was_authorized();
     } else if (pnc) {
         // we only send authorization responses to the HLC for PnC rejections. In case of EIM we could
         // still receive a successfull authorization later and therefore we don't inform the HLC
@@ -546,41 +544,19 @@ void evse_managerImpl::handle_set_plug_and_charge_configuration(
 types::evse_manager::UpdateAllowedEnergyTransferModesResult
 evse_managerImpl::handle_update_allowed_energy_transfer_modes(
     std::vector<types::iso15118::EnergyTransferMode>& allowed_energy_transfer_modes) {
-    std::vector<types::iso15118::EnergyTransferMode> filtered_energy_transfer_modes;
-
-    if (mod->r_hlc.empty() or !mod->r_hlc[0]) {
+    if (not mod->is_hlc_enabled()) {
         return types::evse_manager::UpdateAllowedEnergyTransferModesResult::NoHlc;
     }
 
-    filtered_energy_transfer_modes.reserve(allowed_energy_transfer_modes.size());
-
-    // TODO(mlitre): Add check for incompatible type(s), for now we just transform DC stuff
-    // in case of MCS and only if a connector type was configured at all;
-    // also TODO: for DC we can check whether BPT can be supported in case DC supply supports it
-    std::transform(allowed_energy_transfer_modes.begin(), allowed_energy_transfer_modes.end(),
-                   filtered_energy_transfer_modes.begin(), [&](types::iso15118::EnergyTransferMode m) {
-                       // for MCS we have to replace DC types with MCS types
-                       if (mod->connector_type.has_value() and
-                           mod->connector_type == types::evse_manager::ConnectorTypeEnum::cMCS) {
-
-                           if (m == types::iso15118::EnergyTransferMode::DC) {
-                               return types::iso15118::EnergyTransferMode::MCS;
-                           }
-                           if (m == types::iso15118::EnergyTransferMode::DC_BPT) {
-                               return types::iso15118::EnergyTransferMode::MCS_BPT;
-                           }
-                       }
-
-                       // everything else pass untouched
-                       return m;
-                   });
+    const auto filtered_energy_transfer_modes =
+        filter_allowed_energy_transfers(allowed_energy_transfer_modes, mod->connector_type);
 
     // check whether at least one mode has survived our filtering
-    if (!filtered_energy_transfer_modes.size()) {
+    if (filtered_energy_transfer_modes.empty()) {
         return types::evse_manager::UpdateAllowedEnergyTransferModesResult::IncompatibleEnergyTransfer;
     }
 
-    mod->r_hlc[0]->call_update_energy_transfer_modes(filtered_energy_transfer_modes);
+    mod->apply_allowed_energy_transfers(filtered_energy_transfer_modes);
     return types::evse_manager::UpdateAllowedEnergyTransferModesResult::Accepted;
 }
 

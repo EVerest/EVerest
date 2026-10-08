@@ -12,9 +12,11 @@ This page describes the stable EVerest API which consists of a number of API mod
 
 Other APIs that are available, but not described here:
 
-- :ref:`API module <everest_modules_API>`
+- :ref:`API module <everest_modules_API>` (deprecated, see the
+  :ref:`deprecation index <project-deprecation-index>`)
 - :ref:`RpcApi module <everest_modules_RpcApi>`
-- :ref:`EvAPI <everest_modules_EvAPI>`
+- :ref:`EvAPI <everest_modules_EvAPI>` (deprecated, see the
+  :ref:`deprecation index <project-deprecation-index>`)
 
 Part of the EVerest APIs described here are the management APIs, which are a special case
 and are described on a separate page:

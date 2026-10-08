@@ -34,6 +34,12 @@ void from_json(json const& j, V2gServerStatus& k);
 void to_json(json& j, V2gEvErrorCode const& k) noexcept;
 void from_json(json const& j, V2gEvErrorCode& k);
 
+void to_json(json& j, SlacState const& k) noexcept;
+void from_json(json const& j, SlacState& k);
+
+void to_json(json& j, SlacD3State const& k) noexcept;
+void from_json(json const& j, SlacD3State& k);
+
 void to_json(json& j, CertChainState const& k) noexcept;
 void from_json(json const& j, CertChainState& k);
 
@@ -57,5 +63,11 @@ void from_json(json const& j, V2gChargerStatus& k);
 
 void to_json(json& j, V2gEvseElectrical const& k) noexcept;
 void from_json(json const& j, V2gEvseElectrical& k);
+
+void to_json(json& j, SlacStatus const& k) noexcept;
+void from_json(json const& j, SlacStatus& k);
+
+void to_json(json& j, SlacFsmState const& k) noexcept;
+void from_json(json const& j, SlacFsmState& k);
 
 } // namespace everest::lib::API::V1_0::types::telemetry

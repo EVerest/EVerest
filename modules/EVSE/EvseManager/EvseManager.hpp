@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -39,21 +39,54 @@
 #include <date/tz.h>
 #include <future>
 #include <iostream>
+#include <mutex>
 #include <optional>
+
+#include <utils/mqtt_config_service.hpp>
 
 #include "CarManufacturer.hpp"
 #include "Charger.hpp"
+#include "CpStateFrameEmitter.hpp"
 #include "ErrorHandling.hpp"
 #include "PersistentStore.hpp"
 #include "SessionLog.hpp"
 #include "VarContainer.hpp"
+#include "bsp_capabilities_store.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
+#include "pp_ampacity_forwarder.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
 #include <everest/util/async/monitor.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
+
+struct RwConf {
+    bool keep_cable_locked;
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class EvseManager adding the implementation to EvseManager.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.keep_cable_locked = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_keep_cable_locked_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
 
 struct Conf {
     int connector_id;
@@ -63,6 +96,7 @@ struct Conf {
     bool payment_enable_eim;
     bool payment_enable_contract;
     double ac_nominal_voltage;
+    double ac_nominal_frequency;
     double ac_max_reactive_power;
     bool ev_receipt_required;
     bool session_logging;
@@ -71,6 +105,7 @@ struct Conf {
     bool has_ventilation;
     std::string charge_mode;
     bool supported_iso_ac_bpt;
+    std::string iso15118_der_flavor;
     bool ac_hlc_enabled;
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
@@ -111,6 +146,7 @@ struct Conf {
     int soft_over_current_timeout_ms;
     bool lock_connector_in_state_b;
     bool unlock_when_deauthorized;
+    int keep_cable_locked_lock_delay_ms;
     int state_F_after_fault_ms;
     bool fail_on_powermeter_errors;
     bool raise_mrec9;
@@ -130,9 +166,16 @@ struct Conf {
     int dc_ramp_ampere_per_second;
     bool enable_nodered_interface;
     std::string phase_rotation_grid_side;
+    bool debug_emit_cp_state_hpav_frames;
+    std::string debug_cp_state_hpav_device;
+
+    const bool& keep_cable_locked;
+
+    Conf(const RwConf& rw) : keep_cable_locked(rw.keep_cable_locked) {
+    }
 };
 
-class EvseManager : public Everest::ModuleBase {
+class EvseManager : public Everest::ModuleBase, public RwConfUpdate {
 public:
     EvseManager() = delete;
     EvseManager(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider, Everest::TelemetryProvider& telemetry,
@@ -148,7 +191,7 @@ public:
                 std::vector<std::unique_ptr<isolation_monitorIntf>> r_imd,
                 std::vector<std::unique_ptr<over_voltage_monitorIntf>> r_over_voltage_monitor,
                 std::vector<std::unique_ptr<power_supply_DCIntf>> r_powersupply_DC,
-                std::vector<std::unique_ptr<kvsIntf>> r_store, Conf& config) :
+                std::vector<std::unique_ptr<kvsIntf>> r_store, Conf& config, RwConf& rw_config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         telemetry(telemetry),
@@ -168,7 +211,8 @@ public:
         r_over_voltage_monitor(std::move(r_over_voltage_monitor)),
         r_powersupply_DC(std::move(r_powersupply_DC)),
         r_store(std::move(r_store)),
-        config(config){};
+        config(config),
+        rw_config(rw_config){};
 
     Everest::MqttProvider& mqtt;
     Everest::TelemetryProvider& telemetry;
@@ -189,13 +233,13 @@ public:
     const std::vector<std::unique_ptr<power_supply_DCIntf>> r_powersupply_DC;
     const std::vector<std::unique_ptr<kvsIntf>> r_store;
     const Conf& config;
+    RwConf& rw_config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
     sigslot::signal<int> signalNrOfPhasesAvailable;
     types::powermeter::Powermeter get_latest_powermeter_data_billing();
     types::evse_board_support::HardwareCapabilities get_hw_capabilities();
-    std::atomic<bool> ready_for_capabilities{false};
 
     std::mutex external_local_limits_mutex;
     bool update_max_current_limit(types::energy::ExternalLimits& limits, float max_current_import,
@@ -219,7 +263,15 @@ public:
     /// \return True on success.
     ///
     bool reserve(int32_t id, const bool signal_reservation_event = true);
-    int32_t get_reservation_id();
+    ///
+    /// \brief Record the reservation that authorization matched to this session, whatever the session state.
+    ///        Signals no reservation event.
+    /// \param id The reservation id.
+    /// \return False, changing nothing, for a negative id or when the evse is disabled or has a fatal error.
+    ///
+    bool use_reservation(int32_t id);
+    /// \return The reservation id, or nullopt when not reserved or reserved without an id (by connector type).
+    std::optional<int32_t> get_reservation_id_to_report();
 
     bool get_hlc_waiting_for_auth_pnc();
     void set_pnc_enabled(const bool pnc_enabled);
@@ -248,9 +300,21 @@ public:
 
     void ready_to_start_charging();
 
+    // Declared before bsp so it outlives the IECStateMachine signals connected to it.
+    std::unique_ptr<CpStateFrameEmitter> cp_state_frame_emitter;
     std::unique_ptr<IECStateMachine> bsp;
     std::unique_ptr<ErrorHandling> error_handling;
     std::unique_ptr<PersistentStore> store;
+
+    ConfigChangeResult on_keep_cable_locked_changed(const bool& value) override;
+    // Guards rw_config, bsp_connector_type and the bsp hand-over; the handler runs on a config service
+    // thread and may fire before ready() constructs bsp.
+    std::mutex keep_cable_locked_mutex;
+    // Connector type as reported by the BSP capabilities; unset until they arrive.
+    std::optional<types::evse_board_support::Connector_type> bsp_connector_type;
+    // Captive cable mode only applies to AC sockets with a connector lock. Call with keep_cable_locked_mutex
+    // held and bsp constructed.
+    void apply_keep_cable_locked();
     // Declared last so it is destroyed first; ~Charger dereferences bsp/error_handling/store.
     std::unique_ptr<Charger> charger;
 
@@ -283,6 +347,7 @@ public:
 
     std::atomic<bool> der_available{false};
     void recompute_and_publish_supported_ac_energy_transfers();
+    void apply_allowed_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes);
     bool is_hlc_enabled() const {
         return hlc_enabled;
     }
@@ -297,6 +362,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
@@ -320,7 +386,8 @@ private:
     types::powermeter::Powermeter latest_powermeter_data_billing;
 
     Everest::Thread energyThreadHandle;
-    everest::lib::util::monitor<types::evse_board_support::HardwareCapabilities> hw_capabilities;
+    BspCapabilitiesStore hw_capabilities{types::evse_board_support::HardwareCapabilities{}};
+    PpAmpacityForwarder pp_ampacity;
 
     types::energy::ExternalLimits external_local_energy_limits;
     const float EVSE_ABSOLUTE_MAX_CURRENT = 80.0;
@@ -334,6 +401,12 @@ private:
 
     std::atomic_bool hlc_waiting_for_auth_eim;
     std::atomic_bool hlc_waiting_for_auth_pnc;
+
+    // An HLC data link/session is currently in use (set at protocol selection, cleared by the
+    // dlink_* events). While true, the SLAC leave on unplug is deferred to the dlink_terminate
+    // that follows the stack's own TCP teardown, so the FIN still traverses the AVLN
+    // ([V2G-DC-962]/[V2G-DC-940]; the SLAC leave has T_match_leave of budget).
+    std::atomic_bool hlc_link_in_use{false};
 
     std::atomic_bool pnc_enabled{false};
     std::atomic_bool central_contract_validation_allowed{false};
@@ -354,6 +427,11 @@ private:
     std::atomic<std::chrono::steady_clock::time_point> latest_target_current_low_pass_last_update{};
     std::atomic<double> latest_target_voltage{0.};
     std::atomic<double> latest_target_current{0.};
+    // Ramp to 0 A before an ISO 15118-20 pause in dynamic control mode (see Charger::get_dc_pause_ramp_start()):
+    // which ramp the start current belongs to, and the setpoint it started from.
+    std::mutex dc_pause_ramp_mutex;
+    std::optional<std::chrono::steady_clock::time_point> dc_pause_ramp_start;
+    double dc_pause_ramp_from_A{0.};
     std::atomic<double> last_power_supply_voltage{0.};
     std::atomic<double> last_power_supply_current{0.};
 
@@ -375,6 +453,15 @@ private:
 
     void setup_AC_mode(bool ac_hlc_enabled = true);
     void setup_fake_DC_mode();
+    Charger::SetupConfig get_charger_setup_config(Charger::ChargeMode charge_mode, bool ac_hlc_enabled,
+                                                  bool ac_with_soc_timeout) const;
+    struct HlcSessionSetupConfig {
+        bool include_contract_payment{false};
+        bool supported_certificate_service{false};
+        bool central_contract_validation{false};
+        bool force_external_payment{false};
+    };
+    void update_hlc_session_setup(const HlcSessionSetupConfig& session_setup);
 
     // special funtion to switch mode while session is active
     void switch_AC_mode();
@@ -391,6 +478,7 @@ private:
     bool wait_powersupply_DC_below_voltage(double target_voltage);
 
     bool cable_check_should_exit();
+    bool cable_check_wait_for_prepare_charging();
 
     double get_emergency_over_voltage_threshold();
     double get_error_over_voltage_threshold();
@@ -413,6 +501,7 @@ private:
     bool check_voltage_to_protective_earth_in_range(types::isolation_monitor::IsolationMeasurement m);
 
     static constexpr double CABLECHECK_CURRENT_LIMIT{2};
+    static constexpr double PRECHARGE_MIN_CURRENT_A{2};
     static constexpr double CABLECHECK_INSULATION_FAULT_RESISTANCE_OHM{100000.};
     static constexpr double CABLECHECK_MCS_INSULATION_FAULT_RESISTANCE_OHM{125000.};
     static constexpr double CABLECHECK_SAFE_VOLTAGE{60.};
@@ -420,6 +509,10 @@ private:
 
     std::atomic_bool current_demand_active{false};
     std::atomic_bool slac_unmatched{false};
+    // Running count of Control-Pilot B->C transitions in the current session. Incremented on every B->C
+    // edge and pushed to the SLAC module via count_bc() so EvseSlac can detect BCB toggles for
+    // CM_VALIDATE. Reset to 0 on plug-in.
+    int bc_transition_count{0};
     std::mutex powermeter_mutex;
     std::condition_variable powermeter_cv;
     bool initial_powermeter_value_received{false};
@@ -431,10 +524,23 @@ private:
 
     types::power_supply_DC::ChargingPhase last_power_supply_DC_charging_phase{
         types::power_supply_DC::ChargingPhase::Other};
+    // Written only by set_supported_energy_transfers(), which holds it across the blocking HLC
+    // update_energy_transfer_modes command, so an HLC handler must not call back into EvseManager.
+    // Lock order: this monitor first, then hw_capabilities, powersupply_capabilities_mutex or
+    // dc_external_derate_mutex.
     everest::lib::util::monitor<std::vector<types::iso15118::EnergyTransferMode>> supported_energy_transfers;
-    void publish_and_update_supported_energy_transfers();
-    bool update_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& energy_transfers);
-    bool update_supported_energy_transfers(const types::iso15118::EnergyTransferMode& energy_transfer);
+    enum class SendEnergyTransfers {
+        OnChange,
+        Always
+    };
+    // Stores the modes current_modes() returns and sends them, unless send is OnChange and they equal
+    // the stored ones. current_modes() runs while the supported_energy_transfers monitor is held.
+    template <typename ModesFn> void set_supported_energy_transfers(ModesFn current_modes, SendEnergyTransfers send);
+    // Publishes modes and sends them to the HLC. Takes no lock.
+    void send_supported_energy_transfers(const std::vector<types::iso15118::EnergyTransferMode>& modes);
+    std::vector<types::iso15118::EnergyTransferMode> ac_energy_transfers();
+    std::vector<types::iso15118::EnergyTransferMode> dc_energy_transfers();
+    void recompute_and_publish_supported_dc_energy_transfers();
     std::mutex hlc_ac_parameters_mutex;
     void update_hlc_ac_parameters();
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1

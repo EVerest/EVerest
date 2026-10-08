@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -15,6 +15,7 @@
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 // insert your custom include headers here
+#include <memory>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
 namespace module {
@@ -24,9 +25,11 @@ struct Conf {};
 class EvseSlac : public Everest::ModuleBase {
 public:
     EvseSlac() = delete;
-    EvseSlac(const ModuleInfo& info, std::unique_ptr<slacImplBase> p_main, Conf& config) :
-        ModuleBase(info), p_main(std::move(p_main)), config(config){};
+    EvseSlac(const ModuleInfo& info, Everest::TelemetryProvider& telemetry, std::unique_ptr<slacImplBase> p_main,
+             Conf& config) :
+        ModuleBase(info), telemetry(telemetry), p_main(std::move(p_main)), config(config){};
 
+    Everest::TelemetryProvider& telemetry;
     const std::unique_ptr<slacImplBase> p_main;
     const Conf& config;
 
@@ -43,6 +46,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
