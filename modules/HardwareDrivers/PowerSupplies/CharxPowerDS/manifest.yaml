@@ -1,0 +1,77 @@
+description: >-
+  Native driver for the Phoenix Contact CHARX power 40 kW DS module (article 1740541)
+  over CANopen (SocketCAN). Talks to the module directly - no PLC, no PS_CHARX_POWER library.
+provides:
+  main:
+    description: DC power supply, one CHARX power 40 kW DS module
+    interface: power_supply_DC
+config:
+  device:
+    description: SocketCAN interface the module is connected to (500 kbit/s)
+    type: string
+    default: can0
+  node_id:
+    description: CANopen node ID of the module (DIP switch GROUP)
+    type: integer
+    minimum: 1
+    maximum: 127
+    default: 2
+  master_node_id:
+    description: >-
+      Node ID this driver uses for its heartbeat. The module consumes the master heartbeat
+      (object 0x1016:01, factory setting node 1 / 10 s) and drops out without it.
+    type: integer
+    minimum: 1
+    maximum: 127
+    default: 1
+  contactor:
+    description: Module DS output contactor to close for export
+    type: string
+    enum:
+      - A
+      - B
+    default: A
+  max_export_voltage_V:
+    description: Upper limit for capabilities and setpoints, further limited by the module (1000 V)
+    type: number
+    default: 1000
+  min_export_voltage_V:
+    description: Lower limit for capabilities and setpoints, further limited by the module (50 V)
+    type: number
+    default: 50
+  max_export_current_A:
+    description: Upper current limit, further limited by the module (125 A)
+    type: number
+    default: 125
+  max_export_power_W:
+    description: Power limit published in the capabilities
+    type: number
+    default: 40000
+  poll_interval_ms:
+    description: Interval for reading flags, contactor status, voltage and current, and publishing voltage_current
+    type: integer
+    minimum: 50
+    default: 250
+  sdo_timeout_ms:
+    description: Timeout per SDO transfer (the module answers in ~1 ms)
+    type: integer
+    minimum: 10
+    default: 100
+  power_on_timeout_s:
+    description: Raise an error if Export is not confirmed (power stage on, contactor closed) within this time
+    type: number
+    default: 20
+  power_off_timeout_s:
+    description: Raise an error if Off is not confirmed (power stage off, contactor open) within this time
+    type: number
+    default: 8
+  off_current_threshold_A:
+    description: >-
+      setMode(Off) returns once the measured current is below this value or the module reports its
+      power stage off (or after power_off_timeout_s), so the charger relays never open under load.
+    type: number
+    default: 2
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Pionix GmbH
