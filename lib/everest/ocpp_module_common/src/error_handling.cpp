@@ -74,7 +74,8 @@ MREC_ERROR_MAP_TYPE load_mrec_error_map_overrides(const std::filesystem::path& f
 ocpp::v2::Component get_component_from_error(const Everest::error::Error& error) {
     ocpp::v2::Component component;
 
-    if (!error.origin.mapping.has_value()) {
+    // EVSE 0 is the charging station in the 3-tier mapping; OCPP 2.x EVSE ids start at 1
+    if (!error.origin.mapping.has_value() || error.origin.mapping->evse < 1) {
         component.name = CHARGING_STATION_COMPONENT_NAME;
         return component;
     }
