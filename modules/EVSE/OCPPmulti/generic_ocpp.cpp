@@ -803,12 +803,6 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const types::evse_manager::Se
 }
 
 void GenericOcpp::visit_impl(std::int32_t evse_id, const EventInfo& event) {
-    const auto ocpp_evse_id = to_ocpp_evse_id(event.evse_id);
-    if (not ocpp_evse_id.has_value()) {
-        EVLOG_debug << "Dropping queued error event of EVerest evse id " << event.evse_id
-                    << " which is not served by this OCPP instance";
-        return;
-    }
     EVLOG_info << "Processing queued error event for evse_id: " << evse_id << ": " << event.evse_id;
     dispatch_event_info(event);
 
@@ -816,10 +810,9 @@ void GenericOcpp::visit_impl(std::int32_t evse_id, const EventInfo& event) {
         // We do only report inoperative errors as faults
         if (event.error->type == module::EVSE_MANAGER_INOPERATIVE_ERROR) {
             if (event.event_cleared) {
-                mv_charge_point.on_fault_cleared(ocpp_evse_id.value(),
-                                                 get_connector_id_from_error(event.error.value()));
+                mv_charge_point.on_fault_cleared(evse_id, get_connector_id_from_error(event.error.value()));
             } else {
-                mv_charge_point.on_faulted(ocpp_evse_id.value(), get_connector_id_from_error(event.error.value()));
+                mv_charge_point.on_faulted(evse_id, get_connector_id_from_error(event.error.value()));
             }
         }
     }
@@ -2515,9 +2508,6 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
 
     for (const auto& composite_schedule : composite_schedules) {
         const auto evse_id = to_everest_evse_id(composite_schedule.evseId);
-        if (evse_id == 0) {
-            continue;
-        }
         if (not external_energy_limits::is_evse_sink_configured(mv_requires.evse_energy_sink, evse_id)) {
             EVLOG_warning << "Can not apply external limits! No evse energy sink configured for evse_id: " << evse_id;
             continue;
