@@ -134,6 +134,19 @@ The following optional settings may be set to adapt the resilience behavior beha
   In order to prevent a greater command return delay (and since the device is assumed to be set up and running when
   transactions are started), default values are considerably lower than the ones for initialization.
 
+Transaction Body Format (optional)
+----------------------------------
+``transaction_body_format`` selects the v1 transaction format (default ``LEM``). Set it to ``AST`` for the AST DC650
+power meter with its K220031 Ethernet display unit. That device implements the LEM DCBM API with two differences:
+
+- It answers the LEM transaction start body with ``400 Bad Request``. It accepts ``tariffId`` only as a string and
+  rejects any ``cableId`` field. Cable loss compensation is configured on the device through ``/v1/settings``
+  (``cableConf``).
+- Its answer to the transaction stop carries the signed record but no ``meterValue.transactionStatus``. With
+  ``AST`` the driver confirms the stop through ``/v1/status`` (``transactionIsOnGoing`` must be false).
+
+v2-capable devices are not affected by this option.
+
 
 
 Notes

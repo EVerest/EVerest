@@ -254,7 +254,21 @@ void LemDCBM400600Controller::request_device_to_stop_transaction(const std::stri
     }
 
     try {
-        int status = json::parse(legal_api_response.body).at("meterValue").at("transactionStatus");
+        const auto body = json::parse(legal_api_response.body);
+        if (this->config.ast_transaction_body and not body.at("meterValue").contains("transactionStatus")) {
+            // The AST display unit answers the stop with the signed record but without transactionStatus, so
+            // confirm the stop through the device status instead.
+            auto status_response = this->http_client->get("/v1/status");
+            if (status_response.status_code != 200) {
+                throw UnexpectedDCBMResponseCode("/v1/status", 200, status_response);
+            }
+            if (json::parse(status_response.body).at("status").at("bits").at("transactionIsOnGoing").get<bool>()) {
+                throw UnexpectedDCBMResponseBody(
+                    endpoint, fmt::format("Transaction {} is still ongoing after the stop request.", transaction_id));
+            }
+            return;
+        }
+        int status = body.at("meterValue").at("transactionStatus");
         bool transaction_is_ongoing = (status & 0b100) != 0; //  third status bit "transactionIsOnGoing" must be false
         if (transaction_is_ongoing) {
             throw UnexpectedDCBMResponseBody(endpoint, fmt::format("Transaction stop request for transaction {} "
@@ -383,6 +397,14 @@ LemDCBM400600Controller::transaction_start_request_to_dcbm_payload(const types::
                                       {"cableId", this->config.cable_id},
                                       {"userData", ""},
                                       {"SC", this->config.SC}}
+            .dump();
+    } else if (this->config.ast_transaction_body) {
+        // AST DC650 display unit: rejects a numeric tariffId and any cableId with 400 Bad Request
+        return nlohmann::ordered_json{{"evseId", request.evse_id},
+                                      {"transactionId", request.transaction_id},
+                                      {"clientId", client_id},
+                                      {"tariffId", std::to_string(this->config.tariff_id)},
+                                      {"userData", ""}}
             .dump();
     } else {
         return nlohmann::ordered_json{

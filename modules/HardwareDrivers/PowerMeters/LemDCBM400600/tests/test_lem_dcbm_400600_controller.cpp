@@ -36,6 +36,7 @@ struct ControllerConfOverrides {
     // IT = -1 so that init() does not call set_identification_type()
     int IT = -1;
     int transaction_ocmf_fetch_interval_s = 0;
+    bool ast_transaction_body = false;
 };
 
 static LemDCBM400600Controller::Conf make_controller_conf(const ControllerConfOverrides& overrides = {}) {
@@ -52,7 +53,8 @@ static LemDCBM400600Controller::Conf make_controller_conf(const ControllerConfOv
                                          /*UD=*/{},
                                          overrides.IT,
                                          /*command_timeout_ms=*/0,
-                                         overrides.transaction_ocmf_fetch_interval_s};
+                                         overrides.transaction_ocmf_fetch_interval_s,
+                                         overrides.ast_transaction_body};
 }
 
 // Performs one iteration of the live measurement poll loop, in the same order as powermeterImpl does:
@@ -252,6 +254,57 @@ TEST_F(LemDCBM400600ControllerTest, test_start_transaction) {
         int(delta.count() / 1E9 / 60),
         48 * 60 -
             3); // delta of max and min stopping time should be 48 hours - 2 minutes wait time and 1 minute safety time
+}
+
+/// \brief Test the AST DC650 start body: tariffId as a string and no cableId
+TEST_F(LemDCBM400600ControllerTest, test_start_transaction_ast_body) {
+    const std::string expected_ast_body{
+        R"({"evseId":"mock_evse_id","transactionId":"mock_transaction_id","clientId":",mock_transaction_id","tariffId":"0","userData":""})"};
+    testing::Sequence seq;
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", expected_ast_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.start_transaction(this->transaction_request);
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
+    EXPECT_FALSE(res.error.has_value());
+}
+
+/// \brief Test the AST DC650 stop: the response has no transactionStatus, the stop is confirmed via /v1/status
+TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_ast_confirms_via_status) {
+    const std::string ast_stop_response{
+        R"({"transactionId":"mock_transaction_id","meterValue":{"timestampStart":"2026-10-08T11:42:30Z","timestampStop":"2026-10-08T11:42:34Z"}})"};
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(0);
+    testing::Sequence seq;
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, ast_stop_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/status"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"status":{"bits":{"transactionIsOnGoing":false}}})"}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.stop_transaction("mock_transaction_id");
+
+    ASSERT_EQ(transaction_request_status_to_string(res.status), "OK");
+    ASSERT_TRUE(res.signed_meter_value.has_value());
+    ASSERT_EQ(res.signed_meter_value.value().signed_meter_data, "mock_ocmf_string");
 }
 
 /// \brief Test fallback OCMF is fetched immediately after start and then throttled

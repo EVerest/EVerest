@@ -50,6 +50,8 @@ public:
         // minimum time in seconds between fetches of the fallback OCMF record during an active
         // transaction (0 = fetch on every poll)
         const int transaction_ocmf_fetch_interval_s = 0;
+        // v1 transaction start body for the AST DC650 display unit: tariffId as a string, no cableId
+        const bool ast_transaction_body = false;
     };
 
     class DCBMUnexpectedResponseException : public std::exception {
