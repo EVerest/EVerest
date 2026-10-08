@@ -17,7 +17,10 @@ namespace ocpp_module_common::custom_error_mapping {
 
 namespace {
 
+constexpr std::size_t V16_VENDOR_ID_MAX_LENGTH = 255;
+constexpr std::size_t V16_VENDOR_ERROR_CODE_MAX_LENGTH = 50;
 constexpr std::size_t V16_INFO_MAX_LENGTH = 50;
+constexpr std::size_t V2_TECH_CODE_MAX_LENGTH = 50;
 constexpr std::size_t V2_TECH_INFO_MAX_LENGTH = 500;
 constexpr auto DEFAULT_VARIABLE_NAME = "Problem";
 
@@ -144,11 +147,20 @@ std::vector<std::string> replaced_builtin_entries(const CustomFileErrorMapping& 
 std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping) {
     std::vector<Finding> findings;
     for (const auto& [key, entry] : mapping.entries()) {
-        if (entry.v16.has_value() && entry.v16->info.has_value()) {
-            validate_text(entry, entry.v16->info.value(), {"v16", "info"}, V16_INFO_MAX_LENGTH, findings);
+        const auto validate = [&](const std::optional<std::string>& text, std::initializer_list<const char*> path,
+                                  std::size_t max_length) {
+            if (text.has_value()) {
+                validate_text(entry, text.value(), path, max_length, findings);
+            }
+        };
+        if (entry.v16.has_value()) {
+            validate(entry.v16->vendor_id, {"v16", "vendor_id"}, V16_VENDOR_ID_MAX_LENGTH);
+            validate(entry.v16->vendor_error_code, {"v16", "vendor_error_code"}, V16_VENDOR_ERROR_CODE_MAX_LENGTH);
+            validate(entry.v16->info, {"v16", "info"}, V16_INFO_MAX_LENGTH);
         }
-        if (entry.v2.has_value() && entry.v2->tech_info.has_value()) {
-            validate_text(entry, entry.v2->tech_info.value(), {"v2", "tech_info"}, V2_TECH_INFO_MAX_LENGTH, findings);
+        if (entry.v2.has_value()) {
+            validate(entry.v2->tech_code, {"v2", "tech_code"}, V2_TECH_CODE_MAX_LENGTH);
+            validate(entry.v2->tech_info, {"v2", "tech_info"}, V2_TECH_INFO_MAX_LENGTH);
         }
     }
     return findings;

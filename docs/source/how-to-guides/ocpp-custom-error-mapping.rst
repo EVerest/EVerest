@@ -94,13 +94,14 @@ static value per entry: every occurrence of the error is reported with it, whate
 raised with. Without the field, no severity is reported. Over OCPP 2.0.1, which has no severity, the field is
 dropped.
 
-Use placeholders in texts
--------------------------
+Use placeholders in texts and codes
+-----------------------------------
 
-``info`` (OCPP 1.6) and ``tech_info`` (OCPP 2.x) may contain placeholders such as ``${message}``, ``${evse}`` or
-``${origin_module}``, which are replaced by fields of the reported error. The module documentation lists
-:ref:`all placeholders <handwritten_ocppmulti_error-placeholders>`. The OCPP limits of 50 (``info``) and 500
-(``techInfo``) characters apply after substitution, so leave room for the values; longer text is truncated.
+``vendor_id``, ``vendor_error_code`` and ``info`` (OCPP 1.6) and ``tech_code`` and ``tech_info`` (OCPP 2.x) may contain
+placeholders such as ``${message}``, ``${evse}`` or ``${origin_module}``, which are replaced by fields of the reported
+error. The module documentation lists :ref:`all placeholders <handwritten_ocppmulti_error-placeholders>`. The OCPP
+limits of 255 (``vendorId``), 500 (``techInfo``) and 50 (the others) characters apply after substitution, so leave room
+for the values; longer text is truncated.
 
 Keep all texts and codes to printable ASCII characters, as OCPP requires for these fields.
 

@@ -280,10 +280,12 @@ ocpp::v16::ErrorInfo CustomFileErrorMapping::overlay(const Everest::error::Error
         reported.error_code = v16.error_code.value();
     }
     if (v16.vendor_id.has_value()) {
-        reported.vendor_id = ocpp::CiString<255>(v16.vendor_id.value(), ocpp::StringTooLarge::Truncate);
+        reported.vendor_id = ocpp::CiString<255>(substitute_error_placeholders(error, v16.vendor_id.value()),
+                                                 ocpp::StringTooLarge::Truncate);
     }
     if (v16.vendor_error_code.has_value()) {
-        reported.vendor_error_code = ocpp::CiString<50>(v16.vendor_error_code.value(), ocpp::StringTooLarge::Truncate);
+        reported.vendor_error_code = ocpp::CiString<50>(
+            substitute_error_placeholders(error, v16.vendor_error_code.value()), ocpp::StringTooLarge::Truncate);
     }
     if (v16.info.has_value()) {
         reported.info =
@@ -301,7 +303,8 @@ ocpp::v2::EventData CustomFileErrorMapping::overlay(const Everest::error::Error&
 
     const auto& v2 = entry->v2.value();
     if (v2.tech_code.has_value()) {
-        reported.techCode = ocpp::CiString<50>(v2.tech_code.value(), ocpp::StringTooLarge::Truncate);
+        reported.techCode = ocpp::CiString<50>(substitute_error_placeholders(error, v2.tech_code.value()),
+                                               ocpp::StringTooLarge::Truncate);
     }
     if (v2.tech_info.has_value()) {
         reported.techInfo = ocpp::CiString<500>(substitute_error_placeholders(error, v2.tech_info.value()),

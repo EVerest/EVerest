@@ -66,16 +66,14 @@
           ]
         },
         "vendor_id": {
-          "description": "vendorId. Defaults to the built-in value.",
+          "description": "vendorId. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 255 characters after substitution.",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 255
+          "minLength": 1
         },
         "vendor_error_code": {
-          "description": "vendorErrorCode. Defaults to the built-in value.",
+          "description": "vendorErrorCode. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 50
+          "minLength": 1
         },
         "info": {
           "description": "info. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
@@ -90,10 +88,9 @@
       "type": "object",
       "properties": {
         "tech_code": {
-          "description": "techCode. Defaults to the built-in value.",
+          "description": "techCode. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
           "type": "string",
-          "minLength": 1,
-          "maxLength": 50
+          "minLength": 1
         },
         "tech_info": {
           "description": "techInfo. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 500 characters after substitution.",

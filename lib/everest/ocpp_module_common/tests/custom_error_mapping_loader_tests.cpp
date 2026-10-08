@@ -186,10 +186,10 @@ TEST(ErrorMappingLoaderTest, RejectsNoErrorAsV16ErrorCode) {
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v16/error_code");
 }
 
-TEST(ErrorMappingLoaderTest, RejectsFieldLongerThanOcppLimit) {
+TEST(ErrorMappingLoaderTest, RejectsIdentifierLongerThanOcppLimit) {
     const auto finding =
-        single_error(R"({"generic/VendorError": {"v16": {"vendor_error_code": ")" + std::string(51, 'x') + R"("}}})");
-    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v16/vendor_error_code");
+        single_error(R"({"generic/VendorError": {"v2": {"component_name": ")" + std::string(51, 'x') + R"("}}})");
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/component_name");
 }
 
 TEST(ErrorMappingLoaderTest, RejectsEmptyText) {
@@ -201,8 +201,10 @@ TEST(ErrorMappingLoaderTest, RejectsEmptyText) {
 
 // the final length is known only after placeholders are expanded, so longer text is truncated rather than rejected
 TEST(ErrorMappingLoaderTest, AcceptsTextLongerThanOcppLimit) {
-    const auto result = parse_error_mapping(R"({"generic/VendorError": {"v16": {"info": ")" + std::string(51, 'x') +
-                                            R"("}, "v2": {"tech_info": ")" + std::string(501, 'x') + R"("}}})");
+    const auto result = parse_error_mapping(
+        R"({"generic/VendorError": {"v16": {"vendor_id": ")" + std::string(256, 'x') + R"(", "vendor_error_code": ")" +
+        std::string(51, 'x') + R"(", "info": ")" + std::string(51, 'x') + R"("}, "v2": {"tech_code": ")" +
+        std::string(51, 'x') + R"(", "tech_info": ")" + std::string(501, 'x') + R"("}}})");
     EXPECT_TRUE(errors_of(result).empty());
     ASSERT_NE(result.error_mapping, nullptr);
     EXPECT_EQ(result.error_mapping->entries().size(), 1U);

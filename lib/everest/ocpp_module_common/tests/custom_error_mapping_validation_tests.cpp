@@ -15,6 +15,7 @@ namespace {
 
 using namespace ocpp_module_common::custom_error_mapping;
 using ::testing::HasSubstr;
+using ::testing::UnorderedElementsAre;
 
 const std::filesystem::path ERRORS_DIR{EVEREST_ERRORS_DIR};
 
@@ -83,6 +84,29 @@ TEST(ErrorMappingValuesTest, AcceptsErrorPlaceholders) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {
         "v16": {"info": "${severity} on ${evse}/${connector}"}, "v2": {"tech_info": "${type}: ${message} [${uuid}]"}}})");
     EXPECT_TRUE(validate_values(mapping).empty());
+}
+
+TEST(ErrorMappingValuesTest, ChecksPlaceholdersInEveryText) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"vendor_id": "${unknown}", "vendor_error_code": "${unknown}", "info": "${unknown}"},
+        "v2": {"tech_code": "${unknown}", "tech_info": "${unknown}"}}})");
+    std::vector<std::string> pointers;
+    for (const auto& finding : validate_values(mapping)) {
+        EXPECT_EQ(finding.level, Finding::Level::Warning);
+        pointers.push_back(finding.pointer);
+    }
+    EXPECT_THAT(pointers,
+                UnorderedElementsAre("/generic~1VendorError/v16/vendor_id",
+                                     "/generic~1VendorError/v16/vendor_error_code", "/generic~1VendorError/v16/info",
+                                     "/generic~1VendorError/v2/tech_code", "/generic~1VendorError/v2/tech_info"));
+}
+
+TEST(ErrorMappingValuesTest, WarnsAboutStaticCodeOverOcppLimit) {
+    const auto mapping =
+        mapping_of(R"({"generic/VendorError": {"v2": {"tech_code": ")" + std::string(51, 'x') + R"("}}})");
+    const auto finding = single(validate_values(mapping));
+    EXPECT_EQ(finding.level, Finding::Level::Warning);
+    EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_code");
 }
 
 TEST(ErrorMappingValuesTest, WarnsAboutUnknownPlaceholder) {

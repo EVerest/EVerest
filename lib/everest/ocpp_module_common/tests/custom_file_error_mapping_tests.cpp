@@ -103,6 +103,28 @@ TEST(CustomFileErrorMappingTest, SubstitutesErrorPlaceholdersInTexts) {
               "generic/VendorError#Spd: sensor reports fault");
 }
 
+TEST(CustomFileErrorMappingTest, SubstitutesErrorPlaceholdersInCodes) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {
+        "v16": {"vendor_id": "${origin_module}", "vendor_error_code": "E-${sub_type}"},
+        "v2": {"tech_code": "${vendor_id}-${sub_type}"}}})");
+    auto error = error_of("generic/VendorError", "Spd");
+    error.vendor_id = "com.example";
+    error.origin = ImplementationIdentifier("bsp_1", "main");
+
+    const auto v16 = mapping->overlay(error, built_in_v16(error));
+    EXPECT_EQ(v16.vendor_id.value().get(), "bsp_1");
+    EXPECT_EQ(v16.vendor_error_code.value().get(), "E-Spd");
+    EXPECT_EQ(mapping->overlay(error, built_in_v2(error)).techCode.value().get(), "com.example-Spd");
+}
+
+TEST(CustomFileErrorMappingTest, TruncatesCodesAfterSubstitution) {
+    const auto mapping = mapping_of(
+        R"({"generic/VendorError": {"v16": {"vendor_error_code": "${message}"}, "v2": {"tech_code": "${message}"}}})");
+    const auto error = error_of("generic/VendorError", "", std::string(60, 'm'));
+    EXPECT_EQ(mapping->overlay(error, built_in_v16(error)).vendor_error_code.value().get(), std::string(50, 'm'));
+    EXPECT_EQ(mapping->overlay(error, built_in_v2(error)).techCode.value().get(), std::string(50, 'm'));
+}
+
 TEST(CustomFileErrorMappingTest, TruncatesInfoAfterSubstitution) {
     const auto mapping = mapping_of(R"({"generic/VendorError": {"v16": {"info": "${message}"}}})");
     const auto error = error_of("generic/VendorError", "", std::string(60, 'm'));

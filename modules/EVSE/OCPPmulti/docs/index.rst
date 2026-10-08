@@ -635,8 +635,9 @@ The ``v2`` section of the error's custom error mapping entry then replaces each 
 Placeholders in custom error mapping texts
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-The ``info`` (OCPP 1.6) and ``tech_info`` (OCPP 2.x) texts of a custom error mapping entry may contain
-``${name}`` placeholders, which are replaced by fields of the reported EVerest error:
+The ``vendor_id``, ``vendor_error_code`` and ``info`` (OCPP 1.6) and ``tech_code`` and ``tech_info`` (OCPP 2.x) fields of
+a custom error mapping entry may contain ``${name}`` placeholders, which are replaced by fields of the reported EVerest
+error:
 
 .. list-table::
    :header-rows: 1
@@ -674,8 +675,8 @@ The ``info`` (OCPP 1.6) and ``tech_info`` (OCPP 2.x) texts of a custom error map
      - Unique id of the error instance
 
 Any other name, and a ``${`` without a closing ``}``, is warned about and sent as written. Substituted values are not
-scanned for placeholders again. The 50 (``info``) and 500 (``techInfo``) character limits apply after substitution, so
-the text around the placeholders should leave room for the values.
+scanned for placeholders again. The character limits of the OCPP fields, 255 for ``vendorId``, 500 for ``techInfo`` and
+50 for the others, apply after substitution, so the text around the placeholders should leave room for the values.
 
 For example, ``"tech_info": "${severity} ${type} on EVSE ${evse}: ${message}"`` is reported as
 ``High evse_board_support/MREC3HighTemperature on EVSE 1: Temperature above limit``.
