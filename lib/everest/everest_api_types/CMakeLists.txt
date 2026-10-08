@@ -163,8 +163,9 @@ install(TARGETS everest_api_types
   LIBRARY
 )
 
+# private_include too: framework, the API module helpers and many modules include its codecs
 install(
-  DIRECTORY include/everest_api_types
+  DIRECTORY include/everest_api_types private_include/everest_api_types
   DESTINATION include
 )
 
