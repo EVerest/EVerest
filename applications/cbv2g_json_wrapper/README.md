@@ -38,10 +38,10 @@ listed in `include/cbv2g_json_wrapper.h`.
 | Protocol | Namespace | Status |
 |----------|-----------|--------|
 | App Handshake (SAP) | `urn:iso:15118:2:2010:AppProtocol` | Supported |
+| DIN 70121 | `urn:din:70121:2012:MsgDef` | Supported |
 
-Additional protocol support (DIN 70121, ISO 15118-2) is added in
-subsequent PRs in this stack. ISO 15118-20 support is planned as a
-follow-up PR.
+Additional protocol support (ISO 15118-2) is added in subsequent PRs
+in this stack. ISO 15118-20 support is planned as a follow-up PR.
 
 ## Build
 
@@ -72,14 +72,18 @@ cmake --build build
 ## Tests
 
 Tests use GoogleTest and are gated behind `BUILD_CBV2G_JSON_WRAPPER_TESTS`
-so a non-test build does not require GTest:
+so a non-test build does not require GTest. An EVerest build with
+`-DBUILD_TESTING=ON` turns it on, so the tests run with the rest of the unit
+tests:
 
 ```bash
-cmake -S . -B build -DEVEREST_BUILD_APPLICATIONS=ON \
-      -DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON
-cmake --build build --target cbv2g_test_apphand
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build --target cbv2g_test_apphand cbv2g_test_din
 ctest --test-dir build -R cbv2g_test_ --output-on-failure
 ```
+
+A standalone build of this directory needs `-DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON`
+instead, as shown under Build.
 
 ## Third-party
 
