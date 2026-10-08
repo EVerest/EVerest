@@ -1240,6 +1240,40 @@ TEST_F(AuthTest, test_reservation) {
     ASSERT_EQ(reservation_result, ReservationResult::Accepted);
 }
 
+/// \brief Test that reservation_exists checks the requested evse and not evse 1
+TEST_F(AuthTest, test_reservation_exists_checks_requested_evse) {
+    Reservation reservation;
+    reservation.evse_id = 2;
+    reservation.id_token = VALID_TOKEN_1;
+    reservation.reservation_id = 1;
+    reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+    reservation.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() + std::chrono::hours(1)));
+    ASSERT_EQ(this->auth_handler->handle_reservation(reservation), ReservationResult::Accepted);
+
+    std::string other_token = VALID_TOKEN_2;
+    std::optional<std::string> no_group_id_token;
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 2, no_group_id_token),
+              ReservationCheckStatus::ReservedForOtherToken);
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 1, no_group_id_token),
+              ReservationCheckStatus::NotReserved);
+}
+
+/// \brief Test that reservation_exists does not report an unreserved evse as reserved when evse 1 is reserved
+TEST_F(AuthTest, test_reservation_exists_unreserved_evse_while_evse_1_reserved) {
+    Reservation reservation;
+    reservation.evse_id = 1;
+    reservation.id_token = VALID_TOKEN_1;
+    reservation.reservation_id = 1;
+    reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+    reservation.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() + std::chrono::hours(1)));
+    ASSERT_EQ(this->auth_handler->handle_reservation(reservation), ReservationResult::Accepted);
+
+    std::string other_token = VALID_TOKEN_2;
+    std::optional<std::string> no_group_id_token;
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 2, no_group_id_token),
+              ReservationCheckStatus::NotReserved);
+}
+
 /// \brief Test if a reservation cannot be placed if expiry_time is in the past
 TEST_F(AuthTest, test_reservation_in_past) {
     Reservation reservation;
