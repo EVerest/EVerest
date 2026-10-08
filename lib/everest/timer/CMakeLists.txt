@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 project(everest-timer
     VERSION 0.1.4
     DESCRIPTION "EVerest timer library"
@@ -12,11 +10,6 @@ option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 
 if(BUILD_TESTING)
     add_subdirectory(tests)
-endif()
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # dependencies

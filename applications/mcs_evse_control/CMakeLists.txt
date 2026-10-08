@@ -2,8 +2,6 @@
 # and the EVSE's energy node through the EVerest API (evse_manager_consumer_API,
 # external_energy_limits_consumer_API) over MQTT, so it depends only on ftxui, libmosquitto and
 # nlohmann_json - all already dependencies of this tree.
-cmake_minimum_required(VERSION 3.16)
-
 if(NOT TARGET ftxui::component)
     message(WARNING "Not building mcs_evse_control because dependency ftxui is not available.")
     return()

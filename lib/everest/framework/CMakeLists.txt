@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(everest-framework
     VERSION 0.26.0
     DESCRIPTION "The open operating system for e-mobility charging stations"
@@ -100,20 +98,8 @@ ev_setup_python_executable(
     PYTHON_VENV_PATH ${${PROJECT_NAME}_PYTHON_VENV_PATH}
 )
 
-if(BUILD_TESTING)
-    # this policy allows us to link gcov to targets defined in other directories
-    if(POLICY CMP0079)
-        set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
-    endif()
-endif()
-
 # make own cmake modules available
 list(INSERT CMAKE_MODULE_PATH 0 "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
-endif()
 
 # dependencies
 find_package(Boost

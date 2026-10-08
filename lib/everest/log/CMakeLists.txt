@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 project(everest-log
     VERSION 0.3.0
     DESCRIPTION "EVerest logging library"
@@ -12,13 +10,6 @@ option(BUILD_EXAMPLES "Build liblog example binaries." OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(LIBLOG_USE_BOOST_FILESYSTEM "Usage of boost/filesystem.hpp instead of std::filesystem" OFF)
 
-if(BUILD_TESTING)
-    # this policy allows us to link gcov to targets defined in other directories
-    if(POLICY CMP0079)
-        set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
-    endif()
-endif()
-
 if (DISABLE_EDM AND BUILD_TESTING)
     include(FetchContent)
     FetchContent_Declare(
@@ -26,11 +17,6 @@ if (DISABLE_EDM AND BUILD_TESTING)
         URL https://github.com/google/googletest/archive/release-1.12.1.zip
     )
     FetchContent_MakeAvailable(googletest)
-endif()
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # library dependencies

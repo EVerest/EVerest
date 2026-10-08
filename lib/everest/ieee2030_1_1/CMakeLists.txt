@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(iee2030
     VERSION 0.1
     DESCRIPTION "Simple IEEE2030.1.1 library"

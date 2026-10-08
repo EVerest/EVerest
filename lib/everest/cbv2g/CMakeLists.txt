@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(cb_v2g
     VERSION 0.3.1
     DESCRIPTION "V2GTP EXI library"

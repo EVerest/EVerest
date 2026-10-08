@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(ocpp
     VERSION 0.31.1
     DESCRIPTION "A C++ implementation of the Open Charge Point Protocol"
@@ -25,11 +23,6 @@ endif()
 if(BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags()
-endif()
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # dependencies

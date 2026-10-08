@@ -1,17 +1,8 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(everest-sqlite VERSION 0.1.5
         DESCRIPTION "SQLite wrapper for EVerest"
         LANGUAGES CXX C
 )
 
-
-if(BUILD_TESTING)
-    # this policy allows us to link gcov to targets defined in other directories
-    if(POLICY CMP0079)
-        set(CMAKE_POLICY_DEFAULT_CMP0079 NEW)
-    endif()
-endif()
 
 find_package(SQLite3 REQUIRED)
 

@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
 # ftxui powers the interactive terminal status UI and is mandatory for this application. It is
 # provided either by the dependency manager (EVEREST_DEPENDENCY_ENABLED_FTXUI) or, for system
 # dependency builds, by find_package(ftxui 6 QUIET) in the top level CMakeLists.txt. If it is not
