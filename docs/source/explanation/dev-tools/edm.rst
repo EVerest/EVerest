@@ -237,79 +237,54 @@ The ``dependencies_modified.yaml`` file can contain something along these lines:
 	catch2:
 	  git_tag: v1.2.3 # select a different git tag for a build
 
-Selective library consumption
-#############################
+Selective package builds
+########################
 
-If your external project only needs specific everest-core libraries (e.g.
-``liblog``, ``everest-util``, ``everest-io``, ``libocpp``, ``libiso15118``)
-without building the full module framework, you can use the
-``EVEREST_LIBS_ONLY`` and ``EVEREST_INCLUDE_LIBS`` CMake options.
-
-**CMake options:**
+everest-core is built and installed as four CMake packages. ``EVEREST_PACKAGES`` selects the
+ones built from the tree; packages that are needed but not listed are taken from an installed
+prefix with ``find_package()``.
 
 .. list-table::
    :header-rows: 1
 
-   * - Option
-     - Default
-     - Description
-   * - ``EVEREST_LIBS_ONLY``
-     - OFF
-     - Skip modules, applications, config, and code generation. Only build
-       libraries under ``lib/everest/``.
-   * - ``EVEREST_INCLUDE_LIBS``
-     - (empty)
-     - Semicolon-separated allowlist of libraries to build. Transitive
-       internal dependencies are resolved automatically. When empty, all
-       libraries are built.
-   * - ``EVEREST_EXCLUDE_LIBS``
-     - (empty)
-     - Semicolon-separated blocklist of libraries to skip.
+   * - Package
+     - Contents
+   * - ``base``
+     - log, timer, util, sqlite, evse_security, tls
+   * - ``iso15118``
+     - libiso15118 and the cbv2g EXI codec libraries
+   * - ``ocpp``
+     - libocpp
+   * - ``core``
+     - the framework libraries, code generation, interface definitions, and the in-tree modules
+       and applications
 
-**Example: building only liblog, everest-util, and everest-io**
+The default builds all four. Only ``libocpp`` and what it needs, for example:
 
 .. code-block:: bash
 
-  cmake -S . -B build \
-    -DEVEREST_LIBS_ONLY=ON \
-    -DEVEREST_INCLUDE_LIBS="log;util;io"
-  cmake --build build
+  cmake -S . -B build -DEVEREST_PACKAGES="base;ocpp"
 
-Transitive dependencies are resolved automatically. For example, requesting
-``io`` will automatically include ``util`` (since ``everest-io`` depends on
-``everest-util``).
-
-**Example: building only libocpp**
-
-.. code-block:: bash
-
-  cmake -S . -B build \
-    -DEVEREST_LIBS_ONLY=ON \
-    -DEVEREST_INCLUDE_LIBS="ocpp"
-  cmake --build build
-
-This resolves the full dependency chain: ``ocpp`` -> ``log``, ``timer``,
-``evse_security``, ``sqlite``, ``cbv2g``.
-
-**Using from an external project's dependencies.yaml:**
+From an external project's ``dependencies.yaml``:
 
 .. code-block:: yaml
 
   everest-core:
     git: https://github.com/EVerest/everest-core.git
-    git_tag: 2026.02.0
+    git_tag: 2026.10.0
     options:
-      - "EVEREST_LIBS_ONLY ON"
-      - "EVEREST_INCLUDE_LIBS log;util;io"
+      - "EVEREST_PACKAGES base;ocpp"
 
-The internal dependency map is defined in ``cmake/ev-lib-dependencies.cmake``.
+With ``DISABLE_EDM=ON`` the packages can also be built and installed one after the other into
+the same prefix:
 
-.. note::
+.. code-block:: bash
 
-  Libraries that depend on framework code generation (``tls``, ``helpers``,
-  ``conversions``, ``slac``, ``external_energy_limits``, ``everest_api_types``)
-  are **not available** in ``EVEREST_LIBS_ONLY`` mode. Use
-  ``EVEREST_EXCLUDE_MODULES`` instead if you need those libraries.
+  cmake -S . -B b1 -DDISABLE_EDM=ON -DEVEREST_PACKAGES=base -DCMAKE_INSTALL_PREFIX=/opt/everest
+  cmake -S . -B b2 -DDISABLE_EDM=ON -DEVEREST_PACKAGES="iso15118;ocpp" \
+    -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
+  cmake -S . -B b3 -DDISABLE_EDM=ON -DEVEREST_PACKAGES=core \
+    -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
 
 Framework thread pool scaling policy
 ####################################

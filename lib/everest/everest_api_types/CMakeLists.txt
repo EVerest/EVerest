@@ -117,44 +117,38 @@ target_sources(everest_api_types
   src/everest_api_types/utilities/Topics.cpp
 )
 
-# The wrapper layer converts between the stable API structs and the internal
-# ev-cli generated types, so it can only be built in a full everest-core
-# configure where code generation runs. In EVEREST_LIBS_ONLY mode the
-# generate_cpp_files target does not exist and the library is codec-only.
-if(TARGET generate_cpp_files)
-  add_dependencies(everest_api_types generate_cpp_files)
+add_dependencies(everest_api_types generate_cpp_files)
 
-  target_include_directories(everest_api_types
-    PRIVATE "${CMAKE_BINARY_DIR}/generated/include"
-  )
+target_include_directories(everest_api_types
+  PRIVATE "${CMAKE_BINARY_DIR}/generated/include"
+)
 
-  target_sources(everest_api_types
-    PRIVATE
+target_sources(everest_api_types
+  PRIVATE
 
-    src/everest_api_types/auth/wrapper.cpp
-    src/everest_api_types/charger_information/wrapper.cpp
-    src/everest_api_types/dc_external_derate/wrapper.cpp
-    src/everest_api_types/display_message/wrapper.cpp
-    src/everest_api_types/energy/wrapper.cpp
-    src/everest_api_types/error_history/wrapper.cpp
-    src/everest_api_types/ev_board_support/wrapper.cpp
-    src/everest_api_types/evse_board_support/wrapper.cpp
-    src/everest_api_types/evse_manager/wrapper.cpp
-    src/everest_api_types/evse_security/wrapper.cpp
-    src/everest_api_types/money/wrapper.cpp
-    src/everest_api_types/iso15118_charger/wrapper.cpp
-    src/everest_api_types/isolation_monitor/wrapper.cpp
-    src/everest_api_types/ocpp/wrapper.cpp
-    src/everest_api_types/power_supply_DC/wrapper.cpp
-    src/everest_api_types/powermeter/wrapper.cpp
-    src/everest_api_types/session_cost/wrapper.cpp
-    src/everest_api_types/session_storage/wrapper.cpp
-    src/everest_api_types/slac/wrapper.cpp
-    src/everest_api_types/system/wrapper.cpp
-    src/everest_api_types/text_message/wrapper.cpp
-    src/everest_api_types/uk_random_delay/wrapper.cpp
-  )
-endif()
+  src/everest_api_types/auth/wrapper.cpp
+  src/everest_api_types/charger_information/wrapper.cpp
+  src/everest_api_types/dc_external_derate/wrapper.cpp
+  src/everest_api_types/display_message/wrapper.cpp
+  src/everest_api_types/energy/wrapper.cpp
+  src/everest_api_types/error_history/wrapper.cpp
+  src/everest_api_types/ev_board_support/wrapper.cpp
+  src/everest_api_types/evse_board_support/wrapper.cpp
+  src/everest_api_types/evse_manager/wrapper.cpp
+  src/everest_api_types/evse_security/wrapper.cpp
+  src/everest_api_types/money/wrapper.cpp
+  src/everest_api_types/iso15118_charger/wrapper.cpp
+  src/everest_api_types/isolation_monitor/wrapper.cpp
+  src/everest_api_types/ocpp/wrapper.cpp
+  src/everest_api_types/power_supply_DC/wrapper.cpp
+  src/everest_api_types/powermeter/wrapper.cpp
+  src/everest_api_types/session_cost/wrapper.cpp
+  src/everest_api_types/session_storage/wrapper.cpp
+  src/everest_api_types/slac/wrapper.cpp
+  src/everest_api_types/system/wrapper.cpp
+  src/everest_api_types/text_message/wrapper.cpp
+  src/everest_api_types/uk_random_delay/wrapper.cpp
+)
 
 target_link_libraries(everest_api_types
   PRIVATE nlohmann_json::nlohmann_json

@@ -83,13 +83,9 @@ option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
 # pytest workers would otherwise clobber shared .gcda files in the build tree.
 option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverage targets" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
-option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
-option(EVEREST_BUILD_BASE "Build everest-base in-tree; OFF uses an installed everest-base" ON)
-option(EVEREST_BUILD_ISO15118 "Build everest-iso15118 in-tree; OFF uses an installed everest-iso15118" ON)
-option(EVEREST_BUILD_OCPP "Build everest-ocpp in-tree; OFF uses an installed everest-ocpp" ON)
 option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
-set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libraries to build (empty = all)")
-set(EVEREST_EXCLUDE_LIBS "" CACHE STRING "Semicolon-separated blocklist of libraries to skip")
+set(EVEREST_PACKAGES "base;iso15118;ocpp;core" CACHE STRING
+    "Packages built from this tree (base, iso15118, ocpp, core with the modules); the others are taken from an installed prefix")
 # list of compile options that are passed to modules if EVEREST_ENABLE_COMPILE_WARNINGS=ON
 # generated code has functions often not used
 set(EVEREST_COMPILE_OPTIONS "-Wall;-Wno-unused-function" CACHE STRING "A list of compile options used for building modules")
@@ -109,16 +105,17 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     set(IEEE2030_BUILD_TESTING ON)
     set(BUILD_CBV2G_JSON_WRAPPER_TESTS ON)
 endif()
+include(ev-packages)
 # This is a flag for building development tests, but not necessarily to run them, for expample in case
 # tests requires hardware.
 option(BUILD_DEV_TESTS "Build dev tests" OFF)
 
-if(NOT EVEREST_LIBS_ONLY)
+if(EVEREST_BUILD_CORE)
     ev_setup_cmake_variables_python_wheel()
     option(${PROJECT_NAME}_INSTALL_EV_CLI_IN_PYTHON_VENV "Install ev-cli in python venv instead of using system" ON)
 endif()
 
-if(NOT EVEREST_LIBS_ONLY OR NOT DISABLE_EDM)
+if(EVEREST_BUILD_CORE OR NOT DISABLE_EDM)
     set(${PROJECT_NAME}_PYTHON_VENV_PATH "${CMAKE_BINARY_DIR}/venv" CACHE PATH "Path to python venv")
     ev_setup_python_executable(
         USE_PYTHON_VENV ${${PROJECT_NAME}_USE_PYTHON_VENV}
@@ -140,10 +137,9 @@ if(EVEREST_CORE_BUILD_TESTING)
 endif()
 
 include(ev-define-dependency)
-include(ev-lib-dependencies)
 include(ev-packaging)
 
-if(NOT EVEREST_LIBS_ONLY)
+if(EVEREST_BUILD_CORE)
     include("module-dependencies.cmake")
 endif()
 
@@ -152,7 +148,7 @@ if(POLICY CMP0167)
     cmake_policy(SET CMP0167 OLD)
 endif()
 
-if(NOT EVEREST_LIBS_ONLY)
+if(EVEREST_BUILD_CORE)
   find_package(Boost
       COMPONENTS
           filesystem
@@ -189,11 +185,11 @@ if(NOT DISABLE_EDM)
     endif()
 
     # ev-cli and everest-testing
-    if(NOT EVEREST_LIBS_ONLY)
+    if(EVEREST_BUILD_CORE)
         add_subdirectory(applications/utils)
     endif()
 else()
-    if(NOT EVEREST_LIBS_ONLY)
+    if(EVEREST_BUILD_CORE)
         find_package(PalSigslot REQUIRED)
         if(EVEREST_DEPENDENCY_ENABLED_LIBNFC_NCI)
             find_package(libnfc-nci REQUIRED)
@@ -219,16 +215,13 @@ if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
     add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
 endif()
 
-if(NOT DISABLE_EDM AND NOT (EVEREST_BUILD_BASE AND EVEREST_BUILD_ISO15118 AND EVEREST_BUILD_OCPP))
-    message(FATAL_ERROR "Using installed everest packages (EVEREST_BUILD_*=OFF) requires DISABLE_EDM=ON")
-endif()
-if(NOT EVEREST_BUILD_BASE)
+if(NOT EVEREST_BUILD_BASE AND (EVEREST_BUILD_ISO15118 OR EVEREST_BUILD_OCPP OR EVEREST_BUILD_CORE))
     find_package(everest-base REQUIRED)
 endif()
-if(NOT EVEREST_BUILD_ISO15118)
+if(EVEREST_BUILD_CORE AND NOT EVEREST_BUILD_ISO15118)
     find_package(everest-iso15118 REQUIRED)
 endif()
-if(NOT EVEREST_BUILD_OCPP)
+if(EVEREST_BUILD_CORE AND NOT EVEREST_BUILD_OCPP)
     find_package(everest-ocpp REQUIRED)
 endif()
 
@@ -236,10 +229,8 @@ if(EVEREST_BUILD_DOCS)
     add_subdirectory(docs)
 endif()
 
-if(EVEREST_LIBS_ONLY)
-    # ev-targets provides ev_register_library_target() used by some libraries
-    include(ev-targets)
-else()
+include(ev-targets)
+if(EVEREST_BUILD_CORE)
     include(ev-project-bootstrap)
 
     ev_add_project()
@@ -252,7 +243,11 @@ endif()
 
 add_subdirectory(lib)
 
-if(NOT EVEREST_LIBS_ONLY)
+if(DISABLE_EDM)
+    ev_install_library_packages()
+endif()
+
+if(EVEREST_BUILD_CORE)
     # config
     # FIXME (aw): this should be optional
     add_subdirectory(config)
@@ -280,14 +275,14 @@ if(DOXYGEN_FOUND)
 endif()
 
 # testing
-if(EVEREST_CORE_BUILD_TESTING AND NOT EVEREST_LIBS_ONLY)
+if(EVEREST_CORE_BUILD_TESTING AND EVEREST_BUILD_CORE)
     add_subdirectory(types)
     add_subdirectory(tests)
 else()
     message("Not running unit tests")
 endif()
 
-if(NOT EVEREST_LIBS_ONLY)
+if(EVEREST_BUILD_CORE)
     # convenience target for integration tests
     add_custom_target(install_everest_testing
         COMMAND

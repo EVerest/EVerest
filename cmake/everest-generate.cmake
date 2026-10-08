@@ -915,45 +915,6 @@ function(ev_install_project)
 
     include(CMakePackageConfigHelpers)
 
-    if(EVEREST_BUILD_BASE)
-        ev_install_package(
-            NAME everest-base
-            EXPORT everest-base-targets
-            DEPENDENCIES
-                "Boost REQUIRED COMPONENTS log_setup log"
-                "date REQUIRED"
-                "SQLite3 REQUIRED"
-                "OpenSSL 3 REQUIRED"
-            INCLUDES CollectMigrationFiles.cmake
-        )
-    endif()
-    if(EVEREST_BUILD_ISO15118)
-        ev_install_package(
-            NAME everest-iso15118
-            EXPORT everest-iso15118-targets
-            DEPENDENCIES
-                "everest-base REQUIRED"
-                "OpenSSL 3 REQUIRED"
-                "Threads REQUIRED"
-        )
-    endif()
-    if(EVEREST_BUILD_OCPP)
-        ev_install_package(
-            NAME everest-ocpp
-            EXPORT everest-ocpp-targets
-            DEPENDENCIES
-                "everest-base REQUIRED"
-                "OpenSSL 3 REQUIRED"
-                "SQLite3 REQUIRED"
-                "Threads REQUIRED"
-                "date REQUIRED"
-                "nlohmann_json REQUIRED"
-                "nlohmann_json_schema_validator REQUIRED"
-                "ryml REQUIRED"
-                "libwebsockets REQUIRED"
-        )
-    endif()
-
     set (EVEREST_DATADIR "${CMAKE_INSTALL_DATADIR}/everest")
 
     install(DIRECTORY ${CMAKE_BINARY_DIR}/generated/include/generated

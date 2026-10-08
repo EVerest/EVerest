@@ -18,7 +18,7 @@ pugixml:
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
   git_tag: v4.5.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_ENABLE_ADMIN_PANEL_BACKEND"
+  cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_OCPP"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
     - CMAKE_POLICY_DEFAULT_CMP0077 NEW
@@ -106,7 +106,7 @@ catch2:
 mosquitto:
   git: https://github.com/eclipse-mosquitto/mosquitto
   git_tag: v2.0.22
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_io OR EVEREST_BUILD_LIB_framework"
+  cmake_condition: "EVEREST_BUILD_CORE"
   options:
     - DOCUMENTATION OFF
     - WITH_BROKER OFF
@@ -117,7 +117,7 @@ mosquitto:
 ryml:
   git: https://github.com/biojppm/rapidyaml
   git_tag: v0.10.0
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_yaml OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_ocpp"
+  cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_OCPP"
   options: ["CMAKE_POSITION_INDEPENDENT_CODE ON"]
 
 grpc:
@@ -146,12 +146,12 @@ grpc-extended-cpp-plugin:
 nlohmann_json:
   git: https://github.com/nlohmann/json
   git_tag: v3.12.0
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_everest_api_types"
+  cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_OCPP"
   options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
 nlohmann_json_schema_validator:
   git: https://github.com/pboettch/json-schema-validator
   git_tag: 2.4.0
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
+  cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_OCPP"
   options:
     [
       "JSON_VALIDATOR_INSTALL OFF",
@@ -163,7 +163,7 @@ nlohmann_json_schema_validator:
 date:
   git: https://github.com/HowardHinnant/date.git
   git_tag: v3.0.4
-  cmake_condition: "EVEREST_BUILD_LIB_timer OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework"
+  cmake_condition: "EVEREST_BUILD_BASE OR EVEREST_BUILD_OCPP OR EVEREST_BUILD_CORE"
   options:
     [
       "BUILD_TZ_LIB ON",
@@ -175,7 +175,7 @@ date:
 libfmt:
   git: https://github.com/fmtlib/fmt.git
   git_tag: 12.1.0
-  cmake_condition: "EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_run_application"
+  cmake_condition: "EVEREST_BUILD_CORE"
   options:
     [
       "FMT_TEST OFF",
@@ -187,9 +187,9 @@ libfmt:
 pybind11:
   git: https://github.com/pybind/pybind11.git
   git_tag: v3.0.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"
+  cmake_condition: "EVEREST_BUILD_CORE"
   options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
 pybind11_json:
   git: https://github.com/pybind/pybind11_json.git
   git_tag: 0.2.15
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR (EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_LIB_framework)"
+  cmake_condition: "EVEREST_BUILD_CORE"
