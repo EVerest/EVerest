@@ -17,7 +17,9 @@ find_dependency(nlohmann_json_schema_validator REQUIRED)
 find_dependency(ryml REQUIRED)
 find_dependency(fmt REQUIRED)
 find_dependency(Threads REQUIRED)
-find_dependency(sdbus-c++ REQUIRED)
+if("@EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP@")
+    find_dependency(sdbus-c++ REQUIRED)
+endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
 

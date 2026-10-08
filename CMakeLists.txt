@@ -188,7 +188,9 @@ else()
         find_package(pugixml REQUIRED)
         find_package(CURL 7.84.0 REQUIRED)
         find_package(ftxui 6 QUIET) # optional, if not available BringUp module will not be built
-        find_package(sdbus-c++ REQUIRED)
+        if(EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP)
+            find_package(sdbus-c++ REQUIRED)
+        endif()
 
         # modules consume these directly; the libraries find their own
         # external dependencies in their respective CMakeLists.txt
