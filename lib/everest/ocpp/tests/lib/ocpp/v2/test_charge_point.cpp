@@ -1113,6 +1113,80 @@ TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallback
     }
 }
 
+// A connect and a disconnect requested while a CALL is in flight both wait for its answer, then apply in the order they
+// were requested.
+TEST_F(ChargePointConstructorTestFixtureV2, ConnectThenDisconnectAwaitCallInFlightInOrder) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+    std::function<void(const std::string&)> csms_to_charge_point;
+    ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+        .WillByDefault(
+            ::testing::Invoke([&csms_to_charge_point](const std::function<void(const std::string&)>& callback) {
+                csms_to_charge_point = callback;
+            }));
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<std::string> boot_notification_id;
+    std::vector<std::string> transport_calls;
+    ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+        .WillByDefault(::testing::Invoke([&](const std::string& message) {
+            const auto call = json::parse(message);
+            std::lock_guard<std::mutex> lock(mtx);
+            if (call.at(MESSAGE_TYPE_ID) == MessageTypeId::CALL && call.at(CALL_ACTION) == "BootNotification" &&
+                !boot_notification_id.has_value()) {
+                boot_notification_id = call.at(MESSAGE_ID).get<std::string>();
+                cv.notify_all();
+            }
+            return true;
+        }));
+    ON_CALL(*connectivity_manager, connect(::testing::_))
+        .WillByDefault(::testing::Invoke([&](std::optional<std::int32_t>) {
+            std::lock_guard<std::mutex> lock(mtx);
+            transport_calls.push_back("connect");
+            cv.notify_all();
+        }));
+    ON_CALL(*connectivity_manager, disconnect()).WillByDefault(::testing::Invoke([&]() {
+        std::lock_guard<std::mutex> lock(mtx);
+        transport_calls.push_back("disconnect");
+        cv.notify_all();
+    }));
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp, false);
+    NetworkConnectionProfile network_connection_profile;
+    network_connection_profile.messageTimeout = 30;
+    charge_point.on_websocket_connected(1, network_connection_profile, OcppProtocolVersion::v201);
+
+    std::string in_flight_id;
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return boot_notification_id.has_value(); }));
+        in_flight_id = boot_notification_id.value();
+    }
+
+    charge_point.connect_websocket();
+    charge_point.disconnect_websocket();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        EXPECT_TRUE(transport_calls.empty());
+    }
+
+    const json accepted = {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 300}, {"status", "Accepted"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, in_flight_id, accepted}.dump());
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return transport_calls.size() >= 2; }));
+        EXPECT_EQ(transport_calls, (std::vector<std::string>{"connect", "disconnect"}));
+    }
+
+    charge_point.stop();
+}
+
 /// \brief Stands in for the CSMS transport: collects what the message queue sends so the test can answer it
 class FakeCsmsTransport {
 public:

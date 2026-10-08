@@ -1070,4 +1070,197 @@ TEST_F(MessageQueueTest, test_old_timeout_cannot_settle_new_in_flight_after_paus
     }
 }
 
+TEST_F(MessageQueueTest, test_run_when_idle_waits_for_call_result) {
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    wait_for_calls(1);
+
+    std::promise<void> ran;
+    auto ran_future = ran.get_future();
+    message_queue->run_when_idle([&ran]() {
+        ran.set_value();
+        return true;
+    });
+    EXPECT_EQ(ran_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    message_queue->receive(json{3, "first", json::object()}.dump());
+    EXPECT_EQ(ran_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+}
+
+TEST_F(MessageQueueTest, test_run_when_idle_waits_for_in_flight_timeout) {
+    config.message_timeout_seconds = 1;
+    restart_message_queue();
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    wait_for_calls(1);
+
+    std::promise<void> ran;
+    auto ran_future = ran.get_future();
+    message_queue->run_when_idle([&ran]() {
+        ran.set_value();
+        return true;
+    });
+    EXPECT_EQ(ran_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+    EXPECT_EQ(ran_future.wait_for(std::chrono::seconds(3)), std::future_status::ready);
+}
+
+TEST_F(MessageQueueTest, test_run_when_idle_runs_actions_once_in_order) {
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    wait_for_calls(1);
+
+    std::mutex order_mutex;
+    std::vector<int> order;
+    std::promise<void> second_ran;
+    auto second_future = second_ran.get_future();
+    message_queue->run_when_idle([&]() {
+        const std::lock_guard<std::mutex> lk(order_mutex);
+        order.push_back(1);
+        return true;
+    });
+    message_queue->run_when_idle([&]() {
+        const std::lock_guard<std::mutex> lk(order_mutex);
+        order.push_back(2);
+        second_ran.set_value();
+        return true;
+    });
+
+    message_queue->receive(json{3, "first", json::object()}.dump());
+    ASSERT_EQ(second_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    const std::lock_guard<std::mutex> lk(order_mutex);
+    EXPECT_EQ(order, (std::vector<int>{1, 2}));
+}
+
+TEST_F(MessageQueueTest, test_no_call_sent_while_action_runs) {
+    std::promise<void> started;
+    auto started_future = started.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    message_queue->run_when_idle([&]() {
+        started.set_value();
+        release_future.wait_for(std::chrono::seconds(3));
+        return true;
+    });
+    ASSERT_EQ(started_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(0, get_call_count());
+
+    release.set_value();
+    wait_for_calls(1);
+}
+
+TEST_F(MessageQueueTest, test_no_call_sent_after_closing_action_until_resume) {
+    std::promise<void> ran;
+    auto ran_future = ran.get_future();
+    message_queue->run_when_idle([&ran]() {
+        ran.set_value();
+        return false;
+    });
+    ASSERT_EQ(ran_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(0, get_call_count());
+
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(1);
+}
+
+TEST_F(MessageQueueTest, test_calls_sent_after_action_left_socket_connected) {
+    testing::Sequence s;
+    EXPECT_CALL(send_callback_mock, Call(json{2, "first", "non_transactional", json{{"data", "first"}}}))
+        .InSequence(s)
+        .WillOnce(MarkAndReturn(true));
+    EXPECT_CALL(send_callback_mock, Call(json{2, "second", "non_transactional", json{{"data", "second"}}}))
+        .InSequence(s)
+        .WillOnce(MarkAndReturn(true));
+
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "first");
+    wait_for_calls(1);
+    message_queue->run_when_idle([]() { return true; });
+    push_message_call(TestMessageType::NON_TRANSACTIONAL, "second");
+
+    message_queue->receive(json{3, "first", json::object()}.dump());
+    wait_for_calls(2);
+}
+
+TEST_F(MessageQueueTest, test_queue_paused_before_action_stays_paused) {
+    message_queue->pause();
+    std::promise<void> ran;
+    auto ran_future = ran.get_future();
+    message_queue->run_when_idle([&ran]() {
+        ran.set_value();
+        return true;
+    });
+    ASSERT_EQ(ran_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    EXPECT_EQ(0, get_call_count());
+
+    message_queue->resume(std::chrono::seconds(0));
+    wait_for_calls(1);
+}
+
+TEST_F(MessageQueueTest, test_pause_and_resume_during_action_prevent_self_resume) {
+    std::promise<void> paused;
+    auto paused_future = paused.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    message_queue->run_when_idle([&]() {
+        message_queue->pause();
+        paused.set_value();
+        release_future.wait_for(std::chrono::seconds(3));
+        return true;
+    });
+    ASSERT_EQ(paused_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    message_queue->resume(std::chrono::seconds(1));
+    release.set_value();
+
+    EXPECT_CALL(send_callback_mock, Call(testing::_)).WillOnce(MarkAndReturn(true));
+    push_message_call(TestMessageType::TRANSACTIONAL);
+    std::this_thread::sleep_for(std::chrono::milliseconds(300));
+    EXPECT_EQ(0, get_call_count());
+
+    wait_for_calls(1);
+}
+
+TEST_F(MessageQueueTest, test_stop_waits_for_running_action) {
+    auto queue = std::make_unique<MessageQueue<TestMessageType>>([](json) { return true; }, config, db);
+    queue->start();
+
+    std::promise<void> started;
+    auto started_future = started.get_future();
+    std::promise<void> release;
+    auto release_future = release.get_future();
+    std::atomic<bool> finished{false};
+    queue->run_when_idle([&]() {
+        started.set_value();
+        release_future.wait_for(std::chrono::seconds(3));
+        finished = true;
+        return true;
+    });
+    ASSERT_EQ(started_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    std::promise<bool> stopped;
+    auto stopped_future = stopped.get_future();
+    std::thread stopper([&]() {
+        queue->stop();
+        stopped.set_value(finished);
+    });
+    EXPECT_EQ(stopped_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    release.set_value();
+    EXPECT_EQ(stopped_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    stopper.join();
+    EXPECT_TRUE(stopped_future.get());
+}
+
 } // namespace ocpp

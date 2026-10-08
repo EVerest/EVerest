@@ -1308,15 +1308,14 @@ bool ChargePointImpl::stop() {
             }
         }
 
-        this->security_profile_revert_timer.stop();
-
         this->stop_all_transactions();
 
+        this->message_queue->stop();
+        this->security_profile_revert_timer.stop();
         this->database_handler->close_connection();
         // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
         // ~ChargePointImpl() disarms.
         this->connectivity_manager->disconnect();
-        this->message_queue->stop();
 
         this->stopped = true;
         this->initialized = false;
@@ -1913,8 +1912,11 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
                             message_dispatcher->dispatch_call_result(call_result);
                         }
                         response.reset(); // response has been sent
-                        this->connectivity_manager->set_websocket_authorization_key(
-                            this->configuration.getAuthorizationKey().value());
+                        this->message_queue->run_when_idle(
+                            [this, key = this->configuration.getAuthorizationKey().value()]() {
+                                this->connectivity_manager->set_websocket_authorization_key(key);
+                                return this->connectivity_manager->is_websocket_connected();
+                            });
                     } else {
                         EVLOG_info << "AuthorizationKey was changed while on security profile 3. Nothing to do.";
                     }
@@ -2071,30 +2073,36 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
     };
     set_profile(new_security_profile);
     this->connectivity_manager->reload_network_profiles();
-    this->connectivity_manager->connect();
 
-    // Use the configured SwitchSecurityProfileConnectionTimeout (seconds) when present, falling back to the
-    // SECURITY_PROFILE_SWITCH_TIMEOUT default otherwise.
-    const std::chrono::seconds revert_timeout{this->configuration.getSwitchSecurityProfileConnectionTimeout().value_or(
-        SECURITY_PROFILE_SWITCH_TIMEOUT.count())};
+    this->message_queue->run_when_idle([this, fallback_security_profile, set_profile]() {
+        this->connectivity_manager->connect();
 
-    // Arm a revert timer: if the new security profile does not result in a successful connection within the timeout,
-    // revert to the fallback security profile. A successful connection cancels this timer via connected_callback().
-    this->security_profile_revert_timer.timeout(
-        [this, fallback_security_profile, set_profile]() {
-            std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
-            if (this->connectivity_manager->is_websocket_connected()) {
-                EVLOG_info << "Security profile switch connected within the revert timeout window; not reverting.";
-                return;
-            }
-            EVLOG_warning << "Security profile switch did not connect within timeout; reverting.";
-            this->connectivity_manager
-                ->disconnect(); // ensures that connectivity_manager does not initiate a reconnect on its own
-            set_profile(fallback_security_profile);
-            this->connectivity_manager->reload_network_profiles();
-            this->connectivity_manager->connect();
-        },
-        revert_timeout);
+        // Use the configured SwitchSecurityProfileConnectionTimeout (seconds) when present, falling back to the
+        // SECURITY_PROFILE_SWITCH_TIMEOUT default otherwise.
+        const std::chrono::seconds revert_timeout{
+            this->configuration.getSwitchSecurityProfileConnectionTimeout().value_or(
+                SECURITY_PROFILE_SWITCH_TIMEOUT.count())};
+
+        // Arm a revert timer: if the new security profile does not result in a successful connection within the
+        // timeout, revert to the fallback security profile. A successful connection cancels this timer via
+        // connected_callback().
+        this->security_profile_revert_timer.timeout(
+            [this, fallback_security_profile, set_profile]() {
+                std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
+                if (this->connectivity_manager->is_websocket_connected()) {
+                    EVLOG_info << "Security profile switch connected within the revert timeout window; not reverting.";
+                    return;
+                }
+                EVLOG_warning << "Security profile switch did not connect within timeout; reverting.";
+                this->connectivity_manager
+                    ->disconnect(); // ensures that connectivity_manager does not initiate a reconnect on its own
+                set_profile(fallback_security_profile);
+                this->connectivity_manager->reload_network_profiles();
+                this->connectivity_manager->connect();
+            },
+            revert_timeout);
+        return this->connectivity_manager->is_websocket_connected();
+    });
 }
 
 void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call) {
@@ -2959,7 +2967,10 @@ void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSigne
 
     // reconnect with new certificate if valid and security profile is 3
     if (response.status == CertificateSignedStatusEnumType::Accepted && this->configuration.getSecurityProfile() == 3) {
-        this->connectivity_manager->on_charging_station_certificate_changed();
+        this->message_queue->run_when_idle([this]() {
+            this->connectivity_manager->on_charging_station_certificate_changed();
+            return this->connectivity_manager->is_websocket_connected();
+        });
     }
 }
 
