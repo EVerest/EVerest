@@ -104,6 +104,7 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     set(everest-timer_BUILD_TESTING ON)
     set(everest-log_BUILD_TESTING ON)
     set(IEEE2030_BUILD_TESTING ON)
+    set(BUILD_CBV2G_JSON_WRAPPER_TESTS ON)
 endif()
 # This is a flag for building development tests, but not necessarily to run them, for expample in case
 # tests requires hardware.

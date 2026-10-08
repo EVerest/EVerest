@@ -72,14 +72,18 @@ cmake --build build
 ## Tests
 
 Tests use GoogleTest and are gated behind `BUILD_CBV2G_JSON_WRAPPER_TESTS`
-so a non-test build does not require GTest:
+so a non-test build does not require GTest. An EVerest build with
+`-DBUILD_TESTING=ON` turns it on, so the tests run with the rest of the unit
+tests:
 
 ```bash
-cmake -S . -B build -DEVEREST_BUILD_APPLICATIONS=ON \
-      -DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON
-cmake --build build --target cbv2g_test_apphand
+cmake -S . -B build -DBUILD_TESTING=ON
+cmake --build build --target cbv2g_test_apphand cbv2g_test_din
 ctest --test-dir build -R cbv2g_test_ --output-on-failure
 ```
+
+A standalone build of this directory needs `-DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON`
+instead, as shown under Build.
 
 ## Third-party
 
