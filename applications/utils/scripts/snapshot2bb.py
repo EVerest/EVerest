@@ -53,8 +53,7 @@ def main():
         return
 
     # TODO: provide this via a file as a command line parameter
-    mapping = {'Josev': 'josev/python3-iso15118',
-               'everest-utils': 'everest-devtools/evcli',
+    mapping = {'everest-utils': 'everest-devtools/evcli',
                'EVerest': 'everest/everest-core',
                'everest-framework': 'everest/everest-framework',
                'everest-sqlite': 'everest/everest-sqlite',
