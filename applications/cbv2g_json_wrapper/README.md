@@ -39,9 +39,53 @@ listed in `include/cbv2g_json_wrapper.h`.
 |----------|-----------|--------|
 | App Handshake (SAP) | `urn:iso:15118:2:2010:AppProtocol` | Supported |
 | DIN 70121 | `urn:din:70121:2012:MsgDef` | Supported |
+| ISO 15118-2 (incl. PnC) | `urn:iso:15118:2:2013:MsgDef` | Supported |
+| xmldsig `SignedInfo` (PnC signatures) | `http://www.w3.org/2000/09/xmldsig#` | Supported |
 
-Additional protocol support (ISO 15118-2) is added in subsequent PRs
-in this stack. ISO 15118-20 support is planned as a follow-up PR.
+ISO 15118-20 support is planned as a follow-up PR.
+
+### ISO 15118-2
+
+The JSON follows the shape Josev exchanges with its Java codec. Elements and
+attributes keep their XSD names, enumerations their XSD literals, repeated
+elements are arrays, hexBinary values are hex strings (decoded in upper case)
+and base64Binary values padded base64. Simple content that carries an `Id`
+attribute is an object with `Id` and `value`, as in `SignatureValue`, `eMAID`,
+`DHpublickey` and `ContractSignatureEncryptedPrivateKey`. A substitution group
+appears as its concrete member, e.g. `AC_EVSEStatus` or `DC_EVChargeParameter`.
+
+With the `MsgDef` namespace, a JSON object whose single key is `V2G_Message`
+is a complete message. Any other single key encodes that element as an
+ISO 15118-2 EXI fragment, which is what signature digests are computed over:
+`AuthorizationReq`, `MeteringReceiptReq`, `CertificateInstallationReq`,
+`CertificateUpdateReq`, `ContractSignatureCertChain`,
+`ContractSignatureEncryptedPrivateKey`, `DHpublickey`, `eMAID`, `SalesTariff`
+and `SignedInfo`.
+
+The signature itself is computed over `SignedInfo` coded in the fragment
+grammar of the xmldsig schema (ISO 15118-2 Annex J), so `{"SignedInfo": ...}`
+is encoded and decoded with the xmldsig namespace.
+
+Input is validated, not coerced. A missing mandatory element (the `Header`
+and its `SessionID` included), an enumeration given as anything but one of its
+literals, a repeated element given as anything but an array, a string or byte
+value that does not fit, malformed or non-canonical hex or base64, or an integer
+outside the range of its EXI field is reported as `CBV2G_ERROR_JSON_PARSE` with
+a message in `cbv2g_get_last_error()`. Members the schema does not know are
+ignored.
+
+`X509SerialNumber` (up to 20 octets), `MeterReading`, `TMeter` and
+`EVSETimeStamp` are read and written as exact decimal digits, beyond the
+precision of a JSON number in cJSON.
+
+Known limitations:
+
+- A string holding NUL characters decodes to `\u0000` escapes, but encoding
+  refuses such a string, because cJSON ends strings at the first NUL.
+- `KeyInfo` and `Object` in a `Signature`, and `HMACOutputLength` in a
+  `SignatureMethod`, are not supported. ISO 15118-2 does not use them.
+- Array sizes are those of libcbv2g, which are smaller than the schema allows
+  for some elements, e.g. 12 `PMaxScheduleEntry` per schedule.
 
 ## Build
 
@@ -78,7 +122,7 @@ tests:
 
 ```bash
 cmake -S . -B build -DBUILD_TESTING=ON
-cmake --build build --target cbv2g_test_apphand cbv2g_test_din
+cmake --build build --target cbv2g_test_apphand cbv2g_test_din cbv2g_test_iso2
 ctest --test-dir build -R cbv2g_test_ --output-on-failure
 ```
 
