@@ -48,7 +48,6 @@ public:
     static bool x509_is_extension_critical(X509Handle* handle, const std::string& name);
     static std::string x509_get_not_before(X509Handle* handle);
     static std::string x509_get_not_after(X509Handle* handle);
-    static std::string x509_get_public_key_algorithm(X509Handle* handle);
     static std::string x509_get_public_key_bits(X509Handle* handle);
     static std::string x509_get_extended_key_usage(X509Handle* handle);
     static std::string x509_get_certificate_policies(X509Handle* handle);

@@ -80,9 +80,6 @@ public:
     /// @brief Get the notAfter validity field as ISO 8601 UTC, or empty if not present
     static std::string x509_get_not_after(X509Handle* handle);
 
-    /// @brief Get the Subject Public Key algorithm short name (e.g. "rsaEncryption", "id-ecPublicKey"), or empty
-    static std::string x509_get_public_key_algorithm(X509Handle* handle);
-
     /// @brief Get the Subject Public Key size in bits as a decimal string, or empty
     static std::string x509_get_public_key_bits(X509Handle* handle);
 

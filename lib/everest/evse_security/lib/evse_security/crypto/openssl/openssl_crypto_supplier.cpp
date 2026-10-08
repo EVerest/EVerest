@@ -953,24 +953,6 @@ std::string OpenSSLSupplier::x509_get_not_after(X509Handle* handle) {
     return asn1_time_to_iso8601(X509_get0_notAfter(x509));
 }
 
-std::string OpenSSLSupplier::x509_get_public_key_algorithm(X509Handle* handle) {
-    X509* x509 = get(handle);
-    if (x509 == nullptr) {
-        return {};
-    }
-
-    EVP_PKEY* pkey = X509_get_pubkey(x509);
-    if (pkey == nullptr) {
-        return {};
-    }
-
-    const int nid = EVP_PKEY_base_id(pkey);
-    const char* short_name = OBJ_nid2sn(nid);
-    std::string result = (short_name != nullptr) ? short_name : "";
-
-    EVP_PKEY_free(pkey);
-    return result;
-}
 
 std::string OpenSSLSupplier::x509_get_public_key_bits(X509Handle* handle) {
     X509* x509 = get(handle);
