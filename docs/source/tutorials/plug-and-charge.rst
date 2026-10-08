@@ -25,11 +25,7 @@ and the :doc:`Plug&Charge Configuration Howto </how-to-guides/configure-pnc>`
 Certificates for ISO 15118 communication
 ----------------------------------------
 
-The ISO 15118-2 development PKI is generated only when Josev is fetched. With
-default options, configure with ``-DBUILD_TESTING=ON`` or
-``-DEVEREST_DEPENDENCY_ENABLED_JOSEV=ON`` and leave
-``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` enabled.
-The EVerest install then ships this test PKI under ``etc/everest/certs`` of the install
+The EVerest install ships a test PKI under ``etc/everest/certs`` of the install
 prefix (sources in ``config/certs``): CA certificates in ``certs/ca`` and client
 certificates, private keys and password files in ``certs/client``. The EV
 simulation (``Ev15118``) and the charger (``Evse15118D20``) both use it, so no extra
@@ -65,7 +61,7 @@ Let's get started step by step
 ------------------------------
 
 1. Prerequisites must be fullfilled: EVerest must be installed on your system.
-   Enable the test PKI as described above when configuring the build.
+   By default, this includes a complete and automatic installation of a test PKI.
    The certificates and keys are located under ``dist/etc/everest/certs``.
 
 2. Let's prepare the central system that we are going to use. Follow the

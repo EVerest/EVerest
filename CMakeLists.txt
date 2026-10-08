@@ -229,8 +229,19 @@ else()
 
     ev_add_project()
 
-    # create MF_ROOT_CA if not available
     if (ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES)
+        get_property(EVEREST_BUILT_MODULES GLOBAL PROPERTY EVEREST_MODULES)
+        if(NOT DISABLE_EDM AND "Ev15118" IN_LIST EVEREST_BUILT_MODULES)
+            # Run a build-tree copy so CSRs and other intermediate files stay out of the source tree.
+            set(CREATE_CERTS_WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/iso15118-pki")
+            file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/assets/iso15118-pki/"
+                DESTINATION "${CREATE_CERTS_WORKING_DIRECTORY}")
+            message(STATUS "Generating ISO15118 certificates for ${PROJECT_SOURCE_DIR}")
+            execute_process(
+                COMMAND "${CREATE_CERTS_WORKING_DIRECTORY}/create_certs.sh" -v iso-2 -i "${PROJECT_SOURCE_DIR}"
+                WORKING_DIRECTORY "${CREATE_CERTS_WORKING_DIRECTORY}"
+            )
+        endif()
         file(TOUCH config/certs/ca/mf/MF_ROOT_CA.pem)
     endif()
 endif()
