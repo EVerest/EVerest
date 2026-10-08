@@ -1,13 +1,6 @@
 cmake_minimum_required(VERSION 3.14)
 project(cbv2g_json_wrapper VERSION 1.0.0 LANGUAGES C CXX)
 
-# When this directory is configured standalone (i.e. not as part of an
-# everest-core build), pull in libcbv2g via add_subdirectory so the
-# cbv2g::din target is available. See cmake/local-build.cmake for details.
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND NOT TARGET cbv2g::din)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/local-build.cmake)
-endif()
-
 # cJSON library (embedded). C99 is sufficient for both cJSON and the
 # wrapper itself (no C11 features used) and matches libcbv2g's baseline,
 # keeping the toolchain requirement low for downstream consumers.
