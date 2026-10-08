@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     IECStateMachineTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
+    RandomDelayDurationTest.cpp
     VoltagePlausibilityMonitorTest.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
