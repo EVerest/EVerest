@@ -236,11 +236,18 @@ else()
             set(CREATE_CERTS_WORKING_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/iso15118-pki")
             file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/cmake/assets/iso15118-pki/"
                 DESTINATION "${CREATE_CERTS_WORKING_DIRECTORY}")
-            message(STATUS "Generating ISO15118 certificates for ${PROJECT_SOURCE_DIR}")
             execute_process(
                 COMMAND "${CREATE_CERTS_WORKING_DIRECTORY}/create_certs.sh" -v iso-2 -i "${PROJECT_SOURCE_DIR}"
                 WORKING_DIRECTORY "${CREATE_CERTS_WORKING_DIRECTORY}"
+                RESULT_VARIABLE CREATE_CERTS_RESULT
+                OUTPUT_VARIABLE CREATE_CERTS_OUTPUT
+                ERROR_VARIABLE CREATE_CERTS_OUTPUT
             )
+            if(CREATE_CERTS_RESULT EQUAL 0)
+                message(STATUS "ISO 15118-2 development certificates generated")
+            else()
+                message(WARNING "ISO 15118-2 development certificate generation failed (${CREATE_CERTS_RESULT}):\n${CREATE_CERTS_OUTPUT}")
+            endif()
         endif()
         file(TOUCH config/certs/ca/mf/MF_ROOT_CA.pem)
     endif()
