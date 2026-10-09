@@ -211,6 +211,12 @@ vars:
   ready:
     description: Signals that the EVSE Manager is ready to start charging
     type: boolean
+  all_errors_cleared:
+    description: >-
+      Signals that no errors (including ones that do not prevent charging) are currently active on this EVSE
+      or any of the hardware modules it depends on (BSP, powermeter, etc.). Published every time the active
+      error count reaches zero, which can happen repeatedly over the module's lifetime.
+    type: boolean
   selected_protocol:
     description: >-
       Contains the selected protocol used for charging for informative purposes
