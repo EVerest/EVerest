@@ -796,8 +796,8 @@
             "mutability": "ReadOnly"
           }
         ],
-        "description": "The flag that indicates if installation of CSMSRootCertificate is allowed when security profile is 1.",
-        "default": true,
+        "description": "The flag that indicates if installation of CSMSRootCertificate is allowed when security profile is 0 or 1.",
+        "default": false,
         "type": "boolean"
       },
       "AllowMFRootCertInstallWithUnsecureConnection": {
@@ -812,8 +812,8 @@
             "mutability": "ReadOnly"
           }
         ],
-        "description": "The flag that indicates if installation of ManufacturerRootCertificate is allowed when security profile is 1.",
-        "default": true,
+        "description": "The flag that indicates if installation of ManufacturerRootCertificate is allowed when security profile is 0 or 1.",
+        "default": false,
         "type": "boolean"
       },
       "AllowSecurityLevelZeroConnections": {

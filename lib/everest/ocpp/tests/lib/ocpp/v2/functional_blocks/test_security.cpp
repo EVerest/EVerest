@@ -37,13 +37,14 @@ using ::testing::MockFunction;
 using ::testing::Return;
 
 namespace {
-/// \brief Removes \p variable_names from the SecurityCtrlr component before the device model is handed to the fixture,
+/// \brief Removes \p variable_names from a component before the device model is handed to the fixture,
 /// so a test can exercise the paths taken when an optional device model value is absent. set_value cannot express this:
 /// validate_value rejects an empty value for an integer variable.
-DeviceModel* device_model_without_security_ctrlr_variables(DeviceModelTestHelper& device_model_test_helper,
-                                                           const std::vector<std::string>& variable_names) {
+DeviceModel* device_model_without_variables(DeviceModelTestHelper& device_model_test_helper,
+                                            const std::vector<std::string>& variable_names,
+                                            const std::string& component_name) {
     for (const auto& variable_name : variable_names) {
-        EXPECT_TRUE(device_model_test_helper.remove_variable_from_db("SecurityCtrlr", std::nullopt, std::nullopt,
+        EXPECT_TRUE(device_model_test_helper.remove_variable_from_db(component_name, std::nullopt, std::nullopt,
                                                                      std::nullopt, variable_name, std::nullopt));
     }
     return device_model_test_helper.get_device_model();
@@ -75,10 +76,10 @@ protected: // Functions
     SecurityTest() : SecurityTest(std::vector<std::string>{}) {
     }
 
-    explicit SecurityTest(const std::vector<std::string>& removed_security_ctrlr_variables) :
+    explicit SecurityTest(const std::vector<std::string>& removed_variables,
+                          const std::string& component_name = "SecurityCtrlr") :
         device_model_test_helper(),
-        device_model(
-            device_model_without_security_ctrlr_variables(device_model_test_helper, removed_security_ctrlr_variables)),
+        device_model(device_model_without_variables(device_model_test_helper, removed_variables, component_name)),
         logging(false, "", "", false, false, false, false, false, false, false, nullptr),
         evse_security(),
         connectivity_manager(),
@@ -372,94 +373,180 @@ TEST_F(SecurityTest, handle_message_certificate_signed_chargingstationcertificat
     security.handle_message(create_example_certificate_signed_request("", std::nullopt));
 }
 
-TEST_F(SecurityTest, handle_message_install_certificate_csms_root_not_allowed_on_unsecure_connection) {
-    set_security_profile(this->device_model, 1);
-    set_bool_variable(this->device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
-                      false);
+class SecurityMissingInstallAllowTest : public SecurityTest {
+protected:
+    SecurityMissingInstallAllowTest() :
+        SecurityTest({"AllowCSMSRootCertInstallWithUnsecureConnection", "AllowMFRootCertInstallWithUnsecureConnection"},
+                     "InternalCtrlr") {
+    }
+};
 
-    // The certificate is never looked at.
+TEST_F(SecurityMissingInstallAllowTest, install_certificate_missing_allow_rejected_on_low_profiles) {
     EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
-        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
-        ASSERT_TRUE(response.statusInfo.has_value());
-        EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
-        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
-        EXPECT_EQ(response.statusInfo->additionalInfo->get(),
-                  "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
-    }));
+    for (const auto profile : {0, 1}) {
+        set_security_profile(device_model, profile);
+        for (const auto type :
+             {InstallCertificateUseEnum::CSMSRootCertificate, InstallCertificateUseEnum::ManufacturerRootCertificate}) {
+            SCOPED_TRACE(std::to_string(profile) + ": " +
+                         ocpp::v2::conversions::install_certificate_use_enum_to_string(type));
+            EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([type](const json& call_result) {
+                const auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+                EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+                ASSERT_TRUE(response.statusInfo.has_value());
+                EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+                ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+                EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                          ocpp::v2::conversions::install_certificate_use_enum_to_string(type) +
+                              "InstallationNotAllowedWithUnsecureConnection");
+            }));
+            security.handle_message(create_example_install_certificate_request(type));
+        }
+    }
+}
 
-    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::CSMSRootCertificate));
+TEST_F(SecurityTest, install_certificate_mo_v2g_rejected_on_low_profiles) {
+    set_bool_variable(device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection, true);
+    set_bool_variable(device_model, ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection, true);
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+    for (const auto profile : {0, 1}) {
+        set_security_profile(device_model, profile);
+        for (const auto type :
+             {InstallCertificateUseEnum::MORootCertificate, InstallCertificateUseEnum::V2GRootCertificate}) {
+            SCOPED_TRACE(std::to_string(profile) + ": " +
+                         ocpp::v2::conversions::install_certificate_use_enum_to_string(type));
+            EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+                const auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+                EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+                ASSERT_TRUE(response.statusInfo.has_value());
+                EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+                ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+                EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                          "RootCertificateInstallationNotAllowedWithUnsecureConnection");
+            }));
+            security.handle_message(create_example_install_certificate_request(type));
+        }
+    }
+}
+
+TEST_F(SecurityTest, handle_message_install_certificate_csms_root_not_allowed_on_unsecure_connection) {
+    for (const auto profile : {0, 1}) {
+        SCOPED_TRACE(profile);
+        set_security_profile(this->device_model, profile);
+        set_bool_variable(this->device_model,
+                          ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection, false);
+        set_bool_variable(device_model, ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection,
+                          true);
+
+        // The certificate is never looked at.
+        EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+            auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+            EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+            ASSERT_TRUE(response.statusInfo.has_value());
+            EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+            ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+            EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                      "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }));
+
+        security.handle_message(
+            create_example_install_certificate_request(InstallCertificateUseEnum::CSMSRootCertificate));
+    }
 }
 
 TEST_F(SecurityTest, handle_message_install_certificate_manufacturer_root_not_allowed_on_unsecure_connection) {
-    set_security_profile(this->device_model, 1);
-    set_bool_variable(this->device_model, ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection,
-                      false);
+    for (const auto profile : {0, 1}) {
+        SCOPED_TRACE(profile);
+        set_security_profile(this->device_model, profile);
+        set_bool_variable(this->device_model,
+                          ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection, false);
+        set_bool_variable(device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
+                          true);
 
-    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
-        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
-        ASSERT_TRUE(response.statusInfo.has_value());
-        EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
-        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
-        EXPECT_EQ(response.statusInfo->additionalInfo->get(),
-                  "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
-    }));
+        EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+            auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+            EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+            ASSERT_TRUE(response.statusInfo.has_value());
+            EXPECT_EQ(response.statusInfo->reasonCode.get(), "Unspecified");
+            ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+            EXPECT_EQ(response.statusInfo->additionalInfo->get(),
+                      "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
+        }));
 
-    security.handle_message(
-        create_example_install_certificate_request(InstallCertificateUseEnum::ManufacturerRootCertificate));
+        security.handle_message(
+            create_example_install_certificate_request(InstallCertificateUseEnum::ManufacturerRootCertificate));
+    }
 }
 
-TEST_F(SecurityTest, handle_message_install_certificate_csms_root_allowed_on_unsecure_connection) {
-    set_security_profile(this->device_model, 1);
-    set_bool_variable(this->device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
-                      true);
-
-    EXPECT_CALL(evse_security, install_ca_certificate("", ocpp::CaCertificateType::CSMS))
-        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
-        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Accepted);
-        EXPECT_FALSE(response.statusInfo.has_value());
-    }));
-    EXPECT_CALL(security_event_callback_mock, Call(CiString<50>("ReconfigurationOfSecurityParameters"), _));
-
-    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::CSMSRootCertificate));
+TEST_F(SecurityTest, install_certificate_allowed_roots) {
+    const std::vector<std::pair<InstallCertificateUseEnum, ocpp::CaCertificateType>> certificate_types{
+        {InstallCertificateUseEnum::CSMSRootCertificate, ocpp::CaCertificateType::CSMS},
+        {InstallCertificateUseEnum::ManufacturerRootCertificate, ocpp::CaCertificateType::MF},
+        {InstallCertificateUseEnum::MORootCertificate, ocpp::CaCertificateType::MO},
+        {InstallCertificateUseEnum::V2GRootCertificate, ocpp::CaCertificateType::V2G}};
+    for (const auto profile : {0, 1, 2, 3}) {
+        set_security_profile(device_model, profile);
+        set_bool_variable(device_model, ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
+                          profile < 2);
+        set_bool_variable(device_model, ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection,
+                          profile < 2);
+        for (const auto& [type, ca_type] : certificate_types) {
+            if (profile < 2 && (ca_type == ocpp::CaCertificateType::MO || ca_type == ocpp::CaCertificateType::V2G)) {
+                continue;
+            }
+            SCOPED_TRACE(std::to_string(profile) + ": " +
+                         ocpp::v2::conversions::install_certificate_use_enum_to_string(type));
+            EXPECT_CALL(evse_security, install_ca_certificate("", ca_type))
+                .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+            EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+                const auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+                EXPECT_EQ(response.status, InstallCertificateStatusEnum::Accepted);
+                EXPECT_FALSE(response.statusInfo.has_value());
+            }));
+            EXPECT_CALL(security_event_callback_mock, Call(CiString<50>("ReconfigurationOfSecurityParameters"), _));
+            security.handle_message(create_example_install_certificate_request(type));
+        }
+    }
 }
 
 TEST_F(SecurityTest, handle_message_install_certificate_oem_root_not_supported_unsecure_connection) {
-    set_security_profile(this->device_model, 1);
+    for (const auto profile : {0, 1}) {
+        SCOPED_TRACE(profile);
+        set_security_profile(this->device_model, profile);
 
-    // Installing an OEM root certificate is not implemented, the refusal has nothing to do with the connection.
-    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
-        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
-        ASSERT_TRUE(response.statusInfo.has_value());
-        EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
-        ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
-        EXPECT_EQ(response.statusInfo->additionalInfo->get(), "OEMRootCertificateInstallationNotSupported");
-    }));
+        // Installing an OEM root certificate is not implemented, the refusal has nothing to do with the connection.
+        EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+            auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+            EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+            ASSERT_TRUE(response.statusInfo.has_value());
+            EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
+            ASSERT_TRUE(response.statusInfo->additionalInfo.has_value());
+            EXPECT_EQ(response.statusInfo->additionalInfo->get(), "OEMRootCertificateInstallationNotSupported");
+        }));
 
-    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+        security.handle_message(
+            create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+    }
 }
 
 TEST_F(SecurityTest, handle_message_install_certificate_oem_root_not_supported_secure_connection) {
-    set_security_profile(this->device_model, 3);
+    for (const auto profile : {2, 3}) {
+        SCOPED_TRACE(profile);
+        set_security_profile(this->device_model, profile);
 
-    // On a secure connection the request used to reach evse_security, where the conversion of the OEM certificate
-    // type throws. It has to be rejected before that.
-    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
-        EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
-        ASSERT_TRUE(response.statusInfo.has_value());
-        EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
-    }));
+        EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
+            auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>();
+            EXPECT_EQ(response.status, InstallCertificateStatusEnum::Rejected);
+            ASSERT_TRUE(response.statusInfo.has_value());
+            EXPECT_EQ(response.statusInfo->reasonCode.get(), "UnsupportedRequest");
+        }));
 
-    security.handle_message(create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+        security.handle_message(
+            create_example_install_certificate_request(InstallCertificateUseEnum::OEMRootCertificate));
+    }
 }
 
 TEST_F(SecurityTest, sign_certificate_request_accepted) {

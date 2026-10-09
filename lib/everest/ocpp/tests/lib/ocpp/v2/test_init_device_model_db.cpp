@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 
 #define private public
@@ -449,6 +450,76 @@ TEST_F(InitDeviceModelDbTest, default_device_model_config) {
     InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH_DEFAULT);
     const auto component_configs = get_all_component_configs(CONFIG_PATH_DEFAULT);
     EXPECT_NO_THROW(db.initialize_database(component_configs, true));
+}
+
+TEST_F(InitDeviceModelDbTest, certificate_install_defaults_upgrade_preserves_custom_values) {
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    const auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    db.initialize_database(component_configs, true);
+    db.database_exists = true;
+    DeviceModelStorageSqlite storage(DATABASE_PATH);
+    const std::vector<ComponentVariable> variables{
+        ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection,
+        ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection};
+
+    for (const auto& source : {"default", "custom"}) {
+        for (const auto& variable : variables) {
+            SCOPED_TRACE(variable.variable->name.get() + ": " + source);
+            ASSERT_EQ(storage.set_variable_attribute_value(variable.component, *variable.variable,
+                                                           AttributeEnum::Actual, "true", source),
+                      SetVariableStatusEnum::Accepted);
+            ASSERT_TRUE(attribute_has_value("InternalCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                            variable.variable->name.get(), std::nullopt, AttributeEnum::Actual,
+                                            "true"));
+            ASSERT_EQ(get_attribute_source("InternalCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                           variable.variable->name.get(), std::nullopt, AttributeEnum::Actual),
+                      source);
+        }
+
+        db.initialize_database(component_configs, false);
+        for (const auto& variable : variables) {
+            SCOPED_TRACE(variable.variable->name.get() + ": " + source);
+            const auto attribute =
+                storage.get_variable_attribute(variable.component, *variable.variable, AttributeEnum::Actual);
+            ASSERT_TRUE(attribute.has_value());
+            ASSERT_TRUE(attribute->value.has_value());
+            EXPECT_EQ(attribute->value->get(), std::string(source) == "default" ? "false" : "true");
+            EXPECT_EQ(get_attribute_source("InternalCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                           variable.variable->name.get(), std::nullopt, AttributeEnum::Actual),
+                      source);
+        }
+    }
+}
+
+TEST_F(InitDeviceModelDbTest, certificate_install_custom_config_true_default_survives_reinitialization) {
+    auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    std::size_t updated_defaults = 0;
+    for (auto& [component, variables] : component_configs) {
+        if (component.name != "InternalCtrlr") {
+            continue;
+        }
+        for (auto& variable : variables) {
+            if (variable.name == "AllowCSMSRootCertInstallWithUnsecureConnection" ||
+                variable.name == "AllowMFRootCertInstallWithUnsecureConnection") {
+                variable.default_actual_value = "true";
+                ++updated_defaults;
+            }
+        }
+    }
+    ASSERT_EQ(updated_defaults, 2);
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.initialize_database(component_configs, true);
+    db.database_exists = true;
+    db.initialize_database(component_configs, false);
+    for (const auto& name :
+         {"AllowCSMSRootCertInstallWithUnsecureConnection", "AllowMFRootCertInstallWithUnsecureConnection"}) {
+        SCOPED_TRACE(name);
+        EXPECT_TRUE(attribute_has_value("InternalCtrlr", std::nullopt, std::nullopt, std::nullopt, name, std::nullopt,
+                                        AttributeEnum::Actual, "true"));
+        EXPECT_EQ(get_attribute_source("InternalCtrlr", std::nullopt, std::nullopt, std::nullopt, name, std::nullopt,
+                                       AttributeEnum::Actual),
+                  "default");
+    }
 }
 
 TEST_F(InitDeviceModelDbTest, wrong_type) {

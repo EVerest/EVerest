@@ -656,7 +656,7 @@ std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCer
     case InstallCertificateUseEnum::CSMSRootCertificate:
         if (!this->context.device_model
                  .get_optional_value<bool>(ControllerComponentVariables::AllowCSMSRootCertInstallWithUnsecureConnection)
-                 .value_or(true)) {
+                 .value_or(false)) {
             return make_status_info(reason_code_unspecified,
                                     "CSMSRootCertificateInstallationNotAllowedWithUnsecureConnection");
         }
@@ -664,14 +664,14 @@ std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCer
     case InstallCertificateUseEnum::ManufacturerRootCertificate:
         if (!this->context.device_model
                  .get_optional_value<bool>(ControllerComponentVariables::AllowMFRootCertInstallWithUnsecureConnection)
-                 .value_or(true)) {
+                 .value_or(false)) {
             return make_status_info(reason_code_unspecified,
                                     "ManufacturerRootCertificateInstallationNotAllowedWithUnsecureConnection");
         }
         return std::nullopt;
     case InstallCertificateUseEnum::MORootCertificate:
     case InstallCertificateUseEnum::V2GRootCertificate:
-        return std::nullopt;
+        return make_status_info(reason_code_unspecified, "RootCertificateInstallationNotAllowedWithUnsecureConnection");
     case InstallCertificateUseEnum::OEMRootCertificate:
         break; // handled above
     }

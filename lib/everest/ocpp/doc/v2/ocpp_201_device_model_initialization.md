@@ -28,6 +28,20 @@ accordingly. Only the initial values will be set to the values in the component 
 changed a value, it will not be updated to the value from the component config file.
 
 
+## Root certificate installation defaults
+
+On security profiles 0 and 1, `InstallCertificate` rejects CSMS and manufacturer roots unless the corresponding
+`InternalCtrlr.AllowCSMSRootCertInstallWithUnsecureConnection` or
+`InternalCtrlr.AllowMFRootCertInstallWithUnsecureConnection` value is explicitly `true`. Both defaults are `false`,
+and a missing value also denies installation. MO and V2G roots are always rejected on these profiles. Profiles 2 and 3
+allow all four supported root types; OEM roots are unsupported on every profile. Policy refusals return `Rejected`
+with `StatusInfo` before calling the certificate store.
+
+During device-model reinitialization, old `true` values with source `default` are refreshed to the configured `false`
+defaults. Values set by another source are preserved. A custom component configuration that explicitly sets either
+default to `true` retains that opt-in.
+
+
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
