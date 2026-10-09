@@ -990,6 +990,32 @@ TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
 }
 
+// request_error_sequence() is the SLAC module's error routine. Without an established data link, e.g. after
+// TT_EVSE_SLAC_init expired, the EVSE goes to E/F directly ([V2G3-M06-07]). After a lost data link it goes through X1
+// first and leaves the network there ([V2G3-M07-05..07]).
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineWithoutDataLinkGoesToStepEF) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterLostDataLinkGoesThroughX1) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->get_hlc_use_5percent_current_session() = true;
+    charger->set_dlink_ready(true);
+    charger->set_dlink_ready(false);
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_FALSE(ctx.dlink_established);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
