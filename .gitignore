@@ -1,6 +1,7 @@
-*build*
-!lib/everest/*/cmake/*-build.cmake
-!applications/*/cmake/*-build.cmake
+*build*/
+!.ci/build-kit/
+!lib/everest/framework/.ci/build-kit/
+!lib/everest/ocpp/doc/common/build-with-fetchcontent/
 *dist
 .cache/
 workspace.yaml

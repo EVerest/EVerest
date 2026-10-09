@@ -19,6 +19,7 @@ SRCREV = "c784c20401764978fd6287a55e50bc65d083d68c"
 EXTRA_OECMAKE += " \
     -DEVEREST_RS_TARGET_TRIPLE=${RUST_HOST_SYS} \
     -DEVEREST_RS_LINKER=${RUST_TARGET_CCLD} \
+    -DEVEREST_RS_CARGO_LOCKED=OFF \
 "
 
 # cargo runs under CMake, so what cargo_common only prepares as variables is exported here.
