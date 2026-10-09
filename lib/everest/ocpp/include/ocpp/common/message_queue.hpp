@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_COMMON_MESSAGE_QUEUE_HPP
 #define OCPP_COMMON_MESSAGE_QUEUE_HPP
 
@@ -855,6 +855,15 @@ public:
             {
                 const std::lock_guard<std::recursive_mutex> lk(this->next_message_mutex);
                 next_message_to_send.reset();
+            }
+            // The CALLRESULT payload must be an object.
+            // Anything else must not count as an answer to the message in flight and take the CALLERROR path instead.
+            if (enhanced_message.messageTypeId == MessageTypeId::CALLRESULT and
+                not(enhanced_message.message.size() > CALLRESULT_PAYLOAD and
+                    enhanced_message.message.at(CALLRESULT_PAYLOAD).is_object())) {
+                EVLOG_error << "Received a CALLRESULT without an object payload for message with UID: "
+                            << enhanced_message.uniqueId << ", treating it as CALLERROR";
+                enhanced_message.messageTypeId = MessageTypeId::CALLERROR;
             }
             // we need to remove Call messages from in_flight if we receive a CallResult OR a CallError
 
