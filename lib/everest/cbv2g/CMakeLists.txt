@@ -41,6 +41,11 @@ endif()
 
 # packaging
 if (CB_V2G_INSTALL)
+    if (EVEREST_CORE_BUILD AND DISABLE_EDM)
+        set(CBV2G_EXPORT_TARGETS everest-core-targets)
+    else()
+        set(CBV2G_EXPORT_TARGETS cbv2g-targets)
+    endif()
     install(
         TARGETS
             cbv2g_exi_codec
@@ -48,7 +53,7 @@ if (CB_V2G_INSTALL)
             cbv2g_iso2
             cbv2g_iso20
             cbv2g_tp
-        EXPORT cbv2g-targets
+        EXPORT ${CBV2G_EXPORT_TARGETS}
         LIBRARY
     )
 
@@ -63,4 +68,3 @@ if (CB_V2G_INSTALL)
         EXPORT cbv2g-targets
     )
 endif()
-
