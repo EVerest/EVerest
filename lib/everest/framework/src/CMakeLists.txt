@@ -4,7 +4,6 @@ add_executable(manager)
 target_sources(manager
     PRIVATE
         system_unix.cpp
-        manager_admin_panel.cpp
         manager.cpp
 )
 # generate version information header
@@ -20,17 +19,6 @@ target_link_libraries(manager
         Boost::program_options
         management_api
 )
-
-if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
-    target_link_libraries(manager
-        PRIVATE
-            controller-ipc
-    )
-
-    target_compile_definitions(manager PRIVATE ENABLE_ADMIN_PANEL)
-
-    add_subdirectory(controller)
-endif ()
 
 target_compile_options(manager PRIVATE ${COMPILER_WARNING_OPTIONS})
 

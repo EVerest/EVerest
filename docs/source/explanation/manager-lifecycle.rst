@@ -196,8 +196,8 @@ Startup Failure
 Normal Shutdown (SIGINT or SIGTERM)
 ***********************************
 
-- First signal with no modules running (for example in ``Idle``): controller
-  shutdown, MQTT disconnect and → ``Exiting`` with success — no drain.
+- First signal with no modules running (for example in ``Idle``): MQTT
+  disconnect and → ``Exiting`` with success — no drain.
 - First signal with modules running: the shutdown reason becomes *normal stop*,
   the manager goes to ``ShutdownRequested`` and publishes the MQTT shutdown
   signal; modules run their shutdown handlers and exit (see

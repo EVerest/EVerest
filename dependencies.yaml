@@ -18,7 +18,7 @@ pugixml:
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
   git_tag: v4.5.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_ENABLE_ADMIN_PANEL_BACKEND"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
     - CMAKE_POLICY_DEFAULT_CMP0077 NEW

@@ -35,10 +35,6 @@ In the EVerest config file, add the following to the settings section:
 - Use OCPP security level 3 for the CSMS connection.
 - Use a hardware security module, e.g. TPM2 for generating and
   securing private keys.
-- Don't use the *admin-panel* on the product and ensure EVerest does
-  not listen on port 8849. In the Yocto recipes, this is disabled by
-  default. Take special care if you use another build system. Set
-  "EVEREST_ENABLE_ADMIN_PANEL_BACKEND=OFF" in cmake.
 - Do not run EVerest modules as root user. Create a low privilege
   user, that has access only to what is needed (via filesystem
   permissions, group memberships, ...). In Yocto, you can do this in your
