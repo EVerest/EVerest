@@ -80,13 +80,6 @@ def _everest_env(ctx):
         },
     )
 
-    # EVerest expects that there is a `share/everest/www` directory but does
-    # not care about the content... We just symlink the config.yaml into it.
-    symlinks.update(
-        {
-            "share/everest/www/config.yaml": ctx.attr.config_file[DefaultInfo].files.to_list()[0],
-        },
-    )
     symlinks.update(
         {
             "share/everest/schemas/{0}".format(file.basename): file
