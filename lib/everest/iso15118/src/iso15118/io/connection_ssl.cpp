@@ -477,7 +477,10 @@ void ConnectionSSL::handle_data() {
             if ((ssl_error == SSL_ERROR_WANT_READ) or (ssl_error == SSL_ERROR_WANT_WRITE)) {
                 return;
             }
-            log_and_raise_openssl_error("Failed to SSL_accept(): " + std::to_string(ssl_error));
+            // Throwing here would end the controller loop, only tear down connection instead.
+            logf_error("%s", log_openssl_error("Failed to SSL_accept(): " + std::to_string(ssl_error)).c_str());
+            close();
+            return;
         } else {
             logf_info("Handshake complete!");
 
