@@ -1,7 +1,7 @@
 <!-- SPDX-License-Identifier: Apache-2.0 -->
 <!-- Copyright 2026 Pionix GmbH and Contributors to EVerest -->
 
-Vendored from EVerest/ext-switchev-iso15118, commit `1b3ea741ea7954bbe4288742446f33653ecb7849`, path `iso15118/shared/pki/` (Apache-2.0; see LICENSE).
+Vendored from EVerest/ext-switchev-iso15118, commit `1b3ea741ea7954bbe4288742446f33653ecb7849`, path `iso15118/shared/pki/` (Apache-2.0, the license of this repository; see the root `LICENSE`).
 
 The script retains its original author header; only an SPDX line was added. The
 OpenSSL configs are unchanged. CMake stages this directory in the build tree and
