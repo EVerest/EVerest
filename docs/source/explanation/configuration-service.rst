@@ -329,11 +329,12 @@ Two independent mechanisms gate every write:
   for that caller ``ReadOnly`` parameters are treated as writable, so the write
   is accepted and persisted, but it typically only takes effect after a reboot.
 
-Values are validated against the parameter's **datatype** before anything is
-persisted, so a value that would fail to parse on the next boot is rejected up
-front. This is a datatype check only — no range (min/max) validation happens at
-this layer, so a badly chosen but well-typed value is accepted here and can
-still be refused by the module.
+Values are validated before anything is persisted, first against the
+parameter's **datatype** and then against its entry in the module **manifest**
+(``enum``, ``minimum``, ``maximum`` and the other schema keywords), the same
+check a configuration file gets. A value that fails either check is rejected
+with the reason, so a slot never stores a value it could not boot with. A value
+that passes can still be refused by the module at runtime.
 
 By a Configuration API Client
 =============================
