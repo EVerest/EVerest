@@ -201,6 +201,31 @@ TEST_F(DinServerTest, session_setup_datetime_is_used) {
     EXPECT_EQ(evse_id, std::string(reinterpret_cast<char*>(session_setup_res.EVSEID.bytes)));
 }
 
+TEST_F(DinServerTest, session_setup_truncates_evse_id_to_din_size) {
+    auto& session_setup_req = exi_in->V2G_Message.Body.SessionSetupReq;
+    exi_in->V2G_Message.Body.SessionSetupReq_isUsed = true;
+    init_din_SessionSetupReqType(&session_setup_req);
+
+    ctx->current_v2g_msg = V2G_SESSION_SETUP_MSG;
+    ctx->evse_v2g_data.session_id = 0;
+    ctx->ev_v2g_data.received_session_id = 0;
+
+    // The ISO 15118-2 EVSEID buffer holding the configured ID is larger than the DIN one
+    const std::string evse_id(iso2_EVSEID_CHARACTER_SIZE, 'X');
+    memcpy(ctx->evse_v2g_data.evse_id.bytes, evse_id.data(), evse_id.size());
+    ctx->evse_v2g_data.evse_id.bytesLen = evse_id.size();
+
+    auto& session_setup_res = exi_out->V2G_Message.Body.SessionSetupRes;
+    exi_out->V2G_Message.Body.SessionSetupRes_isUsed = 1u;
+    init_din_SessionSetupResType(&session_setup_res);
+
+    EXPECT_EQ(states::handle_din_session_setup(conn.get()), V2G_EVENT_NO_EVENT);
+
+    ASSERT_EQ(session_setup_res.EVSEID.bytesLen, din_evseIDType_BYTES_SIZE);
+    EXPECT_EQ(std::string(reinterpret_cast<char*>(session_setup_res.EVSEID.bytes), session_setup_res.EVSEID.bytesLen),
+              evse_id.substr(0, din_evseIDType_BYTES_SIZE));
+}
+
 TEST_F(DinServerTest, din_service_discovery_good_case) {
 
     // TODO(sl): Maybe add this to check exi_out proberly
