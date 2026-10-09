@@ -82,7 +82,7 @@ bool keep_caps() {
 std::string set_caps(const std::vector<std::string>& capabilities) {
 
     std::vector<cap_value_t> capability_values;
-    capability_values.resize(capabilities.size());
+    capability_values.reserve(capabilities.size());
 
     for (const auto& cap_name : capabilities) {
         auto& cap_value = capability_values.emplace_back();
