@@ -130,7 +130,9 @@ LemDCBM400600Controller::start_transaction(const types::powermeter::TransactionR
                         << value.transaction_id << ", try to recover by closing the current transaction";
             try {
                 // we will not return any response to stop transaction since this is a self triggered command
-                this->request_device_to_stop_transaction(this->current_transaction_id);
+                if (this->request_device_to_stop_transaction(this->current_transaction_id)) {
+                    this->confirm_transaction_stopped(this->current_transaction_id);
+                }
                 this->need_to_stop_transaction = false;
             } catch (UnexpectedDCBMResponseCode& error) {
                 EVLOG_error << "LEM DCBM 400/600: Could not close the current transaction, got error:" << error.what();
@@ -207,13 +209,21 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
         this->current_transaction_id = "";
         this->need_to_stop_transaction = false;
     }
+    // Set once the device accepted the stop but its response could not confirm it (AST format): a retry then
+    // only checks the device status again instead of stopping an already stopped transaction once more.
+    bool awaiting_stop_confirmation = false;
     try {
         return call_with_retry(
-            [this, need_to_execute_device_stop_transaction, tid]() {
+            [this, need_to_execute_device_stop_transaction, tid, &awaiting_stop_confirmation]() {
                 // special case if we started and a transaction is ongoing - the upper layers might not know the
                 // transaction id
                 if (need_to_execute_device_stop_transaction) {
-                    this->request_device_to_stop_transaction(tid);
+                    if (!awaiting_stop_confirmation) {
+                        awaiting_stop_confirmation = this->request_device_to_stop_transaction(tid);
+                    }
+                    if (awaiting_stop_confirmation) {
+                        this->confirm_transaction_stopped(tid);
+                    }
                 }
                 auto signed_meter_value = types::units_signed::SignedMeterValue{fetch_ocmf_result(tid), "", "OCMF"};
                 signed_meter_value.public_key.emplace(public_key_ocmf);
@@ -244,7 +254,7 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
     }
 }
 
-void LemDCBM400600Controller::request_device_to_stop_transaction(const std::string& transaction_id) {
+bool LemDCBM400600Controller::request_device_to_stop_transaction(const std::string& transaction_id) {
     std::string endpoint = v2_capable ? fmt::format("/v2/legal?transactionId={}", transaction_id)
                                       : fmt::format("/v1/legal?transactionId={}", transaction_id);
     auto legal_api_response = this->http_client->put(endpoint, R"({"running": false})");
@@ -255,18 +265,11 @@ void LemDCBM400600Controller::request_device_to_stop_transaction(const std::stri
 
     try {
         const auto body = json::parse(legal_api_response.body);
-        if (this->config.ast_transaction_body and not body.at("meterValue").contains("transactionStatus")) {
-            // The AST display unit answers the stop with the signed record but without transactionStatus, so
-            // confirm the stop through the device status instead.
-            auto status_response = this->http_client->get("/v1/status");
-            if (status_response.status_code != 200) {
-                throw UnexpectedDCBMResponseCode("/v1/status", 200, status_response);
-            }
-            if (json::parse(status_response.body).at("status").at("bits").at("transactionIsOnGoing").get<bool>()) {
-                throw UnexpectedDCBMResponseBody(
-                    endpoint, fmt::format("Transaction {} is still ongoing after the stop request.", transaction_id));
-            }
-            return;
+        if (this->config.ast_transaction_body and not v2_capable and
+            not body.at("meterValue").contains("transactionStatus")) {
+            // The AST display unit answers the stop with the signed record but without transactionStatus: the
+            // caller confirms the stop through the device status instead.
+            return true;
         }
         int status = body.at("meterValue").at("transactionStatus");
         bool transaction_is_ongoing = (status & 0b100) != 0; //  third status bit "transactionIsOnGoing" must be false
@@ -278,6 +281,27 @@ void LemDCBM400600Controller::request_device_to_stop_transaction(const std::stri
     } catch (json::exception& json_error) {
         throw UnexpectedDCBMResponseBody(
             endpoint, fmt::format("Json error '{}' for body {}", json_error.what(), legal_api_response.body));
+    }
+    return false;
+}
+
+void LemDCBM400600Controller::confirm_transaction_stopped(const std::string& transaction_id) {
+    const std::string endpoint = "/v1/status";
+    auto status_response = this->http_client->get(endpoint);
+    if (status_response.status_code != 200) {
+        throw UnexpectedDCBMResponseCode(endpoint, 200, status_response);
+    }
+    bool transaction_is_ongoing = true;
+    try {
+        transaction_is_ongoing =
+            json::parse(status_response.body).at("status").at("bits").at("transactionIsOnGoing").get<bool>();
+    } catch (json::exception& json_error) {
+        throw UnexpectedDCBMResponseBody(
+            endpoint, fmt::format("Json error '{}' for body {}", json_error.what(), status_response.body));
+    }
+    if (transaction_is_ongoing) {
+        throw UnexpectedDCBMResponseBody(
+            endpoint, fmt::format("Transaction {} is still ongoing after the stop request.", transaction_id));
     }
 }
 

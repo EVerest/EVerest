@@ -143,7 +143,8 @@ power meter with its K220031 Ethernet display unit. That device implements the L
   rejects any ``cableId`` field. Cable loss compensation is configured on the device through ``/v1/settings``
   (``cableConf``).
 - Its answer to the transaction stop carries the signed record but no ``meterValue.transactionStatus``. With
-  ``AST`` the driver confirms the stop through ``/v1/status`` (``transactionIsOnGoing`` must be false).
+  ``AST`` the driver confirms the stop through ``/v1/status`` (``transactionIsOnGoing`` must be false). If that
+  check fails, a retry repeats only the check, not the stop request.
 
 v2-capable devices are not affected by this option.
 
