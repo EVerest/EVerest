@@ -63,6 +63,40 @@ def determine_network_interface(preferred_interface: str) -> str:
     return preferred_interface
 
 
+MAC_ADDRESS_HEX_DIGITS = 12
+EVCC_ID_SEPARATORS = (':', '-', '.', ' ')
+VID_PREFIX = 'VID:'
+
+
+def normalize_evcc_id(value: str) -> str:
+    """
+    Turn a MAC address written in any of the forms a user is likely to type into the 12 uppercase hex digits
+    that DIN 70121 and ISO 15118-2 expect in SessionSetupReq. Accepts "VID:0242AC110099", "02:42:AC:11:00:99",
+    "02-42-ac-11-00-99" and "0242ac110099" alike, and returns an empty string for anything that is not a MAC
+    address.
+
+    The "VID:" prefix belongs to the OCPP token, not to the EVCCID - EvseManager prepends it again on the
+    charging station side - so it is accepted for convenience and then stripped.
+    """
+    candidate = value.strip()
+
+    if candidate.upper().startswith(VID_PREFIX):
+        candidate = candidate[len(VID_PREFIX):]
+
+    for separator in EVCC_ID_SEPARATORS:
+        candidate = candidate.replace(separator, '')
+
+    if len(candidate) != MAC_ADDRESS_HEX_DIGITS:
+        return ''
+
+    try:
+        int(candidate, 16)
+    except ValueError:
+        return ''
+
+    return candidate.upper()
+
+
 def patch_josev_config(josev_config: EVCCConfig, everest_config: dict) -> None:
 
     josev_config.use_tls = everest_config['tls_active']

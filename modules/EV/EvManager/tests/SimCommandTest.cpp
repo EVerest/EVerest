@@ -116,3 +116,52 @@ SCENARIO("SimCommands can be parsed", "[SimCommand]") {
         }
     }
 }
+
+SCENARIO("Overloaded SimCommands are parsed by their argument count", "[SimCommand]") {
+    GIVEN("A command registered with both 0 and 1 arguments, as set_evcc_id is") {
+        auto command_registry = CommandRegistry();
+        const auto command_name = std::string{"set_evcc_id"};
+
+        auto called_without_argument = false;
+        auto called_with_argument = std::string{};
+
+        command_registry.register_command(command_name, 0,
+                                          [&called_without_argument](const std::vector<std::string>& /*arguments*/) {
+                                              called_without_argument = true;
+                                              return true;
+                                          });
+        command_registry.register_command(command_name, 1,
+                                          [&called_with_argument](const std::vector<std::string>& arguments) {
+                                              called_with_argument = arguments.at(0);
+                                              return true;
+                                          });
+
+        WHEN("Both forms appear in the same command string") {
+            // Note that parsing lower-cases the whole string, which is why the argument comes back lower-cased.
+            const auto command_string = "set_evcc_id 0242AC110099;set_evcc_id";
+            auto parsed_commands = SimulationCommand::parse_sim_commands(command_string, command_registry);
+
+            THEN("Each one resolves to the overload with the matching argument count") {
+                CHECK(parsed_commands.front().execute());
+                CHECK(called_with_argument == "0242ac110099");
+                CHECK_FALSE(called_without_argument);
+                parsed_commands.pop();
+
+                CHECK(parsed_commands.front().execute());
+                CHECK(called_without_argument);
+                parsed_commands.pop();
+
+                CHECK(parsed_commands.empty());
+            }
+        }
+
+        WHEN("The command is given too many arguments") {
+            const auto command_string = "set_evcc_id 0242ac110099 extra";
+
+            THEN("Parsing should fail") {
+                CHECK_THROWS_WITH(SimulationCommand::parse_sim_commands(command_string, command_registry),
+                                  "Command not found: set_evcc_id");
+            }
+        }
+    }
+}

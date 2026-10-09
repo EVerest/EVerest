@@ -271,6 +271,18 @@ void car_simulatorImpl::register_all_commands() {
         command_registry->register_command("iso_start_bcb_toggle", 1, [this](const CmdArguments& arguments) {
             return this->car_simulation->iso_start_bcb_toggle(arguments);
         });
+        // Two arities: "set_evcc_id <mac>" announces that MAC address, "set_evcc_id" on its own drops the
+        // override and goes back to the MAC address of the EV's network interface. The command parser
+        // lower-cases the whole simulation string, which is harmless here because the EV normalises the MAC
+        // address to upper case anyway.
+        command_registry->register_command("set_evcc_id", 1, [this](const CmdArguments& arguments) {
+            publish_evcc_id(this->car_simulation->set_evcc_id(arguments.at(0)));
+            return true;
+        });
+        command_registry->register_command("set_evcc_id", 0, [this](const CmdArguments& /*arguments*/) {
+            publish_evcc_id(this->car_simulation->set_evcc_id(""));
+            return true;
+        });
     }
 }
 
@@ -415,6 +427,16 @@ void car_simulatorImpl::subscribe_to_external_mqtt() {
                        auto data_copy = data;
                        handle_modify_charging_session(data_copy);
                    });
+}
+
+void car_simulatorImpl::publish_evcc_id(const std::string& evcc_id) {
+    // Echo back what the EV will actually announce so a dashboard can confirm the value was taken. It is
+    // published in the "VID:" form because that is what the charging station turns it into for Autocharge, and
+    // therefore what has to be registered with the CSMS. Retained, so a dashboard that connects later still
+    // sees which vehicle is currently being simulated.
+    const auto payload = evcc_id.empty() ? std::string{"rejected"} : "VID:" + evcc_id;
+    mod->mqtt.publish("everest_external/nodered/" + std::to_string(mod->config.connector_id) + "/carsim/state/evcc_id",
+                      payload, true);
 }
 
 void car_simulatorImpl::reset_car_simulation_defaults() {
