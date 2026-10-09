@@ -149,10 +149,7 @@ void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
         this->security->security_event_notification_req(CiString<50>(ocpp::security_events::STARTUP_OF_THE_DEVICE),
                                                         std::optional<CiString<255>>(startup_message), true, true);
     } else if (this->bootreason == BootReasonEnum::FirmwareUpdate) {
-        std::string startup_message =
-            "Charging station reboot after firmware update. Firmware version: " + firmware_version;
-        this->security->security_event_notification_req(CiString<50>(ocpp::security_events::FIRMWARE_UPDATED),
-                                                        std::optional<CiString<255>>(startup_message), true, true);
+        // FirmwareUpdated is sent with Installed (L01.FR.31).
     } else {
         std::string startup_message = "Charging station reset or reboot. Firmware version: " + firmware_version;
         this->security->security_event_notification_req(CiString<50>(ocpp::security_events::RESET_OR_REBOOT),
@@ -682,7 +679,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->firmware_update = std::make_unique<FirmwareUpdate>(
         *this->functional_block_context, *this->availability, *this->security,
-        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback);
+        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback,
+        this->registration_status);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
@@ -696,7 +694,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.time_sync_callback, this->callbacks.boot_notification_callback,
         this->callbacks.validate_network_profile_callback, this->callbacks.is_reset_allowed_callback,
         this->callbacks.reset_callback, this->callbacks.stop_transaction_callback,
-        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status);
+        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status,
+        *this->firmware_update);
 
     this->remote_transaction_control = std::make_unique<RemoteTransactionControl>(
         *this->functional_block_context, *this->transaction, *this->smart_charging, *this->meter_values,

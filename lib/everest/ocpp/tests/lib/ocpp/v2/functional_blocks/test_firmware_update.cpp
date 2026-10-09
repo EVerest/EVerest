@@ -85,6 +85,7 @@ protected:
 
     NiceMock<AvailabilityMock> availability;
     NiceMock<SecurityMock> security;
+    std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Accepted};
 
     std::unique_ptr<FunctionalBlockContext> fb_context;
     std::unique_ptr<FirmwareUpdate> firmware_update;
@@ -121,7 +122,7 @@ protected:
                 response.status = this->callback_response_status;
                 return response;
             },
-            std::nullopt);
+            std::nullopt, registration_status);
     }
 
     void enable_defer_download_gate() {
@@ -190,6 +191,49 @@ protected:
         return result;
     }
 };
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, InstalledWaitsForRegistrationAndIsSentOnce) {
+    registration_status = RegistrationStatusEnum::Pending;
+    EXPECT_CALL(security, security_event_notification_req(CiString<50>("FirmwareUpdated"), _, true, true, _)).Times(1);
+    firmware_update->on_firmware_update_status_notification(42, FirmwareStatusEnum::Installed);
+    EXPECT_TRUE(firmware_status_notifications().empty());
+    dispatched_calls.clear();
+
+    registration_status = RegistrationStatusEnum::Accepted;
+    firmware_update->on_registration_accepted();
+    const auto notifications = firmware_status_notifications();
+    ASSERT_EQ(notifications.size(), 1);
+    EXPECT_EQ(notifications.front().at("status"), "Installed");
+    EXPECT_EQ(notifications.front().at("requestId"), 42);
+
+    firmware_update->on_registration_accepted();
+    EXPECT_EQ(firmware_status_notifications().size(), 1);
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, LatestStatusIsSentAfterRegistration) {
+    registration_status = RegistrationStatusEnum::Rejected;
+    firmware_update->on_firmware_update_status_notification(41, FirmwareStatusEnum::Installing);
+    firmware_update->on_firmware_update_status_notification(42, FirmwareStatusEnum::Installed);
+    EXPECT_TRUE(firmware_status_notifications().empty());
+    dispatched_calls.clear();
+
+    registration_status = RegistrationStatusEnum::Accepted;
+    firmware_update->on_registration_accepted();
+    const auto notifications = firmware_status_notifications();
+    ASSERT_EQ(notifications.size(), 1);
+    EXPECT_EQ(notifications.front().at("status"), "Installed");
+    EXPECT_EQ(notifications.front().at("requestId"), 42);
+}
+
+TEST_F(FirmwareUpdateDeferredDownloadTest, StatusAfterRegistrationIsSentImmediately) {
+    firmware_update->on_firmware_update_status_notification(43, FirmwareStatusEnum::Installed);
+    const auto notifications = firmware_status_notifications();
+    ASSERT_EQ(notifications.size(), 1);
+    EXPECT_EQ(notifications.front().at("status"), "Installed");
+    EXPECT_EQ(notifications.front().at("requestId"), 43);
+    firmware_update->on_registration_accepted();
+    EXPECT_EQ(firmware_status_notifications().size(), 1);
+}
 
 TEST_F(FirmwareUpdateDeferredDownloadTest, GateOnTransactionActiveDefersDownload) {
     enable_defer_download_gate();

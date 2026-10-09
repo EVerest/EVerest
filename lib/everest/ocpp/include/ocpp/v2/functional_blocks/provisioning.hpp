@@ -15,6 +15,7 @@ class MeterValuesInterface;
 class DiagnosticsInterface;
 class TransactionInterface;
 class TariffAndCostInterface;
+class FirmwareUpdateInterface;
 
 struct BootNotificationResponse;
 struct SetVariablesRequest;
@@ -73,7 +74,8 @@ public:
                  IsResetAllowedCallback is_reset_allowed_callback, ResetCallback reset_callback,
                  StopTransactionCallback stop_transaction_callback,
                  std::optional<VariableChangedCallback> variable_changed_callback,
-                 TariffAndCostInterface& tariff_and_cost, std::atomic<RegistrationStatusEnum>& registration_status);
+                 TariffAndCostInterface& tariff_and_cost, std::atomic<RegistrationStatusEnum>& registration_status,
+                 FirmwareUpdateInterface& firmware_update);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
     void boot_notification_req(const BootReasonEnum& reason, const bool initiated_by_trigger_message = false) override;
     void stop_bootnotification_timer() override;
@@ -94,6 +96,7 @@ private:
     DiagnosticsInterface& diagnostics;
     TransactionInterface& transaction;
     TariffAndCostInterface& tariff_and_cost;
+    FirmwareUpdateInterface& firmware_update;
 
     std::optional<TimeSyncCallback> time_sync_callback;
     std::optional<BootNotificationCallback> boot_notification_callback;
