@@ -37,6 +37,7 @@ struct ControllerConfOverrides {
     int IT = -1;
     int transaction_ocmf_fetch_interval_s = 0;
     bool ast_transaction_body = false;
+    int tariff_id = 0;
 };
 
 static LemDCBM400600Controller::Conf make_controller_conf(const ControllerConfOverrides& overrides = {}) {
@@ -45,7 +46,7 @@ static LemDCBM400600Controller::Conf make_controller_conf(const ControllerConfOv
                                          /*transaction_number_of_http_retries=*/1,
                                          /*transaction_retry_wait_in_milliseconds=*/0,
                                          /*cable_id=*/0,
-                                         /*tariff_id=*/0,
+                                         overrides.tariff_id,
                                          /*meter_timezone=*/{},
                                          /*meter_dst=*/{},
                                          /*SC=*/0,
@@ -305,6 +306,128 @@ TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_ast_confirms_via_statu
     ASSERT_EQ(transaction_request_status_to_string(res.status), "OK");
     ASSERT_TRUE(res.signed_meter_value.has_value());
     ASSERT_EQ(res.signed_meter_value.value().signed_meter_data, "mock_ocmf_string");
+}
+
+/// \brief Test the AST DC650 start body carries the configured tariff as a string
+TEST_F(LemDCBM400600ControllerTest, test_start_transaction_ast_body_tariff_id_as_string) {
+    const std::string expected_ast_body{
+        R"({"evseId":"mock_evse_id","transactionId":"mock_transaction_id","clientId":",mock_transaction_id","tariffId":"7","userData":""})"};
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", expected_ast_body))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    overrides.tariff_id = 7;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.start_transaction(this->transaction_request);
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
+}
+
+/// \brief Test the AST DC650 stop fails if the device status still reports the transaction as ongoing
+TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_ast_fails_when_still_ongoing) {
+    const std::string ast_stop_response{R"({"transactionId":"mock_transaction_id","meterValue":{}})"};
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .WillRepeatedly(testing::Return(HttpResponse{200, ast_stop_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/status"))
+        .Times(2)
+        .WillRepeatedly(testing::Return(HttpResponse{200, R"({"status":{"bits":{"transactionIsOnGoing":true}}})"}));
+    EXPECT_CALL(*this->http_client, get(testing::StartsWith("/v1/ocmf"))).Times(0);
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+    ASSERT_TRUE(res.error.has_value());
+    EXPECT_THAT(res.error.value(), testing::HasSubstr("still ongoing"));
+    EXPECT_FALSE(res.signed_meter_value.has_value());
+}
+
+/// \brief Test the AST DC650 stop fails if the device status cannot be read
+TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_ast_fails_when_status_fails) {
+    const std::string ast_stop_response{R"({"transactionId":"mock_transaction_id","meterValue":{}})"};
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .WillRepeatedly(testing::Return(HttpResponse{200, ast_stop_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/status")).Times(2).WillRepeatedly(testing::Return(HttpResponse{500, ""}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+    ASSERT_TRUE(res.error.has_value());
+    EXPECT_THAT(res.error.value(), testing::HasSubstr("/v1/status"));
+}
+
+/// \brief Test the AST DC650 stop uses transactionStatus when the response does carry it
+TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_ast_uses_transaction_status_when_present) {
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, this->put_legal_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/status")).Times(0);
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+
+    auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
+}
+
+/// \brief Test the default (LEM) format still rejects a stop response without transactionStatus
+TEST_F(LemDCBM400600ControllerTest, test_stop_transaction_lem_rejects_response_without_transaction_status) {
+    const std::string ast_stop_response{R"({"transactionId":"mock_transaction_id","meterValue":{}})"};
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .WillRepeatedly(testing::Return(HttpResponse{200, ast_stop_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/status")).Times(0);
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+}
+
+/// \brief Test a v2-capable device keeps the v2 body even with the AST format configured
+TEST_F(LemDCBM400600ControllerTest, test_start_transaction_v2_ignores_ast_format) {
+    EXPECT_CALL(*this->http_client, get("/v1/status"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{
+            200,
+            R"({ "meterId": "mock_meter_id", "publicKeyOcmf": "KEY", "status": {"bits": {"transactionIsOnGoing": false}}, "version":{"applicationFirmwareVersion":"1.2.0.0"} })"}));
+    EXPECT_CALL(*this->http_client, get("/v2/legal"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"transactionId": "thetransactionid"})"}));
+    EXPECT_CALL(*this->time_sync_helper, restart_unsafe_period()).Times(testing::AnyNumber());
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1);
+    EXPECT_CALL(*this->http_client, post("/v2/legal", testing::AllOf(testing::HasSubstr(R"("tariffId":0)"),
+                                                                     testing::HasSubstr(R"("cableId":0)"))))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    ControllerConfOverrides overrides;
+    overrides.ast_transaction_body = true;
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       make_controller_conf(overrides));
+    controller.init();
+
+    auto res = controller.start_transaction(this->transaction_request);
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
 }
 
 /// \brief Test fallback OCMF is fetched immediately after start and then throttled
