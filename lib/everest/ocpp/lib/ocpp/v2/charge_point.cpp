@@ -424,6 +424,9 @@ void ChargePoint::on_reservation_status(const std::int32_t reservation_id, const
 }
 
 void ChargePoint::on_ev_charging_needs(const NotifyEVChargingNeedsRequest& request) {
+    if (this->smart_charging == nullptr) {
+        return;
+    }
     this->smart_charging->notify_ev_charging_needs_req(request);
 }
 
@@ -611,7 +614,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
-        *this->smart_charging, *this->tariff_and_cost, this->callbacks.stop_transaction_callback,
+        this->smart_charging.get(), *this->tariff_and_cost, this->callbacks.stop_transaction_callback,
         this->callbacks.pause_charging_callback, this->callbacks.transaction_event_callback,
         this->callbacks.transaction_event_response_callback, this->callbacks.reset_callback);
 
@@ -624,7 +627,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status);
 
     this->remote_transaction_control = std::make_unique<RemoteTransactionControl>(
-        *this->functional_block_context, *this->transaction, *this->smart_charging, *this->meter_values,
+        *this->functional_block_context, *this->transaction, this->smart_charging.get(), *this->meter_values,
         *this->availability, *this->firmware_update, *this->security, this->reservation.get(), *this->provisioning,
         this->callbacks.unlock_connector_callback, this->callbacks.remote_start_transaction_callback,
         this->callbacks.stop_transaction_callback, this->registration_status, this->upload_log_status,
