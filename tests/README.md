@@ -20,7 +20,8 @@ cmake --build build --target everest-testing_pip_install_dist # install everest-
 The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`,
 so keep `EVEREST_BUILD_APPLICATIONS=ON` (the default). The OCPP 2.0.1 suite
 includes `test_exi_generator.py`, which checks the response bytes, four signed
-fragment digests and SignedInfo signature against an independent wire capture.
+fragment digests and SignedInfo signature against an independent wire capture in
+`lib/everest/iso15118/test/data/`, shared with libiso15118's tests.
 
 ## Execute locally
 
