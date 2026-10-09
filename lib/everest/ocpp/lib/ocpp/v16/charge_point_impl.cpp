@@ -1875,11 +1875,7 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
     const auto kv = configuration.get(key);
 
     if (kv || key == "AuthorizationKey") {
-        if (key != "AuthorizationKey" && kv.value().readonly) {
-            // supported but could not be changed
-            result = ConfigurationStatus::Rejected;
-        } else if (this->custom_key_validation_callback and
-                   not this->custom_key_validation_callback(key.get(), value.get())) {
+        if (this->custom_key_validation_callback and not this->custom_key_validation_callback(key.get(), value.get())) {
             result = ConfigurationStatus::Rejected;
         } else {
             // TODO(kai): how to signal RebootRequired? or what does need reboot required?
@@ -2049,6 +2045,14 @@ void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabil
 
 void ChargePointImpl::handleChangeConfigurationRequest(ocpp::Call<ChangeConfigurationRequest> call) {
     EVLOG_debug << "Received ChangeConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+
+    if (const auto kv = configuration.get(call.msg.key); kv.has_value() && kv->readonly) {
+        ChangeConfigurationResponse response;
+        response.status = ConfigurationStatus::Rejected;
+        message_dispatcher->dispatch_call_result(
+            ocpp::CallResult<ChangeConfigurationResponse>(response, call.uniqueId));
+        return;
+    }
 
     const auto [_, response] = set_configuration_key_internal(call.msg.key, call.msg.value, call.uniqueId);
 
