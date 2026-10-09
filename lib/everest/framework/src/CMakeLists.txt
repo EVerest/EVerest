@@ -28,9 +28,3 @@ install(
     TARGETS manager
     RUNTIME
 )
-
-# FIXME (aw): the www folder currently always needs to exist, so that the manager does not complain
-install(
-    DIRECTORY # intentionally left blank
-    DESTINATION "${CMAKE_INSTALL_DATAROOTDIR}/everest/www"
-)

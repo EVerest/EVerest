@@ -954,6 +954,9 @@ int Manager::run() {
     if (ms.runtime_settings.forward_exceptions) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
     }
+    for (const auto& key : ms.deprecated_settings) {
+        EVLOG_warning << "Setting '" << key << "' is deprecated and ignored; remove it from the config";
+    }
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
 

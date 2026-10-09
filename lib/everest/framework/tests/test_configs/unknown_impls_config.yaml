@@ -15,5 +15,4 @@ settings:
   types_dir: "types"
   errors_dir: "errors"
   schemas_dir: "schemas"
-  www_dir: "www"
   logging_config_file: "logging.ini"

@@ -31,6 +31,13 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
             CHECK_NOTHROW(Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml"));
         }
     }
+    GIVEN("A valid config file that sets deprecated settings") {
+        THEN("They are accepted, reported as deprecated and their values are ignored") {
+            const auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
+            CHECK(ms.deprecated_settings ==
+                  std::vector<std::string>{"www_dir", "controller_port", "controller_rpc_timeout_ms"});
+        }
+    }
     GIVEN("A valid prefix and a valid config file with a custom prefix") {
         THEN("It should not throw") {
             auto ms = Everest::ManagerSettings(bin_dir + "valid_config_custom_prefix/usr",

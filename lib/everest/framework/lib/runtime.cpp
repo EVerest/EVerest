@@ -342,14 +342,6 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         errors_dir = assert_dir(default_errors_dir, "Default error directory");
     }
 
-    if (settings.www_dir.has_value()) {
-        const auto settings_www_dir = get_prefixed_path_from_json(settings.www_dir.value().string(), prefix);
-        www_dir = assert_dir(settings_www_dir, "Config provided www directory");
-    } else {
-        const auto default_www_dir = data_dir / defaults::WWW_DIR;
-        www_dir = assert_dir(default_www_dir, "Default www directory");
-    }
-
     fs::path logging_config_file;
     if (settings.logging_config_file.has_value()) {
         const auto settings_logging_config_file =
@@ -367,17 +359,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         logging_config_file = assert_file(default_logging_config_file, "Default logging config");
     }
 
-    if (settings.controller_port.has_value()) {
-        controller_port = settings.controller_port.value();
-    } else {
-        controller_port = defaults::CONTROLLER_PORT;
-    }
-
-    if (settings.controller_rpc_timeout_ms.has_value()) {
-        controller_rpc_timeout_ms = settings.controller_rpc_timeout_ms.value();
-    } else {
-        controller_rpc_timeout_ms = defaults::CONTROLLER_RPC_TIMEOUT_MS;
-    }
+    deprecated_settings = settings.deprecated_keys;
 
     std::string mqtt_broker_socket_path;
     std::string mqtt_broker_host;
