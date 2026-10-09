@@ -20,6 +20,11 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     IECStateMachineTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
+<<<<<<< HEAD
+=======
+    RandomDelayDurationTest.cpp
+    SessionLogTest.cpp
+>>>>>>> 1fc4d4b (fix(EvseManager): Do not divide by 0 when UK random delay max is 0 (#3027))
     VoltagePlausibilityMonitorTest.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
