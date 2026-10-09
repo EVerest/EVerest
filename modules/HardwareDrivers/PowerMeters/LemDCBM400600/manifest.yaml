@@ -71,6 +71,22 @@ config:
     description: Used for a unique transaction tariff designation
     type: integer
     default: 0
+  transaction_body_format:
+    description: >-
+      Body format of the v1 transaction start request (POST /v1/legal).
+      LEM: as documented by LEM - tariffId as a number, cableId included.
+      AST: for the AST DC650 with its K220031 Ethernet display unit, which
+      implements the LEM API but answers the LEM body with 400 Bad Request.
+      It needs tariffId as a string and no cableId field (cable loss
+      compensation is configured on the device via /v1/settings cableConf).
+      AST also confirms a transaction stop through /v1/status, because the
+      device's stop response carries no transactionStatus.
+      Ignored for v2-capable devices.
+    type: string
+    enum:
+      - LEM
+      - AST
+    default: LEM
   IT:
     description: >-
       OCMF Identification Type (set on device at startup via /settings/ocmfId/IT).
