@@ -38,6 +38,10 @@ struct v2g_context* v2g_ctx = nullptr;
 namespace module {
 
 void EvseV2G::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : EvseV2G\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate from EvseV2G and IsoMux to Evse15118D20";
 
     telemetry_publisher = std::make_unique<V2gTelemetryPublisher>(telemetry, info.telemetry_enabled,
                                                                   config.publish_telemetry_only_on_change);

@@ -120,6 +120,12 @@ Have a look at this categorized list of all guides:
 
       How to migrate an existing OCPP 1.6 JSON configuration into the unified device model storage.
 
+   .. grid-item-card:: Migrate from EvseV2G and IsoMux to Evse15118D20
+      :link: iso15118-stack-migration
+      :link-type: doc
+
+      How to move a deployment from the deprecated EvseV2G and IsoMux modules to Evse15118D20.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -142,3 +148,4 @@ Have a look at this categorized list of all guides:
     devcontainer-usage/index
     c++-coding-guidelines
     ocpp-storage-migration
+    iso15118-stack-migration
