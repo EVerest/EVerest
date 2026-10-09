@@ -68,10 +68,13 @@ set(TLS_TEST_FILES
         pki.sh
 )
 
+list(TRANSFORM TLS_TEST_FILES PREPEND ${PROJECT_SOURCE_DIR}/lib/everest/tls/tests/pki/
+    OUTPUT_VARIABLE TLS_TEST_FILE_SOURCES)
+
 add_custom_command(
     OUTPUT ${TLS_TEST_FILES}
-    COMMAND cd pki && cp ${TLS_TEST_FILES} ${CMAKE_CURRENT_BINARY_DIR}/
-    WORKING_DIRECTORY ${PROJECT_SOURCE_DIR}/lib/everest/tls/tests
+    COMMAND cp ${TLS_TEST_FILE_SOURCES} ${CMAKE_CURRENT_BINARY_DIR}/
+    DEPENDS ${TLS_TEST_FILE_SOURCES}
 )
 
 add_custom_target(everest_io_tls_test_files
