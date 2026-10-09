@@ -25,7 +25,7 @@
 namespace ocpp::v2 {
 TransactionBlock::TransactionBlock(
     const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
-    AuthorizationInterface& authorization, AvailabilityInterface& availability, SmartChargingInterface& smart_charging,
+    AuthorizationInterface& authorization, AvailabilityInterface& availability, SmartChargingInterface* smart_charging,
     TariffAndCostInterface& tariff_and_cost, StopTransactionCallback stop_transaction_callback,
     PauseChargingCallback pause_charging_callback, std::optional<TransactionEventCallback> transaction_event_callback,
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback, ResetCallback reset_callback) :
@@ -181,7 +181,9 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
     }
 
     // K02.FR.05 The transaction is over, so delete the TxProfiles associated with the transaction.
-    smart_charging.delete_transaction_tx_profiles(enhanced_transaction->get_transaction().transactionId);
+    if (this->smart_charging != nullptr) {
+        this->smart_charging->delete_transaction_tx_profiles(enhanced_transaction->get_transaction().transactionId);
+    }
     evse_handle.release_transaction();
 
     bool send_reset = false;
