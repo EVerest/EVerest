@@ -44,10 +44,10 @@ function(ev_install_library_packages)
             NAME everest-base
             EXPORT everest-base-targets
             DEPENDENCIES
-                "Boost REQUIRED COMPONENTS log_setup log"
-                "date REQUIRED"
-                "SQLite3 REQUIRED"
-                "OpenSSL 3 REQUIRED"
+                "Boost COMPONENTS log_setup log"
+                "date"
+                "SQLite3"
+                "OpenSSL 3"
             INCLUDES CollectMigrationFiles.cmake
         )
     endif()
@@ -56,9 +56,9 @@ function(ev_install_library_packages)
             NAME everest-iso15118
             EXPORT everest-iso15118-targets
             DEPENDENCIES
-                "everest-base REQUIRED"
-                "OpenSSL 3 REQUIRED"
-                "Threads REQUIRED"
+                "everest-base"
+                "OpenSSL 3"
+                "Threads"
         )
     endif()
     if(EVEREST_BUILD_OCPP)
@@ -66,15 +66,15 @@ function(ev_install_library_packages)
             NAME everest-ocpp
             EXPORT everest-ocpp-targets
             DEPENDENCIES
-                "everest-base REQUIRED"
-                "OpenSSL 3 REQUIRED"
-                "SQLite3 REQUIRED"
-                "Threads REQUIRED"
-                "date REQUIRED"
-                "nlohmann_json REQUIRED"
-                "nlohmann_json_schema_validator REQUIRED"
-                "ryml REQUIRED"
-                "libwebsockets REQUIRED"
+                "everest-base"
+                "OpenSSL 3"
+                "SQLite3"
+                "Threads"
+                "date"
+                "nlohmann_json"
+                "nlohmann_json_schema_validator"
+                "ryml"
+                "libwebsockets"
         )
     endif()
 endfunction()
