@@ -1,5 +1,3 @@
-include_guard(GLOBAL)
-
 set(@LIBRARY_PACKAGE_NAME@_VERSION @PROJECT_VERSION@)
 
 @PACKAGE_INIT@
@@ -21,12 +19,20 @@ if("@EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP@")
     find_dependency(sdbus-c++ REQUIRED)
 endif()
 
-include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
+# imported targets are per directory, the project setup is global and done once
+get_property(_everest_core_project_added GLOBAL PROPERTY EVEREST_CORE_PROJECT_ADDED)
+if(NOT _everest_core_project_added)
+    include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
+endif()
 
 include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
 
-ev_add_project(
-    EV_PROJECT_DIRECTORY ${EVEREST_CORE_DATADIR}
-    EV_PROJECT_NAME everest-core
-    SKIP_DOC_GENERATION
-)
+if(NOT _everest_core_project_added)
+    set_property(GLOBAL PROPERTY EVEREST_CORE_PROJECT_ADDED TRUE)
+    ev_add_project(
+        EV_PROJECT_DIRECTORY ${EVEREST_CORE_DATADIR}
+        EV_PROJECT_NAME everest-core
+        SKIP_DOC_GENERATION
+    )
+endif()
+unset(_everest_core_project_added)

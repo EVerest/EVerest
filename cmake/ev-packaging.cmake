@@ -3,7 +3,7 @@
 function(ev_install_package)
     cmake_parse_arguments(OPTNS "" "NAME;EXPORT" "DEPENDENCIES;INCLUDES" ${ARGN})
     set(dir ${CMAKE_INSTALL_LIBDIR}/cmake/${OPTNS_NAME})
-    set(content "include_guard(GLOBAL)\n\n@PACKAGE_INIT@\n\ninclude(CMakeFindDependencyMacro)\n")
+    set(content "@PACKAGE_INIT@\n\ninclude(CMakeFindDependencyMacro)\n")
     foreach(dep IN LISTS OPTNS_DEPENDENCIES)
         string(APPEND content "find_dependency(${dep})\n")
     endforeach()
