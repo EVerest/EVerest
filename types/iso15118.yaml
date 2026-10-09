@@ -337,6 +337,12 @@ types:
         type: number
         minimum: -2
         maximum: 10000
+      current_demand:
+        description: >-
+          True if the EV sent the target during current demand (CurrentDemandReq, DC_ChargeLoopReq),
+          false if it sent it during precharge (PreChargeReq). Lets the consumer tell the two apart
+          without relying on the delivery order of this var and current_demand_started.
+        type: boolean
   DcEvMaximumLimits:
     description:
       Maximum Values (current, power and voltage) supported and allowed

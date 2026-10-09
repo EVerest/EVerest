@@ -358,6 +358,7 @@ struct v2g_context {
         float ev_maximum_voltage_limit;
         float v2g_target_current;
         float v2g_target_voltage;
+        bool v2g_target_current_demand;
         float remaining_time_to_bulk_soc;
         float remaining_time_to_full_soc;
     } ev_v2g_data;

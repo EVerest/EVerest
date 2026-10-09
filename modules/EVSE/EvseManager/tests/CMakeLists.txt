@@ -17,6 +17,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
+    DcSetpointTest.cpp
     IECStateMachineTest.cpp
     OverVoltageMonitorTest.cpp
     PowermeterLimitsTest.cpp
@@ -24,6 +25,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../backtrace.cpp
+    ../dc_setpoint.cpp
     ../powermeter_limits.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp

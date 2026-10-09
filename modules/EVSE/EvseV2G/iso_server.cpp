@@ -441,7 +441,8 @@ static void publish_iso_pre_charge_req(struct v2g_context* ctx,
     publish_dc_ev_target_voltage_current(
         ctx,
         calc_physical_value(v2g_precharge_req->EVTargetVoltage.Value, v2g_precharge_req->EVTargetVoltage.Multiplier),
-        calc_physical_value(v2g_precharge_req->EVTargetCurrent.Value, v2g_precharge_req->EVTargetCurrent.Multiplier));
+        calc_physical_value(v2g_precharge_req->EVTargetCurrent.Value, v2g_precharge_req->EVTargetCurrent.Multiplier),
+        false);
     publish_DcEvStatus(ctx, v2g_precharge_req->DC_EVStatus);
 }
 
@@ -485,7 +486,8 @@ static void publish_iso_current_demand_req(struct v2g_context* ctx,
                                          calc_physical_value(v2g_current_demand_req->EVTargetVoltage.Value,
                                                              v2g_current_demand_req->EVTargetVoltage.Multiplier),
                                          calc_physical_value(v2g_current_demand_req->EVTargetCurrent.Value,
-                                                             v2g_current_demand_req->EVTargetCurrent.Multiplier));
+                                                             v2g_current_demand_req->EVTargetCurrent.Multiplier),
+                                         true);
 
     float evMaximumCurrentLimit = calc_physical_value(v2g_current_demand_req->EVMaximumCurrentLimit.Value,
                                                       v2g_current_demand_req->EVMaximumCurrentLimit.Multiplier);

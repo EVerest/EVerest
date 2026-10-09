@@ -82,9 +82,7 @@ void power_supply_DCImpl::clampVoltageCurrent(double& voltage, double& current) 
               : voltage > config.max_voltage ? config.max_voltage
                                              : voltage;
 
-    current = current < config.min_current   ? config.min_current
-              : current > config.max_current ? config.max_current
-                                             : current;
+    current = current < config.min_current ? 0.0 : current > config.max_current ? config.max_current : current;
 }
 
 void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double& current) {
