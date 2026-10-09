@@ -17,8 +17,6 @@ services:
       - mqtt-server
   everest:
     image: everest:latest
-    ports:
-      - 8849:8849
     depends_on:
       - mqtt-server
     environment:

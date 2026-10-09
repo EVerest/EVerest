@@ -67,7 +67,7 @@ Configuration and Storage
 
   The database holds module configurations only, never the manager
   ``settings:`` block. With ``--db`` alone, the settings (installation paths,
-  MQTT broker and prefixes, controller port, ``run_as_user``, telemetry, schema
+  MQTT broker and prefixes, ``run_as_user``, telemetry, schema
   validation) are the compiled-in defaults. Pass ``--config`` alongside
   ``--db`` whenever the deployment relies on non-default settings; the YAML
   ``settings:`` block is then applied on every start.

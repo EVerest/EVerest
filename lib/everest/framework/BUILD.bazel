@@ -111,39 +111,6 @@ alias(
 )
 
 cc_library(
-    name = "controller-ipc",
-    srcs = ["src/controller/ipc.cpp"],
-    hdrs = ["src/controller/ipc.hpp"],
-    cxxopts = ["-std=c++17"],
-    strip_include_prefix = "src",
-    deps = [
-        "@com_github_nlohmann_json//:json",
-    ],
-)
-
-cc_binary(
-    name = "controller",
-    srcs = glob(
-        [
-            "src/controller/*.cpp",
-            "src/controller/*.hpp",
-        ],
-        exclude = [
-            "src/controller/ipc.cpp",
-            "src/controller/ipc.hpp",
-        ],
-    ),
-    cxxopts = ["-std=c++17"],
-    deps = [
-        ":controller-ipc",
-        ":framework",
-        "//lib/everest/log:liblog",
-        "@com_github_fmtlib_fmt//:fmt",
-        "@com_github_warmcatt_libwebsockets//:libwebsockets",
-    ],
-)
-
-cc_library(
     name = "management_api",
     srcs = glob(["src/management_api/*.cpp"]),
     hdrs = glob(["src/management_api/include/*.hpp"]),
@@ -171,7 +138,6 @@ cc_binary(
     cxxopts = ["-std=c++17"],
     visibility = ["//visibility:public"],
     deps = [
-        ":controller-ipc",
         ":framework",
         ":management_api",
         "//lib/everest/log:liblog",

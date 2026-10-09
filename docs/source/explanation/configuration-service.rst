@@ -109,11 +109,10 @@ options. There are three cases.
   configurations. The database never holds the manager ``settings:`` block, so
   the settings come from built-in defaults: installation paths (``prefix``,
   ``modules_dir``, ``interfaces_dir``, ``types_dir``, ``errors_dir``,
-  ``schemas_dir``, ``configs_dir``, ``www_dir``, ``logging_config_file``), MQTT
-  broker and prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
+  ``schemas_dir``, ``configs_dir``, ``logging_config_file``), MQTT broker and
+  prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
   ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
-  ``mqtt_external_prefix``), ``controller_port``,
-  ``controller_rpc_timeout_ms``, ``run_as_user``, ``telemetry_enabled``,
+  ``mqtt_external_prefix``), ``run_as_user``, ``telemetry_enabled``,
   ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
   Deployments that need any non-default setting pass ``--config`` alongside
   ``--db``.
@@ -148,6 +147,11 @@ Related options:
   ``--reset-from-yaml`` to force re-seeding.
 - ``--conf`` is a deprecated alias for ``--config``. Passing both at once is
   rejected as ambiguous.
+
+The ``settings:`` keys ``www_dir``, ``controller_port`` and
+``controller_rpc_timeout_ms`` belonged to the removed admin panel backend. They
+are deprecated: a config that still sets them is accepted, the values are
+ignored and the manager logs a warning for each of them at startup.
 
 .. note::
 

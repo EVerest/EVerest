@@ -91,10 +91,6 @@ inline constexpr auto DB_FILE_NAME = "everest.db";
 // re-seeded on every start and nothing is persisted to disk.
 inline constexpr auto IN_MEMORY_DB_URI = "file:everest-config?mode=memory&cache=shared";
 
-inline constexpr auto WWW_DIR = "www";
-
-inline constexpr auto CONTROLLER_PORT = 8849;
-inline constexpr auto CONTROLLER_RPC_TIMEOUT_MS = 2000;
 inline constexpr auto MQTT_BROKER_SOCKET_PATH = "/tmp/mqtt_broker.sock";
 inline constexpr auto MQTT_BROKER_HOST = "localhost";
 inline constexpr std::uint16_t MQTT_BROKER_PORT = 1883;

@@ -71,7 +71,6 @@ function (setup_test_directory)
 
 
     file(MAKE_DIRECTORY "${SHARE_EVEREST_DIR}/errors")
-    file(MAKE_DIRECTORY "${SHARE_EVEREST_DIR}/www")
 
 
     set(MODULES_DIR "${DIR}/modules")

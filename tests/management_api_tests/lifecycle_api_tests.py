@@ -170,7 +170,7 @@ def test_ro_status_stream_and_rejections(everest_core: EverestCore, lifecycle_cl
 
     # the rejected commands must not have any effect on the modules
     everest_core.assert_no_manager_status(
-        [ManagerStatusFifo.MANAGER_IDLE, ManagerStatusFifo.MANAGER_RESTART_REQUESTED],
+        [ManagerStatusFifo.MANAGER_IDLE, ManagerStatusFifo.MANAGER_SHUTDOWN_REQUESTED],
         timeout_s=3.0,
     )
     assert "Stopping" not in lifecycle_client.module_statuses()

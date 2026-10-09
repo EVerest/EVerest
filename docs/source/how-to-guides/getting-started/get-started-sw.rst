@@ -230,9 +230,8 @@ Admin panel and simulations
 .. important::
 
   Be aware, that the Admin Panel is currently under development.
-  The former version of the Admin Panel, which was integrated in EVerest,
-  will be removed. See the new standalone version which runs without an
-  EVerest instance here:
+  It is not part of EVerest; it is a standalone application which runs
+  without an EVerest instance, see the
   `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
   .
 

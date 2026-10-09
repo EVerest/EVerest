@@ -14,10 +14,8 @@ stateDiagram-v2
     state "Shutdown / drain" as G_DRAIN {
         ShutdownRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
         CrashShutdownInProgress --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
-        RestartRequested --> ForceTerminating : drain deadline exceeded\n(immediately without --graceful-shutdown)
         ShutdownRequested --> CrashShutdownInProgress : crash path
         CrashShutdownInProgress --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(crash reason is kept)
-        RestartRequested --> ShutdownRequested : first SIGINT/SIGTERM during drain\n(restart intent is dropped)
     }
 
     state "Finalize" as G_END {
@@ -25,16 +23,14 @@ stateDiagram-v2
         Exiting --> [*] : process exit
     }
 
-    %% Cross-region: signals and IPC while starting or running
-    Running --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop,\nMQTT shutdown published\n(--graceful-shutdown only)
+    %% Cross-region: signals and Lifecycle API requests while starting or running
+    Running --> ShutdownRequested : first SIGINT/SIGTERM or\nLifecycle API stop/restart,\nMQTT shutdown published\n(--graceful-shutdown only)
     StartingModules --> ShutdownRequested : first SIGINT/SIGTERM,\nnormal stop
 
     Running --> CrashShutdownInProgress : unexpected module exit
     StartingModules --> CrashShutdownInProgress : unexpected module exit
 
-    Running --> RestartRequested : admin restart request
-    StartingModules --> RestartRequested : admin restart request
-    Idle --> RestartRequested : admin restart request while idle,\nnothing to drain
+    Idle --> StartingModules : Lifecycle API restart while idle,\nreload config, nothing to drain
 
     Idle --> Exiting : first SIGINT/SIGTERM, no modules running\n(cleanup, success, no drain)
     ShutdownRequested --> Exiting : second SIGINT/SIGTERM\n(user abort, failure,\nremaining modules SIGKILLed)\nsame from any other drain state
@@ -42,11 +38,10 @@ stateDiagram-v2
     %% Drain complete → finalize
     ShutdownRequested --> ShutdownFinalizing : all modules gone
     CrashShutdownInProgress --> ShutdownFinalizing : all modules gone
-    RestartRequested --> ShutdownFinalizing : all modules gone
     ForceTerminating --> ShutdownFinalizing : all modules gone
 
     %% Finalize outcomes
-    ShutdownFinalizing --> StartingModules : reload config and start again\n(admin restart, or --recover-module-crashes\nwithin the restart cap and no SIGINT)
+    ShutdownFinalizing --> StartingModules : reload config and start again\n(Lifecycle API restart, or --recover-module-crashes\nwithin the restart cap and no SIGINT)
     ShutdownFinalizing --> Idle : normal stop without SIGINT,\nor crash cap exceeded / failed or empty reload\n(--idle-on-failure)
     ShutdownFinalizing --> Exiting : unexpected module exit, crash cap exceeded\nor failed / empty reload (default, failure)
 
@@ -75,7 +70,6 @@ stateDiagram-v2
     classDef running fill:#3730a3,color:#f8fafc
     classDef shutdownReq fill:#ca8a04,color:#f8fafc
     classDef crash fill:#ea580c,color:#f8fafc
-    classDef restart fill:#c2410c,color:#f8fafc
     classDef force fill:#9a3412,color:#f8fafc
     classDef finalize fill:#047857,color:#f8fafc
     classDef exiting fill:#dc2626,color:#f8fafc
@@ -86,7 +80,6 @@ stateDiagram-v2
     class Running running
     class ShutdownRequested shutdownReq
     class CrashShutdownInProgress crash
-    class RestartRequested restart
     class ForceTerminating force
     class ShutdownFinalizing finalize
     class Exiting exiting
