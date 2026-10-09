@@ -149,6 +149,18 @@ everest-management-api-cli:
   name: "EVerest Management API CLI"
   description: "Command line client for the lifecycle and configuration APIs of the EVerest manager; the management API integration tests use its client modules"
   license: "Apache-2.0"
+everest-api-client:
+  name: "EVerest API Client"
+  description: "Interactive command line client for the EVerest API modules; spies on API traffic and drives the APIs via python client packages generated from their AsyncAPI specs"
+  license: "Apache-2.0"
+everest-api-client-gen:
+  name: "EVerest API Client Generator"
+  description: "Generates the EVerest API Python MQTT client packages from their AsyncAPI specs using Jinja2 (replaces the npm asyncapi-cli + python-mqtt-template toolchain)"
+  license: "Apache-2.0"
+# dependencies of everest-api-client
+cmd2:
+  description: "A tool for building interactive command line applications in Python"
+  license: "MIT"
 # dependencies of everest-testing
 pytest:
   description: "pytest: simple powerful testing with Python"

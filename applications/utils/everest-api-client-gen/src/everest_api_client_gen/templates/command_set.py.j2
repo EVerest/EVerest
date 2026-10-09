@@ -1,0 +1,112 @@
+import json
+import cmd2
+import os
+import argparse
+import paho.mqtt.client as mqtt
+from .client import {{ model.class_name }}
+from cmd2 import CommandSet, with_default_category, with_argparser
+
+@with_default_category('{{ model.class_name }}')
+class {{ model.command_set_name }}(CommandSet):
+  """ {{ model.class_name }} """
+
+  def __init__(self):
+    super().__init__()
+
+  def complete_module_id(self, text, line, begidx, endidx):
+    return [module["id"] for module in self._cmd.api_clients if module["id"].startswith(text)]
+
+  def register_callbacks(self, module_id):
+    api_client = self._cmd.get_instance_by_id(module_id)
+{% for op in model.recv_ops %}
+    lambada_{{ op.op_id }} = lambda data: self.on_{{ op.op_id }}(module_id, data)
+    api_client.receive.{{ op.op_id }}.register_callback(lambada_{{ op.op_id }})
+{% endfor %}
+{% for op in model.recv_ops %}
+
+  def on_{{ op.op_id }}(self, module_id, data):
+    api_client = self._cmd.get_instance_by_id(module_id)
+    if api_client:
+      self._cmd.log_event(api_client.receive.{{ op.op_id }}._topic, json.dumps(json.loads(data.decode('utf-8') if data else '""'), indent=1 if self._cmd.prettify else None))
+      api_client.receive.{{ op.op_id }}.read_and_clear_buffer()
+    else:
+      self._cmd.log_event("ERROR:", "Invalid module id: '" + module_id + "' Have you created the client using the 'add_client' function?")
+{% endfor %}
+{% for op in model.recv_command_ops %}
+
+  {{ op.op_id }}_parser = cmd2.Cmd2ArgumentParser()
+  {{ op.op_id }}_parser.add_argument('module_id', help='the module id for the client', completer=complete_module_id)
+  @cmd2.with_argparser({{ op.op_id }}_parser)
+  def do_{{ model.interface_prefix }}_{{ op.op_id }}(self, args):
+    api_client = self._cmd.get_instance_by_id(args.module_id)
+    if api_client:
+      api_client.receive.{{ op.op_id }}.register_callback(None)
+      output = api_client.receive.{{ op.op_id }}.wait_for_message().decode('utf-8')
+      self._cmd.log_event(api_client.receive.{{ op.op_id }}._topic, output)
+      lambada_{{ op.op_id }} = lambda data: self.on_{{ op.op_id }}(args.module_id, data)
+      api_client.receive.{{ op.op_id }}.register_callback(lambada_{{ op.op_id }})
+    else:
+      self._cmd.log_event("ERROR:", "Invalid module id: '" + args.module_id + "' Have you created the client using the 'add_client' function?")
+{% endfor %}
+{% for op in model.send_command_ops %}
+
+  def complete_{{ op.op_id }}_payload(self, text, line, begidx, endidx):
+    return [payload for payload in ['{{ op.payload_json }}'] if payload.startswith(text)]
+
+  {{ op.op_id }}_parser = cmd2.Cmd2ArgumentParser()
+  {{ op.op_id }}_parser.add_argument('module_id', help='the module id for the client', completer=complete_module_id)
+{% if op.is_reply %}
+  {{ op.op_id }}_parser.add_argument('replyTo', help='the reply to topic from request')
+{% endif %}
+  {{ op.op_id }}_parser.add_argument('payload', help='the payload as json to be send', completer=complete_{{ op.op_id }}_payload)
+  @cmd2.with_argparser({{ op.op_id }}_parser, preserve_quotes=True)
+  def do_{{ model.interface_prefix }}_{{ op.op_id }}(self, args):
+    api_client = self._cmd.get_instance_by_id(args.module_id)
+    if api_client:
+{% if op.is_reply %}
+      api_client.send.{{ op.op_id }}.publish(args.replyTo, json.dumps(json.loads(args.payload)))
+{% else %}
+      api_client.send.{{ op.op_id }}.publish(self._cmd.generate_replyTo(json.dumps(json.loads(args.payload)), api_client.send.{{ op.op_id }}._topic))
+{% endif %}
+    else:
+      self._cmd.log_event("ERROR:", "Invalid module id: '" + args.module_id + "' Have you created the client using the 'add_client' function?")
+{% endfor %}
+
+  receive_heartbeat_{{ model.class_name }}_parser = cmd2.Cmd2ArgumentParser()
+  receive_heartbeat_{{ model.class_name }}_parser.add_argument('module_id', help='the module id for the client', completer=complete_module_id)
+  @cmd2.as_subcommand_to('receive_heartbeat', '{{ model.class_name }}', receive_heartbeat_{{ model.class_name }}_parser)
+  def receive_heartbeat_{{ model.class_name }}(self, ns: argparse.Namespace):
+    api_client = self._cmd.get_instance_by_id(ns.module_id)
+    if api_client:
+      api_client.receive.receive_heartbeat.register_callback(None)
+      output = api_client.receive.receive_heartbeat.wait_for_message().decode('utf-8')
+      self._cmd.log_event(api_client.receive.receive_heartbeat._topic, output)
+      lambada_receive_heartbeat = lambda data: self.on_receive_heartbeat(ns.module_id, data)
+      api_client.receive.receive_heartbeat.register_callback(lambada_receive_heartbeat)
+    else:
+      self._cmd.log_event("ERROR:", "Invalid module id: '" + ns.module_id + "' Have you created the client using the 'add_client' function?")
+
+  client_add_parser = cmd2.Cmd2ArgumentParser()
+  client_add_parser.add_argument('module_id', help='the module id for the client')
+  @cmd2.as_subcommand_to('client_add', '{{ model.class_name }}', client_add_parser)
+  def client_add_{{ model.class_name }}(self, ns: argparse.Namespace):
+    # Call whatever subcommand function was selected
+    mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
+    mqtt_host = (os.getenv('MQTT_BROKER') or {{ '' }}
+      os.getenv('MQTT_SERVER_ADDRESS') or {{ '' }}
+      os.getenv('MQTT_HOST') or {{ '' }}
+      'localhost')
+    try:
+      mqtt_port = int(os.getenv('MQTT_BROKER_PORT') or {{ '' }}
+        os.getenv('MQTT_SERVER_PORT') or {{ '' }}
+        os.getenv('MQTT_PORT') or {{ '' }}
+        1883)
+    except ValueError:
+      self._cmd.log_event("WARNING:", "Invalid MQTT port value, using default port 1883")
+      mqtt_port = 1883
+    mqtt_client.connect(mqtt_host, mqtt_port)
+    self._cmd.mqtt_clients.append({"id": ns.module_id, "mqtt_client": mqtt_client})
+    mqtt_client.loop_start()
+    api_client = {{ model.class_name }}(mqtt_client, "", ns.module_id)
+    self._cmd.api_clients.append({"id": ns.module_id, "instance": api_client})
+    self.register_callbacks(ns.module_id)

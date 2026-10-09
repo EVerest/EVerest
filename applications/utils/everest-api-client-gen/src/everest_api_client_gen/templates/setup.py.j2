@@ -1,0 +1,14 @@
+from setuptools import setup, find_packages
+
+setup(
+  name = "package_{{ model.name_snake }}",
+  version = "0.0.1",
+  description = "A generated asyncapi python mqtt client",
+  packages=find_packages(where="src"),
+  package_dir={"": "src"},
+  python_requires = ">=3.8",
+  install_requires=[
+    "paho-mqtt>=2.0",
+    "cmd2>=2.4,<3"
+  ],
+)
