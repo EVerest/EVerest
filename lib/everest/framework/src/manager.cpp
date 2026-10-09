@@ -553,13 +553,9 @@ Manager::RestartOutcome Manager::handle_restart_modules_after_shutdown(RuntimeCo
     cleanup_modules_state_if_configured(ctx);
 
     // The drain is complete and the restart intent is being acted on now, so the shutdown
-    // bookkeeping has served its purpose - on BOTH outcomes. Leaving m_shutdown_cause == Restart on
-    // the failure path made advance_lifecycle_state_if_ready() re-enter this function on every
-    // main-loop iteration (its transition_to(Idle) is then a no-op self-transition that still
-    // reported TransitionApplied), starving handle_signal_poll():
-    // 100% CPU and SIGINT/SIGTERM ignored. handle_finish_crash_recovery() already clears it; this is
-    // that missing symmetry. Deliberately not reset: m_unexpected_module_exit_count, which must keep
-    // bounding crash recovery.
+    // bookkeeping has served its purpose - on BOTH outcomes. A stale m_shutdown_cause would make a
+    // later drain finalize as a restart. Deliberately not reset: m_unexpected_module_exit_count,
+    // which must keep bounding crash recovery.
     reset_shutdown_state();
 
     if (reload_and_update_context(ctx)) {
@@ -1144,9 +1140,6 @@ int Manager::run() {
         case ModuleStatusAction::AtRest:
             m_config_service_core->set_modules_at_rest();
             break;
-        case ModuleStatusAction::RestartTriggered:
-            m_config_service_core->notice_module_restart_triggered();
-            break;
         }
     });
 
@@ -1361,8 +1354,6 @@ std::string_view Manager::state_to_string(ManagerState state) const {
         return "StartingModules";
     case ManagerState::Running:
         return "Running";
-    case ManagerState::RestartRequested:
-        return "RestartRequested";
     case ManagerState::CrashShutdownInProgress:
         return "CrashShutdownInProgress";
     case ManagerState::ShutdownRequested:
@@ -1480,9 +1471,6 @@ void Manager::notify_status_fifo_for_state(ManagerState state) {
     case ManagerState::Running:
         notify_status_fifo(StatusFifo::MANAGER_RUNNING);
         break;
-    case ManagerState::RestartRequested:
-        notify_status_fifo(StatusFifo::MANAGER_RESTART_REQUESTED);
-        break;
     case ManagerState::CrashShutdownInProgress:
         notify_status_fifo(StatusFifo::MANAGER_CRASH_SHUTDOWN_IN_PROGRESS);
         break;
@@ -1537,8 +1525,7 @@ ManagerState Manager::current_state_unlocked() const {
 bool Manager::is_in_shutdown_flow_state_unlocked() const {
     const auto s = current_state_unlocked();
     return (s == ManagerState::ShutdownRequested) || (s == ManagerState::CrashShutdownInProgress) ||
-           (s == ManagerState::ForceTerminating) || (s == ManagerState::RestartRequested) ||
-           (s == ManagerState::ShutdownFinalizing);
+           (s == ManagerState::ForceTerminating) || (s == ManagerState::ShutdownFinalizing);
 }
 
 void Manager::register_state_transition_handler(std::function<void(ManagerState, ManagerState)> handler) {
@@ -1557,11 +1544,6 @@ Manager::Manager(const po::variables_map& vm) :
 bool Manager::is_in_shutdown_flow_state() const {
     const std::lock_guard<std::mutex> lock(m_state_transition_mutex);
     return is_in_shutdown_flow_state_unlocked();
-}
-
-bool Manager::is_restart_requested() const {
-    const std::lock_guard<std::mutex> lock(m_state_transition_mutex);
-    return current_state_unlocked() == ManagerState::RestartRequested;
 }
 
 bool Manager::are_modules_started() const {
@@ -1801,8 +1783,10 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
             case RestartOutcome::StayedIdle:
                 break;
             }
-            // See the restart path below: a failed reload settles into Idle without applying a
-            // transition, so the main loop must still service lifecycle requests and signals.
+            // A failed reload settles into Idle without applying a transition. Report NoTransition so
+            // the main loop still services lifecycle requests and signals on this iteration: a
+            // "transition applied" that changes nothing makes run() continue past both polls, which is
+            // what would turn a failed restart into an unresponsive manager.
             return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
         }
         if (crash_in_progress && m_unexpected_module_exit_count > MAX_UNEXPECTED_MODULE_RESTARTS) {
@@ -1815,25 +1799,6 @@ Manager::LifecycleAdvanceResult Manager::advance_lifecycle_state_if_ready(Runtim
             return {LifecycleAdvanceResult::Status::ExitRequested, *exit_code};
         }
         return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
-    }
-
-    // Admin restart can mark restart_modules while modules are still draining.
-    // If all children are gone, restart immediately with reloaded config.
-    if (restart_requested && m_module_handles.empty()) {
-        switch (handle_restart_modules_after_shutdown(ctx)) {
-        case RestartOutcome::Restarted:
-            return {LifecycleAdvanceResult::Status::TransitionApplied, std::nullopt};
-        case RestartOutcome::ExitFailure:
-            return {LifecycleAdvanceResult::Status::ExitRequested,
-                    transition_to_exiting_after_shutdown(ctx, EXIT_FAILURE, false)};
-        case RestartOutcome::StayedIdle:
-            break;
-        }
-        // The restart failed and the manager settled into Idle. Report NoTransition so the main loop
-        // still services lifecycle requests and signals on this iteration: a "transition applied" that
-        // changes nothing makes run() continue past both polls, which is what would turn a failed
-        // restart into an unresponsive manager.
-        return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
     }
 
     return {LifecycleAdvanceResult::Status::NoTransition, std::nullopt};
@@ -1942,8 +1907,7 @@ void Manager::handle_shutdown_timeout(RuntimeContext& ctx) {
 
     const auto now = std::chrono::steady_clock::now();
     const bool should_check_shutdown_timeout =
-        (m_state == ManagerState::ShutdownRequested || m_state == ManagerState::CrashShutdownInProgress ||
-         m_state == ManagerState::RestartRequested) &&
+        (m_state == ManagerState::ShutdownRequested || m_state == ManagerState::CrashShutdownInProgress) &&
         m_shutdown_start_time.has_value();
 
     // Without --graceful-shutdown there is no drain phase: force-terminate as soon as the

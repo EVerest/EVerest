@@ -55,7 +55,7 @@ struct LwtCfg {
 /// config service.
 /// `ShutdownCause` records **why** a shutdown or drain was started; it is kept across transient
 /// states (for example through `ForceTerminating` / `ShutdownFinalizing`) so the next step can
-/// distinguish normal stop, admin-driven restart, and crash recovery.
+/// distinguish normal stop, requested restart, and crash recovery.
 ///
 /// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
 /// the state machine diagram in
@@ -213,8 +213,6 @@ private:
     bool are_modules_started() const;
     /// \brief True when manager is in any shutdown-related state.
     bool is_in_shutdown_flow_state() const;
-    /// \brief True when restart has been requested.
-    bool is_restart_requested() const;
     /// \brief True when in idle.
     bool is_idle() const;
 
