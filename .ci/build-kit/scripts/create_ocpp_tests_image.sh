@@ -8,6 +8,15 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
+# test_exi_generator.py reads the wire capture shared with libiso15118
+rsync -a --relative "$EXT_MOUNT/source/./lib/everest/iso15118/test/data" ./
+retVal=$?
+
+if [ $retVal -ne 0 ]; then
+    echo "Failed to copy lib/everest/iso15118/test/data"
+    exit $retVal
+fi
+
 python3 -m pip install --break-system-packages \
     "$EXT_MOUNT"/wheels/everestpy-*.whl \
     "$EXT_MOUNT"/wheels/everest_testing-*.whl \

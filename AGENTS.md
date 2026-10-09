@@ -164,7 +164,8 @@ The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`;
 keep `EVEREST_BUILD_APPLICATIONS=ON` (the default) when building their prefix.
 `ocpp_tests/test_sets/ocpp201/test_exi_generator.py` checks the response bytes,
 four signed fragment digests and SignedInfo signature against an independent
-wire capture. It runs with the OCPP 2.0.1 suite, without starting EVerest.
+wire capture in `lib/everest/iso15118/test/data/`, which libiso15118's tests share.
+It runs with the OCPP 2.0.1 suite, without starting EVerest.
 
 ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests.py`
 (AC and DC end to end), CSMS-side helpers in
