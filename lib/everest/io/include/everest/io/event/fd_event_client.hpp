@@ -24,6 +24,7 @@
 #include <string>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 namespace everest::lib::io::event {
 class fd_event_handler;
@@ -86,6 +87,12 @@ public:
      * @brief Prototype for the query whether the handshake is still pending
      */
     using handshake_status = std::function<bool()>;
+
+    /**
+     * @var handle_status
+     * @brief Prototype for the query whether the device handle is the current connection's
+     */
+    using handle_status = std::function<bool()>;
 
     /**
      * @var handshake_events
@@ -171,16 +178,16 @@ public:
      * on a nonzero code.
      *
      * A nonzero code tears the device down and does not open it again. A consumer that does not
-     * call reset() from this handler is left with a client that has no device.
+     * call reset() from this handler is left with a client that has no device. A write that
+     * fails is reported with the errno the policy recorded for it; a policy answers zero only
+     * for back-pressure (a full socket buffer, a TLS record that needs the peer first), and the
+     * write then waits for the fd to become writable.
      *
-     * One gap the handler cannot be relied on to close: a read or a write that succeeds while the
-     * client is in \ref utilities::connection_state::failed puts the state back to connected and
-     * arms another code 0. Where in the poll pass that success lands decides what the caller sees.
-     * Before this handler observes the failure, the failure is never reported at all. After it,
-     * the teardown it queued still runs while the state has already flipped back, which ends with
-     * the device gone, no reopen, a last signal of code 0, and tx() still accepting into a buffer
-     * nothing drains. A code 0 is therefore a report that a connection came up, not proof that
-     * the client has one.
+     * A failure is final for its connection, whether a poll error, a read or write that failed
+     * or a handshake failure reported it: the device fd takes no further reads or writes, so data
+     * queued before the failure is dropped with the connection and a late success cannot put the
+     * state back to connected before this handler has reported the failure. A code 0 is still a
+     * report that a connection came up, not proof that the client has one now.
      * @param[in] handler The callback to be used as error handler
      */
     void set_error_handler(cb_error const& handler);
@@ -226,6 +233,9 @@ protected:
     /**
      * @brief Constructor.
      * @details Functionality passed in by functors
+     * @param[in] handle_is_current Whether the device handle still stands for the current
+     *            connection. False once a reset has retired it, while its fd may still be
+     *            registered until the queued reopen runs
      * @param[in] drive_handshake One handshake step. 'success' to continue, 'fail' on a handshake
      *            error, 'empty' once the handshake is complete
      * @param[in] handshake_desired_events The single event the handshake waits for after a step
@@ -235,8 +245,9 @@ protected:
      *            the description of the stored error code
      */
     generic_fd_event_client_impl(action const& send_one, action const& receive_one, action const& reset_client,
-                                 error_status const& get_error, handshake_status const& handshake_pending,
-                                 action const& drive_handshake, handshake_events const& handshake_desired_events,
+                                 error_status const& get_error, handle_status const& handle_is_current,
+                                 handshake_status const& handshake_pending, action const& drive_handshake,
+                                 handshake_events const& handshake_desired_events,
                                  handshake_timeout const& get_handshake_timeout, error_text const& get_error_string);
     ~generic_fd_event_client_impl();
 
@@ -445,6 +456,7 @@ protected:
     action m_receive_one;
     action m_reset_client;
     error_status m_get_error;
+    handle_status m_handle_is_current;
     handshake_status m_handshake_pending;
     action m_drive_handshake;
     handshake_events m_handshake_desired_events;
@@ -539,12 +551,11 @@ public:
         generic_fd_event_client_impl(
             [this]() { return send_one(); }, [this]() { return receive_one(); }, [this]() { return reset_client(); },
             // A retired handle carries the errno of the peer it served, which is not the errno of
-            // the connection replacing it. The EPOLLERR branch reads this without knowing which
-            // handle is behind it.
+            // the connection replacing it.
             [this]() { return handle_is_current() ? m_handle->get_error() : 0; },
-            [this]() { return handshake_pending(); }, [this]() { return handshake_step(); },
-            [this]() { return handshake_desired_events(); }, [this]() { return handshake_timeout(); },
-            [this]() { return policy_error_string(); }) {
+            [this]() { return handle_is_current(); }, [this]() { return handshake_pending(); },
+            [this]() { return handshake_step(); }, [this]() { return handshake_desired_events(); },
+            [this]() { return handshake_timeout(); }, [this]() { return policy_error_string(); }) {
         m_buffer_tx_before_connect = mode == utilities::tx_buffering::buffer;
         m_async_connect_state = std::make_shared<async_connect_state>();
         register_async_connect_event_handler(&m_async_connect_state->ready_event,
@@ -607,7 +618,8 @@ public:
      *
      * Unread data on the retired connection is lost with it, because tearing the device down
      * closes its descriptor. A read this poll pass had already queued against the retired handle
-     * is skipped rather than presented as data from the connection this reset opens.
+     * is skipped rather than presented as data from the connection this reset opens, and an error
+     * the retired descriptor reports before the reopen runs is the abandoned peer's, not reported.
      *
      * Shares the threading contract of \ref tx. Must be called from the thread that drives
      * \ref sync, either directly or from a callback that thread dispatches.

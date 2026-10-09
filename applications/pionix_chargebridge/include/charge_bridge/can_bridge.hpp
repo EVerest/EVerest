@@ -76,6 +76,7 @@ private:
     std::chrono::steady_clock::time_point m_vcan_rate_logged{};
     double m_avg_wire_bits{0.0}; // EWMA of real wire bits per forwarded frame
     std::chrono::steady_clock::time_point m_last_msg_to_cb;
+    std::chrono::steady_clock::time_point m_udp_reconnect_at{}; // last reopen of a failed UDP connection
     bool m_udp_ready{false};
     bool m_can_ready{false};
     everest::lib::util::observable<bool> m_ready{false};

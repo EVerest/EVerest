@@ -18,9 +18,20 @@ public:
     slac_socket() = default;
     ~slac_socket() = default;
 
+    /**
+     * @brief Open the PLC socket on \p if_name, non-blocking, with its send buffer at the minimum
+     *        so a modem that holds frames makes the fd not writable instead of taking them into a
+     *        device queue the client cannot see.
+     */
     bool open(std::string const& if_name);
     void close();
 
+    /**
+     * @brief Send one frame.
+     * @return True when it went out or can never go out (an invalid frame is dropped); false to
+     *         retry once the fd is writable (back-pressure, see \ref io::socket::is_send_backpressure)
+     *         or, with \ref get_error set, because the send failed.
+     */
     bool tx(PayloadT const& payload);
     bool rx(PayloadT& buffer);
 

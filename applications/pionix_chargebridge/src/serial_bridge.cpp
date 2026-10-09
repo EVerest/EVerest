@@ -10,10 +10,11 @@
 
 namespace {
 const int default_udp_timeout_ms = 1000;
-// TCP liveness is a backstop since cb-session-v1 (the heartbeat session drives reconnects). Must
-// outlast congestion stalls: with pty backpressure the tx path runs against the MCU's closed
-// window by design. User timeout 60 s, keepalive 10 s idle + 4 x 2 s.
-const std::uint32_t tcp_user_timeout_ms = 60000;
+// Liveness comes from the heartbeat session: it closes and reopens this connection when the
+// ChargeBridge is lost and found. The kernel keepalive below only covers an idle connection. No
+// TCP_USER_TIMEOUT: with pty backpressure the tx path runs against the MCU's 2 KB window by design,
+// and Linux counts a window that never admits the whole head of the write queue as no progress,
+// so a user timeout aborts a live connection at the slow baud rates after exactly its duration.
 const std::uint32_t tcp_keepalive_count = 4;
 const std::uint32_t tcp_keepalive_idle_s = 10;
 const std::uint32_t tcp_keepalive_interval_s = 2;
@@ -100,7 +101,6 @@ void serial_bridge::create_tcp_client(std::string const& remote, uint16_t remote
     m_tcp = std::make_unique<everest::lib::io::tcp::tcp_client>(remote, remote_port, default_udp_timeout_ms);
     m_tcp->set_on_ready_action([this]() {
         m_tcp->get_raw_handler()->set_keep_alive(tcp_keepalive_count, tcp_keepalive_idle_s, tcp_keepalive_interval_s);
-        m_tcp->get_raw_handler()->set_user_timeout(tcp_user_timeout_ms);
         try {
             everest::lib::io::socket::enable_tcp_no_delay(m_tcp->get_raw_handler()->get_fd());
         } catch (std::exception const& e) {
