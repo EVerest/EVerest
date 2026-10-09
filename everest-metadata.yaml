@@ -36,9 +36,6 @@ boost:
 pugixml:
   description: "Light-weight, simple and fast XML parser for C++ with XPath support"
   license: "MIT"
-Josev:
-  description: "Implementation of the ISO 15118 Communication Protocol (-2, -20, -8)"
-  license: "Apache-2.0"
 sqlite_cpp:
   name: "SQLiteCpp"
   description: "SQLiteC++ (SQLiteCpp) is a smart and easy to use C++ SQLite3 wrapper"

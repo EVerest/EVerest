@@ -157,5 +157,4 @@ Examples:
   - ``docs/README.md``: How to build the documentation you are reading
   - ``applications/utils/everest-testing/README.md``: How to use pytest with EVerest
 
-- md/general doc files in other repos (`everest-admin-panel <https://github.com/EVerest/everest-admin-panel>`_,
-  `ext-switchev-iso15118 <https://github.com/EVerest/ext-switchev-iso15118>`_, ...)
+- md/general doc files in other repos (`everest-admin-panel <https://github.com/EVerest/everest-admin-panel>`_, ...)

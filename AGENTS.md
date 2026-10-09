@@ -7,9 +7,7 @@ CI also builds with Bazel.
 
 Libraries that once lived in separate `lib*` repositories are now in-tree under
 `lib/everest/` and are edited in place; there is no upstream repository to mirror them
-to. A few EVerest components are still external dependencies in `dependencies.yaml`,
-notably the Python Josev stack (`ext-switchev-iso15118`), which only the OCPP
-integration tests use.
+to. A few EVerest components are still external dependencies in `dependencies.yaml`.
 
 Contributor policy (licensing, DCO, review, and the project's position on AI-generated
 contributions) is in `docs/source/project/contributing.rst`. This file covers mechanics
@@ -53,11 +51,10 @@ job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
 `-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
-defaults to ON. Josev is fetched with `BUILD_TESTING=ON` and Python support
-enabled, unless explicitly disabled or excluded. When fetched, its CMake runs
-`iso15118/shared/pki/create_certs.sh` with that certificate option ON and fills
-`config/certs` for installation. A default configure without `BUILD_TESTING`
-does not fetch Josev or generate this development PKI.
+defaults to ON. With that option ON, edm enabled and Ev15118 included in the build,
+CMake runs the vendored `cmake/assets/iso15118-pki/create_certs.sh`
+from a build-directory copy and writes the development PKI into the gitignored
+`config/certs` tree for installation. Default builds need no extra flag.
 
 To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
 heavy ones with `-DEVEREST_EXCLUDE_MODULES="EvseSlac;EvseV2G;IsoMux"`, quoting the
@@ -146,8 +143,14 @@ cmake --build build --target install_everest_testing
 ```
 
 OCPP suites also need the pip packages built into the venv once:
-`everestpy_pip_install_dist`, `everest-testing_pip_install_dist` and
-`iso15118_pip_install_dist` (`cmake --build build --target <name>`).
+`everestpy_pip_install_dist` and `everest-testing_pip_install_dist`
+(`cmake --build build --target <name>`).
+
+The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`;
+keep `EVEREST_BUILD_APPLICATIONS=ON` (the default) when building their prefix.
+`ocpp_tests/test_sets/ocpp201/test_exi_generator.py` checks the response bytes,
+four signed fragment digests and SignedInfo signature against an independent
+wire capture. It runs with the OCPP 2.0.1 suite, without starting EVerest.
 
 ISO 15118 has no dedicated suite. It is covered by `tests/core_tests/smoke_tests.py`
 (AC and DC end to end), CSMS-side helpers in

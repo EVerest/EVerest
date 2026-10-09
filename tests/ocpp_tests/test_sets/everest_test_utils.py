@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import asyncio
+import ctypes
 import hashlib
 import pytest
 import queue
@@ -11,14 +12,17 @@ import os
 from pathlib import Path
 import threading
 from types import FunctionType
-from typing import Optional
+from typing import List, Optional, Tuple
 
 from datetime import datetime, timedelta, timezone
 
 from cryptography import x509
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes, serialization
-from cryptography.hazmat.primitives.asymmetric import rsa
+from cryptography.hazmat.primitives.asymmetric import ec, rsa
+from cryptography.hazmat.primitives.asymmetric.utils import decode_dss_signature
+from cryptography.hazmat.primitives.ciphers import Cipher, algorithms, modes
+from cryptography.hazmat.primitives.kdf.concatkdf import ConcatKDFHash
 from cryptography.x509 import load_pem_x509_certificate
 from cryptography.x509.oid import NameOID
 
@@ -33,32 +37,6 @@ from everest.testing.core_utils._configuration.libocpp_configuration_helper impo
     OCPP2XConfigVariableIdentifier,
 )
 
-from iso15118.shared.security import (
-    CertPath,
-    KeyEncoding,
-    KeyPasswordPath,
-    KeyPath,
-    create_signature,
-    encrypt_priv_key,
-    get_cert_cn,
-    load_cert,
-    load_priv_key,
-)
-from iso15118.shared.messages.iso15118_2.msgdef import V2GMessage as V2GMessageV2
-from iso15118.shared.messages.iso15118_2.header import MessageHeader as MessageHeaderV2
-from iso15118.shared.messages.iso15118_2.datatypes import (
-    EMAID,
-    CertificateChain,
-    DHPublicKey,
-    EncryptedPrivateKey,
-    ResponseCode,
-    SubCertificates,
-)
-from iso15118.shared.messages.iso15118_2.body import Body, CertificateInstallationRes
-from iso15118.shared.messages.enums import Namespace
-from iso15118.shared.exi_codec import EXI
-from iso15118.shared.exificient_exi_codec import ExificientEXICodec
-from iso15118.shared.exceptions import EncryptionError, PrivateKeyReadError
 import json
 import base64
 
@@ -151,137 +129,175 @@ class OCPPMultiModuleConfigStrategy(EverestConfigAdjustmentStrategy):
         return adjusted
 
 
+EXI_LIBRARY_NAME = "libcbv2g_json_wrapper.so"
+
+
+def find_exi_library(everest_prefix) -> str:
+    """The cbv2g JSON wrapper installed into an EVerest prefix."""
+    prefix = Path(everest_prefix).resolve()
+    for libdir in ("lib", "lib64"):
+        candidate = prefix / libdir / EXI_LIBRARY_NAME
+        if candidate.exists():
+            return str(candidate)
+    raise FileNotFoundError(f"{EXI_LIBRARY_NAME} is not installed in {prefix}")
+
+
 class EXIGenerator:
+    """Builds the ISO 15118-2 CertificateInstallationRes a certificate provisioning service returns.
 
-    def __init__(self, certs_path):
+    The EXI codec is libcbv2g_json_wrapper; the contract private key
+    encryption ([V2G2-818]) and the CPS signature over the SignedInfo ([V2G2-771]) are done here.
+    """
+
+    # Paths below the test PKI root, as the EVerest certificate layout has them.
+    OEM_LEAF_DER = "client/oem/OEM_LEAF.der"
+    CONTRACT_LEAF_DER = "client/mo/MO_LEAF.der"
+    CONTRACT_LEAF_KEY = "client/mo/MO_LEAF.key"
+    CONTRACT_LEAF_KEY_PASSWORD = "client/mo/MO_LEAF_PASSWORD.txt"
+    MO_SUB_CA2_DER = "ca/mo/MO_SUB_CA2.der"
+    MO_SUB_CA1_DER = "ca/mo/MO_SUB_CA1.der"
+    CPS_LEAF_DER = "client/cps/CPS_LEAF.der"
+    CPS_LEAF_KEY = "client/cps/CPS_LEAF.key"
+    CPS_LEAF_KEY_PASSWORD = "client/cps/CPS_LEAF_PASSWORD.txt"
+    CPS_SUB_CA2_DER = "ca/cps/CPS_SUB_CA2.der"
+    CPS_SUB_CA1_DER = "ca/cps/CPS_SUB_CA1.der"
+
+    ISO2_NAMESPACE = "urn:iso:15118:2:2013:MsgDef"
+    XMLDSIG_NAMESPACE = "http://www.w3.org/2000/09/xmldsig#"
+    CANONICAL_EXI = "http://www.w3.org/TR/canonical-exi/"
+    MAX_EXI_SIZE = 8192
+    MAX_JSON_SIZE = 65536
+
+    def __init__(self, certs_path, library_path: str):
         self.certs_path = certs_path
-        EXI().set_exi_codec(ExificientEXICodec())
+        self._lib = ctypes.CDLL(library_path)
+        self._declare_functions()
 
-        self.oem_leaf_der = load_cert(
-            os.path.join(self.certs_path, CertPath.OEM_LEAF_DER)
+        self.oem_leaf = x509.load_der_x509_certificate(self._read(self.OEM_LEAF_DER))
+        self.contract_leaf_key = self._load_key(self.CONTRACT_LEAF_KEY, self.CONTRACT_LEAF_KEY_PASSWORD)
+        self.signature_key = self._load_key(self.CPS_LEAF_KEY, self.CPS_LEAF_KEY_PASSWORD)
+        contract_leaf = self._read(self.CONTRACT_LEAF_DER)
+        self.contract_cert_chain = [contract_leaf, self._read(self.MO_SUB_CA2_DER), self._read(self.MO_SUB_CA1_DER)]
+        self.cps_certificate_chain = [
+            self._read(self.CPS_LEAF_DER),
+            self._read(self.CPS_SUB_CA2_DER),
+            self._read(self.CPS_SUB_CA1_DER),
+        ]
+        self.emaid = (
+            x509.load_der_x509_certificate(contract_leaf)
+            .subject.get_attributes_for_oid(NameOID.COMMON_NAME)[0]
+            .value
         )
-        self.contract_leaf_key = load_priv_key(
-            os.path.join(self.certs_path, KeyPath.CONTRACT_LEAF_PEM),
-            KeyEncoding.PEM,
-            os.path.join(
-                self.certs_path, KeyPasswordPath.CONTRACT_LEAF_KEY_PASSWORD
-            ),
+
+    def _read(self, relative_path: str) -> bytes:
+        with open(os.path.join(self.certs_path, relative_path), "rb") as f:
+            return f.read()
+
+    def _load_key(self, key_path: str, password_path: str):
+        with open(os.path.join(self.certs_path, password_path), "r") as f:
+            password = f.readline().rstrip().encode("utf-8")
+        return serialization.load_pem_private_key(self._read(key_path), password=password or None)
+
+    def _declare_functions(self):
+        byte_p = ctypes.POINTER(ctypes.c_uint8)
+        self._lib.cbv2g_encode.argtypes = [
+            ctypes.c_char_p, ctypes.c_char_p, byte_p, ctypes.c_size_t, ctypes.POINTER(ctypes.c_size_t)]
+        self._lib.cbv2g_encode.restype = ctypes.c_int
+        self._lib.cbv2g_decode.argtypes = [
+            byte_p, ctypes.c_size_t, ctypes.c_char_p, ctypes.c_char_p, ctypes.c_size_t]
+        self._lib.cbv2g_decode.restype = ctypes.c_int
+        self._lib.cbv2g_get_last_error.argtypes = []
+        self._lib.cbv2g_get_last_error.restype = ctypes.c_char_p
+
+    def _check_result(self, result):
+        if result != 0:
+            error = self._lib.cbv2g_get_last_error().decode("utf-8")
+            raise RuntimeError(f"cbv2g JSON wrapper failed with {result}: {error}")
+
+    def encode(self, message: dict, namespace: str = ISO2_NAMESPACE) -> bytes:
+        out = (ctypes.c_uint8 * self.MAX_EXI_SIZE)()
+        out_len = ctypes.c_size_t()
+        self._check_result(self._lib.cbv2g_encode(
+            json.dumps(message).encode("utf-8"), namespace.encode("utf-8"), out, len(out), ctypes.byref(out_len)))
+        return bytes(out[:out_len.value])
+
+    def decode(self, exi: bytes, namespace: str) -> dict:
+        data = (ctypes.c_uint8 * len(exi)).from_buffer_copy(exi)
+        out = ctypes.create_string_buffer(self.MAX_JSON_SIZE)
+        self._check_result(self._lib.cbv2g_decode(data, len(data), namespace.encode("utf-8"), out, len(out)))
+        return json.loads(out.value)
+
+    def create_signed_info(self, response: dict) -> dict:
+        references = []
+        for name in ("ContractSignatureCertChain", "ContractSignatureEncryptedPrivateKey", "DHpublickey", "eMAID"):
+            element = response[name]
+            digest = hashlib.sha256(self.encode({name: element})).digest()
+            references.append({
+                "URI": "#" + element["Id"],
+                "Transforms": {"Transform": [{"Algorithm": self.CANONICAL_EXI}]},
+                "DigestMethod": {"Algorithm": "http://www.w3.org/2001/04/xmlenc#sha256"},
+                "DigestValue": base64.b64encode(digest).decode("ascii"),
+            })
+        return {
+            "CanonicalizationMethod": {"Algorithm": self.CANONICAL_EXI},
+            "SignatureMethod": {"Algorithm": "http://www.w3.org/2001/04/xmldsig-more#ecdsa-sha256"},
+            "Reference": references,
+        }
+
+    def _encrypt_contract_private_key(self) -> Tuple[bytes, bytes]:
+        """ISO 15118-2 [V2G2-818]: ECDH with the OEM provisioning key, ConcatKDF-SHA256, AES-128-CBC."""
+        ephemeral_key = ec.generate_private_key(ec.SECP256R1())
+        dh_public_key = ephemeral_key.public_key().public_bytes(
+            encoding=serialization.Encoding.X962,
+            format=serialization.PublicFormat.UncompressedPoint,
         )
-        self.contract_cert_chain = CertificateChain(
-            id="id1",
-            certificate=load_cert(
-                os.path.join(self.certs_path, CertPath.CONTRACT_LEAF_DER)
-            ),
-            sub_certificates=SubCertificates(
-                certificates=[
-                    load_cert(os.path.join(self.certs_path,
-                              CertPath.MO_SUB_CA2_DER)),
-                    load_cert(os.path.join(self.certs_path,
-                              CertPath.MO_SUB_CA1_DER)),
-                ]
-            ),
-        )
-        self.emaid = EMAID(
-            id="id4",
-            value=get_cert_cn(
-                load_cert(os.path.join(self.certs_path,
-                          CertPath.CONTRACT_LEAF_DER))
-            ),
-        )
-        self.cps_certificate_chain = CertificateChain(
-            certificate=load_cert(os.path.join(
-                self.certs_path, CertPath.CPS_LEAF_DER)),
-            sub_certificates=SubCertificates(
-                certificates=[
-                    load_cert(os.path.join(self.certs_path,
-                              CertPath.CPS_SUB_CA2_DER)),
-                    load_cert(os.path.join(self.certs_path,
-                              CertPath.CPS_SUB_CA1_DER)),
-                ]
-            ),
-        )
-        self.signature_key = load_priv_key(
-            os.path.join(self.certs_path, KeyPath.CPS_LEAF_PEM),
-            KeyEncoding.PEM,
-            os.path.join(self.certs_path,
-                         KeyPasswordPath.CPS_LEAF_KEY_PASSWORD),
-        )
-        self.contract_cert_chain_exi = EXI().to_exi(
-            self.contract_cert_chain, Namespace.ISO_V2_MSG_DEF
-        )
-        self.emaid_exi = EXI().to_exi(
-            self.emaid, Namespace.ISO_V2_MSG_DEF
-        )
+        shared_secret = ephemeral_key.exchange(ec.ECDH(), self.oem_leaf.public_key())
+        session_key = ConcatKDFHash(
+            algorithm=hashes.SHA256(), length=16, otherinfo=bytes([0x01, 0x55, 0x56])
+        ).derive(shared_secret)
+        init_vector = os.urandom(16)
+        encryptor = Cipher(algorithms.AES(session_key), modes.CBC(init_vector)).encryptor()
+        private_value = self.contract_leaf_key.private_numbers().private_value.to_bytes(32, "big")
+        encrypted = init_vector + encryptor.update(private_value) + encryptor.finalize()
+        return dh_public_key, encrypted
+
+    @staticmethod
+    def _chain(certs: List[bytes]) -> dict:
+        return {
+            "Certificate": base64.b64encode(certs[0]).decode("ascii"),
+            "SubCertificates": {"Certificate": [base64.b64encode(cert).decode("ascii") for cert in certs[1:]]},
+        }
 
     def generate_certificate_installation_res(
         self, base64_encoded_cert_installation_req: str, namespace: str
     ) -> str:
-
-        cert_install_req_exi = base64.b64decode(base64_encoded_cert_installation_req)
-        cert_install_req = EXI().from_exi(cert_install_req_exi, namespace)
-        try:
-            dh_pub_key, encrypted_priv_key_bytes = encrypt_priv_key(
-                oem_prov_cert=self.oem_leaf_der,
-                priv_key_to_encrypt=self.contract_leaf_key,
-            )
-        except EncryptionError:
-            raise EncryptionError(
-                "EncryptionError while trying to encrypt the private key for the "
-                "contract certificate"
-            )
-        except PrivateKeyReadError as exc:
-            raise PrivateKeyReadError(
-                f"Can't read private key to encrypt for CertificateInstallationRes:"
-                f" {exc}"
-            )
-
-        encrypted_priv_key = EncryptedPrivateKey(id="id2", value=encrypted_priv_key_bytes)
-        dh_public_key = DHPublicKey(id="id3", value=dh_pub_key)
-
-        cert_install_res = CertificateInstallationRes(
-            response_code=ResponseCode.OK,
-            cps_cert_chain=self.cps_certificate_chain,
-            contract_cert_chain=self.contract_cert_chain,
-            encrypted_private_key=encrypted_priv_key,
-            dh_public_key=dh_public_key,
-            emaid=self.emaid,
-        )
-
-        try:
-            elements_to_sign = [
-                (cert_install_res.contract_cert_chain.id, self.contract_cert_chain_exi),
-                (
-                    cert_install_res.encrypted_private_key.id,
-                    EXI().to_exi(cert_install_res.encrypted_private_key, Namespace.ISO_V2_MSG_DEF),
-                ),
-                (
-                    cert_install_res.dh_public_key.id,
-                    EXI().to_exi(cert_install_res.dh_public_key, Namespace.ISO_V2_MSG_DEF),
-                ),
-                (cert_install_res.emaid.id, self.emaid_exi),
-            ]
-            signature = create_signature(elements_to_sign, self.signature_key)
-
-        except PrivateKeyReadError as exc:
-            raise Exception(
-                "Can't read private key needed to create signature "
-                f"for CertificateInstallationRes: {exc}",
-            )
-        except Exception as exc:
-            raise Exception(f"Error creating signature {exc}")
-
-        header = MessageHeaderV2(
-            session_id=cert_install_req.header.session_id,
-            signature=signature,
-        )
-        body = Body.parse_obj({"CertificateInstallationRes": cert_install_res.dict()})
-        to_be_exi_encoded = V2GMessageV2(header=header, body=body)
-        exi_encoded_cert_installation_res = EXI().to_exi(
-            to_be_exi_encoded, Namespace.ISO_V2_MSG_DEF
-        )
-
-        return base64.b64encode(exi_encoded_cert_installation_res).decode("utf-8")
-
+        request = self.decode(base64.b64decode(base64_encoded_cert_installation_req), namespace)
+        session_id = request["V2G_Message"]["Header"]["SessionID"]
+        dh_public_key, encrypted_private_key = self._encrypt_contract_private_key()
+        response = {
+            "ResponseCode": "OK",
+            "SAProvisioningCertificateChain": self._chain(self.cps_certificate_chain),
+            "ContractSignatureCertChain": {"Id": "id1", **self._chain(self.contract_cert_chain)},
+            "ContractSignatureEncryptedPrivateKey": {
+                "Id": "id2", "value": base64.b64encode(encrypted_private_key).decode("ascii")},
+            "DHpublickey": {"Id": "id3", "value": base64.b64encode(dh_public_key).decode("ascii")},
+            "eMAID": {"Id": "id4", "value": self.emaid},
+        }
+        signed_info = self.create_signed_info(response)
+        signed_info_exi = self.encode({"SignedInfo": signed_info}, self.XMLDSIG_NAMESPACE)
+        r, s = decode_dss_signature(self.signature_key.sign(signed_info_exi, ec.ECDSA(hashes.SHA256())))
+        signature_value = r.to_bytes(32, "big") + s.to_bytes(32, "big")
+        message = {"V2G_Message": {
+            "Header": {
+                "SessionID": session_id,
+                "Signature": {
+                    "SignedInfo": signed_info,
+                    "SignatureValue": {"value": base64.b64encode(signature_value).decode("ascii")},
+                },
+            },
+            "Body": {"CertificateInstallationRes": response},
+        }}
+        return base64.b64encode(self.encode(message)).decode("ascii")
 
 
 def certificate_signed_response(csr: x509.CertificateSigningRequest):

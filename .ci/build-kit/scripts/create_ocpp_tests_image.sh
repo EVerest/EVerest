@@ -11,7 +11,6 @@ fi
 python3 -m pip install --break-system-packages \
     "$EXT_MOUNT"/wheels/everestpy-*.whl \
     "$EXT_MOUNT"/wheels/everest_testing-*.whl \
-    "$EXT_MOUNT"/wheels/iso15118-*.whl \
     pytest-html \
     pytest-rerunfailures
 retVal=$?
