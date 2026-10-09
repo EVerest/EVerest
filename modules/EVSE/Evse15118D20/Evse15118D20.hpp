@@ -45,6 +45,7 @@ struct Conf {
     bool enable_tls_key_logging;
     std::string tls_key_logging_path;
     bool enable_sdp_server;
+    int tcp_port;
     bool supported_dynamic_mode;
     bool supported_mobility_needs_mode_provided_by_secc;
     bool supported_scheduled_mode;
