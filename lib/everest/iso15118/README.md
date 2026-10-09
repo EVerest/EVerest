@@ -1,7 +1,7 @@
 ISO 15118 library suite
 =======================
 
-This is a C++ library implementation of ISO 15118-20, ISO15118-2 and DIN70121. The implementation of ISO15118-20 is currently under heavy development. DIN70121 and ISO15118-2 will follow and are currently covered by the [EvseV2G module](https://github.com/EVerest/EVerest/tree/main/modules/EvseV2G) of EVerest.
+This is a C++ library implementation of ISO 15118-20, ISO 15118-2 and DIN SPEC 70121 for the SECC side, used by the [Evse15118D20 module](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/Evse15118D20) of EVerest. It supersedes the C-based [EvseV2G module](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/EvseV2G), which is deprecated.
 
 ISO 15118-20 Support
 --------------------
@@ -44,7 +44,7 @@ ISO15118 support is distributed accross multiple repositories and modules in EVe
   [cbexigen repository](https://github.com/EVerest/cbexigen).
 - The [repository libSlac](https://github.com/EVerest/libslac) contains
   definitions of SLAC messages that are used for ISO 15118 communication.
-- DIN70121 & ISO15118-2 functionality can be found in
+- The deprecated C implementation of DIN SPEC 70121 & ISO 15118-2 lives in the
   [EVerest module EvseV2G](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/EvseV2G)
 
 Dependencies

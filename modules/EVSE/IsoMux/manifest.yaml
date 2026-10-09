@@ -1,5 +1,8 @@
 description: >-
-  This module is a multiplexer to support switching over between different ISO module implementations
+  This module is a multiplexer to support switching over between different ISO module implementations.
+  DEPRECATED in 2026.10.0, earliest removal in 2027.04.0: Evse15118D20 runs DIN SPEC 70121,
+  ISO 15118-2 and ISO 15118-20 in one module, so no multiplexer is needed. See the how-to guide
+  "Migrate from EvseV2G and IsoMux to Evse15118D20" for the upgrade path.
 config:
   device:
     description: >-

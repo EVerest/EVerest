@@ -33,6 +33,11 @@ struct v2g_context* v2g_ctx = nullptr;
 namespace module {
 
 void IsoMux::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : IsoMux\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate from EvseV2G and IsoMux to Evse15118D20";
+
     /* create v2g context */
     v2g_ctx = v2g_ctx_create(&(*r_security));
 
