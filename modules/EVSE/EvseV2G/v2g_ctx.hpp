@@ -65,6 +65,13 @@ void populate_physical_value_float(struct iso2_PhysicalValueType* pv, float valu
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated);
 
 /*!
+ * \brief v2g_ctx_init_dc_evse_status_codes This function sets the DC status code of every charging phase back to its
+ * default.
+ * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
+ */
+void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx);
+
+/*!
  * \brief init_charging_values This function inits all charge-values (din/iso). This should be called after starting the
  * charging session.
  * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
