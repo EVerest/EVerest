@@ -478,6 +478,9 @@ protected:
     constexpr auto& get_shared_context() {
         return shared_context;
     }
+    auto& get_hlc_use_5percent_current_session() {
+        return hlc_use_5percent_current_session;
+    }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;
     }
