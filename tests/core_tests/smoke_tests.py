@@ -4,6 +4,8 @@
 
 import pytest
 import asyncio
+import socket
+import struct
 from datetime import datetime, timezone
 from unittest.mock import Mock
 from copy import deepcopy
@@ -444,6 +446,76 @@ async def wait_for_hlc_session_failed_with_reason(mock, expected_reason, timeout
     )
 
 
+SDP_PORT = 15118
+SDP_HEADER = struct.Struct("!BBHI")
+SDP_REQUEST_TYPE = 0x9000
+SDP_RESPONSE_TYPE = 0x9001
+SDP_SECURITY_NONE = 0x10
+SDP_TRANSPORT_TCP = 0x00
+
+
+def link_local_interfaces():
+    """Interfaces with an IPv6 link-local address, in interface index order."""
+    interfaces = set()
+    with open("/proc/net/if_inet6") as if_inet6:
+        for line in if_inet6:
+            _, ifindex, _, scope, _, name = line.split()
+            if int(scope, 16) == 0x20:
+                interfaces.add((int(ifindex, 16), name))
+    return [name for _, name in sorted(interfaces)]
+
+
+def sdp_discover_tcp_server(interface: str, timeout: float = 1.0):
+    """Send an SDP request for plain TCP on the interface. Returns the announced (address, port, scope_id)."""
+    ifindex = socket.if_nametoindex(interface)
+    payload = bytes([SDP_SECURITY_NONE, SDP_TRANSPORT_TCP])
+    request = SDP_HEADER.pack(0x01, 0xFE, SDP_REQUEST_TYPE, len(payload)) + payload
+
+    with socket.socket(socket.AF_INET6, socket.SOCK_DGRAM) as sdp_socket:
+        sdp_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_IF, struct.pack("I", ifindex))
+        sdp_socket.setsockopt(socket.IPPROTO_IPV6, socket.IPV6_MULTICAST_HOPS, 1)
+        sdp_socket.settimeout(timeout)
+        sdp_socket.sendto(request, ("ff02::1", SDP_PORT, 0, ifindex))
+        response, _ = sdp_socket.recvfrom(2048)
+
+    _, _, payload_type, payload_length = SDP_HEADER.unpack_from(response)
+    assert payload_type == SDP_RESPONSE_TYPE and payload_length == 20, f"Unexpected SDP response: {response.hex()}"
+    body = response[SDP_HEADER.size:]
+    address = socket.inet_ntop(socket.AF_INET6, body[0:16])
+    port, security, transport = struct.unpack("!HBB", body[16:20])
+    assert (security, transport) == (SDP_SECURITY_NONE, SDP_TRANSPORT_TCP), f"SDP announced TLS or non-TCP: {body.hex()}"
+    return address, port, ifindex
+
+
+def discover_evse_v2g_tcp_server(everest_core: EverestCore, charger_module_id: str = "iso15118_charger"):
+    """SDP-discover the plain TCP server of an EvseV2G module, resolving device 'auto' like EvseV2G does."""
+    device = everest_core.everest_config["active_modules"][charger_module_id]["config_module"]["device"]
+    interfaces = link_local_interfaces() if device == "auto" else [device]
+    for interface in interfaces:
+        try:
+            return sdp_discover_tcp_server(interface)
+        except TimeoutError:
+            continue
+    raise TimeoutError(f"No SDP response on any of {interfaces}")
+
+
+def tcp_connection_closed_by_peer(address: str, port: int, scope_id: int, timeout: float = 5.0) -> bool:
+    """Open a TCP connection and report whether the peer closes it within the timeout."""
+    with socket.socket(socket.AF_INET6, socket.SOCK_STREAM) as tcp_socket:
+        tcp_socket.settimeout(timeout)
+        tcp_socket.connect((address, port, 0, scope_id))
+        try:
+            return tcp_socket.recv(1) == b""
+        except ConnectionResetError:
+            return True
+        except TimeoutError:
+            return False
+
+
+def last_energy_wh(powermeter_mock) -> float:
+    return powermeter_mock.call_args[0][0]["energy_Wh_import"]["total"]
+
+
 ###################################################
 ################ Begin Tests ######################
 ###################################################
@@ -639,6 +711,43 @@ async def test_iso15118_dc_session_error_before_session(
     assert (
         session_event_mock.call_count == 0
     ), "No session events should occur while error is active"
+
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={"evse_manager": [Requirement("evse_manager", "evse")]}
+)
+@pytest.mark.everest_core_config("config-sil-dc-evsev2g.yaml")
+@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
+async def test_iso15118_dc_session_survives_second_tcp_connection(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test that EvseV2G closes further TCP connections during an ISO 15118-2 DC charging session
+    without touching the session context of the active connection.
+    """
+    _, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+
+    await start_session(test_controller, session_event_mock, test_controller.plug_in_dc_iso)
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=10, timeout=15)
+
+    address, port, scope_id = await asyncio.to_thread(discover_evse_v2g_tcp_server, everest_core)
+    for _ in range(3):
+        assert await asyncio.to_thread(
+            tcp_connection_closed_by_peer, address, port, scope_id
+        ), "EvseV2G kept a second TCP connection open"
+
+    await assert_no_events(
+        session_event_mock,
+        ["ChargingPausedEV", "ChargingPausedEVSE", "StoppingCharging", "ChargingFinished",
+         "TransactionFinished", "SessionFinished"],
+        wait_time=5,
+    )
+    await assert_energy_exceeds(powermeter_mock, energy_threshold_wh=last_energy_wh(powermeter_mock) + 5, timeout=20)
+    await end_session(test_controller, session_event_mock)
 
 ###########################################################
 ################ Pause and No Energy Tests ################

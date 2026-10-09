@@ -569,17 +569,17 @@ static void* connection_server(void* data) {
                  strerror(errno));
         }
 
+        if (ctx->connection_initiated) {
+            // The shared session context belongs to the active connection, so only this socket is closed.
+            dlog(DLOG_LEVEL_ERROR, "Incoming connection on %s, but there is already an active connection.",
+                 ctx->if_name);
+            close(conn->conn.socket_fd);
+            continue;
+        }
+
         // store the port to create a udp socket
         conn->ctx->udp_port = ntohs(addr.sin6_port);
 
-        if (ctx->connection_initiated) {
-            dlog(DLOG_LEVEL_ERROR, "Incoming connection on %s, but there is already an active connection.",
-                 ctx->if_name);
-            connection_teardown(conn);
-            free(conn);
-            conn = NULL;
-            continue;
-        }
         ctx->connection_initiated = true;
 
         if (pthread_create(&conn->thread_id, &attr, connection_handle_tcp, conn) != 0) {
