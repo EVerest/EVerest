@@ -1,0 +1,193 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright 2026 Pionix GmbH and Contributors to EVerest
+#include <catch2/catch_approx.hpp>
+#include <catch2/catch_test_macros.hpp>
+
+#include "helper.hpp"
+
+#include <iso15118/ev/d20/state/dc_pre_charge.hpp>
+#include <iso15118/ev/d20/state/power_delivery.hpp>
+#include <iso15118/message/authorization.hpp>
+#include <iso15118/message/common_types.hpp>
+#include <iso15118/message/dc_pre_charge.hpp>
+#include <iso15118/message/power_delivery.hpp>
+#include <iso15118/message/session_stop.hpp>
+#include <iso15118/message/type.hpp>
+
+using namespace iso15118;
+
+namespace {
+using message_20::datatypes::ResponseCode;
+
+// DC_PreCharge reads target_voltage from the DC params to size its request and its
+// in-tolerance check.
+const auto seed_target_400 = [](FsmStateHelper& helper) {
+    ev::DcChargeParams params{};
+    params.target_voltage = 400.0f;
+    helper.set_dc_params(params);
+};
+
+message_20::DC_PreChargeResponse make_response(const message_20::Header& header, ResponseCode code,
+                                               message_20::datatypes::RationalNumber present_voltage) {
+    return message_20::DC_PreChargeResponse{header, code, present_voltage};
+}
+} // namespace
+
+SCENARIO("ISO15118-20 EV DC_PreCharge sends initial Starting request on enter") {
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_PreChargeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->header.session_id == SESSION_HEADER.session_id);
+    REQUIRE(request_message->processing == message_20::datatypes::Processing::Ongoing);
+    REQUIRE(message_20::datatypes::from_RationalNumber(request_message->target_voltage) == Catch::Approx(400.0f));
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge closes precharge with Finished before PowerDelivery") {
+    bool dc_power_on_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+
+    // enter() queues an Ongoing DC_PreChargeRequest.
+    {
+        const auto enter_requests = primed.take_requests();
+        const auto pre_charge_request = enter_requests.get<message_20::DC_PreChargeRequest>();
+        REQUIRE(pre_charge_request.has_value());
+        REQUIRE(pre_charge_request->processing == message_20::datatypes::Processing::Ongoing);
+    }
+
+    // SECC reports present voltage in tolerance of the 400 V target. Reaching
+    // tolerance must not transition yet: while EVProcessing is Ongoing the SECC
+    // accepts only another DC_PreChargeReq, so a PowerDeliveryReq
+    // here would be answered with FAILED_SequenceError.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    const auto in_tolerance = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(in_tolerance.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
+    REQUIRE(dc_power_on_fired == false);
+
+    {
+        const auto requests = primed.take_requests();
+        const auto pre_charge_request = requests.get<message_20::DC_PreChargeRequest>();
+        REQUIRE(pre_charge_request.has_value());
+        REQUIRE(pre_charge_request->processing == message_20::datatypes::Processing::Finished);
+        REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
+    }
+
+    // The response to that Finished request is the SECC's acknowledgement; it has
+    // advanced to PowerDelivery and now expects PowerDeliveryReq.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(dc_power_on_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    const auto requests = primed.take_requests();
+    REQUIRE_FALSE(requests.get<message_20::DC_PreChargeRequest>().has_value());
+
+    const auto pd_request = requests.get<message_20::PowerDeliveryRequest>();
+    REQUIRE(pd_request.has_value());
+    REQUIRE(pd_request->charge_progress == message_20::datatypes::Progress::Start);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge does not re-check tolerance after Finished") {
+    // The acknowledgement of a Finished request carries whatever voltage the SECC
+    // last measured. Re-applying the tolerance check to it would strand the EV in
+    // precharge whenever the converter has already begun to settle away from the
+    // target, so the closing exchange must be driven by the Finished flag alone.
+    bool dc_power_on_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+    primed.take_requests();
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+    primed.take_requests();
+
+    // Far outside tolerance, yet this is the Finished acknowledgement.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(100.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(dc_power_on_fired == true);
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::PowerDelivery);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge goes to SessionStop when a stop was requested") {
+    // [V2G20-2644]: PowerDeliveryReq(Start) has not been sent, so the EV-side stop skips the
+    // contactor close and sends SessionStopReq(Terminate) as its next request.
+    bool dc_power_on_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+    primed.ctx.set_stop_charging_requested(true);
+
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(400.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(result.transitioned() == true);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::SessionStop);
+    REQUIRE(dc_power_on_fired == false);
+
+    const auto requests = primed.take_requests();
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
+    const auto stop_request = requests.get<message_20::SessionStopRequest>();
+    REQUIRE(stop_request.has_value());
+    REQUIRE(stop_request->charging_session == message_20::datatypes::ChargingSession::Terminate);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge resends Ongoing request when voltage not in tolerance") {
+    bool dc_power_on_fired = false;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.dc_power_on = [&dc_power_on_fired]() { dc_power_on_fired = true; };
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, seed_target_400};
+
+    // SECC reports present voltage far below the 400 V target; precharge not complete.
+    primed.handle_response(make_response(SESSION_HEADER, ResponseCode::OK, message_20::datatypes::from_float(100.0f)));
+    const auto result = primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+
+    REQUIRE(dc_power_on_fired == false);
+    REQUIRE(result.transitioned() == false);
+    REQUIRE(primed.fsm.get_current_state_id() == ev::d20::StateID::DC_PreCharge);
+    REQUIRE(primed.ctx.is_session_stopped() == false);
+
+    // A single Ongoing DC_PreChargeRequest is re-emitted; no PowerDelivery transition.
+    const auto requests = primed.take_requests();
+    const auto request_message = requests.get<message_20::DC_PreChargeRequest>();
+    REQUIRE(request_message.has_value());
+    REQUIRE(request_message->processing == message_20::datatypes::Processing::Ongoing);
+    REQUIRE_FALSE(requests.get<message_20::PowerDeliveryRequest>().has_value());
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge stops session on FAILED_UnknownSession") {
+    // State-specific rejection beyond the shared triple.
+    const ev::feedback::Callbacks callbacks{};
+    PrimedState<ev::d20::state::DC_PreCharge> primed{callbacks, no_seed};
+
+    expect_stops_session(
+        primed,
+        make_response(SESSION_HEADER, ResponseCode::FAILED_UnknownSession, message_20::datatypes::RationalNumber{0, 0}),
+        ev::d20::StateID::DC_PreCharge);
+}
+
+SCENARIO("ISO15118-20 EV DC_PreCharge rejects malformed responses") {
+    const ev::feedback::Callbacks callbacks{};
+    const auto make_fsm = [](FsmStateHelper& helper) {
+        auto& ctx = helper.get_context();
+        ctx.get_session().set_id(SESSION_HEADER.session_id);
+        return fsm::v2::FSM<ev::d20::StateBase>{ctx.create_state<ev::d20::state::DC_PreCharge>()};
+    };
+    const auto make_ok = [](const message_20::Header& header) {
+        return make_response(header, ResponseCode::OK, message_20::datatypes::RationalNumber{0, 0});
+    };
+    const auto wrong = message_20::AuthorizationResponse{SESSION_HEADER, ResponseCode::OK,
+                                                         message_20::datatypes::Processing::Finished};
+    check_rejection_paths(callbacks, ev::d20::StateID::DC_PreCharge, make_fsm, make_ok, wrong);
+}

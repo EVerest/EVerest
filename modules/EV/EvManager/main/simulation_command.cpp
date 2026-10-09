@@ -18,6 +18,10 @@ bool SimulationCommand::execute() const {
     return (*registered_command)(arguments);
 }
 
+const std::string& SimulationCommand::name() const {
+    return registered_command->get_command_name();
+}
+
 std::queue<SimulationCommand> SimulationCommand::parse_sim_commands(const std::string& value,
                                                                     const CommandRegistry& command_registry) {
     auto commands_vector{convert_commands_string_to_vector(value)};

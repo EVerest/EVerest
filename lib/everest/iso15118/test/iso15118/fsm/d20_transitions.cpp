@@ -155,3 +155,53 @@ SCENARIO("ISO15118-20 SECC supported app protocol negotiation") {
         }
     }
 }
+
+SCENARIO("ISO15118-20 SECC accepts the AC and AMD1 DER namespaces on an AC EVSE") {
+
+    const std::vector<ProtocolId> supported_protocols = {ProtocolId::ISO15118_20};
+    const std::vector<dt::ServiceCategory> supported_energy_services = {dt::ServiceCategory::AC};
+
+    const auto negotiate = [&](const std::string& protocol_namespace) {
+        message_20::SupportedAppProtocolRequest req;
+        req.app_protocol.push_back(make_app_protocol(protocol_namespace, 4, 1));
+        return session::secc_sap::handle_request(req, supported_protocols, supported_energy_services, true,
+                                                 std::nullopt, /*tls_active=*/true);
+    };
+
+    const auto runs_iso20 = [](const std::string& selected_namespace) {
+        return session::secc_sap::protocol_id_from_selected_namespace(selected_namespace, std::nullopt) ==
+               ProtocolId::ISO15118_20;
+    };
+
+    GIVEN("Only the AC namespace is offered") {
+        const auto result = negotiate(ISO20_AC_PROTOCOL_NAMESPACE);
+
+        THEN("It is negotiated and leads into the -20 session") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.selected_namespace.value() == ISO20_AC_PROTOCOL_NAMESPACE);
+            REQUIRE(runs_iso20(result.selected_namespace.value()));
+        }
+    }
+
+    GIVEN("Only the AC-DER-IEC namespace is offered [V2G20-3020]") {
+        const auto result = negotiate(ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE);
+
+        THEN("It is negotiated with the offered schema id and leads into the -20 session") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 4);
+            REQUIRE(result.selected_namespace.value() == ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE);
+            REQUIRE(runs_iso20(result.selected_namespace.value()));
+        }
+    }
+
+    GIVEN("Only the AC-DER-SAE namespace is offered [V2G20-3216]") {
+        const auto result = negotiate(ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE);
+
+        THEN("It is negotiated with the offered schema id and leads into the -20 session") {
+            REQUIRE(result.response.response_code == ResponseCode::OK_SuccessfulNegotiation);
+            REQUIRE(result.response.schema_id.value_or(0) == 4);
+            REQUIRE(result.selected_namespace.value() == ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE);
+            REQUIRE(runs_iso20(result.selected_namespace.value()));
+        }
+    }
+}

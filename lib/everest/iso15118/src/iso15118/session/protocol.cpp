@@ -5,7 +5,9 @@
 namespace iso15118 {
 
 std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol_namespace) {
-    if (protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE or protocol_namespace == ISO20_AC_PROTOCOL_NAMESPACE) {
+    if (protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE or protocol_namespace == ISO20_AC_PROTOCOL_NAMESPACE or
+        protocol_namespace == ISO20_AC_DER_IEC_PROTOCOL_NAMESPACE or
+        protocol_namespace == ISO20_AC_DER_SAE_PROTOCOL_NAMESPACE) {
         return ProtocolId::ISO15118_20;
     }
     if (protocol_namespace == ISO2_NAMESPACE) {
@@ -15,6 +17,18 @@ std::optional<ProtocolId> protocol_id_from_namespace(const std::string& protocol
         return ProtocolId::DIN70121;
     }
     return std::nullopt;
+}
+
+const char* protocol_id_to_string(ProtocolId protocol) {
+    switch (protocol) {
+    case ProtocolId::DIN70121:
+        return "DIN70121";
+    case ProtocolId::ISO15118_2:
+        return "ISO15118-2-2013";
+    case ProtocolId::ISO15118_20:
+        return "ISO15118-20";
+    }
+    return "unknown";
 }
 
 } // namespace iso15118
