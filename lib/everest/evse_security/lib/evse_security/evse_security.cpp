@@ -11,12 +11,14 @@
 #include <iostream>
 #include <optional>
 #include <set>
+#include <stdio.h>
 
 #include <cert_rehash/c_rehash.hpp>
 
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_hierarchy.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
+#include <evse_security/utils/enforce_certificate_rules.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
 
 namespace evse_security {
@@ -171,8 +173,7 @@ std::optional<fs::path> get_private_key_path_of_certificate(const X509Wrapper& c
     }
 
     EVLOG_error << "Could not find private key for given certificate: " << certificate.get_file().value_or("N/A") << "("
-                << certificate.get_common_name() << ")"
-                << " key path: " << key_path_directory;
+                << certificate.get_common_name() << ")" << " key path: " << key_path_directory;
 
     return std::nullopt;
 }
@@ -319,14 +320,16 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
                            const std::optional<std::uintmax_t>& max_fs_usage_bytes,
                            const std::optional<std::uintmax_t>& max_fs_certificate_store_entries,
                            const std::optional<std::chrono::seconds>& csr_expiry,
-                           const std::optional<std::chrono::seconds>& garbage_collect_time) :
+                           const std::optional<std::chrono::seconds>& garbage_collect_time,
+                           bool enforce_cert_profiles) :
     private_key_password(private_key_password),
     directories(file_paths.directories),
     links(file_paths.links),
     max_fs_usage_bytes(max_fs_usage_bytes.value_or(DEFAULT_MAX_FILESYSTEM_SIZE)),
     max_fs_certificate_store_entries(max_fs_certificate_store_entries.value_or(DEFAULT_MAX_CERTIFICATE_ENTRIES)),
     csr_expiry(csr_expiry.value_or(DEFAULT_CSR_EXPIRY)),
-    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)) {
+    garbage_collect_time(garbage_collect_time.value_or(DEFAULT_GARBAGE_COLLECT_TIME)),
+    enforce_cert_profiles(enforce_cert_profiles) {
     static_assert(sizeof(std::uint8_t) == 1, "uint8_t not equal to 1 byte!");
 
     const std::vector<fs::path> dirs = {
@@ -634,7 +637,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
 
             return true;
         }); // End for each chain
-    }       // End for each leaf directory
+    } // End for each leaf directory
 
     if (!found_certificate) {
         response.result = DeleteCertificateResult::NotFound;
@@ -1523,46 +1526,67 @@ EvseSecurity::get_full_leaf_certificate_info_internal(const CertificateQueryPara
                     }
                 }
 
-                if (is_valid) {
-                    any_valid_certificate = true;
+                if (false == is_valid) {
+                    return true;
+                }
 
-                    // Search for the private key
-                    auto priv_key_path =
-                        get_private_key_path_of_certificate(chain.at(0), key_dir, this->private_key_password);
+                if (enforce_cert_profiles) {
+                    for (size_t i = 0; i < chain.size(); ++i) {
+                        std::string subType;
+                        if (i == 0)
+                            subType = "leaf";
+                        else if (i == chain.size() - 1)
+                            subType = "root";
+                        else
+                            subType = "intermediate";
 
-                    if (priv_key_path.has_value()) {
-                        // Found at least one valid key
-                        any_valid_key = true;
-
-                        KeyPairInternal key_pair{chain.at(0), priv_key_path.value()};
-
-                        if (params.remove_duplicates) {
-                            // Filter the already added certificates, since we can have a case
-                            // when a leaf is present in 2 files (single/chain) that causes it
-                            // to be added to the list twice by the bundle parser
-                            auto it = std::find_if(valid_leafs.begin(), valid_leafs.end(),
-                                                   [&key_pair](const auto& in_key_pair) {
-                                                       return in_key_pair.certificate == key_pair.certificate;
-                                                   });
-
-                            // None found
-                            if (it == valid_leafs.end()) {
-                                valid_leafs.emplace_back(std::move(key_pair));
-                            }
-                        } else {
-                            // Copy to latest valid
-                            valid_leafs.emplace_back(std::move(key_pair));
-                        }
-
-                        // We found, break
-                        EVLOG_info << "Found valid leaf: [" << chain.at(0).get_file().value() << "]";
-
-                        // Collect all if we don't include valid only
-                        if (params.include_all_valid == false) {
-                            EVLOG_info << "Not requiring all valid leafs, returning";
-                            return false;
+                        if (enforce_certificate_rules(chain.at(i)) != 1) {
+                            EVLOG_error << "Certificate chain invalid at " << subType << ", skipping to next candidate";
+                            return true;
                         }
                     }
+                }
+
+                any_valid_certificate = true;
+
+                // Search for the private key
+                auto priv_key_path =
+                    get_private_key_path_of_certificate(chain.at(0), key_dir, this->private_key_password);
+
+                if (false == priv_key_path.has_value()) {
+                    return true;
+                }
+
+                // Found at least one valid key
+                any_valid_key = true;
+
+                KeyPairInternal key_pair{chain.at(0), priv_key_path.value()};
+
+                if (params.remove_duplicates) {
+                    // Filter the already added certificates, since we can have a case
+                    // when a leaf is present in 2 files (single/chain) that causes it
+                    // to be added to the list twice by the bundle parser
+                    auto it =
+                        std::find_if(valid_leafs.begin(), valid_leafs.end(), [&key_pair](const auto& in_key_pair) {
+                            return in_key_pair.certificate == key_pair.certificate;
+                        });
+
+                    // None found
+                    if (it == valid_leafs.end()) {
+                        valid_leafs.emplace_back(std::move(key_pair));
+                    }
+                } else {
+                    // Copy to latest valid
+                    valid_leafs.emplace_back(std::move(key_pair));
+                }
+
+                // We found, break
+                EVLOG_info << "Found valid leaf: [" << chain.at(0).get_file().value() << "]";
+
+                // Collect all if we don't include valid only
+                if (params.include_all_valid == false) {
+                    EVLOG_info << "Not requiring all valid leafs, returning";
+                    return false;
                 }
 
                 return true;

@@ -1,0 +1,117 @@
+header:
+  domain_component: OEM
+  role: sub_ca
+  path_length: 2
+
+
+OEMSub-CA2:
+  stand:
+    - field: organization # Issuer Organization
+      target: Issuer
+      mustExist: "true"
+
+    - field: commonName # Issuer Common Name
+      target: Issuer
+      mustExist: "true"
+
+    - field: domainComponent # Issuer Domain Component
+      target: Issuer
+      mustExist: "true"
+      val: "OEM"
+
+    - field: notBefore # Not Before
+      target: Subject
+      mustExist: "true"
+
+    - field: notAfter # Not After
+      target: Subject
+      mustExist: "true"
+
+    - field: organization # Subject Organization
+      target: Subject
+      mustExist: "true"
+
+    - field: commonName # Subject Common Name
+      target: Subject
+      mustExist: "true"
+
+    - field: domainComponent # Subject Domain Component
+      target: Subject
+      mustExist: "true"
+      val: "OEM"
+
+    - field: subjectPublicKeyAlgorithm # Subject Public Key Algorithm Identifier
+      target: Subject
+      mustExist: "true"
+
+    - field: subjectPublicKey # Subject Public Key
+      target: Subject
+      mustExist: "true"
+
+    - field: issuerUniqueID # IssuerUniqueID
+      target: Issuer
+      mustExist: "false"
+
+    - field: subjectUniqueID # SubjectUniqueID
+      target: Subject
+      mustExist: "false"
+
+    - field: authorityKeyIdentifier # Authority Key Identifier
+      target: Subject
+      mustExist: "true"
+
+    - field: subjectKeyIdentifier # Subject Key Identifier
+      target: Subject
+      mustExist: "true"
+
+    - field: keyUsage # Key Usage
+      target: Subject
+      mustExist: "true"
+
+    - field: extendedKeyUsage # Extended Key Usage
+      target: Subject
+      mustExist: "false"
+
+    - field: certificatePolicies # Certificate Policies
+      target: Subject
+      mustExist: "false"
+
+    - field: basicConstraints # Basic Constraints
+      target: Subject
+      mustExist: "true"
+
+    - field: crlDistributionPointName # CRL Distribution Point Name
+      target: Subject
+      mustExist: "true"
+
+
+  key_usage:
+    - keyUsageBit: 0 # Digital Signature
+      mustExist: "false"
+
+    - keyUsageBit: 1 # Non Repudiation
+      mustExist: "false"
+
+    - keyUsageBit: 2 # Key Encipherment
+      mustExist: "false"
+
+    - keyUsageBit: 3 # Data Encipherment
+      mustExist: "false"
+
+    - keyUsageBit: 4 # Key Agreement
+      mustExist: "false"
+
+    - keyUsageBit: 5 # Encipher Only
+      mustExist: "false"
+
+    - keyUsageBit: 6 # Decipher Only
+      mustExist: "false"
+
+  basic_constraints:
+    - value: CA
+      mustExist: true
+      data: true
+
+    - value: path_length
+      mustExist: false
+      data: 0

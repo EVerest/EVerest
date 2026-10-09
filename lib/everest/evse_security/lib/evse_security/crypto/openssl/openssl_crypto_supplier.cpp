@@ -8,6 +8,7 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -43,6 +44,44 @@ EVP_PKEY* get(KeyHandle* handle) {
     }
 
     return nullptr;
+}
+
+std::string asn1_time_to_iso8601(const ASN1_TIME* time) {
+    if (time == nullptr) {
+        return {};
+    }
+
+    std::tm tm_value = {};
+    if (ASN1_TIME_to_tm(time, &tm_value) != 1) {
+        return {};
+    }
+
+    char buffer[32] = {};
+    if (std::strftime(buffer, sizeof(buffer), "%Y-%m-%dT%H:%M:%SZ", &tm_value) == 0) {
+        return {};
+    }
+
+    return std::string(buffer);
+}
+
+int extension_name_to_nid(const std::string& name) {
+    if (name == "basicConstraints")
+        return NID_basic_constraints;
+    if (name == "keyUsage")
+        return NID_key_usage;
+    if (name == "extendedKeyUsage")
+        return NID_ext_key_usage;
+    if (name == "subjectKeyIdentifier")
+        return NID_subject_key_identifier;
+    if (name == "authorityKeyIdentifier")
+        return NID_authority_key_identifier;
+    if (name == "crlDistributionPointName" || name == "crlDistributionPoints")
+        return NID_crl_distribution_points;
+    if (name == "certificatePolicies")
+        return NID_certificate_policies;
+    if (name == "authorityInfoAccessMethod")
+        return NID_info_access;
+    return NID_undef;
 }
 
 CertificateValidationResult to_certificate_error(const int ec) {
@@ -335,6 +374,334 @@ std::string OpenSSLSupplier::x509_get_common_name(X509Handle* handle) {
     return common_name;
 }
 
+std::string OpenSSLSupplier::x509_get_organization(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("O");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_organizational_unit(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("OU");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_country(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("C");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_state(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("ST");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_locality(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("L");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_domain_component(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* subject = X509_get_subject_name(x509);
+    const int nid = OBJ_txt2nid("DC");
+    const int index = X509_NAME_get_index_by_NID(subject, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(subject, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_common_name(X509Handle* handle) {
+    const X509* x509 = get(handle);
+
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("CN");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* ca_asn1 = X509_NAME_ENTRY_get_data(entry);
+
+    if (ca_asn1 == nullptr) {
+        return {};
+    }
+
+    const unsigned char* cn_str = ASN1_STRING_get0_data(ca_asn1);
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+    std::string common_name(reinterpret_cast<const char*>(cn_str), ASN1_STRING_length(ca_asn1));
+    return common_name;
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_organization(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("O");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_organizational_unit(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("OU");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_country(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("C");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_state(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("ST");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_locality(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("L");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
+std::string OpenSSLSupplier::x509_get_issuer_domain_component(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const X509_NAME* issuer = X509_get_issuer_name(x509);
+    const int nid = OBJ_txt2nid("DC");
+    const int index = X509_NAME_get_index_by_NID(issuer, nid, -1);
+
+    if (index == -1) {
+        return {};
+    }
+
+    const X509_NAME_ENTRY* entry = X509_NAME_get_entry(issuer, index);
+    const ASN1_STRING* data = X509_NAME_ENTRY_get_data(entry);
+
+    if (data == nullptr) {
+        return {};
+    }
+
+    const unsigned char* str = ASN1_STRING_get0_data(data);
+    return std::string(reinterpret_cast<const char*>(str), ASN1_STRING_length(data));
+}
+
 std::string OpenSSLSupplier::x509_get_issuer_name_hash(X509Handle* handle) {
     const X509* x509 = get(handle);
 
@@ -376,6 +743,7 @@ std::string OpenSSLSupplier::x509_get_serial_number(X509Handle* handle) {
     char* hex_serial = BN_bn2hex(bn_serial);
 
     if (hex_serial == nullptr) {
+        BN_free(bn_serial);
         ERR_print_errors_fp(stderr);
         return {};
     }
@@ -390,6 +758,337 @@ std::string OpenSSLSupplier::x509_get_serial_number(X509Handle* handle) {
 
     serial.erase(0, std::min(serial.find_first_not_of('0'), serial.size() - 1));
     return serial;
+}
+
+std::string OpenSSLSupplier::x509_get_key_usage(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    const ASN1_BIT_STRING* usage =
+        static_cast<const ASN1_BIT_STRING*>(X509_get_ext_d2i(x509, NID_key_usage, nullptr, nullptr));
+    if (usage == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> usages;
+    auto add_usage = [&usages](int bit, const char* name) {
+        if (bit) {
+            usages.emplace_back(name);
+        }
+    };
+
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 0), "digitalSignature");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 1), "nonRepudiation");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 2), "keyEncipherment");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 3), "dataEncipherment");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 4), "keyAgreement");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 5), "keyCertSign");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 6), "cRLSign");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 7), "encipherOnly");
+    add_usage(ASN1_BIT_STRING_get_bit(usage, 8), "decipherOnly");
+
+    ASN1_BIT_STRING_free(const_cast<ASN1_BIT_STRING*>(usage));
+
+    if (usages.empty()) {
+        return {};
+    }
+
+    std::ostringstream oss;
+    for (size_t i = 0; i < usages.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << usages[i];
+    }
+    return oss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_basic_constraints(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    BASIC_CONSTRAINTS* bc =
+        static_cast<BASIC_CONSTRAINTS*>(X509_get_ext_d2i(x509, NID_basic_constraints, nullptr, nullptr));
+    if (bc == nullptr) {
+        return {};
+    }
+
+    std::string result;
+    if (bc->ca) {
+        result = "CA:TRUE";
+    } else {
+        result = "CA:FALSE";
+    }
+
+    if (bc->pathlen != nullptr) {
+        result += ", pathlen:";
+        char* pathlen_str = i2s_ASN1_INTEGER(nullptr, bc->pathlen);
+        if (pathlen_str != nullptr) {
+            result += pathlen_str;
+            OPENSSL_free(pathlen_str);
+        }
+    }
+
+    BASIC_CONSTRAINTS_free(bc);
+    return result;
+}
+
+std::string OpenSSLSupplier::x509_get_subject_key_identifier(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    ASN1_OCTET_STRING* ski =
+        static_cast<ASN1_OCTET_STRING*>(X509_get_ext_d2i(x509, NID_subject_key_identifier, nullptr, nullptr));
+    if (ski == nullptr) {
+        return {};
+    }
+
+    std::stringstream ss;
+    for (int i = 0; i < ski->length; i++) {
+        ss << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(ski->data[i]);
+    }
+
+    ASN1_OCTET_STRING_free(ski);
+    return ss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_authority_key_identifier(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    AUTHORITY_KEYID* aki =
+        static_cast<AUTHORITY_KEYID*>(X509_get_ext_d2i(x509, NID_authority_key_identifier, nullptr, nullptr));
+    if (aki == nullptr) {
+        return {};
+    }
+
+    std::stringstream ss;
+    if (aki->keyid != nullptr) {
+        for (int i = 0; i < aki->keyid->length; i++) {
+            ss << std::setw(2) << std::setfill('0') << std::hex << static_cast<int>(aki->keyid->data[i]);
+        }
+    }
+
+    AUTHORITY_KEYID_free(aki);
+    return ss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_crl_distribution_points(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    CRL_DIST_POINTS* crl_dp =
+        static_cast<CRL_DIST_POINTS*>(X509_get_ext_d2i(x509, NID_crl_distribution_points, nullptr, nullptr));
+    if (crl_dp == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> uris;
+
+    for (int i = 0; i < sk_DIST_POINT_num(crl_dp); i++) {
+        const DIST_POINT* dp = sk_DIST_POINT_value(crl_dp, i);
+        if (dp == nullptr || dp->distpoint == nullptr) {
+            continue;
+        }
+
+        // type 0 == fullName
+        if (dp->distpoint->type != 0) {
+            continue;
+        }
+
+        const GENERAL_NAMES* names = dp->distpoint->name.fullname;
+        for (int j = 0; j < sk_GENERAL_NAME_num(names); j++) {
+            const GENERAL_NAME* gen = sk_GENERAL_NAME_value(names, j);
+            if (gen == nullptr || gen->type != GEN_URI) {
+                continue;
+            }
+
+            const ASN1_IA5STRING* uri = gen->d.uniformResourceIdentifier;
+            if (uri == nullptr) {
+                continue;
+            }
+
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+            uris.emplace_back(reinterpret_cast<const char*>(ASN1_STRING_get0_data(uri)), ASN1_STRING_length(uri));
+        }
+    }
+
+    CRL_DIST_POINTS_free(crl_dp);
+
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < uris.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << uris[i];
+    }
+    return oss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_not_before(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    return asn1_time_to_iso8601(X509_get0_notBefore(x509));
+}
+
+std::string OpenSSLSupplier::x509_get_not_after(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    return asn1_time_to_iso8601(X509_get0_notAfter(x509));
+}
+
+
+std::string OpenSSLSupplier::x509_get_public_key_bits(X509Handle* handle) {
+    X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    EVP_PKEY* pkey = X509_get_pubkey(x509);
+    if (pkey == nullptr) {
+        return {};
+    }
+
+    const int bits = EVP_PKEY_bits(pkey);
+    EVP_PKEY_free(pkey);
+
+    if (bits <= 0) {
+        return {};
+    }
+
+    return std::to_string(bits);
+}
+
+std::string OpenSSLSupplier::x509_get_extended_key_usage(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    EXTENDED_KEY_USAGE* eku =
+        static_cast<EXTENDED_KEY_USAGE*>(X509_get_ext_d2i(x509, NID_ext_key_usage, nullptr, nullptr));
+    if (eku == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> oids;
+    for (int i = 0; i < sk_ASN1_OBJECT_num(eku); i++) {
+        const ASN1_OBJECT* obj = sk_ASN1_OBJECT_value(eku, i);
+        if (obj == nullptr) {
+            continue;
+        }
+
+        char oid_buffer[128] = {};
+        OBJ_obj2txt(oid_buffer, sizeof(oid_buffer), obj, 1);
+        oids.emplace_back(oid_buffer);
+    }
+
+    EXTENDED_KEY_USAGE_free(eku);
+
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < oids.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << oids[i];
+    }
+    return oss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_certificate_policies(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    CERTIFICATEPOLICIES* policies =
+        static_cast<CERTIFICATEPOLICIES*>(X509_get_ext_d2i(x509, NID_certificate_policies, nullptr, nullptr));
+    if (policies == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> oids;
+    for (int i = 0; i < sk_POLICYINFO_num(policies); i++) {
+        const POLICYINFO* policy = sk_POLICYINFO_value(policies, i);
+        if (policy == nullptr || policy->policyid == nullptr) {
+            continue;
+        }
+
+        char oid_buffer[128] = {};
+        OBJ_obj2txt(oid_buffer, sizeof(oid_buffer), policy->policyid, 1);
+        oids.emplace_back(oid_buffer);
+    }
+
+    CERTIFICATEPOLICIES_free(policies);
+
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < oids.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << oids[i];
+    }
+    return oss.str();
+}
+
+std::string OpenSSLSupplier::x509_get_authority_info_access(X509Handle* handle) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    AUTHORITY_INFO_ACCESS* aia =
+        static_cast<AUTHORITY_INFO_ACCESS*>(X509_get_ext_d2i(x509, NID_info_access, nullptr, nullptr));
+    if (aia == nullptr) {
+        return {};
+    }
+
+    std::vector<std::string> uris;
+    for (int i = 0; i < sk_ACCESS_DESCRIPTION_num(aia); i++) {
+        const ACCESS_DESCRIPTION* ad = sk_ACCESS_DESCRIPTION_value(aia, i);
+        if (ad == nullptr || ad->location == nullptr) {
+            continue;
+        }
+
+        if (ad->location->type != GEN_URI) {
+            continue;
+        }
+
+        const ASN1_IA5STRING* uri = ad->location->d.uniformResourceIdentifier;
+        if (uri == nullptr) {
+            continue;
+        }
+
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+        uris.emplace_back(reinterpret_cast<const char*>(ASN1_STRING_get0_data(uri)), ASN1_STRING_length(uri));
+    }
+
+    AUTHORITY_INFO_ACCESS_free(aia);
+
+    std::ostringstream oss;
+    for (std::size_t i = 0; i < uris.size(); ++i) {
+        if (i > 0) {
+            oss << ", ";
+        }
+        oss << uris[i];
+    }
+    return oss.str();
 }
 
 std::string OpenSSLSupplier::x509_get_key_hash(X509Handle* handle) {
@@ -443,8 +1142,16 @@ std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
 
     const auto ocsp = X509_get1_ocsp(x509);
     std::string responder_url;
-    for (int i = 0; i < sk_OPENSSL_STRING_num(ocsp); i++) {
-        responder_url.append(sk_OPENSSL_STRING_value(ocsp, i));
+
+    if (ocsp != nullptr) {
+        for (int i = 0; i < sk_OPENSSL_STRING_num(ocsp); i++) {
+            const char* url = sk_OPENSSL_STRING_value(ocsp, i);
+            if (url != nullptr) {
+                responder_url.append(url);
+            }
+        }
+
+        X509_email_free(ocsp);
     }
 
     if (responder_url.empty()) {
@@ -452,6 +1159,40 @@ std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
     }
 
     return responder_url;
+}
+
+bool OpenSSLSupplier::x509_has_extension(X509Handle* handle, const std::string& name) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return false;
+    }
+
+    const int nid = extension_name_to_nid(name);
+    if (nid == NID_undef) {
+        return false;
+    }
+
+    return X509_get_ext_by_NID(x509, nid, -1) >= 0;
+}
+
+bool OpenSSLSupplier::x509_is_extension_critical(X509Handle* handle, const std::string& name) {
+    const X509* x509 = get(handle);
+    if (x509 == nullptr) {
+        return false;
+    }
+
+    const int nid = extension_name_to_nid(name);
+    if (nid == NID_undef) {
+        return false;
+    }
+
+    const int index = X509_get_ext_by_NID(x509, nid, -1);
+    if (index < 0) {
+        return false;
+    }
+
+    const X509_EXTENSION* ext = X509_get_ext(x509, index);
+    return ext != nullptr && X509_EXTENSION_get_critical(ext) == 1;
 }
 
 bool OpenSSLSupplier::x509_get_validity(X509Handle* handle, std::int64_t& out_valid_in, std::int64_t& out_valid_to) {

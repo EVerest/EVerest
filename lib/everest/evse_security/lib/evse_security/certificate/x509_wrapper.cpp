@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <evse_security/certificate/x509_wrapper.hpp>
-
 #include <cctype>
+#include <evse_security/certificate/x509_wrapper.hpp>
+#include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <fstream>
 #include <iostream>
 #include <regex>
@@ -146,8 +146,116 @@ std::string X509Wrapper::get_common_name() const {
     return CryptoSupplier::x509_get_common_name(get());
 }
 
+std::string X509Wrapper::get_organization() const {
+    return CryptoSupplier::x509_get_organization(get());
+}
+
+std::string X509Wrapper::get_organizational_unit() const {
+    return CryptoSupplier::x509_get_organizational_unit(get());
+}
+
+std::string X509Wrapper::get_country() const {
+    return CryptoSupplier::x509_get_country(get());
+}
+
+std::string X509Wrapper::get_state() const {
+    return CryptoSupplier::x509_get_state(get());
+}
+
+std::string X509Wrapper::get_locality() const {
+    return CryptoSupplier::x509_get_locality(get());
+}
+
+std::string X509Wrapper::get_domain_component() const {
+    return CryptoSupplier::x509_get_domain_component(get());
+}
+
+std::string X509Wrapper::get_issuer_common_name() const {
+    return CryptoSupplier::x509_get_issuer_common_name(get());
+}
+
+std::string X509Wrapper::get_issuer_organization() const {
+    return CryptoSupplier::x509_get_issuer_organization(get());
+}
+
+std::string X509Wrapper::get_issuer_organizational_unit() const {
+    return CryptoSupplier::x509_get_issuer_organizational_unit(get());
+}
+
+std::string X509Wrapper::get_issuer_country() const {
+    return CryptoSupplier::x509_get_issuer_country(get());
+}
+
+std::string X509Wrapper::get_issuer_state() const {
+    return CryptoSupplier::x509_get_issuer_state(get());
+}
+
+std::string X509Wrapper::get_issuer_locality() const {
+    return CryptoSupplier::x509_get_issuer_locality(get());
+}
+
+std::string X509Wrapper::get_issuer_domain_component() const {
+    return CryptoSupplier::x509_get_issuer_domain_component(get());
+}
+
 std::string X509Wrapper::get_issuer_name_hash() const {
     return CryptoSupplier::x509_get_issuer_name_hash(get());
+}
+
+std::string X509Wrapper::get_key_usage() const {
+    return CryptoSupplier::x509_get_key_usage(get());
+}
+
+std::string X509Wrapper::get_basic_constraints() const {
+    return CryptoSupplier::x509_get_basic_constraints(get());
+}
+
+bool X509Wrapper::has_extension(const std::string& name) const {
+    return CryptoSupplier::x509_has_extension(get(), name);
+}
+
+bool X509Wrapper::is_extension_critical(const std::string& name) const {
+    return CryptoSupplier::x509_is_extension_critical(get(), name);
+}
+
+std::string X509Wrapper::get_subject_key_identifier() const {
+    return CryptoSupplier::x509_get_subject_key_identifier(get());
+}
+
+std::string X509Wrapper::get_authority_key_identifier() const {
+    return CryptoSupplier::x509_get_authority_key_identifier(get());
+}
+
+std::string X509Wrapper::get_crl_distribution_points() const {
+    return CryptoSupplier::x509_get_crl_distribution_points(get());
+}
+
+std::string X509Wrapper::get_not_before() const {
+    return CryptoSupplier::x509_get_not_before(get());
+}
+
+std::string X509Wrapper::get_not_after() const {
+    return CryptoSupplier::x509_get_not_after(get());
+}
+
+std::string X509Wrapper::get_public_key_algorithm() const {
+    return CryptoSupplier::x509_get_public_key_algorithm(get());
+}
+
+std::string X509Wrapper::get_public_key_bits() const {
+    return CryptoSupplier::x509_get_public_key_bits(get());
+}
+
+std::string X509Wrapper::get_extended_key_usage() const {
+    return CryptoSupplier::x509_get_extended_key_usage(get());
+}
+
+std::string X509Wrapper::get_certificate_policies() const {
+    return CryptoSupplier::x509_get_certificate_policies(get());
+}
+
+std::string X509Wrapper::get_authority_info_access() const {
+    return CryptoSupplier::x509_get_authority_info_access(get());
 }
 
 std::string X509Wrapper::get_serial_number() const {
@@ -163,10 +271,6 @@ std::string X509Wrapper::get_issuer_key_hash() const {
 
 std::string X509Wrapper::get_key_hash() const {
     return CryptoSupplier::x509_get_key_hash(get());
-}
-
-std::string X509Wrapper::get_public_key_algorithm() const {
-    return CryptoSupplier::x509_get_public_key_algorithm(get());
 }
 
 CertificateHashData X509Wrapper::get_certificate_hash_data() const {
