@@ -865,6 +865,17 @@ public:
         return charge_point;
     }
 
+    // SmartChargingCtrlr.Available=false leaves the smart charging block unbuilt.
+    std::unique_ptr<TestChargePoint>
+    create_charge_point_without_smart_charging(std::shared_ptr<DatabaseHandler> database_handler) {
+        const auto& available_cv = ControllerComponentVariables::SmartChargingCtrlrAvailable;
+        device_model->set_value(available_cv.component, available_cv.variable.value(), AttributeEnum::Actual, "false",
+                                "TEST", true);
+        return std::make_unique<TestChargePoint>(create_evse_connector_structure(), device_model, database_handler,
+                                                 create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                 std::make_shared<EvseSecurityMock>(), callbacks);
+    }
+
     boost::uuids::random_generator uuid_generator;
     std::unique_ptr<TestChargePoint> charge_point;
     std::unique_ptr<SmartChargingMock> smart_charging;
@@ -947,6 +958,31 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, K02FR05_TransactionEnds_WillDelete
     EXPECT_CALL(*smart_charging, delete_transaction_tx_profiles(transaction->get_transaction().transactionId.get()));
     charge_point->on_transaction_finished(DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::StoppedByEV,
                                           TriggerReasonEnum::StopAuthorized, {}, {}, ChargingStateEnum::EVConnected);
+}
+
+TEST_F(ChargePointFunctionalityTestFixtureV2, TransactionFinished_WhenSmartChargingAbsent_ReleasesTransaction) {
+    const auto& resume_cv = ControllerComponentVariables::ResumeTransactionsOnBoot;
+    device_model->set_value(resume_cv.component, resume_cv.variable.value(), AttributeEnum::Actual, "true", "TEST",
+                            true);
+
+    auto database_handler = create_database_handler();
+    auto charge_point_without_smart_charging = create_charge_point_without_smart_charging(database_handler);
+    charge_point_without_smart_charging->start();
+
+    const std::int32_t connector_id = 1;
+    const ocpp::DateTime timestamp("2024-01-17T17:00:00");
+    charge_point_without_smart_charging->on_transaction_started(DEFAULT_EVSE_ID, connector_id, "some-session-id",
+                                                                timestamp, TriggerReasonEnum::Authorized, MeterValue(),
+                                                                {}, {}, {}, {}, ChargingStateEnum::EVConnected);
+    ASSERT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::NotNull());
+
+    charge_point_without_smart_charging->on_ev_charging_needs(NotifyEVChargingNeedsRequest{});
+    charge_point_without_smart_charging->on_transaction_finished(
+        DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::EVDisconnected, TriggerReasonEnum::EVCommunicationLost,
+        {}, {}, ChargingStateEnum::Idle);
+
+    EXPECT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::IsNull());
+    charge_point_without_smart_charging->stop();
 }
 
 // on_der_alarm must no-op (not dereference null) when no DER component exists and der_control is unbuilt.
