@@ -1249,12 +1249,21 @@ void Charger::run_state_machine() {
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
             }
 
-            // If unplugged or a disable is pending, end the session.
-            // When disabled, do not wait for unplug. cp_state_F (set in the Disabled
-            // state handler) is signaled to the EV.
-            if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
-                stop_session();
-                set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+            bool should_stay_in_finished = false;
+            if (connector_type == types::evse_board_support::Connector_type::IEC62196Type2Socket and
+                config_context.wait_cable_removed_before_going_idle) {
+                auto pp_ampacity = bsp->read_pp_ampacity();
+                should_stay_in_finished = pp_ampacity.value_or(0.0) > 0.0;
+            }
+
+            if (not should_stay_in_finished) {
+                // If unplugged or a disable is pending, end the session.
+                // When disabled, do not wait for unplug. cp_state_F (set in the Disabled
+                // state handler) is signaled to the EV.
+                if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
+                    stop_session();
+                    set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+                }
             }
             break;
         }
@@ -1868,6 +1877,7 @@ void Charger::setup(const SetupConfig& config) {
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    config_context.wait_cable_removed_before_going_idle = config.wait_cable_removed_before_going_idle;
 
     if (config_context.charge_mode == ChargeMode::DC) {
         shared_context.hlc_charging_active = true;

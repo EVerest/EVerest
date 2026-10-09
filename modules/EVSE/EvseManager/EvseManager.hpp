@@ -112,6 +112,7 @@ struct Conf {
     bool ac_with_soc;
     int reinit_duration_ms;
     std::string reinit_method;
+    bool wait_cable_removed_before_going_idle;
     int internal_over_voltage_duration_ms;
     bool dbg_hlc_auth_after_tstep;
     int dc_isolation_voltage_V;

@@ -1703,6 +1703,7 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     charger_setup.session_id_type = utils::get_session_id_type_from_string(config.session_id_type);
     charger_setup.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
+    charger_setup.wait_cable_removed_before_going_idle = config.wait_cable_removed_before_going_idle;
     return charger_setup;
 }
 

@@ -92,6 +92,7 @@ public:
         int sleep_before_enabling_pwm_hlc_mode_ms{0};
         utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
         int hlc_charge_loop_without_energy_timeout_s{0};
+        bool wait_cable_removed_before_going_idle{false};
     };
 
     enum class EvseState {
@@ -459,6 +460,9 @@ private:
         // Timeout in seconds that defines for how long the EVSE allows the ISO charge loop (AC: ChargingStatus, DC:
         // CurrentDemand)
         int hlc_charge_loop_without_energy_timeout_s{300};
+        // If true, the EVSE will stay in the Finished state if the cable is disconnected from the EV side, but not the
+        // EVSE side i.e. the charging is finished, but the cable is visible through resistance on the PP pin.
+        bool wait_cable_removed_before_going_idle;
     } config_context;
 
     // Used by different threads, but requires no complete state machine locking
