@@ -27,7 +27,7 @@ TEST(GetEventData, NonEmptyMessageSetsTechInfoOnRaisedEvent) {
                                              "evse_board_support",
                                              "main"};
 
-    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP);
+    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP, get_component_from_error(error));
 
     ASSERT_TRUE(event_data.techInfo.has_value());
     EXPECT_EQ(event_data.techInfo.value().get(), "test error message");
@@ -46,8 +46,8 @@ TEST(GetEventData, ClearedEventEchoesSameTechInfoAsRaisedEvent) {
                                              "evse_board_support",
                                              "main"};
 
-    const auto raised_event_data = get_event_data(error, false, 1, MREC_ERROR_MAP);
-    const auto cleared_event_data = get_event_data(error, true, 2, MREC_ERROR_MAP);
+    const auto raised_event_data = get_event_data(error, false, 1, MREC_ERROR_MAP, get_component_from_error(error));
+    const auto cleared_event_data = get_event_data(error, true, 2, MREC_ERROR_MAP, get_component_from_error(error));
 
     ASSERT_TRUE(raised_event_data.techInfo.has_value());
     ASSERT_TRUE(cleared_event_data.techInfo.has_value());
@@ -62,7 +62,7 @@ TEST(GetEventData, EmptyMessageFallsBackToErrorDescription) {
     const auto error = Everest::error::Error{
         "evse_board_support/MREC2GroundFailure", "SomeSubType", "", "some description", "evse_board_support", "main"};
 
-    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP);
+    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP, get_component_from_error(error));
 
     ASSERT_TRUE(event_data.techInfo.has_value());
     EXPECT_EQ(event_data.techInfo.value().get(), "some description");
@@ -80,7 +80,7 @@ TEST(GetEventData, OverlongMessageTruncatesTechInfoTo500Chars) {
                                              "evse_board_support",
                                              "main"};
 
-    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP);
+    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP, get_component_from_error(error));
 
     ASSERT_TRUE(event_data.techInfo.has_value());
     EXPECT_EQ(event_data.techInfo.value().get(), long_message.substr(0, 500));
@@ -98,7 +98,7 @@ TEST(GetEventData, NonMrecErrorWithMessageAlsoSetsTechInfo) {
                                              "some_module",
                                              "main"};
 
-    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP);
+    const auto event_data = get_event_data(error, false, 1, MREC_ERROR_MAP, get_component_from_error(error));
 
     ASSERT_TRUE(event_data.techInfo.has_value());
     EXPECT_EQ(event_data.techInfo.value().get(), "custom diagnostic text");

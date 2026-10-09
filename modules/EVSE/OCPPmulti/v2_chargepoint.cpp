@@ -464,6 +464,8 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 }
 
 void ChargePointV2::init(init_args_t& args) {
+    m_everest_device_model = args.everest_device_model;
+
     // initialise libocpp device model
     auto libocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(
         args.v2_device_model_database_path, args.v2_device_model_database_migration_path,
@@ -588,11 +590,28 @@ void ChargePointV2::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRe
     check_configured("on_ev_charging_needs");
     m_charge_point->on_ev_charging_needs(request);
 }
+ocpp::v2::Component ChargePointV2::get_component_from_error(const Everest::error::Error& error) const {
+    if (m_everest_device_model != nullptr) {
+        const auto component = m_everest_device_model->get_component_for_module(error.origin.module_id);
+        if (component.has_value()) {
+            return component.value();
+        }
+        EVLOG_debug << "Failed to map the error from module " << error.origin.module_id
+                    << " to a valid component; Using fallback for error mapping";
+    } else {
+        EVLOG_warning << "No device_model configured; Using fallback for error mapping";
+    }
+
+    // fall back to a simplified mapping from the error origin based on evse and connector ids
+    return module::get_component_from_error(error);
+}
+
 void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
     if (event.error) {
         // TODO(james-ctc): needs tidying up. MREC error map is in generic_ocpp
-        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {});
+        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {},
+                                                 get_component_from_error(event.error.value()));
         std::string updated;
         m_callbacks_ptr->map_error(event.error->type, updated);
         event_data.techCode = std::move(updated);

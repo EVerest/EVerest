@@ -488,4 +488,21 @@ TEST_F(ChargePointV2Test, setVariablesEmptyComponentIsPassedThrough) {
     EXPECT_FALSE(results[0].monitor_value.has_value()); // libocpp owns monitors on the v2 path
 }
 
+// without a device model the event component is the evse/connector mapping of the error origin
+TEST_F(ChargePointV2Test, eventWithoutDeviceModelReportsOriginMappingAsComponent) {
+    const Everest::error::Error error{"evse_board_support/MREC2GroundFailure", "", "message", "description",
+                                      ImplementationIdentifier{"bsp", "main", Mapping{EVSE_ID, CONNECTOR_ID}}};
+
+    std::vector<ocpp::v2::EventData> events;
+    EXPECT_CALL(*m_libocpp, on_event(_)).WillOnce(SaveArg<0>(&events));
+
+    m_chargepoint.on_event({1, EVSE_ID, false, error});
+
+    ASSERT_EQ(events.size(), 1);
+    EXPECT_EQ(events.front().component.name.get(), "EVSE");
+    ASSERT_TRUE(events.front().component.evse.has_value());
+    EXPECT_EQ(events.front().component.evse->id, EVSE_ID);
+    EXPECT_EQ(events.front().component.evse->connectorId, CONNECTOR_ID);
+}
+
 } // namespace
