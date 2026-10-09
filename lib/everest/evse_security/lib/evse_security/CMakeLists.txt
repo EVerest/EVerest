@@ -84,7 +84,7 @@ target_link_libraries(evse_security
         OpenSSL::Crypto
 )
 
-if(LIBEVSE_SECURITY_BUILD_TESTING)
+if(BUILD_TESTING)
     target_compile_definitions(evse_security PRIVATE
         DEBUG_MODE_EVSE_SECURITY
     )

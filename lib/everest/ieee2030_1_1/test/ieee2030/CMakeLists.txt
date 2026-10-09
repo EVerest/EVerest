@@ -9,5 +9,5 @@ target_sources(can_charger
 
 target_link_libraries(can_charger
     PRIVATE
-        ieee2030::ieee2030
+        everest::ieee2030
 )

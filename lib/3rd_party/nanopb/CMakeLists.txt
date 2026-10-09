@@ -22,6 +22,7 @@ file(COPY
 target_include_directories(nanopb
     PUBLIC
         $<BUILD_INTERFACE:${EVEREST_CORE_LIB_INCLUDE_DIR}>
+        $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
 )
 
 set_target_properties(nanopb PROPERTIES OUTPUT_NAME "everest_nanopb")

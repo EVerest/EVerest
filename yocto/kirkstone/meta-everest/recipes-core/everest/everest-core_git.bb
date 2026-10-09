@@ -42,7 +42,6 @@ FILES:${PN} += "${libdir}/everest/* ${datadir}/everest/*"
 
 EXTRA_OECMAKE += " \
     -DDISABLE_EDM=ON \
-    -DNO_FETCH_CONTENT=ON \
     -DEVEREST_ENABLE_RUN_SCRIPT_GENERATION=OFF \
     -Deverest-core_INSTALL_EV_CLI_IN_PYTHON_VENV=OFF \
     -Deverest-core_USE_PYTHON_VENV=OFF \
@@ -50,13 +49,6 @@ EXTRA_OECMAKE += " \
     -DPYTHON_MODULE_EXTENSION=.so \
     -DPYBIND11_PYTHONLIBS_OVERWRITE=OFF \
     -DEVEREST_INSTALL_ADMIN_PANEL=OFF \
-    -DLOG_INSTALL=ON \
-    -DEVEREST_SQLITE_INSTALL=ON \
-    -DFRAMEWORK_INSTALL=ON \
-    -DTIMER_INSTALL=ON \
-    -DEVSE_SECURITY_INSTALL=ON \
-    -DOCPP_INSTALL=ON \
-    -DTLS_INSTALL=ON \
 "
 
 # there are issues with pybind11 and the sstate cache

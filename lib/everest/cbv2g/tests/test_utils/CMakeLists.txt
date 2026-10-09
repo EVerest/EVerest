@@ -1,23 +1,23 @@
-add_library(test_utilities OBJECT codec.cpp)
-target_link_libraries(test_utilities
+add_library(cbv2g_test_utilities OBJECT codec.cpp)
+target_link_libraries(cbv2g_test_utilities
     PUBLIC
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::iso20
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::iso20
 )
 
-target_include_directories(test_utilities
+target_include_directories(cbv2g_test_utilities
     PUBLIC
         include
 )
 
 function(add_codec_test CPP_FILE)
-    set(TEST_TARGET_NAME test_${CPP_FILE})
+    set(TEST_TARGET_NAME cbv2g_test_${CPP_FILE})
     add_executable(${TEST_TARGET_NAME} ${CPP_FILE}.cpp)
 
     target_link_libraries(${TEST_TARGET_NAME}
         PRIVATE            
-            test_utilities
+            cbv2g_test_utilities
             Catch2::Catch2WithMain
     )
 

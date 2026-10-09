@@ -41,28 +41,6 @@ target_link_libraries(ocpp_module_common
         everest::ocpp_conversions
 )
 
-if (DISABLE_EDM)
-    install(
-        TARGETS ocpp_module_common
-        EXPORT everest-core-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    )
-    evc_setup_package_no_export(
-        NAME everest-ocpp-module-common
-        LIBRARY_NAME ocpp_module_common
-        NAMESPACE everest
-        TYPE STATIC
-    )
-endif()
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

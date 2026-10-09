@@ -1,12 +1,4 @@
-cmake_minimum_required(VERSION 3.14)
 project(cbv2g_json_wrapper VERSION 1.0.0 LANGUAGES C CXX)
-
-# When this directory is configured standalone (i.e. not as part of an
-# everest-core build), pull in libcbv2g via add_subdirectory so the
-# cbv2g::din target is available. See cmake/local-build.cmake for details.
-if(CMAKE_PROJECT_NAME STREQUAL PROJECT_NAME AND NOT TARGET cbv2g::din)
-    include(${CMAKE_CURRENT_SOURCE_DIR}/cmake/local-build.cmake)
-endif()
 
 # cJSON library (embedded). C99 is sufficient for both cJSON and the
 # wrapper itself (no C11 features used) and matches libcbv2g's baseline,
@@ -42,13 +34,13 @@ target_include_directories(cbv2g_json_wrapper
 target_compile_features(cbv2g_json_wrapper PRIVATE c_std_99)
 set_property(TARGET cbv2g_json_wrapper PROPERTY POSITION_INDEPENDENT_CODE ON)
 
-# cbv2g::din carries the app_handshake/ sources; libcbv2g exposes no
+# everest::cbv2g::din carries the app_handshake/ sources; libcbv2g exposes no
 # standalone apphand target.
 target_link_libraries(cbv2g_json_wrapper
     PRIVATE
         cjson
-        cbv2g::din
-        cbv2g::iso2
+        everest::cbv2g::din
+        everest::cbv2g::iso2
 )
 
 # Hide all symbols by default; the public API is tagged CBV2G_API in the
@@ -72,12 +64,7 @@ install(FILES include/cbv2g_json_wrapper.h
     DESTINATION include
 )
 
-# Optional: Build test executables. GTest is only required when this
-# option is on, so production builds do not pull it in.
-option(BUILD_CBV2G_JSON_WRAPPER_TESTS "Build cbv2g_json_wrapper test executables" OFF)
-if(BUILD_CBV2G_JSON_WRAPPER_TESTS)
-    enable_testing()
-
+if(BUILD_TESTING)
     if(NOT TARGET GTest::gtest_main)
         find_package(GTest REQUIRED)
     endif()

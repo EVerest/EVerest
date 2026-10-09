@@ -2,28 +2,37 @@ set(@LIBRARY_PACKAGE_NAME@_VERSION @PROJECT_VERSION@)
 
 @PACKAGE_INIT@
 
-set(EVEREST_SCHEMA_DIR "@PACKAGE_EVEREST_DATADIR@/schemas")
-find_package(everest-log REQUIRED)
-find_package(everest-sqlite REQUIRED)
-find_package(everest-timer REQUIRED)
-find_package(everest-evse_security REQUIRED)
-find_package(everest-api-types REQUIRED)
-find_dependency(ryml REQUIRED)
-
-set(EV_PROJECT_INFO_SOURCE_DIR "@PACKAGE_EVEREST_DATADIR@/project_info")
-
-include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
-include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
-
-find_package(everest-framework REQUIRED)
-find_package(everest-tls REQUIRED)
-find_package(everest-helpers REQUIRED)
-find_package(everest-ocpp REQUIRED)
-
 include(CMakeFindDependencyMacro)
 
-ev_add_project(
-    EV_PROJECT_DIRECTORY @PACKAGE_EVEREST_DATADIR@
-    EV_PROJECT_NAME everest-core
-    SKIP_DOC_GENERATION
-)
+set(EVEREST_CORE_DATADIR "@PACKAGE_EVEREST_DATADIR@")
+set(EVEREST_SCHEMA_DIR "${EVEREST_CORE_DATADIR}/schemas")
+set(EV_PROJECT_INFO_SOURCE_DIR "${EVEREST_CORE_DATADIR}/project_info")
+find_dependency(everest-base)
+find_dependency(Boost COMPONENTS filesystem program_options thread headers)
+find_dependency(date)
+find_dependency(nlohmann_json)
+find_dependency(nlohmann_json_schema_validator)
+find_dependency(ryml)
+find_dependency(fmt)
+find_dependency(Threads)
+if("@EVEREST_DEPENDENCY_ENABLED_SDBUS_CPP@")
+    find_dependency(sdbus-c++)
+endif()
+
+# imported targets are per directory, the project setup is global and done once
+get_property(_everest_core_project_added GLOBAL PROPERTY EVEREST_CORE_PROJECT_ADDED)
+if(NOT _everest_core_project_added)
+    include(${CMAKE_CURRENT_LIST_DIR}/ev-project-bootstrap.cmake)
+endif()
+
+include(${CMAKE_CURRENT_LIST_DIR}/everest-core-targets.cmake)
+
+if(NOT _everest_core_project_added)
+    set_property(GLOBAL PROPERTY EVEREST_CORE_PROJECT_ADDED TRUE)
+    ev_add_project(
+        EV_PROJECT_DIRECTORY ${EVEREST_CORE_DATADIR}
+        EV_PROJECT_NAME everest-core
+        SKIP_DOC_GENERATION
+    )
+endif()
+unset(_everest_core_project_added)

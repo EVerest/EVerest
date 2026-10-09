@@ -1,4 +1,4 @@
-add_library(everest_api_module_helpers OBJECT)
+add_library(everest_api_module_helpers STATIC)
 add_library(everest::everest_api_module_helpers ALIAS everest_api_module_helpers)
 ev_register_library_target(everest_api_module_helpers)
 
@@ -8,6 +8,7 @@ target_compile_options(everest_api_module_helpers
 target_include_directories(everest_api_module_helpers
   PUBLIC
     $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
+    $<INSTALL_INTERFACE:${CMAKE_INSTALL_INCLUDEDIR}>
     "$<TARGET_PROPERTY:generate_cpp_files,EVEREST_GENERATED_INCLUDE_DIR>"
 )
 
@@ -26,7 +27,7 @@ target_link_libraries(everest_api_module_helpers
 )
 
 install(TARGETS everest_api_module_helpers
-  EXPORT everest_api_module_helpers-targets
+  EXPORT everest-core-targets
   LIBRARY
 )
 

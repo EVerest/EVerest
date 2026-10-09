@@ -5,7 +5,7 @@ target_link_libraries(charge_point
         Boost::thread
         Boost::program_options
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         ocpp
         OpenSSL::SSL
         OpenSSL::Crypto

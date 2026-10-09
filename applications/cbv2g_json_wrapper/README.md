@@ -93,41 +93,19 @@ Known limitations:
 
 The wrapper is built as part of EVerest's `applications/` tree when
 `-DEVEREST_BUILD_APPLICATIONS=ON` is set (the default). It links against
-the in-tree `cbv2g::*` targets exported by `lib/everest/cbv2g`, so no
+the in-tree `everest::cbv2g::*` targets exported by `lib/everest/cbv2g`, so no
 external dependency setup is required.
-
-### Standalone
-
-The wrapper can also be configured directly from this directory. When
-`cbv2g::din` is not already provided by a parent project,
-`cmake/local-build.cmake` is included automatically and looks for
-libcbv2g in three places, in order:
-
-1. `-DCBV2G_SOURCE_DIR=<path>` on the cmake command line
-2. The in-tree path `../../lib/everest/cbv2g` (relative to this directory)
-3. `find_package(cbv2g)` for an installed copy
-
-```bash
-# From inside applications/cbv2g_json_wrapper/, using the in-tree libcbv2g:
-cmake -S . -B build -DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON
-cmake --build build
-```
 
 ## Tests
 
-Tests use GoogleTest and are gated behind `BUILD_CBV2G_JSON_WRAPPER_TESTS`
-so a non-test build does not require GTest. An EVerest build with
-`-DBUILD_TESTING=ON` turns it on, so the tests run with the rest of the unit
-tests:
+Tests use GoogleTest and are built with the rest of the unit tests when
+`-DBUILD_TESTING=ON` is set:
 
 ```bash
 cmake -S . -B build -DBUILD_TESTING=ON
 cmake --build build --target cbv2g_test_apphand cbv2g_test_din cbv2g_test_iso2
 ctest --test-dir build -R cbv2g_test_ --output-on-failure
 ```
-
-A standalone build of this directory needs `-DBUILD_CBV2G_JSON_WRAPPER_TESTS=ON`
-instead, as shown under Build.
 
 ## Third-party
 
