@@ -1,0 +1,16 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+//
+// AUTO-GENERATED. Do not edit by hand.
+// Source: lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json
+
+#include <everest/ocpp_module_common/custom_error_mapping.hpp>
+
+namespace ocpp_module_common::custom_error_mapping {
+
+const std::string& error_mapping_schema() {
+    static const std::string schema = R"json(@CUSTOM_ERROR_MAPPING_SCHEMA_JSON@)json";
+    return schema;
+}
+
+} // namespace ocpp_module_common::custom_error_mapping

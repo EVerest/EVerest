@@ -59,6 +59,11 @@ Compared to the deprecated :ref:`OCPP <everest_modules_OCPP>` (1.6) module, two 
 * ``PublishChargingScheduleIntervalS`` is now ``CompositeScheduleIntervalS``
 * ``PublishChargingScheduleDurationS`` is now ``RequestCompositeScheduleDurationS``
 
+Compared to the :ref:`OCPP201 <everest_modules_OCPP201>` module, ``CustomMrecErrorMapPath`` is replaced by
+``CustomErrorMappingPath``, which takes a file in a different format (see
+:ref:`error reporting <handwritten_ocppmulti_error-reporting>`). An override ``"<error type>": "<techCode>"`` of the
+old file becomes ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
+
 External websocket control via MQTT
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
@@ -535,6 +540,8 @@ The **log_status** and **firmware_update_status** variables are received to repo
 notifications to the CSMS, and **configure_network_status** (subscribed only when ``DelegateNetworkConfigurationToSystem``
 is ``true``) reports the asynchronous outcome of **configure_network** requests.
 
+.. _handwritten_ocppmulti_error-reporting:
+
 Error reporting
 ===============
 
@@ -542,15 +549,28 @@ The ``enable_global_errors`` flag of this module is set in its manifest, so the 
 errors reported by other modules in the same EVerest configuration.
 
 Error reporting follows the Minimum Required Error Codes (MRECs, https://inl.gov/chargex/mrec/). The module maps
-EVerest error types to MREC techCodes using a built-in mapping table. ``CustomMrecErrorMapPath`` can point to a JSON
-file whose entries overwrite the built-in defaults; note that this override is currently only applied on the OCPP 2.x
-error path. OCPP 1.6 uses a separate built-in MREC table that ``CustomMrecErrorMapPath`` does not affect.
+EVerest error types to MREC codes using a built-in mapping table shared by OCPP 1.6 and 2.x.
+
+``CustomErrorMappingPath`` can point to a custom error mapping file, following
+``lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json``. Its keys are EVerest error types,
+optionally refined by a sub type as ``<type>#<sub_type>``. The file is an overlay on the built-in mapping: every
+error is first converted as described below, then the fields its entry sets replace the converted ones. The ``v16``
+section overrides OCPP 1.6 fields and the ``v2`` section OCPP 2.x fields; every field an entry leaves out keeps its
+built-in value, so without a file errors are reported exactly as described below. **evse_manager/Inoperative**
+cannot be mapped. How to write, configure and check such a file is described in
+:ref:`Customize How Errors Reach the CSMS <howto-ocpp-custom-error-mapping>`.
+
+A misconfigured file never stops the module. An entry that breaks the schema or uses an undeclared error type is
+logged as a warning and ignored, so the built-in mapping applies to its errors. Unknown placeholders, text longer than
+the OCPP field and, for OCPP 2.x, components or variables the device model does not contain are only warned about. A
+missing or malformed file is ignored as a whole.
 
 For both protocol generations, only errors of the special type **evse_manager/Inoperative** are reported as faults
 (i.e. lead to a **StatusNotification.req** with status **Faulted**); this type indicates that the EVSE is not
 available for energy transfer. The EVSE/connector an error is reported for is derived from the EVerest mapping of the
-error's origin; without a mapping, or with EVSE 0, it is reported for the whole charging station (connector 0). All
-other errors are reported without changing the connector status, in a version-specific way.
+error's origin; without a mapping, or with EVSE 0, it is reported for the whole charging station (connector 0). The
+custom error mapping file cannot change this. All other errors are reported without changing the connector status, in
+a version-specific way.
 
 OCPP 1.6
 ^^^^^^^^
@@ -558,15 +578,18 @@ OCPP 1.6
 Errors are reported via the error fields of additional **StatusNotification.req** messages. Each error is converted
 as follows:
 
-* If the EVerest error type has a (built-in) MREC mapping, ``errorCode`` is taken from that mapping, ``vendorId`` is
-  set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. (The OCPP 1.6 path uses a fixed
-  built-in table; ``CustomMrecErrorMapPath`` is not applied here.) The error message is written to ``info`` instead
-  of ``vendorId``, truncated to 50 characters; if the error was raised without a message, ``info`` is omitted.
+* If the EVerest error type has a built-in MREC mapping, ``errorCode`` is taken from that mapping,
+  ``vendorId`` is set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. The error message is
+  written to ``info`` instead of ``vendorId``, truncated to 50 characters; if the error was raised without a message,
+  ``info`` is omitted.
 * Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly and ``vendorId`` carries
   the error message (up to 255 characters).
 * Otherwise, ``errorCode`` is ``OtherError``, ``info`` carries the error origin, ``vendorId`` the error message
   (up to 255 characters, the largest field), and ``vendorErrorCode`` a code derived from the EVerest error type
   (``info`` and ``vendorErrorCode`` are limited to 50 characters).
+
+The ``v16`` section of the error's custom error mapping entry then replaces each of ``errorCode``, ``vendorId``,
+``vendorErrorCode`` and ``info`` that it sets.
 
 OCPP 1.6 limitations: individual errors cannot be cleared selectively via **StatusNotification.req**, and, deviating
 from MREC, simultaneous errors are reported in one message per error instead of a single semicolon-separated
@@ -586,8 +609,11 @@ status **Faulted** for the Inoperative case above). All other errors are reporte
 * **EVSE** otherwise; when a connector is also mapped, its id is carried in the component's ``connectorId`` (the
   component name stays **EVSE**, a dedicated **Connector** component is not used yet)
 
-The variable is constantly set to **Problem** for now; a more fine-grained mapping of errors to component-variable
-combinations may be added in the future.
+The variable is set to **Problem**. A ``v2`` section of a custom error mapping entry can name another component and
+variable, but the component's ``evse`` (EVSE id and ``connectorId``) always follows the EVerest mapping of the error's
+origin. The only exception is the **ChargingStation** component, which is reported without an EVSE even when the
+raising module is mapped to one. A component that needs an EVSE or connector, such as **EVSE** or **Connector**, is
+only reported completely for errors of modules whose mapping provides them.
 
 The remaining **eventData** properties are filled as follows:
 
@@ -595,8 +621,65 @@ The remaining **eventData** properties are filled as follows:
   type itself otherwise.
 * ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
   without a message, the description of the error type is sent instead.
+* ``severity`` is only reported when the ``v2`` section of the error's custom error mapping entry sets it, and only
+  over OCPP 2.1. It is a static value per entry, unrelated to the severity the EVerest error is raised with.
 * ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
   property is set accordingly.
+
+The ``v2`` section of the error's custom error mapping entry then replaces each of ``techCode``, ``techInfo``,
+``severity`` and the component and variable names and instances that it sets. Since ``actualValue`` is always ``"true"`` or
+``"false"``, an entry should name a boolean variable.
+
+.. _handwritten_ocppmulti_error-placeholders:
+
+Placeholders in custom error mapping texts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``vendor_id``, ``vendor_error_code`` and ``info`` (OCPP 1.6) and ``tech_code`` and ``tech_info`` (OCPP 2.x) fields of
+a custom error mapping entry may contain ``${name}`` placeholders, which are replaced by fields of the reported EVerest
+error:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Placeholder
+     - Replaced by
+   * - ``${type}``
+     - Error type, for example ``evse_board_support/MREC3HighTemperature``
+   * - ``${sub_type}``
+     - Error sub type
+   * - ``${message}``
+     - Message the error was raised with
+   * - ``${description}``
+     - Description the error was raised with
+   * - ``${vendor_id}``
+     - Vendor id of the error
+   * - ``${origin}``
+     - Module id, implementation id and mapping of the raising module, as one string
+   * - ``${origin_module}``
+     - Module id of the raising module
+   * - ``${origin_implementation}``
+     - Implementation id of the raising module
+   * - ``${evse}``
+     - EVSE id of the raising module's mapping; empty without a mapping
+   * - ``${connector}``
+     - Connector id of the raising module's mapping; empty without a mapping or connector
+   * - ``${severity}``
+     - Severity the EVerest error was raised with: ``Low``, ``Medium`` or ``High``. Unrelated to the ``severity``
+       field of the entry
+   * - ``${state}``
+     - ``Active``, ``ClearedByModule`` or ``ClearedByReboot``
+   * - ``${timestamp}``
+     - Time the error was raised, RFC 3339
+   * - ``${uuid}``
+     - Unique id of the error instance
+
+Any other name, and a ``${`` without a closing ``}``, is warned about and sent as written. Substituted values are not
+scanned for placeholders again. The character limits of the OCPP fields, 255 for ``vendorId``, 500 for ``techInfo`` and
+50 for the others, apply after substitution, so the text around the placeholders should leave room for the values.
+
+For example, ``"tech_info": "${severity} ${type} on EVSE ${evse}: ${message}"`` is reported as
+``High evse_board_support/MREC3HighTemperature on EVSE 1: Temperature above limit``.
 
 .. _handwritten_ocppmulti_suspend-reason-reporting:
 

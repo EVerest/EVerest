@@ -10,6 +10,7 @@
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/custom_error_mapping_validation.hpp>
 #include <ld-ev.hpp>
 #include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
@@ -58,6 +59,38 @@ std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manag
     }
 
     return result;
+}
+
+// a misconfigured custom error mapping must not stop the charger: its offending entries are reported and left out,
+// so the built-in mapping applies to their errors
+void report_findings(const fs::path& file, const std::vector<module::custom_error_mapping::Finding>& findings) {
+    using module::custom_error_mapping::Finding;
+    for (const auto& finding : findings) {
+        const auto ignored = finding.level == Finding::Level::Error && !finding.entry.empty();
+        EVLOG_warning << file.string() << ": " << finding.to_string() << (ignored ? "; the entry is ignored" : "");
+    }
+}
+
+std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping>
+without_reported(const fs::path& file, const module::custom_error_mapping::CustomFileErrorMapping& mapping,
+                 const std::vector<module::custom_error_mapping::Finding>& findings) {
+    report_findings(file, findings);
+    return mapping.without(findings);
+}
+
+module::custom_error_mapping::DeviceModelLookup to_device_model_lookup(const ocpp::v2::GetVariableStatusEnum status) {
+    using module::custom_error_mapping::DeviceModelLookup;
+    switch (status) {
+    case ocpp::v2::GetVariableStatusEnum::UnknownComponent:
+        return DeviceModelLookup::UnknownComponent;
+    case ocpp::v2::GetVariableStatusEnum::UnknownVariable:
+        return DeviceModelLookup::UnknownVariable;
+    case ocpp::v2::GetVariableStatusEnum::Accepted:
+    case ocpp::v2::GetVariableStatusEnum::Rejected:
+    case ocpp::v2::GetVariableStatusEnum::NotSupportedAttributeType:
+        break;
+    }
+    return DeviceModelLookup::Known;
 }
 
 std::int32_t get_connector_id_from_error(const Everest::error::Error& error) {
@@ -421,7 +454,66 @@ GenericOcpp::EventInfo GenericOcpp::convert_error(const Everest::error::Error& e
     return event_data;
 }
 
+void GenericOcpp::init_custom_error_mapping() {
+    const auto configured = mv_config.getCustomErrorMappingPath();
+    if (configured.empty()) {
+        return;
+    }
+
+    // relative paths resolve against the module share directory, like the other configured paths
+    const auto resolved = update_path_multi(remove_dir(mv_info.paths.share), configured);
+    if (!fs::exists(resolved)) {
+        EVLOG_warning << "CustomErrorMappingPath '" << configured << "' not found at " << resolved.string()
+                      << " (relative paths resolve against the OCPPmulti share directory), the built-in error mapping "
+                         "applies";
+        return;
+    }
+
+    auto result = module::custom_error_mapping::load_error_mapping(resolved);
+    report_findings(resolved, result.findings);
+    if (result.error_mapping == nullptr) {
+        EVLOG_warning << resolved.string() << ": not usable, the built-in error mapping applies";
+        return;
+    }
+
+    using namespace module::custom_error_mapping;
+    auto mapping = std::move(result.error_mapping);
+    if (const auto declared = read_declared_error_types(mv_info.paths.errors); declared.has_value()) {
+        mapping = without_reported(resolved, *mapping, validate_error_types(*mapping, declared.value()));
+    } else {
+        EVLOG_warning << resolved.string() << ": error types not checked, errors directory "
+                      << mv_info.paths.errors.string() << " not found";
+    }
+    mapping = without_reported(resolved, *mapping, validate_values(*mapping));
+
+    for (const auto& key : replaced_builtin_entries(*mapping, builtin_error_types())) {
+        EVLOG_info << resolved.string() << ": entry '" << key << "' overrides fields of the built-in MREC mapping";
+    }
+    mv_custom_error_mapping = std::move(mapping);
+    mv_custom_error_mapping_path = resolved;
+}
+
+void GenericOcpp::ready_custom_error_mapping(
+    const GenericChargePointInterface::ConnectorStructure& evse_connector_structure) {
+    if (mv_custom_error_mapping == nullptr || !ocpp_2_selected()) {
+        return;
+    }
+
+    using namespace module::custom_error_mapping;
+    const auto lookup = [this](const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+        const auto results = mv_charge_point.get_variables({{component, variable, ocpp::v2::AttributeEnum::Actual}});
+        return results.empty() ? DeviceModelLookup::UnknownComponent
+                               : to_device_model_lookup(results.front().attributeStatus);
+    };
+    report_findings(mv_custom_error_mapping_path, validate_device_model(*mv_custom_error_mapping, lookup,
+                                                                        evse_connector_structure, /*strict=*/false));
+}
+
 void GenericOcpp::init() {
+    // loaded before the error subscriptions and before the charge point starts,
+    // so the first converted error already sees it
+    init_custom_error_mapping();
+
     // was originally in ready()
     const auto log_path = mv_config.getMessageLogPath();
     if (!fs::exists(log_path)) {
@@ -443,6 +535,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
 
     wait_all_ready();
     auto [evse_connector_structure, connector_mapping] = get_connector_structure();
+    const auto connector_structure_for_validation = evse_connector_structure;
 
     const auto share_path = remove_dir(mv_info.paths.share);
 
@@ -520,6 +613,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     }
 
     mv_charge_point.init(args);
+    ready_custom_error_mapping(connector_structure_for_validation);
 
     // publish charging schedules at least once on startup
     cb_set_charging_profiles();
@@ -1866,15 +1960,8 @@ void GenericOcpp::cb_waiting_for_external_ready(std::int32_t evse_id, bool ready
     }
 }
 
-bool GenericOcpp::map_error(const std::string& error, std::string& updated_error) {
-    bool result{false};
-    if (const auto it = mv_mrec_error_map.find(error); it != mv_mrec_error_map.end()) {
-        updated_error = it->second;
-        result = true;
-    } else {
-        updated_error = error;
-    }
-    return result;
+std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> GenericOcpp::custom_error_mapping() const {
+    return mv_custom_error_mapping;
 }
 
 void GenericOcpp::transaction_add(std::int32_t evse_id,
