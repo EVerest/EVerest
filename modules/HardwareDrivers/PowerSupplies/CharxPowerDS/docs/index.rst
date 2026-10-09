@@ -44,6 +44,22 @@ I setpoint           0x4004:02  mA
 V setpoint           0x4004:06  mV
 ==================== ========== ===========================================
 
+Structure
+=========
+
+- ``main/charx_canopen.*``: the CANopen master. Frame encoding and decoding are free functions; ``Canopen`` adds
+  SocketCAN, the heartbeat thread and serialised SDO transfers. Once constructed, no call throws: a frame that
+  cannot be sent (interface down, transmit queue full because no node acknowledges) is reported as an I/O error.
+- ``main/charx_controller.*``: the logic - switch sequence, validity checks and error mapping - without EVerest
+  or bus dependencies. It talks to the module through the ``SdoClient`` interface and reports through
+  ``ControllerOutputs``; the clock is passed in.
+- ``main/power_supply_DCImpl.*``: the EVerest glue. It runs the poll loop, maps the controller's outputs to the
+  ``power_supply_DC`` variables and errors, and opens the CAN interface again when frames cannot be sent for a
+  while (e.g. an adapter used directly that was replugged). Behind a virtual CAN link (``vxcan`` plus ``can-gw``
+  routes, as in a container) sends always succeed: there a replugged adapter shows as ``CommunicationFault``
+  until whoever set up the link sets it up again.
+- ``tests/``: unit tests for the frame codec and for the controller against a simulated module.
+
 Behavior
 ========
 
@@ -54,11 +70,20 @@ Behavior
 - **Switch on** follows the order the module requires: current setpoint 0, close the contactor, then PowerOn. The
   module refuses PowerOn (abort ``0x08000022``) until the contactor reports closed, about 0.8 s, so PowerOn is
   retried until accepted. The current setpoint is written last.
-- **Switch off** writes PowerOff, opens the contactor and sets the current to 0. ``setMode(Off)`` returns once the
-  module reports its power stage off or the current is below ``off_current_threshold_A``, at most after
-  ``power_off_timeout_s``, so the charger relays do not open under load.
-- **Reported mode** is ``Export`` only when the module confirms power on and contactor closed, otherwise ``Off``.
-- **Commands the module does not follow** within 3 s are sent again.
+- **Switch off** sets the current to 0 and writes PowerOff first. The module's contactor is opened once a reading
+  polled *after* PowerOff shows the current below ``off_current_threshold_A`` (after 3 s at the latest). The flags
+  do not count here: they blink while the DC stages switch. ``setMode(Off)`` returns by the same rule - contactor
+  open, or low current read after PowerOff - so the charger relays do not open under load either; at most after
+  ``power_off_timeout_s``, and at once while ``CommunicationFault`` is active.
+- **Reported mode** is ``Export`` only when the module confirms power stage up and contactor closed, otherwise
+  ``Off``. Once in ``Export``, the ``DcOutputSideOff`` flag alone does not end it for up to 3 s: the module drops
+  that flag for about 1.3 s while it switches its DC stages. Longer, the DC side counts as off.
+- **A module that does not follow** - contactor open or power stage off after PowerOn was accepted, or the module
+  still on after an Off - gets its commands again once the deviation has lasted 3 s, so a single odd poll never
+  interrupts the current.
+- **After a communication loss** NMT start is sent, and the setpoints (or the Off) are sent again before
+  ``CommunicationFault`` clears. A module that kept running is not switched on again, so the current does not drop;
+  one that lost its state (e.g. rebooted) gets the whole switch-on sequence in that same cycle.
 
 Errors
 ======
@@ -67,6 +92,7 @@ Errors
 Error                                    Raised when
 ======================================== =====================================================================
 ``power_supply_DC/CommunicationFault``   the CAN interface cannot be opened, or 3 polls in a row get no answer
+                                         (NMT start is sent then and every 20 failed polls)
 ``power_supply_DC/HardwareFault``        internal failure, converter error, short circuit, emergency stop,
                                          discharge problem, fan fault, module ID repetition, contactor error
 ``power_supply_DC/OverTemperature``      flag OTP
@@ -77,7 +103,7 @@ Error                                    Raised when
 ``power_supply_DC/OverCurrentDC``        DC over current or over power
 ``power_supply_DC/OverCurrentAC``        AC overload
 ``power_supply_DC/VendorError``          switch-on or switch-off not confirmed within ``power_on_timeout_s`` /
-                                         ``power_off_timeout_s``
+                                         ``power_off_timeout_s``, or the module left Export on its own for 3 s
 ======================================== =====================================================================
 
 Each error clears when its condition is gone.

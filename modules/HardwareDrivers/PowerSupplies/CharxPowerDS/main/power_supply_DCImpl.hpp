@@ -13,15 +13,10 @@
 #include "../CharxPowerDS.hpp"
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
-#include <chrono>
-#include <condition_variable>
 #include <memory>
-#include <mutex>
-#include <optional>
-#include <set>
-#include <string>
 
 #include "charx_canopen.hpp"
+#include "charx_controller.hpp"
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -29,7 +24,7 @@ namespace main {
 
 struct Conf {};
 
-class power_supply_DCImpl : public power_supply_DCImplBase {
+class power_supply_DCImpl : public power_supply_DCImplBase, private charx::ControllerOutputs {
 public:
     power_supply_DCImpl() = delete;
     power_supply_DCImpl(Everest::ModuleAdapter* ev, const Everest::PtrContainer<CharxPowerDS>& mod, Conf& config) :
@@ -58,56 +53,14 @@ private:
     virtual void ready() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
-    using Clock = std::chrono::steady_clock;
+    // charx::ControllerOutputs
+    void on_capabilities(const charx::Capabilities& caps) override;
+    void on_mode(bool exporting) override;
+    void on_measurement(double voltage_V, double current_A) override;
+    void on_error(charx::ErrorType type, bool active, const std::string& message) override;
 
-    bool read_capabilities();
-    bool poll_status();
-    void actuate();
-    void handle_errors();
-    void update_reported_mode();
-    void set_error(const std::string& type, bool active, const std::string& message);
-    charx::SdoResult write(charx::Obj o, int32_t value, const char* what);
-
-    std::unique_ptr<charx::Canopen> can;
-    int32_t contactor_value{1};
-
-    // targets from EvseManager (guarded by mtx)
-    std::mutex mtx;
-    std::condition_variable cv;
-    bool target_export{false};
-    double target_voltage{0};
-    double target_current{0};
-    uint64_t target_generation{0}; // bumps on every setMode / setpoint change
-
-    // what the module confirmed in the last poll (guarded by mtx)
-    bool status_valid{false};
-    uint32_t flags1{0};
-    int32_t ds_status{0};
-    int32_t contactor_error{0};
-    double v_meas{0};
-    double i_meas{0};
-    bool power_on() const;
-    bool contactor_closed() const;
-
-    // actuation state (loop thread only)
-    uint64_t applied_generation{~0ull};
-    bool sent_voltage{false};
-    bool sent_contactor{false};
-    bool power_on_accepted{false};
-    bool sent_current{false};
-    bool sent_off{false};
-    std::optional<Clock::time_point> on_requested_at;
-    std::optional<Clock::time_point> off_requested_at;
-    Clock::time_point last_resend{};
-
-    // limits
-    double cap_v_min{50};
-    double cap_v_max{1000};
-    double cap_i_max{125};
-
-    int comm_failures{0};
-    std::optional<types::power_supply_DC::Mode> reported_mode;
-    uint32_t last_logged_flags{0xFFFFFFFF};
+    std::unique_ptr<charx::Controller> controller;
+    std::unique_ptr<charx::Canopen> can; // loop thread only
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

@@ -67,8 +67,9 @@ config:
     default: 8
   off_current_threshold_A:
     description: >-
-      setMode(Off) returns once the measured current is below this value or the module reports its
-      power stage off (or after power_off_timeout_s), so the charger relays never open under load.
+      setMode(Off) returns once the module's contactor is open, or the current measured after PowerOff is below
+      this value (or after power_off_timeout_s), so the charger relays never open under load. The module's own
+      contactor opens on the same low-current reading, or 3 s after PowerOff at the latest.
     type: number
     default: 2
 metadata:
