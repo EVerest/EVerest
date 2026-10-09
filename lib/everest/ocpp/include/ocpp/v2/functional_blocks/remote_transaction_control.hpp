@@ -39,7 +39,7 @@ public:
 class RemoteTransactionControl : public RemoteTransactionControlInterface {
 public:
     RemoteTransactionControl(const FunctionalBlockContext& functional_block_context, TransactionInterface& transaction,
-                             SmartChargingInterface& smart_charging, MeterValuesInterface& meter_values,
+                             SmartChargingInterface* smart_charging, MeterValuesInterface& meter_values,
                              AvailabilityInterface& availability, FirmwareUpdateInterface& firmware_update,
                              SecurityInterface& security, ReservationInterface* reservation,
                              ProvisioningInterface& provisioning, UnlockConnectorCallback unlock_connector_callback,
@@ -55,7 +55,7 @@ private:
     const FunctionalBlockContext& context;
 
     TransactionInterface& transaction;
-    SmartChargingInterface& smart_charging;
+    SmartChargingInterface* smart_charging;
     MeterValuesInterface& meter_values;
     AvailabilityInterface& availability;
     FirmwareUpdateInterface& firmware_update;

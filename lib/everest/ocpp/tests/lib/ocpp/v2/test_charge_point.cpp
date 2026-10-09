@@ -712,6 +712,17 @@ public:
         return charge_point;
     }
 
+    // SmartChargingCtrlr.Available=false leaves the smart charging block unbuilt.
+    std::unique_ptr<TestChargePoint>
+    create_charge_point_without_smart_charging(std::shared_ptr<DatabaseHandler> database_handler) {
+        const auto& available_cv = ControllerComponentVariables::SmartChargingCtrlrAvailable;
+        device_model->set_value(available_cv.component, available_cv.variable.value(), AttributeEnum::Actual, "false",
+                                "TEST", true);
+        return std::make_unique<TestChargePoint>(create_evse_connector_structure(), device_model, database_handler,
+                                                 create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                 std::make_shared<EvseSecurityMock>(), callbacks);
+    }
+
     boost::uuids::random_generator uuid_generator;
     std::unique_ptr<TestChargePoint> charge_point;
     std::unique_ptr<SmartChargingMock> smart_charging;
@@ -796,6 +807,272 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, K02FR05_TransactionEnds_WillDelete
                                           TriggerReasonEnum::StopAuthorized, {}, {}, ChargingStateEnum::EVConnected);
 }
 
+<<<<<<< HEAD
+=======
+TEST_F(ChargePointFunctionalityTestFixtureV2, TransactionFinished_WhenSmartChargingAbsent_ReleasesTransaction) {
+    const auto& resume_cv = ControllerComponentVariables::ResumeTransactionsOnBoot;
+    device_model->set_value(resume_cv.component, resume_cv.variable.value(), AttributeEnum::Actual, "true", "TEST",
+                            true);
+
+    auto database_handler = create_database_handler();
+    auto charge_point_without_smart_charging = create_charge_point_without_smart_charging(database_handler);
+    charge_point_without_smart_charging->start();
+
+    const std::int32_t connector_id = 1;
+    const ocpp::DateTime timestamp("2024-01-17T17:00:00");
+    charge_point_without_smart_charging->on_transaction_started(DEFAULT_EVSE_ID, connector_id, "some-session-id",
+                                                                timestamp, TriggerReasonEnum::Authorized, MeterValue(),
+                                                                {}, {}, {}, {}, ChargingStateEnum::EVConnected);
+    ASSERT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::NotNull());
+
+    charge_point_without_smart_charging->on_ev_charging_needs(NotifyEVChargingNeedsRequest{});
+    charge_point_without_smart_charging->on_transaction_finished(
+        DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::EVDisconnected, TriggerReasonEnum::EVCommunicationLost,
+        {}, {}, ChargingStateEnum::Idle);
+
+    EXPECT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::IsNull());
+    charge_point_without_smart_charging->stop();
+}
+
+// on_der_alarm must no-op (not dereference null) when no DER component exists and der_control is unbuilt.
+TEST_F(ChargePointFunctionalityTestFixtureV2, OnDerAlarm_WhenDerControlAbsent_NoOpsWithoutCrash) {
+    ocpp::v21::NotifyDERAlarmRequest req;
+    req.controlType = ocpp::v2::DERControlEnum::FreqDroop;
+    req.timestamp = ocpp::DateTime("2020-01-01T00:00:00Z");
+    req.gridEventFault = ocpp::v2::GridEventFaultEnum::OverFrequency;
+
+    EXPECT_NO_FATAL_FAILURE(charge_point->on_der_alarm(req));
+}
+
+// The DER block is built only once a component reports Enabled==true. EVSE 2's AC DER component is
+// Available==true but Enabled==false at construction, so SetDERControl gets NotImplemented at first and a
+// CALLRESULT after Enabled flips true.
+TEST_F(ChargePointFunctionalityTestFixtureV2, SetDERControl_BuildsBlockWhenEnabledFlipsTrue) {
+    ocpp::v21::SetDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-lifecycle";
+    // Once the block exists the request is accepted: EVSE 2's AC DER component is enabled by then and AC
+    // admission accepts all control types. The persisted control is deleted at the end of the test because
+    // the handler database is file-backed and shared across tests.
+    req.controlType = DERControlEnum::HFMustTrip;
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 0.0f;
+    p1.y = 0.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    auto build_message = [&]() {
+        return request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req);
+    };
+
+    // Enabled==false at construction: block absent, response is a NotImplemented CALLERROR.
+    this->sent_messages.clear();
+    charge_point->handle_message(build_message());
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& error_response = this->sent_messages.back();
+    EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
+    EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
+
+    // Flip Enabled true: the registered variable listener builds the block.
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    // Same SetDERControl now reaches the block and is answered with a CALLRESULT (not NotImplemented).
+    this->sent_messages.clear();
+    charge_point->handle_message(build_message());
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& result_response = this->sent_messages.back();
+    EXPECT_EQ(result_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLRESULT);
+
+    auto cleanup_handler = create_database_handler();
+    cleanup_handler->open_connection();
+    cleanup_handler->delete_der_control("ctrl-lifecycle");
+}
+
+// When the DER block is built (here lazily, once a DER component reports Enabled==true), it self-emits
+// the current active set so the provider learns the standing state. The DER_CONTROLS table is empty at
+// startup, so the initial emit carries an empty set.
+TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlockBuild_EmitsInitialActiveSet) {
+    // EVSE 2's AC DER component is Available==true but Enabled==false, so no block (and no emit) yet at
+    // construction.
+    ASSERT_EQ(this->der_active_directives_emit_count, 0);
+
+    // Flip Enabled true: the registered variable listener builds the block, which self-emits its
+    // initial (empty) active set.
+    const auto der_enabled_cv = DERComponentVariables::get_ac_component_variable(2, DERComponentVariables::Enabled);
+    this->device_model->set_value(der_enabled_cv.component, der_enabled_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    EXPECT_EQ(this->der_active_directives_emit_count, 1);
+    EXPECT_TRUE(this->last_der_active_directives.empty());
+}
+
+// Available==true alone must not build the DER block at boot: the Enabled gate (false here) keeps it unbuilt.
+TEST_F(ChargePointFunctionalityTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenAvailableTrueButEnabledFalse) {
+    // EVSE 2's AC DER component is Available==true, Enabled==false at construction. No block, no emit.
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v21::SetDERControlRequest req;
+    req.isDefault = false;
+    req.controlId = "ctrl-boot-gate";
+    req.controlType = DERControlEnum::HFMustTrip;
+    DERCurve curve;
+    curve.priority = 0;
+    curve.yUnit = DERUnitEnum::Not_Applicable;
+    DERCurvePoints p1;
+    p1.x = 0.0f;
+    p1.y = 0.0f;
+    curve.curveData = {p1};
+    req.curve = curve;
+
+    this->sent_messages.clear();
+    charge_point->handle_message(
+        request_to_enhanced_message<ocpp::v21::SetDERControlRequest, MessageType::SetDERControl>(req));
+    ASSERT_FALSE(this->sent_messages.empty());
+    const auto& error_response = this->sent_messages.back();
+    EXPECT_EQ(error_response.at(MESSAGE_TYPE_ID).get<MessageTypeId>(), MessageTypeId::CALLERROR);
+    EXPECT_EQ(error_response.at(CALLERROR_ERROR_CODE).get<std::string>(), "NotImplemented");
+}
+
+// Strict opt-in: a DER component with Available==true but no Enabled variable stays disabled, so the
+// block is not built at boot (Enabled.value_or(false)).
+TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnabledVariable) {
+    configure_callbacks_with_mocks();
+
+    // EVSE 1's DC DER component (from DCDERCtrlr_1.json) has no Enabled variable. Flip its Available true
+    // before construction; the missing Enabled must keep the block unbuilt.
+    const auto dc_available_cv = DERComponentVariables::get_dc_component_variable(1, DERComponentVariables::Available);
+    this->device_model->set_value(dc_available_cv.component, dc_available_cv.variable.value(), AttributeEnum::Actual,
+                                  "true", "internal", true);
+
+    ASSERT_EQ(this->der_active_directives_emit_count, 0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                       create_message_queue(database_handler), "/tmp", evse_security, callbacks);
+
+    EXPECT_EQ(this->der_active_directives_emit_count, 0);
+}
+
+// stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive
+// and restartable, and its owner still gets the disconnect notification. Disarming here raced the deferred
+// delivery of that notification and swallowed it.
+TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+
+    charge_point.start(BootReasonEnum::PowerUp);
+    charge_point.stop();
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
+
+    // Verify while still alive: destruction is the only disarm site.
+    ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
+}
+
+// The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
+// destructor body runs before any member is gone and blocks on an in-flight callback.
+TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                           connectivity_manager, "/tmp", callbacks);
+        charge_point.start(BootReasonEnum::PowerUp);
+        charge_point.stop();
+
+        EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    }
+}
+
+// A connect and a disconnect requested while a CALL is in flight both wait for its answer, then apply in the order they
+// were requested.
+TEST_F(ChargePointConstructorTestFixtureV2, ConnectThenDisconnectAwaitCallInFlightInOrder) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+    std::function<void(const std::string&)> csms_to_charge_point;
+    ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+        .WillByDefault(
+            ::testing::Invoke([&csms_to_charge_point](const std::function<void(const std::string&)>& callback) {
+                csms_to_charge_point = callback;
+            }));
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<std::string> boot_notification_id;
+    std::vector<std::string> transport_calls;
+    ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+        .WillByDefault(::testing::Invoke([&](const std::string& message) {
+            const auto call = json::parse(message);
+            std::lock_guard<std::mutex> lock(mtx);
+            if (call.at(MESSAGE_TYPE_ID) == MessageTypeId::CALL && call.at(CALL_ACTION) == "BootNotification" &&
+                !boot_notification_id.has_value()) {
+                boot_notification_id = call.at(MESSAGE_ID).get<std::string>();
+                cv.notify_all();
+            }
+            return true;
+        }));
+    ON_CALL(*connectivity_manager, connect(::testing::_))
+        .WillByDefault(::testing::Invoke([&](std::optional<std::int32_t>) {
+            std::lock_guard<std::mutex> lock(mtx);
+            transport_calls.push_back("connect");
+            cv.notify_all();
+        }));
+    ON_CALL(*connectivity_manager, disconnect()).WillByDefault(::testing::Invoke([&]() {
+        std::lock_guard<std::mutex> lock(mtx);
+        transport_calls.push_back("disconnect");
+        cv.notify_all();
+    }));
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp, false);
+    NetworkConnectionProfile network_connection_profile;
+    network_connection_profile.messageTimeout = 30;
+    charge_point.on_websocket_connected(1, network_connection_profile, OcppProtocolVersion::v201);
+
+    std::string in_flight_id;
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return boot_notification_id.has_value(); }));
+        in_flight_id = boot_notification_id.value();
+    }
+
+    charge_point.connect_websocket();
+    charge_point.disconnect_websocket();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        EXPECT_TRUE(transport_calls.empty());
+    }
+
+    const json accepted = {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 300}, {"status", "Accepted"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, in_flight_id, accepted}.dump());
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return transport_calls.size() >= 2; }));
+        EXPECT_EQ(transport_calls, (std::vector<std::string>{"connect", "disconnect"}));
+    }
+
+    charge_point.stop();
+}
+
+>>>>>>> e6905f4 (fix(libocpp): don't crash at transaction end without SmartChargingCtrlr (#3050))
 /// \brief Stands in for the CSMS transport: collects what the message queue sends so the test can answer it
 class FakeCsmsTransport {
 public:
