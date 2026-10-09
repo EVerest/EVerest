@@ -687,6 +687,10 @@ void Charger::run_state_machine() {
             if (initialize_state) {
                 session_log.evse(false, "Enter T_step_X1");
                 cp_state_X1();
+                if (internal_context.t_step_X1_until_unmatched) {
+                    // [V2G3-M07-06]: the node leaves the logical network within X1.
+                    signal_slac_reset();
+                }
             }
             {
                 const bool fatal_error = stop_charging_on_fatal_error_internal();
@@ -695,11 +699,24 @@ void Charger::run_state_machine() {
                     // X1, do not restore PWM: go back to the return state, its checks will
                     // tear down the session.
                     session_log.evse(false, fmt::format("Exit T_step_X1: {}", stop_reason_flags(fatal_error)));
-                    shared_context.current_state = internal_context.t_step_X1_return_state;
+                    shared_context.current_state = internal_context.t_step_X1_until_unmatched
+                                                       ? internal_context.t_step_EF_return_state
+                                                       : internal_context.t_step_X1_return_state;
+                    internal_context.t_step_X1_until_unmatched = false;
                     break;
                 }
             }
-            if (time_in_current_state >= T_STEP_X1) {
+            if (internal_context.t_step_X1_until_unmatched) {
+                // [V2G3-M07-07]: E/F once the matching state is "Unmatched". X1 is held at least TP_match_leave,
+                // the time the node has to leave the network; T_STEP_X1 bounds the wait.
+                const bool unmatched = not shared_context.matching_started and not shared_context.slac_matched;
+                if ((unmatched and time_in_current_state >= TP_MATCH_LEAVE_MS) or time_in_current_state >= T_STEP_X1) {
+                    session_log.evse(false, unmatched ? "Exit T_step_X1: unmatched, go to E/F"
+                                                      : "Exit T_step_X1: still not unmatched, go to E/F");
+                    internal_context.t_step_X1_until_unmatched = false;
+                    shared_context.current_state = EvseState::T_step_EF;
+                }
+            } else if (time_in_current_state >= T_STEP_X1) {
                 session_log.evse(false, "Exit T_step_X1");
                 if (internal_context.t_step_X1_return_pwm == 0.) {
                     cp_state_X1();
@@ -1625,6 +1642,7 @@ bool Charger::cancel_transaction(const types::evse_manager::StopTransactionReque
 
 void Charger::start_session(bool authfirst) {
     shared_context.session_active = true;
+    shared_context.dlink_established = false;
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
     shared_context.flag_externally_cancelled = false;
@@ -2315,13 +2333,30 @@ void Charger::request_error_sequence() {
         shared_context.current_state == EvseState::PrepareCharging) {
         internal_context.t_step_EF_return_state = shared_context.current_state;
         internal_context.t_step_EF_return_ampere = 0.;
-        shared_context.current_state = EvseState::T_step_EF;
-        signal_slac_reset();
         if (hlc_use_5percent_current_session) {
             internal_context.t_step_EF_return_pwm = PWM_5_PERCENT;
         } else {
             internal_context.t_step_EF_return_pwm = 0.;
         }
+        if (shared_context.dlink_established) {
+            // A lost data link ([V2G3-M07-03]): X2 -> X1 -> E/F -> X1/X2 ([V2G3-M07-05], option A for a nominal
+            // duty cycle [V2G3-M07-11]). T_step_X1 resets SLAC once X1 is applied.
+            internal_context.t_step_X1_until_unmatched = true;
+            shared_context.current_state = EvseState::T_step_X1;
+        } else {
+            // No data link was established, e.g. TT_EVSE_SLAC_init expired: E/F directly ([V2G3-M06-07]).
+            shared_context.current_state = EvseState::T_step_EF;
+            signal_slac_reset();
+        }
+        shared_context.dlink_established = false;
+    }
+}
+
+void Charger::set_dlink_ready(bool ready) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_dlink_ready);
+    // Only the establishment is latched: D-LINK_READY(no link) arrives right before the error routine it triggers.
+    if (ready) {
+        shared_context.dlink_established = true;
     }
 }
 

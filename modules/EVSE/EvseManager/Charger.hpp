@@ -199,6 +199,7 @@ public:
 
     void set_matching_started(bool m);
     void set_slac_matched(bool matched);
+    void set_dlink_ready(bool ready);
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
@@ -392,6 +393,8 @@ private:
         bool authorized_pnc;
         bool matching_started;
         std::atomic_bool slac_matched{false};
+        // D-LINK_READY(link established) was indicated since the session or the last error sequence started.
+        bool dlink_established{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;
         std::optional<double> max_current_cable;
@@ -490,6 +493,8 @@ private:
 
         EvseState t_step_X1_return_state;
         float t_step_X1_return_pwm;
+        // T_step_X1 after a lost data link: X1 lasts until the SLAC module is unmatched ([V2G3-M07-05..07]).
+        bool t_step_X1_until_unmatched{false};
         std::chrono::time_point<std::chrono::steady_clock> last_over_current_event;
         bool over_current{false};
 
@@ -583,6 +588,9 @@ private:
     static constexpr int T_REPLUG_MS = 4000;
     // 3 seconds according to IEC61851-1
     static constexpr int T_STEP_X1 = 3000;
+    // 1 second according to table 3 of ISO15118-3: the time the node has to leave the logical network. An X1 for a lost
+    // data link is held at least this long so that the leave happens within X1 ([V2G3-M07-06]).
+    static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
