@@ -293,9 +293,10 @@ if(EVEREST_BUILD_RUNTIME)
             else echo "Found everest-utils at ${CPM_PACKAGE_everest-utils_SOURCE_DIR}" \;
                  ${Python3_EXECUTABLE} -m pip install -e "${CPM_PACKAGE_everest-utils_SOURCE_DIR}/everest-testing" \;
             fi\;
-        DEPENDS
-            everestpy_pip_install_dist
         COMMENT
             "Installing dependencies for testing EVerest"
     )
+    if(TARGET everestpy_pip_install_dist)
+        add_dependencies(install_everest_testing everestpy_pip_install_dist)
+    endif()
 endif()
