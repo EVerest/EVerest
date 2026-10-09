@@ -1105,7 +1105,7 @@ static enum v2g_event handle_iso_payment_service_selection(struct v2g_connection
     /* Check the current response code and check if no external error has occurred */
     next_event = (v2g_event)iso_validate_response_code(&res->ResponseCode, conn);
 
-    if (req->SelectedPaymentOption == iso2_paymentOptionType_Contract) {
+    if (list_element_found && (req->SelectedPaymentOption == iso2_paymentOptionType_Contract)) {
         dlog(DLOG_LEVEL_INFO, "SelectedPaymentOption: Contract");
         conn->ctx->session.iso_selected_payment_option = iso2_paymentOptionType_Contract;
         /* Set next expected req msg */
@@ -1157,6 +1157,12 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             goto error_out;
         }
 
+        if (err != 0) {
+            memset(res, 0, sizeof(*res));
+            res->ResponseCode = iso2_responseCodeType_FAILED_CertChainError;
+            goto error_out;
+        }
+
         auto cert_emaid = getEmaidFromContractCert(contract_crt);
         std::string req_emaid{&req->eMAID.characters[0], req->eMAID.charactersLen};
 
@@ -1173,15 +1179,10 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             goto error_out;
         }
 
-        if (err != 0) {
-            memset(res, 0, sizeof(*res));
-            res->ResponseCode = iso2_responseCodeType_FAILED_CertChainError;
-            goto error_out;
+        if (conn->pubkey != nullptr) {
+            *conn->pubkey = certificate_public_key(contract_crt.get());
         }
-
-        assert(conn->pubkey != nullptr);
-        *conn->pubkey = certificate_public_key(contract_crt.get());
-        err = (*conn->pubkey == nullptr) ? -1 : 0;
+        err = ((conn->pubkey == nullptr) || (*conn->pubkey == nullptr)) ? -1 : 0;
 
         if (err != 0) {
             memset(res, 0, sizeof(*res));
@@ -1362,8 +1363,8 @@ static enum v2g_event handle_iso_authorization(struct v2g_connection* conn) {
         iso2_fragment.AuthorizationReq_isUsed = 1u;
         memcpy(&iso2_fragment.AuthorizationReq, req, sizeof(*req));
 
-        assert(conn->pubkey != nullptr);
-        const bool bSigRes = check_iso2_signature(&conn->exi_in.iso2EXIDocument->V2G_Message.Header.Signature,
+        const bool bSigRes = (conn->pubkey != nullptr) && (*conn->pubkey != nullptr) &&
+                             check_iso2_signature(&conn->exi_in.iso2EXIDocument->V2G_Message.Header.Signature,
                                                   conn->pubkey->get(), &iso2_fragment);
 
         if (!bSigRes) {
