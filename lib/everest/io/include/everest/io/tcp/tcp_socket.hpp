@@ -7,6 +7,7 @@
 
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/io_error_record.hpp>
 #include <functional>
 #include <string>
 #include <vector>
@@ -103,6 +104,10 @@ public:
      * probed because no descriptor was assigned. That value is cached, so repeated
      * calls report the same cause. It is dropped whenever a descriptor is gained or
      * released, so it cannot outlive the attempt it describes.
+     * With a socket owned, the pending error (SO_ERROR) comes first, then the errno of
+     * the last read or write that failed with one, then a peek: a peer that shut its
+     * side without an error is ECONNRESET, the library's code for a stream peer
+     * closing. Reading SO_ERROR clears it, so a nonzero result is reported once.
      * @return The current errno of the socket. Zero with no pending error.
      */
     int get_error() const;
@@ -168,6 +173,7 @@ private:
     event::unique_fd m_fd;
     int m_timeout_ms{0};
     int m_connect_error{0};
+    socket::io_error_record m_error;
     std::string m_device;
     static constexpr size_t default_buffer_size{1500};
 };

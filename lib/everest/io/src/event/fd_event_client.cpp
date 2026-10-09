@@ -33,17 +33,16 @@ constexpr char deadline_arm_failed_text[]{"handshake deadline could not be armed
 constexpr char deadline_register_failed_text[]{"handshake deadline could not be registered"};
 } // namespace
 
-generic_fd_event_client_impl::generic_fd_event_client_impl(action const& send_one, action const& receive_one,
-                                                           action const& reset_client, error_status const& get_error,
-                                                           handshake_status const& handshake_pending,
-                                                           action const& drive_handshake,
-                                                           handshake_events const& handshake_desired_events,
-                                                           handshake_timeout const& get_handshake_timeout,
-                                                           error_text const& get_error_string) :
+generic_fd_event_client_impl::generic_fd_event_client_impl(
+    action const& send_one, action const& receive_one, action const& reset_client, error_status const& get_error,
+    handle_status const& handle_is_current, handshake_status const& handshake_pending, action const& drive_handshake,
+    handshake_events const& handshake_desired_events, handshake_timeout const& get_handshake_timeout,
+    error_text const& get_error_string) :
     m_send_one(send_one),
     m_receive_one(receive_one),
     m_reset_client(reset_client),
     m_get_error(get_error),
+    m_handle_is_current(handle_is_current),
     m_handshake_pending(handshake_pending),
     m_drive_handshake(drive_handshake),
     m_handshake_desired_events(handshake_desired_events),
@@ -103,7 +102,6 @@ bool generic_fd_event_client_impl::setup_error_event_handler() {
 void generic_fd_event_client_impl::setup_io_event_handler(int fd) {
     using namespace everest::lib::io::event;
     namespace util = everest::lib::util;
-    m_connection_failed = false;
     // Registered for reading below.
     m_rx_paused = false;
     // Belongs to the previous connection, so it may not describe a failure of this one.
@@ -111,17 +109,27 @@ void generic_fd_event_client_impl::setup_io_event_handler(int fd) {
     m_event_handler->register_event_handler(
         fd,
         [this, fd](auto events) {
+            // A consumer reset retires the handle at once but its fd stays registered until the
+            // queued reopen runs. Whatever the fd reports in between belongs to the peer the reset
+            // abandoned: an error read here would fail the connection the reset is opening, and its
+            // teardown would drop that reopen.
+            if (not m_handle_is_current()) {
+                return;
+            }
             // A terminal notification wins over a pending handshake: the connection it would be
             // negotiated on is gone. read_hungup is monitored only while paused, see pause_rx.
             if (util::exists_any(events, poll_events::error, poll_events::hungup, poll_events::read_hungup)) {
                 // Level triggered, so the fd keeps notifying until the queued teardown removes it,
                 // and reading SO_ERROR clears it.
                 if (not m_connection_failed) {
-                    m_connection_failed = true;
                     auto const kind = util::first_present(events, poll_events::error, poll_events::hungup)
                                           .value_or(poll_events::read_hungup);
                     set_error_status_and_notify(consume_poll_error(fd, kind));
                 }
+                return;
+            }
+            // Final, see set_error_status_and_notify: nothing is read or written on it any more.
+            if (m_connection_failed) {
                 return;
             }
             if (m_handshake_pending()) {
@@ -157,6 +165,14 @@ bool generic_fd_event_client_impl::unregister_source(int fd) {
 
 bool generic_fd_event_client_impl::set_error_status_and_notify(int error_code) {
     auto result = set_error_status(error_code);
+    if (current_connection_state() == utilities::connection_state::failed) {
+        // Final for this connection, whichever path reported it: a poll error, a read or write
+        // that failed, a handshake failure. Until the queued teardown runs, the fd can still
+        // report readable or writable, and a success there would put the state back to connected
+        // before the error-fd handler has reported the failure. So it takes no further reads or
+        // writes, and data queued before the failure is dropped with the connection.
+        m_connection_failed = true;
+    }
     m_error_status_event_fd.notify();
     return result;
 }
@@ -203,10 +219,6 @@ void generic_fd_event_client_impl::error_handler() {
 }
 
 void generic_fd_event_client_impl::drive_handshake(int fd) {
-    // Teardown is queued, so events keep arriving until it runs. Never step a dead handshake.
-    if (m_connection_failed) {
-        return;
-    }
     if (not start_handshake_deadline()) {
         return;
     }
@@ -247,7 +259,6 @@ void generic_fd_event_client_impl::fail_connection() {
 }
 
 void generic_fd_event_client_impl::fail_connection(int error_code) {
-    m_connection_failed = true;
     m_handshake_timer.disarm();
     set_error_status_and_notify(genuine_error_code(error_code));
 }
@@ -388,13 +399,25 @@ void generic_fd_event_client_impl::prepare_io_event_handler() {
             fd = client_status->fd;
         }
 
+        // A new connection starts here: whatever was final was the previous one's. An error
+        // already present on this one (an ICMP error that landed before this handler ran) marks it
+        // final below, before its fd is registered.
+        m_connection_failed = false;
         auto error_code = m_get_error();
-        set_error_status_and_notify(error_code);
         if (not ok) {
+            // An open that failed without recording an errno (a policy that catches everything)
+            // is still a failure: reported as zero it would read as a connection that came up,
+            // with no fd, and every write would then wait for a drain that never comes.
+            set_error_status_and_notify(local_error_code(error_code));
             return sync_status::ok;
         }
+        set_error_status_and_notify(error_code);
 
         setup_io_event_handler(fd);
+        if (m_connection_failed) {
+            // Registered so the queued teardown finds it; nothing else runs on a dead connection.
+            return sync_status::ok;
+        }
         if (m_handshake_pending()) {
             // The client owes the first handshake message, so it cannot wait for readability.
             drive_handshake(fd);
@@ -432,9 +455,11 @@ void generic_fd_event_client_impl::set_on_ready_action(ready_action&& item) {
     // Assign on the loop thread, where it is read when a connection becomes ready.
     add_action([this, item = std::move(item)]() mutable {
         m_on_ready_action = std::move(item);
-        // A connected transport is not a ready client while its handshake is outstanding, and
-        // the connected status outlives a failure until the queued teardown runs.
-        if (connected_fd() >= 0 and not m_connection_failed and not m_handshake_pending()) {
+        // The connection state, not the device: a reset issued before this action runs has
+        // already set the state fresh while the retired device stays in place until the queued
+        // reopen, and a ready fired for it would be charged to the connection the reset opens. A
+        // connected transport is not a ready client while its handshake is outstanding.
+        if (current_connection_state() == utilities::connection_state::connected and not m_handshake_pending()) {
             // Explicit registration on a ready connection asks to be called now.
             m_ready_fired_generation = 0;
             maybe_fire_ready();

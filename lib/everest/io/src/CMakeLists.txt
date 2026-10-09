@@ -19,6 +19,7 @@ target_sources(everest_io
         can/socket_can_handler.cpp
         can/can_recv_filter.cpp
         can/can_payload.cpp
+        socket/io_error_record.cpp
         socket/socket.cpp
         utilities/generic_error_state.cpp
         event/fd_event_client.cpp

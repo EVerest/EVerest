@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/io_error_record.hpp>
 #include <everest/io/udp/endpoint.hpp>
 #include <everest/io/udp/udp_payload.hpp>
 #include <functional>
@@ -154,10 +155,14 @@ protected:
      */
     void discard();
 
+    /** Outcome of one send: noted for get_error(), true when the whole payload went out. */
+    bool note_tx_result(ssize_t sent, size_t size);
+
 private:
     event::unique_fd m_owned_udp_fd;
     /** errno of the last failed open or connect, reported while no socket is owned */
     int m_connect_error{0};
+    socket::io_error_record m_error;
 };
 /**
  * A basic <a href="https://man7.org/linux/man-pages/man7/udp.7.html">UDP</a> client.

@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "everest/io/udp/udp_payload.hpp"
+#include <cerrno>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/unique_fd.hpp>
 #include <everest/io/socket/socket.hpp>
@@ -21,6 +22,7 @@ namespace everest::lib::io::udp {
 
 void udp_socket_base::adopt(event::unique_fd&& fd) {
     m_owned_udp_fd = std::move(fd);
+    m_error.clear();
     m_connect_error = 0;
 }
 
@@ -32,6 +34,7 @@ void udp_socket_base::record_connect_failure(int error) {
 void udp_socket_base::discard() {
     m_owned_udp_fd.close();
     m_connect_error = 0;
+    m_error.clear();
 }
 
 bool udp_socket_base::open_as_client(std::string const& remote, uint16_t port, std::string const& device) {
@@ -91,16 +94,19 @@ int udp_socket_base::get_error() const {
     if (not m_owned_udp_fd.is_fd() and m_connect_error != 0) {
         return m_connect_error;
     }
-    return socket::get_pending_error(m_owned_udp_fd);
+    return m_error.report(m_owned_udp_fd);
+}
+
+bool udp_socket_base::note_tx_result(ssize_t sent, size_t size) {
+    m_error.note(sent < 0 ? errno : 0);
+    return sent >= 0 and static_cast<size_t>(sent) == size;
 }
 
 bool udp_socket_base::tx_impl(void const* payload, size_t size) {
     if (not is_open()) {
         return false;
     }
-    size_t nbytes = ::send(m_owned_udp_fd, payload, size, 0);
-
-    return nbytes == size;
+    return note_tx_result(::send(m_owned_udp_fd, payload, size, 0), size);
 }
 
 bool udp_socket_base::tx_impl(void const* payload, size_t size, udp_info const& destination) {
@@ -112,18 +118,15 @@ bool udp_socket_base::tx_impl(void const* payload, size_t size, udp_info const& 
     peer_addr.sin_port = destination.port;
     peer_addr.sin_addr.s_addr = destination.addr;
     peer_addr.sin_family = destination.family;
-    size_t nbytes = ::sendto(m_owned_udp_fd, payload, size, 0, (struct sockaddr*)&peer_addr, peer_addr_len);
-
-    return nbytes == size;
+    return note_tx_result(::sendto(m_owned_udp_fd, payload, size, 0, (struct sockaddr*)&peer_addr, peer_addr_len),
+                          size);
 }
 
 bool udp_socket_base::tx_impl(void const* payload, size_t size, endpoint const& destination) {
     if (not is_open()) {
         return false;
     }
-    size_t nbytes = ::sendto(m_owned_udp_fd, payload, size, 0, destination.sa(), destination.sa_len());
-
-    return nbytes == size;
+    return note_tx_result(::sendto(m_owned_udp_fd, payload, size, 0, destination.sa(), destination.sa_len()), size);
 }
 
 std::optional<udp_info> udp_socket_base::rx_impl(void* buffer, size_t buffer_size, ssize_t& payload_size) {
@@ -131,6 +134,7 @@ std::optional<udp_info> udp_socket_base::rx_impl(void* buffer, size_t buffer_siz
     struct sockaddr_in peer_addr;
     if (is_open()) {
         payload_size = ::recvfrom(m_owned_udp_fd, buffer, buffer_size, 0, (struct sockaddr*)&peer_addr, &peer_addr_len);
+        m_error.note(payload_size < 0 ? errno : 0);
         if (payload_size >= 0) {
             return udp_info{peer_addr.sin_addr.s_addr, peer_addr.sin_port, peer_addr.sin_family};
         }
