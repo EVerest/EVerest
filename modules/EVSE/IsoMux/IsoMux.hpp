@@ -30,6 +30,7 @@ namespace module {
 struct Conf {
     std::string device;
     std::string tls_security;
+    std::string tls_key_logging_path;
     bool tls_key_logging;
     int tls_timeout;
     int proxy_port_iso2;
