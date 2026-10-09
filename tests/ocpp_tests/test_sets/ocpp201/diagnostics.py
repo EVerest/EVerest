@@ -30,6 +30,7 @@ async def test_N01_get_log_cancels_running_upload(
     """N01.FR.20: a second GetLog cancels the running upload, which then reports only AcceptedCanceled."""
     logging.info("######### test_N01_get_log_cancels_running_upload #########")
 
+    first_upload_connected = asyncio.Event()
     release_first_upload = asyncio.Event()
     connections = 0
 
@@ -39,6 +40,7 @@ async def test_N01_get_log_cancels_running_upload(
         is_first = connections == 1
         await reader.read(65536)
         if is_first:
+            first_upload_connected.set()
             await release_first_upload.wait()
         writer.write(UPLOAD_OK)
         await writer.drain()
@@ -54,6 +56,9 @@ async def test_N01_get_log_cancels_running_upload(
         assert await wait_for_and_validate(
             test_utility, charge_point_v201, "LogStatusNotification", {"status": "Uploading", "requestId": 1}
         )
+        # Uploading is reported before the uploader's curl connects. Cancel only once it holds the first
+        # connection, otherwise the second upload would take it and be held instead.
+        await asyncio.wait_for(first_upload_connected.wait(), timeout=STATUS_TIMEOUT_S)
 
         history = charge_point_v201.message_history.messages
         cancel_index = len(history)
