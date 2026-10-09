@@ -3,6 +3,7 @@
 
 #include "generic/string.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
 
 namespace everest::lib::API::V1_0::types::generic {
 
@@ -15,8 +16,7 @@ std::string trimmed(std::string const& str) {
 
 std::optional<std::string> compress_json(std::string data) {
     try {
-        auto obj = nlohmann::json::parse(data);
-        return obj.dump();
+        return utilities::parse_json<nlohmann::json>(data).dump();
     } catch (...) {
     }
     return std::nullopt;

@@ -7,7 +7,9 @@
 #include <everest/logging.hpp>
 #include <fmt/format.h>
 
+#include <algorithm>
 #include <optional>
+#include <stdexcept>
 
 namespace Everest {
 
@@ -99,6 +101,41 @@ void warn_on_high_queue_size(everest::lib::util::simple_queue<ParsedMessage> con
     }
 }
 
+template <typename Key>
+void erase_handler(std::map<Key, MessageHandler::SharedTypedHandler>& data, const Key& key,
+                   const MessageHandler::SharedTypedHandler& handler) {
+    const auto it = data.find(key);
+    if (it != data.end() && it->second == handler) {
+        data.erase(it);
+    }
+}
+
+void erase_handler(MessageHandler::MultiHandlerMap& data, const std::string& topic,
+                   const MessageHandler::SharedTypedHandler& handler) {
+    const auto it = data.find(topic);
+    if (it == data.end()) {
+        return;
+    }
+    auto& topic_handlers = it->second;
+    topic_handlers.erase(std::remove(topic_handlers.begin(), topic_handlers.end(), handler), topic_handlers.end());
+    if (topic_handlers.empty()) {
+        data.erase(it);
+    }
+}
+
+// A missing or non-string msg_type denotes an external MQTT message; an unknown msg_type yields std::nullopt.
+std::optional<MqttMessageType> get_msg_type(const json& payload) {
+    const auto msg_type_it = payload.find("msg_type");
+    if (msg_type_it == payload.end() || !msg_type_it->is_string()) {
+        return MqttMessageType::ExternalMQTT;
+    }
+    try {
+        return string_to_mqtt_message_type(msg_type_it->get_ref<const std::string&>());
+    } catch (const std::runtime_error&) {
+        return std::nullopt;
+    }
+}
+
 } // namespace
 
 using everest::lib::util::bind_obj;
@@ -170,23 +207,27 @@ void MessageHandler::add(const ParsedMessage& message) {
         return;
     }
 
-    EVLOG_verbose << "Adding message to queue: " << message.topic << " with data: " << message.data;
+    EVLOG_verbose << "Adding message to queue: " << message.topic
+                  << " with data: " << message.data.dump(-1, ' ', false, json::error_handler_t::replace);
 
-    MqttMessageType msg_type = MqttMessageType::ExternalMQTT; // Default to ExternalMQTT if msg_type is not present
-
-    if (message.data.is_object()) {
-        auto msg_type_it = message.data.find("msg_type");
-        if (msg_type_it != message.data.end() && msg_type_it->is_string()) {
-            msg_type = string_to_mqtt_message_type(msg_type_it->get<std::string>());
-        }
+    const auto msg_type = get_msg_type(message.data);
+    if (!msg_type.has_value()) {
+        EVLOG_warning << "Ignoring message with unknown msg_type " << message.data.at("msg_type") << " on topic '"
+                      << message.topic << "'";
+        return;
     }
 
     if (msg_type == MqttMessageType::CmdResult || msg_type == MqttMessageType::ConfigurationResponse) {
         EVLOG_verbose << "Pushing cmd_result message to queue: " << message.data;
         result_message_queue.push(message);
     } else if (msg_type == MqttMessageType::GlobalReady) {
+        const auto data_it = message.data.find("data");
+        if (data_it == message.data.end()) {
+            EVLOG_warning << "Ignoring GlobalReady message without data on topic '" << message.topic << "'";
+            return;
+        }
         const auto topic_copy = message.topic;
-        const auto data_copy = message.data.at("data");
+        const auto& data_copy = *data_it;
 
         // Steal the previous ready thread under the monitor lock, then join it outside.
         // Using steal-then-join avoids holding the lock during join(), which could block
@@ -338,18 +379,15 @@ void MessageHandler::run_external_mqtt_worker() {
 }
 
 void MessageHandler::handle_operation_message(const std::string& topic, const json& payload) {
-    MqttMessageType msg_type = MqttMessageType::ExternalMQTT;
-
-    // Determine message type
-    auto msg_type_it = payload.find("msg_type");
-    if (msg_type_it != payload.end() && msg_type_it->is_string()) {
-        msg_type = string_to_mqtt_message_type(msg_type_it->get_ref<const std::string&>());
+    const auto msg_type = get_msg_type(payload);
+    if (!msg_type.has_value()) {
+        return;
     }
 
     auto data_it = payload.find("data");
     const json& data = (data_it != payload.end()) ? *data_it : payload;
 
-    switch (msg_type) {
+    switch (msg_type.value()) {
     case MqttMessageType::Var:
         handle_var_message(topic, data);
         break;
@@ -375,13 +413,7 @@ void MessageHandler::handle_operation_message(const std::string& topic, const js
 }
 
 void MessageHandler::handle_result_message(const std::string& topic, const json& payload) {
-    auto msg_type_it = payload.find("msg_type");
-    if (msg_type_it == payload.end()) {
-        EVLOG_warning << "Received cmd_result message without msg_type: " << payload;
-        return;
-    }
-
-    const auto msg_type = string_to_mqtt_message_type(msg_type_it->get<std::string>());
+    const auto msg_type = get_msg_type(payload);
 
     if (msg_type == MqttMessageType::CmdResult) {
         handle_cmd_result(topic, payload);
@@ -426,7 +458,7 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
     }
     case HandlerType::ConfigurationResponse: {
         auto lock = responses.handle();
-        lock->config = handler;
+        lock->config[topic] = handler;
         break;
     }
     case HandlerType::ModuleReady: {
@@ -445,17 +477,79 @@ void MessageHandler::register_handler(const std::string& topic, std::shared_ptr<
     }
 }
 
+void MessageHandler::unregister_handler(const std::string& topic, const std::shared_ptr<TypedHandler>& handler) {
+    if (!handler) {
+        return;
+    }
+    switch (handler->type) {
+    case HandlerType::Call: {
+        auto lock = handlers.handle();
+        erase_handler(lock->cmd, topic, handler);
+        break;
+    }
+    case HandlerType::Result: {
+        auto lock = responses.handle();
+        erase_handler(lock->cmd, handler->id, handler);
+        break;
+    }
+    case HandlerType::SubscribeVar: {
+        auto lock = handlers.handle();
+        erase_handler(lock->var, topic, handler);
+        break;
+    }
+    case HandlerType::SubscribeError: {
+        auto lock = handlers.handle();
+        erase_handler(lock->error, topic, handler);
+        break;
+    }
+    case HandlerType::ExternalMQTT: {
+        auto lock = handlers.handle();
+        erase_handler(lock->external_var, topic, handler);
+        break;
+    }
+    case HandlerType::ConfigurationRequest: {
+        auto lock = handlers.handle();
+        erase_handler(lock->configuration_request, topic, handler);
+        break;
+    }
+    case HandlerType::ConfigurationResponse: {
+        auto lock = responses.handle();
+        erase_handler(lock->config, topic, handler);
+        break;
+    }
+    case HandlerType::ModuleReady: {
+        auto lock = handlers.handle();
+        erase_handler(lock->module_ready, topic, handler);
+        break;
+    }
+    case HandlerType::GlobalReady: {
+        auto lock = handlers.handle();
+        if (lock->global_ready == handler) {
+            lock->global_ready.reset();
+        }
+        break;
+    }
+    default:
+        break;
+    }
+}
+
 // Private message handler methods
 void MessageHandler::handle_var_message(const std::string& topic, const json& data) {
+    const auto data_it = data.find("data");
+    if (data_it == data.end()) {
+        EVLOG_warning << "Ignoring var message without data on topic '" << topic << "'";
+        return;
+    }
+
     std::vector<SharedTypedHandler> handler_copy;
     {
         auto handle = handlers.handle();
         handler_copy = copy_shared_handler(handle->var, topic);
     }
 
-    const auto& json_data = data.at("data");
     for (const auto& handler : handler_copy) {
-        (*handler->handler)(topic, json_data);
+        (*handler->handler)(topic, *data_it);
     }
 }
 
@@ -520,8 +614,14 @@ void MessageHandler::handle_module_ready_message(const std::string& topic, const
 }
 
 void MessageHandler::handle_cmd_result(const std::string& topic, const json& payload) {
-    const auto& data = payload.at("data").at("data");
-    const auto& id = data.at("id").get<std::string>();
+    static const json::json_pointer data_ptr{"/data/data"};
+    static const json::json_pointer id_ptr{"/data/data/id"};
+    if (!payload.contains(id_ptr) || !payload.at(id_ptr).is_string()) {
+        EVLOG_warning << "Ignoring cmd result without id on topic '" << topic << "'";
+        return;
+    }
+    const auto& data = payload.at(data_ptr);
+    const auto& id = payload.at(id_ptr).get_ref<const std::string&>();
 
     std::shared_ptr<TypedHandler> handler_copy;
     {
@@ -539,16 +639,27 @@ void MessageHandler::handle_cmd_result(const std::string& topic, const json& pay
 }
 
 void MessageHandler::handle_get_config_response(const std::string& topic, const json& payload) {
+    const auto data_it = payload.find("data");
+    if (data_it == payload.end()) {
+        EVLOG_warning << "Ignoring configuration response without data on topic '" << topic << "'";
+        return;
+    }
+
+    // Each request waits for exactly one response, so the handler is consumed by the first response on its topic.
     std::shared_ptr<TypedHandler> handler_copy;
     {
         auto handle = responses.handle();
-        if (handle->config) {
-            handler_copy = handle->config;
+        const auto it = handle->config.find(topic);
+        if (it != handle->config.end()) {
+            handler_copy = it->second;
+            handle->config.erase(it);
         }
     }
-    if (handler_copy) {
-        (*handler_copy->handler)(topic, payload.at("data"));
+    if (!handler_copy) {
+        EVLOG_debug << "Ignoring configuration response without pending request on topic '" << topic << "'";
+        return;
     }
+    (*handler_copy->handler)(topic, *data_it);
 }
 
 } // namespace Everest

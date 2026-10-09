@@ -26,6 +26,7 @@
 #include <everest/io/mqtt/mosquitto_cpp.hpp>
 #include <everest/io/mqtt/mqtt_client.hpp>
 #include <everest/logging.hpp>
+#include <everest/util/json/nesting_depth.hpp>
 
 #include <utils/mqtt_abstraction_impl.hpp>
 
@@ -329,12 +330,12 @@ const std::string& MQTTAbstractionImpl::get_external_prefix() const {
 
 nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
     BOOST_LOG_FUNCTION();
-    std::promise<json> res_promise;
-    std::future<json> res_future = res_promise.get_future();
+    // Shared with the handler, which may still be running when this function returns on timeout.
+    const auto res_promise = std::make_shared<std::promise<json>>();
+    std::future<json> res_future = res_promise->get_future();
 
-    // Why repsonse by value, wouldn't a reference do?
-    const auto res_handler = [&res_promise](const std::string& /*topic*/, json response) {
-        res_promise.set_value(std::move(response));
+    const auto res_handler = [res_promise](const std::string& /*topic*/, json response) {
+        res_promise->set_value(std::move(response));
     };
 
     // FIXME: use configurable HandlerType?
@@ -433,12 +434,19 @@ void MQTTAbstractionImpl::handle_mqtt_message(const Message& message) {
         if (topic_view.size() >= mqtt_everest_prefix_view.size() &&
             topic_view.compare(0, mqtt_everest_prefix_view.size(), mqtt_everest_prefix_view) == 0) {
             EVLOG_verbose << fmt::format("topic {} starts with {}", topic, mqtt_everest_prefix);
+            if (everest::lib::util::exceeds_json_nesting_depth(payload, MAX_JSON_NESTING_DEPTH)) {
+                EVLOG_warning << fmt::format("Ignoring message on topic '{}' nested deeper than {} levels", topic,
+                                             MAX_JSON_NESTING_DEPTH);
+                return;
+            }
+            json data;
             try {
-                this->message_handler.add(ParsedMessage{std::move(topic), json::parse(payload.begin(), payload.end())});
-            } catch (nlohmann::detail::parse_error& e) {
+                data = json::parse(payload.begin(), payload.end());
+            } catch (const nlohmann::json::exception&) {
                 EVLOG_warning << fmt::format("Could not decode json for incoming topic '{}': {}", topic, payload);
                 return;
             }
+            this->message_handler.add(ParsedMessage{topic, std::move(data)});
         } else {
             EVLOG_debug << fmt::format("Message parsing for topic '{}' not implemented. Wrapping in json object.",
                                        topic);
@@ -512,7 +520,10 @@ void MQTTAbstractionImpl::unregister_handler(const std::string& topic, const Tok
 
     EVLOG_verbose << fmt::format("Unregistering handler {} for {}", fmt::ptr(&token), topic);
 
-    if (this->mqtt_is_connected) {
+    this->message_handler.unregister_handler(topic, token);
+
+    // cmd response topics a shared by all calls of that cmd and stay subscribed
+    if (this->mqtt_is_connected && token && token->type != HandlerType::Result) {
         this->unsubscribe(topic);
     }
 }

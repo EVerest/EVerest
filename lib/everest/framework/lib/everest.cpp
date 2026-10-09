@@ -40,6 +40,64 @@ const auto remote_cmd_res_timeout_step = std::chrono::seconds(1);
 const std::array<std::string_view, 3> TELEMETRY_RESERVED_KEYS = {{"connector_id"}};
 constexpr auto ensure_ready_timeout_ms = 100;
 
+namespace {
+CmdResultError parse_cmd_result_error(const json& error) {
+    try {
+        return error.get<CmdResultError>();
+    } catch (const std::exception& e) {
+        return {CmdErrorType::MessageParsingError, fmt::format("Malformed error in command result: {}", e.what()),
+                nullptr};
+    }
+}
+
+std::optional<std::string> schema_validation_error(Config& config, const json& schema, const json& data) {
+    try {
+        json_validator validator(
+            [&config](const json_uri& uri, json& loaded_schema) { config.ref_loader(uri, loaded_schema); },
+            format_checker);
+        validator.set_root_schema(schema);
+        validator.validate(data);
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> cmd_args_validation_error(Config& config, const json& cmd_definition, const json& args) {
+    if (!cmd_definition.contains("arguments")) {
+        return std::nullopt;
+    }
+    for (const auto& argument : cmd_definition.at("arguments").items()) {
+        if (!args.contains(argument.key())) {
+            return fmt::format("Missing argument {}", argument.key());
+        }
+        auto error = schema_validation_error(config, argument.value(), args.at(argument.key()));
+        if (error.has_value()) {
+            return error;
+        }
+    }
+    return std::nullopt;
+}
+
+// The origin becomes the last level of the response topic, so it must not contain MQTT wildcards.
+bool is_valid_cmd_origin(const json& origin) {
+    if (!origin.is_string()) {
+        return false;
+    }
+    const auto& value = origin.get_ref<const std::string&>();
+    return !value.empty() && value.find_first_of("+#") == std::string::npos;
+}
+
+std::optional<error::Error> parse_error(const std::string& topic, const json& data) {
+    try {
+        return data.get<error::Error>();
+    } catch (const std::exception& e) {
+        EVLOG_warning << fmt::format("Ignoring malformed error on topic '{}': {}", topic, e.what());
+        return std::nullopt;
+    }
+}
+} // namespace
+
 Everest::Everest(std::string module_id_, const Config& config_, bool validate_data_with_schema,
                  std::shared_ptr<MQTTAbstraction> mqtt_abstraction, const std::string& telemetry_prefix,
                  bool telemetry_enabled, bool forward_exceptions) :
@@ -409,11 +467,11 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
 
     const std::string call_id = everest::helpers::get_uuid();
 
-    std::promise<CmdResult> res_promise;
-    std::future<CmdResult> res_future = res_promise.get_future();
+    const auto res_promise = std::make_shared<std::promise<CmdResult>>();
+    std::future<CmdResult> res_future = res_promise->get_future();
 
-    const auto res_handler = [this, &res_promise, call_id, connection, cmd_name, return_type](const std::string&,
-                                                                                              json data) {
+    const auto res_handler = [this, res_promise, call_id, connection, cmd_name, return_type](const std::string&,
+                                                                                             json data) {
         const auto& data_id = data.at("id");
         if (data_id != call_id) {
             EVLOG_debug << fmt::format("RES: data_id != call_id ({} != {})", data_id, call_id);
@@ -421,17 +479,17 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
         }
 
         if (data.contains("error")) {
+            auto error = parse_cmd_result_error(data.at("error"));
             EVLOG_error << fmt::format(
-                "{}: {} during command call: {}->{}()", data.at("error").at(conversions::ERROR_TYPE).get<std::string>(),
-                data.at("error").at(conversions::ERROR_MSG),
+                "{}: {} during command call: {}->{}()", conversions::cmd_error_type_to_string(error.event), error.msg,
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name);
-            res_promise.set_value(CmdResult{std::nullopt, data.at("error")});
+            res_promise->set_value(CmdResult{std::nullopt, std::move(error)});
         } else {
             EVLOG_verbose << fmt::format(
                 "Incoming res {} for {}->{}()", data_id,
                 this->config.printable_identifier(connection.module_id, connection.implementation_id), cmd_name);
 
-            res_promise.set_value(CmdResult{std::move(data["retval"]), std::nullopt});
+            res_promise->set_value(CmdResult{std::move(data["retval"]), std::nullopt});
         }
     };
 
@@ -458,6 +516,8 @@ json Everest::call_cmd(const Requirement& req, const std::string& cmd_name, cons
     } while (!this->shutdown_processed &&
              (res_future_status == std::future_status::deferred ||
               (res_future_status == std::future_status::timeout && std::chrono::steady_clock::now() < res_wait)));
+
+    this->mqtt_abstraction->unregister_handler(cmd_response_topic, res_token);
 
     if (res_future_status != std::future_status::ready && this->shutdown_processed) {
         // Once the shutdown handler has returned, module communication is stopped (MQTT is
@@ -578,22 +638,33 @@ void Everest::subscribe_var(const Requirement& req, const std::string& var_name,
         EVLOG_verbose << fmt::format(
             "Incoming {}->{}", this->config.printable_identifier(requirement_module_id, requirement_impl_id), var_name);
 
-        if (this->validate_data_with_schema) {
-            // check data and ignore it if not matching (publishing it should have been prohibited already)
-            try {
-                json_validator validator(
-                    [this](const json_uri& uri, json& schema) { this->config.ref_loader(uri, schema); },
-                    format_checker);
-                validator.set_root_schema(requirement_manifest_vardef);
-                validator.validate(data);
-            } catch (const std::exception& e) {
+        const auto is_invalid = [this, &requirement_manifest_vardef, &var_name, &data]() {
+            const auto validation_error = schema_validation_error(this->config, requirement_manifest_vardef, data);
+            if (validation_error.has_value()) {
                 EVLOG_warning << fmt::format("Ignoring incoming var '{}' because not matching manifest schema: {}",
-                                             var_name, e.what());
+                                             var_name, validation_error.value());
+            }
+            return validation_error.has_value();
+        };
+
+        if (this->validate_data_with_schema) {
+            if (is_invalid()) {
                 return;
             }
+            callback(data);
+            return;
         }
 
-        callback(data);
+        try {
+            callback(data);
+        } catch (...) {
+            // Invalid data makes the generated conversion throw before any module code runs, so the exception is
+            // caused by the input and must not be propagated as a module failure.
+            if (is_invalid()) {
+                return;
+            }
+            throw;
+        }
     };
 
     const auto var_topic =
@@ -639,8 +710,12 @@ void Everest::subscribe_error(const Requirement& req, const error::ErrorType& er
     }
 
     const auto error_handler = [this, requirement_module_id, requirement_impl_id, error_type, raise_callback,
-                                clear_callback](const std::string&, json const& data) {
-        auto error = data.get<error::Error>();
+                                clear_callback](const std::string& topic, json const& data) {
+        const auto parsed_error = parse_error(topic, data);
+        if (!parsed_error.has_value()) {
+            return;
+        }
+        const auto& error = parsed_error.value();
         if (error.type != error_type) {
             // error type doesn't match, ignoring
             return;
@@ -742,8 +817,12 @@ void Everest::subscribe_global_all_errors(const error::ErrorCallback& raise_call
         return;
     }
 
-    const auto error_handler = [this, raise_callback, clear_callback](const std::string&, json const& data) {
-        error::Error error = data.get<error::Error>();
+    const auto error_handler = [this, raise_callback, clear_callback](const std::string& topic, json const& data) {
+        const auto parsed_error = parse_error(topic, data);
+        if (!parsed_error.has_value()) {
+            return;
+        }
+        const auto& error = parsed_error.value();
         switch (error.state) {
         case error::State::Active:
             EVLOG_debug << fmt::format(
@@ -815,8 +894,8 @@ UnsubscribeToken Everest::provide_external_mqtt_handler(const std::string& topic
         topic, external_topic, [handler, external_topic](const std::string&, json const& data) {
             EVLOG_verbose << fmt::format("Incoming external mqtt data for topic '{}'...", external_topic);
             if (!data.is_string()) {
-                EVLOG_AND_THROW(
-                    EverestInternalError("External mqtt result is not a string (that should never happen)"));
+                EVLOG_warning << fmt::format("Ignoring non-string external mqtt data for topic '{}'", external_topic);
+                return;
             }
             handler(data.get<std::string>());
         });
@@ -977,43 +1056,37 @@ void Everest::provide_cmd(const std::string& impl_id, const std::string& cmd_nam
                                      this->config.printable_identifier(this->module_id, impl_id), cmd_name,
                                      fmt::join(arg_names, ","));
 
-        json res_data = json({});
-        try {
-            res_data["id"] = data.at("id");
-        } catch (const json::exception& e) {
-            throw CmdError("Command did not contain id");
+        const auto id_it = data.find("id");
+        const auto origin_it = data.find("origin");
+        if (id_it == data.end() || origin_it == data.end() || !is_valid_cmd_origin(*origin_it)) {
+            EVLOG_warning << fmt::format("Ignoring incoming cmd '{}' without id or valid origin", cmd_name);
+            return;
         }
+        static const json no_args;
+        const auto args_it = data.find("args");
+        const json& args = (args_it != data.end()) ? *args_it : no_args;
+
+        json res_data = json({});
+        res_data["id"] = *id_it;
         std::optional<CmdResultError> error;
 
-        // check data and ignore it if not matching (publishing it should have
-        // been prohibited already)
-        if (this->validate_data_with_schema) {
-            try {
-                for (const auto& arg_name : arg_names) {
-                    if (!data.at("args").contains(arg_name)) {
-                        EVLOG_AND_THROW(std::invalid_argument(
-                            fmt::format("Missing argument {} for {}!", arg_name,
-                                        this->config.printable_identifier(this->module_id, impl_id))));
-                    }
-                    json_validator validator(
-                        [this](const json_uri& uri, json& schema) { this->config.ref_loader(uri, schema); },
-                        format_checker);
-                    validator.set_root_schema(cmd_definition.at("arguments").at(arg_name));
-                    validator.validate(data.at("args").at(arg_name));
-                }
-            } catch (const std::exception& e) {
+        const auto reject_invalid_args = [this, &cmd_name, &cmd_definition, &args, &error]() {
+            const auto validation_error = cmd_args_validation_error(this->config, cmd_definition, args);
+            if (validation_error.has_value()) {
                 EVLOG_warning << fmt::format("Ignoring incoming cmd '{}' because not matching manifest schema: {}",
-                                             cmd_name, e.what());
-                error = CmdResultError{CmdErrorType::SchemaValidationError, e.what()};
+                                             cmd_name, validation_error.value());
+                error = CmdResultError{CmdErrorType::SchemaValidationError, validation_error.value()};
             }
-        }
+        };
 
-        // publish results
+        if (this->validate_data_with_schema) {
+            reject_invalid_args();
+        }
 
         // call real cmd handler
         try {
             if (not error.has_value()) {
-                res_data["retval"] = handler(data.at("args"));
+                res_data["retval"] = handler(args);
             }
         } catch (const MessageParsingError& e) {
             error = CmdResultError{CmdErrorType::MessageParsingError, e.what(), std::current_exception()};
@@ -1035,6 +1108,12 @@ void Everest::provide_cmd(const std::string& impl_id, const std::string& cmd_nam
                                        this->config.printable_identifier(this->module_id, impl_id), cmd_name,
                                        fmt::join(arg_names, ","));
             error = CmdResultError{CmdErrorType::HandlerException, "Unknown exception", std::current_exception()};
+        }
+
+        // Invalid arguments make the generated argument conversion throw before any module code runs, so the
+        // exception is caused by the input and must not be re-thrown as a module failure.
+        if (error.has_value() && error->event == CmdErrorType::HandlerException && !this->validate_data_with_schema) {
+            reject_invalid_args();
         }
 
         // check retval against manifest
@@ -1067,7 +1146,7 @@ void Everest::provide_cmd(const std::string& impl_id, const std::string& cmd_nam
 
         MqttMessagePayload payload{MqttMessageType::CmdResult, res_publish_data};
         const auto final_cmd_response_topic =
-            fmt::format("{}/response/{}", cmd_topic, data.at("origin").get<std::string>());
+            fmt::format("{}/response/{}", cmd_topic, origin_it->get_ref<const std::string&>());
         this->mqtt_abstraction->publish(final_cmd_response_topic, payload);
 
         // re-throw exception caught in handler
@@ -1270,9 +1349,20 @@ std::string Everest::check_external_mqtt(const std::string& topic) {
 }
 
 UnsubscribeToken Everest::create_external_handler(const std::string& topic, const std::string& external_topic,
-                                                  const StringPairHandler& handler) {
+                                                  const Handler& handler) {
+    const auto guarded_handler = [handler](const std::string& incoming_topic, const json& data) {
+        try {
+            handler(incoming_topic, data);
+        } catch (const std::exception& e) {
+            EVLOG_error << fmt::format("Exception in external MQTT handler for topic '{}', dropping message: {}",
+                                       incoming_topic, e.what());
+        } catch (...) {
+            EVLOG_error << fmt::format("Unknown exception in external MQTT handler for topic '{}', dropping message",
+                                       incoming_topic);
+        }
+    };
     const auto token =
-        std::make_shared<TypedHandler>(topic, HandlerType::ExternalMQTT, std::make_shared<Handler>(handler));
+        std::make_shared<TypedHandler>(topic, HandlerType::ExternalMQTT, std::make_shared<Handler>(guarded_handler));
     mqtt_abstraction->register_handler(external_topic, token, QOS::QOS0);
     return [this, external_topic, token]() { this->mqtt_abstraction->unregister_handler(external_topic, token); };
 }

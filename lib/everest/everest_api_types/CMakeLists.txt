@@ -158,6 +158,7 @@ endif()
 
 target_link_libraries(everest_api_types
   PRIVATE nlohmann_json::nlohmann_json
+  PRIVATE everest::util
 )
 
 if (EVEREST_API_JSON_INDENT)

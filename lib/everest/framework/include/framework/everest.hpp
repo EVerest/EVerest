@@ -301,11 +301,12 @@ private:
     std::string check_external_mqtt(const std::string& topic);
 
     ///
-    /// \brief Create external MQTT with an unsubscribe token
+    /// \brief Create external MQTT with an unsubscribe token. Exceptions thrown by \p handler are logged and the
+    /// message is dropped, so that untrusted external payloads cannot terminate the module.
     /// \returns the unsubscribe token
     ///
     UnsubscribeToken create_external_handler(const std::string& topic, const std::string& external_topic,
-                                             const StringPairHandler& handler);
+                                             const Handler& handler);
 };
 
 ///

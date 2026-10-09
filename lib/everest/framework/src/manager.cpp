@@ -1680,6 +1680,11 @@ void Manager::handle_start_modules(const RuntimeContext& ctx) {
                                               mqtt_everest_prefix = ms.mqtt_settings.everest_prefix, &status_fifo,
                                               retain_topics](const std::string&, const nlohmann::json& json) {
             EVLOG_debug << fmt::format("received module ready signal for module: {}({})", module_id, json.dump());
+            if (not json.is_boolean()) {
+                EVLOG_warning << fmt::format("Ignoring non-boolean ready signal for module {}: {}", module_id,
+                                             json.dump());
+                return;
+            }
             bool all_modules_ready = false;
             std::size_t modules_spawned = 0;
             const std::size_t modules_ready_count = [&] {

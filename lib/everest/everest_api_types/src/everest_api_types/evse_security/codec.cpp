@@ -96,63 +96,43 @@ std::ostream& operator<<(std::ostream& os, GetCertificateInfoResult const& val) 
 }
 
 template <> CaCertificateType deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    CaCertificateType obj = data;
-    return obj;
+    return utilities::parse_json<CaCertificateType>(val);
 }
 
 template <> LeafCertificateType deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    LeafCertificateType obj = data;
-    return obj;
+    return utilities::parse_json<LeafCertificateType>(val);
 }
 
 template <> EncodingFormat deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    EncodingFormat obj = data;
-    return obj;
+    return utilities::parse_json<EncodingFormat>(val);
 }
 
 template <> GetLeafCertificateInfoRequest deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    GetLeafCertificateInfoRequest obj = data;
-    return obj;
+    return utilities::parse_json<GetLeafCertificateInfoRequest>(val);
 }
 
 template <> GetCertificateInfoStatus deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    GetCertificateInfoStatus obj = data;
-    return obj;
+    return utilities::parse_json<GetCertificateInfoStatus>(val);
 }
 
 template <> HashAlgorithm deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    HashAlgorithm obj = data;
-    return obj;
+    return utilities::parse_json<HashAlgorithm>(val);
 }
 
 template <> CertificateHashData deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    CertificateHashData obj = data;
-    return obj;
+    return utilities::parse_json<CertificateHashData>(val);
 }
 
 template <> CertificateOCSP deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    CertificateOCSP obj = data;
-    return obj;
+    return utilities::parse_json<CertificateOCSP>(val);
 }
 
 template <> CertificateInfo deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    CertificateInfo obj = data;
-    return obj;
+    return utilities::parse_json<CertificateInfo>(val);
 }
 
 template <> GetCertificateInfoResult deserialize(std::string_view val) {
-    auto data = json::parse(val.begin(), val.end());
-    GetCertificateInfoResult obj = data;
-    return obj;
+    return utilities::parse_json<GetCertificateInfoResult>(val);
 }
 
 } // namespace everest::lib::API::V1_0::types::evse_security
