@@ -7,6 +7,14 @@ set(GENERATED_DIR "${CMAKE_CURRENT_SOURCE_DIR}/generated")
 setup_grpc()
 
 if (ENABLE_GRPC_GENERATOR)
+    ev_is_python_venv_active(
+        RESULT_VAR IS_PYTHON_VENV_ACTIVE
+    )
+    if (IS_PYTHON_VENV_ACTIVE)
+        ev_install_pip_package(NAME grpcio VERSION 1.71.0)
+        ev_install_pip_package(NAME grpcio-tools VERSION 1.71.0)
+    endif()
+
     generate_cpp_from_protobuf()
 endif()
 

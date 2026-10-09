@@ -6,12 +6,12 @@ project(everest-core
 	LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.7
+find_package(everest-cmake 0.8.1
     COMPONENTS bundling
     PATHS ../everest-cmake
     NO_DEFAULT_PATH
 )
-find_package(everest-cmake 0.7
+find_package(everest-cmake 0.8.1
     COMPONENTS bundling
 )
 
@@ -21,7 +21,7 @@ if (NOT everest-cmake_FOUND)
     FetchContent_Declare(
         everest-cmake
         GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        29fdd49cb9db7c4867f8e6aac6d810e79ad5b2a6 # v0.7.0
+        GIT_TAG        8290dee47445c15f75ac3a5b4f971d6ddd4bef29 # v0.8.1 (not yet tagged)
     )
     FetchContent_MakeAvailable(everest-cmake)
     set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
@@ -261,20 +261,4 @@ if(EVEREST_CORE_BUILD_TESTING AND NOT EVEREST_LIBS_ONLY)
     add_subdirectory(tests)
 else()
     message("Not running unit tests")
-endif()
-
-if(NOT EVEREST_LIBS_ONLY)
-    # convenience target for integration tests
-    add_custom_target(install_everest_testing
-        COMMAND
-            if [ -z "${CPM_PACKAGE_everest-utils_SOURCE_DIR}" ] \;
-            then echo "Could not determine location of everest-utils, please install everest-testing manually!" \;
-            else echo "Found everest-utils at ${CPM_PACKAGE_everest-utils_SOURCE_DIR}" \;
-                 ${Python3_EXECUTABLE} -m pip install -e "${CPM_PACKAGE_everest-utils_SOURCE_DIR}/everest-testing" \;
-            fi\;
-        DEPENDS
-            everestpy_pip_install_dist
-        COMMENT
-            "Installing dependencies for testing EVerest"
-    )
 endif()
