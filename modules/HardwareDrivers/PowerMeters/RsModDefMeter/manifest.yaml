@@ -1,0 +1,49 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright 2026 ModDefOrg and Contributors to EVerest
+
+description: >-
+  Generic ModDef-driven powermeter. Loads a ModDef device profile and drives the
+  EVerest powermeter interface from it: publishes the `powermeter` variable from
+  measurand-tagged points, and (for profiles that declare transaction commands)
+  implements signed OCMF start/stop transactions via the ModDef command construct.
+  Modbus RTU access goes through a required serial_communication_hub.
+config:
+  profile:
+    description: >-
+      Path to the ModDef device profile to drive. Supports the binary (.moddef),
+      YAML (.moddef.yaml) and JSON (.moddef.json) forms; the format is chosen by
+      the file extension.
+    type: string
+  device_id:
+    description: >-
+      Selects the device within the profile when it declares more than one.
+      Empty string selects the first/only device.
+    type: string
+    default: ""
+  powermeter_device_id:
+    description: Modbus unit id of the meter on the serial bus (target_device_id)
+    type: integer
+    minimum: 0
+    maximum: 255
+    default: 1
+  read_meter_values_interval_ms:
+    description: How often to read and publish the powermeter variable, in milliseconds
+    type: integer
+    default: 5000
+    minimum: 1000
+  communication_errors_threshold:
+    description: Consecutive read failures tolerated before CommunicationFault is raised
+    type: integer
+    default: 10
+provides:
+  meter:
+    description: Generic ModDef-driven powermeter implementation
+    interface: powermeter
+requires:
+  serial_comm_hub:
+    interface: serial_communication_hub
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - ModDefOrg
+enable_external_mqtt: false
