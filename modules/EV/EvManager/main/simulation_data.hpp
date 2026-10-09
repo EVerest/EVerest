@@ -64,6 +64,7 @@ struct SimulationData {
 
     double battery_charge_wh{0};
     double battery_capacity_wh{0};
+    bool full_soc_pause_requested{false};
 
     types::board_support_common::Event actual_bsp_event{types::board_support_common::Event::Disconnected};
 };
