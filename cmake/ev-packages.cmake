@@ -25,3 +25,13 @@ foreach(_pkg IN LISTS _everest_packages)
         set(EVEREST_TEST_${_PKG} OFF)
     endif()
 endforeach()
+
+# an installed iso15118, ocpp or core brings its own installed base; mixing it with this tree's base is refused
+if(EVEREST_BUILD_BASE AND EVEREST_BUILD_RUNTIME)
+    foreach(_pkg IN ITEMS iso15118 ocpp core)
+        if(NOT _pkg IN_LIST EVEREST_PACKAGES)
+            message(FATAL_ERROR "EVEREST_PACKAGES: base is built here, so ${_pkg} must be built here too "
+                "(an installed ${_pkg} would bring its own base); add ${_pkg} or take base from the installed prefix as well")
+        endif()
+    endforeach()
+endif()
