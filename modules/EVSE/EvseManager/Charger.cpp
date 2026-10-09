@@ -251,6 +251,9 @@ void Charger::run_state_machine() {
                 shared_context.legacy_wakeup_done = false;
                 shared_context.hlc_d20_active = false;
                 cp_state_X1();
+                // The next PWM enable follows a plug-in (IEC 61851-1 Table A.6 seq. 1/2), not seq. 9.2: the EV has been
+                // in state A and no minimum time in X1 applies.
+                internal_context.pwm_switched_off_at.reset();
                 deauthorize_internal();
                 shared_context.flag_transaction_active = false;
                 clear_errors_on_unplug();

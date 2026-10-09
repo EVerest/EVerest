@@ -1086,6 +1086,29 @@ TEST_F(ChargerMinX1Test, PrepareChargingPowerToggleWaitsInX1) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
 }
 
+TEST_F(ChargerMinX1Test, ReplugAfterUnplugEnablesPwmImmediately) {
+    // Charging with PWM on; the EV is unplugged: Idle switches to X1
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.flag_ev_plugged_in = false;
+    charger->get_internal_context().last_state_detect_state_change = Charger::EvseState::Finished;
+    charger->current_state(Charger::EvseState::Idle);
+    charger->run_state_machine();
+    ASSERT_FALSE(pwm_on());
+    EXPECT_FALSE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Replug within 3 s: the new session enables PWM at once, seq. 9.2 does not apply after state A
+    ctx.flag_ev_plugged_in = true;
+    ctx.max_current_cable = 32.;
+    ctx.flag_authorized = true;
+    ctx.flag_transaction_active = true;
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
 TEST_F(ChargerMinX1Test, EvPauseKeepsPwmOffForThreeSeconds) {
     // Charging with PWM on and the relays closed
     auto& ctx = charger->get_shared_context();
