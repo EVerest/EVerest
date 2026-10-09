@@ -97,6 +97,10 @@ have a flag to configure whether it uses the `default` provider or the `custom` 
 
 <b>Note:</b> The custom provider name has to be defined [here](https://github.com/EVerest/libevse-security/blob/4afe644cb62d0bf06fff1e2ca5d2dbc489342e0c/CMakeLists.txt#L32). Change the name from "custom_provider" to the required provider.
 
+## CTL configuration
+
+The CTL directory is not set by defaul, to point to a ctl add the directory to the active config with the line:  ctl_directory: "path/to/ctl/dir" 
+
 ## Garbage Collect
 
 By default a garbage collect function will run and delete all expired leaf certificates and their respective keys, only if the certificate storage is full. A minimum count of leaf certificates will be kept even if they are expired. 
