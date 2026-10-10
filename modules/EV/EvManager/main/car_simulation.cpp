@@ -444,6 +444,7 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
     // Clear the per-session latches; a stale one short-circuits the matching iso_wait_* command.
     sim_data.iso_pwr_ready = false;
     sim_data.iso_stopped = false;
+    sim_data.power_delivery_stopped = false;
     sim_data.iso_charger_paused = false;
     sim_data.dc_power_on = false;
     sim_data.stop_hold_ticks_left.reset();
@@ -532,18 +533,16 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         return true;
     }
 
-    // A stop is already underway. The pilot must stay in C until the PowerDelivery(stop) /
-    // SessionStop exchange has completed -- dropping C while the EVSE still has
-    // power enabled is an emergency C-exit, not a stop (on MCS it latches a CEFAULT the EVSE
-    // can only clear by unplugging). The active flag also lets a following
-    // iso_wait_v2g_session_stopped observe the completed session.
+    // ISO 15118-2 / DIN release CP C after PowerDelivery(Stop) is confirmed, before welding detection.
+    // Without that signal (including MCS / -20), keep C through the V2G wind-down to avoid an
+    // emergency C-exit while the EVSE still has power enabled.
     if (sim_data.stop_hold_ticks_left.has_value()) {
         auto& hold_ticks_left = sim_data.stop_hold_ticks_left.value();
         hold_ticks_left -= 1;
-        if (sim_data.v2g_session_active and hold_ticks_left > 0) {
+        if (sim_data.v2g_session_active and not sim_data.power_delivery_stopped and hold_ticks_left > 0) {
             return false;
         }
-        if (sim_data.v2g_session_active) {
+        if (sim_data.v2g_session_active and not sim_data.power_delivery_stopped) {
             EVLOG_warning << "V2G session did not wind down within the stop hold budget - "
                              "dropping CP to B with the session still open";
         }
@@ -569,12 +568,6 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.stop_hold_ticks_left = static_cast<size_t>(constants::STOP_HOLD_BUDGET_MS / loop_interval_ms) + 1;
         return false;
     }
-    // not iso_charger_paused: see iso_dc_power_on.
-    if (not sim_data.v2g_session_active and not sim_data.iso_charger_paused) {
-        // Session already ended: nothing left to wait out. Bounded by the tick budget above.
-        return false;
-    }
-
     if (sim_data.iso_charger_paused) {
         arm_resume_after_charger_pause();
         return false;

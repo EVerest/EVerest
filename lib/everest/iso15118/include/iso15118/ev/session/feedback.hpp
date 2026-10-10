@@ -50,6 +50,8 @@ struct Callbacks {
     // time). Distinct from stopped, which fires on every session end.
     std::function<void()> timed_out;
     std::function<void()> stopped;
+    // ISO 15118-2 / DIN: the SECC accepted PowerDelivery(Stop); CP may return to B.
+    std::function<void()> power_delivery_stopped;
     std::function<void(const d20::EVSESessionInfo&)> evse_session_info;
     std::function<void()> ev_power_ready;
     std::function<void()> dc_power_on;
@@ -97,6 +99,7 @@ public:
                                 const std::string& emaid) const;
     void timed_out() const;
     void stopped() const;
+    void power_delivery_stopped() const;
     void evse_session_info(const d20::EVSESessionInfo&) const;
     void ev_power_ready() const;
     void dc_power_on() const;

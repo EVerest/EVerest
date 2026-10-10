@@ -54,7 +54,7 @@ struct SimulationData {
     std::optional<size_t> sleep_ticks_left{};
     std::optional<size_t> cp_c_pulse_ticks_left{};
     // Set once a stop has been requested (own timer or stop_from_charger): the pilot is held
-    // in C until the V2G session is inactive, bounded by this countdown.
+    // in C until PowerDelivery(Stop) is confirmed or V2G ends, bounded by this countdown.
     std::optional<size_t> stop_hold_ticks_left{};
     // Set once that hold releases: the pilot stays in B for this countdown before the stop completes.
     std::optional<size_t> stop_dwell_ticks_left{};
@@ -63,6 +63,7 @@ struct SimulationData {
 
     bool v2g_session_active{false};
     bool iso_stopped{false};
+    bool power_delivery_stopped{false};
     bool iso_charger_paused{false};
     size_t evse_maxcurrent{0};
     size_t max_current{0};

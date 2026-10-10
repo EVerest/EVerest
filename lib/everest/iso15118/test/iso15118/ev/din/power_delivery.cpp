@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
 
@@ -73,7 +74,9 @@ SCENARIO("DIN 70121 EV PowerDelivery reports ChargingComplete at a full battery"
 }
 
 SCENARIO("DIN 70121 EV PowerDelivery(Start) transitions to CurrentDemand") {
-    const ev::feedback::Callbacks callbacks{};
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
     PrimedState<State> primed{callbacks, seed_charging, State::Phase::Start};
 
     primed.handle_response(ok_response(header()));
@@ -82,29 +85,38 @@ SCENARIO("DIN 70121 EV PowerDelivery(Start) transitions to CurrentDemand") {
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == StateID::CurrentDemand);
     REQUIRE(primed.take_requests().get<message_din::CurrentDemandRequest>().has_value());
+    REQUIRE(stopped == 0);
 }
 
 SCENARIO("DIN 70121 EV PowerDelivery(Stop) transitions to WeldingDetection") {
-    const ev::feedback::Callbacks callbacks{};
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
     PrimedState<State> primed{callbacks, seed_charging, State::Phase::Stop};
 
+    REQUIRE(stopped == 0);
     primed.handle_response(ok_response(header()));
     const auto result = primed.feed(ev::din::Event::V2GTP_MESSAGE);
 
+    REQUIRE(stopped == 1);
     REQUIRE(result.transitioned() == true);
     REQUIRE(primed.fsm.get_current_state_id() == StateID::WeldingDetection);
     REQUIRE(primed.take_requests().get<message_din::WeldingDetectionRequest>().has_value());
 }
 
 SCENARIO("DIN 70121 EV PowerDelivery rejects malformed responses") {
-    const ev::feedback::Callbacks callbacks{};
-    const auto make_fsm = [](DinStateHelper& helper) {
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
+    const auto phase = GENERATE(State::Phase::Start, State::Phase::Stop);
+    const auto make_fsm = [phase](DinStateHelper& helper) {
         auto& ctx = helper.get_context();
         ctx.set_session_id(SESSION_ID);
-        return fsm::v2::FSM<ev::din::StateBase>{ctx.create_state<State>(State::Phase::Start)};
+        return fsm::v2::FSM<ev::din::StateBase>{ctx.create_state<State>(phase)};
     };
     message_din::CurrentDemandResponse wrong;
     wrong.header = header();
     wrong.response_code = dt::ResponseCode::OK;
     check_rejection_paths(callbacks, StateID::PowerDelivery, make_fsm, ok_response, wrong);
+    REQUIRE(stopped == 0);
 }

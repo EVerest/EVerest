@@ -598,6 +598,8 @@ ISO15118_evImpl::make_callbacks(iso15118::message_20::datatypes::ServiceCategory
 
     callbacks.timed_out = [] { EVLOG_warning << "Ev15118: response watchdog timed out"; };
 
+    callbacks.power_delivery_stopped = [this] { publish_power_delivery_stopped(nullptr); };
+
     callbacks.stopped = [] { EVLOG_info << "Ev15118: session stopped"; };
 
     callbacks.ev_power_ready = [this] { publish_ev_power_ready(true); };

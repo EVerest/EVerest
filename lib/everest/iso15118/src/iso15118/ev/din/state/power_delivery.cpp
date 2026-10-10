@@ -49,6 +49,7 @@ Result PowerDelivery::feed(Event ev) {
     if (m_phase == Phase::Start) {
         return m_ctx.create_state<CurrentDemand>();
     }
+    m_ctx.feedback.power_delivery_stopped();
     return m_ctx.create_state<WeldingDetection>();
 }
 

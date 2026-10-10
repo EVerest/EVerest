@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 
 #include "helper.hpp"
 
@@ -372,4 +373,19 @@ SCENARIO("ISO15118-20 EV PowerDelivery declares one line's share on a SinglePhas
     REQUIRE(message_20::datatypes::from_RationalNumber(entry.power) == 4000.0f);
     REQUIRE_FALSE(entry.power_l2.has_value());
     REQUIRE_FALSE(entry.power_l3.has_value());
+}
+
+SCENARIO("ISO15118-20 EV PowerDelivery never signals power_delivery_stopped") {
+    const auto service = GENERATE(ServiceCategory::DC, ServiceCategory::AC, ServiceCategory::DC_BPT,
+                                  ServiceCategory::AC_BPT, ServiceCategory::AC_DER_IEC, ServiceCategory::AC_DER_SAE,
+                                  ServiceCategory::MCS, ServiceCategory::MCS_BPT);
+    const auto progress = GENERATE(Progress::Start, Progress::Stop, Progress::ScheduleRenegotiation, Progress::Standby);
+    int stopped = 0;
+    ev::feedback::Callbacks callbacks{};
+    callbacks.power_delivery_stopped = [&] { ++stopped; };
+    PrimedState<ev::d20::state::PowerDelivery> primed{callbacks, service, no_seed, progress};
+    REQUIRE(stopped == 0);
+    primed.handle_response(make_pd_res(SESSION_HEADER, ResponseCode::OK));
+    primed.feed(ev::d20::Event::V2GTP_MESSAGE);
+    REQUIRE(stopped == 0);
 }

@@ -54,6 +54,10 @@ void Feedback::stopped() const {
     call_if_available(callbacks.stopped);
 }
 
+void Feedback::power_delivery_stopped() const {
+    call_if_available(callbacks.power_delivery_stopped);
+}
+
 void Feedback::evse_session_info(const d20::EVSESessionInfo& info) const {
     call_if_available(callbacks.evse_session_info, info);
 }

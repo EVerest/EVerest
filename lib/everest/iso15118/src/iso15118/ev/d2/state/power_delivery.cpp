@@ -121,6 +121,7 @@ Result PowerDelivery::feed(Event ev) {
         return m_ctx.create_state<ChargeParameterDiscovery>();
     }
 
+    m_ctx.feedback.power_delivery_stopped();
     if (is_dc) {
         return m_ctx.create_state<WeldingDetection>();
     }

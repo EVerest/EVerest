@@ -48,3 +48,9 @@ Simulator Commands
     | Example: ``sleep 10``
 
 ``test``
+
+``iso_wait_for_stop {time in seconds}``
+    Requests a stop when the timer expires or the charger requests it. CP stays
+    in C until ``power_delivery_stopped`` confirms PowerDelivery(Stop), or the
+    V2G session ends. Without either signal the hold expires after 10 seconds.
+    The contactor then opens and CP stays in B for the stop dwell.

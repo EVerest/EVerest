@@ -398,3 +398,8 @@ session is stored and handed to the next ``ev::Controller`` as
 ``EvConfig::resume``. ``stop_charging`` and ``abort_charging`` discard it.
 ``cp_state_changed`` is latched and replayed to every new controller, and the
 first report switches the CP-dependent checks (the DC cable check) on.
+
+For ISO 15118-2 (AC and DC) and DIN SPEC 70121 (DC), an accepted
+PowerDelivery(Stop) response publishes ``power_delivery_stopped`` before
+WeldingDetection or SessionStop. The EV may then open its contactor and set CP B
+while V2G shutdown continues. ISO 15118-20 does not publish this event.

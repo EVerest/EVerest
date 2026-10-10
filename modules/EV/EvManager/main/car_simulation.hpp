@@ -156,6 +156,10 @@ public:
         sim_data.iso_stopped = iso_stopped;
     }
 
+    void set_power_delivery_stopped(bool power_delivery_stopped) {
+        sim_data.power_delivery_stopped = power_delivery_stopped;
+    }
+
     void set_iso_charger_paused(bool iso_charger_paused) {
         sim_data.iso_charger_paused = iso_charger_paused;
     }

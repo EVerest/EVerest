@@ -5,6 +5,7 @@
 #include "../main/constants.hpp"
 #include <ModuleAdapterStub.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <catch2/generators/catch_generators.hpp>
 #include <memory>
 #include <string>
 #include <vector>
@@ -14,8 +15,13 @@ namespace {
 struct RecordingModuleAdapter : public module::stub::QuietModuleAdapterStub {
     std::vector<std::string> calls;
 
-    Result call_fn(const Requirement&, const std::string& cmd, Parameters) override {
+    std::optional<bool> power_allowed;
+
+    Result call_fn(const Requirement&, const std::string& cmd, Parameters params) override {
         calls.push_back(cmd);
+        if (cmd == "allow_power_on") {
+            power_allowed = params.at("value").get<bool>();
+        }
         if (cmd == "start_charging") {
             return true;
         }
@@ -48,6 +54,26 @@ SCENARIO("iso_wait_for_stop leaves the pilot in B for a dwell before it complete
         sim.set_iso_stopped(true);
         REQUIRE_FALSE(sim.iso_wait_for_stop(arguments, loop_interval_ms));
         REQUIRE(sim.get_state() == SimState::ISO_CHARGING_REGULATED);
+
+        WHEN("PowerDelivery(Stop) is confirmed while the V2G session is active") {
+            sim.set_power_delivery_stopped(true);
+            adapter.calls.clear();
+
+            THEN("Power is disabled and CP drops to B for the dwell without ending V2G") {
+                CHECK_FALSE(sim.iso_wait_for_stop(arguments, loop_interval_ms));
+                CHECK(adapter.calls == std::vector<std::string>{"allow_power_on"});
+                CHECK(adapter.power_allowed == false);
+                CHECK(sim.get_state() == SimState::PLUGGED_IN);
+                CHECK_FALSE(sim.iso_wait_v2g_session_stopped({}));
+                for (size_t tick = 1; tick < dwell_ticks; ++tick) {
+                    CHECK_FALSE(sim.iso_wait_for_stop(arguments, loop_interval_ms));
+                    CHECK(sim.get_state() == SimState::PLUGGED_IN);
+                    CHECK_FALSE(sim.get_modify_charging_session_cmds().has_value());
+                }
+                CHECK_FALSE(sim.iso_wait_for_stop(arguments, loop_interval_ms));
+                CHECK(sim.get_modify_charging_session_cmds().has_value());
+            }
+        }
 
         WHEN("The V2G session reports finished") {
             sim.set_v2g_session_active(false);
@@ -87,6 +113,7 @@ SCENARIO("iso_wait_for_stop leaves the pilot in B for a dwell before it complete
         }
 
         WHEN("A new session starts while the stop hold is armed") {
+            sim.set_power_delivery_stopped(GENERATE(false, true));
             REQUIRE(sim.iso_start_v2g_session({constants::DC, "auto", "0", "0"}, false));
             sim.set_state(SimState::ISO_CHARGING_REGULATED);
             sim.set_iso_stopped(true);
@@ -107,5 +134,21 @@ SCENARIO("iso_wait_for_stop leaves the pilot in B for a dwell before it complete
                 CHECK(sim.get_state() == SimState::PLUGGED_IN);
             }
         }
+    }
+
+    GIVEN("The EV's own stop timer expires while V2G is active") {
+        sim.set_state(SimState::ISO_CHARGING_REGULATED);
+        sim.set_v2g_session_active(true);
+        REQUIRE_FALSE(sim.iso_wait_for_stop({"0"}, loop_interval_ms));
+        REQUIRE(sim.get_state() == SimState::ISO_CHARGING_REGULATED);
+        sim.set_power_delivery_stopped(true);
+        REQUIRE_FALSE(sim.iso_wait_for_stop({"0"}, loop_interval_ms));
+        CHECK(sim.get_state() == SimState::PLUGGED_IN);
+        CHECK(adapter.power_allowed == false);
+        CHECK_FALSE(sim.iso_wait_v2g_session_stopped({}));
+        for (size_t tick = 1; tick < dwell_ticks; ++tick) {
+            CHECK_FALSE(sim.iso_wait_for_stop({"0"}, loop_interval_ms));
+        }
+        CHECK(sim.iso_wait_for_stop({"0"}, loop_interval_ms));
     }
 }

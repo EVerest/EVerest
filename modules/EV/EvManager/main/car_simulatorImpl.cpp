@@ -513,6 +513,10 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
             car_simulation->set_iso_stopped(true);
         });
+        _ev->subscribe_power_delivery_stopped([this]() {
+            const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+            car_simulation->set_power_delivery_stopped(true);
+        });
         _ev->subscribe_v2g_session_finished([this]() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
             car_simulation->set_v2g_session_active(false);

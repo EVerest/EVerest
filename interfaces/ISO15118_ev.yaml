@@ -88,6 +88,10 @@ vars:
       is a session-progress signal, so a consumer may depend on it.
     type: object
     $ref: /iso15118#/V2gMessages
+  power_delivery_stopped:
+    description: >-
+      The SECC confirmed PowerDelivery(Stop); the EV may open its contactor and set CP B.
+    type: 'null'
   v2g_session_finished:
     description: The v2g session between the charger and the car is finished
     type: 'null'
