@@ -25,6 +25,9 @@ void to_json(json& j, const OCMFIdentificationLevel& k) noexcept;
 void from_json(const json& j, TransactionStatus& k);
 void to_json(json& j, const TransactionStatus& k) noexcept;
 
+void from_json(const json& j, Measurement& k);
+void to_json(json& j, const Measurement& k) noexcept;
+
 void from_json(const json& j, Current& k);
 void to_json(json& j, const Current& k) noexcept;
 

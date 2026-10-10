@@ -422,6 +422,67 @@ void to_json(json& j, const TransactionStatus& k) noexcept {
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::powermeter::TransactionStatus";
 }
 
+void from_json(const json& j, Measurement& k) {
+    std::string s = j;
+    if (s == "EnergyImport") {
+        k = Measurement::EnergyImport;
+        return;
+    }
+    if (s == "EnergyExport") {
+        k = Measurement::EnergyExport;
+        return;
+    }
+    if (s == "Power") {
+        k = Measurement::Power;
+        return;
+    }
+    if (s == "Voltage") {
+        k = Measurement::Voltage;
+        return;
+    }
+    if (s == "ReactivePower") {
+        k = Measurement::ReactivePower;
+        return;
+    }
+    if (s == "Current") {
+        k = Measurement::Current;
+        return;
+    }
+    if (s == "Frequency") {
+        k = Measurement::Frequency;
+        return;
+    }
+
+    throw std::out_of_range("Provided string " + s +
+                            " could not be converted to enum of type Measurement_API_1_0");
+}
+void to_json(json& j, const Measurement& k) noexcept {
+    switch (k) {
+    case Measurement::EnergyImport:
+        j = "EnergyImport";
+        return;
+    case Measurement::EnergyExport:
+        j = "EnergyExport";
+        return;
+    case Measurement::Power:
+        j = "Power";
+        return;
+    case Measurement::Voltage:
+        j = "Voltage";
+        return;
+    case Measurement::ReactivePower:
+        j = "ReactivePower";
+        return;
+    case Measurement::Current:
+        j = "Current";
+        return;
+    case Measurement::Frequency:
+        j = "Frequency";
+        return;
+    }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::powermeter::Measurement";
+}
+
 void from_json(const json& j, Current& k) {
     if (j.contains("DC")) {
         k.DC.emplace(j.at("DC"));
@@ -1058,6 +1119,12 @@ void from_json(const json& j, Capabilities& k) {
     if (j.contains("min_import_current_A")) {
         k.min_import_current_A.emplace(j.at("min_import_current_A"));
     }
+    if (j.contains("supported_measurements")) {
+        auto& tmp = k.supported_measurements.emplace();
+        for (auto const& elem : j.at("supported_measurements")) {
+            tmp.push_back(elem);
+        }
+    }
 }
 
 void to_json(json& j, const Capabilities& k) noexcept {
@@ -1067,6 +1134,12 @@ void to_json(json& j, const Capabilities& k) noexcept {
     }
     if (k.min_import_current_A) {
         j["min_import_current_A"] = k.min_import_current_A.value();
+    }
+    if (k.supported_measurements) {
+        j["supported_measurements"] = json::array();
+        for (auto const& item : k.supported_measurements.value()) {
+            j["supported_measurements"].push_back(item);
+        }
     }
 }
 

@@ -1,5 +1,27 @@
 description: Powermeter types
 types:
+  Measurement:
+    description: >-
+      Top-level measurement categories a power meter can report. Values align
+      with the optional fields of the Powermeter type (excluding signed
+      counterparts and metadata). Used so consumers (e.g. OCPP SupportedMeasurands)
+      can learn what the meter will publish without waiting for the first sample.
+      EnergyImport: energy_Wh_import
+      EnergyExport: energy_Wh_export
+      Power: power_W
+      Voltage: voltage_V
+      ReactivePower: VAR
+      Current: current_A
+      Frequency: frequency_Hz
+    type: string
+    enum:
+      - EnergyImport
+      - EnergyExport
+      - Power
+      - Voltage
+      - ReactivePower
+      - Current
+      - Frequency
   Capabilities:
     description: >-
       Capabilities of this power meter. All fields are optional; an absent field
@@ -22,6 +44,17 @@ types:
           can measure within its accuracy class.
         type: number
         minimum: 0
+      supported_measurements:
+        description: >-
+          Distinct top-level measurement categories this meter can report.
+          Publish at least once during start up when known (e.g. from a register
+          model). Absence means the list is unknown, not that no measurements
+          are supported.
+        type: array
+        items:
+          type: string
+          $ref: /powermeter#/Measurement
+        minItems: 0
   TransactionReq:
     description: Required input parameter for starting an OCMF transaction. These values will be included in the signed OCMF packet.
     type: object
