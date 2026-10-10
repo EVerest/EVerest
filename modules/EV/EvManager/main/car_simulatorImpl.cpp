@@ -68,6 +68,16 @@ void car_simulatorImpl::handle_enable(bool& value) {
         return;
     }
 
+    if (!value) {
+        const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+        if (!car_simulation->is_idle_on_the_wire()) {
+            set_execution_active(false);
+            // This unplug answers a pilot loss still pending for the next tick.
+            cancel_charging_session_flag = false;
+            unplug_vehicle_now();
+        }
+    }
+
     reset_car_simulation_defaults();
 
     call_ev_board_support_functions();
@@ -75,11 +85,30 @@ void car_simulatorImpl::handle_enable(bool& value) {
     enabled = value;
 
     mod->r_ev_board_support->call_enable(value);
+    if (value) {
+        const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+        car_simulation->reapply_plugged_in();
+    }
     publish_enabled(value);
 }
 
 void car_simulatorImpl::handle_execute_charging_session(std::string& value) {
-    if (!check_can_execute()) {
+    if (!enabled) {
+        EVLOG_warning << "Simulation disabled, cannot execute charging simulation.";
+        return;
+    }
+    const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+    execute_charging_session(value);
+}
+
+void car_simulatorImpl::execute_charging_session(std::string& value) {
+    if (not car_simulation->is_idle_on_the_wire()) {
+        EVLOG_warning << "Vehicle is not idle (simulation state " << static_cast<int>(car_simulation->get_state())
+                      << "), cannot execute a charging session. Stop the session first or use modify_charging_session.";
+        return;
+    }
+    if (car_simulation->has_live_v2g_session()) {
+        EVLOG_warning << "A V2G session is active; stop it first or use modify_charging_session.";
         return;
     }
 
@@ -88,20 +117,12 @@ void car_simulatorImpl::handle_execute_charging_session(std::string& value) {
         // that will never come) is replaced, the same way modify_charging_session does it. The
         // vehicle keeps its presence on the wire (see CarSimulation::reset), so on a mated MCS
         // bench this is how the operator starts the next session without a full restart.
-        const std::lock_guard<std::mutex> lock{car_simulation_mutex};
         EVLOG_warning << "Replacing the running charging session simulation (it was waiting on: "
                       << (last_blocked_command.empty() ? std::string{"<nothing>"} : last_blocked_command) << ")";
     }
 
-    set_execution_active(false);
-    reset_car_simulation_defaults();
-
+    car_simulation->reset();
     update_command_queue(value);
-
-    const std::lock_guard<std::mutex> lock{car_simulation_mutex};
-    if (!command_queue.empty()) {
-        set_execution_active(true);
-    }
 }
 
 void car_simulatorImpl::handle_modify_charging_session(std::string& value) {
@@ -110,71 +131,97 @@ void car_simulatorImpl::handle_modify_charging_session(std::string& value) {
         return;
     }
 
-    set_execution_active(false);
-
-    update_command_queue(value);
-
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
-    if (!command_queue.empty()) {
-        set_execution_active(true);
-    }
+    update_command_queue(value);
 }
 
 void car_simulatorImpl::run() {
     while (true) {
-        if (enabled && execution_active) {
+        run_simulation_step();
+        std::this_thread::sleep_for(std::chrono::milliseconds(loop_interval_ms));
+    }
+}
 
-            bool finished = run_simulation_loop();
+void car_simulatorImpl::run_simulation_step() {
+    if (enabled && execution_active) {
+        // An execute or modify from another thread may replace the list while this step runs; the
+        // list-end handling below then leaves the new list alone.
+        std::uint64_t generation{};
+        auto progress = run_simulation_loop(generation);
+        if (after_simulation_loop) {
+            after_simulation_loop();
+        }
 
-            bool cancelled = false;
-            if (cancel_charging_session_flag) {
-                cancel_charging_session_flag = false;
-                finished = true;
-                cancelled = true;
-            }
+        bool cancelled = false;
+        if (cancel_charging_session_flag) {
+            cancel_charging_session_flag = false;
+            progress = SequenceProgress::Finished;
+            cancelled = true;
+        }
 
+        {
+            const std::lock_guard<std::mutex> lock{car_simulation_mutex};
             auto& modify_session_cmds = car_simulation->get_modify_charging_session_cmds();
             if (modify_session_cmds.has_value()) {
                 auto cmds = modify_session_cmds.value();
-                handle_modify_charging_session(cmds);
                 modify_session_cmds.reset();
+                update_command_queue(cmds);
+                // Queued by the list itself, so it is the same list: a pending cancel still applies.
+                generation = list_generation;
             }
-
-            if (finished) {
-                set_execution_active(false);
-                if (cancelled) {
-                    // The pilot is gone (plug-out) or the EVSE withdrew (E/F): the vehicle is
-                    // reset NOW, not left pending for the first tick of whatever runs next.
-                    EVLOG_info << "Finished simulation. Session cancelled - resetting the vehicle";
-                    apply_vehicle_unplug();
-                } else {
-                    bool plugged = false;
-                    {
-                        const std::lock_guard<std::mutex> lock{car_simulation_mutex};
-                        plugged = car_simulation->get_state() != SimState::UNPLUGGED;
-                    }
-                    EVLOG_info << "Finished simulation."
-                               << (plugged ? " The vehicle stays plugged in (CP B); the next "
-                                             "execute_charging_session continues from here"
-                                           : "");
-                    reset_car_simulation_defaults();
-                }
-
-                // If we have auto_exec_infinite configured, restart simulation when it is done
-                if (mod->config.auto_exec && mod->config.auto_exec_infinite) {
-                    auto value_copy = mod->config.auto_exec_commands;
-                    handle_execute_charging_session(value_copy);
-                }
-            }
-        } else if (cancel_charging_session_flag) {
-            // Idle but plugged in (a finished queue leaves the vehicle mated), and the pilot went
-            // away: reset the vehicle right here. Left standing, the flag would cancel the next
-            // command list the moment it started.
-            cancel_charging_session_flag = false;
-            EVLOG_info << "Pilot lost while idle - resetting the vehicle";
-            apply_vehicle_unplug();
         }
-        std::this_thread::sleep_for(std::chrono::milliseconds(loop_interval_ms));
+
+        switch (progress) {
+        case SequenceProgress::Waiting:
+            break;
+        case SequenceProgress::Failed: {
+            // Not a session end: the vehicle and any V2G session accepted earlier stay as they are,
+            // and auto_exec_infinite does not repeat a sequence that cannot run.
+            const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+            if (list_generation != generation) {
+                EVLOG_debug << "A command failed, but a new command list already replaced it - leaving that running";
+                break;
+            }
+            set_execution_active(false);
+            EVLOG_info << "Finished simulation. A command failed and ended it";
+            if (not car_simulation->is_idle_on_the_wire()) {
+                EVLOG_warning << "The vehicle is still active; send a stop or unplug with modify_charging_session";
+            }
+            break;
+        }
+        case SequenceProgress::Finished: {
+            const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+            if (list_generation != generation) {
+                // Any cancel belonged to the replaced list.
+                EVLOG_debug << "Command list finished, but a new one already replaced it - leaving that running";
+                break;
+            }
+            set_execution_active(false);
+            if (cancelled) {
+                // The pilot is gone (plug-out) or the EVSE withdrew (E/F): the vehicle is
+                // reset NOW, not left pending for the first tick of whatever runs next.
+                EVLOG_info << "Finished simulation. Session cancelled - resetting the vehicle";
+                unplug_vehicle_now();
+            } else {
+                EVLOG_info << "Finished simulation. The vehicle keeps its state until a stop or unplug.";
+                car_simulation->reset();
+            }
+
+            // If we have auto_exec_infinite configured, restart simulation when it is done
+            if (mod->config.auto_exec && mod->config.auto_exec_infinite) {
+                auto value_copy = mod->config.auto_exec_commands;
+                execute_charging_session(value_copy);
+            }
+            break;
+        }
+        }
+    } else if (cancel_charging_session_flag) {
+        // Idle but plugged in (a finished queue leaves the vehicle mated), and the pilot went
+        // away: reset the vehicle right here. Left standing, the flag would cancel the next
+        // command list the moment it started.
+        cancel_charging_session_flag = false;
+        EVLOG_info << "Pilot lost while idle - resetting the vehicle";
+        apply_vehicle_unplug();
     }
 }
 
@@ -320,9 +367,10 @@ void car_simulatorImpl::register_all_commands() {
     }
 }
 
-bool car_simulatorImpl::run_simulation_loop() {
+car_simulatorImpl::SequenceProgress car_simulatorImpl::run_simulation_loop(std::uint64_t& generation) {
     // Execute sim commands until a command blocks, or we are finished
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+    generation = list_generation;
     while (execution_active && !command_queue.empty()) {
         auto& current_command = command_queue.front();
 
@@ -330,6 +378,14 @@ bool car_simulatorImpl::run_simulation_loop() {
 
         try {
             command_blocked = !current_command.execute();
+        } catch (const TerminalCommandFailure& e) {
+            EVLOG_error << current_command.name() << " failed: " << e.what()
+                        << " - dropping the remaining commands of this simulation";
+            command_queue = {};
+            last_blocked_command.clear();
+            car_simulation->get_modify_charging_session_cmds().reset();
+            car_simulation->state_machine();
+            return SequenceProgress::Failed;
         } catch (const std::exception& e) {
             EVLOG_error << e.what();
         }
@@ -349,35 +405,15 @@ bool car_simulatorImpl::run_simulation_loop() {
 
     car_simulation->state_machine();
 
-    return command_queue.empty();
-}
-
-bool car_simulatorImpl::check_can_execute() {
-    if (!enabled) {
-        EVLOG_warning << "Simulation disabled, cannot execute charging simulation.";
-        return false;
-    }
-    if (execution_active) {
-        // Replacing a queue is fine while the vehicle only presents itself (A/B). Anything above
-        // that -- a readiness claim, power flowing, a BCB toggle -- has to be wound down by the
-        // running commands first: a new list would drop the pilot out of C under an energized
-        // EVSE, which on MCS is an emergency C-exit and latches a CEFAULT.
-        const std::lock_guard<std::mutex> lock{car_simulation_mutex};
-        if (not car_simulation->is_idle_on_the_wire()) {
-            EVLOG_warning << "Execution of charging session simulation already running and the vehicle is not idle "
-                             "(simulation state "
-                          << static_cast<int>(car_simulation->get_state())
-                          << "), cannot start new one. Let the running session stop first, or use "
-                             "modify_charging_session.";
-            return false;
-        }
-    }
-
-    return true;
+    return command_queue.empty() ? SequenceProgress::Finished : SequenceProgress::Waiting;
 }
 
 void car_simulatorImpl::apply_vehicle_unplug() {
     const std::lock_guard<std::mutex> lock{car_simulation_mutex};
+    unplug_vehicle_now();
+}
+
+void car_simulatorImpl::unplug_vehicle_now() {
     car_simulation->unplug_vehicle();
     // Run the unplug branch immediately: the state machine only ticks while a command list is
     // executing, and a pending reset that fires at the start of the next list is exactly the
@@ -400,52 +436,9 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
     using types::board_support_common::BspEvent;
     mod->r_ev_board_support->subscribe_bsp_event([this](const auto& bsp_event) {
         const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
-        // PowerOn / PowerOff are relay (contactor) feedback, not a control pilot measurement. They
-        // arrive on the same variable, and recording one as the measured pilot state made
-        // cp_state_allows_matching() false: with the EV's relay-open feedback landing after CP B,
-        // iso_wait_slac_matched never triggered matching and the vehicle sat in B forever
-        // (bench-found 2026-09-09 against a third-party MCS EVSE; our own EVSE happened to order
-        // the two events the other way round). Keep the pilot bookkeeping to pilot states.
-        if (bsp_event.event == types::board_support_common::Event::PowerOn or
-            bsp_event.event == types::board_support_common::Event::PowerOff) {
-            EVLOG_debug << "Relay feedback from the vehicle BSP: " << bsp_event.event;
-            return;
+        if (car_simulation->handle_bsp_event(bsp_event)) {
+            cancel_charging_session();
         }
-        const auto previous_event = car_simulation->get_bsp_event();
-        car_simulation->set_bsp_event(bsp_event.event);
-        if (bsp_event.event != previous_event) {
-            EVLOG_info << "CP measured at the vehicle inlet: " << previous_event << " -> " << bsp_event.event;
-            forward_cp_state_to_hlc(bsp_event.event);
-        }
-        // [V2G3-A09-123]: E/F stops matching, like a plug out.
-        if (bsp_event.event == types::board_support_common::Event::E or
-            bsp_event.event == types::board_support_common::Event::F) {
-            if (car_simulation->get_slac_state() != types::slac::State::UNMATCHED) {
-                EVLOG_info << "CP left the Bx/Cx/Dx range (" << bsp_event.event << ") - stopping the matching process";
-                car_simulation->stop_matching();
-            }
-            // E/F applied by the vehicle itself (error_e, diode_fail) is not a session end.
-            const auto state = car_simulation->get_state();
-            if (state != SimState::UNPLUGGED and state != SimState::ERROR_E and state != SimState::DIODE_FAIL) {
-                // E/F ends the session; UNMATCHED re-arms iso_wait_slac_matched.
-                EVLOG_info << "<<< SESSION ABORTED by CP state " << bsp_event.event << " - resetting the vehicle";
-                // abort, not stop: [V2G2-025]/[V2G2-728] want no SessionStop exchange.
-                abort_v2g_session();
-                cancel_charging_session();
-            }
-        }
-        if (bsp_event.event == types::board_support_common::Event::Disconnected) {
-            if (car_simulation->get_state() != SimState::UNPLUGGED) {
-                EVLOG_info << "<<< PLUG-OUT detected (CP dead) - cancelling the charging session and resetting";
-                // Same as the E/F case: no pilot left for a SessionStop exchange.
-                abort_v2g_session();
-                cancel_charging_session();
-            } else {
-                // Already unplugged: nothing to cancel.
-                EVLOG_info << "Plug-out signalled while already unplugged - no session to cancel";
-            }
-        }
-        mod->p_ev_manager->publish_bsp_event(bsp_event);
     });
 
     // subscribe bsp_measurement
@@ -507,11 +500,22 @@ void car_simulatorImpl::subscribe_to_variables_on_init() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
             car_simulation->set_iso_stopped(true);
         });
+        _ev->subscribe_power_delivery_stopped([this]() {
+            const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
+            car_simulation->set_power_delivery_stopped(true);
+        });
+        _ev->subscribe_welding_detection_failed([](const types::iso15118::WeldingDetectionFailure& failure) {
+            EVLOG_error << "Welding detection failed after " << failure.cycles << " cycles, last voltage "
+                        << (failure.last_voltage_V ? fmt::format("{:g} V", *failure.last_voltage_V) : "unknown");
+        });
         _ev->subscribe_v2g_session_finished([this]() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
             car_simulation->set_v2g_session_active(false);
             // Do not stay in C/D with the contactor closed ([V2G2-913]).
             car_simulation->end_charging_session();
+            if (not execution_active and car_simulation->get_state() == SimState::PLUGGED_IN) {
+                car_simulation->state_machine();
+            }
         });
         _ev->subscribe_dc_power_on([this]() {
             const std::lock_guard<std::mutex> callback_lock{car_simulation_mutex};
@@ -580,13 +584,14 @@ void car_simulatorImpl::reset_car_simulation_defaults() {
 }
 
 void car_simulatorImpl::update_command_queue(std::string& value) {
-    const std::lock_guard<std::mutex> lock{car_simulation_mutex};
     last_commands = value;
     // The commands of the old queue are gone; their armed countdowns must not survive them
     // (a replaced mid-flight 'sleep 36000' otherwise donates its remaining ticks to the next
     // tick-based command that runs - see SimulationData::clear_command_ticks).
     car_simulation->abort_command_in_flight();
     command_queue = SimulationCommand::parse_sim_commands(value, *command_registry);
+    ++list_generation;
+    set_execution_active(!command_queue.empty());
 }
 
 void car_simulatorImpl::set_execution_active(bool value) {
@@ -595,45 +600,6 @@ void car_simulatorImpl::set_execution_active(bool value) {
 
 void car_simulatorImpl::cancel_charging_session() {
     cancel_charging_session_flag = true;
-}
-
-void car_simulatorImpl::forward_cp_state_to_hlc(types::board_support_common::Event event) {
-    if (mod->r_ev.empty()) {
-        return;
-    }
-    using BspEvent = types::board_support_common::Event;
-    std::optional<types::iso15118::CpState> cp_state;
-    switch (event) {
-    case BspEvent::A:
-        cp_state = types::iso15118::CpState::A;
-        break;
-    case BspEvent::B:
-        cp_state = types::iso15118::CpState::B;
-        break;
-    case BspEvent::C:
-        cp_state = types::iso15118::CpState::C;
-        break;
-    case BspEvent::D:
-        cp_state = types::iso15118::CpState::D;
-        break;
-    case BspEvent::E:
-        cp_state = types::iso15118::CpState::E;
-        break;
-    case BspEvent::F:
-        cp_state = types::iso15118::CpState::F;
-        break;
-    default:
-        return; // PowerOn / PowerOff / Disconnected are not control pilot states
-    }
-    // The HLC stack has no board support connection; [V2G2-847] needs the CP state.
-    mod->r_ev.at(0)->call_cp_state_changed(cp_state.value());
-}
-
-void car_simulatorImpl::abort_v2g_session() {
-    if (mod->r_ev.empty()) {
-        return;
-    }
-    mod->r_ev.at(0)->call_abort_charging();
 }
 
 } // namespace module::main

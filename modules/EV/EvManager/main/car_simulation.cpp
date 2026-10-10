@@ -3,6 +3,7 @@
 #include "car_simulation.hpp"
 
 #include "constants.hpp"
+#include "simulation_command.hpp"
 
 #include <algorithm>
 
@@ -123,6 +124,95 @@ void CarSimulation::stop_matching() {
     if (!r_slac.empty()) {
         r_slac[0]->call_reset();
     }
+}
+
+bool CarSimulation::handle_bsp_event(const types::board_support_common::BspEvent& bsp_event) {
+    using types::board_support_common::Event;
+    // PowerOn / PowerOff are relay (contactor) feedback, not a control pilot measurement, though
+    // they arrive on the same variable. They are published to ev_manager subscribers, but neither
+    // reach the HLC stack nor replace the measured pilot that cp_state_allows_matching() reads.
+    if (bsp_event.event == Event::PowerOn or bsp_event.event == Event::PowerOff) {
+        EVLOG_debug << "Relay feedback from the vehicle BSP: " << bsp_event.event;
+        p_ev_manager->publish_bsp_event(bsp_event);
+        return false;
+    }
+    bool session_ended = false;
+    const auto previous_event = sim_data.actual_bsp_event;
+    sim_data.actual_bsp_event = bsp_event.event;
+    if (bsp_event.event != previous_event) {
+        EVLOG_info << "CP measured at the vehicle inlet: " << previous_event << " -> " << bsp_event.event;
+        forward_cp_state_to_hlc(bsp_event.event);
+    }
+    // [V2G3-A09-123]: E/F stops matching, like a plug out.
+    if (bsp_event.event == Event::E or bsp_event.event == Event::F) {
+        if (sim_data.slac_state != types::slac::State::UNMATCHED) {
+            EVLOG_info << "CP left the Bx/Cx/Dx range (" << bsp_event.event << ") - stopping the matching process";
+            stop_matching();
+        }
+        // E/F applied by the vehicle itself (error_e, diode_fail) is not a session end.
+        const auto state = sim_data.state;
+        if (state != SimState::UNPLUGGED and state != SimState::ERROR_E and state != SimState::DIODE_FAIL) {
+            // E/F ends the session; UNMATCHED re-arms iso_wait_slac_matched.
+            EVLOG_info << "<<< SESSION ABORTED by CP state " << bsp_event.event << " - resetting the vehicle";
+            // abort, not stop: [V2G2-025]/[V2G2-728] want no SessionStop exchange.
+            abort_v2g_session();
+            session_ended = true;
+        }
+    }
+    if (bsp_event.event == Event::Disconnected) {
+        if (sim_data.state != SimState::UNPLUGGED) {
+            EVLOG_info << "<<< PLUG-OUT detected (CP dead) - cancelling the charging session and resetting";
+            // Same as the E/F case: no pilot left for a SessionStop exchange.
+            abort_v2g_session();
+            session_ended = true;
+        } else {
+            // Already unplugged: nothing to cancel.
+            EVLOG_info << "Plug-out signalled while already unplugged - no session to cancel";
+        }
+    }
+    p_ev_manager->publish_bsp_event(bsp_event);
+    return session_ended;
+}
+
+void CarSimulation::forward_cp_state_to_hlc(types::board_support_common::Event event) {
+    if (r_ev.empty()) {
+        return;
+    }
+    using BspEvent = types::board_support_common::Event;
+    std::optional<types::iso15118::CpState> cp_state;
+    switch (event) {
+    case BspEvent::A:
+        cp_state = types::iso15118::CpState::A;
+        break;
+    case BspEvent::B:
+        cp_state = types::iso15118::CpState::B;
+        break;
+    case BspEvent::C:
+        cp_state = types::iso15118::CpState::C;
+        break;
+    case BspEvent::D:
+        cp_state = types::iso15118::CpState::D;
+        break;
+    case BspEvent::E:
+        cp_state = types::iso15118::CpState::E;
+        break;
+    case BspEvent::F:
+        cp_state = types::iso15118::CpState::F;
+        break;
+    case BspEvent::PowerOn:
+    case BspEvent::PowerOff:
+    case BspEvent::Disconnected:
+        return; // not control pilot states
+    }
+    // The HLC stack has no board support connection; [V2G2-847] needs the CP state.
+    r_ev.at(0)->call_cp_state_changed(cp_state.value());
+}
+
+void CarSimulation::abort_v2g_session() {
+    if (r_ev.empty()) {
+        return;
+    }
+    r_ev.at(0)->call_abort_charging();
 }
 
 void CarSimulation::simulate_soc() {
@@ -330,7 +420,7 @@ bool CarSimulation::pause(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::unplug(const CmdArguments& arguments) {
-    sim_data.state = SimState::UNPLUGGED;
+    begin_unplug();
     charge_mode = ChargeMode::None;
     return true;
 }
@@ -380,6 +470,10 @@ bool CarSimulation::iso_wait_slac_matched(const CmdArguments& arguments) {
 }
 
 bool CarSimulation::iso_wait_pwr_ready(const CmdArguments& arguments) {
+    // not iso_charger_paused: a charger pause ends the session too, but is not a failure.
+    if (not sim_data.v2g_session_active and not sim_data.iso_charger_paused) {
+        throw TerminalCommandFailure{"V2G session ended before the EV was ready for power"};
+    }
     if (sim_data.iso_pwr_ready) {
         sim_data.state = SimState::ISO_POWER_READY;
         return true;
@@ -441,54 +535,60 @@ bool CarSimulation::iso_start_v2g_session(const CmdArguments& arguments, bool th
         return selected_payment_option;
     }(payment_option == "auto");
 
+    using types::iso15118::EnergyTransferMode;
+    EnergyTransferMode transfer_mode{};
+    EnergyMode session_energy_mode{};
+    ChargeMode session_charge_mode{};
+    if (energy_mode == constants::AC) {
+        transfer_mode =
+            three_phases ? EnergyTransferMode::AC_three_phase_core : EnergyTransferMode::AC_single_phase_core;
+        session_energy_mode = EnergyMode::AC;
+        session_charge_mode = three_phases ? ChargeMode::ACThreePhase : ChargeMode::AC;
+    } else if (energy_mode == constants::AC_BPT) {
+        transfer_mode = EnergyTransferMode::AC_BPT;
+        session_energy_mode = EnergyMode::AC;
+        session_charge_mode = three_phases ? ChargeMode::ACThreePhase : ChargeMode::AC;
+    } else if (energy_mode == constants::AC_DER) {
+        transfer_mode = EnergyTransferMode::AC_DER_IEC;
+        session_energy_mode = EnergyMode::AC;
+        session_charge_mode = three_phases ? ChargeMode::ACThreePhase : ChargeMode::AC;
+    } else if (energy_mode == constants::DC) {
+        transfer_mode = EnergyTransferMode::DC_extended;
+        session_energy_mode = EnergyMode::DC;
+        session_charge_mode = ChargeMode::DC;
+    } else if (energy_mode == constants::DC_BPT) {
+        transfer_mode = EnergyTransferMode::DC_BPT;
+        session_energy_mode = EnergyMode::DC;
+        session_charge_mode = ChargeMode::DC;
+    } else if (energy_mode == constants::MCS) {
+        // MCS rides the DC power path on the vehicle side; only the -20 energy service differs.
+        transfer_mode = EnergyTransferMode::MCS;
+        session_energy_mode = EnergyMode::DC;
+        session_charge_mode = ChargeMode::DC;
+    } else {
+        throw TerminalCommandFailure{"Unknown energy mode '" + energy_mode +
+                                     "' (valid: ac, ac_bpt, ac_der, dc, dc_bpt, mcs)"};
+    }
+
+    // A rejected start publishes no v2g_session_finished, so nothing would release a wait on this
+    // session. A session accepted earlier and still running keeps its bookkeeping.
+    if (not r_ev[0]->call_start_charging(transfer_mode, selected_payment_option, departure_time, e_amount)) {
+        throw TerminalCommandFailure{"ISO15118_ev rejected the start of a V2G session in energy mode '" + energy_mode +
+                                     "'"};
+    }
+
     // Clear the per-session latches; a stale one short-circuits the matching iso_wait_* command.
     sim_data.iso_pwr_ready = false;
     sim_data.iso_stopped = false;
+    sim_data.power_delivery_stopped = false;
     sim_data.iso_charger_paused = false;
     sim_data.dc_power_on = false;
     sim_data.stop_hold_ticks_left.reset();
     sim_data.stop_dwell_ticks_left.reset();
-
-    if (energy_mode == constants::AC) {
-        sim_data.energy_mode = EnergyMode::AC;
-        if (not three_phases) {
-            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_single_phase_core,
-                                         selected_payment_option, departure_time, e_amount);
-            charge_mode = ChargeMode::AC;
-        } else {
-            r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_three_phase_core,
-                                         selected_payment_option, departure_time, e_amount);
-            charge_mode = ChargeMode::ACThreePhase;
-        }
-    } else if (energy_mode == constants::AC_BPT) {
-        sim_data.energy_mode = EnergyMode::AC;
-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_BPT, selected_payment_option,
-                                     departure_time, e_amount);
-        charge_mode = ChargeMode::AC;
-    } else if (energy_mode == constants::AC_DER) {
-        sim_data.energy_mode = EnergyMode::AC;
-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::AC_DER_IEC, selected_payment_option,
-                                     departure_time, e_amount);
-        charge_mode = ChargeMode::AC;
-    } else if (energy_mode == constants::DC) {
-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_extended, selected_payment_option,
-                                     departure_time, e_amount);
-        sim_data.energy_mode = EnergyMode::DC;
-        charge_mode = ChargeMode::DC;
-    } else if (energy_mode == constants::DC_BPT) {
-        sim_data.energy_mode = EnergyMode::DC;
-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::DC_BPT, selected_payment_option,
-                                     departure_time, e_amount);
-        charge_mode = ChargeMode::DC;
-    } else if (energy_mode == constants::MCS) {
-        // MCS rides the DC power path on the vehicle side; only the -20 energy service differs.
-        sim_data.energy_mode = EnergyMode::DC;
-        r_ev[0]->call_start_charging(types::iso15118::EnergyTransferMode::MCS, selected_payment_option, departure_time,
-                                     e_amount);
-        charge_mode = ChargeMode::DC;
-    } else {
-        return false;
-    }
+    sim_data.v2g_start = AcceptedV2gStart{arguments, session_energy_mode, transfer_mode};
+    charge_mode = session_charge_mode;
+    // No current drawn yet in this session; a resume or restart before a draw falls back to max_current.
+    charge_current_a = 0;
     sim_data.v2g_session_active = true;
     return true;
 }
@@ -532,18 +632,18 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         return true;
     }
 
-    // A stop is already underway. The pilot must stay in C until the PowerDelivery(stop) /
-    // SessionStop exchange has completed -- dropping C while the EVSE still has
-    // power enabled is an emergency C-exit, not a stop (on MCS it latches a CEFAULT the EVSE
-    // can only clear by unplugging). The active flag also lets a following
-    // iso_wait_v2g_session_stopped observe the completed session.
+    // MCS C-exit under power latches CEFAULT on the bench; release after an accepted Stop
+    // has not been verified there, so keep C until session end or the hold budget expires.
     if (sim_data.stop_hold_ticks_left.has_value()) {
         auto& hold_ticks_left = sim_data.stop_hold_ticks_left.value();
         hold_ticks_left -= 1;
-        if (sim_data.v2g_session_active and hold_ticks_left > 0) {
+        const bool keep_holding = sim_data.v2g_session_active and
+                                  (sim_data.v2g_start.transfer_mode == types::iso15118::EnergyTransferMode::MCS or
+                                   not sim_data.power_delivery_stopped);
+        if (keep_holding and hold_ticks_left > 0) {
             return false;
         }
-        if (sim_data.v2g_session_active) {
+        if (keep_holding) {
             EVLOG_warning << "V2G session did not wind down within the stop hold budget - "
                              "dropping CP to B with the session still open";
         }
@@ -569,12 +669,6 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
         sim_data.stop_hold_ticks_left = static_cast<size_t>(constants::STOP_HOLD_BUDGET_MS / loop_interval_ms) + 1;
         return false;
     }
-    // not iso_charger_paused: see iso_dc_power_on.
-    if (not sim_data.v2g_session_active and not sim_data.iso_charger_paused) {
-        // Session already ended: nothing left to wait out. Bounded by the tick budget above.
-        return false;
-    }
-
     if (sim_data.iso_charger_paused) {
         arm_resume_after_charger_pause();
         return false;
@@ -582,22 +676,33 @@ bool CarSimulation::iso_wait_for_stop(const CmdArguments& arguments, size_t loop
     return false;
 }
 
+// After a resumed or restarted start: power up the way the accepted energy mode does, then charge
+// until a stop. AC replays the current drawn in this session, or the configured maximum if none was.
+std::string CarSimulation::power_up_commands() const {
+    std::string commands{"iso_wait_pwr_ready;"};
+    if (sim_data.v2g_start.energy_mode == EnergyMode::DC) {
+        commands += "iso_dc_power_on;";
+    } else {
+        const auto current = charge_current_a > 0 ? charge_current_a : config.max_current;
+        const std::string phases = (charge_mode == ChargeMode::ACThreePhase) ? "3" : "1";
+        commands += "iso_draw_power_regulated " + fmt::format("{:g}", current) + "," + phases + ";";
+    }
+    return commands + "iso_wait_for_stop 36000";
+}
+
 // ISO 15118-20 charger pause: the link stays matched, so wait for PWM and resume the session.
 void CarSimulation::arm_resume_after_charger_pause() {
     EVLOG_info << "Charger wants to pause the session";
     r_ev_board_support->call_allow_power_on(false);
 
-    // NOTE(sl): Change when the Energymode has more then 2 values; BPT sessions resume as
-    // non-BPT here; the internal enum reuse loses the BPT flag.
-    const std::string energy_mode = (sim_data.energy_mode == EnergyMode::AC) ? "AC" : "DC";
-
     auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
 
     modify_session_cmds = "pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;";
-    modify_session_cmds += "iso_start_v2g_session " + energy_mode + ";";
-    modify_session_cmds += "iso_wait_pwr_ready;iso_wait_for_stop 36000";
+    modify_session_cmds += sim_data.v2g_start.command() + ";";
+    modify_session_cmds += power_up_commands();
 
     sim_data.iso_pwr_ready = false;
+    sim_data.dc_power_on = false;
     sim_data.sleep_ticks_left.reset();
     sim_data.iso_charger_paused = false;
 }
@@ -610,23 +715,14 @@ void CarSimulation::arm_restart_after_charger_stop() {
     r_ev_board_support->call_allow_power_on(false);
     sim_data.state = SimState::PLUGGED_IN;
 
-    const bool dc = sim_data.energy_mode == EnergyMode::DC;
-
     auto& modify_session_cmds = sim_data.modify_charging_session_cmds.emplace();
 
     modify_session_cmds = "pause;iso_wait_v2g_session_stopped;sleep 2;iso_wait_pwm_is_running;";
     if (not r_slac.empty()) {
         modify_session_cmds += "iso_wait_slac_matched;";
     }
-    modify_session_cmds += std::string{"iso_start_v2g_session "} + (dc ? "DC" : "AC") + ";";
-    modify_session_cmds += "iso_wait_pwr_ready;";
-    if (dc) {
-        modify_session_cmds += "iso_dc_power_on;";
-    } else {
-        const std::string phases = (charge_mode == ChargeMode::ACThreePhase) ? "3" : "1";
-        modify_session_cmds += "iso_draw_power_regulated " + fmt::format("{:g}", charge_current_a) + "," + phases + ";";
-    }
-    modify_session_cmds += "iso_wait_for_stop 36000";
+    modify_session_cmds += sim_data.v2g_start.command() + ";";
+    modify_session_cmds += power_up_commands();
 
     // Force iso_wait_slac_matched to trigger a new matching: the EV slac sim still reports MATCHED,
     // but the charger restarts its matching on resume and only pairs with a peer in MATCHING state

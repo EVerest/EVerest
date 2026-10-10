@@ -1,0 +1,16 @@
+active_modules:
+  ev_manager:
+    module: EvManager
+    config_module:
+      connector_id: 1
+      auto_enable: true
+      auto_exec: false
+    connections:
+      ev_board_support:
+        - module_id: probe
+          implementation_id: ev_board_support
+      ev:
+        - module_id: probe
+          implementation_id: ev
+  probe:
+    module: ProbeModule

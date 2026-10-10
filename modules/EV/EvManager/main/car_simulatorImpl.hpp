@@ -16,6 +16,8 @@
 // insert your custom include headers here
 #include "car_simulation.hpp"
 #include "command_registry.hpp"
+#include <cstdint>
+#include <functional>
 #include <queue>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
@@ -52,10 +54,22 @@ private:
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 
+    // Where a pass of the simulation loop left the command sequence.
+    enum class SequenceProgress {
+        Waiting,  // a command blocked and runs again on the next tick
+        Finished, // every command ran
+        Failed,   // a command failed terminally and the remaining commands were dropped
+    };
+
+    friend struct CarSimulatorTestAccess;
     void run();
+    void run_simulation_step();
     void handle_modify_charging_session(std::string& value);
-    bool check_can_execute();
-    bool run_simulation_loop();
+    // Replaces the command list unless the vehicle is active on the wire or in a V2G session.
+    // Caller holds car_simulation_mutex.
+    void execute_charging_session(std::string& value);
+    // Reports the generation of the list it ran in `generation`.
+    SequenceProgress run_simulation_loop(std::uint64_t& generation);
     void register_all_commands();
     void subscribe_to_variables_on_init();
     // Console session log of the HLC message flow (config.session_logging).
@@ -66,13 +80,12 @@ private:
     void reset_car_simulation_defaults();
     // Reset for a vehicle whose pilot is gone: UNPLUGGED, applied to the wire at once.
     void apply_vehicle_unplug();
+    // Caller holds car_simulation_mutex.
+    void unplug_vehicle_now();
+    // Installs a new command list and runs it when it is not empty. Caller holds car_simulation_mutex.
     void update_command_queue(std::string& value);
     void set_execution_active(bool value);
     void cancel_charging_session();
-    // Tear the V2G session down at once, without a SessionStop exchange ([V2G2-025], [V2G2-728]).
-    void abort_v2g_session();
-    // Push the applied CP state to the HLC stack, which has no board support connection.
-    void forward_cp_state_to_hlc(types::board_support_common::Event event);
 
     std::unique_ptr<CommandRegistry> command_registry;
 
@@ -86,12 +99,16 @@ private:
     size_t loop_interval_ms{};
 
     std::queue<SimulationCommand> command_queue;
+    // Bumped under car_simulation_mutex whenever a new command list replaces the queue.
+    std::uint64_t list_generation{0};
 
     std::string simulated_already_plugged_in_key;
     std::string simulated_plugged_in_command_key;
     std::string last_commands;
     /// Command the queue is currently parked on; only used to log the wait once.
     std::string last_blocked_command;
+    // Test seam: runs in run_simulation_step() between the simulation loop and the list-end handling.
+    std::function<void()> after_simulation_loop;
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
