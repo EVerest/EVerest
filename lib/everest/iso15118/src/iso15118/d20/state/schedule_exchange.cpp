@@ -25,7 +25,7 @@ using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
 using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
-constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
+constexpr uint64_t MICROSECONDS_PER_MILLISECOND = MICROSECONDS_PER_SECOND / MILLISECONDS_PER_SECOND;
 
 void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt::RationalNumber& max_power) {
     auto& schedule = mode.schedule_tuple.emplace_back();
@@ -158,14 +158,20 @@ Result ScheduleExchange::feed(Event ev) {
             first_req_msg = false;
         }
 
+        // The EV sizes its EVPowerProfile from the ChargeParameterDiscoveryRes, so the offer repeats that maximum
+        // rather than the limits updated since. Only a session that skipped the discovery uses the live ones.
         dt::RationalNumber max_charge_power = {0, 0};
+        if (m_ctx.session.cpd_max_charge_power.has_value()) {
+            max_charge_power = *m_ctx.session.cpd_max_charge_power;
+        } else if (m_ctx.session.is_dc_charger()) {
+            max_charge_power = m_ctx.session_config.dc_limits.charge_limits.power.max;
+        } else if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+                   m_ctx.session.is_ac_der_sae_charger()) {
+            max_charge_power = m_ctx.session_config.ac_limits.charge_power.max;
+        }
 
         const auto& selected_services = m_ctx.session.get_selected_services();
         const auto selected_energy_service = selected_services.selected_energy_service;
-
-        if (m_ctx.session.is_dc_charger()) {
-            max_charge_power = m_ctx.session_config.dc_limits.charge_limits.power.max;
-        }
 
         std::optional<dt::AcConnector> ac_connector{};
         if (std::holds_alternative<dt::AcConnector>(selected_services.selected_connector)) {
@@ -207,6 +213,16 @@ Result ScheduleExchange::feed(Event ev) {
         }
 
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
+
+        m_ctx.session.offered_schedules.clear();
+        if (const auto* scheduled = std::get_if<ScheduledResControlMode>(&res.control_mode)) {
+            for (const auto& tuple : scheduled->schedule_tuple) {
+                const auto& power_schedule = tuple.charging_schedule.power_schedule;
+                m_ctx.session.offered_schedules.emplace(
+                    tuple.schedule_tuple_id,
+                    PowerTimeline::from(power_schedule.time_anchor / MILLISECONDS_PER_SECOND, power_schedule.entries));
+            }
+        }
 
         if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
             m_ctx.session.is_ac_der_sae_charger()) {

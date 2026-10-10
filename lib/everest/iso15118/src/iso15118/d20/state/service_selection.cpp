@@ -83,7 +83,14 @@ message_20::ServiceSelectionResponse handle_request(const message_20::ServiceSel
     }
 
     if (!energy_service_found) {
-        set_response_code(res, dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected);
+        // Only an offered value-added service in the energy-transfer slot means no energy transfer service was
+        // selected ([V2G20-1618]); a ServiceID that was never offered is an invalid selection ([V2G20-433],
+        // [V2G20-467]).
+        const bool offered_as_vas =
+            find_energy_services(session.offered_services.vas_services,
+                                 static_cast<uint16_t>(req.selected_energy_transfer_service.service_id));
+        set_response_code(res, offered_as_vas ? dt::ResponseCode::FAILED_NoEnergyTransferServiceSelected
+                                              : dt::ResponseCode::FAILED_ServiceSelectionInvalid);
         return res;
     }
 

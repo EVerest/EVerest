@@ -23,18 +23,20 @@ SapEngine::SapEngine(io::StreamOutputView output_view_, const session::SessionCo
     tls_active(tls_active_) {
 }
 
-void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+bool SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
     const message_20::Variant variant{payload_type, view};
+    if (variant.is_undecodable()) {
+        // [V2G20-800]: an undecodable frame is ignored, unreported like in D20SeccEngine.
+        logf_warning("Ignoring a SupportedAppProtocol frame that could not be decoded [V2G20-800]");
+        return false;
+    }
     feedback.v2g_message(variant.get_type());
 
     const auto req = variant.get_if<message_20::SupportedAppProtocolRequest>();
     if (req == nullptr) {
         logf_warning("Expected SupportedAppProtocolReq! But code type id: %d", variant.get_type());
-        // [V2G20-800]: an undecodable frame is ignored; a decodable wrong type ends the session.
-        if (variant.get_error().empty()) {
-            stopped = true;
-        }
-        return;
+        stopped = true;
+        return true;
     }
 
     // Reported before deciding anything, so a failed negotiation is reported too (EvseV2G parity).
@@ -58,7 +60,7 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         }
         logf_error("Selecting a protocol namespace failed. Ev offered: %s", ev_supported_namespaces.c_str());
         stopped = true;
-        return;
+        return true;
     }
 
     const auto& selected_namespace = result.selected_namespace.value();
@@ -83,7 +85,7 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
     if (not protocol_id.has_value()) {
         logf_error("SupportedAppProtocol negotiated an unknown namespace, terminating session");
         stopped = true;
-        return;
+        return true;
     }
 
     // ISO 15118-20 mandates TLS ([V2G20-2677]), so there is no conformant plaintext -20 session. Unlike
@@ -103,6 +105,7 @@ void SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         }
     }
     negotiated = std::move(result_negotiated);
+    return true;
 }
 
 void SapEngine::on_control_event(const d20::ControlEvent&) {

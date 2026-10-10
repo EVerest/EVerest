@@ -24,7 +24,7 @@ public:
     DinSeccEngine(io::StreamOutputView output_view, const session::SessionConfig& config,
                   session::feedback::Callbacks callbacks, d20::Timeouts& timeouts);
 
-    void on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
+    bool on_packet(io::v2gtp::PayloadType, const io::StreamInputView&);
     void on_control_event(const d20::ControlEvent&);
     void on_timeout(d20::TimeoutType);
 

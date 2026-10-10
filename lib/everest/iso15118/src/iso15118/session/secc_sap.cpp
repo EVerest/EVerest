@@ -36,9 +36,13 @@ bool is_ac_namespace(const std::string& protocol_namespace) {
     return everest::lib::util::exists(AcNamespaces, protocol_namespace);
 }
 
-// Decides OK_SuccessfulNegotiation vs OK_SuccessfulNegotiationWithMinorDeviation
-// ([V2G2-098]/[V2G20-149]). Returns nullopt for namespaces without a well-known version (e.g. a
-// custom protocol), where no deviation is reported.
+bool is_iso20_namespace(const std::string& protocol_namespace) {
+    return protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE or is_ac_namespace(protocol_namespace);
+}
+
+// Decides OK_SuccessfulNegotiation vs OK_SuccessfulNegotiationWithMinorDeviation ([V2G2-098]).
+// Returns nullopt for namespaces without a well-known version (e.g. a custom protocol), where no
+// deviation is reported.
 std::optional<std::pair<uint32_t, uint32_t>> secc_protocol_version(const std::string& protocol_namespace) {
     if (protocol_namespace == ISO2_NAMESPACE) {
         return std::pair<uint32_t, uint32_t>{2, 0}; // ISO 15118-2:2013
@@ -46,7 +50,7 @@ std::optional<std::pair<uint32_t, uint32_t>> secc_protocol_version(const std::st
     if (protocol_namespace == DIN70121_NAMESPACE) {
         return std::pair<uint32_t, uint32_t>{2, 0}; // DIN SPEC 70121:2014
     }
-    if (protocol_namespace == ISO20_DC_PROTOCOL_NAMESPACE or is_ac_namespace(protocol_namespace)) {
+    if (is_iso20_namespace(protocol_namespace)) {
         return std::pair<uint32_t, uint32_t>{1, 0}; // ISO 15118-20:2022
     }
     return std::nullopt;
@@ -143,10 +147,12 @@ HandleResult handle_request(const message_20::SupportedAppProtocolRequest& req,
     result.response.schema_id = selected.schema_id;
     result.selected_namespace = selected.protocol_namespace;
 
-    // [V2G2-098] / [V2G20-149]: same namespace and major version, different minor (EvseV2G parity).
+    // [V2G2-098]: same namespace and major version, different minor. ISO 15118-20 has no minor deviation: the
+    // protocol is confirmed with OK_SuccessfulNegotiation ([V2G20-170], [V2G20-1089]).
     const auto& [offered_major, offered_minor] = selected.version;
     const auto secc_version = secc_protocol_version(result.selected_namespace.value());
-    if (secc_version.has_value() and offered_major == secc_version->first and offered_minor != secc_version->second) {
+    if (secc_version.has_value() and not is_iso20_namespace(result.selected_namespace.value()) and
+        offered_major == secc_version->first and offered_minor != secc_version->second) {
         result.response.response_code = ResponseCode::OK_SuccessfulNegotiationWithMinorDeviation;
     } else {
         result.response.response_code = ResponseCode::OK_SuccessfulNegotiation;
