@@ -109,6 +109,7 @@ struct Conf {
     bool ac_hlc_enabled;
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
+    bool ac_limit_slac_init_retries;
     bool ac_with_soc;
     int reinit_duration_ms;
     std::string reinit_method;

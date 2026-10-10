@@ -78,6 +78,7 @@ public:
         bool ac_hlc_enabled{false};
         bool ac_hlc_use_5percent{false};
         bool ac_enforce_hlc{false};
+        bool ac_limit_slac_init_retries{true};
         bool ac_with_soc_timeout{false};
         float soft_over_current_tolerance_percent{0};
         float soft_over_current_measurement_noise_A{0};
@@ -437,6 +438,9 @@ private:
     struct ConfigContext {
         // non standard compliant option to enforce HLC in AC mode
         bool ac_enforce_hlc;
+        // ISO15118-3 SLAC retries: at most C_SEQU_RETRY with 5 percent, then X1 ([V2G3-M06-07]); none without 5
+        // percent ([V2G3-A09-13])
+        bool ac_limit_slac_init_retries{true};
         // Config option to use 5 percent PWM in HLC AC mode
         bool ac_hlc_use_5percent;
         // Config option to enable HLC in AC mode
@@ -517,6 +521,11 @@ private:
         // sequence 9.2 requires at least IEC_MIN_X1_BEFORE_PWM_MS in X1 before PWM is enabled again.
         std::optional<std::chrono::time_point<std::chrono::steady_clock>> pwm_switched_off_at{};
         bool min_x1_wait_logged{false};
+
+        // E/F matching retries in 5 percent mode since plug-in or the last match ([V2G3-M06-07])
+        int slac_retries{0};
+        // C_SEQU_RETRY retries done: 5 percent stays off until unplug, also with ac_enforce_hlc
+        bool slac_retries_exhausted{false};
 
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
@@ -602,6 +611,8 @@ private:
     static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
+    // C_sequ_retry according to table 3 of ISO15118-3
+    static constexpr int C_SEQU_RETRY = 2;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
     // IEC 61851-1:2017 Table A.6 sequence 9.2: after switching PWM off at state B (B2->B1) the EVSE shall wait at
     // least 3 s before it enables PWM again (sequence 3.1, B1->B2).
@@ -645,6 +656,9 @@ protected:
     }
     auto& get_hlc_use_5percent_current_session() {
         return hlc_use_5percent_current_session;
+    }
+    constexpr auto& get_config_context() {
+        return config_context;
     }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;
