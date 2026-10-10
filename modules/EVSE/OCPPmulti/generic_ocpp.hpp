@@ -517,6 +517,9 @@ protected:
     std::optional<types::energy::ScheduleReqEntry>
     create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
                         ocpp::v2::ChargingRateUnitEnum unit);
+    std::optional<types::energy::ScheduleReqEntry>
+    create_export_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                               ocpp::v2::ChargingRateUnitEnum unit);
     std::optional<types::energy::ScheduleSetpointEntry>
     create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
                           const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);
