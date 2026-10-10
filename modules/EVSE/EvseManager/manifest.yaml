@@ -115,6 +115,18 @@ config:
       This mode is not ISO15118-2/-3 compliant. Do not use for public charging stations.
     type: boolean
     default: false
+  ac_limit_slac_init_retries:
+    description: >-
+      Limit the SLAC matching retries as required by ISO15118-3. With 5% PWM ([V2G3-M06-07], Figure 9): if no SLAC
+      request arrives within TT_EVSE_SLAC_init, the EVSE signals E/F for T_step_EF and returns to 5% PWM at most
+      C_sequ_retry (2) times per plug-in. At the next timeout it signals E/F once more and keeps 5% off for the rest
+      of the session: X1 while waiting for authorization (an EIM can still start basic charging), nominal PWM once
+      authorized, also with ac_enforce_hlc. A running HLC session is not affected. Each retry is one error routine
+      request from the SLAC module; with its reset_instead_of_fail option one request spans two TT_EVSE_SLAC_init.
+      With nominal PWM or X1 ([V2G3-A09-13]), a failed matching is not retried and the PWM stays as it is.
+      If false, every failed matching is retried with E/F until the EV is unplugged, also with nominal PWM.
+    type: boolean
+    default: true
   ac_with_soc:
     description: >-
       Special mode that switches between AC and DC charging to get SoC percentage with AC charging

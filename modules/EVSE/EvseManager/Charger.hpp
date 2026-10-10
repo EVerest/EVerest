@@ -78,6 +78,7 @@ public:
         bool ac_hlc_enabled{false};
         bool ac_hlc_use_5percent{false};
         bool ac_enforce_hlc{false};
+        bool ac_limit_slac_init_retries{true};
         bool ac_with_soc_timeout{false};
         float soft_over_current_tolerance_percent{0};
         float soft_over_current_measurement_noise_A{0};
@@ -433,6 +434,9 @@ private:
     struct ConfigContext {
         // non standard compliant option to enforce HLC in AC mode
         bool ac_enforce_hlc;
+        // ISO15118-3 SLAC retries: at most C_SEQU_RETRY with 5 percent, then X1 ([V2G3-M06-07]); none without 5
+        // percent ([V2G3-A09-13])
+        bool ac_limit_slac_init_retries{true};
         // Config option to use 5 percent PWM in HLC AC mode
         bool ac_hlc_use_5percent;
         // Config option to enable HLC in AC mode
@@ -508,6 +512,11 @@ private:
         float pwm_set_last_ampere{0};
         bool t_step_ef_x1_pause{false};
         bool cp_state_F_active{false};
+
+        // E/F matching retries in 5 percent mode since plug-in or the last match ([V2G3-M06-07])
+        int slac_retries{0};
+        // C_SEQU_RETRY retries done: 5 percent stays off until unplug, also with ac_enforce_hlc
+        bool slac_retries_exhausted{false};
 
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
@@ -593,6 +602,8 @@ private:
     static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
+    // C_sequ_retry according to table 3 of ISO15118-3
+    static constexpr int C_SEQU_RETRY = 2;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
     // EV READY certification requires a small pause of 500-1000 ms in X1 after a t_step_EF sequence before going to X2-
     // This is not required by IEC61851-1, but it is allowed by the IEC. It helps some older EVs to start charging
@@ -630,6 +641,9 @@ protected:
     }
     auto& get_hlc_use_5percent_current_session() {
         return hlc_use_5percent_current_session;
+    }
+    constexpr auto& get_config_context() {
+        return config_context;
     }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;

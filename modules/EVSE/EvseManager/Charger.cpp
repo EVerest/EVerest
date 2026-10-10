@@ -263,6 +263,8 @@ void Charger::run_state_machine() {
                 shared_context.flag_transaction_active = false;
                 clear_errors_on_unplug();
                 internal_context.dc_statistics_printed = false;
+                internal_context.slac_retries = 0;
+                internal_context.slac_retries_exhausted = false;
                 hlc_failed = false;
             }
 
@@ -309,7 +311,9 @@ void Charger::run_state_machine() {
                 if (config_context.charge_mode == ChargeMode::AC) {
                     ac_hlc_enabled_current_session = config_context.ac_hlc_enabled and not hlc_failed;
                     if (ac_hlc_enabled_current_session) {
-                        hlc_use_5percent_current_session = config_context.ac_hlc_use_5percent;
+                        // After the last matching retry ([V2G3-M06-07]) the EVSE stays in X1
+                        hlc_use_5percent_current_session =
+                            config_context.ac_hlc_use_5percent and not internal_context.slac_retries_exhausted;
                     }
                 } else if (config_context.charge_mode == ChargeMode::DC) {
                     hlc_use_5percent_current_session = true;
@@ -432,8 +436,9 @@ void Charger::run_state_machine() {
                 // PWM. This is a complete waste of 4 precious seconds.
                 if (config_context.charge_mode == ChargeMode::AC) {
                     if (ac_hlc_enabled_current_session) {
-                        if (config_context.ac_enforce_hlc) {
-                            // non standard compliant mode: we just keep 5 percent running all the time like in DC
+                        if (config_context.ac_enforce_hlc and not internal_context.slac_retries_exhausted) {
+                            // non standard compliant mode: we just keep 5 percent running all the time like in DC.
+                            // Exhausted matching retries end in nominal PWM here as well ([V2G3-M06-07]).
                             session_log.evse(
                                 false, "AC mode, HLC enabled(ac_enforce_hlc), keeping 5 percent on until a dlink error "
                                        "is signalled.");
@@ -1869,6 +1874,7 @@ void Charger::setup(const SetupConfig& config) {
     ac_hlc_enabled_current_session = config_context.ac_hlc_enabled = config.ac_hlc_enabled;
     config_context.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
     config_context.ac_enforce_hlc = config.ac_enforce_hlc;
+    config_context.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     config_context.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
     shared_context.ac_with_soc_timeout = config.ac_with_soc_timeout;
     shared_context.ac_with_soc_timer = 3600000;
@@ -2331,9 +2337,29 @@ void Charger::request_error_sequence() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_request_error_sequence);
     if (shared_context.current_state == EvseState::WaitingForAuthentication or
         shared_context.current_state == EvseState::PrepareCharging) {
+        const bool limit_retries =
+            config_context.ac_limit_slac_init_retries and config_context.charge_mode == ChargeMode::AC;
+        if (limit_retries and not hlc_use_5percent_current_session) {
+            // [V2G3-A09-13]: without 5 percent (nominal PWM or X1), no SLAC will be performed. Keep the PWM as it is.
+            // This also holds after the last 5 percent retry ended in X1.
+            session_log.evse(false, "No SLAC retry without 5 percent PWM");
+            shared_context.dlink_established = false;
+            return;
+        }
         internal_context.t_step_EF_return_state = shared_context.current_state;
         internal_context.t_step_EF_return_ampere = 0.;
-        if (hlc_use_5percent_current_session) {
+        if (limit_retries and internal_context.slac_retries >= C_SEQU_RETRY) {
+            // [V2G3-M06-07], Figure 9 of ISO15118-3: after C_sequ_retry retries, the next timeout ends 5 percent for
+            // the session: X1 while waiting for authorization, nominal PWM once authorized
+            session_log.evse(false, fmt::format("Matching retried {} times, 5 percent stays off after T_step_EF",
+                                                internal_context.slac_retries));
+            internal_context.slac_retries_exhausted = true;
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_pwm = 0.;
+        } else if (hlc_use_5percent_current_session) {
+            if (limit_retries) {
+                internal_context.slac_retries++;
+            }
             internal_context.t_step_EF_return_pwm = PWM_5_PERCENT;
         } else {
             internal_context.t_step_EF_return_pwm = 0.;
@@ -2368,6 +2394,9 @@ void Charger::set_matching_started(bool m) {
 void Charger::set_slac_matched(bool matched) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_matching_started);
     shared_context.slac_matched = matched;
+    if (matched) {
+        internal_context.slac_retries = 0;
+    }
     shared_context.matching_started = matched or shared_context.matching_started;
 }
 
