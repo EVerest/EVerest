@@ -85,3 +85,41 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
         }
     }
 }
+
+TEST_CASE("ISO15118-20 DC power delivery shutdown") {
+    std::optional<d20::PauseContext> pause_ctx;
+    std::vector<session::feedback::Signal> signals;
+    session::feedback::Callbacks callbacks{};
+    callbacks.signal = [&](auto signal) { signals.push_back(signal); };
+    FsmStateHelper helper(session::SessionConfig(create_default_evse_setup()), pause_ctx, callbacks);
+    auto& ctx = helper.get_context();
+    ctx.session = d20::Session(
+        d20::SelectedServiceParameters(dt::ServiceCategory::DC, dt::DcConnector::Extended, dt::ControlMode::Scheduled,
+                                       dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing));
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+    SECTION("Context shutdown") {
+        ctx.request_shutdown();
+    }
+    SECTION("Stop control event") {
+        helper.set_active_control_event(d20::StopCharging{true});
+        CHECK_FALSE(fsm.feed(d20::Event::CONTROL_MESSAGE).transitioned());
+    }
+    CHECK(ctx.shutdown_requested());
+
+    message_20::PowerDeliveryRequest req{};
+    req.header.session_id = ctx.session.get_id();
+    req.processing = dt::Processing::Finished;
+    req.charge_progress = dt::Progress::Start;
+    helper.handle_request(req);
+    CHECK(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+    CHECK(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
+    CHECK_FALSE(ctx.session_stopped);
+    const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+    REQUIRE(res.has_value());
+    CHECK(res->response_code == dt::ResponseCode::OK);
+    REQUIRE(res->status.has_value());
+    CHECK(res->status->notification == dt::EvseNotification::Terminate);
+    CHECK(res->status->notification_max_delay == 0);
+    CHECK(signals ==
+          std::vector{session::feedback::Signal::CHARGE_LOOP_FINISHED, session::feedback::Signal::DC_OPEN_CONTACTOR});
+}

@@ -64,6 +64,10 @@ Result PowerDelivery::feed(Event ev) {
 
     const auto selected_energy_service = m_ctx.session.get_selected_services().selected_energy_service;
     if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto stop = m_ctx.get_control_event<StopCharging>();
+            stop and *stop and m_ctx.session.is_dc_charger()) {
+            m_ctx.request_shutdown();
+        }
 
         if (const auto* control_data = m_ctx.get_control_event<PresentVoltageCurrent>()) {
             present_voltage = control_data->voltage;

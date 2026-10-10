@@ -35,6 +35,9 @@ void DC_PreCharge::enter() {
 Result DC_PreCharge::feed(Event ev) {
 
     if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto stop = m_ctx.get_control_event<StopCharging>(); stop and *stop) {
+            m_ctx.request_shutdown();
+        }
         const auto control_data = m_ctx.get_control_event<PresentVoltageCurrent>();
         if (not control_data) {
             // Ignore control message
@@ -53,11 +56,20 @@ Result DC_PreCharge::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::DC_PreChargeRequest>()) {
+        auto res = handle_request(*req, m_ctx.session, present_voltage);
+        if (m_ctx.shutdown_requested()) {
+            if (res.response_code != dt::ResponseCode::FAILED_UnknownSession) {
+                set_response_code(res, dt::ResponseCode::FAILED_SequenceError);
+            }
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+            return {};
+        }
+
         if (not pre_charge_initiated) {
             m_ctx.feedback.signal(session::feedback::Signal::PRE_CHARGE_STARTED);
             pre_charge_initiated = true;
         }
-        const auto res = handle_request(*req, m_ctx.session, present_voltage);
 
         m_ctx.feedback.dc_pre_charge_target_voltage(message_20::datatypes::from_RationalNumber(req->target_voltage));
 

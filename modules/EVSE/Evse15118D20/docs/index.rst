@@ -401,6 +401,12 @@ grid code restarts service selection.
 
 Terminations that any state performs on a ``SessionStopReq`` or a sequence error
 are omitted, since they end the session rather than move it to another state.
+The diagram includes the DC preparation stop exits: a stop is latched during
+charge parameter discovery, schedule exchange, cable check or precharge. The
+next preparation request receives ``FAILED_SequenceError`` and ends the session,
+without publishing further preparation feedback. A failed cable check has the
+same terminal response, with ``EVSEProcessing`` set to ``Finished``; a pending
+check continues to report ``Ongoing``.
 
 On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
 shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
