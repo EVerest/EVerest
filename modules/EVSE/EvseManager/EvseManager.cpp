@@ -1690,6 +1690,7 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.ac_hlc_enabled = ac_hlc_enabled;
     charger_setup.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
     charger_setup.ac_enforce_hlc = config.ac_enforce_hlc;
+    charger_setup.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     charger_setup.ac_with_soc_timeout = ac_with_soc_timeout;
     charger_setup.soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
     charger_setup.soft_over_current_measurement_noise_A = config.soft_over_current_measurement_noise_A;

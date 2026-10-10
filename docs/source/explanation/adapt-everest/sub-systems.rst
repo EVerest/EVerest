@@ -172,9 +172,18 @@ accordance with the ISO 15118-3 regulations. Some EVs may cancel ISO
 communication in this case, even though the standard clearly states
 differently.
 
+If no SLAC request arrives within TT_EVSE_SLAC_init, EVerest retries the
+matching with an E/F sequence twice (C_sequ_retry of ISO 15118-3) and
+then switches 5% off for the rest of the session: X1 while waiting for
+authorization, nominal PWM once authorized. The
+*ac_limit_slac_init_retries* option (default true) controls this; with
+false, the retries continue until the EV is unplugged.
+
 For those EVs, you can set the *ac_enforce_hlc* option to “true”. Then,
 the 5% PWM will be used throughout the complete charging session as it
 is done for DC. This is not allowed according to the standard though.
+Only if the matching retries are exhausted before any HLC session was
+set up does the session end in nominal PWM here as well.
 
 For completeness, we’ll also add a
 :ref:`PersistentStore <everest_modules_PersistentStore>` 

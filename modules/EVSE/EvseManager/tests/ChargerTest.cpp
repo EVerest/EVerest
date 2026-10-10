@@ -22,6 +22,7 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
     using Charger::get_shared_context;
@@ -977,6 +978,194 @@ TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
     EXPECT_FALSE(charger->get_shared_context().flag_ev_plugged_in);
     EXPECT_NE(charger->current_state(), Charger::EvseState::PrepareCharging);
     EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
+}
+
+// [V2G3-M06-07]: with ac_limit_slac_init_retries (default), the 5% matching sequence (E/F, back to 5%) is
+// retried C_sequ_retry = 2 times; the next timeout ends in X1 and later error routines are ignored.
+TEST_F(ChargerDlinkErrorTest, SlacInitRetriesLimitedThenX1) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = true;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+
+    for (int retry = 0; retry < 2; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session()) << "retry " << retry << " returns to 5%";
+        EXPECT_EQ(slac_resets, retry + 1) << "every E/F resets SLAC";
+    }
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session()) << "last timeout returns to X1";
+    EXPECT_EQ(slac_resets, 3);
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_EQ(slac_resets, 3) << "no SLAC reset once the retries are exhausted";
+}
+
+TEST_F(ChargerDlinkErrorTest, NoFivePercentAfterLastSlacRetry) {
+    // The final T_step_EF returns to WaitingForAuthentication, whose initialization must keep 5% off
+    auto& ctx = charger->get_shared_context();
+    auto& cfg = charger->get_config_context();
+    cfg.ac_hlc_enabled = true;
+    cfg.ac_hlc_use_5percent = true;
+    cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    ctx.flag_ev_plugged_in = true;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int timeout = 0; timeout < 3; timeout++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+    }
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, FivePercentAfterEarlierSlacRetry) {
+    auto& ctx = charger->get_shared_context();
+    auto& cfg = charger->get_config_context();
+    cfg.ac_hlc_enabled = true;
+    cfg.ac_hlc_use_5percent = true;
+    cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    ctx.flag_ev_plugged_in = true;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, NoSlacRetryWithNominalPwm) {
+    // [V2G3-A09-13]: with nominal PWM the EVSE considers that no SLAC will be performed. SLAC is not reset
+    // either: it is not relaunched before the next plug-in.
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = false;
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    ctx.pwm_running = true;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(ctx.pwm_running) << "the PWM stays as it is";
+    EXPECT_EQ(slac_resets, 0);
+}
+
+// ac_enforce_hlc keeps 5% on after an EIM, unless the matching retries are exhausted before any HLC session was
+// set up: then the session ends in nominal PWM like without the option
+struct ChargerEnforceHlcTest : public ChargerDlinkErrorTest {
+    void setup_eim_in_waiting_for_authentication() {
+        auto& ctx = charger->get_shared_context();
+        auto& cfg = charger->get_config_context();
+        cfg.ac_hlc_enabled = true;
+        cfg.ac_hlc_use_5percent = true;
+        cfg.ac_enforce_hlc = true;
+        cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+        ctx.flag_ev_plugged_in = true;
+        ctx.max_current_cable = 32.0f;
+        // The initialization starts a session, which clears the authorization, unless one is active
+        ctx.session_active = true;
+        ctx.flag_authorized = true;
+        ctx.authorized_pnc = false;
+        ctx.flag_transaction_active = true;
+        charger->get_hlc_use_5percent_current_session() = true;
+    }
+
+    void slac_init_timeouts(int count) {
+        auto& ctx = charger->get_shared_context();
+        for (int timeout = 0; timeout < count; timeout++) {
+            ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+            charger->request_error_sequence();
+        }
+    }
+
+    void authorize() {
+        charger->get_shared_context().current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->run_state_machine();
+    }
+};
+
+TEST_F(ChargerEnforceHlcTest, FivePercentKeptAfterEim) {
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(1);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerEnforceHlcTest, NominalPwmAfterLastSlacRetry) {
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(3);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerEnforceHlcTest, FivePercentKeptAfterEimWhenMatched) {
+    // A match resets the count, so a later EIM in a session that matched keeps 5%
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(2);
+    charger->set_slac_matched(true);
+    charger->set_slac_matched(false);
+    slac_init_timeouts(1);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacRetryWithNominalPwmWhenNotLimited) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().ac_limit_slac_init_retries = false;
+    charger->get_hlc_use_5percent_current_session() = false;
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacInitRetriesUnlimitedWhenNotLimited) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().ac_limit_slac_init_retries = false;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int retry = 0; retry < 5; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    }
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacMatchResetsRetryCount) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int retry = 0; retry < 4; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        charger->set_slac_matched(true);
+        charger->set_slac_matched(false);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    }
 }
 
 TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
