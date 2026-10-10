@@ -241,6 +241,14 @@ message_2::ChargeParameterDiscoveryResponse build_response(const message_2::Char
             fill_ac(res, config); // [V2G2-736]: mandatory parameter even on FAILED
             return res;
         }
+        // As on DC, a negative AC_EVChargeParameter value is a wrong charge parameter [V2G2-477].
+        const auto& evp = req.ac_ev_charge_parameter.value();
+        if (dt::from_physical_value(evp.ev_max_current) < 0.0 or dt::from_physical_value(evp.ev_min_current) < 0.0 or
+            dt::from_physical_value(evp.ev_max_voltage) < 0.0 or dt::from_physical_value(evp.e_amount) < 0.0) {
+            res.response_code = dt::ResponseCode::FAILED_WrongChargeParameter;
+            fill_ac(res, config); // [V2G2-736]: mandatory parameter even on FAILED
+            return res;
+        }
         departure_time = req.ac_ev_charge_parameter->departure_time;
         fill_ac(res, config);
     }

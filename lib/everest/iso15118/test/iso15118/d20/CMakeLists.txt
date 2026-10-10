@@ -61,12 +61,22 @@ target_link_libraries(test_d20_crypto
 
 catch_discover_tests(test_d20_crypto)
 
-add_executable(test_ev_power_profile ev_power_profile.cpp)
+add_executable(test_power_timeline power_timeline.cpp)
 
-target_link_libraries(test_ev_power_profile
+target_link_libraries(test_power_timeline
     PRIVATE
         iso15118
         Catch2::Catch2WithMain
 )
 
-catch_discover_tests(test_ev_power_profile)
+catch_discover_tests(test_power_timeline)
+
+add_executable(test_pause_notification pause_notification.cpp)
+
+target_link_libraries(test_pause_notification
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_pause_notification)

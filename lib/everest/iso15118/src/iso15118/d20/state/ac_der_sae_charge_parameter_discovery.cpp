@@ -198,7 +198,8 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
 
     if (const auto* const req = variant->get_if<message_20::DER_SAE_AC_ChargeParameterDiscoveryRequest>()) {
 
-        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
+        const auto& limits = m_ctx.session_config.ac_limits;
+        const auto res = handle_request(*req, m_ctx.session, limits, present_powers,
                                         m_ctx.session_config.der_sae_limits, m_ctx.session_config.der_sae_setup_config);
 
         m_ctx.respond(res);
@@ -207,6 +208,7 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
+        m_ctx.session.cpd_max_charge_power = limits.charge_power.max;
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(
             req->transfer_mode);

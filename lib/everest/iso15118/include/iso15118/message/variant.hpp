@@ -30,6 +30,13 @@ public:
     [[nodiscard]] Type get_type() const;
     [[nodiscard]] const std::string& get_error() const;
 
+    // The frame did not decode at all (empty payload, unsupported payload type, EXI decoder failure). A frame
+    // that decoded to a message type this stack does not handle is not undecodable: get_type() is None and
+    // get_error() names it, and the state machine answers it with a sequence error.
+    [[nodiscard]] bool is_undecodable() const {
+        return undecodable;
+    }
+
     // The raw EXI of an AuthorizationReq or CertificateInstallationReq, empty for every other message and
     // for a variant built directly from a C++ message. The PnC signature verification re-decodes the request
     // from it to rebuild the signed EXI fragment; the certificate relay forwards it verbatim.
@@ -59,6 +66,7 @@ private:
     std::unique_ptr<void, CustomDeleter> data;
     Type type{Type::None};
     std::string error;
+    bool undecodable{false};
     std::vector<uint8_t> exi_payload;
 };
 } // namespace iso15118::message_20
