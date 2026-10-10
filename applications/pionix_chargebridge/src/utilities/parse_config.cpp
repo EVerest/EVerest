@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "c4/yml/node.hpp"
+#include <charge_bridge/utilities/config_path.hpp>
 #include <charge_bridge/utilities/parse_config.hpp>
 #include <charge_bridge/utilities/string.hpp>
 #include <charge_bridge/utilities/type_converters.hpp>
@@ -54,7 +55,6 @@ void yaml_error_handler(const char* msg, std::size_t len, ryml::Location loc, vo
     error_msg << print_yaml_location(loc);
     error_msg.write(msg, len);
 
-    std::cerr << error_msg.str() << std::endl;
     throw std::runtime_error(error_msg.str());
 }
 
@@ -65,7 +65,7 @@ void print_location(ryml::ConstNodeRef node, ryml::Parser& parser) {
 void load_yaml_file(const std::string& filename, ryml::Parser* parser, ryml::Tree* t) {
     std::ifstream file(filename);
     if (!file.is_open()) {
-        throw std::runtime_error("Could not open file: " + filename);
+        throw std::runtime_error("Config file not found: " + filename);
     }
 
     std::stringstream buffer;
@@ -334,7 +334,7 @@ void parse_config_impl(c4::yml::NodeRef& config, charge_bridge_config& c, std::f
         std::cerr << "Configuration error: Cannot enable EVSE and EV BSP at the same time (both are only "
                      "allowed with an ANY* mDNS endpoint, where the discovered board selects the role)"
                   << std::endl;
-        throw std::exception();
+        throw std::runtime_error("");
     }
 
     get_block("evse_bsp", c.bsp, [&](auto& cfg, auto const& main) {
@@ -579,17 +579,18 @@ charge_bridge_config set_config_placeholders(charge_bridge_config const& src, ch
     return result;
 }
 
-std::vector<charge_bridge_config> parse_config_multi(std::string const& config_file) {
+std::vector<charge_bridge_config> parse_config_multi(std::string const& config_file_arg) {
     const static RymlCallbackInitializer ryml_callback_initializer;
 
+    auto const config_file = resolve_from_shell_cwd(config_file_arg).string();
     try {
         ryml::EventHandlerTree evt_handler = {};
         ryml::Parser parser(&evt_handler, ryml::ParserOptions().locations(true));
         ryml::Tree config_tree;
         load_yaml_file(config_file, &parser, &config_tree);
         c4::yml::NodeRef config = config_tree.rootref();
-        if (config.invalid()) {
-            std::cerr << "Config file not found: " << config_file << std::endl;
+        if (config.invalid() or not config.is_map()) {
+            std::cerr << "Config file is empty or not a YAML mapping: " << config_file << std::endl;
             return {};
         }
         charge_bridge_config base_config;
@@ -610,8 +611,16 @@ std::vector<charge_bridge_config> parse_config_multi(std::string const& config_f
         }
 
         return cb_config_list;
+    } catch (std::exception const& e) {
+        // A missing file and a YAML syntax error carry their reason in the exception; a semantic
+        // error (unknown value, missing key, bad address) has already been printed with its
+        // location and arrives with an empty message.
+        if (e.what() != nullptr and e.what()[0] != '\0') {
+            std::cerr << e.what() << std::endl;
+        }
+        std::cerr << "FAILED to parse configuration " << config_file << std::endl;
     } catch (...) {
-        std::cerr << "FAILED to parse configuration!" << std::endl;
+        std::cerr << "FAILED to parse configuration " << config_file << std::endl;
     }
     return {};
 }
