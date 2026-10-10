@@ -21,6 +21,7 @@ cc_test(
         ],
         exclude = [
             "main/car_simulatorImpl.*",
+            "tests/CarSimulatorTest.cpp",
         ],
     ) + [
         "EvManager.hpp",

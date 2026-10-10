@@ -14,6 +14,8 @@ target_include_directories(${TEST_TARGET_NAME}
 target_sources(${TEST_TARGET_NAME}
     PRIVATE
         CarSimulationTest.cpp
+        CarSimulatorTest.cpp
+        ../main/car_simulatorImpl.cpp
         CommandRegistryTest.cpp
         SimCommandTest.cpp
         ../main/car_simulation.cpp
