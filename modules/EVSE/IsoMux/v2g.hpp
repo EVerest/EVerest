@@ -130,7 +130,7 @@ struct v2g_context {
 
     uint32_t network_read_timeout;     /* in milli seconds */
     uint32_t network_read_timeout_tls; /* in milli seconds */
-    bool selected_iso20{false};
+    std::atomic_bool selected_iso20{false};
     std::atomic_bool iso20_proxy_enabled{true};
 
     enum tls_security_level tls_security;
@@ -151,7 +151,8 @@ struct v2g_context {
     bool tls_key_logging;
 
     enum V2gMsgTypeId current_v2g_msg;         /* holds the last v2g msg type */
-    int state;                                 /* holds the current state id */
+    std::atomic_bool session_active;           /* a connection is being proxied, further connections are rejected */
+    std::atomic_int active_connections;        /* connection threads of the TCP and TLS servers */
     std::atomic_bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown
                                       immediately without response message) */
 };

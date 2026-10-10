@@ -51,7 +51,7 @@ static int v2g_incoming_v2gtp(struct v2g_connection* conn) {
     }
 
     rv = V2GTP_ReadHeader(conn->buffer, &conn->payload_len);
-    if (rv == -1) {
+    if (rv != V2GTP_ERROR__NO_ERROR) {
         dlog(DLOG_LEVEL_ERROR, "Invalid v2gtp header");
         return -1;
     }
@@ -143,38 +143,20 @@ static bool v2g_sniff_apphandshake(struct v2g_connection* conn, bool& iso20) {
     return true;
 }
 
-bool v2g_detect_iso20_support(struct v2g_connection* conn) {
-    int rv = -1;
-    enum v2g_event rvAppHandshake = V2G_EVENT_NO_EVENT;
-    enum v2g_protocol selected_protocol = V2G_UNKNOWN_PROTOCOL;
+HandshakeResult v2g_detect_iso20_support(struct v2g_connection* conn) {
+    /* setup for receive */
+    conn->buffer[0] = 0;
+    conn->payload_len = 0;
+    exi_bitstream_init(&conn->stream, conn->buffer, 0, 0, nullptr);
 
-    /* static setup */
-    conn->stream.data = conn->buffer;
-    bool app_protocol_received = false;
-    do {
-        /* setup for receive */
-        conn->stream.data[0] = 0;
-        conn->payload_len = 0;
-        exi_bitstream_init(&conn->stream, conn->buffer, 0, 0, nullptr);
+    /* next call return -1 on error, 1 when peer closed connection, 0 on success */
+    if (v2g_incoming_v2gtp(conn) != 0 or conn->ctx->is_connection_terminated) {
+        dlog(DLOG_LEVEL_ERROR, "v2g_incoming_v2gtp() failed");
+        return HandshakeResult::Failed;
+    }
 
-        /* next call return -1 on error, 1 when peer closed connection, 0 on success */
-        rv = v2g_incoming_v2gtp(conn);
+    bool iso20 = false;
+    v2g_sniff_apphandshake(conn, iso20);
 
-        if (rv != 0) {
-            dlog(DLOG_LEVEL_ERROR, "v2g_incoming_v2gtp() failed");
-        }
-
-        if (conn->ctx->is_connection_terminated == true) {
-            rv = -1;
-        }
-
-        bool iso20 = false;
-        app_protocol_received = v2g_sniff_apphandshake(conn, iso20);
-
-        if (iso20) {
-            return true;
-        }
-
-    } while ((rv == 1) && not app_protocol_received);
-    return false;
+    return iso20 ? HandshakeResult::Iso20Offered : HandshakeResult::Iso20NotOffered;
 }

@@ -28,6 +28,12 @@ static const char* v2g_msg_type[] = {
     "Unknown",
 };
 
-bool v2g_detect_iso20_support(struct v2g_connection* conn);
+enum class HandshakeResult {
+    Failed, // no complete SupportedAppProtocolReq received, the connection must not be proxied
+    Iso20Offered,
+    Iso20NotOffered,
+};
+
+HandshakeResult v2g_detect_iso20_support(struct v2g_connection* conn);
 
 #endif /* V2G_SERVER_H */

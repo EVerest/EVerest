@@ -4,6 +4,7 @@
 #include "tls_connection.hpp"
 #include "connection.hpp"
 #include "log.hpp"
+#include "proxy.hpp"
 #include "v2g.hpp"
 #include "v2g_server.hpp"
 #include <everest/tls/tls.hpp>
@@ -49,13 +50,7 @@ void process_connection_thread(std::shared_ptr<tls::ServerConnection> con, struc
 
             // TODO(james-ctc) v2g_ctx->tls_key_logging
 
-            if (ctx->state == 0) {
-                const auto rv = ::connection_handle(connection.get());
-                dlog(DLOG_LEVEL_INFO, "connection_handle exited with %d", rv);
-            } else {
-                dlog(DLOG_LEVEL_INFO, "%s", "Closing tls-connection. v2g-session is already running");
-            }
-
+            ::connection_handle(connection.get());
             con->shutdown();
             break;
         case tls::Connection::result_t::want_read:
@@ -68,21 +63,29 @@ void process_connection_thread(std::shared_ptr<tls::ServerConnection> con, struc
             break;
         }
     }
+
+    connection_slot_release(ctx);
 }
 
 void handle_new_connection_cb(tls::Server::ConnectionPtr&& con, struct v2g_context* ctx) {
     assert(con != nullptr);
     assert(ctx != nullptr);
+    if (not connection_slot_acquire(ctx)) {
+        // dropping the connection closes its socket
+        dlog(DLOG_LEVEL_WARNING, "Too many connections, closing connection");
+        return;
+    }
+    // passing unique pointers through thread parameters is problematic
+    std::shared_ptr<tls::ServerConnection> connection(con.release());
     // create a thread to process this connection
     try {
-        // passing unique pointers through thread parameters is problematic
-        std::shared_ptr<tls::ServerConnection> connection(con.release());
         std::thread connection_loop(process_connection_thread, connection, ctx);
         connection_loop.detach();
     } catch (const std::system_error&) {
         // unable to start thread
         dlog(DLOG_LEVEL_ERROR, "pthread_create() failed: %s", strerror(errno));
-        con->shutdown();
+        connection->shutdown();
+        connection_slot_release(ctx);
     }
 }
 
@@ -331,7 +334,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
     int ev_fd = conn->tls_connection->socket(); // underlying socket of TLS connection
 
     // SupportedAppProtocolReq message is still in buffer, we need to forward it to the external stack
-    write(proxy_fd, conn->buffer, conn->payload_len + 8);
+    if (not proxy_write(proxy_fd, conn->buffer, conn->payload_len + 8)) {
+        return -1;
+    }
 
     struct pollfd poll_list[2];
     poll_list[0].fd = proxy_fd;
@@ -358,7 +363,9 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
             break;
         } else if (r > 0) {
             // successfully read bytes, forward to proxy module
-            write(proxy_fd, buf, r);
+            if (not proxy_write(proxy_fd, buf, r)) {
+                return -1;
+            }
         }
 
         // check if SSL was actually waiting on write
@@ -384,11 +391,13 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
             // we can read from proxy (connection to local ISO module)
             int nrbytes = read(proxy_fd, buf, sizeof(buf));
 
-            if (nrbytes == 0) {
+            if (nrbytes <= 0) {
                 break;
             }
             // write data to EV
-            nrbytes = conn->write(conn, buf, nrbytes);
+            if (conn->write(conn, buf, nrbytes) != nrbytes) {
+                return -1;
+            }
         }
 
         if (poll_list[0].revents & POLLERR or poll_list[0].revents & POLLHUP or poll_list[0].revents & POLLNVAL) {
@@ -408,7 +417,6 @@ int connection_proxy(struct v2g_connection* conn, int proxy_fd) {
         }
     }
 
-    close(proxy_fd);
     return 0;
 }
 
