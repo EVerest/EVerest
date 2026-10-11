@@ -17,6 +17,7 @@
 
 #include <ocpp/v2/functional_blocks/availability.hpp>
 #include <ocpp/v2/functional_blocks/diagnostics.hpp>
+#include <ocpp/v2/functional_blocks/firmware_update.hpp>
 #include <ocpp/v2/functional_blocks/meter_values.hpp>
 #include <ocpp/v2/functional_blocks/security.hpp>
 #include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
@@ -57,7 +58,8 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
                            StopTransactionCallback stop_transaction_callback,
                            std::optional<VariableChangedCallback> variable_changed_callback,
                            TariffAndCostInterface& tariff_and_cost,
-                           std::atomic<RegistrationStatusEnum>& registration_status) :
+                           std::atomic<RegistrationStatusEnum>& registration_status,
+                           FirmwareUpdateInterface& firmware_update) :
     context(functional_block_context),
     message_queue(message_queue),
     ocsp_updater(ocsp_updater),
@@ -67,6 +69,7 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
     diagnostics(diagnostics),
     transaction(transaction),
     tariff_and_cost(tariff_and_cost),
+    firmware_update(firmware_update),
     time_sync_callback(time_sync_callback),
     boot_notification_callback(boot_notification_callback),
     validate_network_profile_callback(validate_network_profile_callback),
@@ -207,6 +210,7 @@ void Provisioning::handle_boot_notification_response(CallResult<BootNotification
 
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
         this->message_queue.set_registration_status_accepted();
+        this->firmware_update.on_registration_accepted();
         // B01.FR.06 Only use boot timestamp if TimeSource contains Heartbeat
         if (this->time_sync_callback.has_value() and
             this->context.device_model.get_value<std::string>(ControllerComponentVariables::TimeSource)
