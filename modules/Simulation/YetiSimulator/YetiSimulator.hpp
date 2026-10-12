@@ -104,6 +104,7 @@ public:
     void pwm_on(const double dutycycle);
     void cp_state_x1();
     void cp_state_f();
+    void simulation_statemachine();
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -123,7 +124,6 @@ private:
     void simulation_step();
     void check_error_rcd();
     void read_from_car();
-    void simulation_statemachine();
     void add_noise();
     void simulate_powermeter();
     void publish_ev_board_support() const;

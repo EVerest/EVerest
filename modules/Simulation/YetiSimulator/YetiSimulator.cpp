@@ -493,6 +493,8 @@ void YetiSimulator::simulation_statemachine() {
             // Table A.6: Sequence 4 EV ready to charge.
             // Must enable power within 3 seconds.
             powerOn();
+        } else {
+            powerOff();
         }
         break;
     case state::State::STATE_D:

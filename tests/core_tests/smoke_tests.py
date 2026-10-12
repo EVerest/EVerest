@@ -132,11 +132,12 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
-async def wait_for_session_events(mock, expected_events, timeout=30):
+async def wait_for_session_events(mock, expected_events, timeout=30, forbidden_events=()):
     """Wait for specific events to appear in the mock's call list in the exact order.
     
     After successfully matching events, the mock is automatically reset so subsequent
     calls will only see new events. This allows checking for the same event multiple times.
+    Any of forbidden_events recorded before the match fails the wait.
     """
     start_time = asyncio.get_event_loop().time()
 
@@ -146,6 +147,10 @@ async def wait_for_session_events(mock, expected_events, timeout=30):
             event_data = call[0][0]
             event_type = event_data.get("event")
             events.append(event_type)
+
+        found_forbidden = [event for event in events if event in forbidden_events]
+        if found_forbidden:
+            raise AssertionError(f"Events {found_forbidden} should not have occurred. All events: {events}")
 
         # Check if expected_events appear in order (as a subsequence)
         expected_idx = 0
@@ -1586,10 +1591,31 @@ async def test_iso15118_dc_cable_check_failed(
         "imd": [Requirement("imd", "main")],
     }
 )
-@pytest.mark.everest_core_config("config-sil-dc.yaml")
-@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(cable_check_measurements=10))
+@pytest.mark.parametrize(
+    "iso15118_version",
+    [
+        pytest.param(
+            "iso15118_dc_d2",
+            marks=[
+                pytest.mark.everest_core_config("config-sil-dc.yaml"),
+                pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(cable_check_measurements=10)),
+            ],
+            id="iso15118_dc_d2",
+        ),
+        pytest.param(
+            "iso15118_dc_d20",
+            marks=[
+                pytest.mark.everest_core_config("config-sil-dc-d20.yaml"),
+                pytest.mark.everest_config_adaptions(
+                    DcConfigAdjustmentStrategy(ev_d20_only=True, cable_check_measurements=10)
+                ),
+            ],
+            id="iso15118_dc_d20",
+        ),
+    ],
+)
 async def test_iso15118_dc_stop_transaction_during_cable_check(
-    test_controller: TestController, everest_core: EverestCore
+    iso15118_version, test_controller: TestController, everest_core: EverestCore
 ):
     """
     Test that stopping the transaction on request (regular Local/Remote stop) while the
@@ -1598,21 +1624,17 @@ async def test_iso15118_dc_stop_transaction_during_cable_check(
     surface as MREC11CableCheckFault/Inoperative to the user. The session must still wind
     down cleanly with a TransactionFinished event (StoppingCharging -> Finished), without
     the D-LINK_ERROR of the dying HLC session restarting SLAC matching.
+
+    The d20 variant wires EvseManager.hlc directly to Evse15118D20, so the SECC must end
+    the session during cable check and the simulated relay must open on the withdrawn
+    power permission before EvseManager leaves StoppingCharging.
     """
-    probe_module, session_event_mock, powermeter_mock, _ = await setup_session_mocks(
+    probe_module, session_event_mock, _, _ = await setup_session_mocks(
         test_controller, everest_core
     )
     error_raised_mock, _ = setup_error_monitoring(probe_module, "evse_manager")
     imd_measurement_mock = Mock()
     probe_module.subscribe_variable("imd", "isolation_measurement", imd_measurement_mock)
-
-    # Run a complete charging session first: the state machine only arms the HLC stop
-    # handling (hlc_charging_active) when the Idle state is re-entered, so only from the
-    # second session on does a stop during cable check take the HLC stop path that must
-    # end in StoppingCharging -> Finished (and not in a SLAC matching restart).
-    await run_basic_session(test_controller, session_event_mock, powermeter_mock, "plug_in_dc_iso")
-    await asyncio.sleep(3)
-    imd_measurement_mock.reset_mock()
 
     test_controller.plug_in_dc_iso()
 
@@ -1635,8 +1657,7 @@ async def test_iso15118_dc_stop_transaction_during_cable_check(
     )
 
     # The stop must land during the cable check, i.e. charging must never start
-    await assert_no_events(session_event_mock, ["ChargingStarted"], wait_time=2, reset_after_check=False)
-    await wait_for_session_events(session_event_mock, ["TransactionFinished"])
+    await wait_for_session_events(session_event_mock, ["TransactionFinished"], forbidden_events=["ChargingStarted"])
 
     # Give the detached cable check thread time to wind down before checking for errors
     await asyncio.sleep(3)

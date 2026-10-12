@@ -5,8 +5,13 @@ set(TEST_TARGET_NAME ${PROJECT_NAME}_YetiSimulator_tests)
 
 add_executable(${TEST_TARGET_NAME}
     EvBoardSupportTest.cpp
+    EvseBoardSupportTest.cpp
+    ../YetiSimulator.cpp
+    ../board_support/evse_board_supportImpl.cpp
     ../ev_board_support/ev_board_supportImpl.cpp
+    ../util/errors.cpp
     ../util/state.cpp
+    ../util/util.cpp
 )
 
 get_target_property(GENERATED_INCLUDE_DIR generate_cpp_files EVEREST_GENERATED_INCLUDE_DIR)
