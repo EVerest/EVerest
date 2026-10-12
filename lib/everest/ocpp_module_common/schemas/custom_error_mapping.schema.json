@@ -1,0 +1,131 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://everest.github.io/schemas/ocpp_module_common/custom_error_mapping.schema.json",
+  "title": "Custom OCPP error mapping",
+  "description": "Overrides fields of the built-in OCPP 1.6 StatusNotification and OCPP 2.x NotifyEvent representation of EVerest errors. Every field an entry leaves out keeps its built-in value. Each key is an EVerest error type '<namespace>/<type>', optionally refined by a sub_type as '<namespace>/<type>#<sub_type>'. An entry for type and sub_type takes precedence over an entry for the type alone. evse_manager/Inoperative cannot be mapped.",
+  "type": "object",
+  "properties": {
+    "$schema": {
+      "description": "Optional reference to this schema, for editors.",
+      "type": "string"
+    }
+  },
+  "propertyNames": {
+    "pattern": "^(\\$schema|[A-Za-z0-9_]+/[A-Z][A-Za-z0-9]*(#.+)?)$"
+  },
+  "patternProperties": {
+    "^[A-Za-z0-9_]+/[A-Z][A-Za-z0-9]*(#.+)?$": {
+      "$ref": "#/definitions/entry"
+    }
+  },
+  "definitions": {
+    "entry": {
+      "description": "Static identity of one EVerest error.",
+      "type": "object",
+      "properties": {
+        "v16": {
+          "$ref": "#/definitions/v16"
+        },
+        "v2": {
+          "$ref": "#/definitions/v2"
+        }
+      },
+      "anyOf": [
+        {
+          "required": ["v16"]
+        },
+        {
+          "required": ["v2"]
+        }
+      ],
+      "additionalProperties": false
+    },
+    "v16": {
+      "description": "OCPP 1.6 StatusNotification.req fields.",
+      "type": "object",
+      "properties": {
+        "error_code": {
+          "description": "errorCode. Defaults to the built-in value.",
+          "type": "string",
+          "enum": [
+            "ConnectorLockFailure",
+            "EVCommunicationError",
+            "GroundFailure",
+            "HighTemperature",
+            "InternalError",
+            "LocalListConflict",
+            "OtherError",
+            "OverCurrentFailure",
+            "PowerMeterFailure",
+            "PowerSwitchFailure",
+            "ReaderFailure",
+            "ResetFailure",
+            "UnderVoltage",
+            "OverVoltage",
+            "WeakSignal"
+          ]
+        },
+        "vendor_id": {
+          "description": "vendorId. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 255 characters after substitution.",
+          "type": "string",
+          "minLength": 1
+        },
+        "vendor_error_code": {
+          "description": "vendorErrorCode. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
+          "type": "string",
+          "minLength": 1
+        },
+        "info": {
+          "description": "info. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "additionalProperties": false
+    },
+    "v2": {
+      "description": "OCPP 2.x NotifyEvent.req fields.",
+      "type": "object",
+      "properties": {
+        "tech_code": {
+          "description": "techCode. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 50 characters after substitution.",
+          "type": "string",
+          "minLength": 1
+        },
+        "tech_info": {
+          "description": "techInfo. Defaults to the built-in value. May contain the error placeholders ${type}, ${sub_type}, ${message}, ${description}, ${vendor_id}, ${origin}, ${origin_module}, ${origin_implementation}, ${evse}, ${connector}, ${severity}, ${state}, ${timestamp} and ${uuid}. Truncated to 500 characters after substitution.",
+          "type": "string",
+          "minLength": 1
+        },
+        "component_name": {
+          "description": "Component name. Defaults to the built-in value: EVSE, or ChargingStation for an error without an EVSE mapping. The EVSE and connector of the component always follow the EVerest mapping of the module that raised the error; ChargingStation reports the error without an EVSE.",
+          "$ref": "#/definitions/identifier"
+        },
+        "component_instance": {
+          "description": "Component instance.",
+          "$ref": "#/definitions/identifier"
+        },
+        "variable_name": {
+          "description": "Variable name. Defaults to the built-in value, Problem.",
+          "$ref": "#/definitions/identifier"
+        },
+        "variable_instance": {
+          "description": "Variable instance.",
+          "$ref": "#/definitions/identifier"
+        },
+        "severity": {
+          "description": "severity (0 highest, 9 lowest), reported for every occurrence of the error. A static value, unrelated to the severity the EVerest error is raised with. Only OCPP 2.1 reports it. Without this field no severity is reported.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9
+        }
+      },
+      "additionalProperties": false
+    },
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 50
+    }
+  }
+}

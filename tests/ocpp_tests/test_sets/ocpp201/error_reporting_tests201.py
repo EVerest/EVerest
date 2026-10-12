@@ -132,3 +132,74 @@ async def test_error_without_message_sets_notify_event_tech_info_to_description_
         {},
         validate_payload_func=_validate_notify_event_tech_info(expected_tech_info, True),
     )
+
+
+def _validate_notify_event_entry(expected_entry):
+    """Returns a validate_payload_func for wait_for_and_validate that matches a NotifyEvent.req
+    `eventData` entry containing all of `expected_entry`; eventId and timestamp vary per run
+    and are not compared."""
+
+    def _validate(meta_data, msg, exp_payload):
+        if msg.action != "NotifyEvent":
+            return False
+        for event_data in msg.payload.get("eventData", []):
+            if all(event_data.get(key) == value for key, value in expected_entry.items()):
+                return True
+        return False
+
+    return _validate
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config(
+    get_everest_config_path_str("everest-config-ocpp201.yaml")
+)
+@pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+async def test_mrec_error_reports_full_notify_event_on_raise_and_clear(
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+    test_controller: TestController,
+):
+    logging.info("######### test_mrec_error_reports_full_notify_event_on_raise_and_clear #########")
+
+    # Every eventData field except eventId and timestamp, for the MREC techCode of the error type
+    message = "test error message"
+    expected_entry = {
+        "trigger": "Alerting",
+        "actualValue": "true",
+        "component": {"name": "EVSE", "evse": {"id": 1}},
+        "eventNotificationType": "HardWiredNotification",
+        "variable": {"name": "Problem"},
+        "techCode": "CX002",
+        "techInfo": message,
+        "cleared": False,
+    }
+
+    test_controller.publish(
+        _raise_error_topic(test_controller),
+        json.dumps({"type": MREC_ERROR_TYPE, "message": message}),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "NotifyEvent",
+        {},
+        validate_payload_func=_validate_notify_event_entry(expected_entry),
+    )
+
+    test_controller.publish(
+        _clear_error_topic(test_controller),
+        json.dumps({"type": MREC_ERROR_TYPE}),
+    )
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "NotifyEvent",
+        {},
+        validate_payload_func=_validate_notify_event_entry(
+            {**expected_entry, "actualValue": "false", "cleared": True}
+        ),
+    )

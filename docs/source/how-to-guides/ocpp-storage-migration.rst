@@ -27,13 +27,20 @@ the module config keys as described below for the module you are coming from.
 Coming from OCPP201
 -------------------
 
-All ``OCPP201`` config keys exist unchanged in OCPPmulti:
+These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
 ``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
-``DelayOcppStart``, ``ResetStopDelay``, and ``CustomMrecErrorMapPath``.
+``DelayOcppStart``, and ``ResetStopDelay``.
+
+``CustomMrecErrorMapPath`` has no counterpart. OCPPmulti reads a custom error
+mapping file from ``CustomErrorMappingPath`` instead, in a different format
+that covers OCPP 1.6 and 2.x (see the error reporting section of
+:ref:`OCPPmulti <everest_modules_OCPPmulti>`). An ``OCPP201`` techCode
+override ``"<error type>": "<techCode>"`` becomes the entry
+``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
 
 One new module config key is relevant: ``Mode`` selects the protocol
 generation. Its default ``Only2`` runs OCPP 2.x, matching the behavior of the
@@ -41,8 +48,8 @@ old ``OCPP201`` module, so no change is needed. Which OCPP 2.x version (2.0.1
 or 2.1) is offered to the CSMS during the websocket handshake is still
 controlled by the device model variable ``SupportedOcppVersions`` of the
 ``InternalCtrlr`` component (a comma-separated preference list, e.g.
-``ocpp2.1,ocpp2.0.1``). Everything else in an existing ``OCPP201``
-configuration carries over without changes.
+``ocpp2.1,ocpp2.0.1``). Apart from the custom error mapping, everything else
+in an existing ``OCPP201`` configuration carries over without changes.
 
 Coming from OCPP (1.6)
 ----------------------
