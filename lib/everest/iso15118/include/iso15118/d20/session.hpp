@@ -218,6 +218,9 @@ public:
     // From the EV's latest PowerDeliveryReq that carried one.
     std::optional<EvPowerProfile> ev_power_profile{};
 
+    // Set once a charge loop response carried EVSENotification=Pause ([V2G20-1195]).
+    bool secc_pause_notified{false};
+
 private:
     // NOTE (aw): could be const
     std::array<uint8_t, ID_LENGTH> id{};
