@@ -575,6 +575,17 @@ ChargePointConfigurationDeviceModel::setInternalRemoteStartTransactionWithoutCon
 }
 
 ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalAllowRemoteStartTransactionWhileFinishing(const std::string& value) {
+    if (not getAllowRemoteStartTransactionWhileFinishing().has_value()) {
+        return SetResult::UnknownVariable;
+    }
+    if (not isBool(value)) {
+        return SetResult::Rejected;
+    }
+    return set_value_check(*storage, keys::valid_keys::AllowRemoteStartTransactionWhileFinishing, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalReportSuspendedEVSEReasonChange(const std::string& value) {
     return set_value(isBool, *storage, keys::valid_keys::ReportSuspendedEVSEReasonChange, value);
 }
@@ -2055,6 +2066,10 @@ std::optional<bool> ChargePointConfigurationDeviceModel::getRemoteStartTransacti
     return get_optional<bool>(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst);
 }
 
+std::optional<bool> ChargePointConfigurationDeviceModel::getAllowRemoteStartTransactionWhileFinishing() {
+    return get_optional<bool>(*storage, keys::valid_keys::AllowRemoteStartTransactionWhileFinishing);
+}
+
 std::optional<bool> ChargePointConfigurationDeviceModel::getAllowOfflineTxForUnknownId() {
     return get_optional<bool>(*storage, keys::valid_keys::AllowOfflineTxForUnknownId);
 }
@@ -2286,6 +2301,10 @@ ChargePointConfigurationDeviceModel::getRemoteStartTransactionWithoutConnectorId
     return get_key_value_optional(*storage, keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst);
 }
 
+std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAllowRemoteStartTransactionWhileFinishingKeyValue() {
+    return get_key_value_optional(*storage, keys::valid_keys::AllowRemoteStartTransactionWhileFinishing);
+}
+
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getAllowOfflineTxForUnknownIdKeyValue() {
     return get_key_value_optional(*storage, keys::valid_keys::AllowOfflineTxForUnknownId);
 }
@@ -2403,6 +2422,10 @@ void ChargePointConfigurationDeviceModel::setRejectRemoteStartTransactionWithout
 
 void ChargePointConfigurationDeviceModel::setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) {
     setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(to_string(find_first));
+}
+
+void ChargePointConfigurationDeviceModel::setAllowRemoteStartTransactionWhileFinishing(bool allow) {
+    setInternalAllowRemoteStartTransactionWhileFinishing(to_string(allow));
 }
 
 void ChargePointConfigurationDeviceModel::setAllowOfflineTxForUnknownId(bool enabled) {
@@ -3624,6 +3647,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::RemoteStartTransactionWithoutConnectorIdFindFirst:
             result = convert(setInternalRemoteStartTransactionWithoutConnectorIdFindFirst(value_str));
+            break;
+        case keys::valid_keys::AllowRemoteStartTransactionWhileFinishing:
+            result = convert(setInternalAllowRemoteStartTransactionWhileFinishing(value_str));
             break;
         case keys::valid_keys::ReportSuspendedEVSEReasonChange:
             result = convert(setInternalReportSuspendedEVSEReasonChange(value_str));

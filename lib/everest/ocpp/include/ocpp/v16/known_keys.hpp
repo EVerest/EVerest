@@ -177,6 +177,7 @@ namespace ocpp::v16::keys {
     mapping(StopTransactionIfUnlockNotSupported, StopTransactionIfUnlockNotSupported) \
     mapping(RejectRemoteStartTransactionWithoutConnectorId, RejectRemoteStartTransactionWithoutConnectorId) \
     mapping(RemoteStartTransactionWithoutConnectorIdFindFirst, RemoteStartTransactionWithoutConnectorIdFindFirst) \
+    mapping(AllowRemoteStartTransactionWhileFinishing, AllowRemoteStartTransactionWhileFinishing) \
     mapping(MeterPublicKeys, MeterPublicKeys) \
     mapping(DisableSecurityEventNotifications, DisableSecurityEventNotifications) \
     mapping(ISO15118CertificateManagementEnabled, ISO15118CertificateManagementEnabled) \
@@ -284,6 +285,7 @@ namespace ocpp::v16::keys {
     key(Internal, QueueAllMessages) \
     key(Internal, RejectRemoteStartTransactionWithoutConnectorId) \
     key(Internal, RemoteStartTransactionWithoutConnectorIdFindFirst) \
+    key(Internal, AllowRemoteStartTransactionWhileFinishing) \
     key(Internal, ReportClearedErrors) \
     key(Internal, ReportSuspendedEVSEReasonChange) \
     key(Internal, RetryBackoffRandomRange) \

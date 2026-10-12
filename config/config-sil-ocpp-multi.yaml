@@ -45,6 +45,7 @@ active_modules:
       ac_enforce_hlc: false
       external_ready_to_start_charging: true
       request_zero_power_in_idle: true
+      allow_start_charging_while_finished: true
     connections:
       bsp:
         - module_id: yeti_driver_1
@@ -82,6 +83,7 @@ active_modules:
       ac_enforce_hlc: false
       external_ready_to_start_charging: true
       request_zero_power_in_idle: true
+      allow_start_charging_while_finished: true
     connections:
       bsp:
         - module_id: yeti_driver_2
@@ -155,6 +157,7 @@ active_modules:
     config_module:
       connection_timeout: 10
       selection_algorithm: FindFirst
+      allow_new_session_while_finished: true
     connections:
       token_provider:
         - module_id: token_provider_1

@@ -1352,6 +1352,12 @@ const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst = {
         "RemoteStartTransactionWithoutConnectorIdFindFirst",
     }),
 };
+const ComponentVariable AllowRemoteStartTransactionWhileFinishing = {
+    ControllerComponents::OCPP16LegacyCtrlr,
+    std::optional<Variable>({
+        "AllowRemoteStartTransactionWhileFinishing",
+    }),
+};
 const ComponentVariable MeterPublicKeys = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({

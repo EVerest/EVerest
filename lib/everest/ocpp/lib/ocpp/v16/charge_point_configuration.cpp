@@ -2489,6 +2489,34 @@ std::optional<KeyValue> ChargePointConfiguration::getRemoteStartTransactionWitho
     return find_first_opt;
 }
 
+std::optional<bool> ChargePointConfiguration::getAllowRemoteStartTransactionWhileFinishing() {
+    std::optional<bool> allow = std::nullopt;
+    if (this->config["Internal"].contains("AllowRemoteStartTransactionWhileFinishing")) {
+        allow.emplace(this->config["Internal"]["AllowRemoteStartTransactionWhileFinishing"]);
+    }
+    return allow;
+}
+
+void ChargePointConfiguration::setAllowRemoteStartTransactionWhileFinishing(bool allow) {
+    if (this->getAllowRemoteStartTransactionWhileFinishing() != std::nullopt) {
+        this->config["Internal"]["AllowRemoteStartTransactionWhileFinishing"] = allow;
+        this->setInUserConfig("Internal", "AllowRemoteStartTransactionWhileFinishing", allow);
+    }
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getAllowRemoteStartTransactionWhileFinishingKeyValue() {
+    std::optional<KeyValue> allow_opt = std::nullopt;
+    auto allow = this->getAllowRemoteStartTransactionWhileFinishing();
+    if (allow != std::nullopt) {
+        KeyValue kv;
+        kv.key = "AllowRemoteStartTransactionWhileFinishing";
+        kv.readonly = false;
+        kv.value.emplace(ocpp::conversions::bool_to_string(allow.value()));
+        allow_opt.emplace(kv);
+    }
+    return allow_opt;
+}
+
 std::int32_t ChargePointConfiguration::getWaitForStopTransactionsOnResetTimeout() {
     return this->config["Internal"]["WaitForStopTransactionsOnResetTimeout"];
 }
@@ -3409,6 +3437,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "RemoteStartTransactionWithoutConnectorIdFindFirst") {
         return this->getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue();
     }
+    if (key == "AllowRemoteStartTransactionWhileFinishing") {
+        return this->getAllowRemoteStartTransactionWhileFinishingKeyValue();
+    }
     if (key == "WaitForStopTransactionsOnResetTimeout") {
         return this->getWaitForStopTransactionsOnResetTimeoutKeyValue();
     }
@@ -4266,6 +4297,15 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         }
         if (isBool(value.get())) {
             this->setRemoteStartTransactionWithoutConnectorIdFindFirst(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
+    } else if (key == "AllowRemoteStartTransactionWhileFinishing") {
+        if (!this->getAllowRemoteStartTransactionWhileFinishing().has_value()) {
+            return ConfigurationStatus::NotSupported;
+        }
+        if (isBool(value.get())) {
+            this->setAllowRemoteStartTransactionWhileFinishing(ocpp::conversions::string_to_bool(value.get()));
         } else {
             return ConfigurationStatus::Rejected;
         }

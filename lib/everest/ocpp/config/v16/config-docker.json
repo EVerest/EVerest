@@ -7,6 +7,7 @@
         "ChargePointVendor": "Pionix",
         "FirmwareVersion": "0.1",
         "AllowChargingProfileWithoutStartSchedule": true,
+        "AllowRemoteStartTransactionWhileFinishing": true,
         "UseTPM" : false,
         "LogMessagesFormat": ["html","security"]
     },

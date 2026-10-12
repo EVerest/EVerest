@@ -343,6 +343,7 @@ extern const ComponentVariable SwitchSecurityProfileConnectionTimeout;
 extern const ComponentVariable StopTransactionIfUnlockNotSupported;
 extern const ComponentVariable RejectRemoteStartTransactionWithoutConnectorId;
 extern const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst;
+extern const ComponentVariable AllowRemoteStartTransactionWhileFinishing;
 extern const ComponentVariable MeterPublicKeys;
 extern const ComponentVariable DisableSecurityEventNotifications;
 extern const ComponentVariable ISO15118CertificateManagementEnabled;

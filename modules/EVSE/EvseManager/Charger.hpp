@@ -92,6 +92,7 @@ public:
         int sleep_before_enabling_pwm_hlc_mode_ms{0};
         utils::SessionIdType session_id_type{utils::SessionIdType::UUID};
         int hlc_charge_loop_without_energy_timeout_s{0};
+        bool allow_start_charging_while_finished{false};
     };
 
     enum class EvseState {
@@ -147,6 +148,7 @@ public:
     // pending.
     bool authorize(bool a, const types::authorization::ProvidedIdToken& token,
                    const types::authorization::ValidationResult& result);
+    bool isAuthorizationAllowed() const;
     bool deauthorize();
 
     bool get_authorized_pnc();
@@ -452,6 +454,8 @@ private:
         bool fail_on_powermeter_errors;
         // Raise MREC9 authorization timeout error
         bool raise_mrec9;
+        // Allow a new authorization while in EvseState::Finished to start a new session the same connector.
+        bool allow_start_charging_while_finished{false};
         // sleep before enabling pwm in hlc mode
         int sleep_before_enabling_pwm_hlc_mode_ms{1000};
         // type used to generate session ids

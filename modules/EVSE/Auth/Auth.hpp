@@ -65,6 +65,7 @@ struct Conf {
     bool ignore_connector_faults;
     bool plug_in_timeout_enabled;
     bool stop_transaction_on_reswipe;
+    bool allow_new_session_while_finished;
 };
 
 class Auth : public Everest::ModuleBase {

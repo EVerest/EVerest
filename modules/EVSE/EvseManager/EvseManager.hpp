@@ -150,6 +150,7 @@ struct Conf {
     int state_F_after_fault_ms;
     bool fail_on_powermeter_errors;
     bool raise_mrec9;
+    bool allow_start_charging_while_finished;
     int sleep_before_enabling_pwm_hlc_mode_ms;
     bool central_contract_validation_allowed;
     bool contract_certificate_installation_enabled;

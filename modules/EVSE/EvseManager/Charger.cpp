@@ -1232,6 +1232,7 @@ void Charger::run_state_machine() {
             break;
 
         // Final state that may only wait for unplug, but does not allow session restart.
+        // Unless allow_start_charging_while_finished is enabled.
         // Cleans the session up.
         case EvseState::Finished:
 
@@ -1255,7 +1256,50 @@ void Charger::run_state_machine() {
             if (not shared_context.flag_ev_plugged_in or shared_context.flag_disable_requested) {
                 stop_session();
                 set_state(shared_context.flag_disable_requested ? EvseState::Disabled : EvseState::Idle);
+                break;
             }
+
+            // Optional (disabled by default) feature: Allow a newly received authorization to restart a
+            // session on the same connector without requiring the EV to be unplugged first.
+            if (config_context.allow_start_charging_while_finished and shared_context.flag_authorized) {
+                EVLOG_info << "New authorization while Finished with EV plugged in. "
+                           << "Starting new session (allow_start_charging_while_finished enabled).";
+
+                // Store new validation since stop_session/start_session reset these values.
+                const auto id_token = shared_context.id_token;
+                const auto validation_result = shared_context.validation_result;
+                const auto authorized_pnc = shared_context.authorized_pnc;
+
+                stop_session();
+                start_session(true);
+
+                shared_context.id_token = id_token;
+                shared_context.validation_result = validation_result;
+
+                signal_simple_event(types::evse_manager::SessionEventEnum::Authorized);
+                shared_context.flag_authorized = true;
+                shared_context.authorized_pnc = authorized_pnc;
+                shared_context.flag_transaction_active = false;
+
+                // Reset HLC/SLAC related bookkeeping the same way EvseState::Idle does on a real unplug, since we
+                // are intentionally skipping Idle here.
+                if (config_context.charge_mode == ChargeMode::AC) {
+                    shared_context.hlc_charging_active = false;
+                } else {
+                    shared_context.hlc_charging_active = true;
+                }
+                shared_context.hlc_allow_close_contactor = false;
+                shared_context.max_current_cable.reset();
+                shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Unknown;
+                shared_context.legacy_wakeup_done = false;
+                shared_context.hlc_d20_active = false;
+                bcb_toggle_reset();
+
+                // Re-use the existing (unplug/replug) WaitingForAuthentication logic to bring up PWM/HLC and start
+                // the transaction, since the EV is already plugged in and already authorized at this point.
+                set_state(EvseState::WaitingForAuthentication);
+            }
+
             break;
         }
 
@@ -1865,6 +1909,7 @@ void Charger::setup(const SetupConfig& config) {
     config_context.reinit_method = config.reinit_method;
     config_context.fail_on_powermeter_errors = config.fail_on_powermeter_errors;
     config_context.raise_mrec9 = config.raise_mrec9;
+    config_context.allow_start_charging_while_finished = config.allow_start_charging_while_finished;
     config_context.sleep_before_enabling_pwm_hlc_mode_ms = config.sleep_before_enabling_pwm_hlc_mode_ms;
     config_context.session_id_type = config.session_id_type;
     config_context.hlc_charge_loop_without_energy_timeout_s = config.hlc_charge_loop_without_energy_timeout_s;
@@ -1924,7 +1969,7 @@ bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
                         const types::authorization::ValidationResult& result) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_authorize);
     if (a) {
-        if (shared_context.flag_externally_cancelled || shared_context.flag_disable_requested) {
+        if (!isAuthorizationAllowed()) {
             EVLOG_warning
                 << "Received an authorization after the session was externally cancelled. Ignoring this authorization.";
             // Ignore (delayed) authorization responses after an external cancellation or while EVSE is disabled.
@@ -1959,6 +2004,21 @@ bool Charger::authorize(bool a, const types::authorization::ProvidedIdToken& tok
         }
         shared_context.flag_authorized = false;
     }
+    return true;
+}
+
+bool Charger::isAuthorizationAllowed() const {
+    // A disable request always blocks authorization, regardless of config.
+    if (shared_context.flag_disable_requested) {
+        return false;
+    }
+
+    // An external cancellation normally blocks authorization, but the
+    // allow_start_charging_while_finished config overrides that specific case.
+    if (shared_context.flag_externally_cancelled and not config_context.allow_start_charging_while_finished) {
+        return false;
+    }
+
     return true;
 }
 
