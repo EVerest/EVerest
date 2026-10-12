@@ -8,7 +8,7 @@ using namespace fusion_charger::modbus_driver::raw_registers;
 
 bool mode_phase_is_export_mode(ModePhase mode_phase) {
     return mode_phase == ModePhase::ExportCableCheck || mode_phase == ModePhase::ExportPrecharge ||
-           mode_phase == ModePhase::ExportCharging;
+           mode_phase == ModePhase::ExportCharging || mode_phase == ModePhase::ExportChargingIdle;
 }
 
 ConnectorFSM::ConnectorFSM(ConnectorFSM::Callbacks callbacks, logs::LogIntf log, std::string _log_prefix) :
@@ -132,6 +132,7 @@ WorkingStatus state_to_ws(States state, ModePhase mode_phase) {
         case ModePhase::ExportPrecharge:
             return WorkingStatus::CHARGING_STARTING;
         case ModePhase::ExportCharging:
+        case ModePhase::ExportChargingIdle:
             return WorkingStatus::CHARGING;
         }
     }
@@ -397,7 +398,7 @@ void Connector::new_export_voltage_current(double voltage, double current) {
     this->current_requested_voltage_current.voltage = voltage;
     this->current_requested_voltage_current.current = current;
 
-    if (fsm.get_state() == States::Running) {
+    if (fsm.get_state() == States::Running && fsm.get_mode_phase() != ModePhase::ExportChargingIdle) {
         send_needed_goose_frame();
     }
 }
@@ -444,6 +445,9 @@ void Connector::send_needed_goose_frame(States state, ModePhase mode_phase) {
             goose_sender.send_charging_voltage_output(connector_config.global_connector_number,
                                                       current_requested_voltage_current.voltage,
                                                       current_requested_voltage_current.current);
+            break;
+        case ModePhase::ExportChargingIdle:
+            goose_sender.send_module_placeholder_request(connector_config.global_connector_number);
             break;
         }
         break;

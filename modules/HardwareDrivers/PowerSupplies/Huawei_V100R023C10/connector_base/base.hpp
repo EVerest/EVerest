@@ -99,6 +99,8 @@ private:
     void update_and_publish_capabilities();
     void init_capabilities();
 
+    ModePhase charging_mode_phase() const;
+
     std::string log_prefix;
     std::string telemetry_subtopic;
 
@@ -119,6 +121,7 @@ private:
 
     double export_voltage{0.};
     double export_current_limit{0.};
+    bool below_minimum_current{false};
 
     struct {
         std::atomic<float> upstream_voltage{0.0f};

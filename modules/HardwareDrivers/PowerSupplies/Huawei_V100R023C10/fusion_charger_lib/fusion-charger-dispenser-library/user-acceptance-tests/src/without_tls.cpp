@@ -126,6 +126,51 @@ TEST_F(DispenserWithoutTlsTest, ChargingACarUpToRegularDisconnect) {
     EXPECT_EQ(connector()->get_working_status(), WorkingStatus::STANDBY);
 }
 
+TEST_F(DispenserWithoutTlsTest, ChargingIdleBelowMinimumCurrent) {
+    power_stack_mock->set_psu_running_mode(PSURunningMode::RUNNING);
+    power_stack_mock->send_mac_address();
+    connector()->on_car_connected();
+    power_stack_mock->send_hmac_key(1);
+    sleep_for_ms(10);
+
+    connector()->new_export_voltage_current(400, 20);
+    connector()->on_mode_phase_change(ModePhase::ExportCharging);
+    sleep_for_ms(10);
+    EXPECT_EQ(get_last_power_requirement_request()->requirement_type, fusion_charger::goose::RequirementType::Charging);
+    EXPECT_EQ(connector()->get_working_status(), WorkingStatus::CHARGING);
+    auto stop_request_counter_before_idle = get_stop_request_counter();
+
+    connector()->on_mode_phase_change(ModePhase::ExportChargingIdle);
+    connector()->new_export_voltage_current(400, 0);
+    sleep_for_ms(10);
+    EXPECT_EQ(get_last_power_requirement_request()->requirement_type,
+              fusion_charger::goose::RequirementType::ModulePlaceholderRequest);
+    EXPECT_EQ(get_last_power_requirement_request()->current, 0);
+    EXPECT_EQ(get_last_power_requirement_request()->voltage, 0);
+    EXPECT_EQ(connector()->get_working_status(), WorkingStatus::CHARGING);
+    EXPECT_EQ(get_stop_request_counter(), stop_request_counter_before_idle);
+
+    connector()->new_export_voltage_current(410, 15);
+    sleep_for_ms(10);
+    EXPECT_EQ(get_last_power_requirement_request()->requirement_type,
+              fusion_charger::goose::RequirementType::ModulePlaceholderRequest);
+
+    connector()->on_mode_phase_change(ModePhase::ExportCharging);
+    sleep_for_ms(10);
+    EXPECT_EQ(get_last_power_requirement_request()->requirement_type, fusion_charger::goose::RequirementType::Charging);
+    EXPECT_EQ(get_last_power_requirement_request()->mode, fusion_charger::goose::Mode::ConstantCurrent);
+    EXPECT_EQ(get_last_power_requirement_request()->current, 15);
+    EXPECT_EQ(get_last_power_requirement_request()->voltage, 410);
+    EXPECT_EQ(connector()->get_working_status(), WorkingStatus::CHARGING);
+    EXPECT_EQ(get_stop_request_counter(), stop_request_counter_before_idle);
+
+    connector()->on_mode_phase_change(ModePhase::ExportChargingIdle);
+    connector()->on_mode_phase_change(ModePhase::Off);
+    sleep_for_ms(10);
+    EXPECT_EQ(connector()->get_working_status(), WorkingStatus::CHARGING_COMPLETE);
+    EXPECT_GT(get_stop_request_counter(), stop_request_counter_before_idle);
+}
+
 TEST_F(DispenserWithoutTlsTest, ChargingRestartWithoutDisconnect) {
     power_stack_mock->set_psu_running_mode(PSURunningMode::RUNNING);
     power_stack_mock->send_mac_address();
