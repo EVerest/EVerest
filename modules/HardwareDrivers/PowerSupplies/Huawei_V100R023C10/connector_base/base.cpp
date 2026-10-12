@@ -246,7 +246,7 @@ void ConnectorBase::ev_handle_setMode(types::power_supply_DC::Mode mode, types::
             this->get_connector()->on_mode_phase_change(ModePhase::ExportPrecharge);
             break;
         case types::power_supply_DC::ChargingPhase::Charging:
-            this->get_connector()->on_mode_phase_change(ModePhase::ExportCharging);
+            this->get_connector()->on_mode_phase_change(charging_mode_phase());
             break;
         default:
             EVLOG_info << log_prefix << "Unknown Export phase: " << phase;
@@ -272,20 +272,39 @@ void ConnectorBase::ev_handle_setExportVoltageCurrent(double voltage, double cur
     else if (voltage < caps.min_export_voltage_V)
         voltage = caps.min_export_voltage_V;
 
+    const bool below_minimum = current < caps.min_export_current_A;
     if (current > caps.max_export_current_A)
         current = caps.max_export_current_A;
-    else if (current < caps.min_export_current_A)
+    else if (below_minimum)
         current = 0.;
 
     std::lock_guard lock(connector_mutex);
 
     export_voltage = voltage;
     export_current_limit = current;
+    below_minimum_current = below_minimum;
 
     mod->telemetry_publisher->datapoint_changed(telemetry_subtopic, telemetry_datapoint_keys::EXPORT_VOLTAGE, voltage);
     mod->telemetry_publisher->datapoint_changed(telemetry_subtopic, telemetry_datapoint_keys::EXPORT_CURRENT, current);
 
+    const bool charging = last_mode == types::power_supply_DC::Mode::Export and
+                          last_phase == types::power_supply_DC::ChargingPhase::Charging;
+
+    if (charging and below_minimum) {
+        this->get_connector()->on_mode_phase_change(ModePhase::ExportChargingIdle);
+        this->get_connector()->new_export_voltage_current(voltage, current);
+        return;
+    }
+
     this->get_connector()->new_export_voltage_current(voltage, current);
+
+    if (charging) {
+        this->get_connector()->on_mode_phase_change(ModePhase::ExportCharging);
+    }
+}
+
+ModePhase ConnectorBase::charging_mode_phase() const {
+    return below_minimum_current ? ModePhase::ExportChargingIdle : ModePhase::ExportCharging;
 }
 void ConnectorBase::ev_handle_setImportVoltageCurrent(double voltage, double current) {
     EVLOG_error << "Not implemented";

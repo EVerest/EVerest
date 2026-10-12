@@ -24,6 +24,7 @@ enum class ModePhase {
     OffCableCheck,
     ExportPrecharge,
     ExportCharging,
+    ExportChargingIdle,
 };
 
 enum class States {
@@ -41,8 +42,8 @@ std::string state_to_string(States state);
  * @brief Returns true if the mode phase is an export mode
  *
  * @param mode_phase the mode phase
- * @return true if the mode phase is ExportCableCheck, ExportPrecharge or
- * ExportCharging
+ * @return true if the mode phase is ExportCableCheck, ExportPrecharge,
+ * ExportCharging or ExportChargingIdle
  * @return false otherwise
  */
 bool mode_phase_is_export_mode(ModePhase mode_phase);

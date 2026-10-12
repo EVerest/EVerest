@@ -71,6 +71,35 @@ TEST_F(ConnectorFSM_Fixture, regular_state_flow) {
     EXPECT_EQ(fsm.get_state(), States::CarDisconnected);
 }
 
+TEST_F(ConnectorFSM_Fixture, charging_idle_keeps_running) {
+    fsm.on_car_connected();
+    fsm.on_hmac_key_received();
+    fsm.on_module_placeholder_allocation_response(true);
+    fsm.on_mode_phase_change(ModePhase::ExportCharging);
+    EXPECT_EQ(fsm.get_state(), States::Running);
+
+    fsm.on_mode_phase_change(ModePhase::ExportChargingIdle);
+    EXPECT_EQ(fsm.get_state(), States::Running);
+    EXPECT_EQ(fsm.get_mode_phase(), ModePhase::ExportChargingIdle);
+    EXPECT_EQ(state_to_ws(fsm.get_state(), fsm.get_mode_phase()),
+              fusion_charger::modbus_driver::raw_registers::WorkingStatus::CHARGING);
+
+    fsm.on_mode_phase_change(ModePhase::ExportCharging);
+    EXPECT_EQ(fsm.get_state(), States::Running);
+    EXPECT_EQ(fsm.get_mode_phase(), ModePhase::ExportCharging);
+    EXPECT_EQ(state_transition_counter, 3);
+
+    fsm.on_mode_phase_change(ModePhase::ExportChargingIdle);
+    fsm.on_mode_phase_change(ModePhase::Off);
+    EXPECT_EQ(fsm.get_state(), States::Completed);
+}
+
+TEST_F(ConnectorFSM_Fixture, charging_idle_is_export_mode) {
+    EXPECT_TRUE(mode_phase_is_export_mode(ModePhase::ExportChargingIdle));
+    EXPECT_FALSE(mode_phase_is_export_mode(ModePhase::OffCableCheck));
+    EXPECT_FALSE(mode_phase_is_export_mode(ModePhase::Off));
+}
+
 TEST_F(ConnectorFSM_Fixture, car_disconnect_from_any) {
     // From NoKeyYet
     fsm.on_car_connected();
