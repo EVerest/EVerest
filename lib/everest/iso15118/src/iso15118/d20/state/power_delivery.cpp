@@ -220,8 +220,8 @@ Result PowerDelivery::feed(Event ev) {
         }
 
         if (req->power_profile.has_value()) {
-            m_ctx.session.ev_power_profile =
-                EvPowerProfile::from(req->power_profile->time_anchor, req->power_profile->entries);
+            m_ctx.session.ev_power_profile = PowerTimeline::from(
+                req->power_profile->time_anchor / MICROSECONDS_PER_SECOND, req->power_profile->entries);
         }
 
         if (not shutdown_requested) {
