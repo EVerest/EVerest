@@ -39,8 +39,7 @@ void TbdController::loop() {
 
     if (not config.enable_sdp_server) {
         auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-        session =
-            std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+        replace_session(std::make_unique<Session>(std::move(connection), make_session_config(), callbacks, pause_ctx));
     }
 
     auto next_event = get_current_time_point();
@@ -68,19 +67,32 @@ void TbdController::loop() {
             }
 
             if (session->is_finished()) {
-                session.reset();
+                replace_session(nullptr);
 
                 if (not config.enable_sdp_server) {
                     auto connection = std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
-                    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup),
-                                                        callbacks, pause_ctx);
+                    replace_session(
+                        std::make_unique<Session>(std::move(connection), make_session_config(), callbacks, pause_ctx));
                 }
             }
         }
     }
 }
 
+d20::SessionConfig TbdController::make_session_config() {
+    std::lock_guard<std::mutex> lock(session_mutex);
+    return d20::SessionConfig(evse_setup);
+}
+
+void TbdController::replace_session(std::unique_ptr<Session> new_session) {
+    {
+        std::lock_guard<std::mutex> lock(session_mutex);
+        session.swap(new_session);
+    }
+}
+
 void TbdController::send_control_event(const d20::ControlEvent& event) {
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(event);
     }
@@ -88,6 +100,7 @@ void TbdController::send_control_event(const d20::ControlEvent& event) {
 
 void TbdController::update_authorization_services(const std::vector<message_20::datatypes::Authorization>& services,
                                                   bool cert_install_service) {
+    std::lock_guard<std::mutex> lock(session_mutex);
 
     evse_setup.enable_certificate_install_service = cert_install_service;
 
@@ -99,6 +112,7 @@ void TbdController::update_authorization_services(const std::vector<message_20::
 }
 
 void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
+    std::lock_guard<std::mutex> lock(session_mutex);
 
     evse_setup.dc_limits = limits;
 
@@ -108,10 +122,12 @@ void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 }
 
 void TbdController::update_powersupply_limits(const d20::DcTransferLimits& limits) {
+    std::lock_guard<std::mutex> lock(session_mutex);
     evse_setup.powersupply_limits = limits;
 }
 
 void TbdController::update_energy_modes(const std::vector<message_20::datatypes::ServiceCategory>& modes) {
+    std::lock_guard<std::mutex> lock(session_mutex);
     evse_setup.supported_energy_services = modes;
 
     if (session) {
@@ -120,6 +136,7 @@ void TbdController::update_energy_modes(const std::vector<message_20::datatypes:
 }
 
 void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_services) {
+    std::lock_guard<std::mutex> lock(session_mutex);
 
     evse_setup.supported_vas_services = vas_services;
 
@@ -129,6 +146,7 @@ void TbdController::update_supported_vas_services(const d20::SupportedVASs& vas_
 }
 
 void TbdController::update_ac_limits(const d20::AcTransferLimits& limits) {
+    std::lock_guard<std::mutex> lock(session_mutex);
 
     evse_setup.ac_limits = limits;
 
@@ -180,7 +198,7 @@ void TbdController::handle_sdp_server_input() {
 
     const auto ipv6_endpoint = connection->get_public_endpoint();
 
-    session = std::make_unique<Session>(std::move(connection), d20::SessionConfig(evse_setup), callbacks, pause_ctx);
+    replace_session(std::make_unique<Session>(std::move(connection), make_session_config(), callbacks, pause_ctx));
 
     sdp_server->send_response(request, ipv6_endpoint);
 }
