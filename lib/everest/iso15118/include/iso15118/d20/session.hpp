@@ -13,7 +13,7 @@
 #include <vector>
 
 #include <iso15118/d20/der_functions.hpp>
-#include <iso15118/d20/ev_power_profile.hpp>
+#include <iso15118/d20/power_timeline.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -215,8 +215,8 @@ public:
     // The ScheduleTupleIDs offered in the last finished ScheduleExchangeRes. Empty in dynamic control mode.
     std::set<dt::NumericId> offered_schedules{};
 
-    // From the EV's latest PowerDeliveryReq that carried one.
-    std::optional<EvPowerProfile> ev_power_profile{};
+    // The EVPowerProfile of the EV's latest PowerDeliveryReq that carried one.
+    std::optional<PowerTimeline> ev_power_profile{};
 
 private:
     // NOTE (aw): could be const

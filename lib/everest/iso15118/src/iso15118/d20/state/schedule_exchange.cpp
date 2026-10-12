@@ -25,7 +25,7 @@ using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
 using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
-constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
+constexpr uint64_t MICROSECONDS_PER_MILLISECOND = MICROSECONDS_PER_SECOND / MILLISECONDS_PER_SECOND;
 
 void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt::RationalNumber& max_power) {
     auto& schedule = mode.schedule_tuple.emplace_back();
