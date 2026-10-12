@@ -483,6 +483,7 @@ void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransfe
         s->der_sae_setup_config = setup_config;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session and setup_config.has_value()) {
         session->push_control_event(setup_config.value());
     } else if (session and withdrawn) {
