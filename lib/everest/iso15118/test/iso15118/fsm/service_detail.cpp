@@ -62,6 +62,15 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             parameter_set.id = 0;
             parameter_set.parameter.push_back({"Service1", 40});
             parameter_set.parameter.push_back({"Service2", std::string{"house"}});
+        } else if (id == 4600) {
+            for (uint16_t set_id = 0; set_id < 6; set_id++) {
+                auto& parameter_set = service_parameter_list.emplace_back();
+                parameter_set.id = set_id;
+                const auto parameter_count = set_id == 0 ? 10 : 1;
+                for (int32_t i = 0; i < parameter_count; i++) {
+                    parameter_set.parameter.push_back({"Parameter" + std::to_string(i), i});
+                }
+            }
         } else if (id == message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)) {
             auto& parameter_set = service_parameter_list.emplace_back();
             parameter_set.id = 0;
@@ -689,6 +698,48 @@ SCENARIO("ISO15118-20 service detail state transitions") {
         }
     }
 
+    GIVEN("Good Case - AC Service with more parameter sets than a ServiceDetailRes carries") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
+
+        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto req =
+            message_20::ServiceDetailRequest{header_req, message_20::to_underlying_value(dt::ServiceCategory::AC)};
+
+        state_helper.handle_request(req);
+
+        ctx.session.offered_services.energy_services = {dt::ServiceCategory::AC};
+        ctx.session_config.ac_parameter_list.clear();
+        for (const auto& [control_mode, mobility_needs_mode] :
+             {std::pair{dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedByEvcc},
+              std::pair{dt::ControlMode::Dynamic, dt::MobilityNeedsMode::ProvidedBySecc},
+              std::pair{dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}}) {
+            for (const auto connector : {dt::AcConnector::SinglePhase, dt::AcConnector::ThreePhase}) {
+                ctx.session_config.ac_parameter_list.push_back(
+                    {connector, control_mode, mobility_needs_mode, 230, dt::Pricing::NoPricing});
+            }
+        }
+
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Only the parameter sets that fit are offered") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
+
+            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& res = response_message.value();
+
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.service_parameter_list.size() == 4);
+            for (uint16_t i = 0; i < 4; i++) {
+                REQUIRE(res.service_parameter_list[i].id == i);
+            }
+            REQUIRE(ctx.session.offered_services.ac_parameter_list.size() == 4);
+            REQUIRE(ctx.session.offered_services.ac_parameter_list.count(4) == 0);
+        }
+    }
+
     GIVEN("Good Case - AC Service: Scheduled Mode: 1, MobilityNeedsMode: 2 change to 1") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
 
@@ -887,6 +938,36 @@ SCENARIO("ISO15118-20 service detail state transitions") {
             REQUIRE(parameters.parameter[1].name == "Service2");
             REQUIRE(std::holds_alternative<std::string>(parameters.parameter[1].value));
             REQUIRE(std::get<std::string>(parameters.parameter[1].value) == "house");
+        }
+    }
+
+    GIVEN("Good case - custom vas with more parameters than a ServiceDetailRes carries") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ServiceDetail>()};
+
+        const auto header_req = message_20::Header{ctx.session.get_id(), 1691411798};
+        const auto req = message_20::ServiceDetailRequest{header_req, 4600};
+
+        state_helper.handle_request(req);
+
+        ctx.session.offered_services.vas_services = {4600};
+
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Parameter sets and parameters beyond the encodable limits are dropped") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::ServiceSelection);
+
+            const auto response_message = ctx.get_response<message_20::ServiceDetailResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& res = response_message.value();
+
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.service_parameter_list.size() == 4);
+            REQUIRE(res.service_parameter_list[0].parameter.size() == 8);
+            REQUIRE(res.service_parameter_list[0].parameter[7].name == "Parameter7");
+            REQUIRE(res.service_parameter_list[3].id == 3);
+            REQUIRE(ctx.session.offered_services.custom_vas_list.at(4600) == std::vector<uint16_t>{0, 1, 2, 3});
         }
     }
 
