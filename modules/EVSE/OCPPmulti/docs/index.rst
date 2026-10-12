@@ -580,7 +580,15 @@ OCPP 2.x
 
 In contrast to OCPP 1.6, error information is not transmitted in **StatusNotification.req** (it is only sent with
 status **Faulted** for the Inoperative case above). All other errors are reported via **NotifyEvent.req**, whose
-**eventData** structure requires mapping each error to a component-variable combination:
+**eventData** structure requires mapping each error to a component-variable combination.
+
+The module attempts to map the error to the device model component of the module that raised it:
+
+* The component name is the module type,
+* the instance is the module id,
+* and ``evse`` carries the EVSE and connector ids of the module's mapping.
+
+When the attempt to derive the information from the device model fails, the component falls back to:
 
 * **ChargingStation**, without an EVSE, if the error origin has no mapping or is mapped to EVSE 0
 * **EVSE** otherwise; when a connector is also mapped, its id is carried in the component's ``connectorId`` (the

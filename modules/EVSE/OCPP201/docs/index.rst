@@ -342,11 +342,16 @@ component-variable combination. This requires a mapping
 mechanism between EVerest errors and component-variable
 combination.
 
-Currently this module maps the Error to one of these three Components:
+The module attempts to map the error to the device model component of the module that raised it:
 
-* ChargingStation (if error.origin.mapping.evse is not set or 0)
-* EVSE (error.origin.mapping.evse is set and error.origin.mapping.connector is not set)
-* Connector (error.origin.mapping.evse is set and error.origin.mapping.connector is set)
+* The component name is the module type,
+* the instance is the module id,
+* and ``evse`` carries the EVSE and connector ids of the module's mapping.
+
+When the attempt to derive the information from the device model fails, the component falls back to:
+
+* ChargingStation (if error.origin.mapping is not set)
+* EVSE (if error.origin.mapping.evse is set; error.origin.mapping.connector, when set, is carried as connectorId)
 
 The Variable used as part of the NotifyEventRequest is constantly defined to **Problem** for now.
 

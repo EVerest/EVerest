@@ -20,6 +20,8 @@ private:
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     // interface type so unit tests can inject a mock; init() creates the real ocpp::v2::ChargePoint
     std::unique_ptr<ocpp::v2::ChargePointInterface> m_charge_point;
+    // handed over in init(); resolves the module that raised an error to its device model component
+    std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model;
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
 
@@ -51,6 +53,9 @@ private:
 
     void process_tx_event_effect(std::int32_t evse_id, module::TxEventEffect tx_event_effect,
                                  const types::evse_manager::SessionEvent& session_event);
+    /// \brief Resolves the OCPP component for the given \p error: the component of the origin module from the
+    /// device model if available, otherwise a simplified mapping based on the evse and connector ids of the origin
+    ocpp::v2::Component get_component_from_error(const Everest::error::Error& error) const;
 
 public:
     explicit ChargePointV2(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
