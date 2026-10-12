@@ -582,7 +582,7 @@ std::optional<json> ModuleAdapter::evse_manager_call_update_allowed_energy_trans
 std::optional<json> ModuleAdapter::external_energy_limits_call_set_external_limits(const Requirement& req,
                                                                                    const json& args) {
     EVLOG_debug << "Call call_set_external_limits: " << args.dump();
-    publish_fn("external_energy_limits", "call_set_external_limits", args);
+    publish_fn("external_energy_limits", "call_set_external_limits", static_cast<int>(req.index), args);
     return {};
 }
 

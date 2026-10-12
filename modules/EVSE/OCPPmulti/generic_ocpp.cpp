@@ -15,6 +15,7 @@
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <utils/exceptions.hpp>
 
+#include <cmath>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -2287,6 +2288,37 @@ GenericOcpp::create_limits_entry(const std::string& timestamp, const ocpp::v2::E
     return result;
 };
 
+std::optional<types::energy::ScheduleReqEntry>
+GenericOcpp::create_export_limits_entry(const std::string& timestamp,
+                                        const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                                        ocpp::v2::ChargingRateUnitEnum unit) {
+    std::optional<types::energy::ScheduleReqEntry> result;
+
+    // dischargeLimit_L2/_L3 are not representable in LimitsReq
+    if (period.dischargeLimit.has_value()) {
+        types::energy::ScheduleReqEntry entry;
+        entry.timestamp = timestamp;
+
+        const auto source_ext_limit = mv_info.id + "/OCPP_set_external_limits";
+        const auto discharge_limit = std::abs(period.dischargeLimit.value());
+
+        types::energy::LimitsReq limits_req;
+        if (unit == ocpp::v2::ChargingRateUnitEnum::A) {
+            limits_req.ac_max_current_A = {discharge_limit, source_ext_limit};
+            if (period.numberPhases.has_value()) {
+                limits_req.ac_max_phase_count = {period.numberPhases.value(), source_ext_limit};
+            }
+        } else {
+            limits_req.total_power_W = {discharge_limit, source_ext_limit};
+        }
+
+        entry.limits_to_leaves = limits_req;
+        result = std::move(entry);
+    }
+
+    return result;
+}
+
 std::optional<types::energy::ScheduleSetpointEntry>
 GenericOcpp::create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
                                    const ocpp::v2::EnhancedChargingSchedulePeriod& period,
@@ -2479,6 +2511,8 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
         types::energy::ExternalLimits limits;
         std::vector<types::energy::ScheduleReqEntry> schedule_import;
         std::vector<types::energy::ScheduleSetpointEntry> schedule_setpoints;
+        std::vector<types::energy::ScheduleReqEntry> schedule_export;
+        bool has_export_limit{false};
 
         const auto& unit = composite_schedule.chargingRateUnit;
 
@@ -2492,10 +2526,23 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
             if (auto limits_entry = create_limits_entry(timestamp, period, unit)) {
                 schedule_import.push_back(*limits_entry);
             }
+
+            // a period without a discharge limit gets an empty entry so a previous limit does not carry over
+            auto export_entry = create_export_limits_entry(timestamp, period, unit);
+            if (export_entry.has_value()) {
+                has_export_limit = true;
+            } else {
+                export_entry.emplace();
+                export_entry->timestamp = timestamp;
+            }
+            schedule_export.push_back(*export_entry);
         }
 
         limits.schedule_import = std::move(schedule_import);
         limits.schedule_setpoints = std::move(schedule_setpoints);
+        if (has_export_limit) {
+            limits.schedule_export = std::move(schedule_export);
+        }
 
         auto& evse_sink = external_energy_limits::get_evse_sink_by_evse_id(mv_requires.evse_energy_sink, evse_id);
         evse_sink.call_set_external_limits(limits);
