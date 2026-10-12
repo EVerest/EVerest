@@ -228,6 +228,15 @@ public:
     virtual int status_request_cb(Ssl* ctx);
 
     /**
+     * \brief decode a stapled OCSP response, either a single response or an
+     *        ocsp_multi list of uint24 length prefixed responses (RFC 6961)
+     * \param[in] response the stapled response, must not be nullptr
+     * \param[in] length of the stapled response, must be greater than zero
+     * \return true when all responses decode and exactly fill length
+     */
+    static bool decode_ocsp_response(const unsigned char* response, std::int32_t length);
+
+    /**
      * \brief the OpenSSL callback for the status_request_v2 extension
      * \param[in] ctx the connection context
      * \param[in] object the instance of ClientStatusRequestV2

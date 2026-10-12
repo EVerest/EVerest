@@ -1,11 +1,14 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright 2024 Pionix GmbH and Contributors to EVerest
 
+#include "extensions/status_request.hpp"
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/openssl_util.hpp>
 #include <everest/tls/tls.hpp>
 #include <gtest/gtest.h>
 #include <iterator>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include <cstring>
 #include <utility>
@@ -447,6 +450,87 @@ TEST(TrustedCaKeys, select) {
     auto result = select(keys, chains);
     EXPECT_NE(result, nullptr);
     EXPECT_EQ(result, &chains[2]);
+}
+
+using tls::status_request::ClientStatusRequestV2;
+
+// OCSPResponse { responseStatus malformedRequest }
+const std::vector<std::uint8_t> minimal_ocsp_response{0x30, 0x03, 0x0a, 0x01, 0x01};
+
+// places data directly in front of an inaccessible page so that any over-read faults
+class GuardedBuffer {
+public:
+    explicit GuardedBuffer(const std::vector<std::uint8_t>& data) {
+        m_page_size = static_cast<std::size_t>(sysconf(_SC_PAGESIZE));
+        m_mapping = mmap(nullptr, 2 * m_page_size, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        if (m_mapping == MAP_FAILED) {
+            m_mapping = nullptr;
+            return;
+        }
+        auto* guard = static_cast<std::uint8_t*>(m_mapping) + m_page_size;
+        if (mprotect(guard, m_page_size, PROT_NONE) != 0) {
+            return;
+        }
+        m_data = guard - data.size();
+        std::memcpy(m_data, data.data(), data.size());
+    }
+    GuardedBuffer(const GuardedBuffer&) = delete;
+    GuardedBuffer& operator=(const GuardedBuffer&) = delete;
+    ~GuardedBuffer() {
+        if (m_mapping != nullptr) {
+            munmap(m_mapping, 2 * m_page_size);
+        }
+    }
+
+    const std::uint8_t* data() const {
+        return m_data;
+    }
+
+private:
+    std::size_t m_page_size{0};
+    void* m_mapping{nullptr};
+    std::uint8_t* m_data{nullptr};
+};
+
+bool decode(const std::vector<std::uint8_t>& data) {
+    GuardedBuffer buffer(data);
+    EXPECT_NE(buffer.data(), nullptr);
+    if (buffer.data() == nullptr) {
+        return false;
+    }
+    return ClientStatusRequestV2::decode_ocsp_response(buffer.data(), static_cast<std::int32_t>(data.size()));
+}
+
+std::vector<std::uint8_t> multi(std::uint32_t length, const std::vector<std::uint8_t>& response) {
+    std::vector<std::uint8_t> result{static_cast<std::uint8_t>(length >> 16U), static_cast<std::uint8_t>(length >> 8U),
+                                     static_cast<std::uint8_t>(length)};
+    result.insert(result.end(), response.begin(), response.end());
+    return result;
+}
+
+TEST(ClientStatusRequestV2, decodeSingle) {
+    EXPECT_TRUE(decode(minimal_ocsp_response));
+}
+
+TEST(ClientStatusRequestV2, decodeMulti) {
+    auto data = multi(minimal_ocsp_response.size(), minimal_ocsp_response);
+    const auto second = multi(minimal_ocsp_response.size(), minimal_ocsp_response);
+    data.insert(data.end(), second.begin(), second.end());
+    EXPECT_TRUE(decode(data));
+}
+
+TEST(ClientStatusRequestV2, decodeMultiLengthExceedsData) {
+    // SEQUENCE claims 240 content bytes, the entry claims 256, only 6 bytes are present
+    EXPECT_FALSE(decode(multi(0x000100, {0x30, 0x81, 0xf0, 0x0a, 0x01, 0x01})));
+    EXPECT_FALSE(decode(multi(0xffffff, minimal_ocsp_response)));
+    EXPECT_FALSE(decode(multi(minimal_ocsp_response.size() + 1, minimal_ocsp_response)));
+}
+
+TEST(ClientStatusRequestV2, decodeMultiTrailingData) {
+    EXPECT_FALSE(decode(multi(minimal_ocsp_response.size() - 1, minimal_ocsp_response)));
+    auto data = multi(minimal_ocsp_response.size(), minimal_ocsp_response);
+    data.push_back(0x00);
+    EXPECT_FALSE(decode(data));
 }
 
 } // namespace
