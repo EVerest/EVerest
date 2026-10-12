@@ -315,6 +315,8 @@ void Session::handle_connection_event(io::ConnectionEvent event) {
     case Event::CLOSED:
         state.connected = false;
         logf_info("Connection is closed");
+        // Do not block new SDP requests when a connection failed on its own.
+        ctx.session_stopped = true;
         return;
     }
 }
