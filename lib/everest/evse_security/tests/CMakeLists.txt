@@ -11,6 +11,7 @@ find_package(OpenSSL REQUIRED)
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     evse_security
     GTest::gtest_main
+    OpenSSL::Crypto
 )
 
 if(USING_TPM2)

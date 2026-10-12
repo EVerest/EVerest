@@ -1149,6 +1149,16 @@ TEST_F(EvseSecurityTests, leaf_cert_starts_in_future_accepted) {
     ASSERT_EQ(v2g_keypair_after.info.value().password, v2g_keypair_before.info.value().password);
 }
 
+TEST_F(EvseSecurityTests, verify_certificate_rejects_leaf_that_starts_in_future) {
+    const auto new_root_ca = read_file_to_string(std::filesystem::path("future_leaf/V2G_ROOT_CA.pem"));
+    const auto result_ca = this->evse_security->install_ca_certificate(new_root_ca, CaCertificateType::V2G);
+    ASSERT_EQ(result_ca, InstallCertificateResult::Accepted);
+
+    const auto client_certificate = read_file_to_string(fs::path("future_leaf/SECC_LEAF_FUTURE.pem"));
+    ASSERT_NE(this->evse_security->verify_certificate(client_certificate, LeafCertificateType::V2G),
+              CertificateValidationResult::Valid);
+}
+
 TEST_F(EvseSecurityTests, expired_leaf_cert_rejected) {
     const auto new_root_ca = read_file_to_string(std::filesystem::path("expired_leaf/V2G_ROOT_CA.pem"));
     const auto result_ca = this->evse_security->install_ca_certificate(new_root_ca, CaCertificateType::V2G);
