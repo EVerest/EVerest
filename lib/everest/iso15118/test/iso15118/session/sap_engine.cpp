@@ -57,7 +57,15 @@ public:
         return *res;
     }
 
+    // As the Session does with a V2GTP payload that is not a message at all.
+    void feed_raw(const std::vector<uint8_t>& payload) {
+        accepted.push_back(
+            engine.on_packet(io::v2gtp::PayloadType::SAP, io::StreamInputView{payload.data(), payload.size()}));
+    }
+
     std::vector<std::string> selected_protocols;
+    std::vector<V2gMessageType> reported_messages;
+    std::vector<bool> accepted;
 
 private:
     static session::SessionConfig make_config(std::vector<ProtocolId> supported_protocols) {
@@ -69,6 +77,9 @@ private:
     session::feedback::Callbacks make_callbacks() {
         session::feedback::Callbacks callbacks;
         callbacks.selected_protocol = [this](const std::string& protocol) { selected_protocols.push_back(protocol); };
+        callbacks.v2g_message = [this](const V2gMessageType& type, const io::StreamInputView&) {
+            reported_messages.push_back(type);
+        };
         return callbacks;
     }
 
@@ -215,6 +226,20 @@ SCENARIO("SapEngine ends the session when no protocol can be negotiated") {
             REQUIRE_FALSE(engine.has_outgoing());
             REQUIRE(engine.is_finished());
             REQUIRE_FALSE(engine.take_negotiated().has_value());
+        }
+    }
+
+    GIVEN("An EV sending a frame that does not decode") {
+        SapEngineHelper helper{{ProtocolId::ISO15118_20}, false};
+        auto& engine = helper.get_engine();
+
+        helper.feed_raw({0xff, 0xff, 0xff, 0xff});
+
+        THEN("the frame is ignored and not reported as a message [V2G20-800]") {
+            REQUIRE(helper.accepted == std::vector<bool>{false});
+            REQUIRE(helper.reported_messages.empty());
+            REQUIRE_FALSE(engine.has_outgoing());
+            REQUIRE_FALSE(engine.is_finished());
         }
     }
 

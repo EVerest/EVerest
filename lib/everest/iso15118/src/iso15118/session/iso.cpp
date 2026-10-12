@@ -383,21 +383,28 @@ TimePoint const& Session::poll() {
             // Timestamp the request so -2/DIN and the handshake can pace their response after it.
             last_request_rx_time = now;
 
-            // A sequence timer is armed on accept and on every response; stop it as soon as the next request
-            // arrives, the SupportedAppProtocolReq included.
-            timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
-
-            if (not in_sap_phase()) {
-                // The first request to a protocol engine is the SessionSetupReq: the session is established, so
-                // V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
-                v2g_session_established = true;
-            }
+            // Read before the call: an accepted SupportedAppProtocolReq hands over to the protocol engine.
+            const bool sap_phase = in_sap_phase();
 
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
             current_request_frame = {packet.get_buffer(),
                                      packet.get_payload_length() + io::SdpPacket::V2GTP_HEADER_SIZE};
-            visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
+            const bool accepted =
+                visit_engine([payload_type, &view](auto& e) { return e.on_packet(payload_type, view); });
             current_request_frame = {};
+
+            // An ignored frame ([V2G20-800]) is no request: the timers run on as if it never arrived.
+            if (accepted) {
+                // A sequence timer is armed on accept and on every response; stop it as soon as the next
+                // request arrives, the SupportedAppProtocolReq included.
+                timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+
+                if (not sap_phase) {
+                    // The first request to a protocol engine is the SessionSetupReq: the session is established,
+                    // so V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
+                    v2g_session_established = true;
+                }
+            }
 
             packet.reset();
             state.new_data = false; // reset new_data flag
