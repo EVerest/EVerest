@@ -77,6 +77,12 @@ bool split_key_value(const std::string& key_value, std::string& key, std::string
     return split_ok;
 }
 
+namespace {
+bool is_option_like(const std::string& location) {
+    return !location.empty() && location.front() == '-';
+}
+} // namespace
+
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
     this->firmware_installation_running = false;
@@ -484,6 +490,10 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
 
 types::system::UpdateFirmwareResponse
 systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmware_update_request) {
+    if (is_option_like(firmware_update_request.location)) {
+        EVLOG_warning << "Rejecting firmware update, location must not start with '-'";
+        return types::system::UpdateFirmwareResponse::Rejected;
+    }
     if (firmware_update_request.request_id == -1) {
         return this->handle_standard_firmware_update(firmware_update_request);
     } else {
@@ -499,6 +509,12 @@ types::system::UploadLogsResponse
 systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_request) {
 
     types::system::UploadLogsResponse response;
+
+    if (is_option_like(upload_logs_request.location)) {
+        EVLOG_warning << "Rejecting log upload, location must not start with '-'";
+        response.upload_logs_status = types::system::UploadLogsStatus::Rejected;
+        return response;
+    }
 
     {
         auto state = this->log_upload_state.handle();

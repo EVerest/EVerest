@@ -101,3 +101,22 @@ async def test_N01_get_log_cancels_running_upload(
         release_first_upload.set()
         server.close()
         await server.wait_closed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+async def test_N01_get_log_rejects_option_like_location(
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+):
+    """A remote location starting with '-' would be parsed as an option by the uploader, so it is rejected."""
+    logging.info("######### test_N01_get_log_rejects_option_like_location #########")
+
+    log = LogParametersType(remote_location="-K/dev/null")
+    r = await charge_point_v201.get_log_req(log=log, log_type=LogEnumType.diagnostics_log, request_id=1)
+    assert LogStatusEnumType(r.status) == LogStatusEnumType.rejected
+
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "LogStatusNotification", {"requestId": 1}, timeout=5
+    )

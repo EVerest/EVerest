@@ -12,7 +12,7 @@ protocols=ftp,ftps,http,https
 if curl --version | grep -qE '^Protocols:(.* )?sftp( |$)'; then
     protocols+=,sftp
 fi
-curl --progress-bar --ssl --proto "=$protocols" --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" "${2}" -o "${3}"
+curl --progress-bar --ssl --proto "=$protocols" --proto-default https --connect-timeout "$CONNECTION_TIMEOUT" -o "${3}" -- "${2}"
 curl_exit_code=$?
 sleep 2
 if [[ $curl_exit_code -eq 0 ]]; then

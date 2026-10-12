@@ -240,6 +240,28 @@ async def test_firwmare_update_retries(
 
 
 @pytest.mark.asyncio
+async def test_firmware_update_ignores_option_like_location(
+    charge_point_v16: ChargePoint16, test_utility: TestUtility
+):
+    # UpdateFirmware.conf carries no status, so the rejection shows only as a download that never starts
+    logging.info(
+        "######### test_firmware_update_ignores_option_like_location #########")
+
+    await charge_point_v16.update_firmware_req(
+        location="-K/dev/null",
+        retrieve_date=datetime.now(timezone.utc).isoformat(),
+    )
+
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v16,
+        "FirmwareStatusNotification",
+        call.FirmwareStatusNotification(FirmwareStatus.downloading),
+        timeout=5,
+    )
+
+
+@pytest.mark.asyncio
 async def test_signed_update_firmware_retries(
     test_config: OcppTestConfiguration,
     charge_point_v16: ChargePoint16,
