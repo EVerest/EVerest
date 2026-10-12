@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 #include <iso15118/message/common_types.hpp>
 
@@ -273,7 +275,11 @@ template <> void convert(const struct iso20_PowerScheduleEntryType& in, datatype
 namespace datatypes {
 
 float from_RationalNumber(const RationalNumber& in) {
-    return in.value * pow(10, in.exponent);
+    // Since an int8 exponent can reach values far beyond what float can represent, clamp to them.
+    constexpr auto float_max = static_cast<double>(std::numeric_limits<float>::max());
+    constexpr auto float_lowest = static_cast<double>(std::numeric_limits<float>::lowest());
+    const auto value = static_cast<double>(in.value) * std::pow(10.0, in.exponent);
+    return static_cast<float>(std::clamp(value, float_lowest, float_max));
 }
 
 RationalNumber from_float(float in) {
