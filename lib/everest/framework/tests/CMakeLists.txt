@@ -9,6 +9,7 @@ add_executable(${TEST_TARGET_NAME})
 
 target_include_directories(${TEST_TARGET_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${PROJECT_SOURCE_DIR}/src
 )
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
@@ -18,7 +19,9 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_filesystem_helpers.cpp
     test_message_handler.cpp
     test_message_handler_scaling_policy.cpp
+    test_system_unix.cpp
     helpers.cpp
+    ${PROJECT_SOURCE_DIR}/src/system_unix.cpp
 )
 
 target_compile_definitions(${TEST_TARGET_NAME}
@@ -36,6 +39,7 @@ target_link_libraries(${TEST_TARGET_NAME}
         everest::framework
         everest::log
         everest::sqlite
+        PkgConfig::libcap
         Catch2::Catch2WithMain
 )
 
