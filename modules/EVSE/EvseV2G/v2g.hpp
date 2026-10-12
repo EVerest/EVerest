@@ -396,8 +396,10 @@ struct v2g_connection {
     struct v2g_context* ctx;
 
     bool is_tls_connection;
-    bool tls_handshake_failed;               /* true when accept() never returned success */
-    V2gMsgTypeId last_v2g_msg_at_disconnect; /* last V2G message before connection teardown */
+    bool tls_handshake_failed;                /* true when accept() never returned success */
+    V2gMsgTypeId last_v2g_msg_at_disconnect;  /* last V2G message before connection teardown */
+    V2gMsgTypeId v2g_msg_before_session_stop; /* the message the EV sent before SessionStopReq, recorded by the
+                                                 session-stop handlers */
 
     // used for non-TLS connections
     struct {

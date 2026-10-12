@@ -283,6 +283,25 @@ TEST_F(DinServerTest, handle_din_contract_authentication_check_evse_processing_o
 
 // if not otherwise specified, the following testcases are happy paths
 
+TEST_F(DinServerTest, session_stop_from_contract_authentication_keeps_the_phase_the_ev_left) {
+    // An EV whose V2G_EVCC_Ongoing_Timer expired ends the session with SessionStopReq
+    ctx->evse_v2g_data.session_id = 0;
+    ctx->is_dc_charger = true;
+    ctx->last_v2g_msg = V2G_AUTHORIZATION_MSG;
+    ctx->state = WAIT_FOR_AUTHORIZATION;
+
+    init_din_exiDocument(exi_in.get());
+    exi_in->V2G_Message.Body.SessionStopReq_isUsed = 1u;
+
+    EXPECT_EQ(din_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(exi_out->V2G_Message.Body.SessionStopRes_isUsed, 1u);
+    EXPECT_EQ(exi_out->V2G_Message.Body.SessionStopRes.ResponseCode, din_responseCodeType_OK);
+    EXPECT_EQ(conn->d_link_action, dLinkAction::D_LINK_ACTION_TERMINATE);
+    EXPECT_EQ(ctx->last_v2g_msg, V2G_SESSION_STOP_MSG);
+    EXPECT_EQ(conn->v2g_msg_before_session_stop, V2G_AUTHORIZATION_MSG);
+}
+
 TEST_F(DinServerTest, din_validate_response_code_TERMINATE_CONNECTION) {
 
     // which response code is actually irrelevant here and was picked at random

@@ -2422,6 +2422,7 @@ static enum v2g_event handle_iso_session_stop(struct v2g_connection* conn) {
     struct iso2_SessionStopReqType* req = &conn->exi_in.iso2EXIDocument->V2G_Message.Body.SessionStopReq;
     struct iso2_SessionStopResType* res = &conn->exi_out.iso2EXIDocument->V2G_Message.Body.SessionStopRes;
 
+    conn->v2g_msg_before_session_stop = conn->ctx->last_v2g_msg;
     res->ResponseCode = iso2_responseCodeType_OK;
 
     /* Check the current response code and check if no external error has occurred */

@@ -449,6 +449,69 @@ map_v2g_message_to_hlc_failed_reason(const iso15118::V2gMessageType& type) {
     return std::visit([](auto&& concrete) { return map_v2g_message_to_hlc_failed_reason(concrete); }, type);
 }
 
+constexpr bool is_session_stop_message(iso15118::message_20::Type type) {
+    using Type = iso15118::message_20::Type;
+    return type == Type::SessionStopReq or type == Type::SessionStopRes;
+}
+
+constexpr bool is_session_stop_message(iso15118::message_2::Type type) {
+    using Type = iso15118::message_2::Type;
+    return type == Type::SessionStopReq or type == Type::SessionStopRes;
+}
+
+constexpr bool is_session_stop_message(iso15118::message_din::Type type) {
+    using Type = iso15118::message_din::Type;
+    return type == Type::SessionStopReq or type == Type::SessionStopRes;
+}
+
+inline bool is_session_stop_message(const iso15118::V2gMessageType& type) {
+    return std::visit([](auto&& concrete) { return is_session_stop_message(concrete); }, type);
+}
+
+// The messages a SessionStopReq regularly follows: PowerDelivery(Stop) and welding detection.
+constexpr bool precedes_regular_session_stop(iso15118::message_20::Type type) {
+    using Type = iso15118::message_20::Type;
+    return type == Type::PowerDeliveryReq or type == Type::PowerDeliveryRes or type == Type::DC_WeldingDetectionReq or
+           type == Type::DC_WeldingDetectionRes;
+}
+
+constexpr bool precedes_regular_session_stop(iso15118::message_2::Type type) {
+    using Type = iso15118::message_2::Type;
+    return type == Type::PowerDeliveryReq or type == Type::PowerDeliveryRes or type == Type::WeldingDetectionReq or
+           type == Type::WeldingDetectionRes;
+}
+
+constexpr bool precedes_regular_session_stop(iso15118::message_din::Type type) {
+    using Type = iso15118::message_din::Type;
+    return type == Type::PowerDeliveryReq or type == Type::PowerDeliveryRes or type == Type::WeldingDetectionReq or
+           type == Type::WeldingDetectionRes;
+}
+
+inline bool precedes_regular_session_stop(const iso15118::V2gMessageType& type) {
+    return std::visit([](auto&& concrete) { return precedes_regular_session_stop(concrete); }, type);
+}
+
+// Reason to publish as hlc_session_failed when a data link ends, from the last message handled and the
+// last one outside the SessionStop exchange. A connection that closed without SessionStopReq is
+// classified by the message in flight. A SessionStopReq is the regular end only after PowerDelivery(Stop)
+// or welding detection; sent from any earlier phase it means the EV gave up there, e.g. because its
+// V2G_EVCC_Ongoing_Timer expired while the EVSE was still answering AuthorizationReq with Ongoing.
+inline std::optional<types::evse_manager::HlcSessionFailedReasonEnum>
+hlc_failed_reason_at_teardown(const std::optional<iso15118::V2gMessageType>& last_message,
+                              const std::optional<iso15118::V2gMessageType>& last_message_before_session_stop) {
+    if (not last_message.has_value()) {
+        return std::nullopt;
+    }
+    if (not is_session_stop_message(*last_message)) {
+        return map_v2g_message_to_hlc_failed_reason(*last_message);
+    }
+    if (not last_message_before_session_stop.has_value() or
+        precedes_regular_session_stop(*last_message_before_session_stop)) {
+        return std::nullopt;
+    }
+    return map_v2g_message_to_hlc_failed_reason(*last_message_before_session_stop);
+}
+
 std::optional<float> convert_from_optional(const std::optional<dt::RationalNumber>& in);
 std::optional<dt::RationalNumber> convert_from_optional(const std::optional<float>& in);
 std::optional<float> convert_from_optional(const std::optional<uint32_t>& in);
