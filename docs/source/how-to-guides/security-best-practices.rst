@@ -35,10 +35,6 @@ In the EVerest config file, add the following to the settings section:
 - Use OCPP security level 3 for the CSMS connection.
 - Use a hardware security module, e.g. TPM2 for generating and
   securing private keys.
-- Don't use the *admin-panel* on the product and ensure EVerest does
-  not listen on port 8849. In the Yocto recipes, this is disabled by
-  default. Take special care if you use another build system. Set
-  "EVEREST_ENABLE_ADMIN_PANEL_BACKEND=OFF" in cmake.
 - Do not run EVerest modules as root user. Create a low privilege
   user, that has access only to what is needed (via filesystem
   permissions, group memberships, ...). In Yocto, you can do this in your
@@ -145,8 +141,11 @@ module, run with the same capabilities.
    -A OUTPUT -o seth0 -p tcp -m tcp --sport 64109 -j ACCEPT
 
 According to the standard, port 15118 is used for SDP messages.
-:ref:`EvseV2G <everest_modules_EvseV2G>`  uses the following ports: TCP (61341), TLS (64109).
-:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 which uses port 50000 for TCP and TLS1.2/1.3.
+:ref:`EvseV2G <everest_modules_EvseV2G>` uses the configurable ``tcp_port`` and ``tls_port``
+values (defaults: TCP ``61341``, TLS ``64109``).
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 and uses the configured
+``tcp_port`` value for TCP and TLS1.2/1.3. The default is ``50000``.
+When changing these values, update the firewall rules accordingly.
 
 General (non-EVerest-related) security aspects
 ====================================================================

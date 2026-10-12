@@ -1,8 +1,3 @@
-everest-admin-panel:
-  name: "EVerest admin panel"
-  description: "A beta-stage frontend for graphically editing the everest config file"
-  license: "Apache-2.0"
-
 everest-cmake:
   description: "CMake utility scripts for everest"
   license: "Apache-2.0"

@@ -24,8 +24,6 @@ option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(EVEREST_ENABLE_JS_SUPPORT "Enable everestjs for JavaScript modules" OFF)
 option(EVEREST_ENABLE_PY_SUPPORT "Enable everestpy for Python modules" ON)
 option(EVEREST_ENABLE_RS_SUPPORT "Enable everestrs for Rust modules" OFF)
-option(EVEREST_ENABLE_ADMIN_PANEL_BACKEND "Enable everest admin panel backend" OFF)
-option(EVEREST_INSTALL_ADMIN_PANEL "Download and install everest admin panel" OFF)
 
 set(EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY "greedy" CACHE STRING
     "Thread pool scaling policy for framework message handling: greedy, latency, conservative, fixed_size, custom")
@@ -165,20 +163,6 @@ if(NOT DISABLE_EDM)
     # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
     set(FRAMEWORK_INSTALL OFF)
 
-    if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
-        # FIXME (aw): libwebsockets/ninja clean doesn't delete recursivly ..
-        set_property(
-            TARGET websockets_shared
-            APPEND
-            PROPERTY ADDITIONAL_CLEAN_FILES "${libwebsockets_BINARY_DIR}/include/libwebsockets"
-        )
-
-        # FIXME (aw): libwebsockets enum-int-mismatch FIX
-        # see https://github.com/warmcat/libwebsockets/pull/2824
-        if (CMAKE_COMPILER_IS_GNUCC AND CMAKE_C_COMPILER_VERSION VERSION_GREATER 13.0)
-            target_compile_options(websockets_shared PRIVATE -Wno-error=enum-int-mismatch)
-        endif()
-    endif()
     set_property(TARGET nlohmann_json_schema_validator PROPERTY POSITION_INDEPENDENT_CODE ON)
 
     # FIXME (aw): add catch2's cmake folder
@@ -190,13 +174,9 @@ else()
     find_package(nlohmann_json REQUIRED)
     find_package(nlohmann_json_schema_validator REQUIRED)
     find_package(fmt REQUIRED)
-    # ryml is linked by the controller and is part of the link interface of
-    # everest::yaml, which the manager executable links against
+    # ryml is part of the link interface of everest::yaml, which the manager
+    # executable links against
     find_package(ryml REQUIRED)
-
-    if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
-        find_package(libwebsockets REQUIRED)
-    endif()
 
     if (BUILD_TESTING)
         find_package(Catch2 REQUIRED)

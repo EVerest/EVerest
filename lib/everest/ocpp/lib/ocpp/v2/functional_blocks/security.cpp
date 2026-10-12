@@ -39,9 +39,11 @@ StatusInfo make_status_info(const CiString<20>& reason_code, const std::string& 
 }
 } // namespace
 
-Security::Security(const FunctionalBlockContext& functional_block_context, MessageLogging& logging,
-                   OcspUpdaterInterface& ocsp_updater, SecurityEventCallback security_event_callback) :
+Security::Security(const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
+                   MessageLogging& logging, OcspUpdaterInterface& ocsp_updater,
+                   SecurityEventCallback security_event_callback) :
     context(functional_block_context),
+    message_queue(message_queue),
     logging(logging),
     ocsp_updater(ocsp_updater),
     security_event_callback(security_event_callback),
@@ -413,7 +415,10 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     if (response.status == CertificateSignedStatusEnum::Accepted and
         cert_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate and
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile) == 3) {
-        this->context.connectivity_manager.on_charging_station_certificate_changed();
+        this->message_queue.run_when_idle([this]() {
+            this->context.connectivity_manager.on_charging_station_certificate_changed();
+            return this->context.connectivity_manager.is_websocket_connected();
+        });
 
         const auto& security_event = ocpp::security_events::RECONFIGURATIONOFSECURITYPARAMETERS;
         const std::string tech_info = "Changed charging station certificate";

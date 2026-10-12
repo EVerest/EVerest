@@ -756,7 +756,7 @@ ReservationCheckStatus AuthHandler::handle_reservation_exists(std::string& id_to
     }
 
     // Evse id has a value.
-    if (!this->reservation_handler.is_evse_reserved(evse_id.has_value())) {
+    if (!this->reservation_handler.is_evse_reserved(static_cast<uint32_t>(evse_id.value()))) {
         // There is an evse id, but the evse is not reserved.
         return ReservationCheckStatus::NotReserved;
     }

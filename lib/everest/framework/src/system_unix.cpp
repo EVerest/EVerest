@@ -234,24 +234,20 @@ SignalPolling::SignalPolling() {
     }
 }
 
-std::optional<uint32_t> SignalPolling::poll_signal(int timeout_ms, int extra_wakeup_fd, int extra_wakeup_fd2) {
+std::optional<uint32_t> SignalPolling::poll_signal(int timeout_ms, int extra_wakeup_fd) {
     if (not m_available) {
         // no signal fd: sleep instead of poll so the caller's loop does not busy-spin; signals
         // use their default disposition since the mask was restored in setup_signal_fd().
-        // NOTE: this fallback cannot observe the extra wakeup fds, so a fd that becomes readable
-        // during the sleep is only serviced on the caller's next loop iteration (after the sleep).
+        // NOTE: this fallback cannot observe the extra wakeup fd, so a wakeup during the sleep is
+        // only serviced on the caller's next loop iteration (after the sleep).
         std::this_thread::sleep_for(std::chrono::milliseconds(std::min(timeout_ms, SIGNAL_POLL_TIMEOUT_MS)));
         return std::nullopt;
     }
-    std::array<struct pollfd, 3> pollfds{};
+    std::array<struct pollfd, 2> pollfds{};
     pollfds[0] = {m_signal_fd, POLLIN, 0};
     nfds_t nfds = 1;
     if (extra_wakeup_fd != -1) {
         pollfds.at(nfds) = {extra_wakeup_fd, POLLIN, 0};
-        ++nfds;
-    }
-    if (extra_wakeup_fd2 != -1) {
-        pollfds.at(nfds) = {extra_wakeup_fd2, POLLIN, 0};
         ++nfds;
     }
     std::optional<uint32_t> received_signal = std::nullopt;

@@ -37,8 +37,6 @@ class ConfigServiceCore;
 } // namespace Everest
 struct TypedHandler;
 
-class ManagerAdminPanel;
-
 struct ModuleShutdownInfo {
     std::string id;
     int wstatus;
@@ -57,7 +55,7 @@ struct LwtCfg {
 /// config service.
 /// `ShutdownCause` records **why** a shutdown or drain was started; it is kept across transient
 /// states (for example through `ForceTerminating` / `ShutdownFinalizing`) so the next step can
-/// distinguish normal stop, admin-driven restart, and crash recovery.
+/// distinguish normal stop, requested restart, and crash recovery.
 ///
 /// The full lifecycle description lives in `docs/source/explanation/manager-lifecycle.rst`,
 /// the state machine diagram in
@@ -215,8 +213,6 @@ private:
     bool are_modules_started() const;
     /// \brief True when manager is in any shutdown-related state.
     bool is_in_shutdown_flow_state() const;
-    /// \brief True when restart has been requested.
-    bool is_restart_requested() const;
     /// \brief True when in idle.
     bool is_idle() const;
 
@@ -247,18 +243,16 @@ private:
 
     /// \brief Advance lifecycle state when current phase is complete.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return Result containing transition/exit outcome for this evaluation step.
-    LifecycleAdvanceResult advance_lifecycle_state_if_ready(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    LifecycleAdvanceResult advance_lifecycle_state_if_ready(RuntimeContext& ctx);
 
     /// \brief Complete shutdown finalization according to preserved restart/crash intent.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \param restart_requested Preserved restart intent for this finalization step.
     /// \param crash_in_progress Preserved crash-recovery intent for this finalization step.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
-    std::optional<int> handle_finalize_shutdown_transition(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                           bool restart_requested, bool crash_in_progress);
+    std::optional<int> handle_finalize_shutdown_transition(RuntimeContext& ctx, bool restart_requested,
+                                                           bool crash_in_progress);
 
     /// \brief Outcome of a module restart after a completed drain.
     enum class RestartOutcome {
@@ -284,11 +278,9 @@ private:
     /// \return std::nullopt for callers that return std::optional<int>.
     std::optional<int> transition_to_idle_after_shutdown(std::string_view log_message);
 
-    /// \brief Shut down the controller, transition to Exiting, then publish the final lifecycle
-    ///        status and disconnect MQTT.
+    /// \brief Transition to Exiting, then publish the final lifecycle status and disconnect MQTT.
     /// \return Process exit code for the caller.
-    int transition_to_exiting_after_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel, int exit_code,
-                                             bool reset_state);
+    int transition_to_exiting_after_shutdown(RuntimeContext& ctx, int exit_code, bool reset_state);
 
     /// \brief Publish the final lifecycle status (at most once) and disconnect MQTT before the
     ///        manager process exits.
@@ -304,16 +296,14 @@ private:
 
     /// \brief Finalize normal shutdown and decide exit vs idle outcome.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return EXIT_SUCCESS/EXIT_FAILURE when manager exits, std::nullopt for idle mode.
-    std::optional<int> handle_finish_normal_shutdown(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    std::optional<int> handle_finish_normal_shutdown(RuntimeContext& ctx);
 
     /// \brief Finalize crash-recovery shutdown path.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return EXIT_FAILURE when manager exits after crash (default), std::nullopt when staying idle
     ///         (`--recover-module-crashes` and restart cap exceeded).
-    std::optional<int> handle_finish_crash_recovery(RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    std::optional<int> handle_finish_crash_recovery(RuntimeContext& ctx);
 
     /// \brief Start the shutdown flow; publishes the shutdown topic when graceful shutdown is
     ///        enabled (`--graceful-shutdown`), otherwise modules are force-terminated by the
@@ -336,43 +326,30 @@ private:
     /// \brief Poll waitpid once and dispatch child exit handling.
     /// \param wstatus waitpid status output parameter.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return true when loop should short-circuit/continue after handling.
-    bool handle_waitpid_event(int& wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    bool handle_waitpid_event(int& wstatus, RuntimeContext& ctx);
 
     /// \brief Handle one child exit and update shutdown/restart state.
     /// \param pid Exited child process id.
     /// \param wstatus waitpid status for the exited child.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return true when loop should short-circuit/continue after handling.
-    bool handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
-
-    /// \brief Poll controller IPC commands (restart/check-config).
-    /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
-    /// \param prefix_opt Prefix passed to config-check requests.
-    /// \return Exit code when manager should terminate, std::nullopt otherwise.
-    std::optional<int> handle_controller_ipc_poll(RuntimeContext& ctx, ManagerAdminPanel& admin_panel,
-                                                  const std::string& prefix_opt);
+    bool handle_child_exit(pid_t pid, int wstatus, RuntimeContext& ctx);
 
     /// \brief Handle SIGINT/SIGTERM transition and optional immediate exit.
     /// \param signo Signal number received by polling.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
-    std::optional<int> handle_signal(int signo, RuntimeContext& ctx, ManagerAdminPanel& admin_panel);
+    std::optional<int> handle_signal(int signo, RuntimeContext& ctx);
 
     /// \brief Poll signal fd and forward handled signals to handle_signal().
     /// \param signal_polling Signal polling abstraction used by manager loop.
     /// \param ctx Runtime dependencies for the current run.
-    /// \param admin_panel Controller IPC/process integration helper.
     /// \return Exit code when manager should terminate, std::nullopt otherwise.
-    std::optional<int> handle_signal_poll(Everest::system::SignalPolling& signal_polling, RuntimeContext& ctx,
-                                          ManagerAdminPanel& admin_panel);
+    std::optional<int> handle_signal_poll(Everest::system::SignalPolling& signal_polling, RuntimeContext& ctx);
 
-    /// \brief Main-loop signal poll timeout: short while deadlines are running or controller IPC
-    ///        needs polling, long otherwise (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
+    /// \brief Main-loop signal poll timeout: short while deadlines are running, long otherwise
+    ///        (SIGINT/SIGTERM/SIGCHLD wake the poll immediately).
     int signal_poll_timeout_ms() const;
 
     /// \brief True when --lifecycle-api was given, i.e. the lifecycle status topic is in use.

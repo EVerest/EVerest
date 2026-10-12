@@ -4,6 +4,8 @@
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
+#include <future>
+
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
@@ -65,6 +67,8 @@ protected: // Members
         security_event_callback_mock;
     std::atomic<ocpp::OcppProtocolVersion> ocpp_version;
     FunctionalBlockContext functional_block_context;
+    std::function<bool(json)> send_callback{[](json) { return false; }};
+    MessageQueue<MessageType> message_queue;
     Security security;
 
 protected: // Functions
@@ -84,7 +88,10 @@ protected: // Functions
         functional_block_context{
             this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
             this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version},
-        security(functional_block_context, logging, ocsp_updater, security_event_callback_mock.AsStdFunction()) {
+        message_queue([this](json message) { return this->send_callback(message); }, MessageQueueConfig<MessageType>{},
+                      nullptr),
+        security(functional_block_context, message_queue, logging, ocsp_updater,
+                 security_event_callback_mock.AsStdFunction()) {
     }
 
     ocpp::EnhancedMessage<MessageType> create_example_certificate_signed_request(
@@ -291,14 +298,53 @@ TEST_F(SecurityTest, handle_message_certificate_signed_chargingstationcertificat
         EXPECT_EQ(response.status, CertificateSignedStatusEnum::Accepted);
     }));
     // The connectivity manager should be informed of the changed certificate (because of security profile 3)
-    EXPECT_CALL(connectivity_manager, on_charging_station_certificate_changed()).Times(1);
+    std::promise<void> certificate_changed;
+    auto certificate_changed_future = certificate_changed.get_future();
+    EXPECT_CALL(connectivity_manager, on_charging_station_certificate_changed())
+        .WillOnce(Invoke([&certificate_changed]() { certificate_changed.set_value(); }));
     // A security event notification should be sent (because of security profile 3)
     EXPECT_CALL(security_event_callback_mock,
                 Call(CiString<50>("ReconfigurationOfSecurityParameters"),
                      std::optional<CiString<255>>("Changed charging station certificate")));
 
+    message_queue.start();
     security.handle_message(
         create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate));
+    EXPECT_EQ(certificate_changed_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    message_queue.stop();
+}
+
+TEST_F(SecurityTest,
+       handle_message_certificate_signed_chargingstationcertificate_accepted_securityprofile_3_awaits_call_in_flight) {
+    set_security_profile(this->device_model, 3);
+    std::promise<void> call_sent;
+    send_callback = [&call_sent](json) {
+        call_sent.set_value();
+        return true;
+    };
+    message_queue.start();
+    message_queue.set_registration_status_accepted();
+    message_queue.resume(std::chrono::seconds(0));
+    message_queue.push_call(json{2, "in-flight", "Heartbeat", json::object()});
+    EXPECT_EQ(call_sent.get_future().wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    EXPECT_CALL(evse_security, update_leaf_certificate("", ocpp::CertificateSigningUseEnum::ChargingStationCertificate))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_));
+    EXPECT_CALL(security_event_callback_mock, Call(_, _));
+    std::promise<void> certificate_changed;
+    auto certificate_changed_future = certificate_changed.get_future();
+    EXPECT_CALL(connectivity_manager, on_charging_station_certificate_changed())
+        .WillOnce(Invoke([&certificate_changed]() { certificate_changed.set_value(); }));
+
+    security.handle_message(
+        create_example_certificate_signed_request("", ocpp::v2::CertificateSigningUseEnum::ChargingStationCertificate));
+    EXPECT_EQ(certificate_changed_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    message_queue.receive(json{3, "in-flight", {{"currentTime", DateTime().to_rfc3339()}}}.dump());
+    EXPECT_EQ(certificate_changed_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    message_queue.stop();
 }
 
 TEST_F(SecurityTest, handle_message_certificate_signed_chargingstationcertificate_accepted_securityprofile_1) {
@@ -679,7 +725,7 @@ TEST_F(SecurityTest, sign_certificate_request_no_organization_name) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::ChargeBoxSerialNumber.component,
                                   ControllerComponentVariables::ChargeBoxSerialNumber.variable.value(),
@@ -708,7 +754,7 @@ TEST_F(SecurityTest, sign_certificate_request_no_serial_number) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::OrganizationName.component,
                                   ControllerComponentVariables::OrganizationName.variable.value(),
@@ -736,7 +782,7 @@ TEST_F(SecurityTest, sign_certificate_request_no_country) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::OrganizationName.component,
                                   ControllerComponentVariables::OrganizationName.variable.value(),
@@ -1435,7 +1481,7 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_no_common_name) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrOrganizationName.component,
                                   ControllerComponentVariables::ISO15118CtrlrOrganizationName.variable.value(),
@@ -1463,7 +1509,7 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_no_organization) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
                                   ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
@@ -1491,7 +1537,7 @@ TEST_F(SecurityTest, sign_certificate_request_v2g_no_country) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
+    Security s(b, message_queue, logging, ocsp_updater, security_event_callback_mock.AsStdFunction());
 
     this->device_model->set_value(ControllerComponentVariables::ISO15118CtrlrSeccId.component,
                                   ControllerComponentVariables::ISO15118CtrlrSeccId.variable.value(),
@@ -1604,7 +1650,7 @@ TEST_F(SecurityTest, security_event_notification_no_callback) {
     const FunctionalBlockContext b{
         this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
         this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
-    Security s(b, logging, ocsp_updater, nullptr);
+    Security s(b, message_queue, logging, ocsp_updater, nullptr);
 
     // This will send a security event notification to the CSMS.
     EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).WillOnce(Invoke([&](const json& call, bool triggered) {

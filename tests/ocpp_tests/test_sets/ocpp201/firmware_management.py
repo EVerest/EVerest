@@ -288,10 +288,6 @@ async def test_L01_update_firmware_cancels_running_download(
         r = await charge_point_v201.update_firmware(request_id=2, firmware=firmware())
         assert UpdateFirmwareStatusEnumType(r.status) == UpdateFirmwareStatusEnumType.accepted_canceled
 
-        # The cancel stops the downloader script, but its curl keeps the output pipe open until the held
-        # download ends.
-        release_first_download.set()
-
         assert await wait_for_and_validate(
             test_utility, charge_point_v201, "FirmwareStatusNotification", {
                 "status": "DownloadFailed", "requestId": 1},

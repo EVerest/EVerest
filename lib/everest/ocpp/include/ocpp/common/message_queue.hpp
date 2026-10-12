@@ -183,6 +183,7 @@ private:
     bool paused;
     // Transiently true while the queue is paused, but is waiting to unpause
     bool resuming;
+    std::deque<std::function<bool()>> idle_actions;
     bool running;
     bool new_message;
     bool is_registration_status_accepted;
@@ -548,8 +549,25 @@ public:
                 using namespace std::chrono_literals;
                 // It's safe to wait on the cv here because we're guaranteed to only lock this->message_mutex once
                 this->cv.wait(lk, [this]() {
-                    return !this->running || (!this->paused && this->new_message && this->in_flight == nullptr);
+                    return !this->running || (!this->idle_actions.empty() && this->in_flight == nullptr) ||
+                           (!this->paused && this->new_message && this->in_flight == nullptr);
                 });
+                if (this->running && !this->idle_actions.empty() && this->in_flight == nullptr) {
+                    const auto action = std::move(this->idle_actions.front());
+                    this->idle_actions.pop_front();
+                    const bool paused_for_action = !this->paused;
+                    if (paused_for_action) {
+                        this->pause();
+                    }
+                    const auto pause_resume_ctr_before = this->pause_resume_ctr;
+                    lk.unlock();
+                    const bool still_connected = action();
+                    lk.lock();
+                    if (paused_for_action && still_connected && pause_resume_ctr_before == this->pause_resume_ctr) {
+                        this->resume(std::chrono::seconds(0));
+                    }
+                    continue;
+                }
                 EVLOG_debug << "There are " << this->normal_message_queue.size()
                             << " messages in the normal message queue.";
                 EVLOG_debug << "There are " << this->transaction_message_queue.size()
@@ -665,8 +683,16 @@ public:
                     this->handle_timeout_or_callerror(std::nullopt);
                 } else {
                     EVLOG_debug << "Successfully sent message. UID: " << this->in_flight->uniqueId();
-                    this->in_flight_timeout_timer.timeout([this]() { this->handle_timeout_or_callerror(std::nullopt); },
-                                                          this->current_message_timeout(message->message_attempts));
+                    const auto message_id = message->uniqueId();
+                    this->in_flight_timeout_timer.timeout(
+                        [this, message, message_id]() {
+                            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+                            if (this->in_flight != message || this->in_flight->uniqueId() != message_id) {
+                                return;
+                            }
+                            this->handle_timeout_or_callerror(std::nullopt);
+                        },
+                        this->current_message_timeout(message->message_attempts));
                 }
                 if (this->transaction_message_queue.empty() && this->normal_message_queue.empty()) {
                     this->new_message = false;
@@ -943,6 +969,7 @@ public:
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
             this->running = false;
+            this->idle_actions.clear();
         }
         this->cv.notify_one();
         this->worker_thread.join();
@@ -960,8 +987,25 @@ public:
         this->resume_timer.stop();
         this->paused = true;
         this->resuming = false;
+        // A CALL sent on the lost connection is never answered, so settle it as a timeout
+        if (this->in_flight != nullptr) {
+            this->handle_timeout_or_callerror(std::nullopt);
+        }
         this->cv.notify_one();
         EVLOG_debug << "pause() notified message queue";
+    }
+
+    /// \brief Runs \p action on the queue thread once no CALL is in flight, in FIFO order and before further CALLs.
+    /// Sending is paused while \p action runs. If the queue was running before, it resumes after \p action when
+    /// \p action returns true because the socket is still connected and nobody paused or resumed meanwhile.
+    /// \p action must not call stop(), and stop() must not be called from the websocket receive thread while actions
+    /// may run.
+    void run_when_idle(std::function<bool()> action) {
+        {
+            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+            this->idle_actions.push_back(std::move(action));
+        }
+        this->cv.notify_one();
     }
 
     /// \brief Resumes the message queue

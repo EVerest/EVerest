@@ -40,12 +40,15 @@ properties:
       errors_dir:
         type: string
       www_dir:
+        description: Deprecated and ignored.
         type: string
       logging_config_file:
         type: string
       controller_port:
+        description: Deprecated and ignored.
         type: integer
       controller_rpc_timeout_ms:
+        description: Deprecated and ignored.
         type: integer
       mqtt_broker_socket_path:
         type: string

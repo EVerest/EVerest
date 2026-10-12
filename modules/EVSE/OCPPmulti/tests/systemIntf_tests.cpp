@@ -23,6 +23,7 @@
 #include <future>
 #include <mutex>
 #include <thread>
+#include <tuple>
 
 #include <generic_ocpp.hpp>
 
@@ -204,28 +205,97 @@ TEST_F(GenericOcppRequiresTester, callIsResetAllowedImmediateAndResume) {
     EXPECT_EQ(received.size(), 2);
 }
 
-TEST_F(GenericOcppRequiresTester, callReset) {
-    // call_reset() used in cb_is_reset_allowed()
+using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
 
-    using ResetType = ocpp_multi::GenericChargePointCallbacks::ResetType;
+struct GenericOcppResetTester : public GenericOcppRequiresTester,
+                                public testing::WithParamInterface<std::tuple<ResetType, json>> {};
 
+TEST_P(GenericOcppResetTester, callReset) {
+    // call_reset() used in cb_reset()
+
+    const auto& [type, expected] = GetParam();
+
+    std::mutex mutex;
+    std::vector<json> received;
+    interfaces->subscribe_var("system", "call_reset", [&](const auto&, const auto&, const auto& data) {
+        std::lock_guard<std::mutex> lock(mutex);
+        received.push_back(data);
+    });
+    const auto received_count = [&]() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return received.size();
+    };
+
+    interfaces->add_cmd_result(R"(true)"_json);
+
+    ocpp->cb_reset(std::nullopt, type);
+    EXPECT_TRUE(wait_for_condition([&] { return received_count() >= 1; }));
+
+    // joins the reset work before the fixture tears down the interfaces
+    ocpp->shutdown();
+
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0], expected);
+}
+
+INSTANTIATE_TEST_SUITE_P(ResetTypes, GenericOcppResetTester,
+                         testing::Values(std::make_tuple(ResetType::Immediate,
+                                                         R"({"scheduled":false,"type":"NotSpecified"})"_json), // v2
+                                         std::make_tuple(ResetType::Hard,
+                                                         R"({"scheduled":false,"type":"Hard"})"_json), // v1.6
+                                         std::make_tuple(ResetType::Soft,
+                                                         R"({"scheduled":false,"type":"Soft"})"_json))); // v1.6
+
+TEST_F(GenericOcppRequiresTester, callResetOfEvseNotSent) {
     std::vector<json> received;
     interfaces->subscribe_var("system", "call_reset",
                               [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
 
-    interfaces->add_cmd_result(R"(true)"_json);
-    interfaces->add_cmd_result(R"(true)"_json);
-    interfaces->add_cmd_result(R"(true)"_json);
+    ocpp->cb_reset(1, ResetType::OnIdle);
+    ocpp->shutdown();
 
-    ocpp->cb_reset(1, ResetType::OnIdle);               // no MQTT message sent
-    ocpp->cb_reset(std::nullopt, ResetType::Immediate); // v2
-    ocpp->cb_reset(std::nullopt, ResetType::Hard);      // v1.6
-    ocpp->cb_reset(std::nullopt, ResetType::Soft);      // v1.6
+    EXPECT_TRUE(received.empty());
+}
 
-    ASSERT_EQ(received.size(), 3);
-    EXPECT_EQ(received[0], R"({"scheduled":false,"type":"NotSpecified"})"_json);
-    EXPECT_EQ(received[1], R"({"scheduled":false,"type":"Hard"})"_json);
-    EXPECT_EQ(received[2], R"({"scheduled":false,"type":"Soft"})"_json);
+TEST_F(GenericOcppRequiresTester, callResetDoesNotBlockCaller) {
+    ASSERT_EQ(config.ResetStopDelay, 0);
+
+    std::mutex mutex;
+    std::vector<json> received;
+    interfaces->subscribe_var("system", "call_reset", [&](const auto&, const auto&, const auto& data) {
+        std::lock_guard<std::mutex> lock(mutex);
+        received.push_back(data);
+    });
+    const auto received_count = [&]() {
+        std::lock_guard<std::mutex> lock(mutex);
+        return received.size();
+    };
+
+    std::promise<void> stop_entered;
+    std::promise<void> release_stop;
+    auto release = release_stop.get_future().share();
+    EXPECT_CALL(chargepoint, stop()).WillOnce([&stop_entered, release]() {
+        stop_entered.set_value();
+        release.wait_for(std::chrono::seconds(5));
+    });
+
+    auto reset = std::async(std::launch::async, [this]() { ocpp->cb_reset(std::nullopt, ResetType::Hard); });
+
+    const bool returned = reset.wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    const bool stop_blocked = stop_entered.get_future().wait_for(std::chrono::seconds(2)) == std::future_status::ready;
+    const auto published_while_blocked = received_count();
+    release_stop.set_value();
+
+    EXPECT_TRUE(returned) << "cb_reset() waited for stop()";
+    EXPECT_TRUE(stop_blocked);
+    EXPECT_EQ(published_while_blocked, 0);
+    EXPECT_TRUE(wait_for_condition([&] { return received_count() >= 1; }));
+
+    // joins the reset work before the fixture tears down the interfaces
+    ocpp->shutdown();
+
+    ASSERT_EQ(received_count(), 1);
+    EXPECT_EQ(received[0], R"({"scheduled":false,"type":"Hard"})"_json);
 }
 
 TEST_F(GenericOcppRequiresTester, callSetSystemTime) {

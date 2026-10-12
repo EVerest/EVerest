@@ -80,17 +80,21 @@ types::system::UploadLogsResponse
 systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_request) {
     types::system::UploadLogsResponse response;
 
-    if (this->log_upload_running) {
-        response.upload_logs_status = types::system::UploadLogsStatus::AcceptedCanceled;
-    } else {
-        response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
+    {
+        auto state = this->log_upload_state.handle();
+        if (*state == LogUploadState::Uploading) {
+            EVLOG_info << "Received Log upload request and log upload already running - cancelling current upload";
+            this->interrupt_log_upload->store(true);
+            response.upload_logs_status = types::system::UploadLogsStatus::AcceptedCanceled;
+        } else {
+            response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
+        }
     }
 
     const auto diagnostics_file_path =
         create_temp_file(fs::temp_directory_path(), this->create_logs_filename("diagnostics"));
     const auto diagnostics_file_name = diagnostics_file_path.filename().string();
 
-    response.upload_logs_status = types::system::UploadLogsStatus::Accepted;
     response.file_name = diagnostics_file_name;
 
     // populate file with available logs within the specified time window
@@ -100,76 +104,112 @@ systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_req
 
     this->upload_logs_thread =
         std::thread([this, create_result, upload_logs_request, diagnostics_file_name, diagnostics_file_path]() {
-            if (this->log_upload_running) {
-                EVLOG_info << "Received Log upload request and log upload already running - cancelling current upload";
-                this->interrupt_log_upload.exchange(true);
-                EVLOG_info << "Waiting for other log upload to finish...";
-                std::unique_lock<std::mutex> lk(this->log_upload_mutex);
-                this->log_upload_cv.wait(lk, [this]() { return !this->log_upload_running; });
-                EVLOG_info << "Previous Log upload finished!";
-            }
-
-            std::lock_guard<std::mutex> lg(this->log_upload_mutex);
-            EVLOG_info << "Starting upload of log file";
-            this->interrupt_log_upload.exchange(false);
-            this->log_upload_running = true;
-            const auto diagnostics_uploader = this->scripts_path / DIAGNOSTICS_UPLOADER;
-            const auto constants = this->scripts_path / CONSTANTS;
-
-            std::vector<std::string> args = {constants.string(), upload_logs_request.location, diagnostics_file_name,
-                                             diagnostics_file_path.string()};
-            bool uploaded = false;
-            int32_t retries = 0;
-            const auto total_retries = upload_logs_request.retries.value_or(this->mod->config.DefaultRetries);
-            const auto retry_interval =
-                upload_logs_request.retry_interval_s.value_or(this->mod->config.DefaultRetryInterval);
-
-            types::system::LogStatus log_status;
-            if (create_result == DiagnosticsHandler::log_result_t::error_file) {
-                // problem creating the file - nothing to upload
-                log_status.log_status = types::system::LogStatusEnum::UploadFailure;
-                this->publish_log_status(log_status);
-            } else {
-                while (!uploaded && retries <= total_retries && !this->interrupt_log_upload) {
-                    retries += 1;
-                    log_status.request_id = upload_logs_request.request_id.value_or(-1);
-                    run_application(
-                        diagnostics_uploader.string(), args, [this, &log_status](const std::string& output_line) {
-                            if (output_line == "Uploaded") {
-                                log_status.log_status = types::system::string_to_log_status_enum(output_line);
-                            } else if (output_line == "UploadFailure" || output_line == "PermissionDenied" ||
-                                       output_line == "BadMessage" || output_line == "NotSupportedOperation") {
-                                log_status.log_status = types::system::LogStatusEnum::UploadFailure;
-                            } else {
-                                log_status.log_status = types::system::LogStatusEnum::Uploading;
-                            }
-                            this->publish_log_status(log_status);
-                            if (this->interrupt_log_upload) {
-                                return CmdControl::Terminate;
-                            }
-                            return CmdControl::Continue;
-                        });
-                    if (this->interrupt_log_upload) {
-                        EVLOG_info << "Uploading Logs was interrupted, terminating upload script, requestId: "
-                                   << log_status.request_id;
-                        // N01.FR.20
-                        log_status.log_status = types::system::LogStatusEnum::AcceptedCanceled;
-                        this->publish_log_status(log_status);
-                    } else if (log_status.log_status != types::system::LogStatusEnum::Uploaded &&
-                               retries <= total_retries) {
-                        std::this_thread::sleep_for(std::chrono::seconds(retry_interval));
-                    } else {
-                        uploaded = true;
-                    }
-                }
-            }
-            this->log_upload_running = false;
-            this->log_upload_cv.notify_one();
+            this->begin_log_upload();
+            const auto log_status =
+                this->run_log_upload(upload_logs_request, diagnostics_file_name, diagnostics_file_path, create_result);
+            this->finish_log_upload(log_status);
             EVLOG_info << "Log upload thread finished";
         });
     this->upload_logs_thread.detach();
 
     return response;
+}
+
+void systemImpl::begin_log_upload() {
+    auto state = this->log_upload_state.handle();
+    if (*state != LogUploadState::Idle) {
+        EVLOG_info << "Waiting for other log upload to finish...";
+        state.wait([&state]() { return *state == LogUploadState::Idle; });
+        EVLOG_info << "Previous Log upload finished!";
+    }
+    *state = LogUploadState::Uploading;
+    this->interrupt_log_upload->store(false);
+}
+
+types::system::LogStatus systemImpl::run_log_upload(const types::system::UploadLogsRequest& upload_logs_request,
+                                                    const std::string& diagnostics_file_name,
+                                                    const fs::path& diagnostics_file_path,
+                                                    DiagnosticsHandler::log_result_t create_result) {
+    EVLOG_info << "Starting upload of log file";
+    const auto diagnostics_uploader = this->scripts_path / DIAGNOSTICS_UPLOADER;
+    const auto constants = this->scripts_path / CONSTANTS;
+
+    std::vector<std::string> args = {constants.string(), upload_logs_request.location, diagnostics_file_name,
+                                     diagnostics_file_path.string()};
+    int32_t retries = 0;
+    const auto total_retries = upload_logs_request.retries.value_or(this->mod->config.DefaultRetries);
+    const auto retry_interval =
+        std::chrono::seconds(upload_logs_request.retry_interval_s.value_or(this->mod->config.DefaultRetryInterval));
+
+    types::system::LogStatus log_status{types::system::LogStatusEnum::Idle,
+                                        upload_logs_request.request_id.value_or(-1)};
+    if (create_result == DiagnosticsHandler::log_result_t::error_file) {
+        // problem creating the file - nothing to upload
+        log_status.log_status = types::system::LogStatusEnum::UploadFailure;
+        this->publish_log_status(log_status);
+        return log_status;
+    }
+
+    RunOptions options;
+    options.stop_requested = this->interrupt_log_upload;
+    options.callback = [this, &log_status](const std::string& output_line) {
+        if (this->interrupt_log_upload->load()) {
+            return CmdControl::Terminate;
+        }
+        if (output_line == "Uploaded") {
+            log_status.log_status = types::system::string_to_log_status_enum(output_line);
+        } else if (output_line == "UploadFailure" || output_line == "PermissionDenied" || output_line == "BadMessage" ||
+                   output_line == "NotSupportedOperation") {
+            log_status.log_status = types::system::LogStatusEnum::UploadFailure;
+        } else {
+            log_status.log_status = types::system::LogStatusEnum::Uploading;
+        }
+        this->publish_log_status(log_status);
+        return CmdControl::Continue;
+    };
+    while (retries <= total_retries) {
+        retries += 1;
+        run_application(diagnostics_uploader.string(), args, options);
+        if (log_status.log_status == types::system::LogStatusEnum::Uploaded) {
+            break;
+        }
+        // after the last attempt only the interrupt is checked
+        const auto wait = retries <= total_retries ? retry_interval : std::chrono::seconds(0);
+        if (this->log_upload_interrupted_within(wait)) {
+            break;
+        }
+    }
+    return log_status;
+}
+
+bool systemImpl::log_upload_interrupted_within(std::chrono::seconds interval) {
+    if (this->interrupt_log_upload->load()) {
+        return true;
+    }
+    const auto retry_at = std::chrono::steady_clock::now() + interval;
+    while (std::chrono::steady_clock::now() < retry_at) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        if (this->interrupt_log_upload->load()) {
+            return true;
+        }
+    }
+    return false;
+}
+
+void systemImpl::finish_log_upload(types::system::LogStatus log_status) {
+    bool cancelled = false;
+    {
+        auto state = this->log_upload_state.handle();
+        cancelled =
+            log_status.log_status != types::system::LogStatusEnum::Uploaded && this->interrupt_log_upload->load();
+        *state = LogUploadState::Idle;
+    }
+    this->log_upload_state.notify_all();
+    if (cancelled) {
+        EVLOG_info << "Uploading Logs was interrupted, terminating upload script, requestId: " << log_status.request_id;
+        log_status.log_status = types::system::LogStatusEnum::AcceptedCanceled;
+        this->publish_log_status(log_status);
+    }
 }
 
 bool systemImpl::handle_is_reset_allowed(types::system::ResetType& type) {

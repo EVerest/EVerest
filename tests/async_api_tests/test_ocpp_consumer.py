@@ -71,14 +71,14 @@ def probe_module(everest_core: EverestCore) -> ProbeModule:
     return probe_module
 
 
-def _subscribe_to_queue(handler: AsyncApiMqttHandler, topic: str) -> Queue:
+async def _subscribe_to_queue(handler: AsyncApiMqttHandler, topic: str) -> Queue:
     """Collects the payloads published on an external topic."""
     queue = Queue()
 
     async def on_message(payload: str):
         queue.put(json.loads(payload))
 
-    handler.register_handler(topic, on_message)
+    await handler.register_handler(topic, on_message)
     return queue
 
 
@@ -130,9 +130,9 @@ async def test_connection_status_is_forwarded_with_legacy_is_connected(
     probe_module: ProbeModule,
 ):
     prefix = everest_core.mqtt_external_prefix
-    status_queue = _subscribe_to_queue(
+    status_queue = await _subscribe_to_queue(
         async_api_mqtt_handler, f"{prefix}{API_BASE}/e2m/connection_status")
-    is_connected_queue = _subscribe_to_queue(
+    is_connected_queue = await _subscribe_to_queue(
         async_api_mqtt_handler, f"{prefix}{API_BASE}/e2m/is_connected")
 
     # the connection status is forwarded verbatim, is_connected repeats its connected flag
@@ -160,9 +160,9 @@ async def test_latched_connection_status_and_is_connected_are_served(
     probe_module: ProbeModule,
 ):
     prefix = everest_core.mqtt_external_prefix
-    status_queue = _subscribe_to_queue(
+    status_queue = await _subscribe_to_queue(
         async_api_mqtt_handler, f"{prefix}{API_BASE}/e2m/connection_status")
-    is_connected_queue = _subscribe_to_queue(
+    is_connected_queue = await _subscribe_to_queue(
         async_api_mqtt_handler, f"{prefix}{API_BASE}/e2m/is_connected")
 
     await _publish_status_until_received(
@@ -171,7 +171,7 @@ async def test_latched_connection_status_and_is_connected_are_served(
     for variable, expected in (("connection_status", CONNECTED_STATUS),
                                ("is_connected", True)):
         reply_topic = f"{API_BASE}/e2m/{variable}/reply"
-        reply_queue = _subscribe_to_queue(
+        reply_queue = await _subscribe_to_queue(
             async_api_mqtt_handler, f"{prefix}{reply_topic}")
         await async_api_mqtt_handler.publish(
             f"{prefix}{API_BASE}/m2e/{variable}/get",

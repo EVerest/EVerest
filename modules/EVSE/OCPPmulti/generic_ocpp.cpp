@@ -13,6 +13,7 @@
 #include <ld-ev.hpp>
 #include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <utils/exceptions.hpp>
 
 #include <thread>
 
@@ -1049,20 +1050,21 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
 
     if (evse_id > 0) {
         auto& evse = mv_requires.evse_manager.at(evse_id - 1);
+        const bool enable_requested = new_status == ocpp::v2::OperationalStatusEnum::Operative;
+        const auto enable_state =
+            enable_requested ? types::evse_manager::Enable_state::Enable : types::evse_manager::Enable_state::Disable;
 
-        if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Enable, 5000})) {
-                mv_charge_point.on_enabled(evse_id, connector_id);
-                result = true;
-            }
+        // returns the effective enabled state across all sources, not a success flag
+        const bool is_enabled =
+            evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+
+        if (is_enabled) {
+            mv_charge_point.on_enabled(evse_id, connector_id);
         } else {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Disable, 5000})) {
-                mv_charge_point.on_unavailable(evse_id, connector_id);
-                result = true;
-            }
+            mv_charge_point.on_unavailable(evse_id, connector_id);
         }
+
+        result = is_enabled == enable_requested;
     } else {
         EVLOG_warning << "cb_connector_effective_operative_status: invalid evse_id: " << evse_id;
     }
@@ -1476,10 +1478,38 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
         }
 
         if (do_reset) {
-            // small delay before stopping the charge point to make sure all responses are received
-            std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
-            mv_charge_point.stop();
-            mv_requires.system.call_reset(r_type, scheduled);
+            auto reset = m_reset.handle();
+            if (mv_shutting_down.load()) {
+                EVLOG_warning << "Reset ignored: module is shutting down";
+                return;
+            }
+            // joining a running reset here could block libocpp's receive thread on its own join
+            if (reset->running) {
+                EVLOG_warning << "Reset ignored: a reset is already in progress";
+                return;
+            }
+            // not running, so the finished thread no longer needs m_reset
+            if (reset->thread.joinable()) {
+                reset->thread.join();
+            }
+            reset->running = true;
+            reset->thread = std::thread([this, r_type, scheduled]() {
+                try {
+                    // small delay before stopping the charge point to make sure all responses are received
+                    std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
+                    mv_charge_point.stop();
+                    try {
+                        mv_requires.system.call_reset(r_type, scheduled);
+                    } catch (const Everest::Shutdown& e) {
+                        EVLOG_warning << "System reset request interrupted by module shutdown: " << e.what();
+                    } catch (const std::exception& e) {
+                        EVLOG_error << "System reset request failed: " << e.what();
+                    }
+                } catch (const std::exception& e) {
+                    EVLOG_error << "Reset failed, no system reset requested: " << e.what();
+                }
+                m_reset.handle()->running = false;
+            });
         }
     }
 }
@@ -1933,6 +1963,20 @@ void GenericOcpp::shutdown() {
 
     // Unblock any ConnectivityManager thread waiting on a pending configure_network future.
     drain_pending_network_config_requests();
+
+    // the reset work uses the charge point, which the owner tears down after this
+    join_reset_thread();
+}
+
+GenericOcpp::~GenericOcpp() {
+    join_reset_thread();
+}
+
+void GenericOcpp::join_reset_thread() {
+    auto reset_thread = std::move(m_reset.handle()->thread);
+    if (reset_thread.joinable()) {
+        reset_thread.join();
+    }
 }
 
 bool GenericOcpp::ocpp_2_selected() const {

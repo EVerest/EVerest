@@ -1847,8 +1847,10 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
     res->ResponseCode =
         (entry_found == false) ? iso2_responseCodeType_FAILED_TariffSelectionInvalid : res->ResponseCode; // [V2G2-479]
 
-    /* Check EV charging profile values [V2G2-478] */
-    check_iso2_charging_profile_values(req, res, conn, sa_schedule_tuple_idx);
+    if (entry_found == true) {
+        /* Check EV charging profile values [V2G2-478] */
+        check_iso2_charging_profile_values(req, res, conn, sa_schedule_tuple_idx);
+    }
 
     const auto last_v2g_msg = conn->ctx->last_v2g_msg;
 

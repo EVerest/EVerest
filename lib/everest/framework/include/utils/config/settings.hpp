@@ -6,6 +6,7 @@
 #include <filesystem>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <nlohmann/json.hpp>
 
@@ -58,10 +59,9 @@ struct ConfigParseSettings {
 
 /// \brief Settings needed by the manager to load and validate a config
 struct ManagerSettings : public ConfigParseSettings {
-    fs::path db_dir;                  ///< Directory that contains the database
-    fs::path www_dir;                 ///< Directory that contains the everest-admin-panel
-    int controller_port{0};           ///< Websocket port of the controller
-    int controller_rpc_timeout_ms{0}; ///< RPC timeout for controller commands
+    fs::path db_dir; ///< Directory that contains the database
+
+    std::vector<std::string> deprecated_settings; ///< Deprecated settings keys present in the config, ignored
 
     std::string run_as_user; ///< Username under which EVerest should run
 

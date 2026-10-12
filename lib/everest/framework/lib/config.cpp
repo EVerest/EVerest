@@ -1158,18 +1158,40 @@ ManagerConfig::ManagerConfig(const ConfigParseSettings& ps, everest::config::Mod
     init_from_preloaded(std::move(preloaded_configs));
 }
 
-ModuleConfigurations validate_module_configs(const ConfigParseSettings& ps, const nlohmann::json& json_config) {
+ValidatedModuleConfigurations validate_module_configs(const ConfigParseSettings& ps,
+                                                      const nlohmann::json& json_config) {
     ConfigParseSettings val_ps = ps;
     val_ps.config = json_config;
     val_ps.config_file.clear(); // no file; skip canonical() and user-config lookup
     ManagerConfig tmp(val_ps);  // validation-only path; validates manifests and requirements
-    return tmp.get_module_configurations();
+    return {tmp.get_module_configurations(), tmp.get_manifests()};
 }
 
-ModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
-                                                       ModuleConfigurations module_configs) {
+ValidatedModuleConfigurations validate_preloaded_module_configs(const ConfigParseSettings& ps,
+                                                                ModuleConfigurations module_configs) {
     ManagerConfig tmp(ps, std::move(module_configs)); // validation-only path; validates manifests and requirements
-    return tmp.get_module_configurations();
+    return {tmp.get_module_configurations(), tmp.get_manifests()};
+}
+
+std::optional<std::string> validate_config_parameter_value(const json& manifest,
+                                                           const ConfigurationParameterIdentifier& identifier,
+                                                           const ConfigEntry& value) {
+    const auto impl_id = identifier.module_implementation_id.value_or("!module");
+    const auto config_map_pointer =
+        impl_id == "!module" ? json::json_pointer("/config") : json::json_pointer("/provides") / impl_id / "config";
+    const auto config_entry_pointer = config_map_pointer / identifier.configuration_parameter_name;
+    if (not manifest.contains(config_entry_pointer)) {
+        return fmt::format("Manifest has no config entry {}", config_entry_pointer.to_string());
+    }
+
+    try {
+        json_validator validator(loader, format_checker);
+        validator.set_root_schema(manifest.at(config_entry_pointer));
+        validator.validate(json(value));
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
 }
 
 void ManagerConfig::init_schemas() {

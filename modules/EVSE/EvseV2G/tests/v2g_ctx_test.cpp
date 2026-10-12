@@ -129,6 +129,11 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateFalse) {
     EXPECT_FALSE(ctx->is_connection_terminated);
 }
 
+TEST_F(V2gCtxTest, v2g_ctx_create_initializes_default_ports) {
+    EXPECT_EQ(ctx->tcp_port, 61341);
+    EXPECT_EQ(ctx->tls_port, 64109);
+}
+
 #if 0
 // v2g_ctx_init_charging_session() is a trivial implementation
 TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionTrue) {

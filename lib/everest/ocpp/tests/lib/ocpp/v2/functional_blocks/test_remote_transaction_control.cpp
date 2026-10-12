@@ -176,7 +176,7 @@ protected: // Functions
         connector_evse_1(1, 1, component_state_manager),
         connector_evse_2(2, 1, component_state_manager),
         remote_transaction_control(std::make_unique<RemoteTransactionControl>(
-            functional_block_context, transaction, smart_charging, meter_values, availability, firmware_update,
+            functional_block_context, transaction, &smart_charging, meter_values, availability, firmware_update,
             security, nullptr, provisioning, unlock_connector_callback.AsStdFunction(),
             remote_start_transaction_callback.AsStdFunction(), stop_transaction_callback.AsStdFunction(),
             registration_status, upload_log_status, upload_log_status_id)) {
@@ -345,6 +345,21 @@ TEST_F(RemoteTransactionControlTest, RemoteStartWithoutEvseIdAcceptedWithProfile
     expect_response_status(RequestStartStopStatusEnum::Accepted);
 
     remote_transaction_control->handle_message(create_remote_start_request(std::nullopt, create_tx_profile()));
+}
+
+TEST_F(RemoteTransactionControlTest, RemoteStartWithProfileIgnoresProfileWhenSmartChargingUnavailable) {
+    // SmartChargingCtrlr.Available=false: the charge point builds no smart charging block.
+    remote_transaction_control = std::make_unique<RemoteTransactionControl>(
+        functional_block_context, transaction, nullptr, meter_values, availability, firmware_update, security, nullptr,
+        provisioning, unlock_connector_callback.AsStdFunction(), remote_start_transaction_callback.AsStdFunction(),
+        stop_transaction_callback.AsStdFunction(), registration_status, upload_log_status, upload_log_status_id);
+    set_smart_charging_enabled(true);
+
+    EXPECT_CALL(transaction, set_remote_start_id_for_evse(1, _, 123));
+    EXPECT_CALL(remote_start_transaction_callback, Call(_, _)).WillOnce(Return(RequestStartStopStatusEnum::Accepted));
+    expect_response_status(RequestStartStopStatusEnum::Accepted);
+
+    remote_transaction_control->handle_message(create_remote_start_request(1, create_tx_profile()));
 }
 
 TEST_F(RemoteTransactionControlTest, RemoteStartWithEvseIdAcceptedForSpecificEvse) {

@@ -169,10 +169,7 @@ struct Settings {
     std::optional<fs::path> interfaces_dir;
     std::optional<fs::path> types_dir;
     std::optional<fs::path> errors_dir;
-    std::optional<fs::path> www_dir;
     std::optional<fs::path> logging_config_file;
-    std::optional<int> controller_port;
-    std::optional<int> controller_rpc_timeout_ms;
     std::optional<std::string> mqtt_broker_socket_path;
     std::optional<std::string> mqtt_broker_host;
     std::optional<std::uint16_t> mqtt_broker_port;
@@ -183,6 +180,7 @@ struct Settings {
     std::optional<bool> validate_schema;
     std::optional<std::string> run_as_user;
     std::optional<bool> forward_exceptions;
+    std::vector<std::string> deprecated_keys; ///< Deprecated keys present in the settings; their values are ignored
 };
 
 /// \brief Struct that contains the characteristics of a configuration parameter including its datatype, mutability and

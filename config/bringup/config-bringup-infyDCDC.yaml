@@ -1,6 +1,5 @@
 settings:
   mqtt_everest_prefix: everest_infy_dcdc
-  controller_port: 8850
 active_modules:
   cli:
     connections:

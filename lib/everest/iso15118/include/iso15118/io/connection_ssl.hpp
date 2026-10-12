@@ -26,7 +26,8 @@ struct SSLContext;
  */
 class ConnectionSSL : public IConnection {
 public:
-    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig& ssl_config);
+    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig& ssl_config,
+                  uint16_t tcp_port);
 
     void set_event_callback(const ConnectionEventCallback&) final;
     Ipv6EndPoint get_public_endpoint() const final;

@@ -39,7 +39,6 @@ target_compile_definitions(${TEST_TARGET_NAME}
 )
 
 add_subdirectory(api)
-add_subdirectory(controller)
 add_subdirectory(manager)
 
 target_link_libraries(${TEST_TARGET_NAME}
@@ -126,9 +125,6 @@ if(EVEREST_ENABLE_COVERAGE)
 
     append_coverage_compiler_flags_to_target(framework)
     append_coverage_compiler_flags_to_target(manager)
-    if (EVEREST_ENABLE_ADMIN_PANEL_BACKEND)
-        append_coverage_compiler_flags_to_target(controller)
-    endif()
 
     set(GCOVR_ADDITIONAL_ARGS "--gcov-ignore-errors=all")
     setup_target_for_coverage_gcovr_html(

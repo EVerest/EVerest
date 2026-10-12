@@ -82,9 +82,7 @@ class ConfigParseSettings{
 
 class ManagerSettings{
     +fs::path db_dir
-    +fs::path www_dir
-    +int controller_port
-    +int controller_rpc_timeout_ms
+    +std::vector~std::string~ deprecated_settings
     +std::string run_as_user
     +std::string version_information
     +MQTTSettings mqtt_settings

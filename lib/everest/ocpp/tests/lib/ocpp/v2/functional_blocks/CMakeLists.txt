@@ -23,6 +23,7 @@ set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helpe
             ${CMAKE_CURRENT_SOURCE_DIR}/../stubs/timer/timer_stub.cpp
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/security.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/message_queue.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SecurityEventNotification.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CertificateSigned.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/DeleteCertificate.cpp
@@ -32,6 +33,7 @@ set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helpe
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SignCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Get15118EVCertificate.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Reset.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/TransactionEvent.cpp
             ${LIBOCPP_TEST_INCLUDE_COMMON_SOURCES}
             ${LIBOCPP_TEST_INCLUDE_V2_SOURCES}
 )

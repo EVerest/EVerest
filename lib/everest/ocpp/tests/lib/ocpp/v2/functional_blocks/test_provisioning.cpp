@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <future>
 #include <optional>
 
 #include <boost/asio/io_context.hpp>
@@ -146,6 +147,8 @@ protected:
     std::unique_ptr<TariffAndCost> tariff_and_cost;
     std::unique_ptr<Provisioning> provisioning;
 
+    std::function<bool(json)> send_callback{[](json) { return false; }};
+
     // Controls / observations for the reset path.
     bool allow_reset{true};
     std::optional<std::optional<std::int32_t>> reset_callback_evse_id;
@@ -159,7 +162,8 @@ protected:
                                                      db_handler, evse_security, component_state_manager, ocpp_version);
 
         MessageQueueConfig<MessageType> mq_config;
-        message_queue = std::make_unique<MessageQueue<MessageType>>([](json) { return false; }, mq_config, nullptr);
+        message_queue = std::make_unique<MessageQueue<MessageType>>(
+            [this](json message) { return this->send_callback(message); }, mq_config, nullptr);
 
         tariff_and_cost = std::make_unique<TariffAndCost>(*fb_context, meter_values, tariff_message_cb,
                                                           set_running_cost_cb, default_price_cb, io_context);
@@ -271,6 +275,66 @@ TEST_F(ProvisioningVariableChangedTest, MessageTimeoutOnInactiveSlotIsDeferred) 
     set_active_network_profile(*dm, "1");
     EXPECT_CALL(connectivity_manager, set_websocket_connection_options_without_reconnect()).Times(0);
     provisioning->on_variable_changed(make_slot_message_timeout("2", "45"));
+}
+
+// A BasicAuthPassword change on a security profile below 3 reconnects with the new password only once no CALL is in
+// flight, so the answer to that CALL is not lost with the old connection.
+class ProvisioningBasicAuthPasswordTest : public ProvisioningResetTest {
+protected:
+    std::promise<void> call_sent;
+
+    ProvisioningBasicAuthPasswordTest() {
+        const auto& security_profile = ControllerComponentVariables::SecurityProfile;
+        EXPECT_EQ(dm->set_value(security_profile.component, security_profile.variable.value(), AttributeEnum::Actual,
+                                "1", "test", true),
+                  SetVariableStatusEnum::Accepted);
+
+        send_callback = [this](json) {
+            this->call_sent.set_value();
+            return true;
+        };
+        message_queue->start();
+        message_queue->set_registration_status_accepted();
+        message_queue->resume(std::chrono::seconds(0));
+    }
+
+    ~ProvisioningBasicAuthPasswordTest() override {
+        message_queue->stop();
+    }
+
+    static SetVariableData make_basic_auth_password(const std::string& value) {
+        SetVariableData data;
+        data.component = ControllerComponentVariables::BasicAuthPassword.component;
+        data.variable = ControllerComponentVariables::BasicAuthPassword.variable.value();
+        data.attributeValue = value;
+        return data;
+    }
+};
+
+TEST_F(ProvisioningBasicAuthPasswordTest, PasswordAppliedAtOnceWhenNothingInFlight) {
+    std::promise<void> key_set;
+    auto key_set_future = key_set.get_future();
+    EXPECT_CALL(connectivity_manager, set_websocket_authorization_key("0123456789abcdef"))
+        .WillOnce(::testing::Invoke([&key_set](const std::string&) { key_set.set_value(); }));
+    provisioning->on_variable_changed(make_basic_auth_password("0123456789abcdef"));
+    EXPECT_EQ(key_set_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+}
+
+TEST_F(ProvisioningBasicAuthPasswordTest, PasswordAppliedAfterCallInFlightIsAnswered) {
+    std::promise<std::string> key_set;
+    auto key_set_future = key_set.get_future();
+    EXPECT_CALL(connectivity_manager, set_websocket_authorization_key(::testing::_))
+        .WillOnce(::testing::Invoke([&key_set](const std::string& key) { key_set.set_value(key); }));
+
+    message_queue->push_call(json{2, "in-flight", "Heartbeat", json::object()});
+    ASSERT_EQ(call_sent.get_future().wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    provisioning->on_variable_changed(make_basic_auth_password("0123456789abcdef"));
+    EXPECT_EQ(key_set_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    message_queue->receive(json{3, "in-flight", {{"currentTime", DateTime().to_rfc3339()}}}.dump());
+    ASSERT_EQ(key_set_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(key_set_future.get(), "0123456789abcdef");
 }
 
 } // namespace
