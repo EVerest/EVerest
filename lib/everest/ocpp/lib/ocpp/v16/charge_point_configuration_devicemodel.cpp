@@ -309,10 +309,11 @@ inline v16::KeyValue get_key_value(DeviceModelInterface& storage, v16::keys::val
     return get_key_value<std::string>(storage, key);
 }
 
-/// set known key to specified value
+/// set known key to specified value; ReadOnly mutability binds the CSMS only and is checked by the
+/// ChangeConfiguration.req handler
 SetResult set_value(DeviceModelInterface& storage, const v2::Component& component, const v2::Variable& variable,
                     const std::string& value) {
-    return storage.set_value(component, variable, v2::AttributeEnum::Actual, value, "OCPP 1.6");
+    return storage.set_value(component, variable, v2::AttributeEnum::Actual, value, "OCPP 1.6", true);
 }
 
 SetResult set_value(DeviceModelInterface& storage, const v2::RequiredComponentVariable& var, const std::string& value) {
@@ -436,6 +437,9 @@ int32_t get_active_network_slot(DeviceModelInterface& storage) {
     return 1;
 }
 
+// TODO(piet): the mutability of a known key is defined twice, in known_keys.cpp and in the component config. Derived
+// keys only honour known_keys.cpp, so a ReadOnly NetworkConfiguration slot variable does not make SecurityProfile or
+// AuthorizationKey ReadOnly for the CSMS. Make the component config the only source.
 std::optional<v16::KeyValue> get_derived_key_value_optional(DeviceModelInterface& storage, v16::keys::valid_keys key) {
     namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
     namespace CC = ocpp::v2::ControllerComponentVariables;
@@ -580,7 +584,6 @@ ChargePointConfigurationDeviceModel::setInternalCustomDisplayCostAndPrice(const 
     if (not isBool(value)) {
         return SetResult::Rejected;
     }
-    // the configured device model mutability is enforced by set_value()
     return set_value_check(*storage, keys::valid_keys::CustomDisplayCostAndPrice, value);
 }
 
@@ -1534,8 +1537,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCusto
     }
 
     const auto& [component, variable] = it->second;
-    const auto exists_ro = isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual);
-    if (exists_ro.value_or(true)) {
+    if (!key_exists(*storage, component, variable)) {
         return std::nullopt;
     }
 
@@ -3596,9 +3598,6 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::AllowOfflineTxForUnknownId:
             result = convert(setInternalAllowOfflineTxForUnknownId(value_str));
             break;
-        case keys::valid_keys::CentralSystemURI:
-            result = convert(setInternalCentralSystemURI(value_str));
-            break;
         case keys::valid_keys::CompositeScheduleDefaultLimitAmps:
             result = convert(setInternalCompositeScheduleDefaultLimitAmps(value_str));
             break;
@@ -3805,9 +3804,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::ICCID:
         case keys::valid_keys::IMSI:
         case keys::valid_keys::MeterSerialNumber:
-            // these are not setable via OCPP  - std::nullopt expected
-            break;
-
+        case keys::valid_keys::MeterType:
         case keys::valid_keys::EnableTLSKeylog:
         case keys::valid_keys::LogRotation:
         case keys::valid_keys::LogRotationDateSuffix:
@@ -3816,26 +3813,15 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::TLSKeylogFile:
         case keys::valid_keys::UseTPM:
         case keys::valid_keys::UseTPMSeccLeafCertificate:
-            // hidden keys - std::nullopt expected
-            break;
-
         case keys::valid_keys::ConnectorPhaseRotationMaxLength:
         case keys::valid_keys::GetConfigurationMaxKeys:
-        case keys::valid_keys::MeterValuesAlignedDataMaxLength:
-        case keys::valid_keys::MeterValuesSampledDataMaxLength:
-        case keys::valid_keys::NumberOfConnectors:
         case keys::valid_keys::StopTransactionOnEVSideDisconnect:
-        case keys::valid_keys::StopTxnAlignedDataMaxLength:
-        case keys::valid_keys::StopTxnSampledDataMaxLength:
-        case keys::valid_keys::SupportedFeatureProfiles:
         case keys::valid_keys::SupportedFeatureProfilesMaxLength:
         case keys::valid_keys::CustomMultiLanguageMessages:
         case keys::valid_keys::NumberOfDecimalsForCostValues:
         case keys::valid_keys::SupportedLanguages:
         case keys::valid_keys::SupportedFileTransferProtocols:
         case keys::valid_keys::AuthorizeConnectorZeroOnConnectorOne:
-        case keys::valid_keys::ChargePointId:
-        case keys::valid_keys::HostName:
         case keys::valid_keys::IFace:
         case keys::valid_keys::LogMessages:
         case keys::valid_keys::LogMessagesFormat:
@@ -3844,30 +3830,42 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::MaxMessageSize:
         case keys::valid_keys::MessageQueueSizeThreshold:
         case keys::valid_keys::MessageTypesDiscardForQueueing:
-        case keys::valid_keys::MeterType:
         case keys::valid_keys::QueueAllMessages:
         case keys::valid_keys::ReportClearedErrors:
         case keys::valid_keys::SupportedChargingProfilePurposeTypes:
         case keys::valid_keys::SupportedCiphers12:
         case keys::valid_keys::SupportedCiphers13:
-        case keys::valid_keys::SupportedMeasurands:
         case keys::valid_keys::UseSslDefaultVerifyPaths:
         case keys::valid_keys::VerifyCsmsCommonName:
         case keys::valid_keys::WebsocketPingPayload:
         case keys::valid_keys::WebsocketPongTimeout:
-        case keys::valid_keys::LocalAuthListMaxLength:
         case keys::valid_keys::SendLocalListMaxLength:
         case keys::valid_keys::ReserveConnectorZeroSupported:
         case keys::valid_keys::AdditionalRootCertificateCheck:
         case keys::valid_keys::CertificateSignedMaxChainSize:
         case keys::valid_keys::CertificateStoreMaxLength:
         case keys::valid_keys::ChargeProfileMaxStackLevel:
-        case keys::valid_keys::ChargingScheduleAllowedChargingRateUnit:
         case keys::valid_keys::ChargingScheduleMaxPeriods:
         case keys::valid_keys::ConnectorSwitch3to1PhaseSupported:
+            // ReadOnly for the CSMS only; plain stored values a local caller may write
+            result = convert(set_value(*storage, sv_key, value_str));
+            break;
+
+        case keys::valid_keys::CentralSystemURI:
+        case keys::valid_keys::ChargePointId:
+        case keys::valid_keys::HostName:
+        case keys::valid_keys::NumberOfConnectors:
+        case keys::valid_keys::SupportedFeatureProfiles:
+        case keys::valid_keys::SupportedMeasurands:
+        case keys::valid_keys::ChargingScheduleAllowedChargingRateUnit:
+        case keys::valid_keys::MeterValuesAlignedDataMaxLength:
+        case keys::valid_keys::MeterValuesSampledDataMaxLength:
+        case keys::valid_keys::StopTxnAlignedDataMaxLength:
+        case keys::valid_keys::StopTxnSampledDataMaxLength:
+        case keys::valid_keys::LocalAuthListMaxLength:
         case keys::valid_keys::MaxChargingProfilesInstalled:
         default:
-            // std::nullopt expected
+            // derived by the stack, e.g. CentralSystemURI from the active network slot, or reported from limits
             break;
         }
     } else {
