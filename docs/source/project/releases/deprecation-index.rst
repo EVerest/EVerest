@@ -111,3 +111,13 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - No replacement. The module logs a deprecation warning at startup.
+   * - ``error_history_consumer_API``: ``severity`` property of ``ErrorObject``
+       (all messages carrying errors: ``get_errors``, ``active_errors``,
+       ``error_raised``, ``error_cleared``), the ``severity_filter`` argument of
+       ``get_errors``, and the ``Severity`` and ``SeverityFilter`` schemas
+     - 2026.10.0
+     - 2027.04.0
+     - No replacement: EVerest defines no clear semantics for error severity.
+       Stop reading ``severity`` from error objects and do not treat it as
+       required; drop ``severity_filter`` from ``get_errors`` requests and
+       filter by ``type_filter``, ``origin_filter`` or ``state_filter`` instead.
