@@ -1,0 +1,70 @@
+flowchart LR
+    subgraph Inputs
+        M2E["MQTT m2e/*<br/>configure_session, stop_session,<br/>pause/resume_session, enable, ..."]
+        BspVars["ev_board_support vars<br/>bsp_event, bsp_measurement, ev_info"]
+        SlacVars["ev_slac var<br/>state"]
+        IsoVars["ISO15118_ev vars<br/>ev_power_ready, dc_power_on,<br/>stop/pause_from_charger,<br/>v2g_session_finished, ..."]
+    end
+
+    subgraph MqttWorker["MQTT worker thread"]
+        Router["CommandRouter<br/>parse JSON to Event"]
+    end
+
+    subgraph Callbacks["framework callbacks"]
+        PeerSubs["PeerSubscriptions<br/>var to typed Event"]
+    end
+
+    subgraph Main["framework main thread, ready()"]
+        Ready["EnableCmd if enabled_at_startup"]
+    end
+
+    Queue[("thread_safe_queue&lt;Event&gt;<br/>enqueue, then wake_fd.notify()")]
+
+    subgraph Loop["loop_thread, EvCtlRuntime::run"]
+        subgraph OnWake["on_wake, per event in order"]
+            W1["1. RaiseError / ClearError<br/>to ErrorSink, never the FSM"]
+            W2["2. configure_session<br/>validate, latch, kvs_save, ack"]
+            W3["3. apply_passthrough_vars"]
+            W4["4. feed_with_fault_isolation"]
+            W5["5. publish_passthrough_external"]
+            W1 --> W2 --> W3 --> W4 --> W5
+        end
+        Internal["internal producers<br/>states: BeginSession, internal faults<br/>SocIntegrator: stop / pause<br/>CurvePlayer steps"]
+        FSM["fsm::v2::FSM&lt;StateBase&gt;"]
+        Ctx["FsmContext<br/>SimVars, configured session"]
+        Peers["PeerActions<br/>BspPeer, IsoPeer, SlacPeer,<br/>KvsPeer, InternalPublisher, ErrorSink"]
+        W4 --> FSM
+        FSM <--> Ctx
+        W1 --> Ctx
+        W2 --> Ctx
+        W3 --> Ctx
+        W5 --> Ctx
+        Ctx --> Peers
+    end
+
+    subgraph Outputs
+        BspOut["ev_board_support<br/>enable, set_cp_state, allow_power_on,<br/>set_ac_max_current, set_three_phases"]
+        IsoOut["Ev15118, ISO15118_ev<br/>start/stop/pause/abort_charging,<br/>update_soc, cp_state_changed, ..."]
+        SlacOut["EvSlac, ev_slac<br/>reset, trigger_matching"]
+        Kvs["kvs<br/>store / load"]
+        E2M["MQTT e2m/*<br/>state, fault, command_ack, ev_info,<br/>slac_state, bsp_event, iso_session_event, ..."]
+        EvManager["provided ev_manager<br/>bsp_event, ev_info, raise/clear_error"]
+    end
+
+    Heartbeat["CommCheck thread<br/>heartbeat"]
+
+    M2E --> Router --> Queue
+    BspVars --> PeerSubs
+    SlacVars --> PeerSubs
+    IsoVars --> PeerSubs
+    PeerSubs --> Queue
+    Ready --> Queue
+    Internal --> Queue
+    Queue --> W1
+    Peers --> BspOut
+    Peers --> IsoOut
+    Peers --> SlacOut
+    Peers --> Kvs
+    Peers --> EvManager
+    Ctx --> E2M
+    Heartbeat --> E2M

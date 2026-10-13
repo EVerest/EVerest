@@ -95,8 +95,10 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/powermeter.cpp
   manual_tests/serialization/strict_inputs.cpp
   manual_tests/serialization/telemetry.cpp
+  manual_tests/serialization/ev_controller.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
   manual_tests/spec_check/e2m_channel_depth.cpp
+  manual_tests/spec_check/ev_controller_spec.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
@@ -105,6 +107,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
   everest::log
   everest::framework
   everest::everest_api_types
+  everest::yaml
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
