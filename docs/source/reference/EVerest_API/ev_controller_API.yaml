@@ -1,0 +1,1259 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:ev_controller_API'
+info:
+  title: 'EVerest API definition for the EV controller'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients that drive an EvController, the simulated EV. The client configures
+    and steers charging sessions and observes the EV's state, faults and ISO 15118 events.
+    Plugging, unplugging and electrical faults are world operations of the paired EvDriverSim
+    (ev_driver_sim API); EvController starts a session on pilot presence.
+    Commands without arguments carry an empty JSON object ({}) as payload.
+    A command whose payload the codec rejects, or that a state refuses, is acknowledged as Rejected
+    on e2m/command_ack. A command that does not apply to the current state is ignored without an
+    acknowledgement, for example resume_session, bcb_toggle and set_soc while Charging. Commands
+    without arguments ignore their payload.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: ev_controller
+servers:
+  default:
+    pathname: 'everest_api/1/ev_controller/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  ########## ev_controller
+  send_enable:
+    address: 'm2e/enable'
+    messages:
+      send_enable:
+        $ref: '#/components/messages/send_enable'
+  send_configure_session:
+    address: 'm2e/configure_session'
+    messages:
+      send_configure_session:
+        $ref: '#/components/messages/send_configure_session'
+  send_stop_session:
+    address: 'm2e/stop_session'
+    messages:
+      send_stop_session:
+        $ref: '#/components/messages/send_stop_session'
+  send_pause_session:
+    address: 'm2e/pause_session'
+    messages:
+      send_pause_session:
+        $ref: '#/components/messages/send_pause_session'
+  send_resume_session:
+    address: 'm2e/resume_session'
+    messages:
+      send_resume_session:
+        $ref: '#/components/messages/send_resume_session'
+  send_set_charging_current:
+    address: 'm2e/set_charging_current'
+    messages:
+      send_set_charging_current:
+        $ref: '#/components/messages/send_set_charging_current'
+  send_set_soc:
+    address: 'm2e/set_soc'
+    messages:
+      send_set_soc:
+        $ref: '#/components/messages/send_set_soc'
+  send_set_present_values:
+    address: 'm2e/set_present_values'
+    messages:
+      send_set_present_values:
+        $ref: '#/components/messages/send_set_present_values'
+  send_bcb_toggle:
+    address: 'm2e/bcb_toggle'
+    messages:
+      send_bcb_toggle:
+        $ref: '#/components/messages/send_bcb_toggle'
+  send_query_state:
+    address: 'm2e/query_state'
+    messages:
+      send_query_state:
+        $ref: '#/components/messages/send_query_state'
+
+  receive_state:
+    address: 'e2m/state'
+    messages:
+      receive_state:
+        $ref: '#/components/messages/receive_state'
+  receive_ev_info:
+    address: 'e2m/ev_info'
+    messages:
+      receive_ev_info:
+        $ref: '#/components/messages/receive_ev_info'
+  receive_bsp_event:
+    address: 'e2m/bsp_event'
+    messages:
+      receive_bsp_event:
+        $ref: '#/components/messages/receive_bsp_event'
+  receive_bsp_measurement:
+    address: 'e2m/bsp_measurement'
+    messages:
+      receive_bsp_measurement:
+        $ref: '#/components/messages/receive_bsp_measurement'
+  receive_slac_state:
+    address: 'e2m/slac_state'
+    messages:
+      receive_slac_state:
+        $ref: '#/components/messages/receive_slac_state'
+  receive_iso_session_event:
+    address: 'e2m/iso_session_event'
+    messages:
+      receive_iso_session_event:
+        $ref: '#/components/messages/receive_iso_session_event'
+  receive_der_negotiated_functions:
+    address: 'e2m/der_negotiated_functions'
+    messages:
+      receive_der_negotiated_functions:
+        $ref: '#/components/messages/receive_der_negotiated_functions'
+  receive_der_control:
+    address: 'e2m/der_control'
+    messages:
+      receive_der_control:
+        $ref: '#/components/messages/receive_der_control'
+  receive_fault:
+    address: 'e2m/fault'
+    messages:
+      receive_fault:
+        $ref: '#/components/messages/receive_fault'
+  receive_command_ack:
+    address: 'e2m/command_ack'
+    messages:
+      receive_command_ack:
+        $ref: '#/components/messages/receive_command_ack'
+
+  send_raise_error:
+    address: 'm2e/raise_error'
+    messages:
+      send_raise_error:
+        $ref: '#/components/messages/send_raise_error'
+  send_clear_error:
+    address: 'm2e/clear_error'
+    messages:
+      send_clear_error:
+        $ref: '#/components/messages/send_clear_error'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+
+operations:
+  ########## ev_controller
+  send_enable:
+    title: 'Send enable'
+    action: send
+    channel:
+      $ref: '#/channels/send_enable'
+    description: 'Direction: Module to EVerest'
+  send_configure_session:
+    title: 'Send configure session'
+    action: send
+    channel:
+      $ref: '#/channels/send_configure_session'
+    description: 'Direction: Module to EVerest'
+  send_stop_session:
+    title: 'Send stop session'
+    action: send
+    channel:
+      $ref: '#/channels/send_stop_session'
+    description: 'Direction: Module to EVerest'
+  send_pause_session:
+    title: 'Send pause session'
+    action: send
+    channel:
+      $ref: '#/channels/send_pause_session'
+    description: 'Direction: Module to EVerest'
+  send_resume_session:
+    title: 'Send resume session'
+    action: send
+    channel:
+      $ref: '#/channels/send_resume_session'
+    description: 'Direction: Module to EVerest'
+  send_set_charging_current:
+    title: 'Send set charging current'
+    action: send
+    channel:
+      $ref: '#/channels/send_set_charging_current'
+    description: 'Direction: Module to EVerest'
+  send_set_soc:
+    title: 'Send set SoC'
+    action: send
+    channel:
+      $ref: '#/channels/send_set_soc'
+    description: 'Direction: Module to EVerest'
+  send_set_present_values:
+    title: 'Send set present values'
+    action: send
+    channel:
+      $ref: '#/channels/send_set_present_values'
+    description: 'Direction: Module to EVerest'
+  send_bcb_toggle:
+    title: 'Send BCB toggle'
+    action: send
+    channel:
+      $ref: '#/channels/send_bcb_toggle'
+    description: 'Direction: Module to EVerest'
+  send_query_state:
+    title: 'Send query state'
+    action: send
+    channel:
+      $ref: '#/channels/send_query_state'
+    description: 'Direction: Module to EVerest'
+
+  receive_state:
+    title: 'Receive state'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_state'
+    description: 'Direction: EVerest to Module'
+  receive_ev_info:
+    title: 'Receive EV info'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_ev_info'
+    description: 'Direction: EVerest to Module'
+  receive_bsp_event:
+    title: 'Receive BSP event'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_bsp_event'
+    description: 'Direction: EVerest to Module'
+  receive_bsp_measurement:
+    title: 'Receive BSP measurement'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_bsp_measurement'
+    description: 'Direction: EVerest to Module'
+  receive_slac_state:
+    title: 'Receive SLAC state'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_slac_state'
+    description: 'Direction: EVerest to Module'
+  receive_iso_session_event:
+    title: 'Receive ISO session event'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_iso_session_event'
+    description: 'Direction: EVerest to Module'
+  receive_der_negotiated_functions:
+    title: 'Receive DER negotiated functions'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_der_negotiated_functions'
+    description: 'Direction: EVerest to Module'
+  receive_der_control:
+    title: 'Receive DER control'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_der_control'
+    description: 'Direction: EVerest to Module'
+  receive_fault:
+    title: 'Receive fault'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_fault'
+    description: 'Direction: EVerest to Module'
+  receive_command_ack:
+    title: 'Receive command acknowledgement'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_command_ack'
+    description: 'Direction: EVerest to Module'
+
+  send_raise_error:
+    title: 'Send raise error'
+    action: send
+    channel:
+      $ref: '#/channels/send_raise_error'
+    description: 'Direction: Module to EVerest'
+  send_clear_error:
+    title: 'Send clear error'
+    action: send
+    channel:
+      $ref: '#/channels/send_clear_error'
+    description: 'Direction: Module to EVerest'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+    description: 'Direction: EVerest to Module'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+    description: 'Direction: Module to EVerest'
+
+
+
+components:
+  messages:
+    ########## ev_controller
+    send_enable:
+      name: send_enable
+      title: 'Send enable or disable'
+      summary: >-
+        Enables (true) or disables (false) the EV. A disabled EV ignores the pilot and starts no
+        session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Enabled'
+      examples:
+        - summary: "Enable the EV."
+          payload:
+            true
+    send_configure_session:
+      name: send_configure_session
+      title: 'Send session configuration'
+      summary: >-
+        Latches the configuration of the next session. Accepted in any state and applied at the next
+        plug; reconfiguring replaces the latch. The curve and, for ISO modes, the SLAC peer and the
+        supported protocols are validated first. The result is acknowledged on e2m/command_ack:
+        Accepted, or Rejected with a reason, which leaves the previous latch in place. A plug with no
+        configuration uses the module's default_session, or else an AcIec session from max_current_a
+        and three_phases.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SessionConfig'
+      examples:
+        - summary: "Configure a DC ISO 15118-2 session with contract payment."
+          payload:
+            mode: DcIso2
+            params:
+              payment: Contract
+              departure_time_s: 3600
+              e_amount_wh: 20000
+    send_stop_session:
+      name: send_stop_session
+      title: 'Send stop session'
+      summary: >-
+        Stops the running session. An empty object or abort false stops it cleanly with SessionStop;
+        abort true terminates the V2G session at once instead.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/StopSessionParams'
+      examples:
+        - summary: "Stop the session cleanly."
+          payload:
+            abort: false
+    send_pause_session:
+      name: send_pause_session
+      title: 'Send pause session'
+      summary: Pauses the running session from the EV side.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Pause the session."
+          payload: {}
+    send_resume_session:
+      name: send_resume_session
+      title: 'Send resume session'
+      summary: >-
+        Resumes a session the EV paused. While a resume or BCB toggle is already pending, it is
+        rejected with reason "resume already pending".
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Resume the session."
+          payload: {}
+    send_set_charging_current:
+      name: send_set_charging_current
+      title: 'Send set charging current'
+      summary: >-
+        Sets the AC current the EV draws and its phase count, optionally ramping to it linearly over
+        ramp_ms. Acts only while Charging in AcIec and AcIso2 sessions; while Charging in any other
+        mode it is rejected with reason "set_charging_current not supported in DC/ISO-20 mode". Other
+        states reject it with a reason of their own or ignore it.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SetChargingCurrentParams'
+      examples:
+        - summary: "Ramp to 16 A on three phases within 2 s."
+          payload:
+            current_a: 16.0
+            three_phases: true
+            ramp_ms: 2000
+    send_set_soc:
+      name: send_set_soc
+      title: 'Send set SoC'
+      summary: >-
+        Sets the EV's initial state of charge while Unplugged. It has no effect in any other state:
+        most states reject it with a reason, and some, such as Charging, ignore it.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SetSocParams'
+      examples:
+        - summary: "Set the SoC to 42.5 percent."
+          payload:
+            soc_pct: 42.5
+    send_set_present_values:
+      name: send_set_present_values
+      title: 'Send set present values'
+      summary: >-
+        Overrides the present values the EV reports over ISO 15118, which otherwise echo what the
+        EVSE delivered. A field left out keeps its current override. Overrides are cleared when a
+        session ends, on a charger fault and on unplug.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SetPresentValuesParams'
+      examples:
+        - summary: "Report 400 V and 11 kW."
+          payload:
+            present_voltage: 400.0
+            present_active_power: 11000.0
+    send_bcb_toggle:
+      name: send_bcb_toggle
+      title: 'Send BCB toggle'
+      summary: >-
+        Wakes the charger from an EV pause with a B/C toggle pattern. Rejected with reason
+        "resume already pending" while a resume is pending, "count must be > 0" below the minimum
+        count and "count exceeds 1000" above the maximum count.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BcbToggleParams'
+      examples:
+        - summary: "Toggle three times."
+          payload:
+            count: 3
+    send_query_state:
+      name: send_query_state
+      title: 'Send query state'
+      summary: Asks the EV to publish its current state on e2m/state again.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Empty'
+      examples:
+        - summary: "Query the state."
+          payload: {}
+
+    receive_state:
+      name: receive_state
+      title: 'Receive state'
+      summary: The EV's state machine state, published on every transition and on query_state.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/FsmState'
+      examples:
+        - summary: "The EV is charging."
+          payload:
+            "Charging"
+    receive_ev_info:
+      name: receive_ev_info
+      title: 'Receive EV info'
+      summary: The EV's battery state.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/EvInfo'
+      examples:
+        - summary: "A half-full 60 kWh battery."
+          payload:
+            soc_pct: 50.0
+            battery_capacity_wh: 60000.0
+            battery_charge_wh: 30000.0
+            target_current_a: 0.0
+            target_voltage_v: 0.0
+    receive_bsp_event:
+      name: receive_bsp_event
+      title: 'Receive BSP event'
+      summary: Events of the EV board, the pilot state and the contactor.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BspEvent'
+      examples:
+        - summary: "The pilot is in state B."
+          payload:
+            event: B
+    receive_bsp_measurement:
+      name: receive_bsp_measurement
+      title: 'Receive BSP measurement'
+      summary: >-
+        Measurements of the EV board. Published only when the module configuration sets
+        publish_bsp_measurements.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/BspMeasurement'
+      examples:
+        - summary: "A 53 percent PWM duty cycle and 5 mA residual current."
+          payload:
+            cp_pwm_duty_cycle: 53.0
+            rcd_current_mA: 5.0
+    receive_slac_state:
+      name: receive_slac_state
+      title: 'Receive SLAC state'
+      summary: The state of the SLAC peer.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/SlacState'
+      examples:
+        - summary: "SLAC is matched."
+          payload:
+            state: Matched
+    receive_iso_session_event:
+      name: receive_iso_session_event
+      title: 'Receive ISO session event'
+      summary: >-
+        Each ISO 15118 lifecycle edge the ISO session reports. Published before the state machine
+        handles it, so an edge a state ignores is still published.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/IsoSessionEvent'
+      examples:
+        - summary: "DC power is on at 400 V and 100 A."
+          payload:
+            kind: DcPowerOn
+            dc_voltage_v: 400.0
+            dc_current_a: 100.0
+    receive_der_negotiated_functions:
+      name: receive_der_negotiated_functions
+      title: 'Receive DER negotiated functions'
+      summary: The DER functions negotiated in an ISO 15118-20 DER session.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DerNegotiatedFunctions'
+      examples:
+        - summary: "Two negotiated IEC functions."
+          payload:
+            flavor: IEC
+            functions:
+              - "FixedPowerFactor"
+              - "FixedReactivePower"
+    receive_der_control:
+      name: receive_der_control
+      title: 'Receive DER control'
+      summary: A DER control the charger sent in an ISO 15118-20 DER session. Absent fields stay absent.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/DerControl'
+      examples:
+        - summary: "A charge loop control with a reactive power setpoint."
+          payload:
+            flavor: SAE
+            source: ChargeLoop
+            permit_service: true
+            enabled_functions:
+              - "ConstantVar"
+            problems: []
+            dso_q_setpoint: 1500.0
+            dso_cos_phi_setpoint: 0.5
+    receive_fault:
+      name: receive_fault
+      title: 'Receive fault'
+      summary: >-
+        A fault report. Published on entry to Faulted; with type ChargerFault and message "pilot E"
+        or "pilot F" when the pilot enters E or F; with type V2GTimeout when the V2G session ends
+        during negotiation; and with type ChargerFault when the ISO peer reports a failed welding
+        detection.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/FaultReport'
+      examples:
+        - summary: "The charger signals pilot F."
+          payload:
+            type: ChargerFault
+            message: "pilot F"
+    receive_command_ack:
+      name: receive_command_ack
+      title: 'Receive command acknowledgement'
+      summary: >-
+        The result of a command. A command whose payload the codec rejects, or that the EV's state
+        refuses, is acknowledged as Rejected with a reason; accepted commands are acknowledged where
+        applicable. A command that does not apply to the current state is ignored without an
+        acknowledgement, for example resume_session, bcb_toggle and set_soc while Charging.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommandAck'
+      examples:
+        - summary: "A rejected resume."
+          payload:
+            command: resume_session
+            status: Rejected
+            reason: "resume already pending"
+
+    send_raise_error:
+      name: send_raise_error
+      title: 'Send raise error'
+      summary: Raises an error on the EV's ev_manager implementation.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Error'
+      examples:
+        - summary: ""
+          payload:
+            "type": "VendorError"
+            "sub_type": "string"
+            "message": "string"
+    send_clear_error:
+      name: send_clear_error
+      title: 'Send clear error'
+      summary: >-
+        Clears an error raised with raise_error. Without sub_type it clears every sub type of the
+        type. With sub_type, it is rejected with reason "no such error active" when that pair is not
+        active.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/Error'
+      examples:
+        - summary: ""
+          payload:
+            "type": "VendorError"
+            "sub_type": "string"
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload: 42
+
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Signal to EVerest that communication is good or check shall be stopped
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: ""
+          payload:
+            true
+
+
+  schemas:
+    Empty:
+      description: Empty object. Commands without arguments carry it as payload.
+      type: object
+    Enabled:
+      description: 'True: enabled. False: disabled.'
+      type: boolean
+    PaymentOption:
+      description: Payment option the EV selects in an ISO 15118 session.
+      type: string
+      enum:
+        - ExternalPayment
+        - Contract
+    BptParams:
+      description: Bidirectional power transfer parameters of an ISO 15118-20 session.
+      type: object
+      required:
+        - discharge_max_current_limit
+        - discharge_max_power_limit
+        - discharge_target_current
+        - discharge_minimal_soc
+      properties:
+        discharge_max_current_limit:
+          description: Maximum discharge current in A.
+          type: number
+          minimum: 0
+        discharge_max_power_limit:
+          description: Maximum discharge power in W.
+          type: number
+          minimum: 0
+        discharge_target_current:
+          description: Target discharge current in A.
+          type: number
+          minimum: 0
+        discharge_minimal_soc:
+          description: SoC in percent below which the EV does not discharge.
+          type: number
+          minimum: 0
+          maximum: 100
+    CurvePoint:
+      description: One point of a charging curve.
+      type: object
+      required:
+        - t_offset_ms
+        - current_a
+        - three_phases
+      properties:
+        t_offset_ms:
+          description: Offset in ms from when the curve started playing, rebased on each loop. Not from session start.
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+        current_a:
+          description: Commanded current in A at this point.
+          type: number
+          minimum: 0
+        three_phases:
+          description: 'True: three phases. False: one phase.'
+          type: boolean
+        ramp_ms:
+          description: >-
+            If set, the current ramps linearly from its present value to current_a over ramp_ms.
+            Otherwise it steps at once.
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    ChargingCurve:
+      description: >-
+        A current curve the EV plays while charging. Points must be non-empty with strictly increasing
+        t_offset_ms; a looping curve needs at least two points.
+      type: object
+      required:
+        - points
+        - loop
+      properties:
+        points:
+          description: Curve points, strictly increasing in t_offset_ms.
+          type: array
+          minItems: 1
+          items:
+            $ref: '#/components/schemas/CurvePoint'
+        loop:
+          description: Repeat the curve from t = 0 after the last point.
+          type: boolean
+    AcIecSessionParams:
+      description: Parameters of an AcIec session, PWM only without an ISO handshake.
+      type: object
+      properties:
+        charging_current_a:
+          $ref: '#/components/schemas/ChargingCurrent'
+        three_phases:
+          $ref: '#/components/schemas/ThreePhases'
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    AcIso2SessionParams:
+      description: Parameters of an AcIso2 session.
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/PaymentOption'
+        departure_time_s:
+          $ref: '#/components/schemas/DepartureTime'
+        e_amount_wh:
+          $ref: '#/components/schemas/EnergyAmount'
+        charging_current_a:
+          $ref: '#/components/schemas/ChargingCurrent'
+        three_phases:
+          $ref: '#/components/schemas/ThreePhases'
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    AcIsoD20SessionParams:
+      description: Parameters of an AcIsoD20 session, those of AcIso2 plus optional bidirectional power transfer.
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/PaymentOption'
+        departure_time_s:
+          $ref: '#/components/schemas/DepartureTime'
+        e_amount_wh:
+          $ref: '#/components/schemas/EnergyAmount'
+        charging_current_a:
+          $ref: '#/components/schemas/ChargingCurrent'
+        three_phases:
+          $ref: '#/components/schemas/ThreePhases'
+        bpt:
+          $ref: '#/components/schemas/BptParams'
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    AcIsoD20DerSessionParams:
+      description: >-
+        Parameters of an AcIsoD20DerIec or AcIsoD20DerSae session, the fields of AcIso2. The mode
+        selects the DER annex.
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/PaymentOption'
+        departure_time_s:
+          $ref: '#/components/schemas/DepartureTime'
+        e_amount_wh:
+          $ref: '#/components/schemas/EnergyAmount'
+        charging_current_a:
+          $ref: '#/components/schemas/ChargingCurrent'
+        three_phases:
+          $ref: '#/components/schemas/ThreePhases'
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    DcIso2SessionParams:
+      description: Parameters of a DcIso2 session. DC modes have no AC current or phase fields.
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/PaymentOption'
+        departure_time_s:
+          $ref: '#/components/schemas/DepartureTime'
+        e_amount_wh:
+          $ref: '#/components/schemas/EnergyAmount'
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    DcIsoD20SessionParams:
+      description: Parameters of a DcIsoD20 session, those of DcIso2 plus optional bidirectional power transfer and MCS.
+      type: object
+      properties:
+        payment:
+          $ref: '#/components/schemas/PaymentOption'
+        departure_time_s:
+          $ref: '#/components/schemas/DepartureTime'
+        e_amount_wh:
+          $ref: '#/components/schemas/EnergyAmount'
+        bpt:
+          $ref: '#/components/schemas/BptParams'
+        mcs_enabled:
+          description: Run the session as MCS. Defaults to false.
+          type: boolean
+        curve:
+          $ref: '#/components/schemas/ChargingCurve'
+    ChargingCurrent:
+      description: AC charging current in A.
+      type: number
+      minimum: 0
+    ThreePhases:
+      description: 'True: three phases. False: one phase.'
+      type: boolean
+    DepartureTime:
+      description: Departure time in s from now.
+      type: integer
+      minimum: 0
+      maximum: 2147483647
+    EnergyAmount:
+      description: Energy the EV requests in Wh.
+      type: integer
+      minimum: 0
+      maximum: 2147483647
+    SessionConfig:
+      description: >-
+        Session configuration, tagged by mode. params is optional and carries only the fields valid
+        for the mode; fields foreign to the mode are ignored and an unknown mode is rejected.
+      oneOf:
+        - $ref: '#/components/schemas/AcIecSessionConfig'
+        - $ref: '#/components/schemas/AcIso2SessionConfig'
+        - $ref: '#/components/schemas/AcIsoD20SessionConfig'
+        - $ref: '#/components/schemas/AcIsoD20DerIecSessionConfig'
+        - $ref: '#/components/schemas/AcIsoD20DerSaeSessionConfig'
+        - $ref: '#/components/schemas/DcIso2SessionConfig'
+        - $ref: '#/components/schemas/DcIsoD20SessionConfig'
+    AcIecSessionConfig:
+      description: AC session as of IEC 61851, PWM only.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: AcIec
+        params:
+          $ref: '#/components/schemas/AcIecSessionParams'
+    AcIso2SessionConfig:
+      description: AC session over ISO 15118-2.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: AcIso2
+        params:
+          $ref: '#/components/schemas/AcIso2SessionParams'
+    AcIsoD20SessionConfig:
+      description: AC session over ISO 15118-20.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: AcIsoD20
+        params:
+          $ref: '#/components/schemas/AcIsoD20SessionParams'
+    AcIsoD20DerIecSessionConfig:
+      description: AC session over ISO 15118-20 with IEC DER.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: AcIsoD20DerIec
+        params:
+          $ref: '#/components/schemas/AcIsoD20DerSessionParams'
+    AcIsoD20DerSaeSessionConfig:
+      description: AC session over ISO 15118-20 with SAE DER.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: AcIsoD20DerSae
+        params:
+          $ref: '#/components/schemas/AcIsoD20DerSessionParams'
+    DcIso2SessionConfig:
+      description: DC session over ISO 15118-2.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: DcIso2
+        params:
+          $ref: '#/components/schemas/DcIso2SessionParams'
+    DcIsoD20SessionConfig:
+      description: DC session over ISO 15118-20.
+      type: object
+      required:
+        - mode
+      properties:
+        mode:
+          type: string
+          const: DcIsoD20
+        params:
+          $ref: '#/components/schemas/DcIsoD20SessionParams'
+    StopSessionParams:
+      description: Teardown selector of stop_session.
+      type: object
+      properties:
+        abort:
+          description: 'True: terminate the V2G session at once. False (default): stop it with SessionStop.'
+          type: boolean
+    SetChargingCurrentParams:
+      description: AC current and phase count the EV draws.
+      type: object
+      required:
+        - current_a
+        - three_phases
+      properties:
+        current_a:
+          description: Current in A.
+          type: number
+          minimum: 0
+        three_phases:
+          description: 'True: three phases. False: one phase.'
+          type: boolean
+        ramp_ms:
+          description: If set, ramp linearly to current_a over ramp_ms. Otherwise step at once.
+          type: integer
+          minimum: 0
+          maximum: 2147483647
+    SetSocParams:
+      description: State of charge to set.
+      type: object
+      required:
+        - soc_pct
+      properties:
+        soc_pct:
+          description: SoC in percent.
+          type: number
+          minimum: 0
+          maximum: 100
+    SetPresentValuesParams:
+      description: Per-field override of the present values the EV reports over ISO 15118.
+      type: object
+      properties:
+        present_voltage:
+          description: Present DC voltage in V, overriding the delivered voltage.
+          type: number
+          minimum: 0
+        present_active_power:
+          description: Present active power in W, overriding the integrated active power.
+          type: number
+    BcbToggleParams:
+      description: B/C toggle pattern.
+      type: object
+      properties:
+        count:
+          description: Number of B to C to B round trips, two pilot edges each. Defaults to 3.
+          type: integer
+          minimum: 1
+          maximum: 1000
+    FsmState:
+      description: State of the EV's state machine.
+      type: string
+      enum:
+        - Disabled
+        - Unplugged
+        - Plugged
+        - SlacMatching
+        - V2GNegotiating
+        - BcbToggling
+        - Charging
+        - ChargingPwmPaused
+        - Paused
+        - Stopping
+        - Faulted
+        - ChargerFault
+    EvInfo:
+      description: Battery state of the EV.
+      type: object
+      required:
+        - soc_pct
+        - battery_capacity_wh
+        - battery_charge_wh
+        - target_current_a
+        - target_voltage_v
+      properties:
+        soc_pct:
+          description: SoC in percent.
+          type: number
+          minimum: 0
+          maximum: 100
+        battery_capacity_wh:
+          description: Battery capacity in Wh.
+          type: number
+          minimum: 0
+        battery_charge_wh:
+          description: Energy stored in the battery in Wh.
+          type: number
+          minimum: 0
+        target_current_a:
+          description: Target current in A. EvController reports 0.
+          type: number
+          minimum: 0
+        target_voltage_v:
+          description: Target voltage in V. EvController reports 0.
+          type: number
+          minimum: 0
+    BspEventKind:
+      description: >-
+        Pilot state or contactor event of the EV board. E is a pilot at 0 V, F the charger signaling
+        a fault.
+      type: string
+      enum:
+        - A
+        - B
+        - C
+        - D
+        - E
+        - F
+        - PowerOn
+        - PowerOff
+        - Disconnected
+    BspEvent:
+      description: An event of the EV board.
+      type: object
+      required:
+        - event
+      properties:
+        event:
+          $ref: '#/components/schemas/BspEventKind'
+    BspMeasurement:
+      description: Measurements of the EV board.
+      type: object
+      required:
+        - cp_pwm_duty_cycle
+      properties:
+        cp_pwm_duty_cycle:
+          description: CP PWM duty cycle in percent.
+          type: number
+          minimum: 0
+          maximum: 100
+        rcd_current_mA:
+          description: Residual current in mA.
+          type: number
+          minimum: 0
+    SlacStateKind:
+      description: State of the SLAC peer.
+      type: string
+      enum:
+        - Unmatched
+        - Matching
+        - Matched
+    SlacState:
+      description: SLAC peer state.
+      type: object
+      required:
+        - state
+      properties:
+        state:
+          $ref: '#/components/schemas/SlacStateKind'
+    IsoSessionEventKind:
+      description: An ISO 15118 lifecycle edge.
+      type: string
+      enum:
+        - PowerReady
+        - StopFromCharger
+        - PauseFromCharger
+        - V2GFinished
+        - DcPowerOn
+    IsoSessionEvent:
+      description: An ISO 15118 lifecycle edge with the DC values it carries.
+      type: object
+      required:
+        - kind
+      properties:
+        kind:
+          $ref: '#/components/schemas/IsoSessionEventKind'
+        dc_voltage_v:
+          description: DC voltage in V.
+          type: number
+          minimum: 0
+        dc_current_a:
+          description: DC current in A.
+          type: number
+    DerFlavor:
+      description: DER annex of an ISO 15118-20 DER session.
+      type: string
+      enum:
+        - IEC
+        - SAE
+    DerControlSource:
+      description: The ISO 15118-20 message a DER control came in.
+      type: string
+      enum:
+        - ChargeParameterDiscovery
+        - ChargeLoop
+    DerNegotiatedFunctions:
+      description: DER functions negotiated in the session.
+      type: object
+      required:
+        - flavor
+        - functions
+      properties:
+        flavor:
+          $ref: '#/components/schemas/DerFlavor'
+        functions:
+          description: Names of the negotiated functions.
+          type: array
+          items:
+            type: string
+    DerControl:
+      description: A DER control sent by the charger.
+      type: object
+      required:
+        - flavor
+        - source
+      properties:
+        flavor:
+          $ref: '#/components/schemas/DerFlavor'
+        source:
+          $ref: '#/components/schemas/DerControlSource'
+        permit_service:
+          description: Whether the charger permits the DER service.
+          type: boolean
+        enabled_functions:
+          description: Names of the enabled functions.
+          type: array
+          items:
+            type: string
+        problems:
+          description: Problems the charger reports.
+          type: array
+          items:
+            type: string
+        dso_q_setpoint:
+          description: Reactive power setpoint of the DSO in var.
+          type: number
+        dso_cos_phi_setpoint:
+          description: Power factor setpoint of the DSO.
+          type: number
+    FaultType:
+      description: |
+        Type of a fault report.
+        - V2GTimeout: the V2G session ended during negotiation, or the charger's PWM never came back
+          for a resumed session.
+        - Internal: a software fault of the EV.
+        - ChargerFault: the charger signaled a fault, by pilot E or F or a failed welding detection.
+      type: string
+      enum:
+        - V2GTimeout
+        - Internal
+        - ChargerFault
+    FaultReport:
+      description: A fault of the EV or the charger.
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/FaultType'
+        message:
+          description: Diagnostic text.
+          type: string
+        rcd_mA:
+          description: Residual current in mA. EvController does not set it.
+          type: number
+          minimum: 0
+    CommandAckStatus:
+      description: Result of a command.
+      type: string
+      enum:
+        - Accepted
+        - Rejected
+    CommandAck:
+      description: Acknowledgement of a command.
+      type: object
+      required:
+        - command
+        - status
+      properties:
+        command:
+          description: The command suffix, for example configure_session.
+          type: string
+        status:
+          $ref: '#/components/schemas/CommandAckStatus'
+        reason:
+          description: Why the command was rejected, or a note on an accepted one.
+          type: string
+
+
+    ErrorEnum:
+      description: |
+        Type of error
+        - CommunicationFault: The communication to the hardware or underlying driver is lost or has errors.
+        - VendorError: Vendor specific error code. Will stop charging session.
+        - VendorWarning: Vendor specific error code. Charging may continue.
+
+      type: string
+      enum:
+        - CommunicationFault
+        - VendorError
+        - VendorWarning
+    Error:
+      description: >-
+        Error object with type, subtype and message.
+      type: object
+      required:
+        - type
+      properties:
+        type:
+          $ref: '#/components/schemas/ErrorEnum'
+        sub_type:
+          description: The subtype of the error
+          type: string
+        message:
+          description: Optional free-text detail about this specific occurrence of the error.
+          type: string
+
+    CommunicationCheck:
+      type: boolean
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
+    HeartBeatId:
+      type: integer
+      minimum: 0
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

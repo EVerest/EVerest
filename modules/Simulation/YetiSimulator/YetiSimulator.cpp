@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "board_support/evse_board_supportImpl.hpp"
+#include "util/cp_signal.hpp"
 #include "util/state.hpp"
 #include "util/util.hpp"
 
@@ -390,6 +391,25 @@ void YetiSimulator::read_from_car() {
     const auto cpLo = module_state->pwm_voltage_lo;
     const auto cpHi = module_state->pwm_voltage_hi;
 
+    // Raise/clear the diode fault from the CP signal independently of the state
+    // classification, so under PWM it also clears once the negative half is
+    // restored while the car stays connected. Without PWM it clears on disconnect or E.
+    const auto diode_fault_active =
+        p_board_support->error_state_monitor->is_error_active(diode_fault.type, diode_fault.sub_type);
+    switch (diode_fault_latch.step(module_state->pwm_running, cpHi, cpLo, diode_fault_active)) {
+    case cp_signal::DiodeFaultLatch::Action::Raise:
+        forward_error(p_board_support,
+                      p_board_support->error_factory->create_error(diode_fault.type, diode_fault.sub_type,
+                                                                   diode_fault.message, diode_fault.severity),
+                      true);
+        break;
+    case cp_signal::DiodeFaultLatch::Action::Clear:
+        p_board_support->clear_error(diode_fault.type);
+        break;
+    case cp_signal::DiodeFaultLatch::Action::None:
+        break;
+    }
+
     // sth is wrong with negative signal
     if (module_state->pwm_running and not is_voltage_in_range(cpLo, -12.0)) {
         // CP-PE short or signal somehow gone
@@ -397,10 +417,6 @@ void YetiSimulator::read_from_car() {
             module_state->current_state = state::State::STATE_E;
             drawPower(0, 0, 0, 0);
         } else if (is_voltage_in_range(cpHi + cpLo, 0.0)) { // Diode fault
-            const auto error = p_board_support->error_factory->create_error(diode_fault.type, diode_fault.sub_type,
-                                                                            diode_fault.message, diode_fault.severity);
-            forward_error(p_board_support, error, true);
-
             drawPower(0, 0, 0, 0);
         }
     } else if (is_voltage_in_range(cpHi, 12.0)) {

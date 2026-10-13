@@ -19,6 +19,7 @@
 #include <generated/interfaces/temperature_sensor/Implementation.hpp>
 
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
+#include "util/cp_signal.hpp"
 #include "util/errors.hpp"
 #include "util/state.hpp"
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
@@ -137,6 +138,8 @@ private:
     [[nodiscard]] types::board_support_common::ProximityPilot read_pp_ampacity() const;
 
     void publish_event(state::State event);
+
+    cp_signal::DiodeFaultLatch diode_fault_latch;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
