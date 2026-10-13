@@ -1,19 +1,15 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include "fsm/evse/msm/machine.hpp"
-#include "fsm/msm_traverse.hpp"
+#include "fsm/evse/machine.hpp"
+#include "fsm/fsm_helpers.hpp"
 
 #include <everest/slac/slac_fsm.hpp>
 #include <everest_api_types/telemetry/codec.hpp>
 
-#include <boost/core/demangle.hpp>
-
 #include <cstddef>
 #include <memory>
 #include <string>
-#include <type_traits>
-#include <typeinfo>
 #include <utility>
 #include <vector>
 
@@ -22,54 +18,23 @@ namespace everest::lib::slac {
 namespace {
 namespace api_telemetry = everest::lib::API::V1_0::types::telemetry;
 
-std::string simplify_state_name(std::string name) {
-    auto sm_prefix = std::string("boost::msm::back::state_machine<");
-    auto start_pos = name.find(sm_prefix);
-
-    if (start_pos != std::string::npos) {
-        // relevant type is the first template parameter
-        start_pos += sm_prefix.length();
-        auto end_pos = name.find(',', start_pos);
-        if (end_pos != std::string::npos) {
-            name = name.substr(start_pos, end_pos - start_pos);
-        }
+struct PrintVisitor : sm::Visitor {
+    explicit PrintVisitor(std::string& output_) : output(output_) {
     }
-
-    // strip namespace
-    auto last_colon = name.rfind("::");
-    if (last_colon != std::string::npos) {
-        name = name.substr(last_colon + 2);
-    }
-
-    return name;
-}
-
-struct PrintVisitor {
     std::string& output;
 
-    template <typename StateType> void on_active_state(StateType const&, int /*state_id*/, size_t depth) {
+    void on_active_state(sm::Node const& state, std::size_t depth) override {
         std::string indent(depth * 4, ' ');
-        std::string clean_name = simplify_state_name(boost::core::demangle(typeid(StateType).name()));
-        output += indent + " -> " + clean_name + "\n";
+        output += indent + " -> " + state.name() + "\n";
     }
 
-    void on_dynamic_sessions_size(size_t /*size*/) {
-        // No action needed for printing
-    }
-
-    void on_dynamic_session_start(int index, size_t depth) {
+    void on_dynamic_session_start(int index, std::size_t depth) override {
         std::string indent(depth * 4, ' ');
         output += indent + " * [Dynamic Session " + std::to_string(index) + "]\n";
     }
-    template <typename StateType> void on_submachine_start(int, size_t) {
-    }
-    template <typename StateType> void on_submachine_end(int, size_t) {
-    }
-    void on_dynamic_session_end(int, size_t) {
-    }
 };
 
-struct FsmStateVisitor {
+struct FsmStateVisitor : sm::Visitor {
     std::vector<api_telemetry::SlacFsmState> stack;
     std::string last_visited_state;
 
@@ -77,30 +42,27 @@ struct FsmStateVisitor {
         stack.emplace_back();
     }
 
-    template <typename StateType> void on_active_state(StateType const&, int /*state_id*/, size_t /*depth*/) {
-        auto clean_name = simplify_state_name(boost::core::demangle(typeid(StateType).name()));
-        stack.back().states.push_back(clean_name);
-        last_visited_state = std::move(clean_name);
+    void on_active_state(sm::Node const& state, std::size_t /*depth*/) override {
+        std::string name = state.name();
+        stack.back().states.push_back(name);
+        last_visited_state = std::move(name);
     }
 
-    template <typename StateType> void on_submachine_start(int /*state_id*/, size_t /*depth*/) {
+    void on_submachine_start(std::size_t /*depth*/) override {
         stack.emplace_back();
     }
 
-    template <typename StateType> void on_submachine_end(int /*state_id*/, size_t /*depth*/) {
+    void on_submachine_end(std::size_t /*depth*/) override {
         auto child = std::move(stack.back());
         stack.pop_back();
         stack.back().submachines[last_visited_state] = std::move(child);
     }
 
-    void on_dynamic_sessions_size(size_t /*size*/) {
-    }
-
-    void on_dynamic_session_start(int /*index*/, size_t /*depth*/) {
+    void on_dynamic_session_start(int /*index*/, std::size_t /*depth*/) override {
         stack.emplace_back();
     }
 
-    void on_dynamic_session_end(int /*index*/, size_t /*depth*/) {
+    void on_dynamic_session_end(int /*index*/, std::size_t /*depth*/) override {
         auto child = std::move(stack.back());
         stack.pop_back();
         stack.back().sessions.push_back(std::move(child));
@@ -114,7 +76,7 @@ struct FsmStateVisitor {
 } // namespace
 
 struct slac_fsm::Impl {
-    msm::SlacFSM fsm;
+    sm::evse::SlacMachine fsm;
     bool started{false};
     explicit Impl(fsm::evse::Context& ctx) : fsm(ctx) {
     }
@@ -130,24 +92,21 @@ void slac_fsm::event_post_processing() {
     auto telemetry = ctx.slac_config.provide_telemetry;
 
     if (print or telemetry) {
-        auto const& msm = impl->fsm;
-        auto current_signature = msm::signature_of(msm);
-
-        if (current_signature != last_signature) {
+        auto const& machine = impl->fsm;
+        if (sm::update_signature(machine, last_signature)) {
             if (print) {
                 std::string current_state_str;
                 PrintVisitor print_visitor{current_state_str};
-                msm::traverse_fsm(msm, 0, print_visitor);
+                machine.traverse(print_visitor);
                 ctx.log_info("SLAC FSM state:\n" + current_state_str);
             }
             if (telemetry) {
                 FsmStateVisitor fsm_state_visitor;
-                msm::traverse_fsm(msm, 0, fsm_state_visitor);
+                machine.traverse(fsm_state_visitor);
                 ctx.telemetry("FSM", "state", api_telemetry::serialize(fsm_state_visitor.get_result()));
 
                 ctx.telemetry("generic", "status", serialize(ctx.status));
             }
-            last_signature = std::move(current_signature);
         }
     }
 }
@@ -165,7 +124,7 @@ slac_fsm::~slac_fsm() {
 // sub-machines were never entered, and feeding it events would settle them without a context.
 void slac_fsm::begin_event() {
     ctx.sample_time();
-    msm::rethrow_recorded(impl->fsm);
+    sm::rethrow_recorded(ctx);
 }
 
 void slac_fsm::reset() {
@@ -173,8 +132,8 @@ void slac_fsm::reset() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(msm::reset{});
-    msm::rethrow_recorded(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::reset});
+    sm::rethrow_recorded(ctx);
     settle();
 }
 
@@ -183,8 +142,8 @@ void slac_fsm::enter_bcd() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(msm::enter_bcd{});
-    msm::rethrow_recorded(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::enter_bcd});
+    sm::rethrow_recorded(ctx);
     settle();
 }
 
@@ -193,20 +152,18 @@ void slac_fsm::leave_bcd() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(msm::leave_bcd{});
-    msm::rethrow_recorded(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::leave_bcd});
+    sm::rethrow_recorded(ctx);
     settle();
 }
 
 void slac_fsm::message(messages::HomeplugMessage msg) {
-    msm::message event;
-    event.payload = std::move(msg);
     begin_event();
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(event);
-    msm::rethrow_recorded(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::message, &msg});
+    sm::rethrow_recorded(ctx);
     settle();
 }
 
@@ -225,19 +182,19 @@ void slac_fsm::restart_fsm() {
     }
     impl->started = true;
     impl->fsm.start();
-    msm::rethrow_recorded(impl->fsm);
+    sm::rethrow_recorded(ctx);
     settle();
 }
 
 void slac_fsm::settle() {
-    msm::settle(impl->fsm);
+    sm::settle(impl->fsm);
     event_post_processing();
     // The publishers above park a throw like the ones inside the machine; surface it from this event.
-    msm::rethrow_recorded(impl->fsm);
+    sm::rethrow_recorded(ctx);
 }
 
 std::optional<timer::tick> slac_fsm::next_wakeup() const {
-    return msm::next_wakeup_of(impl->fsm, ctx.current_time);
+    return sm::next_wakeup_of(impl->fsm, ctx.current_time);
 }
 
 } // namespace everest::lib::slac

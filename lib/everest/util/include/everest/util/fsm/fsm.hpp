@@ -129,6 +129,12 @@ public:
         return m_current_state->get_id();
     }
 
+    // Read-only view of the active state, for introspection such as collecting its timers or
+    // reporting the active state tree; transitions still only happen through feed().
+    const auto& get_current_state() const {
+        return *m_current_state;
+    }
+
 private:
     StateContainerType m_current_state;
 };

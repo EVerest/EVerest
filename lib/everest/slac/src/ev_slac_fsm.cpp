@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include "fsm/ev/msm/machine.hpp"
-#include "fsm/msm_traverse.hpp"
+#include "fsm/ev/machine.hpp"
+#include "fsm/fsm_helpers.hpp"
 #include <everest/slac/ev_slac_fsm.hpp>
 
 #include <utility>
@@ -10,7 +10,7 @@
 namespace everest::lib::slac {
 
 struct ev_slac_fsm::Impl {
-    msm::ev::SlacEVFSM fsm;
+    sm::ev::SlacEvMachine fsm;
     bool started{false};
     explicit Impl(fsm::ev::Context& ctx) : fsm(ctx) {
     }
@@ -29,7 +29,7 @@ ev_slac_fsm::~ev_slac_fsm() {
 // never entered.
 void ev_slac_fsm::begin_event() {
     ctx.sample_time();
-    msm::rethrow_recorded(impl->fsm);
+    sm::rethrow_recorded(ctx);
 }
 
 void ev_slac_fsm::reset() {
@@ -37,9 +37,9 @@ void ev_slac_fsm::reset() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(msm::reset{});
-    msm::rethrow_recorded(impl->fsm);
-    msm::settle(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::reset});
+    sm::rethrow_recorded(ctx);
+    sm::settle(impl->fsm);
 }
 
 void ev_slac_fsm::trigger_matching() {
@@ -47,21 +47,19 @@ void ev_slac_fsm::trigger_matching() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(msm::ev::trigger_matching{});
-    msm::rethrow_recorded(impl->fsm);
-    msm::settle(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::trigger_matching});
+    sm::rethrow_recorded(ctx);
+    sm::settle(impl->fsm);
 }
 
 void ev_slac_fsm::message(messages::HomeplugMessage msg) {
-    msm::message event;
-    event.payload = std::move(msg);
     begin_event();
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    impl->fsm.process_event(event);
-    msm::rethrow_recorded(impl->fsm);
-    msm::settle(impl->fsm);
+    impl->fsm.process(sm::Event{sm::EventId::message, &msg});
+    sm::rethrow_recorded(ctx);
+    sm::settle(impl->fsm);
 }
 
 void ev_slac_fsm::update() {
@@ -69,19 +67,19 @@ void ev_slac_fsm::update() {
     if (not impl->started) {
         return; // never started: its sub-machines were never entered and hold no context
     }
-    msm::settle(impl->fsm);
+    sm::settle(impl->fsm);
 }
 
 void ev_slac_fsm::restart_fsm() {
     begin_event();
     impl->started = true;
     impl->fsm.start();
-    msm::rethrow_recorded(impl->fsm);
-    msm::settle(impl->fsm);
+    sm::rethrow_recorded(ctx);
+    sm::settle(impl->fsm);
 }
 
 std::optional<timer::tick> ev_slac_fsm::next_wakeup() const {
-    return msm::next_wakeup_of(impl->fsm, ctx.current_time);
+    return sm::next_wakeup_of(impl->fsm, ctx.current_time);
 }
 
 } // namespace everest::lib::slac
