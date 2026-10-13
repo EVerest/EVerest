@@ -1027,6 +1027,26 @@ TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterHlcDlinkErrorGoesToStepEF) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
 }
 
+// The HLC reports the lost link while the EVSE is still in the X1 of the error sequence; the reinit it requests
+// replaces T_step_X1 without running its exit. The next ordinary T_step_X1 must not inherit the link-loss handling.
+TEST_F(ChargerDlinkErrorTest, LinkLossX1DoesNotOutliveReinit) {
+    setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+    charger->set_dlink_ready(true);
+    charger->request_error_sequence();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+
+    charger->dlink_error();
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+
+    int slac_resets = 0;
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+    charger->current_state(Charger::EvseState::T_step_X1);
+    charger->run_state_machine();
+
+    EXPECT_EQ(slac_resets, 0);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------

@@ -509,6 +509,7 @@ void Charger::run_state_machine() {
                                                 internal_context.t_step_X1_return_state = target_state;
                                                 internal_context.t_step_X1_return_pwm = 0.;
                                                 internal_context.t_step_EF_return_ampere = 0.;
+                                                internal_context.t_step_X1_until_unmatched = false;
                                                 hlc_use_5percent_current_session = false;
                                                 shared_context.current_state = EvseState::T_step_X1;
                                             }
@@ -1921,6 +1922,8 @@ void Charger::process_pending_reinit_request() {
 
     shared_context.reinit_requested = false;
     shared_context.reinit_running = true;
+    // Replaces T_step_X1 without running its exit.
+    internal_context.t_step_X1_until_unmatched = false;
     shared_context.current_state = EvseState::Reinit;
 }
 
