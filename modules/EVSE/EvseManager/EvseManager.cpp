@@ -2525,6 +2525,7 @@ void EvseManager::powersupply_DC_on() {
 // input voltage/current is what the evse/car would like to set.
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
+    std::lock_guard<std::mutex> set_lock(powersupply_dc_set_mutex);
     if (last_power_supply_voltage == _voltage and last_power_supply_current == _current) {
         return true;
     }
@@ -2541,9 +2542,9 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // this option will deliver the offered ampere value in those cases
 
     if (config.hack_fix_hlc_integer_current_requests) {
-        auto hlc_limits = charger->get_evse_max_hlc_limits();
-        if (hlc_limits.evse_maximum_current_limit - (int)current < 1.)
-            current = hlc_limits.evse_maximum_current_limit;
+        const double evse_max_current = latest_evse_max_current;
+        if (evse_max_current > 0. and evse_max_current - (int)current < 1.)
+            current = evse_max_current;
     }
 
     if (config.sae_j2847_2_bpt_enabled) {
@@ -2797,6 +2798,7 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
 }
 
 void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {
+    latest_evse_max_current = hlc_limits.evse_maximum_current_limit;
     double clamped_voltage = raw_ev_target_voltage.load();
     double clamped_current = raw_ev_target_current.load();
 
