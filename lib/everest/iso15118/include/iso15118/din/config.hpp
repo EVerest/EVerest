@@ -18,7 +18,7 @@ struct SessionConfig {
     std::vector<uint8_t> evse_id;
 
     uint16_t charge_service_id{1};
-    bool free_service{true};
+    bool free_service{false};
     dt::SupportedEnergyTransferMode energy_transfer_mode{dt::SupportedEnergyTransferMode::DC_extended};
 
     // Two flavours (EvseV2G parity): the evse_capability_* values are the maximum the EVSE could ever

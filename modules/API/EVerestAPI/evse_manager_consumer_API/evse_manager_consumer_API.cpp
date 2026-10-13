@@ -98,11 +98,11 @@ void evse_manager_consumer_API::ready() {
     generate_api_cmd_resume_charging();
     generate_api_cmd_stop_transaction();
     generate_api_cmd_force_unlock();
+    generate_api_cmd_set_free_service();
     generate_api_cmd_random_delay_enable();
     generate_api_cmd_random_delay_disable();
     generate_api_cmd_random_delay_cancel();
     generate_api_cmd_random_delay_set_duration_s();
-    generate_api_cmd_set_free_service();
 
     helper.generate_api_var_communication_check(&comm_check);
     comm_check.start(config.cfg_communication_check_to_s);
@@ -204,6 +204,17 @@ void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
     });
 }
 
+void evse_manager_consumer_API::generate_api_cmd_set_free_service() {
+    helper.subscribe_api_topic("set_free_service", [this](std::string const& data) {
+        bool free_service{};
+        if (deserialize(data, free_service)) {
+            r_evse_manager->call_set_free_service(free_service);
+            return true;
+        }
+        return false;
+    });
+}
+
 void evse_manager_consumer_API::generate_api_cmd_random_delay_enable() {
     if (not r_random_delay.empty()) {
         helper.subscribe_api_topic("random_delay_enable", [this](std::string const&) {
@@ -241,19 +252,6 @@ void evse_manager_consumer_API::generate_api_cmd_random_delay_set_duration_s() {
             }
             return false;
         });
-}
-
-void evse_manager_consumer_API::generate_api_cmd_set_free_service() {
-    if (not r_hlc.empty()) {
-        helper.subscribe_api_topic("set_free_service", [this](std::string const& data) {
-            bool free_service;
-            if (deserialize(data, free_service)) {
-                r_hlc[0]->call_set_free_service(free_service);
-                return true;
-            }
-            return false;
-        });
-    }
 }
 
 void evse_manager_consumer_API::generate_api_var_session_event() {

@@ -1661,10 +1661,11 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
 }
 
 void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
-    if (free_service) {
-        // libiso15118 hardcodes free_service to false for the energy transfer services in
-        // ServiceDiscoveryRes, so this cannot be applied yet.
-        EVLOG_warning << "FreeService is not supported for ISO15118-20 and is ignored";
+    std::scoped_lock lock(GEL);
+
+    setup_config.free_service = free_service;
+    if (controller) {
+        controller->update_free_service(free_service);
     }
 }
 

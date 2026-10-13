@@ -14,7 +14,6 @@
 #include <generated/interfaces/generic_error/Implementation.hpp>
 
 // headers for required interface implementations
-#include <generated/interfaces/ISO15118_charger/Interface.hpp>
 #include <generated/interfaces/evse_board_support/Interface.hpp>
 #include <generated/interfaces/evse_manager/Interface.hpp>
 #include <generated/interfaces/isolation_monitor/Interface.hpp>
@@ -54,8 +53,7 @@ public:
                               std::vector<std::unique_ptr<slacIntf>> r_slac,
                               std::vector<std::unique_ptr<isolation_monitorIntf>> r_imd,
                               std::vector<std::unique_ptr<power_supply_DCIntf>> r_ps_dc,
-                              std::vector<std::unique_ptr<uk_random_delayIntf>> r_random_delay,
-                              std::vector<std::unique_ptr<ISO15118_chargerIntf>> r_hlc, Conf& config) :
+                              std::vector<std::unique_ptr<uk_random_delayIntf>> r_random_delay, Conf& config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_main(std::move(p_main)),
@@ -65,7 +63,6 @@ public:
         r_imd(std::move(r_imd)),
         r_ps_dc(std::move(r_ps_dc)),
         r_random_delay(std::move(r_random_delay)),
-        r_hlc(std::move(r_hlc)),
         config(config){};
 
     Everest::MqttProvider& mqtt;
@@ -76,7 +73,6 @@ public:
     const std::vector<std::unique_ptr<isolation_monitorIntf>> r_imd;
     const std::vector<std::unique_ptr<power_supply_DCIntf>> r_ps_dc;
     const std::vector<std::unique_ptr<uk_random_delayIntf>> r_random_delay;
-    const std::vector<std::unique_ptr<ISO15118_chargerIntf>> r_hlc;
     const Conf& config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
@@ -106,11 +102,11 @@ private:
     void generate_api_cmd_resume_charging();
     void generate_api_cmd_stop_transaction();
     void generate_api_cmd_force_unlock();
+    void generate_api_cmd_set_free_service();
     void generate_api_cmd_random_delay_enable();
     void generate_api_cmd_random_delay_disable();
     void generate_api_cmd_random_delay_cancel();
     void generate_api_cmd_random_delay_set_duration_s();
-    void generate_api_cmd_set_free_service();
 
     void generate_api_var_session_event();
     void generate_api_var_hlc_session_failed();

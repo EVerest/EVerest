@@ -526,6 +526,12 @@ bool evse_managerImpl::handle_force_unlock(int& connector_id) {
     return false;
 };
 
+void evse_managerImpl::handle_set_free_service(bool& free_service) {
+    if (not mod->r_hlc.empty()) {
+        mod->r_hlc[0]->call_set_free_service(free_service);
+    }
+}
+
 void evse_managerImpl::handle_set_plug_and_charge_configuration(
     types::evse_manager::PlugAndChargeConfiguration& plug_and_charge_configuration) {
     if (plug_and_charge_configuration.pnc_enabled.has_value()) {

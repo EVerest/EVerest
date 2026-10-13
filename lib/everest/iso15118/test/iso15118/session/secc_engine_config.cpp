@@ -529,3 +529,28 @@ SCENARIO("Authorization Ongoing timeouts") {
         }
     }
 }
+
+SCENARIO("SECC charge service FreeService mapping") {
+    GIVEN("A module that never called set_free_service") {
+        const auto config = make_session_config({});
+
+        THEN("Neither DIN nor ISO 15118-2 advertises the charge service as free") {
+            REQUIRE(config.free_service == false);
+            REQUIRE(make_din_config(config).free_service == false);
+            REQUIRE(make_d2_config(config, false).free_service == false);
+        }
+    }
+
+    GIVEN("A module that offers the charge service free of charge") {
+        session::EvseSetupConfig setup{};
+        setup.evse_id = "DE*PNX*E12345*1";
+        setup.free_service = true;
+        const session::SessionConfig config(setup);
+
+        THEN("The session config and the DIN and ISO 15118-2 configs carry the flag") {
+            REQUIRE(config.free_service == true);
+            REQUIRE(make_din_config(config).free_service == true);
+            REQUIRE(make_d2_config(config, false).free_service == true);
+        }
+    }
+}

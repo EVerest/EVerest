@@ -86,6 +86,8 @@ public:
     // ISO 15118-2 Plug-and-Charge per-session setup: whether Contract is offered and whether a locally
     // unverifiable contract chain may be forwarded to the CSMS (central contract validation).
     void update_iso2_pnc_config(bool pnc_enabled, bool central_contract_validation_allowed);
+    // Applies from the next session's ServiceDiscoveryRes (DIN 70121, ISO 15118-2 and -20).
+    void update_free_service(bool free_service);
     void update_dc_limits(const d20::DcTransferLimits&);
     void update_powersupply_limits(const d20::DcTransferLimits&);
     // ISO 15118-2: request a (signed) MeteringReceipt from the EV (ReceiptRequired in the charge loop).
