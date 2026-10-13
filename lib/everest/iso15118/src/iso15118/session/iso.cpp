@@ -403,6 +403,7 @@ TimePoint const& Session::poll() {
             const bool accepted =
                 visit_engine([payload_type, &view](auto& e) { return e.on_packet(payload_type, view); });
             current_request_frame = {};
+            response_held = not visit_engine([](const auto& e) { return e.has_outgoing(); });
 
             // An ignored frame ([V2G20-800]) is no request: the timers run on as if it never arrived.
             if (accepted) {
@@ -450,9 +451,14 @@ TimePoint const& Session::poll() {
                 } else {
                     const auto took =
                         std::chrono::duration_cast<std::chrono::milliseconds>(now - last_request_rx_time.value());
-                    logf_warning("Response not ready within %d ms after the request (took %lld ms), sending "
-                                 "immediately",
-                                 RESPONSE_DELAY_AFTER_REQUEST_MS, static_cast<long long>(took.count()));
+                    if (response_held) {
+                        logf_info("Response sent %lld ms after the request, held for another module",
+                                  static_cast<long long>(took.count()));
+                    } else {
+                        logf_warning("Response not ready within %d ms after the request (took %lld ms), sending "
+                                     "immediately",
+                                     RESPONSE_DELAY_AFTER_REQUEST_MS, static_cast<long long>(took.count()));
+                    }
                     response_send_after = now;
                 }
             } else {

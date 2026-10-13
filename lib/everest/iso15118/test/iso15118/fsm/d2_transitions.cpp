@@ -268,6 +268,7 @@ void to_welding_detection(Secc& secc) {
     to_current_demand(secc);
     secc.drive(current_demand_req());
     secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+    secc.fsm.control(d20::DcOutputDisabled{});
     // [V2G2-920]..[V2G2-922]: without CP State B the WeldingDetectionReq is parked until the timeout.
     secc.fsm.context().set_cp_state(d20::CpState::B);
 }
@@ -569,13 +570,49 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.drive(current_demand_req());
             secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
 
-            THEN("The charge loop defers to PowerDelivery and the machine moves to PostCharge") {
-                REQUIRE(secc.fsm.state() == StateID::PostCharge);
-                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+            THEN("The contactor is opened and the response waits for the DC output to be disabled") {
+                REQUIRE(secc.fsm.state() == StateID::DcPowerDeliveryStop);
+                REQUIRE_FALSE(secc.fsm.has_response());
                 REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_STARTED));
                 REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(session::feedback::Signal::DC_OPEN_CONTACTOR));
+                REQUIRE_FALSE(secc.fsm.context().evse().cable_check_done);
+            }
+
+            AND_WHEN("Present values arrive and the module reports the DC output disabled") {
+                secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.control(d20::DcOutputDisabled{});
+
+                THEN("PowerDeliveryRes goes out OK and the machine moves to PostCharge") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.context().evse().present_voltage == 0.0f);
+                }
+            }
+
+            AND_WHEN("The DC output is not reported disabled in time") {
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("PowerDeliveryRes goes out OK anyway and the machine moves to PostCharge") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
+            }
+
+            AND_WHEN("The EV sends another request before the response") {
+                secc.drive(current_demand_req());
+
+                THEN("It is out of sequence") {
+                    const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
             }
         }
     }
@@ -1842,6 +1879,7 @@ SCENARIO("ISO 15118-2 SECC gates a post-charge SessionStopReq on CP State B") {
         to_current_demand(secc);
         secc.drive(current_demand_req());
         secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+        secc.fsm.control(d20::DcOutputDisabled{});
         REQUIRE(secc.fsm.state() == StateID::PostCharge);
 
         WHEN("The EV ends the session straight away") {

@@ -41,6 +41,12 @@ constexpr auto TIMEOUT_STOP_CHARGING_GUARD = 1000 * 10;
 // over V2G ([V2G2-880] NOTE 1, [V2G-DC-638] NOTE 2), so this only bounds how long the reason stays
 // deliverable.
 constexpr auto TIMEOUT_EMERGENCY_SHUTDOWN_GUARD = 1000 * 2;
+// How long PowerDeliveryRes(stop) waits for DcOutputDisabled. ISO 15118-2: within
+// V2G_SECC_Msg_Performance_Time(PowerDeliveryRes) of 4.5 s (Table 109). DIN SPEC 70121: within
+// V2G_SECC_Msg_Performance_Time(PowerDeliveryRes) of 1.5 s (Table 75), 100 ms kept for polling and sending.
+// EvseV2G waits as long (V2G_DC_OUTPUT_DISABLED_TIMEOUT, V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN).
+constexpr auto TIMEOUT_DC_OUTPUT_DISABLED_ISO2 = 1000 * 3;
+constexpr auto TIMEOUT_DC_OUTPUT_DISABLED_DIN = 1400;
 
 class Timeouts {
 public:

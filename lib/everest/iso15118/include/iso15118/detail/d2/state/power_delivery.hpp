@@ -16,7 +16,8 @@ namespace dt = message_2::datatypes;
 
 // An action on a transition, not a wait state: it is reached from two nodes in each flow, so it
 // cannot be a state either of them transitions into. The caller has matched the type against its own
-// accepted set, and on AC has already satisfied the contactor gate, so neither function waits.
+// accepted set, and on AC has already satisfied the contactor gate. A DC stop hands over to
+// DcPowerDeliveryStop, which holds the response.
 Result process_ac_power_delivery(Context& ctx, const message_2::PowerDeliveryRequest& req);
 Result process_dc_power_delivery(Context& ctx, const message_2::PowerDeliveryRequest& req);
 

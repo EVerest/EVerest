@@ -664,6 +664,7 @@ int v2g_handle_connection(struct v2g_connection* conn) {
         }
 
         start_time = getmonotonictime(); // To calc the duration of req msg configuration
+        conn->ctx->response_wait_ms = 0;
 
         /* according to agreed protocol decode the stream */
         enum v2g_event v2gEvent = V2G_EVENT_NO_EVENT;
@@ -754,6 +755,11 @@ int v2g_handle_connection(struct v2g_connection* conn) {
             if (time_to_conf_res < MAX_RES_TIME) {
                 // dlog(DLOG_LEVEL_ERROR,"time_to_conf_res %llu", time_to_conf_res);
                 std::this_thread::sleep_for(std::chrono::microseconds((MAX_RES_TIME - time_to_conf_res) * 1000));
+            } else if (time_to_conf_res - conn->ctx->response_wait_ms < MAX_RES_TIME) {
+                dlog(DLOG_LEVEL_INFO,
+                     "Response message (type %d) sent after %" PRIi64 " ms, %lld ms of it waiting for "
+                     "another module",
+                     conn->ctx->current_v2g_msg, time_to_conf_res, conn->ctx->response_wait_ms);
             } else {
                 dlog(DLOG_LEVEL_WARNING, "Response message (type %d) not configured within %d ms (took %" PRIi64 " ms)",
                      conn->ctx->current_v2g_msg, MAX_RES_TIME, time_to_conf_res);

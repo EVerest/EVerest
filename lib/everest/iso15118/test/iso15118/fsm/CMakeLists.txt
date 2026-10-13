@@ -57,4 +57,6 @@ function(create_secc_fsm_test_target NAME)
 endfunction()
 
 create_secc_fsm_test_target(din_transitions)
+create_secc_fsm_test_target(din_secc_engine_stop)
 create_secc_fsm_test_target(d2_transitions)
+create_secc_fsm_test_target(d2_secc_engine_stop)

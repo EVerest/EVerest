@@ -9,7 +9,9 @@
 #include "v2g.hpp"
 #include "v2g_ctx.hpp"
 
+#include <chrono>
 #include <memory>
+#include <thread>
 
 uint64_t v2g_session_id_from_exi(bool is_iso, void* exi_in) {
     return 0;
@@ -149,6 +151,67 @@ TEST_F(IsoServerPowerDeliveryTest, offered_tuple_id_with_charging_profile_above_
     EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
 
     EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED_ChargingProfileInvalid);
+}
+
+class IsoServerDcStopTest : public IsoServerPowerDeliveryTest {
+protected:
+    void SetUp() override {
+        IsoServerPowerDeliveryTest::SetUp();
+
+        // The fixture builds the context without v2g_ctx_create(), so set up the
+        // condition variable with the monotonic clock the wait helper relies on
+        pthread_mutex_init(&ctx->mqtt_lock, nullptr);
+        pthread_condattr_init(&ctx->mqtt_attr);
+        pthread_condattr_setclock(&ctx->mqtt_attr, CLOCK_MONOTONIC);
+        pthread_cond_init(&ctx->mqtt_cond, &ctx->mqtt_attr);
+
+        ctx->is_dc_charger = true;
+        ctx->last_v2g_msg = V2G_CURRENT_DEMAND_MSG;
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_CURRENTDEMAND_POWERDELIVERY);
+        ctx->dc_output_disabled = true; // left over from an earlier stop, must not end the wait
+
+        auto& req = exi_in->V2G_Message.Body.PowerDeliveryReq;
+        req.ChargeProgress = iso2_chargeProgressType_Stop;
+        req.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    }
+
+    void TearDown() override {
+        pthread_cond_destroy(&ctx->mqtt_cond);
+        pthread_condattr_destroy(&ctx->mqtt_attr);
+        pthread_mutex_destroy(&ctx->mqtt_lock);
+    }
+};
+
+TEST_F(IsoServerDcStopTest, stop_response_waits_for_dc_output_disabled) {
+    // [IEC 61851-23:2023 Table CC.9 t103, t104] Side B is disabled before the PowerDeliveryRes
+    ctx->dc_output_disabled_timeout_ms = 2000;
+    constexpr auto confirmation_delay = std::chrono::milliseconds(100);
+
+    std::thread confirmer([this, confirmation_delay]() {
+        std::this_thread::sleep_for(confirmation_delay);
+        v2g_ctx_signal_dc_output_disabled(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    confirmer.join();
+
+    EXPECT_GE(elapsed, confirmation_delay);
+    EXPECT_LT(elapsed, std::chrono::milliseconds(ctx->dc_output_disabled_timeout_ms));
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(ctx->state, static_cast<int>(iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(IsoServerDcStopTest, stop_response_sent_after_timeout_without_confirmation) {
+    ctx->dc_output_disabled_timeout_ms = 50;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(ctx->state, static_cast<int>(iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
 }
 
 } // namespace

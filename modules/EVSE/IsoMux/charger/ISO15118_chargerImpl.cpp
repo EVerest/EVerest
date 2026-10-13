@@ -612,6 +612,14 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     }
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    if (mod->selected_iso20()) {
+        mod->r_iso20->call_dc_output_disabled();
+    } else {
+        mod->r_iso2->call_dc_output_disabled();
+    }
+}
+
 void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
     // CP state is physical-layer information: broadcast to both children so whichever stack owns
     // the session has it (the selection may also not have happened yet at plug-in time).

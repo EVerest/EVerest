@@ -1795,6 +1795,13 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     }
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    std::scoped_lock lock(GEL);
+    if (controller) {
+        controller->send_control_event(iso15118::d20::DcOutputDisabled{});
+    }
+}
+
 void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
     using LibCpState = iso15118::d20::CpState;
     auto state = LibCpState::A;

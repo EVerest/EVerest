@@ -187,6 +187,7 @@ void to_welding_detection(Secc& secc) {
     to_current_demand(secc);
     secc.drive(current_demand_req());
     secc.drive(power_delivery_req(false));
+    secc.fsm.control(d20::DcOutputDisabled{});
     // [V2G-DC-988]: after PowerDelivery(off) the EV signals CP State B again.
     secc.fsm.context().set_cp_state(d20::CpState::B);
 }
@@ -675,13 +676,49 @@ SCENARIO("DIN SPEC 70121 SECC charging state transitions") {
             secc.drive(current_demand_req());
             secc.drive(power_delivery_req(false));
 
-            THEN("The charge loop answers it and the machine moves to WeldingDetection [V2G-DC-459]") {
-                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
-                const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+            THEN("The contactor is opened and the response waits for the DC output to be disabled") {
+                REQUIRE(secc.fsm.state() == StateID::PowerDeliveryStop);
+                REQUIRE_FALSE(secc.fsm.has_response());
+                REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(session::feedback::Signal::DC_OPEN_CONTACTOR));
                 // The contactor is open again, so the verified isolation no longer holds.
                 REQUIRE_FALSE(secc.fsm.context().evse().cable_check_done);
+            }
+
+            AND_WHEN("Present values arrive and the module reports the DC output disabled") {
+                secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.control(d20::DcOutputDisabled{});
+
+                THEN("PowerDeliveryRes goes out OK and the machine moves to WeldingDetection [V2G-DC-459]") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.context().evse().present_voltage == 0.0f);
+                }
+            }
+
+            AND_WHEN("The DC output is not reported disabled in time") {
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("PowerDeliveryRes goes out OK anyway and the machine moves to WeldingDetection") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
+            }
+
+            AND_WHEN("The EV sends another request before the response") {
+                secc.drive(current_demand_req());
+
+                THEN("It is out of sequence [V2G-DC-666]") {
+                    const auto res = secc.fsm.response<message_din::CurrentDemandResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
             }
         }
     }
@@ -796,6 +833,7 @@ SCENARIO("DIN SPEC 70121 SECC unknown-session rejection") {
         to_current_demand(secc);
         secc.drive(current_demand_req());
         secc.drive(power_delivery_req(false));
+        secc.fsm.control(d20::DcOutputDisabled{});
         REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
 
         WHEN("A WeldingDetectionReq with a mismatched SessionID arrives") {

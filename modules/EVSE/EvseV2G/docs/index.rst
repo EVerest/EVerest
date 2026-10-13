@@ -40,3 +40,12 @@ Schedule Renegotation
 Smart Charging           
 Internet Service         
 =======================  ==================
+
+DC charging stop
+================
+
+On a DC stop request (DIN 70121 PowerDeliveryReq with ReadyToChargeState false, ISO 15118-2
+PowerDeliveryReq with ChargeProgress Stop), EvseV2G publishes ``dc_open_contactor`` and waits for
+the ``dc_output_disabled`` command before it sends the PowerDeliveryRes, at most 1.4 s on DIN 70121
+(the EV gives up after 2 s) and 3 s on ISO 15118-2 (4.5 s performance time). Without the
+confirmation it sends the response after the timeout and logs a warning.
