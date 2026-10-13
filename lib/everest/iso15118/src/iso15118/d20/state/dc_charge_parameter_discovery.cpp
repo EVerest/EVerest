@@ -128,7 +128,8 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_ev_info.ev_transfer_limits.emplace<BPT_DC_ModeReq>(*mode);
         }
 
-        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.powersupply_limits);
+        const auto& limits = m_ctx.session_config.powersupply_limits;
+        const auto res = handle_request(*req, m_ctx.session, limits);
 
         m_ctx.respond(res);
 
@@ -138,6 +139,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
+        m_ctx.session.cpd_max_charge_power = limits.charge_limits.power.max;
 
         return m_ctx.create_state<ScheduleExchange>();
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {

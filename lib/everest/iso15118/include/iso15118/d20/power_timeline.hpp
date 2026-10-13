@@ -56,6 +56,20 @@ struct PowerTimeline {
         }
         return std::nullopt;
     }
+
+    // Whether a demand of \p power_w over [\p start_s, \p end_s) exceeds the power of any entry it overlaps. Time
+    // no entry covers is unconstrained.
+    bool exceeded_by(uint64_t start_s, uint64_t end_s, float power_w) const {
+        uint64_t slot_start = time_anchor_s;
+        for (const auto& entry : entries) {
+            const uint64_t slot_end = slot_start + entry.duration_s;
+            if (start_s < slot_end and slot_start < end_s and power_w > entry.power_w) {
+                return true;
+            }
+            slot_start = slot_end;
+        }
+        return false;
+    }
 };
 
 } // namespace iso15118::d20
