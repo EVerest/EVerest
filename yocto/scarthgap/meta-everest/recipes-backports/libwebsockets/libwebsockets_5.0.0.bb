@@ -7,8 +7,8 @@ DEPENDS = "zlib"
 DEPENDS:append:class-native = " libcap-native"
 
 S = "${WORKDIR}/git"
-SRCREV = "85c6f7959fd40d8aaf7a50be3c9b75f08389a01c"
-SRC_URI = "git://github.com/warmcat/libwebsockets.git;protocol=https;branch=v4.5-stable"
+SRCREV = "2491a1b101283cf7886d05033345b7e821825319"
+SRC_URI = "git://github.com/warmcat/libwebsockets.git;protocol=https;branch=v5.0-stable"
 
 UPSTREAM_CHECK_URI = "https://github.com/warmcat/${BPN}/releases"
 UPSTREAM_CHECK_GITTAGREGEX = "v(?P<pver>\d+(\.\d+)+)"
@@ -37,6 +37,9 @@ python __anonymous() {
 
 EXTRA_OECMAKE += " \
     -DLIB_SUFFIX=${@d.getVar('baselib').replace('lib', '')} \
+    -DLWS_WITH_HTTP3=OFF \
+    -DLWS_WITH_DHT=OFF \
+    -DLWS_WITH_STUB=OFF \
 "
 
 do_install:append() {
