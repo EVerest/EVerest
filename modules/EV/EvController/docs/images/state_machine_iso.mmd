@@ -1,0 +1,50 @@
+stateDiagram-v2
+    direction TB
+
+    [*] --> Plugged
+
+    Plugged --> SlacMatching : duty in (4,7)
+    Plugged --> Plugged : ISO, duty in (7,97) arms iso_pwm_wait_s once
+    Plugged --> Charging : PWM deadline, AC ISO falls back to AcIec
+    Plugged --> Faulted : PWM deadline, DC Internal "no 5 % PWM"
+
+    note right of SlacMatching
+        MCS: CP C for 4 s, then B,
+        then trigger_matching and arm 30s deadline.
+    end note
+
+    SlacMatching --> V2GNegotiating : SlacState=MATCHED
+    SlacMatching --> Faulted : StateDeadline (30s, SlacTimeout)
+
+    V2GNegotiating --> Charging : IsoPowerReady (AC)
+    V2GNegotiating --> Charging : IsoDcPowerOn / dc_power_on (DC)
+    V2GNegotiating --> V2GNegotiating : IsoPowerReady (DC, CP=C + power-on, await dc_power_on)
+    V2GNegotiating --> Stopping : IsoStopFromCharger
+    V2GNegotiating --> Faulted : StateDeadline (60s, V2GTimeout)
+
+    Charging --> Paused : PauseSession / IsoPauseFromCharger
+    Charging --> Stopping : StopSession / IsoStopFromCharger / IsoV2GFinished
+    Charging --> Faulted : InternalFault
+
+    Paused --> BcbToggling : ResumeSession (no live ISO session, seeds bcb_remaining=6)
+    Paused --> Paused : ResumeSession (ISO session live, defer + arm 15s fallback)
+    Paused --> BcbToggling : IsoV2GFinished (release deferred resume)
+    Paused --> BcbToggling : StateDeadline (15s deferred-resume fallback)
+    Paused --> Stopping : StateDeadline (1h watchdog)
+    Paused --> Faulted : InternalFault
+
+    BcbToggling --> V2GNegotiating : 6x StateDeadline (link kept, DC D-LINK_PAUSE)
+    BcbToggling --> SlacMatching : 6x StateDeadline + slac_unmatched (re-match)
+    BcbToggling --> Faulted : InternalFault
+
+    Stopping --> [*] : IsoV2GFinished / StateDeadline (10s), held without a session
+    Stopping --> Plugged : charger stop, SLAC reset, same session awaits a fresh 5 % PWM edge
+    Stopping --> Faulted : InternalFault
+
+    note right of Paused
+        CP held at C while an ISO session is still
+        tearing down, lowered to B when the EVCC
+        receives PowerDeliveryRes (V2gMessage). IsoV2GFinished
+        re-asserts B as a backstop for peers that
+        publish no per-message signal.
+    end note

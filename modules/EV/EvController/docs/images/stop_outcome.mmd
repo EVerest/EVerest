@@ -1,0 +1,9 @@
+flowchart TD
+    Done["a stop completes:<br/>Stopping on IsoV2GFinished or its 10 s deadline,<br/>or an AcIec stop"]
+    Finish{"finish_stopping"}
+    Done --> Finish
+    Finish -->|"EV stop: stop_session, on_battery_full stop"| Hold["hold_session<br/>Plugged begins no session"]
+    Hold --> HoldWait["Plugged ignores PWM<br/>until unplug and replug"]
+    Finish -->|"charger stop: IsoStopFromCharger, or IsoV2GFinished in Charging"| Restart["SLAC reset, awaiting_pwm_wake<br/>Plugged begins the same configured session"]
+    Restart --> Wake["PWM must leave 5 % and come back"]
+    Wake --> Slac["SlacMatching with the same session"]
