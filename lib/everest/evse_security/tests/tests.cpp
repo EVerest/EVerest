@@ -1699,7 +1699,7 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_cso_cpo_subca2_passes_rules) {
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_missing_ski_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    fs::path path = fs::path("eonti_addon_test_certs/invalid/MO-EMSPRootCA__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path))
         GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID82... not found, skipping";
 
@@ -1713,7 +1713,7 @@ TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_missing_ski_fails) {
 
 TEST_F(EvseSecurityTestsWithRules, verify_mo_root_ca_unexpected_aki_fails) {
     fs::path path =
-        fs::path("eonti_addon_test_certs/valid/MO-EMSPRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
+        fs::path("eonti_addon_test_certs/invalid/MO-EMSPRootCA__BAD_NID90_UnexpectedAuthorityKeyIdentifier.pem");
     if (!fs::exists(path))
         GTEST_SKIP() << "MO-EMSPRootCA__BAD_NID90... not found, skipping";
 
@@ -1791,7 +1791,7 @@ TEST_F(EvseSecurityTestsWithRules, verify_valid_oem_root_ca_passes_rules) {
 }
 
 TEST_F(EvseSecurityTestsWithRules, verify_oem_subca1_missing_ski_fails) {
-    fs::path path = fs::path("eonti_addon_test_certs/valid/OEMSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
+    fs::path path = fs::path("eonti_addon_test_certs/invalid/OEMSub-CA1__BAD_NID82_MissingSubjectKeyIdentifier.pem");
     if (!fs::exists(path))
         GTEST_SKIP() << "OEMSub-CA1__BAD_NID82... not found, skipping";
 
