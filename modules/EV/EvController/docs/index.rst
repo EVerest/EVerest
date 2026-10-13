@@ -1468,10 +1468,10 @@ Python test controller
 Integration tests drive the simulator through
 ``EvControllerTestController`` (in
 ``applications/utils/everest-testing/src/everest/testing/core_utils/controller/evctl_test_controller.py``).
-It resolves the EvController module id from the active config, publishes to
-``m2e/*`` and subscribes to ``e2m/+`` through a paho client, and exposes a
-``StateCollector`` with a ``threading.Condition`` for ``wait_for_state`` /
-``wait_for_state_not``.
+It is ``EverestTestController`` plus EvController's own ``m2e/*`` commands.
+Each helper resolves its car by ``connector_id`` through the simulator
+registry, and ``StateCollector`` waits on the state and SoC history the
+registry records from boot.
 
 Minimal usage:
 

@@ -15,9 +15,8 @@ publishes as its supported energy transfer modes, before and after
 No ISO session is negotiated here, the probe stops at the advertisement
 boundary. The SECC still binds the fixed SDP port at boot though, so both tests
 carry the ``xdist_group`` marker that serializes ISO configs when the suite runs
-in parallel without network isolation. The EvManager in both configs plugs in
-after a 20 s ``sleep``, the probe is done well before that and never touches the
-car simulator.
+in parallel without network isolation. EvDriverSim keeps the pilot unplugged
+in both configs; this probe never plugs in the EV.
 """
 
 import asyncio

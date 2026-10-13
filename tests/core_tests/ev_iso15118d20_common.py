@@ -5,7 +5,7 @@
 """Helpers shared by the Ev15118 SIL tests.
 
 Not a conftest.py: none of these are pytest fixtures. ``_ev_config_adaptions`` and
-``EvAutoExecAdjustmentStrategy`` are evaluated inside the
+the strategies are evaluated inside the
 ``@pytest.mark.everest_config_adaptions`` decorator, i.e. at module import time,
 and the ``wait_for_*`` helpers are plain coroutines.
 """
@@ -19,6 +19,24 @@ from unittest.mock import Mock
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
 from smoke_tests import NetworkInterfaceConfigAdjustmentStrategy
+
+
+class EvManagerAdjustmentStrategy(EverestConfigAdjustmentStrategy):
+    """Run the car as EvManager on Ev15118, the module pair these tests drive.
+
+    The SIL configs load EvController behind an EvDriverSim; EvManager takes the
+    driver's place on the board support.
+    """
+
+    def adjust_everest_configuration(self, everest_config: Dict) -> Dict:
+        adjusted_config = deepcopy(everest_config)
+        modules = adjusted_config["active_modules"]
+        driver = modules.pop("ev_manager_driver")
+        ev_manager = modules["ev_manager"]
+        ev_manager["module"] = "EvManager"
+        ev_manager["config_module"]["auto_enable"] = True
+        ev_manager["connections"]["ev_board_support"] = driver["connections"]["ev_board_support"]
+        return adjusted_config
 
 
 class EvAutoExecAdjustmentStrategy(EverestConfigAdjustmentStrategy):
@@ -48,8 +66,12 @@ def _ev_device_adaptions() -> List[EverestConfigAdjustmentStrategy]:
 
 
 def _ev_config_adaptions(auto_exec_commands: str) -> List[EverestConfigAdjustmentStrategy]:
-    """Auto_exec strategy plus, when EVEREST_V2G_DEVICE is set, a device override."""
-    return [EvAutoExecAdjustmentStrategy(auto_exec_commands), *_ev_device_adaptions()]
+    """EvManager, its auto_exec and, when EVEREST_V2G_DEVICE is set, a device override."""
+    return [
+        EvManagerAdjustmentStrategy(),
+        EvAutoExecAdjustmentStrategy(auto_exec_commands),
+        *_ev_device_adaptions(),
+    ]
 
 
 async def wait_for_call(mock: Mock, timeout: float = 30.0):

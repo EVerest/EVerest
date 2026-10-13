@@ -18,12 +18,19 @@ the generation of temporary directories and adjusting the configuration accordin
 
 Controller that can be used to start/stop the Everest instance and send events to control/simulate the stack's behavior.
 
+Both controllers discover cars through a `SimRegistry`, which maps each
+`EvController` and its paired `EvDriverSim` to a connector. `test_controller.start()` starts EVerest and
+enables the cars. Plug helpers configure the session, then plug, and leave the
+unplug to the test. Pilot and electrical faults go to `EvDriverSim`; without one,
+world helpers raise `NoSimulatorError` before publishing.
+
 ### Fixtures
 
-The core_utils basically provide two fixtures that you can require in your test cases:
+The core_utils basically provide these fixtures that you can require in your test cases:
 
 - **everest_core** The main fixture `everest_core` can be used to start and stop the EVerest application.
 - **test_controller**: Fixture that references the test_controller that can be used for control events for the test cases. This includes control over simulations that trigger events like an EV plug in, EV plug out, swipe RFID and more. 
+- **evctl_test_controller**: Fixture that yields an `EvControllerTestController`, a `test_controller` that also has the commands `EvController` accepts over its external MQTT API.
 
 #### Configuration Fixtures:
 
