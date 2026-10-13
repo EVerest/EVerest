@@ -64,6 +64,14 @@ endif()
 add_subdirectory(lib)
 
 
+# Stage Security_Profiles into the build tree so they are usable
+# at build/test time without requiring an install step.
+set(SECURITY_PROFILES_BUILD_DIR
+    "${CMAKE_CURRENT_BINARY_DIR}/share/everest/Security_Profiles")
+
+file(COPY "${CMAKE_CURRENT_SOURCE_DIR}/Security_Profiles/"
+     DESTINATION "${SECURITY_PROFILES_BUILD_DIR}")
+
 # compile definition and install for Security_Profiles
 if(NOT DISABLE_EDM)
 
@@ -72,17 +80,29 @@ if(NOT DISABLE_EDM)
         DESTINATION share/everest/Security_Profiles
     )
 
-    target_compile_definitions(evse_security PRIVATE
-        CERT_PROFILES_DIR="${CMAKE_INSTALL_PREFIX}/share/everest/Security_Profiles/iso15118-2"
-    )
+    if(EVSE_SECURITY_INSTALL)
+        set(CERT_PROFILES_DIR
+            "${CMAKE_INSTALL_PREFIX}/share/everest/Security_Profiles/iso15118-2")
+    else()
+        set(CERT_PROFILES_DIR
+            "${SECURITY_PROFILES_BUILD_DIR}/iso15118-2")
+    endif()
 
 else()
 
-    target_compile_definitions(evse_security PRIVATE
-        CERT_PROFILES_DIR="${CMAKE_INSTALL_PREFIX}/Security_Profiles/iso15118-2"
-    )
+    if(EVSE_SECURITY_INSTALL)
+        set(CERT_PROFILES_DIR
+            "${CMAKE_INSTALL_PREFIX}/Security_Profiles/iso15118-2")
+    else()
+        set(CERT_PROFILES_DIR
+            "${SECURITY_PROFILES_BUILD_DIR}/iso15118-2")
+    endif()
 
 endif()
+
+target_compile_definitions(evse_security PRIVATE
+    CERT_PROFILES_DIR="${CERT_PROFILES_DIR}"
+)
 
 # packaging
 if (EVSE_SECURITY_INSTALL)
