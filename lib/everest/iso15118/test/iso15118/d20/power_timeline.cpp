@@ -43,3 +43,24 @@ SCENARIO("A power timeline tells which entry applies at an instant") {
         }
     }
 }
+
+SCENARIO("A power timeline tells whether a demand exceeds it") {
+    const std::vector<dt::PowerScheduleEntry> entries{entry(3600, 11000), entry(3600, 0)};
+    const auto offered = iso15118::d20::PowerTimeline::from(1000, entries);
+
+    THEN("a demand within every slot it overlaps is fine") {
+        REQUIRE_FALSE(offered.exceeded_by(1000, 4600, 11000.0f));
+        REQUIRE_FALSE(offered.exceeded_by(4600, 8200, 0.0f));
+    }
+
+    THEN("a demand above any overlapped slot exceeds it") {
+        REQUIRE(offered.exceeded_by(1000, 4600, 11001.0f));
+        REQUIRE(offered.exceeded_by(4599, 4601, 1.0f));
+        REQUIRE(offered.exceeded_by(1000, 8200, 11000.0f));
+    }
+
+    THEN("time the timeline does not cover is unconstrained") {
+        REQUIRE_FALSE(offered.exceeded_by(0, 1000, 22000.0f));
+        REQUIRE_FALSE(offered.exceeded_by(8200, 9000, 22000.0f));
+    }
+}
