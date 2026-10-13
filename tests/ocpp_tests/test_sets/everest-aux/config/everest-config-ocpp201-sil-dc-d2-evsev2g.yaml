@@ -71,24 +71,29 @@ active_modules:
         simulate_error: false
         simulate_error_delay: 5
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 30;unplug
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       ev:
         - module_id: iso15118_car
           implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
+    config_module:
+      ev_controller_module_id: ev_manager
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   connector_2:
     module: EvseManager
     config_module:

@@ -8,13 +8,17 @@ import pytest
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
-from everest.testing.core_utils.controller.test_controller_interface import (
-    TestController,
-)
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_device_adaptions, wait_for_call, wait_for_match
+from ev_iso15118d20_common import (
+    _ev_device_adaptions,
+    observe_controller_variable,
+    start_iso_session,
+    stop_iso_session,
+    wait_for_call,
+    wait_for_match,
+)
 
 
 # The SECC publishes this literal for any negotiated AC ISO 15118-20 namespace, DER included.
@@ -52,14 +56,6 @@ WATT_PF_DIRECTIVES = {
     ],
 }
 
-# Driven from the probe rather than from auto_exec, so the session starts only after the SECC has
-# been told about the DER wiring. The chain is event-gated throughout (iso_wait_*).
-SESSION_COMMANDS = (
-    "iso_wait_slac_matched;iso_start_v2g_session ac_der;iso_wait_pwr_ready;"
-    "iso_draw_power_regulated 16,3;iso_wait_for_stop 10;iso_wait_v2g_session_stopped;unplug"
-)
-
-
 # EvseManager::ready() builds its initial AC energy transfer list with der_available hardcoded to
 # false (get_supported_ac_energy_transfers(..., false)), so AC_DER_IEC never reaches the SECC's
 # offered services and no AC DER session can be negotiated. That gate is deliberate: DER stays
@@ -76,14 +72,13 @@ SESSION_COMMANDS = (
         "extensions": [Requirement("iso15118_charger", "extensions")],
         "grid_support": [Requirement("iso15118_charger", "grid_support")],
         "evse_manager": [Requirement("evse_manager", "evse")],
-        "car_sim": [Requirement("ev_manager", "main")],
         "ev": [Requirement("iso15118_car", "ev")],
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-der-d20.yaml")
 @pytest.mark.everest_config_adaptions(*_ev_device_adaptions())
 async def test_ev_iso15118d20_ac_der_iec_session(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: Ev15118 negotiates an AC_DER_IEC ISO 15118-20 session.
 
@@ -102,24 +97,18 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     declares, reaching the charge loop at all exercises the intersection rule: an EV that mishandled
     the offered mask would have stopped the session here.
 
-    What the gate does not prove:
-      * The exact negotiated control-function set. The EV only logs it. The SECC maps its copy into
-        ChargingNeeds.der_charging_parameters.ev_supported_dercontrol, but the generated to_json for
-        DERChargingParameters replaces that list with an empty array whenever it is the first present
-        optional field, so the value never reaches the wire. Asserting the intersection directly
-        needs either a published variable on ISO15118_ev carrying the EV's negotiated mask, or that
-        serializer defect fixed.
-      * Directive application. The SECC does send DerControl in the charge loop, but Ev15118
-        only logs it; no variable carries it.
+    EvController publishes the negotiated function set on e2m/der_negotiated_functions.
+    The gate checks that it contains exactly WattCosPhiMode. It does not prove directive
+    application: Ev15118 publishes received control blocks but does not execute them.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
+    negotiated_functions = observe_controller_variable(evctl_test_controller, "der_negotiated_functions")
     selected_protocol_mock = Mock()
     selected_service_mock = Mock()
     charging_needs_mock = Mock()
     supported_modes_mock = Mock()
-    sim_enabled_mock = Mock()
     power_ready_mock = Mock()
     finished_mock = Mock()
 
@@ -127,7 +116,6 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     probe_module.subscribe_variable("charger", "selected_service_parameters", selected_service_mock)
     probe_module.subscribe_variable("extensions", "charging_needs", charging_needs_mock)
     probe_module.subscribe_variable("evse_manager", "supported_energy_transfer_modes", supported_modes_mock)
-    probe_module.subscribe_variable("car_sim", "enabled", sim_enabled_mock)
     probe_module.subscribe_variable("ev", "ev_power_ready", power_ready_mock)
     probe_module.subscribe_variable("ev", "v2g_session_finished", finished_mock)
 
@@ -152,10 +140,7 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     # publication that carries AC_DER_IEC rather than the first one.
     await wait_for_match(supported_modes_mock, lambda modes: AC_DER_IEC_SERVICE in modes, timeout=30)
 
-    # The EvManager silently drops a session request while the simulation is disabled, and it enables
-    # itself in its ready(), so wait for that before asking it to run the chain.
-    await wait_for_match(sim_enabled_mock, lambda enabled: enabled is True, timeout=30)
-    await probe_module.call_command("car_sim", "execute_charging_session", {"value": SESSION_COMMANDS})
+    events = await start_iso_session(evctl_test_controller, "AcIsoD20DerIec")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -183,4 +168,8 @@ async def test_ev_iso15118d20_ac_der_iec_session(
     await wait_for_call(power_ready_mock, timeout=30)
     assert power_ready_mock.call_args[0][0] is True, "ev_power_ready published without a true value"
 
+    negotiated = await wait_for_match(negotiated_functions, lambda value: value["flavor"] == "IEC")
+    assert negotiated["functions"] == ["WattCosPhiMode"]
+
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)

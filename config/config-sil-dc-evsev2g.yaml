@@ -76,24 +76,29 @@ active_modules:
         - module_id: powersupply_dc
           implementation_id: main
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session DC;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       ev:
         - module_id: iso15118_car
           implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
+    config_module:
+      ev_controller_module_id: ev_manager
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   auth:
     module: Auth
     config_module:
@@ -357,13 +362,13 @@ x-module-layout:
     terminals:
       top: []
       right:
-        - id: main
-          interface: car_simulator
+        - id: ev_manager
+          interface: ev_manager
           type: provide
       bottom: []
       left:
-        - id: powermeter
-          interface: powermeter
+        - id: kvs
+          interface: kvs
           type: requirement
         - id: slac
           interface: ev_slac
@@ -373,6 +378,21 @@ x-module-layout:
           type: requirement
         - id: ev
           interface: ISO15118_ev
+          type: requirement
+  ev_manager_driver:
+    position:
+      x: 13
+      y: 23
+    terminals:
+      top: []
+      right:
+        - id: board_support
+          interface: ev_board_support
+          type: provide
+      bottom: []
+      left:
+        - id: ev_board_support
+          interface: ev_board_support
           type: requirement
   auth:
     position:

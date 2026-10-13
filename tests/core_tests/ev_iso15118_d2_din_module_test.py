@@ -19,14 +19,17 @@ import pytest
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
-from everest.testing.core_utils.controller.test_controller_interface import (
-    TestController,
-)
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 from everest.testing.core_utils import EverestConfigAdjustmentStrategy
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import (
+    AcFivePercentAdjustmentStrategy,
+    _ev_device_adaptions,
+    start_iso_session,
+    stop_iso_session,
+    wait_for_call,
+)
 
 
 # selected_protocol literals published by EvseV2G (v2g_server.cpp) and Evse15118D20 (sap_engine.cpp).
@@ -37,23 +40,6 @@ DC_CONFIG = "config-sil-dc-evsev2g.yaml"
 DC_TLS_CONFIG = "config-sil-dc-tls-evsev2g.yaml"
 DC_TLS_PNC_CONFIG = "config-sil-dc-tls.yaml"
 AC_CONFIG = "config-sil-evsev2g.yaml"
-
-# The whole DC flow, event-gated after the initial settling sleep.
-DC_AUTO_EXEC = (
-    "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
-    "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
-    "iso_wait_v2g_session_stopped;unplug"
-)
-DC_PNC_AUTO_EXEC = (
-    "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC,contract;"
-    "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
-    "iso_wait_v2g_session_stopped;unplug"
-)
-# AC has no power-on step; hold the charge loop briefly, then stop.
-AC_AUTO_EXEC = (
-    "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC;"
-    "sleep 5;iso_stop_charging;iso_wait_v2g_session_stopped;unplug"
-)
 
 
 def _everest_prefix(request) -> Path:
@@ -142,15 +128,16 @@ class Iso2TlsPncAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
-def _dc_adaptions(auto_exec: str = DC_AUTO_EXEC, **car_keys) -> List[EverestConfigAdjustmentStrategy]:
-    adaptions = list(_ev_config_adaptions(auto_exec))
+def _dc_adaptions(**car_keys) -> List[EverestConfigAdjustmentStrategy]:
+    adaptions = list(_ev_device_adaptions())
     if car_keys:
         adaptions.append(EvProtocolAdjustmentStrategy(**car_keys))
     return adaptions
 
 
-async def _run_dc_session(everest_core: EverestCore, expected_protocol: str):
-    """Drive the auto_exec DC flow and assert the negotiated protocol and a clean end."""
+async def _run_dc_session(everest_core: EverestCore, evctl_test_controller, expected_protocol: str):
+    """Drive the EvController DC flow and assert the negotiated protocol and a clean end."""
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -163,6 +150,7 @@ async def _run_dc_session(everest_core: EverestCore, expected_protocol: str):
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "DcIso2")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -171,6 +159,7 @@ async def _run_dc_session(everest_core: EverestCore, expected_protocol: str):
     )
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -186,11 +175,10 @@ PROBE_CONNECTIONS = {
 @pytest.mark.everest_core_config(DC_CONFIG)
 @pytest.mark.everest_config_adaptions(*_dc_adaptions(supported_ISO15118_2=False, supported_DIN70121=True))
 async def test_ev_din70121_dc_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """DIN SPEC 70121 DC charge loop: -2 is dropped from the offer, so DIN is selected."""
-    test_controller.start()
-    await _run_dc_session(everest_core, DIN_PROTOCOL)
+    await _run_dc_session(everest_core, evctl_test_controller, DIN_PROTOCOL)
 
 
 @pytest.mark.asyncio
@@ -199,14 +187,13 @@ async def test_ev_din70121_dc_charge_loop(
 @pytest.mark.everest_core_config(DC_CONFIG)
 @pytest.mark.everest_config_adaptions(*_dc_adaptions())
 async def test_ev_iso15118_2_dc_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """ISO 15118-2 DC charge loop over plain TCP with EIM.
 
     The EV offers -2 ahead of DIN, and EvseV2G honors the EV's priority order.
     """
-    test_controller.start()
-    await _run_dc_session(everest_core, ISO2_PROTOCOL)
+    await _run_dc_session(everest_core, evctl_test_controller, ISO2_PROTOCOL)
 
 
 @pytest.mark.asyncio
@@ -215,11 +202,10 @@ async def test_ev_iso15118_2_dc_charge_loop(
 @pytest.mark.everest_core_config(DC_TLS_CONFIG)
 @pytest.mark.everest_config_adaptions(*_dc_adaptions())
 async def test_ev_iso15118_2_dc_tls_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """ISO 15118-2 DC charge loop over TLS 1.2 (no client certificate) with EIM."""
-    test_controller.start()
-    await _run_dc_session(everest_core, ISO2_PROTOCOL)
+    await _run_dc_session(everest_core, evctl_test_controller, ISO2_PROTOCOL)
 
 
 @pytest.mark.asyncio
@@ -227,18 +213,18 @@ async def test_ev_iso15118_2_dc_tls_charge_loop(
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(DC_TLS_PNC_CONFIG)
 @pytest.mark.parametrize("required_modules", [("Ev15118", "Evse15118D20")])
-@pytest.mark.everest_config_adaptions(*_dc_adaptions(DC_PNC_AUTO_EXEC), Iso2TlsPncAdjustmentStrategy())
+@pytest.mark.everest_config_adaptions(*_dc_adaptions(), Iso2TlsPncAdjustmentStrategy())
 async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """ISO 15118-2 DC charge loop over TLS 1.2 with Plug & Charge, against Evse15118D20.
 
-    The EvManager selects the Contract payment option; the EV presents the installed MO
+    EvController selects the Contract payment option; the EV presents the installed MO
     contract certificate in PaymentDetails and signs the AuthorizationReq. require_auth_pnc
     is the gate: Evse15118D20 publishes it only after it verified the signed
     AuthorizationReq, so an EIM fallback fails the test instead of passing it.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -253,6 +239,7 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "DcIso2", payment="Contract")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -267,6 +254,7 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
     )
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -274,16 +262,16 @@ async def test_ev_iso15118_2_dc_tls_pnc_charge_loop(
 @pytest.mark.xdist_group(name="ISO15118")
 @pytest.mark.probe_module(connections=PROBE_CONNECTIONS)
 @pytest.mark.everest_core_config(AC_CONFIG)
-@pytest.mark.everest_config_adaptions(*_ev_config_adaptions(AC_AUTO_EXEC))
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions(), AcFivePercentAdjustmentStrategy())
 async def test_ev_iso15118_2_ac_session(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """ISO 15118-2 AC session over plain TCP with EIM.
 
     AC has no power-on handshake, so the gate is protocol selection plus a clean
     SessionStop reported by the EV.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -294,6 +282,7 @@ async def test_ev_iso15118_2_ac_session(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "AcIso2")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -301,4 +290,5 @@ async def test_ev_iso15118_2_ac_session(
         f"selected_protocol '{selected_protocol}' != expected '{ISO2_PROTOCOL}'"
     )
 
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)

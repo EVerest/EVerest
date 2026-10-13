@@ -7,6 +7,9 @@ import sys
 from pathlib import Path
 
 from everest.testing.core_utils.controller.test_controller_interface import TestController
+from everest.testing.core_utils._configuration.everest_configuration_strategies.ac_five_percent import (
+    AcFivePercentAdjustmentStrategy,
+)
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../..")))
@@ -42,6 +45,7 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -68,7 +72,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility,
@@ -135,6 +139,7 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -160,7 +165,7 @@ class TestPlugAndCharge:
         )
 
         await asyncio.sleep(3)
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         assert await wait_for_and_validate(
             test_utility,
@@ -203,6 +208,7 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -252,7 +258,7 @@ class TestPlugAndCharge:
             central_system_v16.chargepoint
         )
 
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
         # expect authorize.req
         r: call.DataTransfer = call.DataTransfer(
             **await wait_for_payload(
@@ -307,6 +313,7 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -356,7 +363,7 @@ class TestPlugAndCharge:
             central_system_v16.chargepoint
         )
 
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
         test_utility.messages.clear()
         test_utility.forbidden_actions.append("Authorize")
         test_utility.forbidden_actions.append("StartTransaction")
@@ -375,6 +382,7 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -438,6 +446,7 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso no-tls.yaml",
         "everest-config-sil-iso no-tls-evsev2g.yaml",
@@ -496,6 +505,7 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @pytest.mark.everest_config_adaptions(AcFivePercentAdjustmentStrategy())
     @parametrize_secc_config(
         "everest-config-sil-iso.yaml",
         "everest-config-sil-iso-evsev2g.yaml",
@@ -524,7 +534,7 @@ class TestPlugAndCharge:
         test_utility.forbidden_actions.append("StartTransaction")
 
         # plug in first
-        test_controller.plug_in_ac_iso()
+        test_controller.plug_in_ac_iso(payment_type="contract")
 
         # expect StatusNotification with status preparing
         assert await wait_for_and_validate(

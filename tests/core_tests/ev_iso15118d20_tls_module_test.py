@@ -8,13 +8,15 @@ import pytest
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
-from everest.testing.core_utils.controller.test_controller_interface import (
-    TestController,
-)
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import (
+    _ev_device_adaptions,
+    start_iso_session,
+    stop_iso_session,
+    wait_for_call,
+)
 
 
 D20_DC_PROTOCOL = "ISO15118-20:DC"
@@ -29,18 +31,12 @@ D20_DC_PROTOCOL = "ISO15118-20:DC"
     }
 )
 @pytest.mark.everest_core_config("config-sil-dc-d20-tls.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC;"
-        "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
-        "iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions())
 async def test_ev_iso15118d20_tls_dc_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: Ev15118 runs the DC charge loop over TLS 1.3 with mutual authentication."""
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -53,9 +49,11 @@ async def test_ev_iso15118d20_tls_dc_charge_loop(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "DcIsoD20")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     assert selected_protocol_mock.call_args[0][0] == D20_DC_PROTOCOL
 
     await wait_for_call(dc_power_on_mock, timeout=30)
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)
