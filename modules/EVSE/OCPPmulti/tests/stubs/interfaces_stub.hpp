@@ -132,6 +132,8 @@ private:
     // guarded by m_cmd_response_mutex: commands may be invoked from module threads concurrently
     std::mutex m_cmd_response_mutex;
     std::list<json> m_cmd_response_list;
+    // EVerest evse id that get_evse reports per evse_manager index; index + 1 when not set
+    std::map<std::size_t, std::int32_t> m_evse_ids;
 
 protected:
     // ------------------------------------------------------------------------
@@ -215,6 +217,9 @@ public:
 
     // add to list of cmd responses
     void add_cmd_result(const json& data);
+
+    // set the EVerest evse id that get_evse reports for evse_manager \p index
+    void set_evse_id(std::size_t index, std::int32_t evse_id);
 
     // subscribe to variables published on the interface (see publish_fn)
     void subscribe_var(const std::string_view& interface, const std::string_view& variable, int instance, var_cb_t cb);
@@ -348,6 +353,12 @@ public:
         auto req = m_requirement;
         req.index = r_evse_manager.size();
         r_evse_manager.emplace_back(std::make_unique<evse_managerIntf>(&m_adapter, req, module_id, std::nullopt));
+    }
+
+    // add an evse_manager whose get_evse reports \p evse_id instead of its position
+    void add_evse_manager(const std::string& module_id, std::int32_t evse_id) {
+        m_adapter.set_evse_id(r_evse_manager.size(), evse_id);
+        add_evse_manager(module_id);
     }
 
     void add_extensions_15118(const std::string& module_id) {

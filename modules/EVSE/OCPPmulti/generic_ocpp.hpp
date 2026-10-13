@@ -335,6 +335,10 @@ protected:
     /// Events of EVSEs not served by this instance are dropped.
     void dispatch_event_info(EventInfo event_data);
 
+    /// \brief Report an evse_manager Inoperative error of OCPP evse \p evse_id as event and as fault.
+    /// \p event carries the OCPP evse id already, so it is not translated like in dispatch_event_info().
+    void report_inoperative(std::int32_t evse_id, const EventInfo& event);
+
     void init_check_energy_sink();
     void init_error_handlers();
     void init_evse_maps();
