@@ -11,6 +11,8 @@
 #include "v2g.hpp"
 
 #include <memory>
+#include <string>
+#include <vector>
 
 void publish_dc_ev_maximum_limits(struct v2g_context* ctx, const float& v2g_dc_ev_max_current_limit,
                                   const unsigned int& v2g_dc_ev_max_current_limit_is_used,
@@ -40,6 +42,25 @@ void publish_dc_ev_remaining_time(struct v2g_context* ctx, const float& v2g_dc_e
                                   const unsigned int& v2g_dc_ev_remaining_time_to_bulk_soc_is_used) {
 }
 
+// Records the calls of the DC output disabled handshake, see v2g_ctx.cpp for the real implementation
+namespace dc_output_disabled_calls {
+std::vector<std::string> sequence;
+int max_wait_ms{0};
+} // namespace dc_output_disabled_calls
+
+void v2g_ctx_request_dc_output_disabled(struct v2g_context* ctx) {
+    dc_output_disabled_calls::sequence.push_back("request");
+}
+
+void v2g_ctx_signal_dc_output_disabled(struct v2g_context* ctx) {
+}
+
+bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms) {
+    dc_output_disabled_calls::sequence.push_back("wait");
+    dc_output_disabled_calls::max_wait_ms = max_wait_ms;
+    return true;
+}
+
 namespace {
 class DinServerTest : public testing::Test {
 protected:
@@ -61,6 +82,7 @@ protected:
         exi_out = std::make_unique<din_exiDocument>();
 
         module::stub::clear_logs();
+        dc_output_disabled_calls::sequence.clear();
         conn->ctx = ctx.get();
         conn->ctx->p_charger = &charger;
 
@@ -615,6 +637,18 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_sets_shutdown_status_code
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
 }
 
+TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_waits_for_dc_output_disabled) {
+    // [IEC 61851-23:2023 Table CC.9 t103, t104] The PowerDeliveryRes to a stop request is sent after the
+    // DC output is confirmed as disabled; the confirmation is cleared before dc_open_contactor is published
+    set_power_delivery_req(false);
+
+    EXPECT_EQ(states::handle_din_power_delivery(conn.get()), V2G_EVENT_NO_EVENT);
+
+    const std::vector<std::string> expected{"request", "wait"};
+    EXPECT_EQ(dc_output_disabled_calls::sequence, expected);
+    EXPECT_EQ(dc_output_disabled_calls::max_wait_ms, V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN);
+}
+
 TEST_F(DinServerPowerDeliveryTest, power_delivery_stop_preserves_more_specific_status_code) {
     // A more specific status code like EVSE_UtilityInterruptEvent must not be overwritten
     // by EVSE_Shutdown when the EV requests to stop the charging session
@@ -677,6 +711,8 @@ TEST_F(DinServerPowerDeliveryTest, power_delivery_start_keeps_ready_status_code)
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Ready);
     EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], din_DC_EVSEStatusCodeType_EVSE_NotReady);
+    // Only a stop request waits for the DC output to be disabled
+    EXPECT_TRUE(dc_output_disabled_calls::sequence.empty());
     EXPECT_EQ(ctx->state, WAIT_FOR_CURRENTDEMAND);
 }
 

@@ -87,6 +87,16 @@ cmds:
       status:
         description: Set to true when contactor is closed, false when contactor is open
         type: boolean
+  dc_output_disabled:
+    description: >-
+      This message is an async response to a previously published dc_open_contactor.
+      It confirms that the DC output is switched off, that the present current is below
+      5 A, and that the present voltage and current last sent with
+      update_dc_present_values were measured after the switch off.
+      The HLC stack may hold back the PowerDeliveryRes for a stop request until it
+      receives this command, so that side B is disabled before the response is sent
+      and the following WeldingDetectionRes reports a fresh present voltage
+      [IEC 61851-23:2023 Table CC.9 t103, t104].
 # Events
   dlink_ready:
     description: >-

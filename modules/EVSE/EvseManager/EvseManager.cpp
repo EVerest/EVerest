@@ -745,6 +745,9 @@ void EvseManager::ready() {
                     }
 
                     r_hlc[0]->call_update_dc_present_values(present_values);
+                    if (dc_output_disabled_confirmation.on_measurement(m.current_A)) {
+                        r_hlc[0]->call_dc_output_disabled();
+                    }
 
                     {
                         // dont publish ev_info here, it will be published when other values change.
@@ -858,6 +861,9 @@ void EvseManager::ready() {
             r_hlc[0]->subscribe_dc_open_contactor([this] {
                 powersupply_DC_off();
                 imd_stop();
+                if (dc_output_disabled_confirmation.request()) {
+                    r_hlc[0]->call_dc_output_disabled();
+                }
             });
 
             // Back up switch off - charger signalled that it needs to switch off now.
@@ -2414,6 +2420,7 @@ void EvseManager::powersupply_DC_off() {
     if (powersupply_dc_is_on) {
         session_log.evse(false, "DC power supply OFF");
         r_powersupply_DC[0]->call_setMode(types::power_supply_DC::Mode::Off, power_supply_DC_charging_phase);
+        dc_output_disabled_confirmation.on_output_off();
         powersupply_dc_is_on = false;
         // Invalidate the powersupply_DC_set() cache: the power supply resets its
         // internal targets on the Off transition, so the cached values are stale now.

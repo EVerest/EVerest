@@ -300,11 +300,16 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    v2g_ctx_signal_dc_output_disabled(v2g_ctx);
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     // FIXME: dlink_ready(true) is ignored for now
     // If dlink becomes not ready (false), stop TCP connection in the read thread
     if (!value) {
         v2g_ctx->is_connection_terminated = true;
+        v2g_ctx_wake_waiters(v2g_ctx);
     }
 }
 
@@ -345,6 +350,7 @@ void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
             // If it did not stop within timeout, stop session using FAILED reply
             if (timeout_reached) {
                 v2g_ctx->stop_hlc = stop;
+                v2g_ctx_wake_waiters(v2g_ctx);
             }
         }).detach();
     } else {

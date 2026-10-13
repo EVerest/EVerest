@@ -830,6 +830,11 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     }
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    // Not used yet: libiso15118 sends the PowerDeliveryRes to a stop request without waiting for the
+    // DC output to be disabled.
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     // your code for cmd dlink_ready goes here
 }

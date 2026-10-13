@@ -694,9 +694,13 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
                 status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
             }
         }
+        v2g_ctx_request_dc_output_disabled(conn->ctx);
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
+        // [IEC 61851-23:2023 Table CC.9 t103, t104] Disable side B before the PowerDeliveryRes, so that the
+        // EVSEPresentVoltage in the following WeldingDetectionRes is measured after the switch off.
+        v2g_ctx_wait_dc_output_disabled(conn->ctx, V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN);
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }

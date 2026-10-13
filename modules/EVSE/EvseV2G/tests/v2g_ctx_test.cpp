@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <chrono>
 #include <memory>
+#include <thread>
 #include <v2g_ctx.hpp>
 
 #include "ISO15118_chargerImplStub.hpp"
@@ -143,6 +145,139 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionFalse) {
     // calls v2g_ctx_init_charging_values
 }
 #endif
+
+TEST_F(V2gCtxTest, dc_output_disabled_defaults) {
+    EXPECT_EQ(ctx->dc_output_disabled_timeout_ms, V2G_DC_OUTPUT_DISABLED_TIMEOUT);
+    EXPECT_FALSE(ctx->dc_output_disabled);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_confirmation_before_wait_returns_immediately) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    v2g_ctx_signal_dc_output_disabled(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_is_bounded_by_the_protocol) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get(), 50));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_DC_OUTPUT_DISABLED_TIMEOUT));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_request_clears_earlier_confirmation) {
+    // A confirmation left over from an earlier request must not end the wait for a new one
+    ctx->is_connection_terminated = false;
+    v2g_ctx_signal_dc_output_disabled(ctx.get());
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->dc_output_disabled_timeout_ms = 50;
+
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_confirmation_wakes_up_waiter) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread confirmer([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_dc_output_disabled(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_DC_OUTPUT_DISABLED_TIMEOUT));
+    confirmer.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_ends_on_hlc_stop) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->stop_hlc = true;
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_no_wait_with_zero_timeout) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->dc_output_disabled_timeout_ms = 0;
+
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_ends_on_terminated_connection) {
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->is_connection_terminated = true;
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_is_accounted_as_response_wait) {
+    ctx->is_connection_terminated = false;
+    ctx->response_wait_ms = 0;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread confirmer([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        v2g_ctx_signal_dc_output_disabled(ctx.get());
+    });
+
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    confirmer.join();
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    EXPECT_LT(ctx->response_wait_ms, V2G_DC_OUTPUT_DISABLED_TIMEOUT);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_wakes_up_on_terminated_connection) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread unplug([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->is_connection_terminated = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    unplug.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_wakes_up_on_hlc_stop) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread stopper([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->stop_hlc = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    stopper.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
 
 TEST(valgrind, memcheck) {
     // v2g_ctx_free() now sets shutdown and joins the event thread,

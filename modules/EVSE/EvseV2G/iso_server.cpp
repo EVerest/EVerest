@@ -1606,8 +1606,12 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             conn->ctx->p_charger->publish_ac_open_contactor(nullptr);
         } else {
             set_dc_shutdown_status_code(conn->ctx);
+            v2g_ctx_request_dc_output_disabled(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
+            // [IEC 61851-23:2023 Table CC.9 t103, t104] Disable side B before the PowerDeliveryRes, so that the
+            // EVSEPresentVoltage in the following WeldingDetectionRes is measured after the switch off.
+            v2g_ctx_wait_dc_output_disabled(conn->ctx);
         }
         break;
 

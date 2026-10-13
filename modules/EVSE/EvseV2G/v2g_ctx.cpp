@@ -2,6 +2,7 @@
 // Copyright (C) 2022-2023 chargebyte GmbH
 // Copyright (C) 2022-2023 Contributors to EVerest
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -232,6 +233,7 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
     // AC paramter
     ctx->evse_v2g_data.rcd = (int)0; // 0 if RCD has not detected an error
     ctx->contactor_is_closed = false;
+    ctx->dc_output_disabled = false;
     ctx->evse_v2g_data.receipt_required = (int)0;
 
     // Specific SAE J2847 bidi values
@@ -295,6 +297,8 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     ctx->if_name = "eth1";
 
     ctx->network_read_timeout = 1000;
+    ctx->dc_output_disabled_timeout_ms = V2G_DC_OUTPUT_DISABLED_TIMEOUT;
+    ctx->response_wait_ms = 0;
     ctx->network_read_timeout_tls = 5000;
 
     ctx->sdp_socket = -1;
@@ -370,6 +374,53 @@ void v2g_ctx_free(struct v2g_context* ctx) {
     free(ctx->local_tcp_addr);
     ctx->local_tcp_addr = NULL;
     free(ctx);
+}
+
+void v2g_ctx_request_dc_output_disabled(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->dc_output_disabled = false;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+void v2g_ctx_signal_dc_output_disabled(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->dc_output_disabled = true;
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms) {
+    const int timeout_ms = std::min(ctx->dc_output_disabled_timeout_ms, max_wait_ms);
+    if (timeout_ms <= 0) {
+        return ctx->dc_output_disabled;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) && (ctx->dc_output_disabled == false) && (ctx->intl_emergency_shutdown == false) &&
+           (ctx->stop_hlc == false) && (ctx->is_connection_terminated == false)) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool disabled = ctx->dc_output_disabled;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not disabled and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "DC output not confirmed as disabled within %d ms, sending the response anyway",
+             timeout_ms);
+    }
+    return disabled;
+}
+
+void v2g_ctx_wake_waiters(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
 }
 
 void publish_dc_ev_maximum_limits(struct v2g_context* ctx, const float& v2g_dc_ev_max_current_limit,
