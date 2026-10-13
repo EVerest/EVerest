@@ -57,6 +57,11 @@ from everest.testing.core_utils.sim_registry import (  # noqa: E402
     NoSimulatorError,
     SimRegistry,
 )
+from everest.testing.core_utils.controller.everest_test_controller import (  # noqa: E402
+    EverestTestController,
+)
+
+
 # ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
@@ -97,6 +102,157 @@ def registry(mqtt_client, config_path):
 def test_ev_by_connector_returns_ev_controller_driver(registry):
     drv = registry.ev_by_connector(1)
     assert isinstance(drv, EvControllerDriver)
+
+
+_CONFIG_YAML_EV_ONLY = textwrap.dedent("""\
+    active_modules:
+      ev_sim_1:
+        module: EvController
+        config_module:
+          connector_id: 1
+""")
+
+
+@pytest.fixture
+def controller_ev_only(monkeypatch, tmp_path):
+    """EverestTestController with only an EvController."""
+    import everest.testing.core_utils.sim_registry as mod
+
+    cfg = tmp_path / "everest-config-ev-only.yaml"
+    cfg.write_text(_CONFIG_YAML_EV_ONLY)
+
+    fake_client = MagicMock()
+    fake_client.publish = MagicMock()
+    fake_client.connect = MagicMock()
+    fake_client.loop_start = MagicMock()
+    fake_client.loop_stop = MagicMock()
+    fake_client.disconnect = MagicMock()
+    monkeypatch.setattr(mod.mqtt, "Client", MagicMock(return_value=fake_client))
+
+    core = MagicMock()
+    core.mqtt_external_prefix = "pfx/"
+    core.everest_uuid = "test-uuid"
+    core.everest_config_path = str(cfg)
+
+    ctrl = EverestTestController(core)
+    ctrl._mqtt_client = fake_client
+    ctrl._registry = SimRegistry(fake_client, "pfx/", cfg)
+    ctrl._fake_client = fake_client
+    return ctrl
+
+
+def test_plug_in_fails_when_no_ev_instance_for_that_connector(controller_ev_only):
+    # The regression this guards: every plug_in* helper returned silently when
+    # the connector had no EvController, so a test asked for a car to be plugged
+    # in, no car was plugged in, and the test carried on to fail as a protocol
+    # bug much later.
+    ctrl = controller_ev_only
+    with pytest.raises(NoSimulatorError) as excinfo:
+        ctrl.plug_in(connector_id=7)
+
+    # The message has to say what was there, or the reader cannot tell a wrong
+    # connector_id from a config with no simulator at all.
+    assert "no EvController instance for connector_id=7" in str(excinfo.value)
+    assert "ev_sim_1" in str(excinfo.value)
+    assert ctrl._fake_client.publish.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# The session configuration each plug_in* helper publishes
+#
+# EverestTestController is what every swapped OCPP config's test goes through, and its
+# readiness gate was covered while its session configuration was not: dropping the
+# configure_session call left the whole suite green, and the module then synthesized a bare
+# AcIec session from cfg.max_current_a, so a PnC test negotiated nothing and died much later
+# as an unrelated timeout. One assertion per helper on the published payload.
+# ---------------------------------------------------------------------------
+
+
+def _configure_session_payloads(ctrl):
+    out = []
+    for call_args in ctrl._fake_client.publish.call_args_list:
+        topic = call_args.args[0]
+        if topic.endswith("/m2e/configure_session"):
+            out.append(json.loads(call_args.args[1]))
+    return out
+
+
+@pytest.mark.parametrize(
+    "helper,expected_mode,expected_params",
+    [
+        ("plug_in", "AcIec", {"charging_current_a": 32.0, "three_phases": False}),
+        ("plug_in_ac_iso", "AcIso2",
+         {"charging_current_a": 16.0, "three_phases": True,
+          "departure_time_s": 86400, "e_amount_wh": 0}),
+        ("plug_in_dc_iso", "DcIso2", {"departure_time_s": 86400, "e_amount_wh": 0}),
+        ("diode_fail", "AcIec", {"charging_current_a": 32.0, "three_phases": True}),
+    ],
+)
+def test_plug_helpers_configure_the_session_before_plugging(
+    controller_with_driver, helper, expected_mode, expected_params
+):
+    ctrl = controller_with_driver
+    # The readiness gate has its own tests; this one is about what gets published once it
+    # has been satisfied.
+    ctrl._registry._ready = True
+
+    getattr(ctrl, helper)(connector_id=7)
+
+    payloads = [json.loads(p) for t, p in ctrl._fake_client.published if t.endswith("/configure_session")]
+    assert len(payloads) == 1, f"{helper} published {len(payloads)} configure_session messages"
+    assert payloads[0]["mode"] == expected_mode
+    assert payloads[0]["params"] == expected_params
+
+    # Configure before plug, or the module latches a session it was not asked for.
+    topics = [t for t, _ in ctrl._fake_client.published]
+    assert topics.index(
+        next(t for t in topics if t.endswith("/m2e/configure_session"))
+    ) < topics.index(next(t for t in topics if t.endswith("/m2e/plug")))
+
+
+@pytest.mark.parametrize(
+    "energy_mode,expected_mode,expected_bpt",
+    [
+        ("DC", "DcIso2", None),
+        # EvManager's dc_discharge_* config defaults, which dc_bpt sent before.
+        (
+            "dc_bpt",
+            "DcIsoD20",
+            {
+                "discharge_max_current_limit": 300.0,
+                "discharge_max_power_limit": 150000.0,
+                "discharge_target_current": 5.0,
+                "discharge_minimal_soc": 20.0,
+            },
+        ),
+    ],
+)
+def test_plug_in_dc_iso_maps_the_energy_mode(controller_with_driver, energy_mode, expected_mode, expected_bpt):
+    ctrl = controller_with_driver
+    ctrl._registry._ready = True
+
+    ctrl.plug_in_dc_iso(connector_id=7, energy_mode=energy_mode)
+
+    payloads = [json.loads(p) for t, p in ctrl._fake_client.published if t.endswith("/configure_session")]
+    assert [p["mode"] for p in payloads] == [expected_mode]
+    assert payloads[0]["params"].get("bpt") == expected_bpt
+
+
+def test_plug_in_dc_iso_rejects_an_unknown_energy_mode(controller_with_driver):
+    ctrl = controller_with_driver
+    ctrl._registry._ready = True
+
+    with pytest.raises(ValueError, match="energy_mode"):
+        ctrl.plug_in_dc_iso(connector_id=7, energy_mode="ac")
+
+
+def test_driving_before_start_fails(tmp_path):
+    # `start()` is what discovers the simulators; driving before it used to
+    # no-op rather than say so.
+    core = MagicMock()
+    core.everest_config_path = str(tmp_path / "unused.yaml")
+    with pytest.raises(NoSimulatorError, match="was not started"):
+        EverestTestController(core).plug_in(connector_id=1)
 
 
 # ---------------------------------------------------------------------------
@@ -249,6 +405,95 @@ def test_autostart_does_not_spend_its_budget_inline(fake_client, two_ev_config):
     assert elapsed < 2.0, f"autostart() blocked for {elapsed:.1f}s with no heartbeat"
 
 
+def test_ev_lookup_raises_naming_the_instance_when_never_ready(
+    monkeypatch, two_ev_config
+):
+    """Driving an instance that never reported readiness must fail loudly."""
+    import everest.testing.core_utils.sim_registry as mod
+
+    fake = _FakeMqttClient()
+    monkeypatch.setattr(mod.mqtt, "Client", MagicMock(return_value=fake))
+
+    core = MagicMock()
+    core.mqtt_external_prefix = "pfx/"
+    core.everest_uuid = "test-uuid"
+    core.everest_config_path = str(two_ev_config)
+
+    ctrl = EverestTestController(core)
+    ctrl.start()
+    assert ctrl._registry._readiness_timeout == 15.0
+    # Shorten the real budget; this asserts the outcome, not the wall clock.
+    ctrl._registry._readiness_timeout = 0.3
+
+    with pytest.raises(AssertionError) as excinfo:
+        ctrl.plug_in(connector_id=1)
+
+    assert "ev_sim_1" in str(excinfo.value)
+    assert not any(t.endswith("/m2e/plug") for t, _ in fake.published), fake.published
+
+
+def test_ev_lookup_succeeds_once_the_heartbeat_arrives(monkeypatch, two_ev_config):
+    """The gate must pass, not merely warn, when the instance does report."""
+    import everest.testing.core_utils.sim_registry as mod
+
+    fake = _FakeMqttClient()
+    monkeypatch.setattr(mod.mqtt, "Client", MagicMock(return_value=fake))
+
+    core = MagicMock()
+    core.mqtt_external_prefix = "pfx/"
+    core.everest_uuid = "test-uuid"
+    core.everest_config_path = str(two_ev_config)
+
+    ctrl = EverestTestController(core)
+    ctrl.start()
+    fake.deliver_heartbeats()
+
+    ctrl.pause_session(connector_id=1)
+
+    assert any(t.endswith("/m2e/pause_session") for t, _ in fake.published), fake.published
+
+
+def test_heartbeat_subscriptions_are_armed_before_everest_boots(
+    monkeypatch, two_ev_config
+):
+    """The heartbeat is not retained, so subscribing after boot is a bet."""
+    import everest.testing.core_utils.sim_registry as mod
+
+    fake = _FakeMqttClient()
+    monkeypatch.setattr(mod.mqtt, "Client", MagicMock(return_value=fake))
+
+    core = MagicMock()
+    core.mqtt_external_prefix = "pfx/"
+    core.everest_uuid = "test-uuid"
+    core.everest_config_path = str(two_ev_config)
+    core.start = MagicMock(side_effect=lambda *a, **kw: fake.events.append(("everest_start", None)))
+
+    ctrl = EverestTestController(core)
+    ctrl.start()
+
+    kinds = [k for k, _ in fake.events]
+    assert "everest_start" in kinds, fake.events
+    boot = kinds.index("everest_start")
+    subscribed_before = [
+        t for i, (k, t) in enumerate(fake.events)
+        if k == "subscribe" and i < boot and t.endswith("/e2m/heartbeat")
+    ]
+    assert len(subscribed_before) == 2, fake.events
+
+
+def test_car_state_is_recorded_from_boot(monkeypatch, two_ev_config):
+    """EvController publishes its first state from ready(), before any helper runs."""
+    fake = _FakeMqttClient()
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+    ctrl.start()
+
+    boot = [k for k, _ in fake.events].index("everest_start")
+    subscribed_before = {t for k, t in fake.events[:boot] if k == "subscribe"}
+    for car in ("ev_sim_1", "ev_sim_2"):
+        for var in ("state", "fault", "ev_info", "command_ack"):
+            assert f"pfx/everest_api/1/ev_controller/{car}/e2m/{var}" in subscribed_before, fake.events
+
+
 def test_autostart_still_publishes_enable_for_every_instance(fake_client, two_ev_config):
     registry = SimRegistry(fake_client, "pfx/", two_ev_config)
     registry.autostart()
@@ -260,7 +505,96 @@ def test_autostart_still_publishes_enable_for_every_instance(fake_client, two_ev
     ]
 
 
+# ---------------------------------------------------------------------------
+# Broker connection state
+#
+# arm() now runs microseconds after connect() rather than ~1.4s later, so the
+# CONNACK race is live: paho writes a SUBSCRIBE issued before the connection is
+# established, returns rc=0, and the subscription may simply not exist. That is
+# indistinguishable from a silent peer and burns the whole readiness budget.
+# ---------------------------------------------------------------------------
+
+
+def _controller_for(monkeypatch, cfg, fake):
+    import everest.testing.core_utils.sim_registry as mod
+    monkeypatch.setattr(mod.mqtt, "Client", MagicMock(return_value=fake))
+    core = MagicMock()
+    core.mqtt_external_prefix = "pfx/"
+    core.everest_uuid = "test-uuid"
+    core.everest_config_path = str(cfg)
+    core.start = MagicMock(
+        side_effect=lambda *a, **kw: fake.events.append(("everest_start", None)))
+    return EverestTestController(core)
+
+
+def test_subscribe_waits_for_connack(monkeypatch, two_ev_config):
+    """No SUBSCRIBE may be issued before the broker has acknowledged CONNECT."""
+    import threading
+
+    fake = _FakeMqttClient()
+    fake.autoconnack = False
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+    # CONNACK lands only after a delay, as a real broker would.
+    threading.Timer(0.3, fake.fire_connack).start()
+
+    ctrl.start()
+
+    kinds = [k for k, _ in fake.events]
+    assert "connack" in kinds, fake.events
+    first_sub = next(i for i, (k, _) in enumerate(fake.events) if k == "subscribe")
+    assert kinds.index("connack") < first_sub, fake.events
+
+
+def test_start_raises_when_broker_never_connacks(monkeypatch, two_ev_config):
+    """A broker that never acknowledges must fail loudly, not silently arm."""
+    fake = _FakeMqttClient()
+    fake.autoconnack = False
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+
+    with pytest.raises(AssertionError) as excinfo:
+        ctrl.start(broker_connect_timeout=0.2)
+
+    assert "broker" in str(excinfo.value).lower()
+    assert not any(k == "subscribe" for k, _ in fake.events), fake.events
+    assert not any(k == "everest_start" for k, _ in fake.events), fake.events
+
+
+def test_reconnect_reissues_subscriptions(monkeypatch, two_ev_config):
+    """paho does not restore subscriptions across a reconnect; we must."""
+    fake = _FakeMqttClient()
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+    ctrl.start()
+
+    before = [t for k, t in fake.events if k == "subscribe"]
+    assert len(before) == 10, fake.events
+
+    fake.fire_connack()  # broker dropped us and we reconnected
+
+    after = [t for k, t in fake.events if k == "subscribe"]
+    assert len(after) == 20, fake.events
+    assert sorted(set(after)) == sorted(set(before)), fake.events
+
+
+def _started(monkeypatch, cfg, fake):
+    ctrl = _controller_for(monkeypatch, cfg, fake)
+    ctrl.start()
+    ctrl._registry._readiness_timeout = 0.2
+    return ctrl
+
+
 _STATE_TOPIC = "pfx/everest_api/1/ev_controller/ev_sim_1/e2m/state"
+
+
+def test_stop_releases_the_mqtt_client(controller_ev_only):
+    ctrl = controller_ev_only
+    client = ctrl._fake_client
+
+    ctrl.stop()
+
+    client.disconnect.assert_called_once()
+    client.loop_stop.assert_called_once()
+    client._reset_sockets.assert_called_once()
+    assert ctrl._mqtt_client is None
 
 
 @pytest.fixture
@@ -342,6 +676,106 @@ def test_registry_without_world_driver_keeps_car_mapping(registry):
     assert registry.ev_by_connector(1).module_id == "ev_sim_1"
 
 
+def test_world_driver_readiness_and_reconnect(monkeypatch, driver_config, fake_client):
+    ctrl = _started(monkeypatch, driver_config, fake_client)
+    fake_client.deliver("pfx/everest_api/1/ev_controller/car/e2m/heartbeat")
+    fake_client.deliver("pfx/everest_api/1/ev_controller/unrelated/e2m/heartbeat")
+    with pytest.raises(AssertionError) as excinfo:
+        ctrl.plug_out(connector_id=7)
+    assert "world" in str(excinfo.value)
+    assert not any("ev_driver_sim" in t for t, _ in fake_client.published)
+    before = list(fake_client.subscriptions)
+    fake_client.fire_connack()
+    assert sorted(fake_client.subscriptions) == sorted(before + before)
+    fake_client.deliver("pfx/everest_api/1/ev_driver_sim/world/e2m/heartbeat")
+    ctrl._registry.require_ready(timeout=0.1)
+
+
+@pytest.mark.parametrize("helper,mode", [
+    ("plug_in", "AcIec"), ("plug_in_ac_iso", "AcIso2"),
+    ("plug_in_dc_iso", "DcIso2"), ("diode_fail", "AcIec"),
+])
+@pytest.mark.parametrize("with_driver", [False, True])
+def test_controller_plug_routes_world_and_intent(
+    monkeypatch, driver_config, config_path, fake_client, helper, mode, with_driver
+):
+    ctrl = _started(monkeypatch, driver_config if with_driver else config_path, fake_client)
+    fake_client.deliver_heartbeats()
+    fake_client.published.clear()
+    if not with_driver:
+        with pytest.raises(NoSimulatorError, match="EvDriverSim"):
+            getattr(ctrl, helper)(connector_id=1)
+        assert fake_client.published == []
+        ctrl.stop()
+        return
+    fake_client.auto_configure_ack = True
+    try:
+        getattr(ctrl, helper)(connector_id=7)
+        published = [(t, json.loads(p)) for t, p in fake_client.published]
+        assert len(published) == 2
+        assert published[0][0] == "pfx/everest_api/1/ev_controller/car/m2e/configure_session"
+        assert published[0][1]["mode"] == mode
+        assert published[1] == ("pfx/everest_api/1/ev_driver_sim/world/m2e/plug", None)
+    finally:
+        ctrl.stop()
+
+
+@pytest.mark.parametrize("helper", ["plug_out", "plug_out_iso"])
+@pytest.mark.parametrize("with_driver", [False, True])
+def test_controller_unplug_routes_world(
+    monkeypatch, driver_config, config_path, fake_client, helper, with_driver
+):
+    ctrl = _started(monkeypatch, driver_config if with_driver else config_path, fake_client)
+    fake_client.deliver_heartbeats()
+    fake_client.published.clear()
+    if not with_driver:
+        with pytest.raises(NoSimulatorError, match="EvDriverSim"):
+            getattr(ctrl, helper)(connector_id=1)
+        assert fake_client.published == []
+        ctrl.stop()
+        return
+    fake_client.state_replies = [b'"Plugged"']
+    getattr(ctrl, helper)(connector_id=7)
+    expected = [("pfx/everest_api/1/ev_driver_sim/world/m2e/unplug", "null")]
+    if helper == "plug_out_iso":
+        expected[:0] = [("pfx/everest_api/1/ev_controller/car/m2e/stop_session", "null"),
+                        ("pfx/everest_api/1/ev_controller/car/m2e/query_state", "{}")]
+    assert fake_client.published == expected
+
+
+def test_plug_out_iso_unplugs_once_the_session_has_stopped(
+    monkeypatch, driver_config, fake_client
+):
+    """The base helper unplugged only after iso_wait_v2g_session_stopped."""
+    import threading
+
+    ctrl = _started(monkeypatch, driver_config, fake_client)
+    fake_client.deliver_heartbeats()
+    fake_client.published.clear()
+    fake_client.state_replies = [b'"Stopping"']
+    state_topic = "pfx/everest_api/1/ev_controller/car/e2m/state"
+    unplug = ("pfx/everest_api/1/ev_driver_sim/world/m2e/unplug", "null")
+    worker = threading.Thread(target=ctrl.plug_out_iso, kwargs={"connector_id": 7})
+    worker.start()
+    worker.join(0.3)
+    assert worker.is_alive()
+    assert unplug not in fake_client.published
+    fake_client.deliver(state_topic, b'"Plugged"')
+    worker.join(2.0)
+    assert not worker.is_alive()
+    assert fake_client.published[-1] == unplug
+
+
+def test_registry_mqtt_client_has_its_own_id(monkeypatch, two_ev_config):
+    """A client id shared with the test's own MQTT client makes the broker drop one of them."""
+    import everest.testing.core_utils.sim_registry as mod
+    fake = _FakeMqttClient()
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+    ctrl.start()
+    ids = [c.kwargs.get("client_id", c.args[0] if c.args else None) for c in mod.mqtt.Client.call_args_list]
+    assert ids == ["test-uuid-simreg"]
+
+
 def test_driver_uses_default_car_id(fake_client, tmp_path):
     cfg = tmp_path / "defaults.yaml"
     cfg.write_text(textwrap.dedent("""\
@@ -411,6 +845,61 @@ def test_world_wait_uses_each_publish_cursor(fake_client, driver_config):
     assert first.wait(timeout=0.1) == ack
     with pytest.raises(AssertionError, match="timeout"):
         second.wait(timeout=0.01)
+
+
+@pytest.mark.parametrize("helper", ["plug_in", "plug_in_ac_iso", "plug_in_dc_iso", "diode_fail"])
+@pytest.mark.parametrize("status", ["Accepted", "Rejected"])
+def test_world_plug_waits_for_car_configuration(monkeypatch, driver_config, fake_client, helper, status):
+    ctrl = _started(monkeypatch, driver_config, fake_client)
+    fake_client.deliver_heartbeats()
+    configured = threading.Event()
+    finished = threading.Event()
+    errors = []
+    publish = fake_client.publish
+
+    def record(topic, payload):
+        publish(topic, payload)
+        if topic.endswith("/m2e/configure_session"):
+            configured.set()
+
+    fake_client.publish = record
+
+    def plug():
+        try:
+            getattr(ctrl, helper)(connector_id=7)
+        except AssertionError as exc:
+            errors.append(str(exc))
+        finally:
+            finished.set()
+
+    worker = threading.Thread(target=plug)
+    worker.start()
+    try:
+        assert configured.wait(1)
+        assert not finished.wait(0.05)
+        assert not any(t.endswith("/m2e/plug") for t, _ in fake_client.published)
+        fake_client.deliver("pfx/everest_api/1/ev_controller/car/e2m/command_ack", json.dumps({
+            "command": "configure_session", "status": status, "reason": "invalid session",
+        }).encode())
+        assert finished.wait(1)
+        plugs = [t for t, _ in fake_client.published if t.endswith("/m2e/plug")]
+        if status == "Accepted":
+            assert not errors
+            assert plugs == ["pfx/everest_api/1/ev_driver_sim/world/m2e/plug"]
+        else:
+            assert errors and "invalid session" in errors[0]
+            assert not plugs
+    finally:
+        ctrl.stop()
+        worker.join(timeout=1)
+
+
+def test_world_plug_is_not_sent_when_configuration_times_out(monkeypatch, driver_config, fake_client):
+    ctrl = _started(monkeypatch, driver_config, fake_client)
+    fake_client.deliver_heartbeats()
+    with pytest.raises(AssertionError, match="timeout.*command_ack"):
+        ctrl.plug_in_dc_iso(connector_id=7)
+    assert not any(t.endswith("/m2e/plug") for t, _ in fake_client.published)
 
 
 @pytest.mark.parametrize("same_publish", [False, True])
@@ -648,7 +1137,73 @@ def test_scenario_start_wait_does_not_block_another_driver(fake_client):
         assert pending.result(timeout=1) == started
 
 
+@pytest.fixture
+def controller_with_driver(monkeypatch, driver_config, fake_client):
+    ctrl = _started(monkeypatch, driver_config, fake_client)
+    fake_client.deliver_heartbeats()
+    fake_client.auto_configure_ack = True
+    fake_client.published.clear()
+    ctrl._fake_client = fake_client
+    yield ctrl
+    ctrl.stop()
+
+
 @pytest.mark.parametrize("verb", ["plug", "unplug", "inject_fault", "clear_fault"])
 def test_car_driver_has_no_world_commands(registry, verb):
     assert not hasattr(registry.ev_by_connector(1), verb)
 
+
+def test_diode_fail_waits_for_charging_then_injects(monkeypatch, driver_config):
+    fake = _FakeMqttClient()
+    fake._reset_sockets = lambda: None
+    ctrl = _started(monkeypatch, driver_config, fake)
+    fake.deliver_heartbeats()
+    fake.auto_configure_ack = True
+    ctrl._registry.ev_by_connector(7).subscribe_var("state")
+    before = set(threading.enumerate())
+    ctrl.diode_fail(connector_id=7)
+    workers = set(threading.enumerate()) - before
+    try:
+        assert len(workers) == 1
+        assert all(t.daemon for t in workers)
+        assert fake.published[-1][0].endswith('/m2e/plug')
+        assert not any(t.endswith('/m2e/inject_fault') for t, _ in fake.published)
+        charging_at = time.monotonic()
+        fake.deliver("pfx/everest_api/1/ev_controller/car/e2m/state", b'"Charging"')
+        time.sleep(0.2)
+        assert not any(t.endswith('/m2e/inject_fault') for t, _ in fake.published)
+        deadline = time.monotonic() + 5.5
+        while time.monotonic() < deadline:
+            if any(t.endswith('/m2e/inject_fault') for t, _ in fake.published):
+                break
+            time.sleep(0.05)
+        assert time.monotonic() - charging_at >= 4.9
+        assert any(t.endswith('/m2e/inject_fault') and json.loads(p) == {'type': 'DiodeFail'}
+                   for t, p in fake.published)
+    finally:
+        ctrl.stop()
+    assert not any(t.is_alive() for t in workers)
+
+
+def test_stop_cancels_diode_fault_before_charging(monkeypatch, driver_config):
+    fake = _FakeMqttClient()
+    fake._reset_sockets = lambda: None
+    ctrl = _started(monkeypatch, driver_config, fake)
+    fake.deliver_heartbeats()
+    fake.auto_configure_ack = True
+    ctrl._registry.ev_by_connector(7).subscribe_var("state")
+    before = set(threading.enumerate())
+    ctrl.diode_fail(connector_id=7)
+    workers = set(threading.enumerate()) - before
+    ctrl.stop()
+    assert not any(t.is_alive() for t in workers)
+    assert not any(t.endswith('/m2e/inject_fault') for t, _ in fake.published)
+
+
+def test_refused_connack_times_out_without_starting_everest(monkeypatch, two_ev_config):
+    fake = _FakeMqttClient()
+    fake.fire_connack = lambda: fake.on_connect(fake, None, {}, 5, None)
+    ctrl = _controller_for(monkeypatch, two_ev_config, fake)
+    with pytest.raises(AssertionError, match="broker.*timed out"):
+        ctrl.start(broker_connect_timeout=0.02)
+    assert not any(kind == "everest_start" for kind, _ in fake.events)

@@ -623,8 +623,15 @@ async def test_C13(
 
     await asyncio.sleep(2)
 
+    # Serialize the two swipes before plug. plug_in() publishes the plug synchronously,
+    # about a second earlier than the EvManager controller it replaced, so the "unknown"
+    # token needs a settle point to be the last fully-processed swipe before the connector
+    # becomes available. Without them token 125 wins and no "unknown" Started event is
+    # emitted. The production auth path is not what changed here; the plug's timing is.
     test_controller.swipe(id_token_125.id_token)
+    await asyncio.sleep(1)
     test_controller.swipe("unknown")
+    await asyncio.sleep(1)
     test_controller.plug_in()
 
     await asyncio.sleep(5)

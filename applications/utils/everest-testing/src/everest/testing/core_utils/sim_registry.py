@@ -185,6 +185,16 @@ class EvControllerDriver(_MqttSimDriver):
         super().__init__(mqtt_client, mqtt_external_prefix, module_id, api="ev_controller")
         self.world_driver: Optional[EvDriverSimDriver] = None
 
+    def arm(self) -> None:
+        """Also record the car's state and events from boot.
+
+        EvController publishes its first state from ready(), so a subscription
+        made after EVerest has started would miss it.
+        """
+        super().arm()
+        for var in ("state", "fault", "ev_info", "command_ack"):
+            self.subscribe_var(var)
+
     # ---- m2e commands -----------------------------------------------------
     def enable(self, value: bool = True) -> None:
         self._publish("enable", value)
@@ -460,7 +470,8 @@ class SimRegistry:
         return self._ev_driver_by_connector.get(connector_id)
 
     def arm(self) -> None:
-        """Subscribe every EV controller and world driver's heartbeat topic.
+        """Subscribe every simulator's heartbeat, and each car's state, fault,
+        ev_info and command_ack.
 
         Call before EVerest boots. The heartbeat is not a retained topic, so a
         subscription registered after the module's `ready()` can only pick up a
