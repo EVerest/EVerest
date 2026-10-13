@@ -1155,6 +1155,8 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
 static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
     struct din_SessionStopResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.SessionStopRes;
 
+    conn->v2g_msg_before_session_stop = conn->ctx->last_v2g_msg;
+
     /* Now fill the EVSE response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
 

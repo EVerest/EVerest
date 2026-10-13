@@ -1309,8 +1309,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     };
 
     callbacks.v2g_message = [this](const iso15118::V2gMessageType& id, const iso15118::io::StreamInputView& exi_frame) {
-        // Always tracked: hlc_session_failed derives its reason from the last message at teardown.
+        // Always tracked: hlc_session_failed derives its reason from the message history at teardown.
         last_v2g_message = id;
+        if (not is_session_stop_message(id)) {
+            last_v2g_message_before_session_stop = id;
+        }
         // Published only in debug mode, mirroring EvseV2G's debugMode gate on this var. The frame is
         // the complete V2GTP message (8-byte header + EXI payload), rendered in the same two encodings
         // EvseV2G uses so existing log tooling can decode either one (v2g_server.cpp:275-288). xml and
@@ -1562,19 +1565,18 @@ void ISO15118_chargerImpl::reset_session_state() {
     // (v2g_ctx.cpp:104), which connection_teardown() calls before it looks at the D-LINK action, so a
     // paused session leaves nothing behind either.
     last_v2g_message.reset();
+    last_v2g_message_before_session_stop.reset();
     last_charging_complete.reset();
     last_bulk_charging_complete.reset();
 }
 
 void ISO15118_chargerImpl::report_hlc_session_failed() {
     // Runs on the session loop thread from the DLINK_TERMINATE / DLINK_ERROR feedback. The data link
-    // outcome is the failure criterion: an end the EV closed regularly has SessionStopReq as its last
-    // message, which maps to no reason; every other end, including one the EVSE forced with a FAILED
-    // response, is a failure ([V2G2-539], [V2G2-727]).
-    if (last_v2g_message.has_value()) {
-        if (const auto reason = map_v2g_message_to_hlc_failed_reason(*last_v2g_message)) {
-            publish_hlc_session_failed(*reason);
-        }
+    // outcome is the failure criterion: an end the EV reached regularly, through PowerDelivery(Stop) and
+    // SessionStopReq, maps to no reason; every other end is a failure, including one the EVSE forced with
+    // a FAILED response ([V2G2-539], [V2G2-727]) and a SessionStopReq sent from an earlier phase.
+    if (const auto reason = hlc_failed_reason_at_teardown(last_v2g_message, last_v2g_message_before_session_stop)) {
+        publish_hlc_session_failed(*reason);
     }
 
     reset_session_state();

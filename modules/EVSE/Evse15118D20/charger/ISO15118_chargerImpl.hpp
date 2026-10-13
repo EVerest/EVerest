@@ -159,9 +159,11 @@ private:
                              float nominal_frequency_hz, const iso15118::d20::DerSaeSetupConfig& current_sae,
                              std::uint32_t applied_revision, const std::optional<module::SaeRelayInput>& applied_input);
 
-    // hlc_session_failed derivation: the last V2G message handled this session (loop thread only, from
-    // the v2g_message feedback) is mapped to a reason at teardown.
+    // hlc_session_failed derivation (loop thread only, from the v2g_message feedback): the last V2G
+    // message handled this session, and the last one outside the SessionStop exchange, which names the
+    // phase the EV left when it ended the session with SessionStopReq. Mapped to a reason at teardown.
     std::optional<iso15118::V2gMessageType> last_v2g_message;
+    std::optional<iso15118::V2gMessageType> last_v2g_message_before_session_stop;
     // Last published EV completion flags (DIN SPEC 70121 / ISO 15118-2 charge progress); published on
     // change only. Reset when the session's data link ends.
     std::optional<bool> last_charging_complete;

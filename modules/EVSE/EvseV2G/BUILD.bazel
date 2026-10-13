@@ -115,6 +115,7 @@ cc_test(
     name = "v2g_ctx_test",
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,
     srcs = [
+        "tests/hlc_session_failed_reason_test.cpp",
         "tests/tools_test.cpp",
         "tests/v2g_ctx_test.cpp",
         "tools.cpp",
