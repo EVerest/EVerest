@@ -953,7 +953,6 @@ std::string OpenSSLSupplier::x509_get_not_after(X509Handle* handle) {
     return asn1_time_to_iso8601(X509_get0_notAfter(x509));
 }
 
-
 std::string OpenSSLSupplier::x509_get_public_key_bits(X509Handle* handle) {
     X509* x509 = get(handle);
     if (x509 == nullptr) {

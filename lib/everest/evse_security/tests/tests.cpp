@@ -127,7 +127,7 @@ protected:
         std::system("./generate_test_certs_leaf_dual_algorithm.sh");
     }
 };
-  
+
 class EvseSecurityTestsExpired : public EvseSecurityTests {
 protected:
     static constexpr int GEN_CERTIFICATES = 30;
