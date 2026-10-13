@@ -4,6 +4,7 @@
 
 #include <list>
 #include <memory>
+#include <mutex>
 #include <optional>
 #include <string>
 #include <vector>
@@ -49,6 +50,10 @@ private:
     std::unique_ptr<io::SdpServer> sdp_server;
 
     std::unique_ptr<Session> session;
+    std::mutex session_mutex;
+
+    d20::SessionConfig make_session_config();
+    void replace_session(std::unique_ptr<Session> new_session);
 
     // callbacks for sdp server
     void handle_sdp_server_input();
