@@ -10,14 +10,21 @@ namespace dt = message_20::datatypes;
 
 namespace {
 
-d20::Session scheduled_session() {
-    return d20::Session(
+constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
+constexpr uint64_t ANCHOR_US = 1691411798 * MICROSECONDS_PER_SECOND;
+
+// Only tuple 1 is offered.
+d20::Session scheduled_session_offering_tuple_1() {
+    d20::Session session(
         d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
                                        dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+    session.offered_schedules.insert(1);
+    return session;
 }
 
-message_20::PowerDeliveryRequest scheduled_start_request(const d20::Session& session,
-                                                         dt::PowerToleranceAcceptance tolerance) {
+message_20::PowerDeliveryRequest scheduled_start_request(const d20::Session& session, dt::NumericId tuple_id,
+                                                         dt::RationalNumber power,
+                                                         std::optional<dt::PowerToleranceAcceptance> tolerance = {}) {
     message_20::PowerDeliveryRequest req;
     req.header.session_id = session.get_id();
     req.header.timestamp = 1691411798;
@@ -25,13 +32,13 @@ message_20::PowerDeliveryRequest scheduled_start_request(const d20::Session& ses
     req.charge_progress = dt::Progress::Start;
 
     auto& profile = req.power_profile.emplace();
-    profile.time_anchor = 1691411798'000'000;
+    profile.time_anchor = ANCHOR_US;
     auto& mode = profile.control_mode.emplace<dt::Scheduled_EVPPTControlMode>();
-    mode.selected_schedule = 1;
+    mode.selected_schedule = tuple_id;
     mode.power_tolerance_acceptance = tolerance;
     dt::PowerScheduleEntry entry{};
     entry.duration = 60;
-    entry.power = {10, 3};
+    entry.power = power;
     profile.entries.push_back(entry);
     return req;
 }
@@ -80,13 +87,21 @@ SCENARIO("Power delivery state handling") {
     GIVEN("Bad case - EVPowerProfileInvalid") {
     }
     GIVEN("Bad case - ScheduleSelectionInvalid") {
+        const auto session = scheduled_session_offering_tuple_1();
+        const auto req = scheduled_start_request(session, 2, {10, 3});
+
+        const auto res = d20::state::handle_request(req, session, false, false);
+
+        THEN("ResponseCode: FAILED_ScheduleSelectionInvalid [V2G20-479]") {
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_ScheduleSelectionInvalid);
+        }
     }
     GIVEN("Bad case - PowerDeliveryNotApplied") {
     } // TODO(sl): evse is not able to deliver energy
 
     GIVEN("Bad case - FAILED_PowerToleranceNotConfirmed") {
-        const auto session = scheduled_session();
-        const auto req = scheduled_start_request(session, dt::PowerToleranceAcceptance::NotConfirmed);
+        const auto session = scheduled_session_offering_tuple_1();
+        const auto req = scheduled_start_request(session, 1, {10, 3}, dt::PowerToleranceAcceptance::NotConfirmed);
 
         const auto res = d20::state::handle_request(req, session, false, false);
 
@@ -97,8 +112,8 @@ SCENARIO("Power delivery state handling") {
         }
     }
     GIVEN("Good case - OK_PowerToleranceConfirmed") {
-        const auto session = scheduled_session();
-        const auto req = scheduled_start_request(session, dt::PowerToleranceAcceptance::Confirmed);
+        const auto session = scheduled_session_offering_tuple_1();
+        const auto req = scheduled_start_request(session, 1, {10, 3}, dt::PowerToleranceAcceptance::Confirmed);
 
         const auto res = d20::state::handle_request(req, session, false, false);
 

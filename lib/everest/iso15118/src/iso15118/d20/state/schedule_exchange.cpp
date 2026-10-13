@@ -210,6 +210,13 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
 
+        m_ctx.session.offered_schedules.clear();
+        if (const auto* scheduled = std::get_if<ScheduledResControlMode>(&res.control_mode)) {
+            for (const auto& tuple : scheduled->schedule_tuple) {
+                m_ctx.session.offered_schedules.insert(tuple.schedule_tuple_id);
+            }
+        }
+
         if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
             m_ctx.session.is_ac_der_sae_charger()) {
             // For AC move directly to power delivery

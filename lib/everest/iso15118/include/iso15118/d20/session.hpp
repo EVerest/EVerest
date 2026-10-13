@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <variant>
 #include <vector>
@@ -210,6 +211,9 @@ public:
     AuthorizationData authorization;
 
     bool service_renegotiation_supported{false};
+
+    // The ScheduleTupleIDs offered in the last finished ScheduleExchangeRes. Empty in dynamic control mode.
+    std::set<dt::NumericId> offered_schedules{};
 
     // From the EV's latest PowerDeliveryReq that carried one.
     std::optional<EvPowerProfile> ev_power_profile{};

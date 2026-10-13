@@ -9,6 +9,7 @@
 #include <iso15118/d20/state/session_stop.hpp>
 #include <iso15118/d20/timeout.hpp>
 
+#include <optional>
 #include <variant>
 
 #include <iso15118/detail/d20/context_helper.hpp>
@@ -31,6 +32,23 @@ const dt::Scheduled_EVPPTControlMode* scheduled_profile(const message_20::PowerD
         return nullptr;
     }
     return std::get_if<dt::Scheduled_EVPPTControlMode>(&req.power_profile->control_mode);
+}
+
+// Checks the scheduled-mode EVPowerProfile of a PowerDeliveryReq(Start) against the ScheduleExchangeRes.
+// [V2G20-1070]: anything else is accepted, so a dynamic-mode profile is never rejected here.
+std::optional<dt::ResponseCode> power_profile_error(const message_20::PowerDeliveryRequest& req,
+                                                    const d20::Session& session) {
+    const auto* scheduled = scheduled_profile(req);
+    if (scheduled == nullptr) {
+        return std::nullopt;
+    }
+
+    if (session.offered_schedules.count(scheduled->selected_schedule) == 0) {
+        // [V2G20-479] names FAILED_TariffSelectionInvalid, which the -20 schema does not define.
+        return dt::ResponseCode::FAILED_ScheduleSelectionInvalid;
+    }
+
+    return std::nullopt;
 }
 
 // [V2G20-1944] for a confirmed tolerance. A declined one is WARNING only if the SECC renegotiates the schedule
@@ -62,6 +80,11 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
 
     if (contactor_error) {
         set_response_code(res, dt::ResponseCode::FAILED_ContactorError);
+        return res;
+    }
+
+    if (const auto error = power_profile_error(req, session)) {
+        set_response_code(res, *error);
         return res;
     }
 
@@ -172,13 +195,20 @@ Result PowerDelivery::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto* const req = variant->get_if<message_20::PowerDeliveryRequest>()) {
+        const auto shutdown_requested = m_ctx.shutdown_requested();
+
+        // Checked before the AC contactor closes for a Start: a rejected request must not energize the outlet.
+        const auto res = handle_request(*req, m_ctx.session, false, shutdown_requested);
+        if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+            return {};
+        }
 
         if (req->power_profile.has_value()) {
             m_ctx.session.ev_power_profile =
                 EvPowerProfile::from(req->power_profile->time_anchor, req->power_profile->entries);
         }
-
-        const auto shutdown_requested = m_ctx.shutdown_requested();
 
         if (not shutdown_requested) {
 
@@ -199,14 +229,7 @@ Result PowerDelivery::feed(Event ev) {
             }
         }
 
-        const auto& res = handle_request(*req, m_ctx.session, false, shutdown_requested);
-
         m_ctx.respond(res);
-
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
-        }
 
         if (shutdown_requested) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
