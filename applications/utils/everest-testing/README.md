@@ -18,12 +18,94 @@ the generation of temporary directories and adjusting the configuration accordin
 
 Controller that can be used to start/stop the Everest instance and send events to control/simulate the stack's behavior.
 
+The controllers share the `SimRegistry` MQTT transport and simulator drivers.
+`test_controller.start()` starts EVerest; the direct EV controller fixture only enables
+its car, so its test owns EVerest's lifecycle. Plug helpers configure the session and
+plug synchronously; the test owns unplugging. The direct controller's AC IEC helper
+also waits for Charging. `diode_fail()` on `test_controller` waits in a daemon thread
+for Charging, then injects the fault about five seconds later; `stop()` cancels it.
+
+Connecting waits for a successful broker CONNACK and raises `BrokerNotConnectedError`
+on timeout. Reconnect restores subscriptions. The heartbeat readiness gate raises
+`SimNotReadyError` if a simulator does not become ready.
+
 ### Fixtures
 
-The core_utils basically provide two fixtures that you can require in your test cases:
+The core_utils basically provide these fixtures that you can require in your test cases:
 
 - **everest_core** The main fixture `everest_core` can be used to start and stop the EVerest application.
-- **test_controller**: Fixture that references the test_controller that can be used for control events for the test cases. This includes control over simulations that trigger events like an EV plug in, EV plug out, swipe RFID and more. 
+- **test_controller**: Fixture that references the test_controller that can be used for control events for the test cases. This includes control over simulations that trigger events like an EV plug in, EV plug out, swipe RFID and more. The fixture always yields an `EvController`-backed `EverestTestController`. A controller asked to drive an EV it has no simulator instance for fails the test rather than logging and returning.
+- **evctl_test_controller**: Fixture that references an `EvControllerTestController` bound to `everest_core`, for the scenario, charging-curve and timing-override commands that the `EvController` module accepts over its external MQTT API. Use it instead of `test_controller` when a test drives the EV side directly.
+
+Tests that collect car command acknowledgments can register
+`evctl_test_controller.add_command_ack_observer(callback)`. The callback receives
+a decoded acknowledgment dict on the MQTT thread and must not block. Observers
+receive separate copies; exceptions are logged without interrupting other observers
+or the controller's command waits.
+
+#### EvDriverSim routing
+
+Both EV controllers detect an optional `EvDriverSim` paired with an `EvController`
+through `config_module.ev_controller_module_id` (default `ev_manager`). The
+`SimRegistry` indexes the driver by its module id and by the paired car's
+`connector_id`; the driver's position in the config does not matter.
+
+With a driver present, `plug_in*` first sends `configure_session` to the car and
+waits up to 10 seconds for its Accepted `command_ack` before sending `plug` to the
+driver. Rejection raises with the car's reason; timeout raises without plugging.
+This ensures the car has latched the requested session before the driver passes
+the pilot. `play_charging_curve` uses the same latch helper: it waits for acceptance
+before returning, so a subsequent `plug()` uses the configured curve. Unplug and
+electrical faults (`DiodeFail`, `RcdError`, `CpErrorE`) go to the driver; session
+commands stay on `EvController`. Software faults are internal to the car and
+cannot be injected over MQTT. Without a driver, world helpers
+raise `NoSimulatorError` before publishing. HIL uses its physical pilot.
+
+`EvControllerTestController.clear_fault()` clears faults through EvDriverSim.
+`run_scenario(name, timing=...)` uses EvDriverSim and waits for its `Started`
+scenario event after its Accepted command acknowledgement. Started confirms that
+the car accepted configuration and the driver successfully plugged. An Accepted
+command acknowledgement alone only accepts the request for processing; a later
+Rejected event can report a configuration rejection, a missing car acknowledgement
+(after 10 seconds), or a refused world step. A rejection received while waiting fails with its reason.
+Calls through one `EvDriverSimDriver` serialize the entire scenario start, from
+the event cursor and publish through the acknowledgement and Started/Rejected
+wait. The lock releases on success, rejection or timeout; it does not wait for
+Finished. Each publish retains its own acknowledgement waiter. Separate driver
+objects remain independent. Neither scenario events nor command acknowledgements
+carry a request id, so the lock serializes starts, not runs: a same-name Rejected
+from an independent publisher, or from an earlier run on the same driver that
+fails after its start returned (a refused step, or a configuration timeout after
+a shorter caller timeout), can be taken as a later start's outcome. Independent
+publishers can also make command acknowledgements ambiguous.
+The car protocol also has no request id: concurrent independent `configure_session`
+publishers to the same car, or a late reply after a timed-out run, cannot be
+correlated with a pending scenario. Preset completion is reported
+as a `Finished` event; it does not imply that the car has finished charging.
+Configurations without EvDriverSim cannot run presets.
+
+`SimRegistry.ev_driver_by_connector(connector_id)` returns the optional
+`EvDriverSimDriver`. The direct EV controller exposes its paired driver as
+`ev_driver`. This wrapper publishes `plug`, `unplug`, `inject_fault` (with optional
+`rcd_mA` and `message`), `clear_fault` and `run_scenario` under
+`everest_api/1/ev_driver_sim/<id>/m2e/`, using the run's external MQTT prefix. It
+subscribes to `world_state`, `command_ack`, `scenario_event` and `heartbeat` under `e2m/`.
+`world_state` holds the last received state, or `None` before the first update.
+Each world command other than `run_scenario` returns a `CommandAckWaiter`; call its `wait(status="Accepted",
+timeout=10.0)` to await that specific publish. The driver's
+`wait_for_command_ack(command, status="Accepted", timeout=10.0)` waits for the latest
+publish of that command. Retain returned waiters when issuing multiple commands
+before waiting. Replies are assigned to their publish's waiter in command order as
+they arrive, even when the caller never waits. This keeps an unwaited command's
+reply from satisfying a later command. One reply satisfies only one wait, including
+concurrent waits on the same waiter. A timeout consumes nothing; the same waiter
+can be retried for its eventual reply. A missing reply leaves its publish pending,
+so the next reply for that command is assigned to the oldest pending publish.
+Without request ids, a lost reply can shift the association of later replies;
+the waiter cannot detect that loss. An Accepted wait fails immediately on a
+Rejected reply and includes its reason.
+The registry's `require_ready()` includes driver heartbeats, and reconnects restore
+the driver's subscriptions.
 
 #### Configuration Fixtures:
 
@@ -142,7 +224,5 @@ You can run these tests using
 cd examples
 python3 -m pytest tests.py --everest-prefix <path-to-EVerest>/build/dist/ --libocpp <path-to-libocpp> --log-cli-level=DEBUG
 ```
-
-
 
 
