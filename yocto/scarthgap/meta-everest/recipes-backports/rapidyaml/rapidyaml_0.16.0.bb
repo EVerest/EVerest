@@ -10,8 +10,10 @@ SRC_URI = "gitsm://github.com/biojppm/rapidyaml.git;branch=master;protocol=https
 inherit cmake
 
 S = "${WORKDIR}/git"
-PV = "v0.10.0"
+PV = "v0.16.0"
 
-SRCREV = "653eac9741c7728f2a87435b981737894149e002"
+SRCREV = "f8ac8dd50f4f7916579d55a05ebf9c6488e52670"
 
-EXTRA_OECMAKE += "-DBUILD_SHARED_LIBS=ON"
+EXTRA_OECMAKE += "-DBUILD_SHARED_LIBS=ON -DRYML_WITH_LEGACY_OPERATORS=ON"
+
+FILES:${PN}-dev += "${datadir}/ryml"

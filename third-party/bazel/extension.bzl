@@ -51,6 +51,16 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.mosquitto.bazel",
     )
 
+    # the bazel-central-registry has no rapidyaml 0.16 yet
+    maybe(
+        http_archive,
+        name = "rapidyaml",
+        url = "https://github.com/biojppm/rapidyaml/archive/refs/tags/v0.16.0.tar.gz",
+        sha256 = "ad4337d468c5f5d8624651bdc2900f7fe601c83fc3cff669dc972bf8634af4e9",
+        strip_prefix = "rapidyaml-0.16.0",
+        build_file = "@everest-core//third-party/bazel:BUILD.rapidyaml.bazel",
+    )
+
     maybe(
         http_archive,
         name = "openssl_source",

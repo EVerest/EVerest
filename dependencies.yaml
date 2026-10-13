@@ -116,9 +116,9 @@ mosquitto:
 # everest/yaml library
 ryml:
   git: https://github.com/biojppm/rapidyaml
-  git_tag: v0.10.0
+  git_tag: v0.16.0
   cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_yaml OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_ocpp"
-  options: ["CMAKE_POSITION_INDEPENDENT_CODE ON"]
+  options: ["CMAKE_POSITION_INDEPENDENT_CODE ON", "RYML_WITH_LEGACY_OPERATORS ON"]
 
 grpc:
   git: https://github.com/grpc/grpc.git
