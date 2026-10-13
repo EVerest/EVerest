@@ -337,9 +337,10 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         const auto der_control = create_der_control(selected_services.selected_der_control_functions, der_functions);
 
+        const auto& limits = m_ctx.session_config.ac_limits;
         const auto res =
-            handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
-                           m_ctx.session_config.der_iec_limits, operating_mode, grid_connection_mode, der_control);
+            handle_request(*req, m_ctx.session, limits, present_powers, m_ctx.session_config.der_iec_limits,
+                           operating_mode, grid_connection_mode, der_control);
 
         m_ctx.respond(res);
 
@@ -347,6 +348,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
+        m_ctx.session.cpd_max_charge_power = limits.charge_power.max;
 
         // An EV that does not accept the settings may restart the service selection, but only once this
         // state has finished. The schedule exchange state answers that ServiceDiscoveryReq.
