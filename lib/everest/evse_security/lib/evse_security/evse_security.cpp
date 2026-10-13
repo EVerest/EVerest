@@ -150,7 +150,8 @@ std::optional<fs::path> get_private_key_path_of_certificate(const X509Wrapper& c
     }
 
     EVLOG_error << "Could not find private key for given certificate: " << certificate.get_file().value_or("N/A") << "("
-                << certificate.get_common_name() << ")" << " key path: " << key_path_directory;
+                << certificate.get_common_name() << ")"
+                << " key path: " << key_path_directory;
 
     return std::nullopt;
 }
@@ -677,7 +678,7 @@ DeleteResult EvseSecurity::delete_certificate(const CertificateHashData& certifi
 
             return true;
         }); // End for each chain
-    } // End for each leaf directory
+    }       // End for each leaf directory
 
     if (!found_certificate) {
         response.result = DeleteCertificateResult::NotFound;
