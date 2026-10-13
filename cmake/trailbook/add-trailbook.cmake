@@ -315,6 +315,7 @@ macro(_add_trailbook_sphinx_build_command)
         COMMAND
             ${_SPHINX_BUILD_EXECUTABLE}
             -b html
+            -j auto
             ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
             ${CMAKE_CURRENT_BINARY_DIR}/sphinx_build_temp/
         COMMAND

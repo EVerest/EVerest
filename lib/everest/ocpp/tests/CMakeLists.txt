@@ -17,6 +17,7 @@ if(LIBOCPP_ENABLE_V2)
     # Add all v2 tests you don't want to include in the default test executable here.
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_authorization.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_availability.cpp)
+    list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_remote_transaction_control.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_security.cpp)
     list(APPEND SEPARATE_UNIT_TESTS ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp/v2/functional_blocks/test_tariff_and_cost.cpp)
 endif()
@@ -27,6 +28,8 @@ set(GCOVR_DEPENDENCIES)
 
 
 add_libocpp_unittest(NAME libocpp_unit_tests PATH "")
+# since this is a very long running unit test: start it first in a parallel ctest run.
+set_tests_properties(libocpp_unit_tests PROPERTIES COST 1000)
 
 target_include_directories(libocpp_unit_tests PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/lib/ocpp

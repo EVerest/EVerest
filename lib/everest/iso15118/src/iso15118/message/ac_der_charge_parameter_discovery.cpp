@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/ac_der_iec_charge_parameter_discovery.hpp>
 
 #include <iso15118/detail/variant_access.hpp>
@@ -391,6 +391,7 @@ template <>
 void convert(const struct iso20_ac_der_iec_AC_ChargeParameterDiscoveryResType& in,
              DER_AC_ChargeParameterDiscoveryResponse& out) {
     convert(in.Header, out.header);
+    cb_convert_enum(in.ResponseCode, out.response_code);
 
     if (in.DER_AC_CPDResEnergyTransferMode_isUsed) {
         convert(in.DER_AC_CPDResEnergyTransferMode, out.transfer_mode);

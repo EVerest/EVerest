@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Characterization test: the connected udp_client already works over IPv6.
 // This locks that guarantee so the unconnected-client refactor cannot regress
@@ -84,7 +84,7 @@ private:
 TEST(udp_client_v6_test, connected_roundtrip_over_ipv6_loopback) {
     v6_echo echo;
 
-    udp_client client("::1", echo.port(), 1000);
+    udp_client client("::1", echo.port());
 
     std::atomic<bool> got{false};
     udp_payload received;

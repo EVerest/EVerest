@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "SerializationTestHelpers.hpp"
 #include "everest_api_types/generic/codec.hpp"
@@ -15,7 +15,8 @@ using namespace everest::lib::API::V1_0::types;
 // than other serializations because the to_json function may throw an error
 template <>
 everest::lib::API::V1_0::types::generic::RequestReply
-generate<everest::lib::API::V1_0::types::generic::RequestReply>(bool set_optional_fields) {
+generate<everest::lib::API::V1_0::types::generic::RequestReply>(bool set_optional_fields, int seed) {
+    (void)seed; // Not used in this generator, but silence the compiler warning;
     RequestReply generated_object;
     generated_object.replyTo = "mdvChgNGIuAZPRzFEkDOLnsMUcJYyl";
     generated_object.payload = "{\"data\": { \"inner\" : 23, \"inner_str\":\"string\"}}";

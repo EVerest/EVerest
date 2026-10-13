@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 -  Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_V2_CTRLR_COMPONENT_VARIABLES
 #define OCPP_V2_CTRLR_COMPONENT_VARIABLES
@@ -140,6 +140,7 @@ extern const ComponentVariable VerifyCsmsCommonName;
 extern const ComponentVariable UseTPM;
 extern const ComponentVariable UseTPMSeccLeafCertificate;
 extern const ComponentVariable VerifyCsmsAllowWildcards;
+extern const ComponentVariable ReportSuspendedEVSEReasonChange;
 extern const ComponentVariable IFace;
 extern const ComponentVariable EnableTLSKeylog;
 extern const ComponentVariable TLSKeylogFile;
@@ -156,6 +157,7 @@ extern const ComponentVariable MessageQueueSizeThreshold;
 extern const ComponentVariable MaxMessageSize;
 extern const ComponentVariable ResumeTransactionsOnBoot;
 extern const ComponentVariable AllowSecurityLevelZeroConnections;
+extern const ComponentVariable DeferFirmwareDownloadDuringTransaction;
 extern const RequiredComponentVariable SupportedOcppVersions;
 extern const ComponentVariable AlignedDataCtrlrEnabled;
 extern const ComponentVariable AlignedDataCtrlrAvailable;
@@ -246,6 +248,7 @@ extern const RequiredComponentVariable NetworkProfileConnectionAttempts;
 extern const RequiredComponentVariable OfflineThreshold;
 extern const ComponentVariable QueueAllMessages;
 extern const ComponentVariable MessageTypesDiscardForQueueing;
+extern const ComponentVariable QueueNotifyEventMessages;
 extern const RequiredComponentVariable ResetRetries;
 extern const RequiredComponentVariable RetryBackOffRandomRange;
 extern const RequiredComponentVariable RetryBackOffRepeatTimes;
@@ -351,6 +354,7 @@ extern const ComponentVariable SupportedLanguages;
 extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
+extern const ComponentVariable ReportClearedErrors;
 } // namespace ControllerComponentVariables
 
 namespace EvseComponentVariables {

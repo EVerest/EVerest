@@ -99,6 +99,8 @@ void v2g_ctx_init_charging_session(struct v2g_context* const ctx, bool is_connec
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
+    ctx->error_shutdown = false;
+    ctx->error_shutdown_reported = false;
     ctx->is_connection_terminated = is_connection_terminated;
     ctx->last_v2g_msg = V2G_UNKNOWN_MSG;
     ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
@@ -288,12 +290,15 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     ctx->local_tls_addr = NULL;
 
     ctx->is_dc_charger = true;
+    ctx->is_fake_dc = false;
 
     v2g_ctx_init_charging_session(ctx, true);
 
     /* interface from config file or options */
     ctx->if_name = "eth1";
 
+    ctx->tcp_port = 61341;
+    ctx->tls_port = 64109;
     ctx->network_read_timeout = 1000;
     ctx->network_read_timeout_tls = 5000;
 

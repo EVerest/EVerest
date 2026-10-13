@@ -18,10 +18,8 @@ public:
     UserConfigStorage(const fs::path& user_config_path);
 
     GenericResponseStatus write_module_configs(const ModuleConfigurations& module_configs) override;
-    GenericResponseStatus write_settings(const Everest::ManagerSettings& manager_settings) override;
-    GenericResponseStatus wipe() override;
+    GenericResponseStatus replace_module_configs(const ModuleConfigurations& module_configs) override;
     GetModuleConfigsResponse get_module_configs() override;
-    GetSettingsResponse get_settings() override;
     GetModuleConfigurationResponse get_module_config(const std::string& module_id) override;
     GetConfigurationParameterResponse
     get_configuration_parameter(const ConfigurationParameterIdentifier& identifier) override;

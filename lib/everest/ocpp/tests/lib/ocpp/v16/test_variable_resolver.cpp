@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <gtest/gtest.h>
 
@@ -185,6 +185,17 @@ TEST(VariableResolver, CustomMappingReverseAmbiguousCollidesWithStandard) {
     // the standard key remains reported
     ASSERT_TRUE(reverse.key.has_value());
     EXPECT_EQ(reverse.key.value(), "HeartbeatInterval");
+}
+
+TEST(VariableResolver, IsConnectionConfigCvPredicate) {
+    // the public predicate backs both classify() and the custom-mapping load-time rejection
+    using ocpp::v16::is_connection_config_cv;
+    EXPECT_TRUE(is_connection_config_cv(make_component("NetworkConfiguration", "1"), make_variable("OcppCsmsUrl")));
+    EXPECT_TRUE(is_connection_config_cv(make_component("OCPPCommCtrlr"), make_variable("ActiveNetworkProfile")));
+    EXPECT_TRUE(is_connection_config_cv(make_component("SecurityCtrlr"), make_variable("BasicAuthPassword")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("SecurityCtrlr"), make_variable("CertificateEntries")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("OCPPCommCtrlr"), make_variable("HeartbeatInterval")));
+    EXPECT_FALSE(is_connection_config_cv(make_component("VendorCtrlr"), make_variable("BarSetting")));
 }
 
 TEST(VariableResolver, ClassifyConnectionConfig) {

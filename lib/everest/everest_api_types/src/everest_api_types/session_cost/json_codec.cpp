@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "session_cost/json_codec.hpp"
 #include "session_cost/API.hpp"
@@ -236,11 +236,7 @@ void to_json(json& j, SessionCost const& k) noexcept {
         j["id_tag"] = k.id_tag.value();
     }
     if (k.cost_chunks) {
-        if (j.size() == 0) {
-            j = json{{"cost_chunks", json::array()}};
-        } else {
-            j["cost_chunks"] = json::array();
-        }
+        j["cost_chunks"] = json::array();
         for (auto val : k.cost_chunks.value()) {
             j["cost_chunks"].push_back(val);
         }
@@ -255,11 +251,7 @@ void to_json(json& j, SessionCost const& k) noexcept {
         j["next_period"] = k.next_period.value();
     }
     if (k.message) {
-        if (j.size() == 0) {
-            j = json{{"message", json::array()}};
-        } else {
-            j["message"] = json::array();
-        }
+        j["message"] = json::array();
         for (auto val : k.message.value()) {
             j["message"].push_back(val);
         }

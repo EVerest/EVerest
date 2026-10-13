@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/logging.hpp>
 #include <ocpp/common/websocket/websocket_uri.hpp>
@@ -27,10 +27,15 @@ ChargePointConfigurationConnectivity::read_network_connection_profile(int32_t sl
     if (slot != 1) {
         return std::nullopt;
     }
+    return synthesize_legacy_network_connection_profile();
+}
+
+ocpp::v2::NetworkConnectionProfile
+ChargePointConfigurationConnectivity::synthesize_legacy_network_connection_profile() {
     ocpp::v2::NetworkConnectionProfile profile;
     profile.ocppCsmsUrl = getCentralSystemURI();
     profile.securityProfile = getSecurityProfile();
-    profile.ocppInterface = ocpp::v2::OCPPInterfaceEnum::Any; // not used for OCPP1.6
+    profile.ocppInterface = ocpp::v2::OCPPInterfaceEnum::Any; // no interface notion in the legacy 1.6 config
     profile.ocppTransport = ocpp::v2::OCPPTransportEnum::JSON;
     profile.messageTimeout = 10;
     profile.identity = getChargePointId();
@@ -100,6 +105,9 @@ ChargePointConfigurationConnectivity::get_websocket_connection_options(int32_t /
         EVLOG_error << "Could not configure v1.6 connection options, device model error: " << e.what();
         return std::nullopt;
     } catch (const std::invalid_argument& e) {
+        EVLOG_error << "Could not configure v1.6 connection options, invalid argument: " << e.what();
+        return std::nullopt;
+    } catch (const std::exception& e) {
         EVLOG_error << "Could not configure v1.6 connection options: " << e.what();
         return std::nullopt;
     }
@@ -116,6 +124,11 @@ void ChargePointConfigurationConnectivity::set_active_network_profile_slot(int32
                   << slot;
 }
 
+std::optional<int32_t> ChargePointConfigurationConnectivity::get_active_network_profile_slot() {
+    // OCPP 1.6 does not support multiple network connection profiles, so there is no fallback target.
+    return std::nullopt;
+}
+
 void ChargePointConfigurationConnectivity::set_per_slot_ocpp_version(int32_t /*slot*/, const std::string& /*version*/,
                                                                      const std::string& /*source*/) {
     EVLOG_warning
@@ -130,6 +143,11 @@ void ChargePointConfigurationConnectivity::set_security_ctrl_security_profile(in
 void ChargePointConfigurationConnectivity::set_security_ctrl_identity(const std::string& /*identity*/,
                                                                       const std::string& /*source*/) {
     EVLOG_warning << "OCPP 1.6 does not support setting identity, ignoring";
+}
+
+void ChargePointConfigurationConnectivity::set_active_message_timeout(int32_t /*message_timeout_s*/,
+                                                                      const std::string& /*source*/) {
+    // OCPP 1.6 has no OCPPCommCtrlr.MessageTimeout to keep in sync.
 }
 
 } // namespace ocpp::v16

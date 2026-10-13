@@ -86,6 +86,7 @@ struct EVSEContext {
     bool plugged_in;
     bool plug_in_timeout; // indicates no authorization received within connection_timeout. Replug is required for this
                           // EVSE to get authorization and start a transaction
+    bool reported_enabled{false}; // last Enabled / Disabled session event from the EvseManager was Enabled
 
     bool is_available();
     bool is_unavailable();

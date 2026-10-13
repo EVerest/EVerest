@@ -430,7 +430,7 @@ channels:
 operations:
   ########## evse_manager
   send_request_get_evse:
-    title: 'Send request to get information about the EVSE including its connectors'
+    title: 'Send request to get information about the EVSE: its id according to the 3-tier model of OCPP, its connectors and the configured EVSE ID / DIN EVSE ID that uniquely identify it'
     action: send
     channel:
       $ref: '#/channels/send_request_get_evse'
@@ -677,6 +677,10 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_evse_id'
+    description: >-
+      The EVSE ID is published once on startup.
+      Deprecated: use the get_evse command instead, which also provides the
+      DIN 70121 EVSE ID (DIN SPEC 91286).
   send_request_get_evse_id:
     title: 'Request current EVSE ID'
     action: send
@@ -686,6 +690,8 @@ operations:
       Request the most recently published (latched) EVSE ID.
       The reply will be sent to the replyTo address specified in the message headers.
       If no latched value is available yet, a null payload will be sent.
+      Deprecated: use the get_evse command instead, which also provides the
+      DIN 70121 EVSE ID (DIN SPEC 91286).
     reply:
       address:
         location: "$message.header#/replyTo"
@@ -2162,6 +2168,17 @@ components:
             Timestamp of transaction end. Updated at each transaction end.
           type: string
           format: date-time
+        reserved:
+          description: >-
+            Indicates whether the EVSE is currently held for a reservation (true) or not (false).
+            Independent of state: an EVSE can stay reserved while an EV that does not match the
+            reservation is plugged in. Reservations that are not for a specific EVSE (e.g. only
+            for a connector type) hold an EVSE only once they use up the remaining capacity,
+            and the EVSEs they hold can change while they are pending.
+            Becomes false when the reservation ends or is used to start a transaction.
+            Treated as false when omitted.
+          type: boolean
+          default: false
     HlcSessionFailedReasonEnum:
       description: |
         Reason for a higher-level-communication (HLC) session failure event.
@@ -2240,6 +2257,31 @@ components:
           description: Type of the connector
           type: string
           $ref: '#/components/schemas/ConnectorTypeEnum'
+        charge_mode:
+          description: >-
+            AC or DC power topology of this connector's power path. A static property of the plug and
+            its power electronics, configured rather than negotiated or measured, and settled before
+            any session. Not the charging state machine's current mode, which an EVSE running
+            ac_with_soc switches between AC and DC within a session.
+            Optional on this contract even though EVerest always populates it, so that adding it
+            does not constrain a client that validates against this schema.
+          type: string
+          $ref: '#/components/schemas/ChargeMode'
+        hlc_capable:
+          description: >-
+            Whether an ISO 15118 high level communication session can ever occur on this connector.
+            True only when an SECC and a SLAC provider are both wired and the configuration permits
+            HLC, so it is false on a connector whose SECC is wired but whose HLC is switched off.
+            Resolved once at startup; not a statement about the current session.
+            Optional on this contract even though EVerest always populates it, so that adding it
+            does not constrain a client that validates against this schema.
+          type: boolean
+    ChargeMode:
+      description: AC or DC power topology of a connector's power path
+      type: string
+      enum:
+        - AC
+        - DC
     ConnectorTypeEnum:
       description: |
         Type of a physical connector
@@ -2420,7 +2462,9 @@ components:
         - connectors
       properties:
         id:
-          description: ID of the EVSE
+          description: >-
+            ID of this EVSE within the charging station, according to the 3-tier model 
+            (charging station > EVSE > connector)
           type: integer
           minimum: 1
           maximum: 128
@@ -2433,8 +2477,22 @@ components:
             $ref: '#/components/schemas/Connector'
           minItems: 1
           maxItems: 128
+        evse_id:
+          type: string
+          $ref: '#/components/schemas/EvseId'
+        evse_id_din:
+          description: >-
+            EVSE ID used for DIN 70121 sessions (format according to DIN SPEC 91286,
+            hexBinary-encoded), e.g. 49A80737A45678
+          type: string
     EvseId:
-      description: 'EVSE ID including the connector number, e.g. DE*PNX*E123456*1'
+      description: >-
+        EVSE ID that uniquely identifies this EVSE, e.g. DE*PNX*E123456*1. It has a special
+        format that includes the country code, the operator id and a power outlet id
+        (eMI3 format, normatively specified in ISO 15118-2 Annex H) and is sent as the
+        EVSEID field in ISO 15118 messages.
+        Not to be confused with the numeric id, which identifies this EVSE within the charging
+        station according to the 3-tier model.
       type: string
     EVInfo:
       description: Information about the connected EV if available
@@ -2720,6 +2778,7 @@ components:
         - TimeLimitReached: EV charging session reached a locally enforced time limit
         - Timeout: EV not connected within timeout
         - ReqEnergyTransferRejected: OCPP CSMS cannot accept the requested energy transfer type.
+        - EVSEDisabled: The transaction was stopped because the EVSE was disabled.
 
       type: string
       enum:
@@ -2745,6 +2804,7 @@ components:
         - TimeLimitReached
         - Timeout
         - ReqEnergyTransferRejected
+        - EVSEDisabled
     StopTransactionRequest:
       description: >-
         Request for a stop transaction containing the reason and an optional

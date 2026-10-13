@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/ocpp/Implementation.hpp>
@@ -43,6 +43,8 @@ protected:
     virtual types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) override;
     virtual void handle_monitor_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ev@d2d1847a-7b88-41dd-ad07-92785f06f5c4:v1
     // insert your protected definitions here
@@ -54,6 +56,7 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here

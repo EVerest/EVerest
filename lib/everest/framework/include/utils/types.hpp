@@ -41,8 +41,8 @@ enum class HandlerType {
     Result,
     SubscribeVar,
     SubscribeError,
-    GetConfig,
-    GetConfigResponse,
+    ConfigurationRequest,
+    ConfigurationResponse,
     ConfigRequest,
     ModuleReady,
     GlobalReady,
@@ -69,6 +69,7 @@ struct ModuleInfo {
         std::filesystem::path etc;
         std::filesystem::path libexec;
         std::filesystem::path share;
+        std::filesystem::path errors;
     };
 
     std::string name;
@@ -82,18 +83,18 @@ struct ModuleInfo {
 };
 
 enum class MqttMessageType {
-    Var,               ///< Variable message
-    Cmd,               ///< Command message
-    CmdResult,         ///< Command result message
-    ExternalMQTT,      ///< External MQTT message
-    RaiseError,        ///< Raise error message
-    ClearError,        ///< Clear error message
-    GetConfig,         ///< Get config request
-    GetConfigResponse, ///< Get config response
-    Telemetry,         ///< Telemetry message
-    Heartbeat,         ///< Heartbeat message
-    ModuleReady,       ///< Module ready message
-    GlobalReady        ///< Global ready message
+    Var,                   ///< Variable message
+    Cmd,                   ///< Command message
+    CmdResult,             ///< Command result message
+    ExternalMQTT,          ///< External MQTT message
+    RaiseError,            ///< Raise error message
+    ClearError,            ///< Clear error message
+    ConfigurationRequest,  ///< Configuration request (get or set)
+    ConfigurationResponse, ///< Configuration response
+    Telemetry,             ///< Telemetry message
+    Heartbeat,             ///< Heartbeat message
+    ModuleReady,           ///< Module ready message
+    GlobalReady            ///< Global ready message
 };
 
 std::string mqtt_message_type_to_string(MqttMessageType type);

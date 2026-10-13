@@ -81,14 +81,14 @@ public:
     /// \brief Stops the ChargePoint. Disconnects the websocket connection and stops MessageQueue and all timers
     virtual void stop() = 0;
 
-    /// \brief Initializes the websocket and connects to a CSMS. Provide a network_profile_slot to connect to that
-    /// specific slot.
+    /// \brief Initializes the websocket and connects to a CSMS once no CALL is in flight. Does nothing after stop().
+    /// Provide a network_profile_slot to connect to that specific slot.
     ///
     /// \param network_profile_slot Optional slot to use when connecting. std::nullopt means the slot will be determined
     /// automatically.
     virtual void connect_websocket(std::optional<std::int32_t> network_profile_slot = std::nullopt) = 0;
 
-    /// \brief Disconnects the the websocket connection to the CSMS if it is connected
+    /// \brief Disconnects the websocket from the CSMS once no CALL is in flight. Does nothing after stop().
     virtual void disconnect_websocket() = 0;
 
     /// \addtogroup ocpp201_handlers OCPP 2.0.1 handlers
@@ -512,6 +512,11 @@ private:
 protected:
     void handle_message(const EnhancedMessage<v2::MessageType>& message);
     void clear_invalid_charging_profiles();
+
+    /// \brief Requests the OCSP status of a V2G certificate from the CSMS on behalf of the OcspUpdater
+    /// \return the response of the CSMS, or a response with status Failed when the CSMS did not answer with a
+    /// GetCertificateStatusResponse
+    GetCertificateStatusResponse get_certificate_status_from_csms(const GetCertificateStatusRequest& request);
 
 public:
     /// \addtogroup chargepoint_constructors

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <nlohmann/json.hpp>
 #include <utils/config/types.hpp>
@@ -18,6 +18,15 @@ bool operator<(const Requirement& lhs, const Requirement& rhs) {
 }
 
 namespace everest::config {
+
+bool ConfigurationParameterIdentifier::operator<(const ConfigurationParameterIdentifier& rhs) const {
+    return (
+        this->module_id < rhs.module_id ||
+        (this->module_id == rhs.module_id && this->configuration_parameter_name < rhs.configuration_parameter_name) ||
+        (this->module_id == rhs.module_id && this->configuration_parameter_name == rhs.configuration_parameter_name &&
+         this->module_implementation_id < rhs.module_implementation_id));
+}
+
 std::string config_entry_to_string(const everest::config::ConfigEntry& entry) {
     return std::visit(VisitConfigEntry{}, entry);
 }
@@ -46,6 +55,12 @@ bool ConfigurationParameter::validate_type() const {
 Settings parse_settings(const json& settings_json) {
     Settings settings;
 
+    for (const auto* key : {"www_dir", "controller_port", "controller_rpc_timeout_ms"}) {
+        if (settings_json.contains(key)) {
+            settings.deprecated_keys.emplace_back(key);
+        }
+    }
+
     if (auto it = settings_json.find("prefix"); it != settings_json.end()) {
         settings.prefix = it->get<std::string>();
     }
@@ -70,17 +85,8 @@ Settings parse_settings(const json& settings_json) {
     if (auto it = settings_json.find("errors_dir"); it != settings_json.end()) {
         settings.errors_dir = it->get<std::string>();
     }
-    if (auto it = settings_json.find("www_dir"); it != settings_json.end()) {
-        settings.www_dir = it->get<std::string>();
-    }
     if (auto it = settings_json.find("logging_config_file"); it != settings_json.end()) {
         settings.logging_config_file = it->get<std::string>();
-    }
-    if (auto it = settings_json.find("controller_port"); it != settings_json.end()) {
-        settings.controller_port = it->get<int>();
-    }
-    if (auto it = settings_json.find("controller_rpc_timeout_ms"); it != settings_json.end()) {
-        settings.controller_rpc_timeout_ms = it->get<int>();
     }
     if (auto it = settings_json.find("mqtt_broker_socket_path"); it != settings_json.end()) {
         settings.mqtt_broker_socket_path = it->get<std::string>();
@@ -268,6 +274,16 @@ ConfigEntry parse_config_value(Datatype datatype, const std::string& value_str) 
     }
 }
 
+std::optional<std::string> validate_config_value(const ConfigurationParameterCharacteristics& characteristics,
+                                                 const std::string& value_str) {
+    try {
+        parse_config_value(characteristics.datatype, value_str);
+    } catch (const std::exception& e) {
+        return e.what();
+    }
+    return std::nullopt;
+}
+
 ModuleConfigurations parse_module_configs(const json& active_modules_json) {
     ModuleConfigurations module_configs;
 
@@ -285,7 +301,7 @@ Datatype string_to_datatype(const std::string& str) {
         return Datatype::Decimal;
     } else if (str == "integer") {
         return Datatype::Integer;
-    } else if (str == "boolean" or "bool") {
+    } else if (str == "boolean" or str == "bool") {
         return Datatype::Boolean;
     } else if (str == "unknown") {
         return Datatype::Unknown;
@@ -398,6 +414,12 @@ void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::to_
     if (c.unit.has_value()) {
         j["unit"] = c.unit.value();
     }
+    if (c.min_value.has_value()) {
+        j["min_value"] = c.min_value.value();
+    }
+    if (c.max_value.has_value()) {
+        j["max_value"] = c.max_value.value();
+    }
 }
 
 void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::from_json(
@@ -406,6 +428,12 @@ void adl_serializer<everest::config::ConfigurationParameterCharacteristics>::fro
     c.mutability = everest::config::string_to_mutability(j.at("mutability").get<std::string>());
     if (j.contains("unit")) {
         c.unit = j.at("unit").get<std::string>();
+    }
+    if (j.contains("min_value")) {
+        c.min_value = j.at("min_value").get<float>();
+    }
+    if (j.contains("max_value")) {
+        c.max_value = j.at("max_value").get<float>();
     }
 }
 

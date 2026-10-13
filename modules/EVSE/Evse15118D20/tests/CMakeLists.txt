@@ -17,10 +17,14 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     DerChargingParametersTest.cpp
     DerControlsTest.cpp
     DerRelayTest.cpp
+    DerSaeRelayTest.cpp
     GridEventTest.cpp
+    AcEvFeedbackTest.cpp
     ../charger/der_setup.cpp
     ../charger/der_relay.cpp
+    ../charger/der_relay_sae.cpp
     ../charger/grid_event.cpp
+    ../charger/utils.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
@@ -29,6 +33,30 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::log
     everest::framework
     iso15118::iso15118
+)
+
+add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
+ev_register_test_target(${TEST_TARGET_NAME})
+
+set(TEST_TARGET_NAME ${PROJECT_NAME}_evse15118d20_evse_security_ssl_config_test)
+
+set(MODULE_DIR
+    "${PROJECT_SOURCE_DIR}/modules/EVSE/Evse15118D20")
+
+add_executable(${TEST_TARGET_NAME}
+    evse_security_ssl_config_test.cpp
+    ${MODULE_DIR}/charger/evse_security_ssl_config.cpp
+)
+
+target_include_directories(${TEST_TARGET_NAME} PRIVATE
+    ${MODULE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+)
+
+target_link_libraries(${TEST_TARGET_NAME} PRIVATE
+    GTest::gtest_main
+    iso15118::iso15118
+    everest::framework
 )
 
 add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})

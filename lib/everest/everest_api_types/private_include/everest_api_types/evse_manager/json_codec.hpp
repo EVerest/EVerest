@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -18,6 +18,9 @@ void from_json(json const& j, StopTransactionRequest& k);
 
 void to_json(json& j, StartSessionReason const& k) noexcept;
 void from_json(json const& j, StartSessionReason& k);
+
+void to_json(json& j, ChargeMode const& k) noexcept;
+void from_json(json const& j, ChargeMode& k);
 
 void to_json(json& j, SessionEventEnum const& k) noexcept;
 void from_json(json const& j, SessionEventEnum& k);

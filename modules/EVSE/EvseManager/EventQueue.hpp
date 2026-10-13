@@ -17,10 +17,28 @@ public:
 
 private:
     events_t pending;
-    std::mutex mux;
+    mutable std::mutex mux;
     std::condition_variable cv;
+    bool stopped{false};
 
 public:
+    /// @brief Unblock all waiters and let further waits return immediately, one way operation.
+    /// @details Already pending events are still delivered. Consumers using wait_for() must check
+    ///          is_stopped() to leave their loop, otherwise they spin.
+    void stop() {
+        {
+            std::lock_guard<std::mutex> lock(mux);
+            stopped = true;
+        }
+        cv.notify_all();
+    }
+
+    /// @brief true once stop() has been called
+    bool is_stopped() const {
+        std::lock_guard<std::mutex> lock(mux);
+        return stopped;
+    }
+
     void push(const E& event) {
         {
             std::lock_guard<std::mutex> lock(mux);
@@ -38,7 +56,7 @@ public:
 
     events_t wait() {
         std::unique_lock<std::mutex> ul(mux);
-        cv.wait(ul, [this]() { return !pending.empty(); });
+        cv.wait(ul, [this]() { return !pending.empty() or stopped; });
         events_t active;
         pending.swap(active);
         ul.unlock();
@@ -47,7 +65,7 @@ public:
 
     template <class Rep, class Period> events_t wait_for(const std::chrono::duration<Rep, Period>& rel_time) {
         std::unique_lock<std::mutex> ul(mux);
-        if (!cv.wait_for(ul, rel_time, [this]() { return !pending.empty(); })) {
+        if (!cv.wait_for(ul, rel_time, [this]() { return !pending.empty() or stopped; })) {
             return {};
         }
         events_t active;

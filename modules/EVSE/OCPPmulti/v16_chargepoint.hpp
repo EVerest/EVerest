@@ -12,6 +12,7 @@
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/variable_resolver.hpp>
 
+#include <functional>
 #include <optional>
 
 namespace ocpp_multi {
@@ -53,6 +54,9 @@ private:
         std::string device_model_config_mappings;
         std::int32_t ocpp16_network_config_slot;
         bool enable_legacy_config_migration;
+        // Registered as source "EVEREST" in the composed device model storage, next to the SQLite-backed
+        // "OCPP" source; same composition as the OCPP 2.x path.
+        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
     };
 
     void check_configured(const std::string_view& fn);
@@ -61,7 +65,8 @@ private:
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
-    void cb_connection_state_changed(bool is_connected);
+    void cb_connection_state_changed(bool is_connected, int configuration_slot,
+                                     const ocpp::v2::NetworkConnectionProfile& network_connection_profile);
     ocpp::v16::DataTransferResponse cb_data_transfer(const ocpp::v16::DataTransferRequest& request);
     void cb_default_price(const ocpp::TariffMessage& message);
     bool cb_disable_evse(std::int32_t ocpp_connector_id);
@@ -83,18 +88,17 @@ private:
     ocpp::v16::UpdateFirmwareStatusEnumType cb_signed_update_firmware(ocpp::v16::SignedUpdateFirmwareRequest msg);
     bool cb_stop_transaction(std::int32_t ocpp_connector_id, ocpp::v16::Reason reason);
     ocpp::v16::DataTransferResponse cb_tariff_message(const ocpp::TariffMessage& message);
-    void cb_transaction_started(std::int32_t ocpp_connector_id, const std::string& session_id);
-    void cb_transaction_stopped(std::int32_t ocpp_connector_id, const std::string& session_id,
-                                std::int32_t transaction_id);
-    void cb_transaction_updated(std::int32_t ocpp_connector_id, const std::string& session_id,
-                                std::int32_t transaction_id, const ocpp::v16::IdTagInfo& id_tag_info);
+    void cb_transaction_started(const std::string& session_id, const ocpp::v16::StartTransactionRequest& request);
+    void cb_transaction_stopped(const std::string& session_id, std::int32_t ocpp_connector_id,
+                                const ocpp::v16::StopTransactionRequest& request);
+    void cb_transaction_updated(const std::string& session_id, const ocpp::v16::StartTransactionRequest& request,
+                                const ocpp::v16::StartTransactionResponse& response);
     ocpp::v16::UnlockStatus cb_unlock_connector(std::int32_t ocpp_connector_id);
     void cb_update_firmware(ocpp::v16::UpdateFirmwareRequest msg);
     ocpp::v16::GetLogResponse cb_upload_diagnostics(const ocpp::v16::GetDiagnosticsRequest& request);
     ocpp::v16::GetLogResponse cb_upload_logs(ocpp::v16::GetLogRequest request);
     void cb_variable_listener(const ocpp::v16::KeyValue& key_value);
 
-    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
     ocpp::v2::AuthorizeResponse validate_pnc(const types::authorization::ProvidedIdToken& provided_token);
     ocpp::v2::AuthorizeResponse validate_standard(const types::authorization::ProvidedIdToken& provided_token);
 
@@ -204,8 +208,15 @@ public:
 
     ocpp::v2::AuthorizeResponse validate_token(const types::authorization::ProvidedIdToken& provided_token) override;
 
-    static bool default_is_fault(const Everest::error::Error& error);
-    static std::string default_vendor_error_code(const Everest::error::Error& error);
+    static std::optional<ocpp::CiString<50>>
+    encode_pause_reasons(const std::optional<types::evse_manager::ChargingPausedEVSEReasons>& reasons);
+
+protected:
+    // Access for unit tests
+    ocpp::v16::ErrorInfo convert_error(const Everest::error::Error& error);
+    using error_raised_t = std::function<void(std::int32_t, const ocpp::v16::ErrorInfo&)>;
+    using error_cleared_t = std::function<void(std::int32_t, const std::string&)>;
+    void dispatch_error_event(const EventInfo& event, const error_raised_t& raised, const error_cleared_t& cleared);
 };
 
 } // namespace ocpp_multi

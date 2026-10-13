@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include "socket_server.hpp"
 
 SocketServer::SocketServer(int port, void* context, std::function<void(int, void*)> on_client) :

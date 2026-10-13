@@ -98,6 +98,23 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
         *din_response_code = din_responseCodeType_FAILED;
     }
 
+    /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
+     * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus).
+     * Once that has been reported, requests that would continue the energy transfer are answered
+     * with FAILED; the stop sequence (PowerDelivery(Stop), WeldingDetection, SessionStop) is still
+     * allowed to complete normally. */
+    if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
+        switch (conn->ctx->current_v2g_msg) {
+        case V2G_CABLE_CHECK_MSG:
+        case V2G_PRE_CHARGE_MSG:
+        case V2G_CURRENT_DEMAND_MSG:
+            *din_response_code = din_responseCodeType_FAILED;
+            break;
+        default:
+            break;
+        }
+    }
+
     /* [V2G-DC-390]: at this point we must check whether the given request is valid at this step;
      * the idea is that we catch this error in each function below to respond with a valid
      * encoded message; note, that the handler functions below must not access v2g_session in
@@ -122,6 +139,13 @@ v2g_event din_validate_response_code(din_responseCodeType* const din_response_co
         *din_response_code <= din_responseCodeType_FAILED_WrongEnergyTransferType) {
         dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s",
              v2g_msg_type[conn->ctx->current_v2g_msg], dinResponse[*din_response_code]);
+    }
+
+    /* The error shutdown counts as reported only when the response actually leaves with an OK
+     * response code, i.e. carrying the shutdown status; a response that fails for another reason
+     * (unknown session, sequence error) must not consume the one-shot report. */
+    if ((conn->ctx->error_shutdown == true) && (*din_response_code < din_responseCodeType_FAILED)) {
+        conn->ctx->error_shutdown_reported = true;
     }
 
     return nextEvent;
@@ -482,7 +506,7 @@ enum v2g_event handle_din_session_setup(struct v2g_connection* conn) {
 
     dlog(DLOG_LEVEL_INFO, "Created new session with id 0x%016" PRIx64, be64toh(conn->ctx->evse_v2g_data.session_id));
 
-    res->EVSEID.bytesLen = std::min((int)conn->ctx->evse_v2g_data.evse_id.bytesLen, iso2_EVSEID_CHARACTER_SIZE);
+    res->EVSEID.bytesLen = std::min((int)conn->ctx->evse_v2g_data.evse_id.bytesLen, din_evseIDType_BYTES_SIZE);
     memcpy(res->EVSEID.bytes, conn->ctx->evse_v2g_data.evse_id.bytes, res->EVSEID.bytesLen);
 
     res->DateTimeNow_isUsed = conn->ctx->evse_v2g_data.date_time_now_is_used;
@@ -649,6 +673,7 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
             transport.set(&telemetry_types::V2gTransport::charge_parameter_discovery_requested, true);
         });
     }
+    const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
 
     /* At first, publish the received EV request message to the customer MQTT interface */
     publish_din_charge_parameter_discovery_req(conn->ctx, req);
@@ -657,14 +682,14 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
     res->AC_EVSEChargeParameter_isUsed = 0u;
 
-    if (((req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_core) &&
-         (req->EVRequestedEnergyTransferType != din_EVRequestedEnergyTransferType_DC_extended)) ||
-        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] !=
+    if (((req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_core) ||
+         (req->EVRequestedEnergyTransferType == din_EVRequestedEnergyTransferType_DC_extended)) &&
+        conn->ctx->evse_v2g_data.charge_service.SupportedEnergyTransferMode.EnergyTransferMode.array[0] ==
             (iso2_EnergyTransferModeType)req->EVRequestedEnergyTransferType) {
+        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
+    } else if (conn->ctx->is_fake_dc == false) {
         res->ResponseCode = din_responseCodeType_FAILED_WrongEnergyTransferType; // [V2G-DC-397] Failed reponse code is
                                                                                  // logged at the end of the function
-    } else {
-        log_selected_energy_transfer_type((int)req->EVRequestedEnergyTransferType);
     }
 
     res->ResponseCode = (req->AC_EVChargeParameter_isUsed == (unsigned int)1)
@@ -782,12 +807,30 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
         res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
     }
 
+    /* If fake HLC DC is active, try to stop the charging session over EVSENotification and EVSEStatusCode first.
+     * If the EV is ignoring the shutdown request, stop the charging session in the next response message with a failed
+     * response code.
+     */
+    if (conn->ctx->is_fake_dc) {
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = din_EVSENotificationType_StopCharging;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+
+        if (first_req == true) {
+            dlog(DLOG_LEVEL_INFO, "Initiate stop of the fake HLC DIN DC session");
+            res->EVSEProcessing = din_EVSEProcessingType_Ongoing;
+        } else {
+            res->ResponseCode = din_responseCodeType_FAILED;
+        }
+    }
+
     /* Check the current response code and check if no external error has occurred */
     nextEvent = utils::din_validate_response_code(&res->ResponseCode, conn);
 
     /* Set next expected req msg */
     if (res->EVSEProcessing == din_EVSEProcessingType_Finished) {
-        if (res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) {
+        if ((res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode != din_DC_EVSEStatusCodeType_EVSE_Ready) &&
+            (conn->ctx->is_fake_dc == false)) {
             dlog(DLOG_LEVEL_WARNING,
                  "EVSE wants to finish charge parameter phase, but status code is not set to 'ready' (1)");
         }
@@ -819,7 +862,7 @@ static enum v2g_event handle_din_charge_parameter(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
     struct din_PowerDeliveryReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.PowerDeliveryReq;
     struct din_PowerDeliveryResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.PowerDeliveryRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
@@ -828,6 +871,16 @@ static enum v2g_event handle_din_power_delivery(struct v2g_connection* conn) {
     publish_din_power_delivery_req(conn->ctx, req);
 
     if (req->ReadyToChargeState == (int)0) {
+        /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
+         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.5.19]. More
+         * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
+        for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+            uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];
+            if ((status_code == din_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+                (status_code == din_DC_EVSEStatusCodeType_EVSE_Ready)) {
+                status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
+            }
+        }
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
@@ -932,7 +985,7 @@ static enum v2g_event handle_din_cable_check(struct v2g_connection* conn) {
                               ? din_EVSEProcessingType_Finished
                               : din_EVSEProcessingType_Ongoing;
 
-    if (conn->ctx->intl_emergency_shutdown == true) {
+    if ((conn->ctx->intl_emergency_shutdown == true) || (conn->ctx->error_shutdown == true)) {
         res->DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_EmergencyShutdown;
     } else if (res->EVSEProcessing == din_EVSEProcessingType_Finished) {
         res->DC_EVSEStatus.EVSEStatusCode = din_DC_EVSEStatusCodeType_EVSE_Ready;
@@ -1077,7 +1130,7 @@ static enum v2g_event handle_din_current_demand(struct v2g_connection* conn) {
  * \param conn is the structure with the V2G msg pair.
  * \return Returns the next V2G-event.
  */
-static enum v2g_event handle_din_welding_detection(struct v2g_connection* conn) {
+enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn) {
     struct din_WeldingDetectionReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct din_WeldingDetectionResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
@@ -1131,6 +1184,12 @@ static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
 
     /* Check the current response code and check if no external error has occurred */
     utils::din_validate_response_code(&res->ResponseCode, conn);
+
+    /* A positive SessionStopRes anchors the CP-oscillator retain time [V2G-DC-968]; DIN has no
+     * pause, so this is always a terminate */
+    if (res->ResponseCode == din_responseCodeType_OK) {
+        conn->session_stop_res_pending = v2g_connection::SessionStopResPending::TERMINATE;
+    }
 
     /* Setuo dlink action */
     conn->d_link_action = dLinkAction::D_LINK_ACTION_TERMINATE;
@@ -1244,7 +1303,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.PowerDeliveryRes_isUsed = 1u;
         init_din_PowerDeliveryResType(&exi_out->V2G_Message.Body.PowerDeliveryRes);
-        next_v2g_event = handle_din_power_delivery(conn);
+        next_v2g_event = states::handle_din_power_delivery(conn);
     } else if (exi_in->V2G_Message.Body.ChargingStatusReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "ChargingStatus request is not supported in DIN 70121");
         conn->ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
@@ -1273,7 +1332,7 @@ enum v2g_event din_handle_request(v2g_connection* conn) {
         }
         exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed = 1u;
         init_din_WeldingDetectionResType(&exi_out->V2G_Message.Body.WeldingDetectionRes);
-        next_v2g_event = handle_din_welding_detection(conn);
+        next_v2g_event = states::handle_din_welding_detection(conn);
     } else if (exi_in->V2G_Message.Body.SessionStopReq_isUsed) {
         dlog(DLOG_LEVEL_TRACE, "Handling SessionStopReq");
         conn->ctx->current_v2g_msg = V2G_SESSION_STOP_MSG;

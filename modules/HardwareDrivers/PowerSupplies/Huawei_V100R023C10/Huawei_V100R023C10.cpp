@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "Huawei_V100R023C10.hpp"
 #include "connector_1/power_supply_DCImpl.hpp"
@@ -126,6 +126,7 @@ void Huawei_V100R023C10::init() {
     dispenser_config.verify_secure_goose_hmac = config.verify_secure_goose;
     dispenser_config.module_placeholder_allocation_timeout =
         std::chrono::seconds(config.module_placeholder_allocation_timeout_s);
+    dispenser_config.modbus_timeout_ms = std::chrono::seconds(config.modbus_timeout_s);
 
     dispenser_config.telemetry_publisher = this->telemetry_publisher;
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/dc_welding_detection.hpp>
 #include <iso15118/d20/state/session_stop.hpp>
 
@@ -17,16 +17,18 @@ message_20::DC_WeldingDetectionResponse handle_request(const message_20::DC_Weld
     message_20::DC_WeldingDetectionResponse res;
 
     if (validate_and_setup_header(res.header, session, req.header.session_id) == false) {
-        return response_with_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, dt::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     res.present_voltage = dt::from_float(present_voltage);
 
-    return response_with_code(res, dt::ResponseCode::OK);
+    set_response_code(res, dt::ResponseCode::OK);
+    return res;
 }
 
 void DC_WeldingDetection::enter() {
-    m_ctx.log.enter_state("DC_WeldingDetection");
+    logf_debug("Enter state: DC_WeldingDetection");
 }
 
 Result DC_WeldingDetection::feed(Event ev) {
@@ -76,6 +78,7 @@ Result DC_WeldingDetection::feed(Event ev) {
         }
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
 
         // Todo(sl): Tell the reason why the charger is stopping. Shutdown, Error, etc.
         if (req->charging_session == message_20::datatypes::ChargingSession::Pause) {
@@ -92,7 +95,7 @@ Result DC_WeldingDetection::feed(Event ev) {
 
         return {};
     } else {
-        m_ctx.log("expected DC_WeldingDetection! But code type id: %d", variant->get_type());
+        logf_warning("Expected DC_WeldingDetection! But code type id: %d", variant->get_type());
 
         // Sequence Error
         const message_20::Type req_type = variant->get_type();

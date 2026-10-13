@@ -1,0 +1,9 @@
+# A configuration that fails validation: the module name does not exist, so no manifest can be
+# loaded for it. Used by core_tests/manager_lifecycle_tests.py to cover the invalid-configuration
+# outcomes at boot.
+#
+# The "config-test-" prefix is required: conftest.py sweeps every other config-*.yaml in the
+# installed config directory into TestConfigsInDirectory, which asserts that each one starts.
+active_modules:
+  broken:
+    module: ThisModuleDoesNotExist

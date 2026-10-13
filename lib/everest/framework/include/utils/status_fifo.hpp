@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef STATUS_FIFO_HPP
 #define STATUS_FIFO_HPP
 
@@ -17,7 +17,6 @@ public:
     static constexpr auto MANAGER_INITIALIZING = "MANAGER_INITIALIZING\n";
     static constexpr auto MANAGER_STARTING_MODULES = "MANAGER_STARTING_MODULES\n";
     static constexpr auto MANAGER_RUNNING = "MANAGER_RUNNING\n";
-    static constexpr auto MANAGER_RESTART_REQUESTED = "MANAGER_RESTART_REQUESTED\n";
     static constexpr auto MANAGER_CRASH_SHUTDOWN_IN_PROGRESS = "MANAGER_CRASH_SHUTDOWN_IN_PROGRESS\n";
     static constexpr auto MANAGER_SHUTDOWN_REQUESTED = "MANAGER_SHUTDOWN_REQUESTED\n";
     static constexpr auto MANAGER_FORCE_TERMINATING = "MANAGER_FORCE_TERMINATING\n";

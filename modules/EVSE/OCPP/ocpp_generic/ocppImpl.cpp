@@ -103,6 +103,10 @@ void ocppImpl::init() {
 void ocppImpl::ready() {
 }
 
+void ocppImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 bool ocppImpl::handle_stop() {
     if (this->mod->charge_point == nullptr) {
         EVLOG_warning << "ChargePoint not initialized, cannot handle stop command";
@@ -252,7 +256,7 @@ ocppImpl::handle_set_variables(std::vector<types::ocpp::SetVariableRequest>& req
         // retrieve key and value from the request
         auto key = request.component_variable.variable.name;
         auto value = request.value;
-        auto response = this->mod->charge_point->set_configuration_key(key, value);
+        auto response = this->mod->set_writable_configuration_key(key, value);
 
         switch (response) {
         case ocpp::v16::ConfigurationStatus::Accepted:
@@ -299,6 +303,27 @@ void ocppImpl::handle_monitor_variables(std::vector<types::ocpp::ComponentVariab
             });
     }
 }
+
+std::vector<types::ocpp::GetVariableResult>
+ocppImpl::handle_monitor_and_get_variables(std::vector<types::ocpp::ComponentVariable>& component_variables) {
+    // register the monitors first so that no change between reading the values and the registration is lost
+    handle_monitor_variables(component_variables);
+
+    if (component_variables.empty()) {
+        // an empty key list in an OCPP1.6 GetConfiguration.req would return all keys
+        return {};
+    }
+
+    std::vector<types::ocpp::GetVariableRequest> requests;
+    requests.reserve(component_variables.size());
+    for (const auto& cv : component_variables) {
+        types::ocpp::GetVariableRequest request;
+        request.component_variable = cv; // no attribute_type: Actual is the default
+        requests.push_back(request);
+    }
+    return handle_get_variables(requests);
+}
+
 types::ocpp::ChangeAvailabilityResponse
 ocppImpl::handle_change_availability(types::ocpp::ChangeAvailabilityRequest& request) {
 

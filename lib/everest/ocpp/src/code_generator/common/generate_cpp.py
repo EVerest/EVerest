@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 #
 # SPDX-License-Identifier: Apache-2.0
-# Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+# Copyright Pionix GmbH and Contributors to EVerest
 #
 """OCPP JSON schema to cpp converter."""
 from jinja2 import Environment, FileSystemLoader, select_autoescape
@@ -60,7 +60,6 @@ env = Environment(
 env.filters['snake_case'] = snake_case
 env.filters['remove_last'] = remove_last
 env.globals['timestamp'] = datetime.utcnow
-env.globals['year'] = datetime.utcnow().year
 message_hpp_template = env.get_template('message.hpp.jinja')
 message_cpp_template = env.get_template('message.cpp.jinja')
 messages_cmakelists_txt_template = env.get_template(

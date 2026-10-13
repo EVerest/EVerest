@@ -5,8 +5,10 @@
 #include <everest/logging.hpp>
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -20,6 +22,7 @@
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
+#include <evse_security/crypto/openssl/openssl_iso20.hpp>
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
@@ -61,6 +64,32 @@ CertificateValidationResult to_certificate_error(const int ec) {
         EVLOG_warning << X509_verify_cert_error_string(ec);
         return CertificateValidationResult::Unknown;
     }
+}
+
+// A leaf that is not yet valid is verified at its notBefore, so every other certificate in the chain still has to be
+// valid at that time
+bool set_future_leaf_verification_time(X509_STORE_CTX* ctx, const X509* leaf) {
+    const ASN1_TIME* not_before = X509_get0_notBefore(leaf);
+    const int not_before_vs_now = X509_cmp_current_time(not_before);
+    if (not_before_vs_now == 0) {
+        return false;
+    }
+    if (not_before_vs_now < 0) {
+        return true;
+    }
+
+    std::tm not_before_tm{};
+    if (ASN1_TIME_to_tm(not_before, &not_before_tm) != 1) {
+        return false;
+    }
+    // -1 if not representable, e.g. dates after 2038 with a 32-bit time_t
+    const std::time_t verification_time = timegm(&not_before_tm);
+    if (verification_time == -1) {
+        return false;
+    }
+
+    X509_STORE_CTX_set_time(ctx, 0, verification_time);
+    return true;
 }
 } // namespace
 
@@ -124,6 +153,7 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
     unsigned int bits = 0;
     std::string group_256 = "P-256";
     std::string group_384 = "P-384";
+    std::string group_521 = "P-521";
     char* group = nullptr;
     std::size_t group_sz = 0;
     int nid = NID_undef;
@@ -158,6 +188,11 @@ bool s_generate_key(const KeyGenerationInfo& key_info, KeyHandle_ptr& out_key, E
         group = group_256.data();
         group_sz = group_256.length();
         nid = NID_X9_62_prime256v1;
+        break;
+    case CryptoKeyType::EC_secp521r1:
+        group = group_521.data();
+        group_sz = group_521.length();
+        nid = NID_secp521r1;
         break;
     case CryptoKeyType::EC_secp384r1:
     default:
@@ -401,6 +436,31 @@ std::string OpenSSLSupplier::x509_get_key_hash(X509Handle* handle) {
     return ss.str();
 }
 
+std::string OpenSSLSupplier::x509_get_public_key_algorithm(X509Handle* handle) {
+    X509* x509 = get(handle);
+
+    if (x509 == nullptr) {
+        return {};
+    }
+
+    // Borrowed reference, must not be freed
+    EVP_PKEY* pkey = X509_get0_pubkey(x509);
+    if (pkey == nullptr) {
+        return {};
+    }
+
+    // EC keys are told apart by their curve: that is what ISO 15118-2 (prime256v1) and
+    // ISO 15118-20 (secp521r1) prescribe for the SECC leaf.
+    std::array<char, 64> group{};
+    std::size_t group_len = 0;
+    if (EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len) == 1 && group_len > 0) {
+        return std::string(group.data(), group_len);
+    }
+
+    const char* type_name = EVP_PKEY_get0_type_name(pkey);
+    return (type_name != nullptr) ? std::string(type_name) : std::string{};
+}
+
 std::string OpenSSLSupplier::x509_get_responder_url(X509Handle* handle) {
     X509* x509 = get(handle);
 
@@ -469,6 +529,10 @@ bool OpenSSLSupplier::x509_is_child(X509Handle* child, X509Handle* parent) {
         // X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_X509_STRICT);
 
         X509_STORE_CTX_set_flags(ctx.get(), X509_V_FLAG_PARTIAL_CHAIN);
+    }
+
+    if (iso20::key_type(X509_get0_pubkey(x509_child)) != iso20::KeyType::None) {
+        X509_STORE_CTX_set_verify_cb(ctx.get(), iso20::verify_annex_b_extensions);
     }
 
     if (X509_verify_cert(ctx.get()) != 1) {
@@ -548,21 +612,16 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
         return CertificateValidationResult::Unknown;
     }
 
-    if (allow_future_certificates) {
-        // Manually check if cert is expired
-        int day = 0;
-        int sec = 0;
-        ASN1_TIME_diff(&day, &sec, nullptr, X509_get_notAfter(get(target)));
-        if (day < 0 || sec < 0) {
-            // certificate is expired
-            return CertificateValidationResult::Expired;
-        }
-        // certificate is not expired, but may not be valid yet. Since we allow future certs, disable time checks.
-        X509_STORE_CTX_set_flags(store_ctx_ptr.get(), X509_V_FLAG_NO_CHECK_TIME);
+    if (iso20::key_type(X509_get0_pubkey(get(target))) != iso20::KeyType::None) {
+        X509_STORE_CTX_set_verify_cb(store_ctx_ptr.get(), iso20::verify_annex_b_extensions);
     }
 
-    // verifies the certificate chain based on ctx
-    // verifies the certificate has not expired and is already valid
+    if (allow_future_certificates && !set_future_leaf_verification_time(store_ctx_ptr.get(), get(target))) {
+        EVLOG_warning << "X509 could not determine the verification time from the leaf's notBefore!";
+        return CertificateValidationResult::Unknown;
+    }
+
+    // verifies the certificate chain based on ctx, including the validity period of every certificate in it
     if (X509_verify_cert(store_ctx_ptr.get()) != 1) {
         const int ec = X509_STORE_CTX_get_error(store_ctx_ptr.get());
         return to_certificate_error(ec);
@@ -720,12 +779,19 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         x509Name, "CN", MBSTRING_ASC,
         // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
         reinterpret_cast<const unsigned char*>(csr_info.commonName.c_str()), -1, -1, 0);
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
-    X509_NAME_add_entry_by_txt(x509Name, "DC", MBSTRING_ASC, reinterpret_cast<const unsigned char*>("CPO"), -1, -1, 0);
+    if (csr_info.domain_component.has_value()) {
+        X509_NAME_add_entry_by_txt(
+            x509Name, "DC", MBSTRING_ASC,
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+            reinterpret_cast<const unsigned char*>(csr_info.domain_component->c_str()), -1, -1, 0);
+    }
 
     STACK_OF(X509_EXTENSION)* extensions = sk_X509_EXTENSION_new_null();
-    X509_EXTENSION* ext_key_usage =
-        X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage, "digitalSignature, keyAgreement");
+    std::string key_usage = "critical, digitalSignature";
+    if (csr_info.key_agreement) {
+        key_usage += ", keyAgreement";
+    }
+    X509_EXTENSION* ext_key_usage = X509V3_EXT_conf_nid(nullptr, nullptr, NID_key_usage, key_usage.c_str());
     X509_EXTENSION* ext_basic_constraints =
         X509V3_EXT_conf_nid(nullptr, nullptr, NID_basic_constraints, "critical,CA:false");
     sk_X509_EXTENSION_push(extensions, ext_key_usage);
@@ -761,8 +827,10 @@ CertificateSignRequestResult OpenSSLSupplier::x509_generate_csr(const Certificat
         return CertificateSignRequestResult::ExtensionsError;
     }
 
-    // sign the certificate with the private key
-    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, EVP_sha256()) != 0;
+    // sign the certificate with the private key. ISO 15118-20 pairs secp521r1 with SHA-512
+    // (ecdsa-with-SHA512); everything else keeps SHA-256
+    const EVP_MD* digest = (csr_info.key_info.key_type == CryptoKeyType::EC_secp521r1) ? EVP_sha512() : EVP_sha256();
+    const bool x509_signed = X509_REQ_sign(x509_req_ptr.get(), key, digest) != 0;
 
     if (x509_signed == false) {
         EVLOG_error << "Failed to sign csr with error!";

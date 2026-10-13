@@ -8,10 +8,11 @@ set -euo pipefail
 # Suites:
 #   all             All tests
 #
-#   integration     Core, framework, async API, and EEBUS tests
+#   integration     Core, framework, async API, management API, and EEBUS tests
 #   core            Core tests only
 #   framework       Framework tests only
 #   asyncapi        Async API tests only
+#   management      Management API tests only
 #
 #   ocpp            All OCPP tests (1.6, 2.0.1, 2.1)
 #   ocpp16          OCPP 1.6 tests only
@@ -29,6 +30,9 @@ set -euo pipefail
 #   --junitxml PATH      JUnit XML output (default: result.xml)
 #   --html PATH          HTML report output (default: report.html)
 #   --no-isolation       Disable network isolation
+#   --iso15118-parallel N
+#                        Run at most N ISO 15118 tests at the same time
+#                        (default: no limit; only with network isolation)
 #   --ocpp-impl V        OCPP module(s) to test: both (default), legacy, multi
 #   --                   Pass remaining args directly to pytest (e.g. -k ...)
 #   -h, --help           Show this help
@@ -37,6 +41,7 @@ set -euo pipefail
 #   PYTHON_INTERPRETER   Python to use (default: python3)
 #   PARALLEL_TESTS       Worker count (overridden by -j)
 #   NETWORK_ISOLATION    true/false (overridden by --no-isolation)
+#   ISO15118_PARALLEL    ISO 15118 test limit (overridden by --iso15118-parallel)
 #   EVEREST_PREFIX       Install prefix (overridden by --everest-prefix)
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE:-$0}")" && pwd)"
@@ -52,6 +57,7 @@ PREFIX="${EVEREST_PREFIX:-${EVEREST_CORE_DIR}/build/dist}"
 JUNITXML="result.xml"
 HTML="report.html"
 ISOLATION="${NETWORK_ISOLATION:-true}"
+ISO15118_PARALLEL="${ISO15118_PARALLEL:-}"
 SUITE=""
 EXTRA_PYTEST_ARGS=()
 OCPP_IMPL="both"
@@ -71,6 +77,7 @@ while [[ $# -gt 0 ]]; do
         --junitxml)        JUNITXML="$2"; shift 2;;
         --html)            HTML="$2"; shift 2;;
         --no-isolation)    ISOLATION=false; shift;;
+        --iso15118-parallel) ISO15118_PARALLEL="$2"; shift 2;;
         --ocpp-impl)       OCPP_IMPL="$2"; shift 2;;
         --)                shift; EXTRA_PYTEST_ARGS+=("$@"); break;;
         -h|--help)         usage;;
@@ -158,6 +165,11 @@ fi
 
 [[ -n "$ISOLATION_FLAG" ]] && PYTEST_ARGS+=("$ISOLATION_FLAG")
 
+if [[ -n "$ISOLATION_FLAG" && -n "$ISO15118_PARALLEL" ]]; then
+    echo "ISO 15118 tests in parallel: at most $ISO15118_PARALLEL"
+    PYTEST_ARGS+=(--iso15118-parallel "$ISO15118_PARALLEL")
+fi
+
 if [[ ${#EXTRA_PYTEST_ARGS[@]} -gt 0 ]]; then
     echo "Pytest passthrough args: ${EXTRA_PYTEST_ARGS[*]}"
 fi
@@ -209,23 +221,26 @@ case "$SUITE" in
         setup_ocpp
 
         SUITE_PYTEST_ARGS=("${OCPP_IMPL_ARGS[@]}")
+        # eebus_tests are long-running, so run them first
         run_pytest_suite \
+            eebus_tests/eebus_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
+            management_api_tests/*_tests.py \
             ocpp_tests/test_sets/ocpp16/*.py \
             ocpp_tests/test_sets/ocpp201/*.py \
-            ocpp_tests/test_sets/ocpp21/*.py \
-            eebus_tests/eebus_tests.py
+            ocpp_tests/test_sets/ocpp21/*.py
         ;;
 
     integration)
         cd "$SCRIPT_DIR"
         run_pytest_suite \
+            eebus_tests/eebus_tests.py \
             core_tests/*.py \
             framework_tests/*.py \
             async_api_tests/*.py \
-            eebus_tests/eebus_tests.py
+            management_api_tests/*_tests.py
         ;;
 
     core)
@@ -244,6 +259,12 @@ case "$SUITE" in
         cd "$SCRIPT_DIR"
         run_pytest_suite \
             async_api_tests/*.py
+        ;;
+
+    management)
+        cd "$SCRIPT_DIR"
+        run_pytest_suite \
+            management_api_tests/*_tests.py
         ;;
 
     ocpp)
@@ -289,7 +310,7 @@ case "$SUITE" in
 
     *)
         echo "Unknown suite: $SUITE" >&2
-        echo "Valid suites: all, integration, core, framework, asyncapi, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
+        echo "Valid suites: all, integration, core, framework, asyncapi, management, ocpp, ocpp16, ocpp201, ocpp21, eebus" >&2
         exit 1
         ;;
 

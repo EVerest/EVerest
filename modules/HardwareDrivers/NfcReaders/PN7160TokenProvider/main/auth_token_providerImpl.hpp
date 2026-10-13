@@ -21,6 +21,12 @@ namespace module {
 namespace main {
 
 struct Conf {
+    std::string transport;
+    std::string device;
+    std::string i2c_address;
+    std::string pin_int;
+    std::string pin_enable;
+    std::string pin_fwdnld;
     int token_debounce_interval_ms;
     bool disable_nfc_rfid;
     bool debug;

@@ -1,6 +1,6 @@
 
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v16/charge_point_configuration_interface.hpp"
 #include <filesystem>
@@ -160,6 +160,20 @@ TEST_F(ConfigurationTester, BooleanKeyAcceptsValidLiterals) {
         ASSERT_TRUE(result.has_value()) << "value=" << v;
         EXPECT_EQ(result.value(), ConfigurationStatus::Accepted) << "value=" << v;
     }
+}
+
+TEST_F(ConfigurationTester, OcspRequestInterval) {
+    EXPECT_EQ(config->getOcspRequestInterval(), 604800);
+
+    auto set_ok = config->set("OcspRequestInterval", "86400");
+    ASSERT_TRUE(set_ok.has_value());
+    EXPECT_EQ(set_ok.value(), ConfigurationStatus::Accepted);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
+
+    auto set_low = config->set("OcspRequestInterval", "86399");
+    ASSERT_TRUE(set_low.has_value());
+    EXPECT_EQ(set_low.value(), ConfigurationStatus::Rejected);
+    EXPECT_EQ(config->getOcspRequestInterval(), 86400);
 }
 
 TEST_F(ConfigurationTester, BooleanKeyRejectsInvalidLiterals) {

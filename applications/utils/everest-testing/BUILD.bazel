@@ -20,7 +20,7 @@ py_library(
         requirement("pyftpdlib"),
         requirement("ocpp"),
         requirement("websockets"),
-        requirement("pyOpenSSL"),
+        requirement("cryptography"),
         requirement("pyyaml"),
     ],
 )

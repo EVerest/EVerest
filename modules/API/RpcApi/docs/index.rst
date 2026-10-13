@@ -16,6 +16,8 @@ Version history of the module:
      - Description
    * - 1.0.0
      - Initial version of the RpcApi module
+   * - 1.1.0
+     - Added new enums for AC_DER
 
 Introduction
 ------------

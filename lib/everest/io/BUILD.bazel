@@ -43,6 +43,7 @@ cc_library(
     }),
     visibility = ["//visibility:public"],
     deps = [
+        "//lib/everest/tls",
         "//lib/everest/util",
         "@mosquitto",
     ],

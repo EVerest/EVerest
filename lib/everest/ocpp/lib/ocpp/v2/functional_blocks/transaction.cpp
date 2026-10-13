@@ -25,7 +25,7 @@
 namespace ocpp::v2 {
 TransactionBlock::TransactionBlock(
     const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
-    AuthorizationInterface& authorization, AvailabilityInterface& availability, SmartChargingInterface& smart_charging,
+    AuthorizationInterface& authorization, AvailabilityInterface& availability, SmartChargingInterface* smart_charging,
     TariffAndCostInterface& tariff_and_cost, StopTransactionCallback stop_transaction_callback,
     PauseChargingCallback pause_charging_callback, std::optional<TransactionEventCallback> transaction_event_callback,
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback, ResetCallback reset_callback) :
@@ -181,7 +181,9 @@ void TransactionBlock::on_transaction_finished(const std::int32_t evse_id, const
     }
 
     // K02.FR.05 The transaction is over, so delete the TxProfiles associated with the transaction.
-    smart_charging.delete_transaction_tx_profiles(enhanced_transaction->get_transaction().transactionId);
+    if (this->smart_charging != nullptr) {
+        this->smart_charging->delete_transaction_tx_profiles(enhanced_transaction->get_transaction().transactionId);
+    }
     evse_handle.release_transaction();
 
     bool send_reset = false;
@@ -264,31 +266,36 @@ void TransactionBlock::transaction_event_req(const TransactionEventEnum& event_t
 
     ocpp::Call<TransactionEventRequest> call(req);
 
-    // Check if id token is in the remote start map, because when a remote
-    // start request is done, the first transaction event request should
-    // always contain trigger reason 'RemoteStart'.
-    auto it = std::find_if(
-        remote_start_id_per_evse.begin(), remote_start_id_per_evse.end(),
-        [&id_token, &evse](const std::pair<std::int32_t, std::pair<IdToken, std::int32_t>>& remote_start_per_evse) {
-            if (id_token.has_value() and remote_start_per_evse.second.first.idToken == id_token.value().idToken) {
+    {
+        // Check if id token is in the remote start map, because when a remote
+        // start request is done, the first transaction event request should
+        // always contain trigger reason 'RemoteStart'.
+        // Handle spans find-then-erase so the two form one atomic critical section; it is
+        // released (end of this block) before dispatch_call to avoid holding the lock while dispatching.
+        auto handle = this->remote_start_id_per_evse.handle();
+        auto it = std::find_if(
+            handle->begin(), handle->end(),
+            [&id_token, &evse](const std::pair<std::int32_t, std::pair<IdToken, std::int32_t>>& remote_start_per_evse) {
+                if (id_token.has_value() and remote_start_per_evse.second.first.idToken == id_token.value().idToken) {
 
-                if (remote_start_per_evse.first == 0) {
-                    return true;
+                    if (remote_start_per_evse.first == 0) {
+                        return true;
+                    }
+
+                    if (evse.has_value() and evse.value().id == remote_start_per_evse.first) {
+                        return true;
+                    }
                 }
+                return false;
+            });
 
-                if (evse.has_value() and evse.value().id == remote_start_per_evse.first) {
-                    return true;
-                }
-            }
-            return false;
-        });
+        if (it != handle->end()) {
+            // Found remote start. Set remote start id and the trigger reason.
+            call.msg.triggerReason = TriggerReasonEnum::RemoteStart;
+            call.msg.transactionInfo.remoteStartId = it->second.second;
 
-    if (it != remote_start_id_per_evse.end()) {
-        // Found remote start. Set remote start id and the trigger reason.
-        call.msg.triggerReason = TriggerReasonEnum::RemoteStart;
-        call.msg.transactionInfo.remoteStartId = it->second.second;
-
-        remote_start_id_per_evse.erase(it);
+            handle->erase(it);
+        }
     }
 
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
@@ -300,7 +307,8 @@ void TransactionBlock::transaction_event_req(const TransactionEventEnum& event_t
 
 void TransactionBlock::set_remote_start_id_for_evse(const std::int32_t evse_id, const IdToken id_token,
                                                     const std::int32_t remote_start_id) {
-    remote_start_id_per_evse[evse_id] = {id_token, remote_start_id};
+    auto handle = this->remote_start_id_per_evse.handle();
+    (*handle)[evse_id] = {id_token, remote_start_id};
 }
 
 void TransactionBlock::schedule_reset(const std::optional<std::int32_t> reset_scheduled_evseid) {

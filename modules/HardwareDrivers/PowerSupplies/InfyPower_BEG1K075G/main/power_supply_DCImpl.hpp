@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_POWER_SUPPLY_DC_IMPL_HPP
 #define MAIN_POWER_SUPPLY_DC_IMPL_HPP
 
@@ -14,6 +14,7 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
 #include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
@@ -60,10 +61,14 @@ private:
     types::power_supply_DC::Capabilities caps;
 
     types::power_supply_DC::Mode last_publish_mode{types::power_supply_DC::Mode::Off};
+    std::atomic<types::power_supply_DC::Mode> commanded_mode{types::power_supply_DC::Mode::Off};
     std::optional<double> last_logged_export_voltage;
     std::optional<double> last_logged_export_current;
     std::optional<double> last_logged_import_voltage;
     std::optional<double> last_logged_import_current;
+    // The modules do not regulate to 0 A, so a 0 A request switches the DC side off instead.
+    bool off_for_zero_current{false};
+    void apply_setpoint(double voltage, double current, types::power_supply_DC::Mode setpoint_mode);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 

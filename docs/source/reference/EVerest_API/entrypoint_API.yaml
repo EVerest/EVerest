@@ -6,13 +6,15 @@ info:
   version: 1.0.0
   description: >-
     API for EVerest API clients discovering the EVerest API capabilities.
+    Experimental: this API is exempt from the EVerest stability guarantees and
+    the deprecation period; channels, operations and message payloads may change
+    without further notice until it is promoted to stable.
 
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0
   tags:
     - name: EVerest
-    - name: Auth
 servers:
   default:
     pathname: 'everest_api/'
@@ -97,6 +99,16 @@ operations:
     action: send
     channel:
       $ref: '#/channels/send_ready_beacon'
+    description: >-
+      Announces that the entrypoint API can be queried, subject to the conditions
+      below. The payload is an empty
+      JSON object and the message is not retained: a client connecting later
+      never receives it and should send a discover request on its own.
+      Clients must be prepared to receive this beacon more than once.
+      Only if every API module is configured with 'allow_global_read: true' does
+      the beacon guarantee that discover and query-modules/{api_type} requests
+      are answered; without that setting it guarantees nothing.
+      The beacon never indicates that the API modules themselves are ready.
 
 
 components:
@@ -172,7 +184,7 @@ components:
     send_ready_beacon:
       name: send_ready_beacon
       title: 'Send ready beacon'
-      summary: A beacon to indicate the API is ready to be queried
+      summary: A beacon to indicate the entrypoint API is ready to be queried
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ReadyBeacon'
@@ -231,4 +243,4 @@ components:
     ReadyBeacon:
       type: object
       additionalProperties: true
-      description: a beacon to indicate the API is ready to be queried
+      description: Empty object announcing that the entrypoint API is ready to be queried

@@ -27,7 +27,6 @@ types::json_rpc_api::ErrorResObj RequestHandlerDummy::set_ac_charging_current(co
     ErrorResObj res{};
 
     auto evse_store = data_store.get_evse_store(evse_index);
-    auto evse_state = evse_store->evsestatus.get_state();
 
     // Skipping applying limits if charging is not allowed.
     // In this case, the zero limit is already applied to prevent charging. This value should not be overridden.

@@ -6935,7 +6935,15 @@ static int encode_iso20_dc_ReceiptType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso20_dc_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 129;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 129;
+                        }
+                        else
+                        {
+                            grammar_id = 130;
+                        }
                     }
                 }
             }
@@ -7026,7 +7034,15 @@ static int encode_iso20_dc_ReceiptType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso20_dc_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 131;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 131;
+                        }
+                        else
+                        {
+                            grammar_id = 132;
+                        }
                     }
                 }
             }
@@ -7104,7 +7120,15 @@ static int encode_iso20_dc_ReceiptType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso20_dc_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 133;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 133;
+                        }
+                        else
+                        {
+                            grammar_id = 134;
+                        }
                     }
                 }
             }
@@ -7169,7 +7193,15 @@ static int encode_iso20_dc_ReceiptType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso20_dc_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 135;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 135;
+                        }
+                        else
+                        {
+                            grammar_id = 136;
+                        }
                     }
                 }
             }
@@ -7221,7 +7253,15 @@ static int encode_iso20_dc_ReceiptType(exi_bitstream_t* stream, const struct iso
                     error = encode_iso20_dc_DetailedTaxType(stream, &ReceiptType->TaxCosts.array[TaxCosts_currentIndex++]);
                     if (error == EXI_ERROR__NO_ERROR)
                     {
-                        grammar_id = 137;
+                        // LOOP breakout code for schema given maximum, regardless of ARRAY_SIZE definition
+                        if (TaxCosts_currentIndex < 10)
+                        {
+                            grammar_id = 137;
+                        }
+                        else
+                        {
+                            grammar_id = 2;
+                        }
                     }
                 }
             }

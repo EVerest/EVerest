@@ -1,0 +1,8 @@
+sequenceDiagram
+    participant Client as Configuration API Client
+    participant Manager as EVerest Manager + ConfigServiceCore
+ 
+    Client->>Manager: [Configuration API] GetConfigurationRequest(request)
+    Manager->Manager: Validate request, Access control
+    Manager->Manager: Read from memory (active slot) or from the database<br/>(other slots, or force_read_from_db)
+    Manager-->>Client: [Configuration API] GetConfigurationResult(result, data)

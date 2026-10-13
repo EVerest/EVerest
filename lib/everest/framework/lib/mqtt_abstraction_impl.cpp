@@ -149,10 +149,11 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const json& json) {
     publish(topic, json, QOS::QOS2);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const json& json, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
-    publish(topic, json.dump(), qos, retain);
+    publish(topic, json.dump(), qos, retain, record_retained);
 }
 
 void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data) {
@@ -161,7 +162,8 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
     publish(topic, data, QOS::QOS0);
 }
 
-void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain) {
+void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& data, QOS qos, bool retain,
+                                  bool record_retained) {
     BOOST_LOG_FUNCTION();
 
     if (topic.empty()) {
@@ -170,7 +172,7 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
 
     auto mqtt_qos = to_io_qos(qos, everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
 
-    if (retain) {
+    if (retain and record_retained) {
         if (not(data.empty() and qos == QOS::QOS0)) {
             // topic should be retained, so save the topic in retained_topics
             // do not save the topic when the payload is empty and QOS is set to 0 which means a retained topic is to be
@@ -197,6 +199,44 @@ void MQTTAbstractionImpl::publish(const std::string& topic, const std::string& d
                                  static_cast<int>(qos), static_cast<int>(retain));
 }
 
+bool MQTTAbstractionImpl::set_lwt(const std::string& topic, const json& json, QOS qos, bool retain) {
+    BOOST_LOG_FUNCTION();
+
+    return set_lwt(topic, json.dump(), qos, retain);
+}
+
+bool MQTTAbstractionImpl::set_lwt(const std::string& topic, const std::string& data, QOS qos, bool retain) {
+    BOOST_LOG_FUNCTION();
+
+    if (topic.empty()) {
+        EVLOG_warning << "Ignoring last-will-testament with empty topic";
+        return false;
+    }
+
+    // An MQTT connection allows only a single last-will-testament, and it must be registered before connect().
+    if (this->mqtt_is_connected) {
+        EVLOG_error << "Cannot set last-will-testament after the MQTT connection has been established";
+        return false;
+    }
+    if (this->lwt_set) {
+        EVLOG_error << "A last-will-testament has already been set; it can only be set once";
+        return false;
+    }
+
+    const auto mqtt_qos = to_io_qos(qos, everest::lib::io::mqtt::mqtt_client::QoS::at_most_once);
+    const auto error = this->mqtt_client->set_will(topic, data, mqtt_qos, retain, {});
+    if (error != everest::lib::io::mqtt::ErrorCode::Success) {
+        EVLOG_error << "MQTT error while setting last-will-testament";
+        // leave lwt_set false so a corrected call may retry
+        return false;
+    }
+
+    this->lwt_set = true;
+    EVLOG_verbose << fmt::format("set last-will-testament on topic: {} with payload: {} and qos: {} and retain: {}",
+                                 topic, data, static_cast<int>(qos), static_cast<int>(retain));
+    return true;
+}
+
 void MQTTAbstractionImpl::subscribe(const std::string& topic) {
     BOOST_LOG_FUNCTION();
 
@@ -215,7 +255,7 @@ void MQTTAbstractionImpl::subscribe(const std::string& topic, QOS qos) {
             topic,
             [this, topic]([[maybe_unused]] everest::lib::io::mqtt::mosquitto_cpp& client,
                           everest::lib::io::mqtt::mosquitto_cpp::message const& message) {
-                this->message_queue.emplace(topic, message.payload);
+                this->message_queue.emplace(message.topic, message.payload);
                 this->new_message_event.notify();
             },
             max_qos_level);
@@ -299,14 +339,15 @@ nlohmann::json MQTTAbstractionImpl::get_internal(const MQTTRequest& request) {
 
     // FIXME: use configurable HandlerType?
     const auto res_token =
-        std::make_shared<TypedHandler>(HandlerType::GetConfigResponse, std::make_shared<Handler>(res_handler));
+        std::make_shared<TypedHandler>(HandlerType::ConfigurationResponse, std::make_shared<Handler>(res_handler));
     this->register_handler(request.response_topic, res_token, request.qos);
     if (request.request_topic.has_value()) {
         if (request.request_data.has_value()) {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json::parse(request.request_data.value())};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest,
+                                       json::parse(request.request_data.value())};
             this->publish(request.request_topic.value(), payload, request.qos);
         } else {
-            MqttMessagePayload payload{MqttMessageType::GetConfig, json{}};
+            MqttMessagePayload payload{MqttMessageType::ConfigurationRequest, json{}};
             this->publish(request.request_topic.value(), payload, request.qos);
         }
     }
@@ -428,8 +469,9 @@ void MQTTAbstractionImpl::on_mqtt_connect() {
         this->mqtt_is_connected = true;
         to_publish = std::move(*handle);
     }
+    // publish() already updated retained_topics, so do not set record_retained here again
     for (auto& message : to_publish) {
-        this->publish(message->topic, message->payload, message->qos, message->retain);
+        this->publish(message->topic, message->payload, message->qos, message->retain, false);
     }
 }
 

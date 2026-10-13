@@ -69,7 +69,7 @@ public:
         return setpoints;
     };
 
-    ScheduleRes get_sold_energy();
+    const ScheduleRes& get_sold_energy() const;
 
     Market* parent();
 

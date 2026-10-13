@@ -7,9 +7,10 @@
 namespace module::board_support {
 
 namespace {
-types::evse_board_support::HardwareCapabilities set_default_capabilities() {
-    return {32.0,                                                          // max_current_A_import
-            6.0,                                                           // min_current_A_import
+types::evse_board_support::HardwareCapabilities set_default_capabilities(double max_current_A_import,
+                                                                         double min_current_A_import) {
+    return {max_current_A_import,                                          // max_current_A_import
+            min_current_A_import,                                          // min_current_A_import
             3,                                                             // max_phase_count_import
             1,                                                             // min_phase_count_import
             16.0,                                                          // max_current_A_export
@@ -27,8 +28,16 @@ void evse_board_supportImpl::init() {
 }
 
 void evse_board_supportImpl::ready() {
-    const auto default_capabilities = set_default_capabilities();
-    publish_capabilities(default_capabilities);
+    auto capabilities = set_default_capabilities(mod->config.max_current_A_import, mod->config.min_current_A_import);
+    if (mod->config.caps_min_current_A >= 0) {
+        capabilities.min_current_A_import = mod->config.caps_min_current_A;
+        capabilities.min_current_A_export = mod->config.caps_min_current_A;
+    }
+    if (mod->config.caps_max_current_A >= 0) {
+        capabilities.max_current_A_import = mod->config.caps_max_current_A;
+        capabilities.max_current_A_export = mod->config.caps_max_current_A;
+    }
+    publish_capabilities(capabilities);
 }
 
 void evse_board_supportImpl::handle_enable(bool& value) {

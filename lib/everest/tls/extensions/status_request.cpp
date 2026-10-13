@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "extensions/status_request.hpp"
 #include "helpers.hpp"
@@ -44,7 +44,7 @@ OCSP_RESPONSE* load_ocsp(const char* filename) {
         }
 
         if (resp == nullptr) {
-            log_error("d2i_OCSP_RESPONSE_bio");
+            log_error(std::string("d2i_OCSP_RESPONSE_bio: ") + filename);
         }
     }
 
@@ -444,42 +444,53 @@ int ClientStatusRequestV2::status_request_cb(SSL* ctx) {
     // length == -1 on no response and response will be nullptr
 
     if ((response != nullptr) && (total_length > 0) && (total_length <= std::numeric_limits<std::int32_t>::max())) {
-        // there is a response
+        result = decode_ocsp_response(response, static_cast<std::int32_t>(total_length)) ? 1 : 0;
+    }
 
-        const auto* tmp_p = &response[0];
+    return result;
+}
 
-        if (response[0] == 0x30) {
-            // not a multi response
-            auto* resp = d2i_OCSP_RESPONSE(nullptr, &tmp_p, total_length);
-            if (resp == nullptr) {
-                log_error("d2i_OCSP_RESPONSE (single)");
-                result = 0;
+bool ClientStatusRequestV2::decode_ocsp_response(const unsigned char* response, std::int32_t length) {
+    bool result{true};
+    const auto* tmp_p = &response[0];
+
+    if (response[0] == 0x30) {
+        // not a multi response
+        auto* resp = d2i_OCSP_RESPONSE(nullptr, &tmp_p, length);
+        if (resp == nullptr) {
+            log_error("d2i_OCSP_RESPONSE (single)");
+            result = false;
+        }
+        OCSP_RESPONSE_free(resp);
+    } else {
+        // multiple responses
+        auto remaining = length;
+        const unsigned char* ptr{response};
+
+        while (remaining >= 3) {
+            const auto len = uint24(ptr);
+            update_position(ptr, remaining, 3);
+            if (len > static_cast<std::uint32_t>(remaining)) {
+                log_error("OCSP_RESPONSE length exceeds received data (multi)");
+                result = false;
+                remaining = -1;
+                break;
+            }
+            // d2i_OCSP_RESPONSE updates tmp_p
+            tmp_p = ptr;
+            auto* resp = d2i_OCSP_RESPONSE(nullptr, &tmp_p, len);
+            update_position(ptr, remaining, len);
+            if ((resp == nullptr) || (ptr != tmp_p)) {
+                log_error("d2i_OCSP_RESPONSE (multi)");
+                result = false;
+                remaining = -1;
             }
             OCSP_RESPONSE_free(resp);
-        } else {
-            // multiple responses
-            auto remaining = static_cast<std::int32_t>(total_length);
-            const unsigned char* ptr{response};
+        }
 
-            while (remaining >= 3) {
-                const auto len = uint24(ptr);
-                update_position(ptr, remaining, 3);
-                // d2i_OCSP_RESPONSE updates tmp_p
-                tmp_p = ptr;
-                auto* resp = d2i_OCSP_RESPONSE(nullptr, &tmp_p, len);
-                update_position(ptr, remaining, len);
-                if ((resp == nullptr) || (ptr != tmp_p)) {
-                    log_error("d2i_OCSP_RESPONSE (multi)");
-                    result = 0;
-                    remaining = -1;
-                }
-                OCSP_RESPONSE_free(resp);
-            }
-
-            if (remaining != 0) {
-                log_error("OCSP_RESPONSE decode error (multi)");
-                result = 0;
-            }
+        if (remaining != 0) {
+            log_error("OCSP_RESPONSE decode error (multi)");
+            result = false;
         }
     }
 

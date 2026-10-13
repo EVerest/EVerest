@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2023 chargebyte GmbH
-// Copyright (C) 2023 Contributors to EVerest
-// Copyright (C) 2024 Pionix GmbH
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef MAIN_ISOLATION_MONITOR_IMPL_HPP
 #define MAIN_ISOLATION_MONITOR_IMPL_HPP
 

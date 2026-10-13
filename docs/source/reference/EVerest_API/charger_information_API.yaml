@@ -1,0 +1,242 @@
+---
+asyncapi: 3.0.0
+id: 'pionix:de:everest:charger_information_API'
+info:
+  title: 'EVerest API definition for the charger information module'
+  version: 1.0.0
+  description: >-
+    API for EVerest API clients providing the charger information (vendor, model, serial numbers,
+    firmware version, ...) to EVerest. EVerest requests the information on demand; the client answers
+    each request with a ChargerInformation object.
+
+    Modules such as OCPP and the API modules request the charger information once during their
+    startup and block until the reply arrives. If no reply arrives within cfg_request_reply_to_s
+    seconds, EVerest continues with empty vendor and model strings, so the client should be connected
+    and answering before EVerest starts.
+
+  license:
+    name: Apache-2.0
+    url: https://opensource.org/licenses/Apache-2.0
+  tags:
+    - name: EVerest
+    - name: ChargerInformationAPI
+servers:
+  default:
+    pathname: 'everest_api/1/charger_information/{module_id}'
+    host: 'localhost:1883'
+    description: default local MQTT
+    protocol: mqtt
+    variables:
+      module_id:
+        description: The ID of the module as defined in the EVerest config file.
+defaultContentType: application/json
+
+
+channels:
+  receive_request_get_charger_information:
+    address: 'e2m/get_charger_information'
+    messages:
+      receive_request_get_charger_information:
+        $ref: '#/components/messages/receive_request_get_charger_information'
+  send_reply_get_charger_information:
+    address: null
+    description: Dynamically defined channel. Used to reply to a get_charger_information request.
+    messages:
+      send_reply_get_charger_information:
+        $ref: '#/components/messages/send_reply_get_charger_information'
+
+  receive_heartbeat:
+    address: 'e2m/heartbeat'
+    messages:
+      receive_heartbeat:
+        $ref: '#/components/messages/receive_heartbeat'
+  send_communication_check:
+    address: 'm2e/communication_check'
+    messages:
+      send_communication_check:
+        $ref: '#/components/messages/send_communication_check'
+
+
+operations:
+  receive_request_get_charger_information:
+    title: 'Receive request to get the charger information'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_request_get_charger_information'
+    description: >-
+      Direction: EVerest to Module.
+      The client must reply on the replyTo address: EVerest blocks the requesting module
+      until a reply arrives or the request times out.
+    reply:
+      address:
+        location: "$message.header#/replyTo"
+      channel:
+        $ref: '#/channels/send_reply_get_charger_information'
+  send_reply_get_charger_information:
+    title: 'Send reply to get charger information request'
+    action: send
+    channel:
+      $ref: '#/channels/send_reply_get_charger_information'
+    description: 'Direction: Module to EVerest'
+
+  receive_heartbeat:
+    title: 'Receive heartbeat'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_heartbeat'
+    description: 'Direction: EVerest to Module'
+  send_communication_check:
+    title: 'Send communication check'
+    action: send
+    channel:
+      $ref: '#/channels/send_communication_check'
+    description: 'Direction: Module to EVerest'
+
+
+components:
+  messages:
+    receive_request_get_charger_information:
+      name: receive_request_get_charger_information
+      title: 'Receive get charger information request'
+      summary: Call to get the charger information
+      payload:
+        type: object
+        properties:
+          headers:
+            type: object
+            properties:
+              replyTo:  # Address for the request to reply to
+                type: string
+                description: Address to send the response to.
+      examples:
+        - summary: "Request charger information"
+          payload:
+            headers:
+              replyTo: "reply/to/address"
+    send_reply_get_charger_information:
+      name: send_reply_get_charger_information
+      title: 'Reply to get charger information'
+      summary: 'Reply to get charger information.'
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/ChargerInformation'
+      examples:
+        - summary: "Charger information"
+          payload:
+            vendor: "Pionix"
+            model: "BelayBox"
+            chargepoint_serial: "SH4CAWN00123"
+            chargebox_serial: "CB123456"
+            friendly_name: "Pionix BelayBox [SH4CAWN00123]"
+            manufacturer: "Pionix GmbH"
+            manufacturer_url: "https://pionix.com"
+            model_revision: "B"
+            board_revision: "1.2"
+            firmware_version: "2026.10.0"
+
+    receive_heartbeat:
+      name: receive_heartbeat
+      title: 'Receive heartbeat'
+      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/HeartBeatId'
+      examples:
+        - summary: "Heartbeat"
+          payload:
+            42
+    send_communication_check:
+      name: send_communication_check
+      title: 'Send communication check'
+      summary: Send communication check to EVerest to signal the module is alive
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/CommunicationCheck'
+      examples:
+        - summary: "Communication check"
+          payload:
+            true
+
+  schemas:
+    ChargerInformation:
+      type: object
+      description: >-
+        Type holding (mostly static) meta information about the whole charger.
+        Vendor and manufacturer refer to the very same company - it is the brand which appears
+        physically on the device label and/or which is shown on the device's web frontend, in UPnP etc.
+        Both terms are used to differentiate the different usages - with legal suffix, or without.
+      additionalProperties: false
+      required:
+        - vendor
+        - model
+      properties:
+        vendor:
+          type: string
+          description: >-
+            Name of vendor, not including any legal form. Is typically used with `model` to
+            form a unique product name aka `vendor` + `single whitespace` + `model`.
+            Example: Pionix
+        model:
+          type: string
+          description: >-
+            A human-friendly name of the model, aka the product name; without vendor name,
+            without any device specific data/numbers (serial numbers/MAC addresses).
+            Example: BelayBox
+        chargepoint_serial:
+          type: string
+          description: >-
+            The traditional serial number as string. It does not necessarily consist of digits only.
+            Usually, this serial appears also on a label on the device.
+            Example: SH4CAWN00123
+        chargebox_serial:
+          type: string
+          description: >-
+            The serial number of the controller as string (if any).
+            It does not necessarily consist of digits only.
+            Example: CB123456
+        friendly_name:
+          type: string
+          description: >-
+            A string which can be used to display the device e.g. in network listings/enumerations.
+            This could typically consist of `vendor` + `single whitespace` + `model` + ` [` + `serial` + `]`.
+        manufacturer:
+          type: string
+          description: >-
+            The name of the vendor, but this may include the legal form.
+            Typically used in product property lists or as text for the following URL.
+        manufacturer_url:
+          type: string
+          description: >-
+            An URL to the vendor website, ideally not a deep link so that it is available for
+            the whole product lifetime.
+        model_url:
+          type: string
+          description: >-
+            An URL to the model website (if any); as above, ideally not a deep link.
+        model_number:
+          type: string
+          description: >-
+            A model number as string (if any).
+        model_revision:
+          type: string
+          description: >-
+            A model or product revision string. Very often this is not defined for the first one
+            so that users of this variable should consider reasonable fallback/default values.
+        board_revision:
+          type: string
+          description: >-
+            The revision (aka version) of the internal (main) PCB, i.e. the one with
+            the CPU running the EVerest system.
+        firmware_version:
+          type: string
+          description: >-
+            A string containing the current running firmware version of the complete system.
+            This is typically not the EVerest version itself, but a firmware version which appears
+            e.g. on the web frontend and as part of the filenames the customer can download from
+            the manufacturer's website.
+    CommunicationCheck:
+      type: boolean
+      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+    HeartBeatId:
+      type: integer
+      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <generic_ocpp.hpp>
+#include <v16_conversions.hpp>
 
 #include "stubs/generic_ocpp_stub.hpp"
 
@@ -103,6 +104,34 @@ TEST(GenericOcppProvides, dataTransferOffline) {
     const auto result = ocpp.handle_data_transfer(request);
     EXPECT_EQ(result.status, DataTransferStatus::Offline);
     EXPECT_FALSE(result.data.has_value());
+}
+
+TEST(V16Conversions, dataTransferResponseObjectData) {
+    ocpp::v2::DataTransferResponse response;
+    response.status = DataTransferStatusEnum::Accepted;
+    response.data = R"({"emergencyACLimit": 32})"_json;
+
+    const auto result = ocpp_multi::v16_conversions::convert(response);
+    EXPECT_EQ(result.status, ocpp::v16::DataTransferStatus::Accepted);
+    ASSERT_TRUE(result.data.has_value());
+    EXPECT_EQ(result.data.value(), "{\"emergencyACLimit\":32}");
+}
+
+TEST(V16Conversions, dataTransferResponseStringData) {
+    ocpp::v2::DataTransferResponse response;
+    response.status = DataTransferStatusEnum::Accepted;
+    response.data = nlohmann::json("OK");
+
+    const auto result = ocpp_multi::v16_conversions::convert(response);
+    ASSERT_TRUE(result.data.has_value());
+    EXPECT_EQ(result.data.value(), "OK");
+}
+
+TEST(V16Conversions, toV16DataString) {
+    using ocpp_multi::v16_conversions::to_v16_data_string;
+    EXPECT_FALSE(to_v16_data_string(std::nullopt).has_value());
+    EXPECT_EQ(to_v16_data_string(nlohmann::json("text")).value(), "text");
+    EXPECT_EQ(to_v16_data_string(nlohmann::json::array({1, 2})).value(), "[1,2]");
 }
 
 } // namespace

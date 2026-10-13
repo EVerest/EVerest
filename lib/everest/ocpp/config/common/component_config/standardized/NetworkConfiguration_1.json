@@ -89,7 +89,7 @@
       ],
       "description": "Message timeout in seconds",
       "type": "integer",
-      "default": 30
+      "default": 60
     },
     "Identity": {
       "variable_name": "Identity",

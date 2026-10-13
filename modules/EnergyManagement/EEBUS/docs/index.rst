@@ -8,6 +8,22 @@ EEBUS
 
 This document describes the EVerest EEBUS module. This module acts as a bridge between the EVerest framework and an external EEBUS gRPC service. It implements the "Limitation of Power consumption" (LPC) use case.
 
+.. warning::
+
+   This module is currently **experimental**: configuration parameters and its
+   integration in EVerest may change without further notice. It is exempt from
+   the stability guarantees and the deprecation period of the EVerest public
+   API until promoted to stable (see :ref:`project-experimental-components`).
+
+.. note::
+
+   **Upstream maintenance.** The ``eebus_grpc_api`` sidecar this module drives is
+   built from `enbility/eebus-grpc <https://github.com/enbility/eebus-grpc>`_ on
+   top of the ``eebus-go`` EEBUS stack. The maintainer of ``eebus-go`` will not
+   maintain it going forward. Fixes, EEBUS specification updates and security
+   patches for the stack underneath this module are therefore not guaranteed to
+   arrive from upstream.
+
 Architecture
 ============
 

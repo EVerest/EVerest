@@ -32,7 +32,9 @@ void init_iso20_ac_exiDocument(struct iso20_ac_exiDocument* exiDoc) {
     exiDoc->AC_CPDResEnergyTransferMode_isUsed = 0u;
     exiDoc->BPT_AC_CPDReqEnergyTransferMode_isUsed = 0u;
     exiDoc->BPT_AC_CPDResEnergyTransferMode_isUsed = 0u;
+    exiDoc->CLReqControlMode_isUsed = 0u;
     exiDoc->Scheduled_AC_CLReqControlMode_isUsed = 0u;
+    exiDoc->CLResControlMode_isUsed = 0u;
     exiDoc->Scheduled_AC_CLResControlMode_isUsed = 0u;
     exiDoc->BPT_Scheduled_AC_CLReqControlMode_isUsed = 0u;
     exiDoc->BPT_Scheduled_AC_CLResControlMode_isUsed = 0u;
@@ -40,8 +42,6 @@ void init_iso20_ac_exiDocument(struct iso20_ac_exiDocument* exiDoc) {
     exiDoc->Dynamic_AC_CLResControlMode_isUsed = 0u;
     exiDoc->BPT_Dynamic_AC_CLReqControlMode_isUsed = 0u;
     exiDoc->BPT_Dynamic_AC_CLResControlMode_isUsed = 0u;
-    exiDoc->CLReqControlMode_isUsed = 0u;
-    exiDoc->CLResControlMode_isUsed = 0u;
     exiDoc->Signature_isUsed = 0u;
     exiDoc->SignatureValue_isUsed = 0u;
     exiDoc->SignedInfo_isUsed = 0u;
@@ -281,18 +281,6 @@ void init_iso20_ac_ReceiptType(struct iso20_ac_ReceiptType* ReceiptType) {
     ReceiptType->OverstayCosts_isUsed = 0u;
 }
 
-void init_iso20_ac_Scheduled_AC_CLResControlModeType(struct iso20_ac_Scheduled_AC_CLResControlModeType* Scheduled_AC_CLResControlModeType) {
-    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_L2_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_L3_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_L2_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_L3_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_L2_isUsed = 0u;
-    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_L3_isUsed = 0u;
-}
-
 void init_iso20_ac_Dynamic_AC_CLResControlModeType(struct iso20_ac_Dynamic_AC_CLResControlModeType* Dynamic_AC_CLResControlModeType) {
     Dynamic_AC_CLResControlModeType->DepartureTime_isUsed = 0u;
     Dynamic_AC_CLResControlModeType->MinimumSOC_isUsed = 0u;
@@ -306,6 +294,18 @@ void init_iso20_ac_Dynamic_AC_CLResControlModeType(struct iso20_ac_Dynamic_AC_CL
     Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_isUsed = 0u;
     Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_L2_isUsed = 0u;
     Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_L3_isUsed = 0u;
+}
+
+void init_iso20_ac_Scheduled_AC_CLResControlModeType(struct iso20_ac_Scheduled_AC_CLResControlModeType* Scheduled_AC_CLResControlModeType) {
+    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_L2_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSETargetActivePower_L3_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_L2_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSETargetReactivePower_L3_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_L2_isUsed = 0u;
+    Scheduled_AC_CLResControlModeType->EVSEPresentActivePower_L3_isUsed = 0u;
 }
 
 void init_iso20_ac_CLResControlModeType(struct iso20_ac_CLResControlModeType* CLResControlModeType) {

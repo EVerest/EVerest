@@ -297,7 +297,7 @@ components:
       examples:
         - summary: "Report cable ampicity of 32A and some RCD current + PWM duty cycle"
           payload:
-            proximity_pilot:  
+            proximity_pilot:
               "ampacity": "A_32"
             rcd_current_mA: 5
             cp_pwm_duty_cycle: 53
@@ -411,7 +411,7 @@ components:
         - cp_pwm_duty_cycle
         - proximity_pilot
       properties:
-        proximity_pilot:  
+        proximity_pilot:
           description: Current capability of the cable
           type: object
           $ref: 'evse_board_support_API.yaml#/components/schemas/ProximityPilot'
@@ -449,7 +449,19 @@ components:
           description: The subtype of the error
           type: string
         message:
-          description: Addition information about the error
+          description: |-
+            Optional free-text detail about this specific occurrence of the error,
+            e.g. a measured value or a diagnostic string from the hardware. Unlike
+            the fixed per-error-type description, this is chosen by the caller.
+            If an OCPP module is part of the EVerest configuration, the message is
+            forwarded to the CSMS:
+            * OCPP 1.6 (`StatusNotification.req`):
+              * MREC errors: sent as `info`, truncated to 50 characters.
+                Omitted entirely when the message is empty.
+              * all other errors: sent as `vendorId`, truncated to 255 characters.
+            * OCPP 2.x (`NotifyEvent.req`): sent as `techInfo`, truncated to 500
+              characters. When the message is empty, the error description is sent
+              instead.
           type: string
 
     CommunicationCheck:

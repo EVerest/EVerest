@@ -195,6 +195,15 @@ protected: // Functions
                   SetVariableStatusEnum::Accepted);
     }
 
+    void set_local_auth_list_disable_post_authorize(DeviceModel* device_model, const bool enable) {
+        const auto& local_auth_list_disable_post_authorize =
+            ControllerComponentVariables::LocalAuthListDisablePostAuthorize;
+        EXPECT_EQ(device_model->set_value(local_auth_list_disable_post_authorize.component,
+                                          local_auth_list_disable_post_authorize.variable.value(),
+                                          AttributeEnum::Actual, enable ? "true" : "false", "default", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
     void set_offline_tx_for_unknown_id_enabled(DeviceModel* device_model, const bool enabled) {
         const auto& offline_tx_for_unknown_id_enabled = ControllerComponentVariables::OfflineTxForUnknownIdEnabled;
         EXPECT_EQ(device_model->set_value(offline_tx_for_unknown_id_enabled.component,
@@ -608,6 +617,78 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_connectivity_ma
 
     EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
               AuthorizationStatusEnum::Accepted);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_disable_post_authorize_online) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_local_auth_list_disable_post_authorize(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    // LocalAuthListCtrlr.DisablePostAuthorize: no Authorize.req for a stored entry that is not Accepted.
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Blocked;
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillRepeatedly(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Blocked);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_post_authorize_online) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_local_auth_list_disable_post_authorize(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Return(std::async(std::launch::deferred, [this]() {
+        return create_example_authorize_response(AuthorizeCertificateStatusEnum::Accepted,
+                                                 AuthorizationStatusEnum::Accepted);
+    })));
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Blocked;
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillRepeatedly(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_disable_post_authorize_offline) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_local_auth_list_disable_post_authorize(this->device_model, true);
+    this->set_local_authorize_offline(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Blocked;
+
+    // Consulted only when LocalAuthorizeOffline lets the offline station check the list.
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
 }
 
 TEST_F(AuthorizationTest, validate_token_emaid_authorize_request_accepted) {

@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -29,6 +29,10 @@ struct Conf {
     std::string secc_leaf_cert_directory;
     std::string secc_leaf_key_directory;
     std::string private_key_password;
+    int max_fs_usage_bytes;
+    int max_fs_certificate_store_entries;
+    int csr_expiry_s;
+    int garbage_collect_time_s;
 };
 
 class EvseSecurity : public Everest::ModuleBase {
@@ -55,6 +59,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

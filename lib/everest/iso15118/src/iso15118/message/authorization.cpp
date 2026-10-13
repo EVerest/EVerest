@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/authorization.hpp>
 
 #include <type_traits>
+#include <variant>
 
 #include <iso15118/detail/variant_access.hpp>
 
@@ -22,7 +23,7 @@ template <> void convert(const struct iso20_AuthorizationReqType& in, Authorizat
 
         pnc_out.id = CB2CPP_STRING(in.PnC_AReqAuthorizationMode.Id);
         CB2CPP_BYTES(in.PnC_AReqAuthorizationMode.GenChallenge, pnc_out.gen_challenge);
-        // Todo(sl): Adding certificate
+        convert(in.PnC_AReqAuthorizationMode.ContractCertificateChain, pnc_out.contract_certificate_chain);
     }
 }
 
@@ -35,6 +36,26 @@ template <> void convert(const struct iso20_AuthorizationResType& in, Authorizat
     convert(in.Header, out.header);
 }
 
+namespace {
+struct AuthorizationModeVisitor {
+    AuthorizationModeVisitor(iso20_AuthorizationReqType& out_) : out(out_){};
+    void operator()([[maybe_unused]] const datatypes::EIM_ASReqAuthorizationMode& in) {
+        CB_SET_USED(out.EIM_AReqAuthorizationMode);
+        init_iso20_EIM_AReqAuthorizationModeType(&out.EIM_AReqAuthorizationMode);
+    }
+    void operator()(const datatypes::PnC_ASReqAuthorizationMode& in) {
+        CB_SET_USED(out.PnC_AReqAuthorizationMode);
+        init_iso20_PnC_AReqAuthorizationModeType(&out.PnC_AReqAuthorizationMode);
+        CPP2CB_STRING(in.id, out.PnC_AReqAuthorizationMode.Id);
+        CPP2CB_BYTES(in.gen_challenge, out.PnC_AReqAuthorizationMode.GenChallenge);
+        convert(in.contract_certificate_chain, out.PnC_AReqAuthorizationMode.ContractCertificateChain);
+    }
+
+private:
+    iso20_AuthorizationReqType& out;
+};
+} // namespace
+
 template <> void convert(const AuthorizationRequest& in, iso20_AuthorizationReqType& out) {
     init_iso20_AuthorizationReqType(&out);
 
@@ -42,8 +63,9 @@ template <> void convert(const AuthorizationRequest& in, iso20_AuthorizationReqT
 
     cb_convert_enum(in.selected_authorization_service, out.SelectedAuthorizationService);
 
-    // Todo(rb): add pnc
-    out.EIM_AReqAuthorizationMode_isUsed = true;
+    // Encode what the caller selected. Which modes the EV offers is application logic, not
+    // this conversion's business; forcing EIM here made a PnC request serialize as EIM.
+    std::visit(AuthorizationModeVisitor{out}, in.authorization_mode);
 }
 
 template <> void convert(const AuthorizationResponse& in, iso20_AuthorizationResType& out) {

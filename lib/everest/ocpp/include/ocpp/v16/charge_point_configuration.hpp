@@ -1,8 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 #define OCPP_V16_CHARGE_POINT_CONFIGURATION_HPP
 
+#include <functional>
 #include <map>
 #include <mutex>
 #include <optional>
@@ -24,6 +25,7 @@ private:
     json config;
     json custom_schema;
     json internal_schema;
+    json cost_and_price_schema;
     bool core_schema_unlock_connector_on_ev_side_disconnect_ro_value;
     fs::path user_config_path;
 
@@ -129,6 +131,9 @@ public:
     bool getVerifyCsmsAllowWildcards() override;
     void setVerifyCsmsAllowWildcards(bool verify_csms_allow_wildcards) override;
     KeyValue getVerifyCsmsAllowWildcardsKeyValue() override;
+    bool getReportSuspendedEVSEReasonChange() override;
+    void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) override;
+    KeyValue getReportSuspendedEVSEReasonChangeKeyValue() override;
     bool getUseTPM() override;
     KeyValue getUseTPMKeyValue() override;
     bool getUseTPMSeccLeafCertificate() override;
@@ -177,6 +182,9 @@ public:
 
     std::optional<bool> getQueueAllMessages() override;
     std::optional<KeyValue> getQueueAllMessagesKeyValue() override;
+
+    std::optional<bool> getReportClearedErrors() override;
+    std::optional<KeyValue> getReportClearedErrorsKeyValue() override;
 
     std::optional<std::string> getMessageTypesDiscardForQueueing() override;
     std::optional<KeyValue> getMessageTypesDiscardForQueueingKeyValue() override;
@@ -489,7 +497,8 @@ public:
 
     // California Pricing Requirements
     bool getCustomDisplayCostAndPriceEnabled() override;
-    KeyValue getCustomDisplayCostAndPriceEnabledKeyValue() override;
+    std::optional<KeyValue> getCustomDisplayCostAndPriceEnabledKeyValue();
+    ConfigurationStatus setCustomDisplayCostAndPrice(const bool& value);
 
     std::optional<std::uint32_t> getPriceNumberOfDecimalsForCostValues() override;
     std::optional<KeyValue> getPriceNumberOfDecimalsForCostValuesKeyValue() override;
@@ -548,6 +557,8 @@ public:
     std::vector<KeyValue> get_all_key_value() override;
 
     std::optional<ConfigurationStatus> set(const CiString<50>& key, const CiString<500>& value) override;
+
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) override;
 };
 
 } // namespace v16

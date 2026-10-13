@@ -11,6 +11,7 @@
 #include <ifaddrs.h>
 #include <iomanip>
 #include <math.h>
+#include <netinet/in.h>
 #include <sstream>
 #include <stdio.h>
 #include <string.h>
@@ -59,24 +60,40 @@ int generate_random_data(void* dest, size_t dest_len) {
 }
 
 const char* choose_first_ipv6_interface() {
-    struct ifaddrs *ifaddr, *ifa;
-    char buffer[INET6_ADDRSTRLEN];
+    return choose_first_ipv6_interface(nullptr);
+}
 
-    if (getifaddrs(&ifaddr) == -1)
+const char* choose_first_ipv6_interface(std::string* failure_detail) {
+    struct ifaddrs *ifaddr, *ifa;
+    static std::string selected_interface;
+
+    if (getifaddrs(&ifaddr) == -1) {
+        if (failure_detail != nullptr) {
+            *failure_detail = std::string("Failed to enumerate network interfaces: ") + strerror(errno);
+        }
         return NULL;
+    }
 
     for (ifa = ifaddr; ifa != NULL; ifa = ifa->ifa_next) {
         if (!ifa->ifa_addr)
             continue;
 
-        if (ifa->ifa_addr->sa_family == AF_INET6) {
-            inet_ntop(AF_INET6, &ifa->ifa_addr->sa_data, buffer, sizeof(buffer));
-            if (strstr(buffer, "fe80") != NULL) {
-                return ifa->ifa_name;
-            }
+        if (ifa->ifa_addr->sa_family != AF_INET6)
+            continue;
+
+        const auto* addr = reinterpret_cast<struct sockaddr_in6*>(ifa->ifa_addr);
+        if (IN6_IS_ADDR_LINKLOCAL(&addr->sin6_addr)) {
+            selected_interface = ifa->ifa_name;
+            freeifaddrs(ifaddr);
+            return selected_interface.c_str();
         }
     }
-    dlog(DLOG_LEVEL_ERROR, "No necessary IPv6 link-local address was found!");
+    freeifaddrs(ifaddr);
+    if (failure_detail != nullptr) {
+        *failure_detail = "No IPv6 link-local interface found";
+    } else {
+        dlog(DLOG_LEVEL_ERROR, "No necessary IPv6 link-local address was found!");
+    }
     return NULL;
 }
 

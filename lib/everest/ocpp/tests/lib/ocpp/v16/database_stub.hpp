@@ -6,6 +6,10 @@
 
 #include <gtest/gtest.h>
 
+#include <chrono>
+
+#include <test_temp_paths.hpp>
+
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/connector.hpp>
 #include <ocpp/v16/database_handler.hpp>
@@ -67,6 +71,12 @@ struct SQLiteStatementTest : public StatementInterface {
     virtual int bind_null(const std::string& param) {
         return 0;
     }
+    virtual int bind_datetime(const int idx, const std::chrono::system_clock::time_point& val) {
+        return 0;
+    }
+    virtual int bind_datetime(const std::string& param, const std::chrono::system_clock::time_point& val) {
+        return 0;
+    }
     virtual int get_number_of_rows() override {
         return 0;
     }
@@ -88,6 +98,9 @@ struct SQLiteStatementTest : public StatementInterface {
     virtual double column_double(const int idx) {
         return 0.0;
     }
+    virtual std::chrono::system_clock::time_point column_datetime(const int idx) {
+        return std::chrono::system_clock::time_point{};
+    }
     virtual SqliteVariant column_variant(const std::string& name) {
         return 0;
     }
@@ -101,6 +114,15 @@ struct DatabaseConnectionTest : public ConnectionInterface {
         return true;
     }
     virtual std::unique_ptr<TransactionInterface> begin_transaction() {
+        return std::unique_ptr<TransactionInterface>{};
+    }
+    virtual std::unique_ptr<TransactionInterface> begin_transaction_with_enforced_fkeys() {
+        return std::unique_ptr<TransactionInterface>{};
+    }
+    virtual std::unique_ptr<TransactionInterface> begin_transaction_with_deferred_fkeys() {
+        return std::unique_ptr<TransactionInterface>{};
+    }
+    virtual std::unique_ptr<TransactionInterface> begin_transaction_with_disabled_fkeys() {
         return std::unique_ptr<TransactionInterface>{};
     }
     virtual bool commit_transaction() {
@@ -134,9 +156,8 @@ struct DatabaseConnectionTest : public ConnectionInterface {
 class DbTestBase : public testing::Test {
 protected:
     const std::string chargepoint_id = "12345678";
-    const fs::path database_path = "/tmp/";
     const fs::path init_script_path = "./core_migrations";
-    const fs::path db_filename = database_path / (chargepoint_id + ".db");
+    const fs::path db_filename = libocpp_test::unique_temp_path("ocpp16_" + chargepoint_id, ".db");
 
     std::map<std::int32_t, std::shared_ptr<Connector>> connectors;
     std::shared_ptr<stubs::DatabaseHandlerTest> database_handler;

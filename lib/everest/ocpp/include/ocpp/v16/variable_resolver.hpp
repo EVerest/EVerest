@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef OCPP_V16_VARIABLE_RESOLVER_HPP
 #define OCPP_V16_VARIABLE_RESOLVER_HPP
@@ -31,6 +31,15 @@ enum class CVClass {
     /// No relation to 1.6 keys; plain device-model access gated by the variable's mutability.
     Free,
 };
+
+/// \brief Whether the CV belongs to the connection/network-profile configuration managed by the
+///        1.6 stack (see CVClass::ConnectionConfig): NetworkConfiguration/<slot>, the OCPPCommCtrlr
+///        profile selectors and the SecurityCtrlr connection fallbacks.
+///
+/// Custom config mappings must not target these CVs: the key path writes the device model without
+/// the RebootRequired/reconnect semantics the standardized keys and canonical CVs carry.
+/// load_ocpp16_custom_config_mappings_from_yaml rejects such mappings.
+bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
 /// \brief Result of a reverse (CV -> 1.6 key) lookup.
 struct ReverseResult {

@@ -1,9 +1,10 @@
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_ISO15118_2: true
+      supported_DIN70121: true
     connections:
       security:
         - module_id: evse_security
@@ -16,6 +17,7 @@ active_modules:
   evse_manager_1:
     module: EvseManager
     config_module:
+      enable_nodered_interface: true
       connector_id: 1
       evse_id: DE*PNX*E12345*1
       session_logging: true
@@ -40,6 +42,7 @@ active_modules:
   evse_manager_2:
     module: EvseManager
     config_module:
+      enable_nodered_interface: true
       connector_id: 2
       evse_id: DE*PNX*E12345*2
       session_logging: true

@@ -14,27 +14,63 @@ on:
         type: string
 jobs:
   bazel-cross-build:
-    name: Cross-compile (${{ inputs.platform }})
+    name: build
     runs-on: ${{ inputs.runner }}
     steps:
       - name: Checkout
-        uses: actions/checkout@v6
-      - name: Mount bazel repo cache
-        uses: actions/cache@v5
+        uses: actions/checkout@v7
+      - name: Authenticate GitHub downloads
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          umask 077
+          for host in github.com codeload.github.com; do
+            printf 'machine %s\nlogin x-access-token\npassword %s\n' "$host" "$GITHUB_TOKEN"
+          done > "$HOME/.netrc"
+      - name: Restore bazel repo cache
+        id: repo-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-repo-cache"
           key: ${{ runner.os }}-bazel-repo-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
           restore-keys: |
             ${{ runner.os }}-bazel-repo-
-      - name: Mount bazel disk cache
-        uses: actions/cache@v5
+      - name: Restore bazel disk cache
+        id: disk-cache
+        uses: actions/cache/restore@v6
         with:
           path: "~/.cache/bazel-disk-cache"
-          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}
+          key: ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-${{ github.sha }}
           restore-keys: |
+            ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-${{ hashFiles('.bazelversion', '.bazelrc', 'MODULE.bazel', 'third-party/bazel/*') }}-
             ${{ runner.os }}-bazel-disk-${{ inputs.platform }}-
+      - name: Record build start
+        run: echo "BAZEL_BUILD_START=$(date +%s)" >> "$GITHUB_ENV"
       - name: Build all
         run: >
           bazelisk build --config=ci --config=${{ inputs.platform }} //...
           --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
+      - name: Save bazel repo cache
+        if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-repo-cache"
+          key: ${{ steps.repo-cache.outputs.cache-primary-key }}
+      # The cross build disk caches are large, so only the scheduled nightly run of on_pr.yaml refreshes them.
+      - name: Prune bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'schedule' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        # Relies on Bazel refreshing the mtime of every disk cache entry it reads or writes (verified
+        # with Bazel 9.0.0). Restored files keep their archived mtime, so without that refresh every
+        # cache hit would be deleted here; the sizes in the notice show how much was kept.
+        run: |
+          before=$(du -sm ~/.cache/bazel-disk-cache | cut -f1)
+          find ~/.cache/bazel-disk-cache -type f ! -newermt "@$BAZEL_BUILD_START" -delete
+          after=$(du -sm ~/.cache/bazel-disk-cache | cut -f1)
+          echo "::notice title=Bazel disk cache::pruned from ${before} MB to ${after} MB"
+      - name: Save bazel disk cache
+        if: ${{ github.ref == 'refs/heads/main' && github.event_name == 'schedule' && steps.disk-cache.outputs.cache-hit != 'true' }}
+        uses: actions/cache/save@v6
+        with:
+          path: "~/.cache/bazel-disk-cache"
+          key: ${{ steps.disk-cache.outputs.cache-primary-key }}

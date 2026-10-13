@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "comparators.hpp"
+#include "connectivity_manager_mock.hpp"
 #include "device_model_test_helper.hpp"
 #include "everest/logging.hpp"
 #include "evse_security_mock.hpp"
@@ -13,22 +14,30 @@
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 #include "ocpp/v2/device_model_storage_sqlite.hpp"
 #include "ocpp/v2/init_device_model_db.hpp"
+#include "ocpp/v2/messages/BootNotification.hpp"
+#include "ocpp/v2/messages/GetCertificateStatus.hpp"
 #include "ocpp/v2/ocpp_enums.hpp"
 #include "ocpp/v2/types.hpp"
 #include "ocpp/v21/messages/NotifyDERAlarm.hpp"
 #include "ocpp/v21/messages/SetDERControl.hpp"
 #include "smart_charging_test_utils.hpp"
+#include "test_temp_paths.hpp"
 
 #include "gmock/gmock.h"
 #include <boost/uuid/uuid_generators.hpp>
 #include <boost/uuid/uuid_io.hpp>
+#include <condition_variable>
+#include <deque>
+#include <future>
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 #include <memory>
+#include <mutex>
+#include <optional>
 
 static const ocpp::v2::AddChargingProfileSource DEFAULT_REQUEST_TO_ADD_PROFILE_SOURCE =
     ocpp::v2::AddChargingProfileSource::SetChargingProfile;
-static const std::string TEMP_OUTPUT_PATH = "/tmp/ocpp201";
+static const std::string TEMP_OUTPUT_PATH = libocpp_test::unique_temp_directory("ocpp201_message_log").string();
 static const std::string DEFAULT_TX_ID = "10c75ff7-74f5-44f5-9d01-f649f3ac7b78";
 
 namespace ocpp::v2 {
@@ -150,7 +159,7 @@ public:
 
     std::shared_ptr<DatabaseHandler> create_database_handler() {
         auto database_connection =
-            std::make_unique<everest::db::sqlite::Connection>(fs::path("/tmp/ocpp201") / "cp.db");
+            std::make_unique<everest::db::sqlite::Connection>(libocpp_test::unique_temp_path("ocpp201_cp", ".db"));
         return std::make_shared<DatabaseHandler>(std::move(database_connection), MIGRATION_FILES_LOCATION_V2);
     }
 
@@ -664,11 +673,69 @@ public:
     std::shared_ptr<EvseSecurityMock> evse_security;
 };
 
+TEST_F(ChargePointCommonTestFixtureV2, OnWebsocketConnectedMirrorsMessageTimeoutBeforeRegistration) {
+    auto database_handler = create_database_handler();
+    configure_callbacks_with_mocks();
+    auto charge_point = std::make_unique<ChargePoint>(evse_connector_structure, device_model, database_handler,
+                                                      create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                      std::make_shared<EvseSecurityMock>(), callbacks);
+    const auto& cv = ControllerComponentVariables::MessageTimeout;
+    ASSERT_EQ(
+        device_model->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "999", "test"),
+        SetVariableStatusEnum::Accepted);
+    NetworkConnectionProfile profile;
+    profile.messageTimeout = 75;
+
+    charge_point->on_websocket_connected(1, profile, OcppProtocolVersion::v201);
+
+    EXPECT_EQ(device_model->get_value<int>(cv), 75);
+}
+
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint) {
     configure_callbacks_with_mocks();
 
     EXPECT_NO_THROW(ocpp::v2::ChargePoint(evse_connector_structure, device_model, database_handler,
                                           create_message_queue(database_handler), "/tmp", evse_security, callbacks));
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesFalse_DoesNotLogMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_false");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "false",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_TRUE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_LogMessagesTrue_LogsMessages) {
+    configure_callbacks_with_mocks();
+    const auto log_path = libocpp_test::unique_temp_directory("ocpp201_log_messages_true");
+    const auto log_messages = ControllerComponentVariables::LogMessages;
+    const auto log_formats = ControllerComponentVariables::LogMessagesFormat;
+    device_model->set_value(log_messages.component, log_messages.variable.value(), AttributeEnum::Actual, "true",
+                            "TEST", true);
+    device_model->set_value(log_formats.component, log_formats.variable.value(), AttributeEnum::Actual, "log", "TEST",
+                            true);
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler,
+                                           create_message_queue(database_handler), log_path.string(), evse_security,
+                                           callbacks);
+    }
+
+    EXPECT_FALSE(std::filesystem::is_empty(log_path));
+    std::filesystem::remove_all(log_path);
 }
 
 TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_InitializeInCorrectOrder) {
@@ -734,6 +801,7 @@ TEST_F(ChargePointConstructorTestFixtureV2, CreateChargePoint_CallbacksNotValid_
 
 class TestChargePoint : public ChargePoint {
 public:
+    using ChargePoint::get_certificate_status_from_csms;
     using ChargePoint::handle_message;
 
     TestChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
@@ -795,6 +863,17 @@ public:
             create_evse_connector_structure(), device_model, database_handler, create_message_queue(database_handler),
             TEMP_OUTPUT_PATH, std::make_shared<EvseSecurityMock>(), callbacks);
         return charge_point;
+    }
+
+    // SmartChargingCtrlr.Available=false leaves the smart charging block unbuilt.
+    std::unique_ptr<TestChargePoint>
+    create_charge_point_without_smart_charging(std::shared_ptr<DatabaseHandler> database_handler) {
+        const auto& available_cv = ControllerComponentVariables::SmartChargingCtrlrAvailable;
+        device_model->set_value(available_cv.component, available_cv.variable.value(), AttributeEnum::Actual, "false",
+                                "TEST", true);
+        return std::make_unique<TestChargePoint>(create_evse_connector_structure(), device_model, database_handler,
+                                                 create_message_queue(database_handler), TEMP_OUTPUT_PATH,
+                                                 std::make_shared<EvseSecurityMock>(), callbacks);
     }
 
     boost::uuids::random_generator uuid_generator;
@@ -879,6 +958,31 @@ TEST_F(ChargePointFunctionalityTestFixtureV2, K02FR05_TransactionEnds_WillDelete
     EXPECT_CALL(*smart_charging, delete_transaction_tx_profiles(transaction->get_transaction().transactionId.get()));
     charge_point->on_transaction_finished(DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::StoppedByEV,
                                           TriggerReasonEnum::StopAuthorized, {}, {}, ChargingStateEnum::EVConnected);
+}
+
+TEST_F(ChargePointFunctionalityTestFixtureV2, TransactionFinished_WhenSmartChargingAbsent_ReleasesTransaction) {
+    const auto& resume_cv = ControllerComponentVariables::ResumeTransactionsOnBoot;
+    device_model->set_value(resume_cv.component, resume_cv.variable.value(), AttributeEnum::Actual, "true", "TEST",
+                            true);
+
+    auto database_handler = create_database_handler();
+    auto charge_point_without_smart_charging = create_charge_point_without_smart_charging(database_handler);
+    charge_point_without_smart_charging->start();
+
+    const std::int32_t connector_id = 1;
+    const ocpp::DateTime timestamp("2024-01-17T17:00:00");
+    charge_point_without_smart_charging->on_transaction_started(DEFAULT_EVSE_ID, connector_id, "some-session-id",
+                                                                timestamp, TriggerReasonEnum::Authorized, MeterValue(),
+                                                                {}, {}, {}, {}, ChargingStateEnum::EVConnected);
+    ASSERT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::NotNull());
+
+    charge_point_without_smart_charging->on_ev_charging_needs(NotifyEVChargingNeedsRequest{});
+    charge_point_without_smart_charging->on_transaction_finished(
+        DEFAULT_EVSE_ID, timestamp, MeterValue(), ReasonEnum::EVDisconnected, TriggerReasonEnum::EVCommunicationLost,
+        {}, {}, ChargingStateEnum::Idle);
+
+    EXPECT_THAT(database_handler->transaction_get(DEFAULT_EVSE_ID), testing::IsNull());
+    charge_point_without_smart_charging->stop();
 }
 
 // on_der_alarm must no-op (not dereference null) when no DER component exists and der_control is unbuilt.
@@ -1003,4 +1107,234 @@ TEST_F(ChargePointConstructorTestFixtureV2, DerBlock_NotBuiltAtBoot_WhenNoEnable
 
     EXPECT_EQ(this->der_active_directives_emit_count, 0);
 }
+
+// stop() is the external "stop OCPP communication" control, not destruction: the charge point stays alive
+// and restartable, and its owner still gets the disconnect notification. Disarming here raced the deferred
+// delivery of that notification and swallowed it.
+TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(0);
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+
+    charge_point.start(BootReasonEnum::PowerUp);
+    charge_point.stop();
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
+
+    // Verify while still alive: destruction is the only disarm site.
+    ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
+}
+
+// The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
+// destructor body runs before any member is gone and blocks on an in-flight callback.
+TEST_F(ChargePointConstructorTestFixtureV2, DestructionDisarmsConnectionCallbacks) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    {
+        ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                           connectivity_manager, "/tmp", callbacks);
+        charge_point.start(BootReasonEnum::PowerUp);
+        charge_point.stop();
+
+        EXPECT_CALL(*connectivity_manager, disarm_connection_callbacks()).Times(1);
+    }
+}
+
+// A connect and a disconnect requested while a CALL is in flight both wait for its answer, then apply in the order they
+// were requested.
+TEST_F(ChargePointConstructorTestFixtureV2, ConnectThenDisconnectAwaitCallInFlightInOrder) {
+    configure_callbacks_with_mocks();
+
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+    std::function<void(const std::string&)> csms_to_charge_point;
+    ON_CALL(*connectivity_manager, set_message_callback(::testing::_))
+        .WillByDefault(
+            ::testing::Invoke([&csms_to_charge_point](const std::function<void(const std::string&)>& callback) {
+                csms_to_charge_point = callback;
+            }));
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    std::optional<std::string> boot_notification_id;
+    std::vector<std::string> transport_calls;
+    ON_CALL(*connectivity_manager, send_to_websocket(::testing::_))
+        .WillByDefault(::testing::Invoke([&](const std::string& message) {
+            const auto call = json::parse(message);
+            std::lock_guard<std::mutex> lock(mtx);
+            if (call.at(MESSAGE_TYPE_ID) == MessageTypeId::CALL && call.at(CALL_ACTION) == "BootNotification" &&
+                !boot_notification_id.has_value()) {
+                boot_notification_id = call.at(MESSAGE_ID).get<std::string>();
+                cv.notify_all();
+            }
+            return true;
+        }));
+    ON_CALL(*connectivity_manager, connect(::testing::_))
+        .WillByDefault(::testing::Invoke([&](std::optional<std::int32_t>) {
+            std::lock_guard<std::mutex> lock(mtx);
+            transport_calls.push_back("connect");
+            cv.notify_all();
+        }));
+    ON_CALL(*connectivity_manager, disconnect()).WillByDefault(::testing::Invoke([&]() {
+        std::lock_guard<std::mutex> lock(mtx);
+        transport_calls.push_back("disconnect");
+        cv.notify_all();
+    }));
+
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp, false);
+    NetworkConnectionProfile network_connection_profile;
+    network_connection_profile.messageTimeout = 30;
+    charge_point.on_websocket_connected(1, network_connection_profile, OcppProtocolVersion::v201);
+
+    std::string in_flight_id;
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        ASSERT_TRUE(cv.wait_for(lock, std::chrono::seconds(5), [&] { return boot_notification_id.has_value(); }));
+        in_flight_id = boot_notification_id.value();
+    }
+
+    charge_point.connect_websocket();
+    charge_point.disconnect_websocket();
+    std::this_thread::sleep_for(std::chrono::milliseconds(200));
+    {
+        std::lock_guard<std::mutex> lock(mtx);
+        EXPECT_TRUE(transport_calls.empty());
+    }
+
+    const json accepted = {{"currentTime", ocpp::DateTime().to_rfc3339()}, {"interval", 300}, {"status", "Accepted"}};
+    csms_to_charge_point(json{MessageTypeId::CALLRESULT, in_flight_id, accepted}.dump());
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        EXPECT_TRUE(cv.wait_for(lock, std::chrono::seconds(2), [&] { return transport_calls.size() >= 2; }));
+        EXPECT_EQ(transport_calls, (std::vector<std::string>{"connect", "disconnect"}));
+    }
+
+    charge_point.stop();
+}
+
+/// \brief Stands in for the CSMS transport: collects what the message queue sends so the test can answer it
+class FakeCsmsTransport {
+public:
+    bool send(const json& message) {
+        {
+            const std::lock_guard<std::mutex> lock(this->mutex);
+            this->outbox.push_back(message);
+        }
+        this->outbox_changed.notify_all();
+        return true;
+    }
+
+    std::optional<json> next_sent_message(std::chrono::seconds timeout) {
+        std::unique_lock<std::mutex> lock(this->mutex);
+        if (!this->outbox_changed.wait_for(lock, timeout, [this] { return !this->outbox.empty(); })) {
+            return std::nullopt;
+        }
+        const json message = this->outbox.front();
+        this->outbox.pop_front();
+        return message;
+    }
+
+private:
+    std::mutex mutex;
+    std::condition_variable outbox_changed;
+    std::deque<json> outbox;
+};
+
+/// \brief A registered charging station whose outgoing CALLs the test answers through the real message queue
+class ChargePointCsmsReplyTestFixtureV2 : public ChargePointCommonTestFixtureV2,
+                                          public testing::WithParamInterface<const char*> {
+public:
+    void SetUp() override {
+        configure_callbacks_with_mocks();
+        auto database_handler = create_database_handler();
+        message_queue = std::make_shared<MessageQueue<v2::MessageType>>(
+            [this](json message) -> bool { return this->csms.send(message); }, MessageQueueConfig<v2::MessageType>{},
+            database_handler);
+        charge_point = std::make_unique<TestChargePoint>(
+            create_evse_connector_structure(), device_model, database_handler, message_queue, TEMP_OUTPUT_PATH,
+            std::make_shared<testing::NiceMock<EvseSecurityMock>>(), callbacks);
+        message_queue->start();
+        message_queue->resume(std::chrono::seconds(0));
+        charge_point->handle_message(boot_notification_accepted());
+    }
+
+    void TearDown() override {
+        charge_point->stop();
+    }
+
+    static EnhancedMessage<MessageType> boot_notification_accepted() {
+        BootNotificationResponse response;
+        response.currentTime = ocpp::DateTime();
+        response.interval = 0;
+        response.status = RegistrationStatusEnum::Accepted;
+
+        EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::BootNotificationResponse;
+        enhanced_message.messageTypeId = MessageTypeId::CALLRESULT;
+        enhanced_message.message = json(CallResult<BootNotificationResponse>(response, MessageId("boot")));
+        return enhanced_message;
+    }
+
+    /// \brief Answers every CALL the charging station sends. GetCertificateStatus is answered with \p payload, every
+    /// other CALL with an empty payload.
+    /// \return true once GetCertificateStatus was answered, false when it did not arrive in time
+    bool answer_calls_until_get_certificate_status(const std::string& payload) {
+        while (const auto call = csms.next_sent_message(std::chrono::seconds(5))) {
+            const std::string message_id = call->at(MESSAGE_ID);
+            const bool is_get_certificate_status = call->at(CALL_ACTION) == "GetCertificateStatus";
+            const std::string reply_payload = is_get_certificate_status ? payload : "{}";
+            message_queue->receive(R"([3, ")" + message_id + R"(", )" + reply_payload + "]");
+            if (is_get_certificate_status) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    FakeCsmsTransport csms;
+    std::shared_ptr<MessageQueue<v2::MessageType>> message_queue;
+    std::unique_ptr<TestChargePoint> charge_point;
+};
+
+/// \brief A CALLRESULT for GetCertificateStatus without a usable status must be reported to the OcspUpdater as a
+/// Failed response instead of escaping as an exception
+TEST_P(ChargePointCsmsReplyTestFixtureV2, MalformedGetCertificateStatusResponse_YieldsFailedResponse) {
+    const std::string payload = GetParam();
+
+    auto response_future = std::async(std::launch::async, [this] {
+        GetCertificateStatusRequest request;
+        request.ocspRequestData.hashAlgorithm = HashAlgorithmEnum::SHA256;
+        request.ocspRequestData.issuerNameHash = "issuerHash";
+        request.ocspRequestData.issuerKeyHash = "issuerKey";
+        request.ocspRequestData.serialNumber = "serial";
+        request.ocspRequestData.responderURL = "responder";
+        return charge_point->get_certificate_status_from_csms(request);
+    });
+
+    ASSERT_TRUE(answer_calls_until_get_certificate_status(payload))
+        << "charging station did not send GetCertificateStatus";
+
+    try {
+        const GetCertificateStatusResponse response = response_future.get();
+        EXPECT_EQ(response.status, GetCertificateStatusEnum::Failed);
+    } catch (const std::exception& e) {
+        ADD_FAILURE() << "get_certificate_status_from_csms threw: " << e.what();
+    }
+}
+
+INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
+                         testing::Values("{}", "12345", R"("Accepted")", R"({"status": null})",
+                                         R"({"status": "test"})"));
+
 } // namespace ocpp::v2

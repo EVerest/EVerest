@@ -17,6 +17,13 @@ Project & Community
 
       Want to contribute to EVerest? Find guidelines and processes here. 
 
+   .. grid-item-card:: Roadmap
+      :link: roadmap
+      :link-type: doc
+
+      Where EVerest is heading, how the roadmap is aligned and where to get the
+      latest state.
+
    .. grid-item-card:: Governance
       :link: governance/governance
       :link-type: doc
@@ -47,6 +54,12 @@ Project & Community
 
       The current list of deprecated public API components, removal timelines, and migration guides.
 
+   .. grid-item-card:: Experimental Feature Index
+      :link: releases/experimental-index
+      :link-type: doc
+
+      The current list of experimental public API components and what the missing guarantees mean.
+
    .. grid-item-card:: Security Policy
       :link: governance/security
       :link-type: doc
@@ -65,6 +78,7 @@ Project & Community
 
     community
     contributing
+    roadmap
     governance/governance
     governance/code-of-conduct
     governance/security
@@ -73,3 +87,4 @@ Project & Community
     releases/breaking-changes
     releases/deprecation-policy
     releases/deprecation-index
+    releases/experimental-index

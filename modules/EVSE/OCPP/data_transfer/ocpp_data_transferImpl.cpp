@@ -12,6 +12,10 @@ void ocpp_data_transferImpl::init() {
 void ocpp_data_transferImpl::ready() {
 }
 
+void ocpp_data_transferImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 types::ocpp::DataTransferStatus to_everest(ocpp::v16::DataTransferStatus status) {
     switch (status) {
     case ocpp::v16::DataTransferStatus::Accepted:

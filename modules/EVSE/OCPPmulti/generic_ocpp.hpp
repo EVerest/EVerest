@@ -45,8 +45,11 @@
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
+#include <future>
+#include <map>
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -101,6 +104,8 @@ struct GenericOcppInterface {
     virtual types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) = 0;
     virtual void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
+    virtual std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) = 0;
     // session cost
 };
 
@@ -114,9 +119,10 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getChargePointConfigPath() const = 0;
     [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
     [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
-    [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
+    [[nodiscard]] virtual std::string getCustomErrorMappingPath() const = 0;
     [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
+    [[nodiscard]] virtual bool getDelegateNetworkConfigurationToSystem() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigMappings() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
@@ -160,7 +166,8 @@ private:
     ConfigInterface& mv_config;
     provides_t mv_provides;
     requires_t mv_requires;
-    module::MREC_ERROR_MAP_TYPE mv_mrec_error_map;
+    std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> mv_custom_error_mapping;
+    std::filesystem::path mv_custom_error_mapping_path;
 
     std::atomic<std::int32_t> mv_event_id_counter{0};
     std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
@@ -171,6 +178,19 @@ private:
     everest::lib::util::monitor<std::map<std::int32_t, std::string>> mv_evse_evcc_id;
     everest::lib::util::monitor<std::map<std::int32_t, bool>> mv_evse_ready_map;
     everest::lib::util::monitor<std::map<std::int32_t, std::optional<float>>> mv_evse_soc_map;
+
+    // Pending configure_network requests, keyed by a unique request_id (not configuration_slot, which
+    // repeats across libocpp's per-slot retries). The stored slot lets a re-request drop the stale attempt.
+    struct PendingNetworkConfigRequest {
+        std::int32_t configuration_slot;
+        std::promise<ocpp::ConfigNetworkResult> promise;
+    };
+    std::int32_t mv_next_network_config_request_id{1}; // guarded by the monitor lock below
+    everest::lib::util::monitor<std::map<std::int32_t, PendingNetworkConfigRequest>> mv_pending_network_config_requests;
+
+    /// \brief Fails all pending configure_network promises so a ConnectivityManager blocked on one of the
+    /// futures does not have to run into its NetworkConfigTimeout during shutdown.
+    void drain_pending_network_config_requests();
 
     // these need to be thread safe - used by libocpp and this object
     std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
@@ -209,6 +229,15 @@ private:
     std::mutex recompute_mutex;
     std::atomic_bool recompute_pending{false};
 
+    struct ResetState {
+        std::thread thread;
+        bool running{false};
+    };
+    // Runs the stop and system reset of an accepted Reset off the caller's thread, which on OCPP 2.x is
+    // libocpp's websocket receive thread; stopping the charge point may join that thread.
+    everest::lib::util::monitor<ResetState> m_reset;
+    void join_reset_thread();
+
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
     bool enqueue_if_not_started(std::int32_t evse_id, const Event& event);
 
@@ -218,11 +247,9 @@ public:
     GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
                 const provides_t& provides, const requires_t& requires) :
         mv_charge_point(charge_point), mv_info(info), mv_config(config), mv_provides(provides), mv_requires(requires) {
-        // loaded before the charge point starts so map_error() never sees an empty map
-        const auto map_path = mv_config.getCustomMrecErrorMapPath();
-        mv_mrec_error_map =
-            (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
     }
+
+    ~GenericOcpp() override;
 
     void set_mode(GenericChargePointInterface::modes_t new_mode) {
         mv_mode = new_mode;
@@ -246,6 +273,8 @@ public:
     types::ocpp::ChangeAvailabilityResponse
     handle_change_availability(const types::ocpp::ChangeAvailabilityRequest& request) override;
     void handle_monitor_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
+    std::vector<types::ocpp::GetVariableResult>
+    handle_monitor_and_get_variables(const std::vector<types::ocpp::ComponentVariable>& component_variables) override;
 
     // ------------------------------------------------------------------------
     // startup
@@ -300,14 +329,21 @@ protected:
     EventInfo convert_error(const Everest::error::Error& error);
 
     void init_check_energy_sink();
+    void init_custom_error_mapping();
     void init_error_handlers();
     void init_evse_maps();
     void init_subscribe();
     void init_evse_subscribe();
 
+    void ready_custom_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
     void ready_module_configuration();
     void ready_transaction_handler();
+
+    // Pop-and-set discipline for configure_network promises: find the pending request keyed by \p request_id
+    // under the monitor lock, move the promise out and erase it while holding the lock, then release the lock
+    // and only THEN call set_value. First popper wins; if the entry is already gone this is a no-op.
+    void fulfill_network_request(std::int32_t request_id, const ocpp::ConfigNetworkResult& result);
 
     // every Event alternative needs an overload; a missing one is a compile error
     void visit_impl(std::int32_t, const std::monostate&) {
@@ -328,10 +364,12 @@ protected:
     void cb_charging_needs(std::int32_t extensions_id, const types::iso15118::ChargingNeeds& charging_needs) override;
     ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) override;
-    std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() override;
+    std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile(
+        std::int32_t configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
     bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                  ocpp::v2::OperationalStatusEnum new_status) override;
-    void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) override;
+    void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                     ocpp::OcppProtocolVersion protocol_version) override;
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
     void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
     void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) override;
@@ -381,10 +419,12 @@ protected:
     void cb_tariff_message(const types::session_cost::TariffMessage& message) override;
     void cb_time_sync(const ocpp::DateTime& current_time) override;
     void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
-                              const std::optional<std::string>& transaction_id) override;
+                              const std::optional<std::string>& transaction_id,
+                              const ocpp::DateTime& timestamp) override;
     void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                        const ocpp::v2::TransactionEventResponse& transaction_event_response,
-                                       const std::optional<std::string>& transaction_id) override;
+                                       const std::optional<std::string>& transaction_id,
+                                       const ocpp::DateTime& timestamp) override;
     ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) override;
     bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
@@ -395,11 +435,12 @@ protected:
     cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
     void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) override;
     void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) override;
-    bool map_error(const std::string& error, std::string& updated_error) override;
+    std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> custom_error_mapping() const override;
     void transaction_add(std::int32_t evse_id,
                          const std::shared_ptr<module::TransactionData>& transaction_data) override;
     std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) override;
     module::TxEventEffect transaction_event(std::int32_t evse_id, module::TxEvent tx_event) override;
+    bool transaction_is_ev_connect_timeout(std::int32_t evse_id, std::chrono::seconds ev_connection_timeout) override;
     void transaction_reset(std::int32_t evse_id) override;
     void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) override;
 
@@ -451,10 +492,11 @@ protected:
     /// to the grid_support consumer after releasing the handle. No-op when no consumer is connected.
     void push_active_directive_sets();
 
-    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. Every connection
-    /// must carry a mapping; an unmapped connection is logged and excluded. Any EVSE without a wired
-    /// grid_support connection has its DER controller forced to Available=false.
-    void init_grid_support_routing(const std::map<std::int32_t, std::int32_t>& evse_connector_structure);
+    /// \brief Populate m_grid_support_by_evse from the connections' framework mappings. An unmapped
+    /// connection, or one mapping an already-served EVSE, is logged and excluded. Clearing an unwired
+    /// EVSE's DER controller is disable_other_der_ctrlrs' job, in the EverestDeviceModelStorage
+    /// constructor.
+    void init_grid_support_routing();
 
     /// \brief Resolve the grid_support connection mapped to \p evse_id, or nullptr if none.
     grid_supportIntf* grid_support_for_evse(std::int32_t evse_id) const;
@@ -474,6 +516,9 @@ protected:
     std::optional<types::energy::ScheduleReqEntry>
     create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
                         ocpp::v2::ChargingRateUnitEnum unit);
+    std::optional<types::energy::ScheduleReqEntry>
+    create_export_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                               ocpp::v2::ChargingRateUnitEnum unit);
     std::optional<types::energy::ScheduleSetpointEntry>
     create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
                           const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);

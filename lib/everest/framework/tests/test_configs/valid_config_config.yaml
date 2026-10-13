@@ -6,4 +6,6 @@ settings:
   errors_dir: "errors"
   schemas_dir: "schemas"
   www_dir: "www"
+  controller_port: 8849
+  controller_rpc_timeout_ms: 2000
   logging_config_file: "logging.ini"

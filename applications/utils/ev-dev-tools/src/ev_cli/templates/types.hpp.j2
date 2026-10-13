@@ -147,19 +147,8 @@ struct {{ parsed_type.name }} {
         {% if not property.required %}
         if (k.{{property.name}}) {
                     {% if property.type.startswith('std::vector<') %}
-                    {%- if parsed_type.properties|selectattr('required')|list|length %}
             j.emplace("{{property.name}}", *k.{{property.name}});
-                    {%- else %}
-        {#only optional keys in json#}
-        {#TODO: add key to json when there are no required keys but multiple optional keys#}
-        {# FIXME: this is never generated?#}
-            if (j.size() == 0) {
-                j = json{{'{{"'+property.name+'", json::array()}};'}}
-            } else {
-                j.emplace("{{property.name}}", *k.{{property.name}});
-            }
-        {% endif %}
-        {% else %}
+        {%- else %}
         {%- if property.enum %}
         j.emplace("{{property.name}}", {{ enum_to_string_view(property.type) }}(*k.{{ property.name }}));
             {%- else %}
@@ -194,25 +183,29 @@ struct {{ parsed_type.name }} {
         {% endif %}
         {% endif %}
         {%- endfor %}
+        {% set optional_properties = parsed_type.properties|rejectattr('required')|list %}
+        {% if optional_properties %}
 
         // the optional parts of the type
-        auto it = j.end();
-        {% for property in parsed_type.properties %}
-            {% if not property.required %}
-        it = it = j.find("{{property.name}}");
-        if (it != j.end()) {
-                {% if property.type.startswith('std::vector<') %}
-            k.{{property.name}} = j.at("{{property.name}}").get<{{property.type}}>();
-                {% else %}
-                    {%- if property.enum %}
-            k.{{property.name}} = {{ string_to_enum(property.type) }}(it->get<std::string>());
-                    {%- else %}
-            k.{{property.name}} = it->get<{{property.type}}>();
-                    {% endif %}
-                {% endif %}
-        }
+        {% for property in optional_properties %}
+            {% if loop.first %}
+        auto it = j.find("{{property.name}}");
+            {% else %}
+        it = j.find("{{property.name}}");
             {% endif %}
+        if (it != j.end()) {
+            {% if property.type.startswith('std::vector<') %}
+            k.{{property.name}} = j.at("{{property.name}}").get<{{property.type}}>();
+            {% else %}
+                {%- if property.enum %}
+            k.{{property.name}} = {{ string_to_enum(property.type) }}(it->get<std::string>());
+                {%- else %}
+            k.{{property.name}} = it->get<{{property.type}}>();
+                {% endif %}
+            {% endif %}
+        }
         {% endfor %}
+        {% endif %}
     }
 
     /// \brief Compares objects of type {{ parsed_type.name }} for equality

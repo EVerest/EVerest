@@ -25,8 +25,10 @@ The following flow diagram gives a simplified overview of how an incoming token 
         B --> C{Token valid?}
         C -- no --> RJ[["Rejected"]]
         C -- yes --> D{"Should the token stop<br/>an ongoing transaction?"}
-        D -- yes --> E[Stop the transaction]
+        D -- yes --> D2{"stop_transaction_on_reswipe?"}
+        D2 -- true --> E[Stop the transaction]
         E --> RS[["Transaction stopped"]]
+        D2 -- false --> RE[["Publish UsedToReauthorize<br/>(transaction continues)"]]
         D -- no --> F["Select an available connector<br/>using the configured algorithm"]
         F -- "none available or timeout" --> RJ
         F -- selected --> G[Authorize the connector]
@@ -36,7 +38,11 @@ The following flow diagram gives a simplified overview of how an incoming token 
 
     The diagram above is simplified to show the essential flow. It omits some details, such as whether the token was
     already validated by the provider, reservation matching, the distinction between master-pass-group and
-    parent-id-token stops, and authorization being withdrawn while waiting for a plug in.
+    parent-id-token stops, and authorization being withdrawn while waiting for a plug in. Note that master-pass-group
+    stops are not affected by the ``stop_transaction_on_reswipe`` config option: a master pass token always stops
+    ongoing transactions. If ``stop_transaction_on_reswipe`` is false, the ``UsedToReauthorize`` event published via
+    the ``token_validation_status`` var can be used e.g. by a display application to let the user decide whether to
+    stop the transaction manually.
 
 .. note::
     

@@ -1,0 +1,8 @@
+description: Interactive bring up helper for EV Board support interface
+requires:
+  bsp:
+    interface: ev_board_support
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Michael Heimpold

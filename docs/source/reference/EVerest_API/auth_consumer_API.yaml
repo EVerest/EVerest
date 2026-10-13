@@ -405,6 +405,9 @@ components:
         - UsedToStart: Token was used to start a charging session
         - UsedToStop: Token was used to stop a charging session
         - Withdrawn: Authorization was withdrawn
+        - UsedToReauthorize: Token (or its parent id token) matched an ongoing transaction, but stopping the
+          transaction on a renewed token presentation is disabled by configuration, so the transaction was not
+          stopped. Can be used e.g. to allow the user to stop the transaction manually via a display.
       type: string
       enum:
         - Processing
@@ -414,6 +417,7 @@ components:
         - UsedToStart
         - UsedToStop
         - Withdrawn
+        - UsedToReauthorize
     TokenValidationStatusMessage:
       description: The token validation status
       type: object

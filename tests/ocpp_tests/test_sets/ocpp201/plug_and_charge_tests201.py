@@ -15,7 +15,7 @@ from ocpp.v201 import call as call201
 from ocpp.routing import create_route_map
 import asyncio
 import pytest
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.charge_point_v201 import ChargePoint201
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
 from everest_test_utils import *
@@ -53,8 +53,13 @@ class TestPlugAndCharge:
 
     @pytest.mark.asyncio
     @pytest.mark.source_certs_dir(Path(__file__).parent.parent / "everest-aux/certs")
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_01(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -83,7 +88,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -114,8 +119,13 @@ class TestPlugAndCharge:
         )
 
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_02(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -154,7 +164,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -197,8 +207,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_03(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -250,7 +265,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, True, False)
@@ -304,8 +319,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_installation_and_authorization_04(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -401,8 +421,13 @@ class TestPlugAndCharge:
         )
     )
     @pytest.mark.asyncio
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_contract_revoked(
         self,
+        secc_config,
         request,
         exi_generator,
         central_system: CentralSystem,
@@ -462,7 +487,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(
+            **await wait_for_payload(
                 test_utility,
                 charge_point,
                 "Authorize",
@@ -535,8 +560,13 @@ class TestPlugAndCharge:
             ]
         )
     )
+    @parametrize_secc_config(
+        "everest-config-ocpp201-sil-dc-d2.yaml",
+        "everest-config-ocpp201-sil-dc-d2-evsev2g.yaml",
+    )
     async def test_no_tls_after_secc_leaf_deleted(
         self,
+        secc_config,
         exi_generator,
         central_system: CentralSystem,
         charge_point: ChargePoint201,
@@ -564,7 +594,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {})
         )
 
         assert validate_authorize_req(authorize_req, False, True)
@@ -631,7 +661,7 @@ class TestPlugAndCharge:
 
         # expect authorize.req
         authorize_req: call201.Authorize = call201.Authorize(
-            **await wait_for_and_validate(test_utility, charge_point, "Authorize", {"idToken": {"type": "ISO14443"}})
+            **await wait_for_payload(test_utility, charge_point, "Authorize", {"idToken": {"type": "ISO14443"}})
         )
 
         assert validate_authorize_req(authorize_req, False, False)

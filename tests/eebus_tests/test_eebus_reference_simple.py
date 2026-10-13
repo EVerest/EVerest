@@ -21,7 +21,7 @@ from everest.testing.core_utils.everest_core import EverestCore
 from fixtures.eebus_module_test import EebusTestProbeModule
 from helpers.async_helpers import async_get
 
-from conftest import EebusModuleConfigStrategy, ReferenceControlBox, wait_for_everest_ski
+from eebus_test_utils import EebusModuleConfigStrategy, ReferenceControlBox, wait_for_everest_ski
 
 # The EEBUS module config uses failsafe_control_limit_W = 4200 (default).
 # Any limit with a different value must have come from the control box.

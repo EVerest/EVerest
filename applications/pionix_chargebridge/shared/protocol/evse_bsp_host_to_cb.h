@@ -6,6 +6,7 @@
 
 #include <stdint.h>
 #include "cb_platform.h"
+#include "cb_common.h" // CpState, for ev_set_cp_state
 
 struct CB_COMPILER_ATTR_PACK evse_bsp_host_to_cb {
     uint8_t connector_lock;     /* 0: unlock, otherwise: lock */

@@ -11,7 +11,6 @@
 #include <ocpp/v2/ocpp_types.hpp>
 
 #include <map>
-#include <set>
 #include <string>
 #include <string_view>
 
@@ -48,7 +47,9 @@ public:
     static std::optional<std::string> get_connector_id(std::int32_t id, const std::string& current);
 
 private:
-    std::set<std::string> read_only;
+    // mutability as configured in the component configs of a real deployment;
+    // empty by default; tests model it via set_readonly()/set_readwrite()
+    std::map<std::string, MutabilityEnum> configured_mutability;
 
     std::optional<MemoryStorage::Storage::iterator> locate_v16(const std::string& name) const;
     std::optional<std::string> get_meter_public_keys_v16() const;
@@ -56,6 +57,7 @@ private:
     std::optional<std::string> get_v16(ocpp::v16::keys::valid_keys key) const;
     SetVariableStatusEnum set_v16(const std::string& name, const std::string& value);
     SetVariableStatusEnum set_v16_custom(const std::string& name, const std::string& value);
+    std::optional<MutabilityEnum> get_configured_mutability(const std::string& key_str) const;
     std::optional<MutabilityEnum> get_mutability(const std::string& key_str);
     void add_supported_measureands_values_list(ocpp::v2::ReportData& data);
     void add_to_report(std::vector<ocpp::v2::ReportData>& report, const std::string_view& name,
@@ -70,6 +72,7 @@ public:
     void apply_full_config();
 
     void set_readonly(const std::string& key);
+    void set_readwrite(const std::string& key);
     void set(const std::string_view& component, const std::string_view& variable, const std::string_view& value);
     std::string get(const std::string_view& component, const std::string_view& variable);
     void clear(const std::string_view& component, const std::string_view& variable);

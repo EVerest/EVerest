@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/logging.hpp>
 #include <ocpp/v16/charge_point.hpp>
@@ -74,6 +74,10 @@ void ChargePoint::connect_websocket() {
 
 void ChargePoint::disconnect_websocket() {
     this->charge_point->disconnect_websocket();
+}
+
+void ChargePoint::reload_network_profiles() {
+    this->charge_point->reload_network_profiles();
 }
 
 void ChargePoint::on_websocket_connected(const int configuration_slot,
@@ -316,6 +320,11 @@ void ChargePoint::register_set_connection_timeout_callback(
     this->charge_point->register_set_connection_timeout_callback(callback);
 }
 
+void ChargePoint::register_configure_network_connection_profile_callback(
+    ConfigureNetworkConnectionProfileCallback callback) {
+    this->charge_point->register_configure_network_connection_profile_callback(std::move(callback));
+}
+
 void ChargePoint::register_is_reset_allowed_callback(const std::function<bool(const ResetType& reset_type)>& callback) {
     this->charge_point->register_is_reset_allowed_callback(callback);
 }
@@ -338,7 +347,9 @@ void ChargePoint::register_signal_set_charging_profiles_callback(const std::func
     this->charge_point->register_signal_set_charging_profiles_callback(callback);
 }
 
-void ChargePoint::register_connection_state_changed_callback(const std::function<void(bool is_connected)>& callback) {
+void ChargePoint::register_connection_state_changed_callback(
+    const std::function<void(const bool is_connected, const int configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback) {
     this->charge_point->register_connection_state_changed_callback(callback);
 }
 
@@ -350,19 +361,19 @@ void ChargePoint::register_get_15118_ev_certificate_response_callback(
 }
 
 void ChargePoint::register_transaction_started_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback) {
     this->charge_point->register_transaction_started_callback(callback);
 }
 
 void ChargePoint::register_transaction_stopped_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id)>& callback) {
+    const std::function<void(const std::string& session_id, const std::int32_t connector,
+                             const StopTransactionRequest& request)>& callback) {
     this->charge_point->register_transaction_stopped_callback(callback);
 }
 
 void ChargePoint::register_transaction_updated_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                             const StartTransactionResponse& response)>& callback) {
     this->charge_point->register_transaction_updated_callback(callback);
 }
 
@@ -374,6 +385,15 @@ void ChargePoint::register_configuration_key_changed_callback(
 void ChargePoint::register_generic_configuration_key_changed_callback(
     const std::function<void(const KeyValue& key_value)>& callback) {
     this->charge_point->register_generic_configuration_key_changed_callback(callback);
+}
+
+void ChargePoint::register_custom_key_validation_callback(
+    const std::function<bool(const std::string& key, const std::string& value)>& callback) {
+    this->charge_point->register_custom_key_validation_callback(callback);
+}
+
+ConfigurationStatus ChargePoint::set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) {
+    return this->charge_point->set_custom_key_forced(key, value);
 }
 
 void ChargePoint::register_security_event_callback(

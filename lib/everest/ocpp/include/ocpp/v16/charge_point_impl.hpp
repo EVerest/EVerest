@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_V16_CHARGE_POINT_IMPL_HPP
 #define OCPP_V16_CHARGE_POINT_IMPL_HPP
 #include "ocpp/v16/ocpp_enums.hpp"
@@ -146,6 +146,7 @@ private:
     std::mutex data_transfer_callbacks_mutex;
     std::map<CiString<50>, std::function<void(const KeyValue& key_value)>> configuration_key_changed_callbacks;
     std::function<void(const KeyValue& key_value)> generic_configuration_key_changed_callback;
+    std::function<bool(const std::string& key, const std::string& value)> custom_key_validation_callback;
 
     std::mutex stop_transaction_mutex;
     std::condition_variable stop_transaction_cv;
@@ -179,7 +180,9 @@ private:
     std::function<void(const std::string& system_time)> set_system_time_callback;
     std::function<void(const BootNotificationResponse& boot_notification_response)> boot_notification_response_callback;
     std::function<void()> signal_set_charging_profiles_callback;
-    std::function<void(bool is_connected)> connection_state_changed_callback;
+    std::function<void(const bool is_connected, const int configuration_slot,
+                       const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>
+        connection_state_changed_callback;
 
     std::function<GetLogResponse(const GetDiagnosticsRequest& request)> upload_diagnostics_callback;
     std::function<void(const UpdateFirmwareRequest msg)> update_firmware_callback;
@@ -196,11 +199,13 @@ private:
     std::function<GetLogResponse(GetLogRequest msg)> upload_logs_callback;
     std::function<void(std::int32_t connection_timeout)> set_connection_timeout_callback;
 
-    std::function<void(const std::int32_t connector, const std::string& session_id)> transaction_started_callback;
-    std::function<void(const std::int32_t connector, const std::string& session_id, const std::int32_t transaction_id,
-                       const IdTagInfo& id_tag_info)>
+    std::function<void(const std::string& session_id, const StartTransactionRequest& request)>
+        transaction_started_callback;
+    std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                       const StartTransactionResponse& response)>
         transaction_updated_callback;
-    std::function<void(const std::int32_t connector, const std::string& session_id, const std::int32_t transaction_id)>
+    std::function<void(const std::string& session_id, const std::int32_t connector,
+                       const StopTransactionRequest& request)>
         transaction_stopped_callback;
     std::function<ocpp::ReservationCheckStatus(const std::int32_t connector, const std::string& id_token)>
         is_token_reserved_for_connector_callback;
@@ -251,6 +256,9 @@ private:
                              const std::optional<CiString<255>>& vendor_id = std::nullopt,
                              const std::optional<CiString<50>>& vendor_error_code = std::nullopt,
                              bool initiated_by_trigger_message = false);
+    /// \brief Answers a TriggerMessage(StatusNotification) for \p connector . An active error owns the info field; in
+    /// its absence a suspended connector reports its suspend reason if ReportSuspendedEVSEReasonChange is set.
+    void triggered_status_notification(const std::int32_t connector);
     void diagnostic_status_notification(DiagnosticsStatus status, bool initiated_by_trigger_message = false);
     void firmware_status_notification(FirmwareStatus status, bool initiated_by_trigger_message = false,
                                       bool disable_connectors_during_install = true);
@@ -309,7 +317,7 @@ private:
     void handleRemoteStartTransactionRequest(Call<RemoteStartTransactionRequest> call);
     void handleRemoteStopTransactionRequest(Call<RemoteStopTransactionRequest> call);
     void handleResetRequest(Call<ResetRequest> call);
-    void handleStartTransactionResponse(CallResult<StartTransactionResponse> call_result);
+    void handleStartTransactionResponse(const EnhancedMessage<v16::MessageType>& message);
     void handleStopTransactionResponse(const EnhancedMessage<v16::MessageType>& message);
     void handleUnlockConnectorRequest(Call<UnlockConnectorRequest> call);
     void handleHeartbeatResponse(CallResult<HeartbeatResponse> call_result);
@@ -454,7 +462,9 @@ public:
         const std::optional<SecurityConfiguration>& security_configuration,
         const std::function<void(const std::string& message, MessageDirection direction)>& message_callback);
 
-    virtual ~ChargePointImpl() override = default;
+    /// \brief Disarms the connection callbacks so a deferred websocket callback cannot reach a
+    /// partly destroyed charge point.
+    virtual ~ChargePointImpl() override;
 
     /// \brief Allow to update the ChargePoint core information which will be sent in BootNotification.req
     void update_chargepoint_information(const std::string& vendor, const std::string& model,
@@ -521,6 +531,10 @@ public:
 
     /// \brief Disconnects the the websocket connection to the CSMS if it is connected
     void disconnect_websocket();
+
+    /// \brief Rebuilds the ConnectivityManager's cached network connection profiles and slot priority list.
+    /// \see ocpp::v16::ChargePoint::reload_network_profiles
+    void reload_network_profiles();
 
     /// \brief Calls the set_connection_timeout_callback that can be registered. This function is used to notify an
     /// Authorization mechanism about a changed ConnectionTimeout configuration key.
@@ -664,6 +678,8 @@ public:
     void on_suspend_charging_ev(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
 
     /// \brief This function should be called when EVSE indicates that it suspends charging on the given \p connector
+    /// . The \p info is always forwarded verbatim, but unless ReportSuspendedEVSEReasonChange is set a suspend on an
+    /// already suspended connector is discarded.
     /// \param connector
     /// \param info
     void on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info = std::nullopt);
@@ -866,6 +882,12 @@ public:
     /// \param callback
     void register_set_connection_timeout_callback(const std::function<void(std::int32_t connection_timeout)>& callback);
 
+    /// \brief registers a \p callback on the connectivity manager that is called before each websocket connection
+    /// attempt so the host can configure the network interface for the network connection profile. Must be called
+    /// before start(). \see ocpp::v16::ChargePoint::register_configure_network_connection_profile_callback
+    /// \param callback
+    void register_configure_network_connection_profile_callback(ConfigureNetworkConnectionProfileCallback callback);
+
     /// \brief registers a \p callback function that can be used to check if a reset is allowed . The
     /// is_reset_allowed_callback is called when a Reset.req is received.
     /// \param callback
@@ -896,7 +918,9 @@ public:
     /// \brief registers a \p callback function that can be used when the connection state to CSMS changes. The
     /// connection_state_changed_callback is called when chargepoint has connected to or disconnected from the CSMS.
     /// \param callback
-    void register_connection_state_changed_callback(const std::function<void(bool is_connected)>& callback);
+    void register_connection_state_changed_callback(
+        const std::function<void(const bool is_connected, const int configuration_slot,
+                                 const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback);
 
     /// \brief registers a \p callback function that can be used to publish the response to a Get15118Certificate.req
     /// wrapped in a DataTransfer.req . The get_15118_ev_certificate_response_callback is called after the response to a
@@ -908,25 +932,27 @@ public:
                                  const ocpp::v2::CertificateActionEnum& certificate_action)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, the \p session_id correlates it with the EVerest session
+    /// because it is not part of the message.
     /// \param callback
     void register_transaction_started_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StopTransaction.req message is sent by the
-    /// chargepoint
+    /// chargepoint. The \p request is the message as sent, \p session_id and \p connector correlate it with the
+    /// EVerest session and connector because neither is part of the message.
     /// \param callback
     void register_transaction_stopped_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id)>& callback);
+        const std::function<void(const std::string& session_id, const std::int32_t connector,
+                                 const StopTransactionRequest& request)>& callback);
 
     /// \brief registers a \p callback function that is called when a StartTransaction.conf message is received by the
-    /// CSMS. This includes the transactionId.
+    /// CSMS. The \p response includes the transactionId and the idTagInfo, the \p request is the StartTransaction.req
+    /// it answers.
     /// \param callback
     void register_transaction_updated_callback(
-        const std::function<void(const std::int32_t connector, const std::string& session_id,
-                                 const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>
-            callback);
+        const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                                 const StartTransactionResponse& response)>& callback);
 
     /// \brief registers a \p callback function that can be used to react on changed configuration keys. This
     /// callback is called when a configuration key has been changed by the CSMS
@@ -941,6 +967,20 @@ public:
     /// \param callback executed when this configuration key changed
     void
     register_generic_configuration_key_changed_callback(const std::function<void(const KeyValue& key_value)>& callback);
+
+    /// \brief registers a \p callback that can veto a ChangeConfiguration before it is applied (e.g.
+    /// based on runtime charge-point state), for both Core and Custom-profile keys. Invoked from
+    /// set_configuration_key_internal, so it applies regardless of which ChargePointConfigurationInterface
+    /// implementation is in use.
+    /// \param callback returns true to allow the change, false to reject it
+    void register_custom_key_validation_callback(
+        const std::function<bool(const std::string& key, const std::string& value)>& callback);
+
+    /// \brief force-writes a Custom key's value, bypassing its readOnly flag (see
+    /// ChargePointConfigurationInterface::set_custom_key_forced for details)
+    /// \param key
+    /// \param value
+    ConfigurationStatus set_custom_key_forced(const CiString<50>& key, const CiString<500>& value);
 
     /// \brief registers a \p callback function that can be used to react to a security event callback. This callback is
     /// called only if the SecurityEvent occured internally within libocpp
@@ -970,7 +1010,9 @@ public:
     /// \return a response containing the requested key(s) including the values and unkown keys if present
     GetConfigurationResponse get_configuration_key(const GetConfigurationRequest& request);
 
-    /// \brief Sets a configuration key
+    /// \brief Sets a configuration key on behalf of a local caller
+    /// \note Unlike a ChangeConfiguration.req from the CSMS, this also writes ReadOnly keys. Keys whose value the
+    /// stack derives itself are still rejected.
     /// \param key
     /// \param value
     /// \return Indicates the result of the operation

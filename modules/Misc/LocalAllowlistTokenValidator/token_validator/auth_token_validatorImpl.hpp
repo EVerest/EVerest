@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef TOKEN_VALIDATOR_AUTH_TOKEN_VALIDATOR_IMPL_HPP
 #define TOKEN_VALIDATOR_AUTH_TOKEN_VALIDATOR_IMPL_HPP
 

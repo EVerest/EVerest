@@ -176,10 +176,10 @@ public:
     /// \param component_configs    A map with all components, variables, characteristics and attributes.
     /// \param delete_db_if_exists  Set to true to delete the database if it already exists.
     /// \param inject_ocpp16_legacy_ctrlr_fallback
-    ///                             If true and OCPP16LegacyCtrlr is absent from both \p component_configs
-    ///                             and the existing database, inject built-in defaults. Required for
-    ///                             backwards compatibility with component config directories that predate
-    ///                             the OCPP1.6 device model implementation.
+    ///                             If true and OCPP16LegacyCtrlr is absent from \p component_configs, add the
+    ///                             built-in defaults so the component is inserted and updated like any other
+    ///                             component. Required for backwards compatibility with component config
+    ///                             directories that predate the OCPP1.6 device model implementation.
     ///
     /// \throws InitDeviceModelDbError  - When database could not be initialized or
     ///                                 - Foreign keys could not be turned on or

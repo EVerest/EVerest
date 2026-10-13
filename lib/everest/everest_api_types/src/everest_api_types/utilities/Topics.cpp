@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "utilities/Topics.hpp"
 #include <iostream>
@@ -16,6 +16,18 @@ void Topics::setup(std::string const& target_module_id, std::string const& api_t
 std::string Topics::entrypoint(const std::string& var) const {
     std::stringstream topic;
     topic << everest::lib::API::Topics::api_base << "/" << var;
+    return topic.str();
+}
+
+std::string Topics::nonmodule_to_extern(const std::string& var) const {
+    std::stringstream topic;
+    topic << api_base << "/" << m_api_version << "/" << m_api_type << "/" << api_out << "/" << var;
+    return topic.str();
+}
+
+std::string Topics::extern_to_nonmodule(const std::string& var) const {
+    std::stringstream topic;
+    topic << api_base << "/" << m_api_version << "/" << m_api_type << "/" << api_in << "/" << var;
     return topic.str();
 }
 

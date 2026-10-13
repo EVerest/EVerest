@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "evse_security/json_codec.hpp"
 #include "evse_security/API.hpp"
@@ -68,6 +68,9 @@ void to_json(json& j, LeafCertificateType const& k) noexcept {
     case LeafCertificateType::MO:
         j = "MO";
         return;
+    case LeafCertificateType::V2G20:
+        j = "V2G20";
+        return;
     }
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_security::LeafCertificateType";
 }
@@ -88,6 +91,10 @@ void from_json(const json& j, LeafCertificateType& k) {
     }
     if (s == "MO") {
         k = LeafCertificateType::MO;
+        return;
+    }
+    if (s == "V2G20") {
+        k = LeafCertificateType::V2G20;
         return;
     }
     throw std::out_of_range(

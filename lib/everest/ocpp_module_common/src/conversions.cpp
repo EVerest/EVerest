@@ -100,16 +100,27 @@ ocpp::v2::DataTransferResponse to_ocpp_data_transfer_response(types::ocpp::DataT
     ocpp::v2::DataTransferResponse ocpp_response;
     ocpp_response.status = conversions::to_ocpp_data_transfer_status_enum(response.status);
     if (response.data.has_value()) {
-        ocpp_response.data = json::parse(response.data.value());
+        try {
+            ocpp_response.data = json::parse(response.data.value());
+        } catch (const json::exception&) {
+            // Modules may answer with plain text; pass it on as a json string instead of dropping it.
+            ocpp_response.data = json(response.data.value());
+        }
     }
     if (response.custom_data.has_value()) {
         auto custom_data = response.custom_data.value();
-        json custom_data_json = json::parse(custom_data.data);
-        if (not custom_data_json.contains("vendorId")) {
-            EVLOG_warning << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
-            custom_data_json["vendorId"] = custom_data.vendor_id;
+        try {
+            json custom_data_json = json::parse(custom_data.data);
+            if (not custom_data_json.contains("vendorId")) {
+                EVLOG_warning
+                    << "DataTransferResponse custom_data.data does not contain vendorId, automatically adding it";
+                custom_data_json["vendorId"] = custom_data.vendor_id;
+            }
+            ocpp_response.customData = custom_data_json;
+        } catch (const json::exception& e) {
+            EVLOG_error << "Parsing of data transfer response custom_data json failed because: "
+                        << "(" << e.what() << ")";
         }
-        ocpp_response.customData = custom_data_json;
     }
     return ocpp_response;
 }
@@ -1417,6 +1428,7 @@ to_everest_ocpp_transaction_event(const ocpp::v2::TransactionEventRequest& trans
     ocpp_transaction_event.session_id =
         transaction_event.transactionInfo.transactionId; // session_id == transaction_id for OCPP2.0.1
     ocpp_transaction_event.transaction_id = transaction_event.transactionInfo.transactionId;
+    ocpp_transaction_event.timestamp = transaction_event.timestamp.to_rfc3339();
     return ocpp_transaction_event;
 }
 
@@ -1501,6 +1513,43 @@ types::ocpp::StatusInfoType to_everest_status_info_type(const ocpp::v2::StatusIn
     everest_status_info.reason_code = status_info.reasonCode;
     everest_status_info.additional_info = status_info.additionalInfo;
     return everest_status_info;
+}
+
+std::optional<std::string> to_everest_ocpp_version(const ocpp::OcppProtocolVersion protocol_version) {
+    switch (protocol_version) {
+    case ocpp::OcppProtocolVersion::v16:
+        return "1.6";
+    case ocpp::OcppProtocolVersion::v201:
+        return "2.0.1";
+    case ocpp::OcppProtocolVersion::v21:
+        return "2.1";
+    case ocpp::OcppProtocolVersion::Unknown:
+        break;
+    }
+    return std::nullopt;
+}
+
+types::ocpp::ConnectionStatus
+to_everest_connection_status(const bool is_connected, const int32_t configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                             const ocpp::OcppProtocolVersion protocol_version) {
+    types::ocpp::ConnectionStatus connection_status;
+    connection_status.connected = is_connected;
+    if (not network_connection_profile.ocppCsmsUrl.get().empty()) {
+        connection_status.csms_url = network_connection_profile.ocppCsmsUrl.get();
+    }
+    connection_status.security_profile = network_connection_profile.securityProfile;
+    if (network_connection_profile.identity.has_value() and
+        not network_connection_profile.identity.value().get().empty()) {
+        connection_status.identity = network_connection_profile.identity.value().get();
+    }
+    connection_status.ocpp_version = to_everest_ocpp_version(protocol_version);
+    connection_status.configuration_slot = configuration_slot;
+    connection_status.ocpp_interface =
+        ocpp::v2::conversions::ocppinterface_enum_to_string(network_connection_profile.ocppInterface);
+    connection_status.ocpp_transport =
+        ocpp::v2::conversions::ocpptransport_enum_to_string(network_connection_profile.ocppTransport);
+    return connection_status;
 }
 
 std::vector<types::ocpp::GetVariableResult>
@@ -1974,6 +2023,110 @@ to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityRespon
         result.status_info = to_everest_status_info(response.statusInfo.value());
     }
     return result;
+}
+
+types::network::InterfaceClass to_everest_interface_class(const ocpp::v2::OCPPInterfaceEnum iface) {
+    switch (iface) {
+    case ocpp::v2::OCPPInterfaceEnum::Wired0:
+        return types::network::InterfaceClass::Wired0;
+    case ocpp::v2::OCPPInterfaceEnum::Wired1:
+        return types::network::InterfaceClass::Wired1;
+    case ocpp::v2::OCPPInterfaceEnum::Wired2:
+        return types::network::InterfaceClass::Wired2;
+    case ocpp::v2::OCPPInterfaceEnum::Wired3:
+        return types::network::InterfaceClass::Wired3;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless0:
+        return types::network::InterfaceClass::Wireless0;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless1:
+        return types::network::InterfaceClass::Wireless1;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless2:
+        return types::network::InterfaceClass::Wireless2;
+    case ocpp::v2::OCPPInterfaceEnum::Wireless3:
+        return types::network::InterfaceClass::Wireless3;
+    case ocpp::v2::OCPPInterfaceEnum::Any:
+        return types::network::InterfaceClass::Any;
+    }
+    throw std::out_of_range("Could not convert OCPPInterfaceEnum to types::network::InterfaceClass");
+}
+
+/// \brief Converts a given ocpp::v2::APNAuthenticationEnum \p authentication to a types::network::Apn_authentication.
+static types::network::Apn_authentication
+to_everest_apn_authentication(const ocpp::v2::APNAuthenticationEnum authentication) {
+    switch (authentication) {
+    case ocpp::v2::APNAuthenticationEnum::PAP:
+        return types::network::Apn_authentication::PAP;
+    case ocpp::v2::APNAuthenticationEnum::CHAP:
+        return types::network::Apn_authentication::CHAP;
+    case ocpp::v2::APNAuthenticationEnum::NONE:
+        return types::network::Apn_authentication::NONE;
+    case ocpp::v2::APNAuthenticationEnum::AUTO:
+        return types::network::Apn_authentication::AUTO;
+    }
+    throw std::out_of_range("Could not convert APNAuthenticationEnum to types::network::Apn_authentication");
+}
+
+/// \brief Converts a given ocpp::v2::VPNEnum \p type to a types::network::Type.
+static types::network::Type to_everest_vpn_type(const ocpp::v2::VPNEnum type) {
+    switch (type) {
+    case ocpp::v2::VPNEnum::IKEv2:
+        return types::network::Type::IKEv2;
+    case ocpp::v2::VPNEnum::IPSec:
+        return types::network::Type::IPSec;
+    case ocpp::v2::VPNEnum::L2TP:
+        return types::network::Type::L2TP;
+    case ocpp::v2::VPNEnum::PPTP:
+        return types::network::Type::PPTP;
+    }
+    throw std::out_of_range("Could not convert VPNEnum to types::network::Type");
+}
+
+types::network::APN to_everest_network_apn(const ocpp::v2::APN& apn) {
+    types::network::APN result;
+    result.apn = apn.apn.get();
+    result.apn_authentication = to_everest_apn_authentication(apn.apnAuthentication);
+    if (apn.apnUserName.has_value()) {
+        result.apn_user_name = apn.apnUserName.value().get();
+    }
+    if (apn.apnPassword.has_value()) {
+        result.apn_password = apn.apnPassword.value().get();
+    }
+    if (apn.simPin.has_value()) {
+        result.sim_pin = std::to_string(apn.simPin.value());
+    }
+    if (apn.preferredNetwork.has_value()) {
+        result.preferred_network = apn.preferredNetwork.value().get();
+    }
+    if (apn.useOnlyPreferredNetwork.has_value()) {
+        result.use_only_preferred_network = apn.useOnlyPreferredNetwork.value();
+    }
+    return result;
+}
+
+types::network::VPN to_everest_network_vpn(const ocpp::v2::VPN& vpn) {
+    types::network::VPN result;
+    result.server = vpn.server.get();
+    result.user = vpn.user.get();
+    result.password = vpn.password.get();
+    result.key = vpn.key.get();
+    result.type = to_everest_vpn_type(vpn.type);
+    if (vpn.group.has_value()) {
+        result.group = vpn.group.value().get();
+    }
+    return result;
+}
+
+types::network::ConfigureNetworkRequest
+to_everest_configure_network_request(const int32_t request_id, const ocpp::v2::NetworkConnectionProfile& profile) {
+    types::network::ConfigureNetworkRequest request;
+    request.request_id = request_id;
+    request.interface = to_everest_interface_class(profile.ocppInterface);
+    if (profile.apn.has_value()) {
+        request.apn = to_everest_network_apn(profile.apn.value());
+    }
+    if (profile.vpn.has_value()) {
+        request.vpn = to_everest_network_vpn(profile.vpn.value());
+    }
+    return request;
 }
 
 types::grid_support::DirectiveType to_grid_support_directive_type(const ocpp::v2::DERControlEnum control_type) {

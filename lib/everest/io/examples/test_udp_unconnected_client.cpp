@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 //
 // Example: how to use udp_unconnected_client (an unconnected UDP datagram
 // client, IPv4 or IPv6 auto-selected from the target). Sends a text message

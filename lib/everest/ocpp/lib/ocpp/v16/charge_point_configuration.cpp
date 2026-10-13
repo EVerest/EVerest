@@ -71,6 +71,18 @@ ChargePointConfiguration::ChargePointConfiguration(const std::string& config, co
     }
 
     try {
+        const auto cost_schema_path = schemas_path / "CostAndPrice.json";
+        if (fs::exists(cost_schema_path)) {
+            std::ifstream ifs(cost_schema_path.c_str());
+            std::string cost_schema_file((std::istreambuf_iterator<char>(ifs)), (std::istreambuf_iterator<char>()));
+            this->cost_and_price_schema = json::parse(cost_schema_file);
+        }
+    } catch (const json::parse_error& e) {
+        EVLOG_error << "Error while parsing CostAndPrice.json file.";
+        EVLOG_AND_THROW(e);
+    }
+
+    try {
         auto patch = schemas.get_validator()->validate(this->config);
         if (patch.is_null()) {
             // no defaults substituted
@@ -536,6 +548,15 @@ void ChargePointConfiguration::setVerifyCsmsAllowWildcards(bool verify_csms_allo
     this->setInUserConfig("Internal", "VerifyCsmsAllowWildcards", verify_csms_allow_wildcards);
 }
 
+bool ChargePointConfiguration::getReportSuspendedEVSEReasonChange() {
+    return this->config["Internal"]["ReportSuspendedEVSEReasonChange"];
+}
+
+void ChargePointConfiguration::setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) {
+    this->config["Internal"]["ReportSuspendedEVSEReasonChange"] = report_suspended_evse_reason_change;
+    this->setInUserConfig("Internal", "ReportSuspendedEVSEReasonChange", report_suspended_evse_reason_change);
+}
+
 std::string ChargePointConfiguration::getSupportedMeasurands() {
     return this->config["Internal"]["SupportedMeasurands"];
 }
@@ -801,6 +822,14 @@ KeyValue ChargePointConfiguration::getVerifyCsmsAllowWildcardsKeyValue() {
     return kv;
 }
 
+KeyValue ChargePointConfiguration::getReportSuspendedEVSEReasonChangeKeyValue() {
+    KeyValue kv;
+    kv.key = "ReportSuspendedEVSEReasonChange";
+    kv.readonly = false;
+    kv.value.emplace(ocpp::conversions::bool_to_string(this->getReportSuspendedEVSEReasonChange()));
+    return kv;
+}
+
 KeyValue ChargePointConfiguration::getSupportedMeasurandsKeyValue() {
     KeyValue kv;
     kv.key = "SupportedMeasurands";
@@ -997,6 +1026,27 @@ std::optional<KeyValue> ChargePointConfiguration::getQueueAllMessagesKeyValue() 
         queue_all_messages_kv.emplace(kv);
     }
     return queue_all_messages_kv;
+}
+
+std::optional<bool> ChargePointConfiguration::getReportClearedErrors() {
+    std::optional<bool> report_cleared_errors = std::nullopt;
+    if (this->config["Internal"].contains("ReportClearedErrors")) {
+        report_cleared_errors.emplace(this->config["Internal"]["ReportClearedErrors"]);
+    }
+    return report_cleared_errors;
+}
+
+std::optional<KeyValue> ChargePointConfiguration::getReportClearedErrorsKeyValue() {
+    std::optional<KeyValue> report_cleared_errors_kv = std::nullopt;
+    auto report_cleared_errors = this->getReportClearedErrors();
+    if (report_cleared_errors.has_value()) {
+        KeyValue kv;
+        kv.key = "ReportClearedErrors";
+        kv.readonly = true;
+        kv.value.emplace(ocpp::conversions::bool_to_string(report_cleared_errors.value()));
+        report_cleared_errors_kv.emplace(kv);
+    }
+    return report_cleared_errors_kv;
 }
 
 std::optional<std::string> ChargePointConfiguration::getMessageTypesDiscardForQueueing() {
@@ -2468,13 +2518,17 @@ bool ChargePointConfiguration::getCustomDisplayCostAndPriceEnabled() {
     return false;
 }
 
-KeyValue ChargePointConfiguration::getCustomDisplayCostAndPriceEnabledKeyValue() {
-    const bool enabled = getCustomDisplayCostAndPriceEnabled();
-    KeyValue kv;
-    kv.key = "CustomDisplayCostAndPrice";
-    kv.value = ocpp::conversions::bool_to_string(enabled);
-    kv.readonly = true;
-    return kv;
+std::optional<KeyValue> ChargePointConfiguration::getCustomDisplayCostAndPriceEnabledKeyValue() {
+    if (this->config.contains("CostAndPrice") and this->config["CostAndPrice"].contains("CustomDisplayCostAndPrice")) {
+        const bool enabled = getCustomDisplayCostAndPriceEnabled();
+        KeyValue kv;
+        kv.key = "CustomDisplayCostAndPrice";
+        kv.value = ocpp::conversions::bool_to_string(enabled);
+        kv.readonly = this->cost_and_price_schema["properties"]["CustomDisplayCostAndPrice"]["readOnly"];
+        return kv;
+    }
+
+    return std::nullopt;
 }
 
 std::optional<std::uint32_t> ChargePointConfiguration::getPriceNumberOfDecimalsForCostValues() {
@@ -3080,6 +3134,18 @@ bool ChargePointConfiguration::setMeterPublicKey(const std::int32_t connector_id
     return true;
 }
 
+ConfigurationStatus ChargePointConfiguration::setCustomDisplayCostAndPrice(const bool& value) {
+    auto status = ConfigurationStatus::Rejected;
+
+    if (!this->cost_and_price_schema["properties"]["CustomDisplayCostAndPrice"]["readOnly"]) {
+        this->config["CostAndPrice"]["CustomDisplayCostAndPrice"] = value;
+        this->setInUserConfig("CostAndPrice", "CustomDisplayCostAndPrice", value);
+        status = ConfigurationStatus::Accepted;
+    }
+
+    return status;
+}
+
 void ChargePointConfiguration::setLanguage(const std::string& language) {
     this->config["CostAndPrice"]["Language"] = language;
     this->setInUserConfig("CostAndPrice", "Language", language);
@@ -3101,7 +3167,7 @@ std::optional<KeyValue> ChargePointConfiguration::getLanguageKeyValue() {
 // Custom
 std::optional<KeyValue> ChargePointConfiguration::getCustomKeyValue(const CiString<50>& key) {
     std::lock_guard<std::recursive_mutex> lock(this->configuration_mutex);
-    if (!this->config["Custom"].contains(key.get())) {
+    if (!this->config.contains("Custom") or !this->config["Custom"].contains(key.get())) {
         return std::nullopt;
     }
 
@@ -3316,6 +3382,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     if (key == "VerifyCsmsAllowWildcards") {
         return this->getVerifyCsmsAllowWildcardsKeyValue();
     }
+    if (key == "ReportSuspendedEVSEReasonChange") {
+        return this->getReportSuspendedEVSEReasonChangeKeyValue();
+    }
     if (key == "OcspRequestInterval") {
         return this->getOcspRequestIntervalKeyValue();
     }
@@ -3354,6 +3423,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "QueueAllMessages") {
         return this->getQueueAllMessagesKeyValue();
+    }
+    if (key == "ReportClearedErrors") {
+        return this->getReportClearedErrorsKeyValue();
     }
     if (key == "MessageTypesDiscardForQueueing") {
         return this->getMessageTypesDiscardForQueueingKeyValue();
@@ -4122,6 +4194,12 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         } else {
             return ConfigurationStatus::Rejected;
         }
+    } else if (key == "ReportSuspendedEVSEReasonChange") {
+        if (isBool(value.get())) {
+            this->setReportSuspendedEVSEReasonChange(ocpp::conversions::string_to_bool(value.get()));
+        } else {
+            return ConfigurationStatus::Rejected;
+        }
     } else if (key == "SeccLeafSubjectCommonName") {
         // Hubject PnC Extension keys
         if (this->getSeccLeafSubjectCommonName().has_value()) {
@@ -4191,6 +4269,15 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
         } else {
             return ConfigurationStatus::Rejected;
         }
+    } else if (key == "CustomDisplayCostAndPrice") {
+        if (!isBool(value.get())) {
+            return ConfigurationStatus::Rejected;
+        }
+        const ConfigurationStatus result =
+            this->setCustomDisplayCostAndPrice(ocpp::conversions::string_to_bool(value.get()));
+        if (result != ConfigurationStatus::Accepted) {
+            return result;
+        }
     } else if (key.get().find("DefaultPriceText") == 0) {
         const ConfigurationStatus result = this->setDefaultPriceText(key, value);
         if (result != ConfigurationStatus::Accepted) {
@@ -4252,6 +4339,15 @@ std::optional<ConfigurationStatus> ChargePointConfiguration::set(const CiString<
     }
 
     return ConfigurationStatus::Accepted;
+}
+
+ConfigurationStatus ChargePointConfiguration::set_custom_key_forced(const CiString<50>& key,
+                                                                    const CiString<500>& value) {
+    std::lock_guard<std::recursive_mutex> lock(this->configuration_mutex);
+    if (!this->config.contains("Custom") or !this->config["Custom"].contains(key.get())) {
+        return ConfigurationStatus::NotSupported;
+    }
+    return this->setCustomKey(key, value, /*force=*/true);
 }
 
 } // namespace ocpp::v16

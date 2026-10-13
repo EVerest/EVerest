@@ -26,9 +26,6 @@ class EverestMqttConfigurationAdjustmentStrategy(EverestConfigAdjustmentStrategy
         adjusted_everest_config["settings"]["mqtt_external_prefix"] = self._mqtt_external_prefix
         adjusted_everest_config["settings"]["telemetry_prefix"] = f"telemetry_{self._everest_uuid}"
 
-        # make sure controller starts with a dynamic port
-        adjusted_everest_config["settings"]["controller_port"] = 0
-
         for car_module_id in self._find_jscarv2g_module_ids(adjusted_everest_config):
             adjusted_everest_config["active_modules"][car_module_id]\
                 .setdefault("config_implementation",{})\

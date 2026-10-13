@@ -1,6 +1,9 @@
 description: >-
   The EVerest API module, exposing some internal functionality on an external
   MQTT connection.
+  DEPRECATED in 2026.10.0, earliest removal in 2027.04.0: superseded by the EVerest
+  API modules evse_manager_consumer_API, external_energy_limits_consumer_API,
+  ocpp_consumer_API and error_history_consumer_API.
 config:
   charger_information_file:
     description: >-

@@ -164,8 +164,7 @@ It is used for the communication between the EVerest modules:
 
 .. code-block:: bash
 
-  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/containers/mosquitto:docker-images-v0.1.0
-
+  docker run -d --name mqtt-server --network infranet_network -p 1883:1883 -p 9001:9001 ghcr.io/everest/everest-dev-environment/mosquitto:docker-images-v0.2.0
 
 That makes us ready for entering the simulation phase described in the next
 chapter.
@@ -231,9 +230,8 @@ Admin panel and simulations
 .. important::
 
   Be aware, that the Admin Panel is currently under development.
-  The former version of the Admin Panel, which was integrated in EVerest,
-  will be removed. See the new standalone version which runs without an
-  EVerest instance here:
+  It is not part of EVerest; it is a standalone application which runs
+  without an EVerest instance, see the
   `Admin Panel GitHub repository <https://github.com/EVerest/everest-admin-panel>`_
   .
 

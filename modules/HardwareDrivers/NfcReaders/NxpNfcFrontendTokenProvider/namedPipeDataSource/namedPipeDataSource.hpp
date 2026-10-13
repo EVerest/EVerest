@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #ifndef NAMED_PIPE_TOKEN_PROVIDER_IMPL_HPP
 #define NAMED_PIPE_TOKEN_PROVIDER_IMPL_HPP

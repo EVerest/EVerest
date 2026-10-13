@@ -17,14 +17,17 @@ int ConfigAccess::getCompositeScheduleIntervalS() const {
 std::string ConfigAccess::getCoreDatabasePath() const {
     return m_config.CoreDatabasePath;
 }
-std::string ConfigAccess::getCustomMrecErrorMapPath() const {
-    return m_config.CustomMrecErrorMapPath;
+std::string ConfigAccess::getCustomErrorMappingPath() const {
+    return m_config.CustomErrorMappingPath;
 }
 std::string ConfigAccess::getDatabasePath() const {
     return m_config.DatabasePath;
 }
 int ConfigAccess::getDelayOcppStart() const {
     return m_config.DelayOcppStart;
+}
+bool ConfigAccess::getDelegateNetworkConfigurationToSystem() const {
+    return m_config.DelegateNetworkConfigurationToSystem;
 }
 std::string ConfigAccess::getDeviceModelConfigMappings() const {
     return m_config.DeviceModelConfigMappings;
@@ -78,8 +81,6 @@ OCPPmulti::~OCPPmulti() {
 }
 
 void OCPPmulti::init() {
-    EVLOG_warning << "This OCPPmulti module is currently experimental! Configuration parameters and the integration in "
-                     "EVerest may change without further notice";
     // no code should be in the init methods
     // invoke_init(*p_ocpp16);
     // invoke_init(*p_auth_validator);
@@ -127,6 +128,14 @@ void OCPPmulti::ready() {
     // invoke_ready(*p_session_cost);
 
     m_ocpp.ready(module::get_config_service_client());
+}
+
+void OCPPmulti::shutdown() {
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
 }
 
 } // namespace module

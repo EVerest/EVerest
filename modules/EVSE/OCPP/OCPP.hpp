@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -69,13 +69,15 @@ struct Event {
 };
 
 using EvseConnectorMap = std::map<int32_t, std::map<int32_t, int32_t>>;
-// ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
-
 namespace module {
 
 // Shared OCPP module support code lives in lib/everest/ocpp_module_common;
 // pull the names into the module namespace to keep call sites unchanged.
 namespace conversions = ocpp_module_common::v16::conversions;
+} // namespace module
+// ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
+
+namespace module {
 
 struct Conf {
     std::string ChargePointConfigPath;
@@ -164,6 +166,9 @@ public:
     // Return the OCPP connector id from a pair of EVerest EVSE id and connector
     // id
     int32_t get_ocpp_connector_id(int32_t evse_id, int32_t connector_id);
+
+    // Rejects ReadOnly keys like a ChangeConfiguration.req from the CSMS
+    ocpp::v16::ConfigurationStatus set_writable_configuration_key(const std::string& key, const std::string& value);
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
 
 protected:
@@ -175,6 +180,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

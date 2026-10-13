@@ -9,7 +9,7 @@ import logging
 from everest.testing.core_utils.controller.test_controller_interface import TestController
 
 from validations import validate_status_notification_201
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 from everest.testing.ocpp_utils.fixtures import *
 
 from everest_test_utils import * # Needs to be before the datatypes below since it overrides the v201 Action enum with the v16 one
@@ -373,7 +373,7 @@ async def test_c10_c11_c12(
 
     # because LocalPreAuthorize is true we dont expect an authorize here
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",

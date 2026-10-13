@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef HUAWEI_V100R023C10_HPP
 #define HUAWEI_V100R023C10_HPP
 
@@ -38,6 +38,7 @@ struct Conf {
     std::string client_cert;
     std::string client_key;
     int module_placeholder_allocation_timeout_s;
+    int modbus_timeout_s;
     std::string esn;
     bool HACK_publish_requested_voltage_current;
     bool HACK_use_ovm_while_cable_check;

@@ -171,4 +171,9 @@ properties:
     description: this requests access to the global error subscription interface
     type: boolean
     default: false
+  capabilities:
+    description: Linux capabilities required to run this module, e.g. "CAP_NET_RAW"
+    type: array
+    items:
+      type: string
 additionalProperties: false

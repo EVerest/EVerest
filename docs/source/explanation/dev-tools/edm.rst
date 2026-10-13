@@ -328,16 +328,31 @@ time.
      - Default
      - Description
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_POLICY``
-     - ``latency``
-     - Selects the policy. Supported values are ``latency``, ``greedy``,
+     - ``greedy``
+     - Selects the policy. Supported values are ``greedy``, ``latency``,
        ``conservative``, ``fixed_size`` and ``custom``.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MIN_THREAD_COUNT``
+     - ``1``
+     - Minimum worker count of the pool. These workers are always running.
+   * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_MAX_THREAD_COUNT``
+     - ``6``
+     - Maximum worker count of the pool, independent of the CPU core count.
+       The pool grows so that a handler blocked waiting for another message
+       still lets that message be handled; such threads do not run in
+       parallel, so the core count is not the right bound. Must not be below
+       the minimum. It must exceed the number of handlers that may block on
+       each other at the same time; a maximum equal to the minimum disables
+       growth, so any such handler waits forever.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_THRESHOLD_MS``
      - ``50``
      - Maximum queued task wait time, in milliseconds, before the ``latency``
        policy adds another worker.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_LATENCY_TICK_MS``
      - ``5``
-     - Supervisor tick, in milliseconds, for the ``latency`` policy.
+     - Back-off, in milliseconds, before the ``latency`` policy's supervisor
+       re-evaluates a queued task it just added a worker for or decided not to
+       add one for. It is not a periodic tick: an idle pool causes no
+       supervisor wakeups.
    * - ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``
      - ``3``
      - Queue size threshold at which the ``fixed_size`` policy adds another
@@ -352,6 +367,12 @@ time.
      - (empty)
      - Additional include directory for the custom policy header.
 
+Two conditions the pool cannot resolve itself are logged by the module as
+warnings: a handler thread that cannot be started (the pool keeps retrying;
+after five seconds of failures the module exits like a crash), and a message
+that has waited more than a second with every handler thread busy, which means
+the maximum is too low for the handlers that wait for each other.
+
 The built-in policies are:
 
 .. list-table::
@@ -359,11 +380,16 @@ The built-in policies are:
 
    * - Policy
      - Behavior
-   * - ``latency``
-     - Default. Adds workers when queued work has waited longer than the
-       framework latency threshold.
    * - ``greedy``
-     - Adds workers as soon as backlog is detected.
+     - Default. Adds a worker whenever a submitted task would otherwise wait
+       for a busy worker, so below the maximum no task is ever left queued
+       behind blocked workers. No supervisor thread; the pool size follows the
+       number of outstanding handlers and surplus workers retire after the
+       idle timeout.
+   * - ``latency``
+     - Adds workers when queued work has waited longer than the framework
+       latency threshold, checked by a supervisor thread that sleeps while the
+       pool is idle.
    * - ``conservative``
      - Adds workers only when the queue depth significantly exceeds the current
        worker count.
@@ -371,7 +397,7 @@ The built-in policies are:
      - Adds workers once the queue size reaches the configured
        ``EVEREST_FRAMEWORK_THREAD_POOL_SCALING_FIXED_SIZE_THRESHOLD``.
 
-**Example: selecting a built-in policy for a full EVerest build**
+**Example: selecting the latency policy for a full EVerest build**
 
 .. code-block:: bash
 
@@ -414,6 +440,26 @@ A custom policy must provide the same interface as the built-in policies:
           std::size_t queue_size,
           std::optional<std::chrono::steady_clock::time_point> oldest_arrival);
   };
+
+``should_grow`` is evaluated on a submission below the thread limit only if the
+submitted task may wait, that is, if the queue is now longer than the number of
+workers waiting at it or about to; a task that an idle worker takes at once
+never grows the pool, so ``queue_size`` is at least 1 whenever the policy is
+asked. A policy with a ``supervisor_tick`` additionally gets a supervisor thread
+that re-evaluates ``should_grow`` for tasks that queue behind busy workers,
+backing off one tick after each evaluation. It sleeps while the queue is empty
+and, at the thread limit, until a worker retires. If the policy also provides
+
+.. code-block:: cpp
+
+  static std::chrono::steady_clock::time_point next_check(
+      std::chrono::steady_clock::time_point oldest_arrival);
+
+the supervisor sleeps until that time instead of waking every tick.
+``next_check`` must return a time no later than the first time ``should_grow``
+can become true for a queue whose oldest task arrived at ``oldest_arrival``
+(an earlier time is harmless: the supervisor then retries every tick), and it
+must be non-decreasing in ``oldest_arrival``. ``LatencyScaling`` provides it.
 
 Create a workspace config from an existing directory tree
 #########################################################

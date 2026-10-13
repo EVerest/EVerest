@@ -11,6 +11,8 @@
 #include <fmt/core.h>
 #include <nlohmann/json.hpp>
 
+#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
@@ -173,11 +175,15 @@ void initialize_device_model_with_migration(const fs::path& ocpp_share_path, con
     EVLOG_info << "Successfully migrated OCPP1.6 configuration to device model database at " << context.database_path;
 }
 
-config_factory_result_t
-create_device_model_charge_point_configuration(const fs::path& ocpp_share_path,
-                                               const DeviceModelInitializationContext& context) {
-    auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(context.database_path);
-    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(std::move(device_model_storage));
+config_factory_result_t create_device_model_charge_point_configuration(
+    const fs::path& ocpp_share_path, const DeviceModelInitializationContext& context,
+    std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_device_model) {
+    // The database is pre-seeded by initialize_device_model_* above, so the 1-arg ctor is correct here.
+    auto ocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(context.database_path);
+    // Same composition as the OCPP 2.x path (ChargePointV2::init): sources "OCPP" + "EVEREST".
+    auto composed_device_model_storage = ocpp_module_common::device_model::make_composed_device_model_storage(
+        std::move(ocpp_device_model_storage), std::move(everest_device_model));
+    auto device_model = std::make_unique<ocpp::v2::DeviceModel>(std::move(composed_device_model_storage));
 
     // One-time migration, mirroring the v2 path (ocpp::v2::ChargePoint::initialize)
     ocpp::v2::NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*device_model);
@@ -234,8 +240,10 @@ std::string load_charge_point_config_json(const fs::path& configured_config_path
 
 } // namespace
 
-config_factory_result_t create_charge_point_configuration(const fs::path& ocpp_share_path,
-                                                          const Ocpp16DeviceModelParams& config, std::int32_t n_evse) {
+config_factory_result_t
+create_charge_point_configuration(const fs::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
+                                  std::int32_t n_evse,
+                                  std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_device_model) {
     const auto context = resolve_device_model_initialization_context(ocpp_share_path, config);
 
     const bool db_initialized =
@@ -265,7 +273,8 @@ config_factory_result_t create_charge_point_configuration(const fs::path& ocpp_s
         initialize_device_model_direct(context, n_evse);
     }
 
-    auto result = create_device_model_charge_point_configuration(ocpp_share_path, context);
+    auto result =
+        create_device_model_charge_point_configuration(ocpp_share_path, context, std::move(everest_device_model));
     result.configuration->check_integrity(n_evse);
     return result;
 }

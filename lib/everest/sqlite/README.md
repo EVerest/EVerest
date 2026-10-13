@@ -92,6 +92,11 @@ stmt->bind_int(1, 1);
 if (stmt->step() == SQLITE_ROW) {
     std::string name = stmt->column_text(0);
 }
+
+// Date/time values are stored as Unix milliseconds (INTEGER)
+auto ts = std::chrono::system_clock::now();
+stmt->bind_datetime(":created_at", ts);
+auto read_back = stmt->column_datetime(0);
 ```
 
 ### 4. Schema Migration

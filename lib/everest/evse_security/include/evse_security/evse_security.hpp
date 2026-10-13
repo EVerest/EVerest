@@ -54,6 +54,10 @@ struct CertificateQueryParams {
     /// if true the leafs that will be valid in the future will be included, with the newest
     /// being first
     bool include_future_valid{false};
+    /// V2G and V2G20 share the SECC store and are told apart by key algorithm (secp521r1 / ED448
+    /// is V2G20, anything else V2G). If true that filter is skipped and every SECC leaf is
+    /// returned regardless of certificate_type, e.g. for OCSP data or listing installed leafs
+    bool all_key_algorithms{false};
     /// if true, will remove all duplicates found, since we can find a leaf for example
     /// in 2 files, one in 'leaf_single' and one in 'leaf_chain'. For delete routines
     /// we need both files returned, while for queries (v2g_chain) we don't need duplicates
@@ -116,6 +120,7 @@ public:
 
     /// @brief Verifies the given \p certificate_chain against the respective CA
     /// trust anchors (indicated by the given \p certificate_type) for the leaf.
+    /// Every certificate in the chain, including the leaf, must be valid at the current time.
     /// @param certificate_chain PEM formatted certificate or certificate chain
     /// @param certificate_type type of the root certificate for which the chain is verified
     /// @return result of the operation
@@ -124,6 +129,7 @@ public:
 
     /// @brief Verifies the given \p certificate_chain against the respective CA
     /// trust anchors (indicated by the given \p certificate_types) for the leaf.
+    /// Every certificate in the chain, including the leaf, must be valid at the current time.
     /// @param certificate_chain PEM formatted certificate or certificate chain
     /// @param certificate_types types of the root certificates for which the chain is verified
     /// @return result of the operation
@@ -170,7 +176,7 @@ public:
 
     /// @brief Updates the OCSP cache for the given \p certificate_hash_data with the given \p ocsp_response
     /// @param certificate_hash_data identifies the certificate for which the \p ocsp_response is specified
-    /// @param ocsp_response the actual OCSP data
+    /// @param ocsp_response OCSPResponse (RFC 6960), DER and then base64 encoded; stored decoded as DER
     void update_ocsp_cache(const CertificateHashData& certificate_hash_data, const std::string& ocsp_response);
 
     // TODO: Switch to path
@@ -239,6 +245,12 @@ public:
     /// will return:
     /// ROOT_V2G_Hubject->SUB_CA1->SUB_CA2->Leaf_Valid_B +
     /// ROOT_V2G_OtherProvider->SUB_CA_O1->SUB_CA_O2->Leav_Valid_A
+    /// V2G and V2G20 share the SECC store: a V2G query returns only the ISO 15118-2 profile leafs (not
+    /// secp521r1 / ED448), a V2G20 query only the ISO 15118-20 profile leafs (secp521r1 / ED448).
+    /// Leafs under one root are further told apart by their public key algorithm (see
+    /// CertificateInfo::public_key_algorithm): the newest leaf is returned per (root, algorithm), so a
+    /// prime256v1 ISO 15118-2 SECC leaf and a secp521r1 ISO 15118-20 SECC leaf issued by the same V2G
+    /// root are both returned.
     /// Note: non self-signed roots and cross-signed certificates are not supported
     /// @param certificate_type type of leaf certificate that we start the search from
     /// @param encoding specifies PEM or DER format
@@ -309,8 +321,11 @@ public:
 
 private:
     // Internal versions of the functions do not lock the mutex
+    /// @param allow_future_leaf accept a leaf whose validity starts in the future, as long as the rest of the chain is
+    /// valid at that time
     CertificateValidationResult verify_certificate_internal(const std::string& certificate_chain,
-                                                            const std::vector<LeafCertificateType>& certificate_types);
+                                                            const std::vector<LeafCertificateType>& certificate_types,
+                                                            bool allow_future_leaf);
 
     GetCertificateInfoResult get_leaf_certificate_info_internal(LeafCertificateType certificate_type,
                                                                 EncodingFormat encoding, bool include_ocsp = false);
@@ -362,6 +377,7 @@ private:
     FRIEND_TEST(EvseSecurityTests, verify_full_filesystem_install_reject);
     FRIEND_TEST(EvseSecurityTests, verify_full_filesystem);
     FRIEND_TEST(EvseSecurityTests, verify_expired_csr_deletion);
+    FRIEND_TEST(EvseSecurityTests, verify_secc_csr_profiles);
     FRIEND_TEST(EvseSecurityTests, verify_ocsp_garbage_collect);
     FRIEND_TEST(EvseSecurityTestsExpired, verify_expired_leaf_deletion);
 #endif

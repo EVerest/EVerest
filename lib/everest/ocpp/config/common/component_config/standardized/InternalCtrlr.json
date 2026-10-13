@@ -457,6 +457,22 @@
         "default": false,
         "type": "boolean"
       },
+      "ReportSuspendedEVSEReasonChange": {
+        "variable_name": "ReportSuspendedEVSEReasonChange",
+        "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+        },
+        "attributes": [
+            {
+                "type": "Actual",
+                "mutability": "ReadWrite"
+            }
+        ],
+        "description": "Resend StatusNotification when the SuspendedEVSE reason changes while the status stays SuspendedEVSE. OCPP 1.6 only.",
+        "default": false,
+        "type": "boolean"
+      },
       "IFace": {
         "variable_name": "IFace",
         "characteristics": {
@@ -813,6 +829,22 @@
               }
           ],
           "description": "If enabled we allow connections using security level 0. This does pose a security risk and is not allowed according to the OCPP spec",
+          "default": false,
+          "type": "boolean"
+      },
+      "DeferFirmwareDownloadDuringTransaction": {
+          "variable_name": "DeferFirmwareDownloadDuringTransaction",
+          "characteristics": {
+            "supportsMonitoring": false,
+            "dataType": "boolean"
+          },
+          "attributes": [
+              {
+                  "type": "Actual",
+                  "mutability": "ReadOnly"
+              }
+          ],
+          "description": "If enabled and a transaction is active, an accepted UpdateFirmware defers the firmware download until the last transaction ends (L01.FR.13). The station reports DownloadScheduled in the meantime. Ships ReadOnly so it is a commissioning-time setting; a deployment that wants the CSMS to control it can declare the Actual attribute ReadWrite in its own component config.",
           "default": false,
           "type": "boolean"
       },

@@ -14,7 +14,6 @@
 #include <ocpp/v16/utils.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
-#include <ocpp/v2/network_configuration_default_schema.hpp>
 
 namespace ocpp::v2 {
 
@@ -240,6 +239,113 @@ void patch_supported_measurands(std::map<ComponentKey, std::vector<DeviceModelVa
     }
 }
 
+// Warn when the migrated slot is not reachable through OCPPCommCtrlr.NetworkConfigurationPriority: the
+// priority value selects the slots in use, and its valuesList gates runtime priority writes.
+void warn_when_migrated_slot_not_in_priority(
+    std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs, const int32_t network_config_slot) {
+    const auto priority_dm_cv = component_variable_to_dm_cv(ControllerComponentVariables::NetworkConfigurationPriority);
+    const auto priority_var = get_variable_to_patch(component_configs, priority_dm_cv);
+    if (!priority_var.has_value()) {
+        return; // get_variable_to_patch already warned
+    }
+    const auto& dm_variable = priority_var->get();
+    const auto slot_str = std::to_string(network_config_slot);
+
+    const auto attribute_it =
+        std::find_if(dm_variable.attributes.begin(), dm_variable.attributes.end(), [](const DbVariableAttribute& attr) {
+            return attr.variable_attribute.type.has_value() and
+                   attr.variable_attribute.type.value() == AttributeEnum::Actual;
+        });
+    std::string current_priority;
+    if (attribute_it != dm_variable.attributes.end() and attribute_it->variable_attribute.value.has_value()) {
+        current_priority = attribute_it->variable_attribute.value.value().get();
+    } else if (dm_variable.default_actual_value.has_value()) {
+        current_priority = dm_variable.default_actual_value.value();
+    }
+
+    const auto priority_slots = ocpp::v16::utils::from_csl(current_priority);
+    if (std::find(priority_slots.begin(), priority_slots.end(), slot_str) == priority_slots.end()) {
+        EVLOG_warning << "Migrated NetworkConfiguration slot " << network_config_slot
+                      << " is not listed in OCPPCommCtrlr/NetworkConfigurationPriority (\"" << current_priority
+                      << "\"); the migrated connection profile will not be used until the priority lists slot "
+                      << network_config_slot << " in the component config.";
+    }
+
+    if (dm_variable.characteristics.valuesList.has_value()) {
+        const auto values_list = ocpp::v16::utils::from_csl(dm_variable.characteristics.valuesList.value().get());
+        if (std::find(values_list.begin(), values_list.end(), slot_str) == values_list.end()) {
+            EVLOG_warning << "Migrated NetworkConfiguration slot " << network_config_slot
+                          << " is not part of OCPPCommCtrlr/NetworkConfigurationPriority's valuesList (\""
+                          << dm_variable.characteristics.valuesList.value().get()
+                          << "\"); runtime priority writes containing slot " << network_config_slot
+                          << " will be Rejected until the component config's valuesList includes it.";
+        }
+    }
+}
+
+// Migrate the OCPP 1.6 connection settings (CentralSystemURI, SecurityProfile, AuthorizationKey, HostName,
+// ChargePointId) into NetworkConfiguration[network_config_slot] and point OCPPCommCtrlr.ActiveNetworkProfile
+// at that slot. The slot's component config and its listing in NetworkConfigurationPriority come from the
+// component configuration; when they are missing, this is reported and the slot is left as configured.
+void patch_network_connection_profile(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                                      ocpp::v16::ChargePointConfiguration& ocpp16_config,
+                                      const int32_t network_config_slot) {
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+
+    ComponentKey nc_component_key;
+    nc_component_key.name = "NetworkConfiguration";
+    nc_component_key.instance = std::to_string(network_config_slot);
+    if (component_configs.find(nc_component_key) == component_configs.end()) {
+        EVLOG_error << "NetworkConfiguration[" << network_config_slot
+                    << "] not found in the component configs - skipping migration of the network connection "
+                       "settings. Provide a NetworkConfiguration_"
+                    << network_config_slot
+                    << " component config or point Ocpp16NetworkConfigSlot at a configured slot.";
+        return;
+    }
+
+    // CentralSystemURI -> NetworkConfiguration[N].OcppCsmsUrl
+    {
+        const auto uri = ocpp16_config.getCentralSystemURI();
+        if (!uri.empty()) {
+            patch_variable_value(component_configs, NC::get_component_variable(network_config_slot, NC::OcppCsmsUrl),
+                                 uri);
+        }
+    }
+    // SecurityProfile -> NetworkConfiguration[N].SecurityProfile
+    patch_variable_value(component_configs, NC::get_component_variable(network_config_slot, NC::SecurityProfile),
+                         std::to_string(ocpp16_config.getSecurityProfile()), true);
+    // OcppInterface -> NetworkConfiguration[N].OcppInterface (pinned to "Any")
+    // Legacy 1.6 configs have no interface notion; pinning "Any" keeps post-migration behavior identical to
+    // the pre-device-model single-profile synthesis. An explicit attribute value set by the integrator wins.
+    patch_variable_value(component_configs, NC::get_component_variable(network_config_slot, NC::OcppInterface), "Any",
+                         /*allow_override=*/false);
+    // AuthorizationKey -> NetworkConfiguration[N].BasicAuthPassword
+    if (const auto ak = ocpp16_config.getAuthorizationKey(); ak.has_value()) {
+        patch_variable_value(component_configs, NC::get_component_variable(network_config_slot, NC::BasicAuthPassword),
+                             ak.value());
+    }
+    // HostName -> NetworkConfiguration[N].HostName
+    if (const auto hn = ocpp16_config.getHostName(); hn.has_value()) {
+        patch_variable_value(component_configs,
+                             NC::get_component_variable(network_config_slot, ocpp::v2::Variable{"HostName"}),
+                             hn.value());
+    }
+    // ChargePointId -> NetworkConfiguration[N].Identity
+    {
+        const auto id = ocpp16_config.getChargePointId();
+        if (!id.empty()) {
+            patch_variable_value(component_configs, NC::get_component_variable(network_config_slot, NC::Identity), id);
+        }
+    }
+    // ActiveNetworkProfile -> the migrated slot, so the OCPP 1.6 key surface (CentralSystemURI,
+    // SecurityProfile, AuthorizationKey, ...) targets it already before the first successful connect.
+    patch_variable_value(component_configs, ControllerComponentVariables::ActiveNetworkProfile,
+                         std::to_string(network_config_slot));
+
+    warn_when_migrated_slot_not_in_priority(component_configs, network_config_slot);
+}
+
 } // namespace
 
 void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
@@ -288,59 +394,11 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
 
     // Handling for special cases that cannot be covered by the generic mapping above:
 
-    if (network_config_slot > 0) {
-        namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    patch_variable_value(component_configs, ControllerComponentVariables::SecurityProfile,
+                         std::to_string(ocpp16_config.getSecurityProfile()));
 
-        ComponentKey nc_component_key;
-        nc_component_key.name = "NetworkConfiguration";
-        nc_component_key.instance = std::to_string(network_config_slot);
-        if (component_configs.find(nc_component_key) == component_configs.end()) {
-            EVLOG_info << "NetworkConfiguration[" << network_config_slot
-                       << "] not found in component configs, injecting from embedded default schema.";
-            try {
-                auto [key, vars] = parse_component_config_from_string(get_default_network_configuration_schema());
-                key.instance = std::to_string(network_config_slot);
-                component_configs[key] = std::move(vars);
-            } catch (const std::exception& e) {
-                EVLOG_error << "Failed to inject NetworkConfiguration[" << network_config_slot
-                            << "] from embedded default schema: " << e.what()
-                            << " — skipping network connection migration.";
-            }
-        }
-        if (component_configs.find(nc_component_key) != component_configs.end()) {
-            // CentralSystemURI -> NetworkConfiguration[N].OcppCsmsUrl
-            {
-                const auto uri = ocpp16_config.getCentralSystemURI();
-                if (!uri.empty()) {
-                    patch_variable_value(component_configs,
-                                         NC::get_component_variable(network_config_slot, NC::OcppCsmsUrl), uri);
-                }
-            }
-            // SecurityProfile -> NetworkConfiguration[N].SecurityProfile
-            patch_variable_value(component_configs,
-                                 NC::get_component_variable(network_config_slot, NC::SecurityProfile),
-                                 std::to_string(ocpp16_config.getSecurityProfile()), true);
-            // AuthorizationKey -> NetworkConfiguration[N].BasicAuthPassword
-            if (const auto ak = ocpp16_config.getAuthorizationKey(); ak.has_value()) {
-                patch_variable_value(component_configs,
-                                     NC::get_component_variable(network_config_slot, NC::BasicAuthPassword),
-                                     ak.value());
-            }
-            // HostName -> NetworkConfiguration[N].HostName
-            if (const auto hn = ocpp16_config.getHostName(); hn.has_value()) {
-                patch_variable_value(component_configs,
-                                     NC::get_component_variable(network_config_slot, ocpp::v2::Variable{"HostName"}),
-                                     hn.value());
-            }
-            // ChargePointId -> NetworkConfiguration[N].Identity
-            {
-                const auto id = ocpp16_config.getChargePointId();
-                if (!id.empty()) {
-                    patch_variable_value(component_configs,
-                                         NC::get_component_variable(network_config_slot, NC::Identity), id);
-                }
-            }
-        }
+    if (network_config_slot > 0) {
+        patch_network_connection_profile(component_configs, ocpp16_config, network_config_slot);
     }
 
     // MeterPublicKeys -> MeterPublicKey[0], MeterPublicKey[1], ...

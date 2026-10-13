@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <everest/ocpp_module_common/custom_error_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
@@ -12,6 +13,7 @@
 #include <generated/types/evse_board_support.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/iso15118.hpp>
+#include <generated/types/ocpp.hpp>
 #include <generated/types/powermeter.hpp>
 #include <generated/types/reservation.hpp>
 #include <generated/types/session_cost.hpp>
@@ -31,6 +33,7 @@
 #include <ocpp/v21/messages/NotifyDERAlarm.hpp>
 #include <ocpp/v21/messages/SetDERControl.hpp>
 
+#include <chrono>
 #include <cstdint>
 #include <optional>
 #include <set>
@@ -78,10 +81,15 @@ struct GenericChargePointCallbacks {
                                    const types::iso15118::ChargingNeeds& charging_needs) = 0;
     virtual ocpp::v2::ClearDisplayMessageResponse
     cb_clear_display_message(const ocpp::v2::ClearDisplayMessageRequest& request) = 0;
-    virtual std::future<ocpp::ConfigNetworkResult> cb_configure_network_connection_profile() = 0;
+    virtual std::future<ocpp::ConfigNetworkResult>
+    cb_configure_network_connection_profile(std::int32_t configuration_slot,
+                                            const ocpp::v2::NetworkConnectionProfile& network_connection_profile) = 0;
+    /// \brief Applies the requested availability and reports the connector's effective state to the CSMS.
+    /// \return true when the effective state matches the requested one.
     virtual bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
-    virtual void cb_connection_state_changed(bool is_connected, ocpp::OcppProtocolVersion protocol_version) = 0;
+    virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
+                                             ocpp::OcppProtocolVersion protocol_version) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
@@ -135,11 +143,15 @@ struct GenericChargePointCallbacks {
     virtual void cb_time_sync(const ocpp::DateTime& current_time) = 0;
     /// transaction_id: CSMS-assigned transaction id; differs from transactionInfo.transactionId (the session id) in
     /// 1.6 mode and is unset while not yet assigned
+    /// timestamp: time of the transaction event as reported to the CSMS; taken from the StartTransaction.req or
+    /// StopTransaction.req in 1.6 mode, where the fabricated transaction_event carries no time of its own
     virtual void cb_transaction_event(const ocpp::v2::TransactionEventRequest& transaction_event,
-                                      const std::optional<std::string>& transaction_id) = 0;
+                                      const std::optional<std::string>& transaction_id,
+                                      const ocpp::DateTime& timestamp) = 0;
     virtual void cb_transaction_event_response(const ocpp::v2::TransactionEventRequest& transaction_event,
                                                const ocpp::v2::TransactionEventResponse& transaction_event_response,
-                                               const std::optional<std::string>& transaction_id) = 0;
+                                               const std::optional<std::string>& transaction_id,
+                                               const ocpp::DateTime& timestamp) = 0;
     virtual ocpp::v2::UnlockConnectorResponse cb_unlock_connector(std::int32_t evse_id, std::int32_t connector_id) = 0;
     virtual bool cb_update_allowed_energy_transfer_modes(
         const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes,
@@ -151,12 +163,17 @@ struct GenericChargePointCallbacks {
     virtual void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) = 0;
     virtual void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) = 0;
 
-    virtual bool map_error(const std::string& error, std::string& updated_error) = 0;
+    /// \returns the mapping loaded from the configured custom error mapping file, or nullptr when no
+    ///          file is configured
+    virtual std::shared_ptr<const ocpp_module_common::custom_error_mapping::CustomFileErrorMapping>
+    custom_error_mapping() const = 0;
     virtual void transaction_add(std::int32_t evse_id,
                                  const std::shared_ptr<ocpp_module_common::TransactionData>& transaction_data) = 0;
     virtual std::shared_ptr<ocpp_module_common::TransactionData> transaction_data(std::int32_t evse_id) = 0;
     virtual ocpp_module_common::TxEventEffect transaction_event(std::int32_t evse_id,
                                                                 ocpp_module_common::TxEvent tx_event) = 0;
+    virtual bool transaction_is_ev_connect_timeout(std::int32_t evse_id,
+                                                   std::chrono::seconds ev_connection_timeout) = 0;
     virtual void transaction_reset(std::int32_t evse_id) = 0;
     virtual void update_evcc_id_token(std::int32_t evse, ocpp::v2::IdToken& id_token) = 0;
 };

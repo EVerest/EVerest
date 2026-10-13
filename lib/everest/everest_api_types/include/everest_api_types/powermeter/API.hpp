@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 #include <optional>
@@ -217,6 +217,11 @@ struct RequestStartTransaction {
     std::optional<OCMFIdentificationLevel> identification_level;
     std::optional<std::string> identification_data;
     std::optional<std::string> tariff_text;
+};
+
+struct Capabilities {
+    std::optional<float> min_import_current_A; ///< Minimum current (charging) measurable within accuracy class
+    std::optional<float> min_export_current_A; ///< Minimum current (discharging) measurable within accuracy class
 };
 
 } // namespace everest::lib::API::V1_0::types::powermeter

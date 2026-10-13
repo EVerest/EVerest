@@ -35,6 +35,9 @@ private: // Members
     std::map<uint32_t, types::reservation::Reservation> evse_reservations;
     /// \brief All reservations not bound to a specific EVSE.
     std::vector<types::reservation::Reservation> global_reservations;
+    /// \brief EVSE specific reservations loaded from the store, not yet applied to their EvseManager: EVSE id to
+    ///        reservation id.
+    std::map<uint32_t, int32_t> restored_reservations;
     /// \brief event mutex, for all timer bound locks (for `reservation_id_to_reservation_timeout_timer_map`)
     mutable std::recursive_mutex event_mutex;
     /// \brief Map with reservations and their timer.
@@ -83,6 +86,22 @@ public:
     ///
     types::reservation::ReservationResult make_reservation(const std::optional<uint32_t> evse_id,
                                                            const types::reservation::Reservation& reservation);
+
+    ///
+    /// \brief Take the reservation restored from the store for this EVSE that has not been applied to its EvseManager
+    ///        yet, and forget it.
+    /// \param evse_id  The evse id.
+    /// \return The reservation id, or nullopt if there is none or it was cancelled or expired since it was loaded.
+    ///
+    std::optional<int32_t> take_restored_reservation(const uint32_t evse_id);
+
+    ///
+    /// \brief Check if an EVSE is reserved with a specific reservation id.
+    /// \param evse_id          The evse id.
+    /// \param reservation_id   The reservation id.
+    /// \return True if the EVSE specific reservation of \p evse_id has \p reservation_id.
+    ///
+    bool is_evse_reserved(const uint32_t evse_id, const int32_t reservation_id);
 
     ///
     /// \brief Change a specific connector state.

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef POWERMETER_API_HPP
 #define POWERMETER_API_HPP
 
@@ -62,6 +62,7 @@ private:
     // insert your private definitions here
     void generate_api_var_powermeter_values();
     void generate_api_var_public_key_ocmf();
+    void generate_api_var_capabilities();
 
     ev_API::CommCheckHandler<powermeterImplBase> comm_check{"powermeter/CommunicationFault",
                                                             ev_API::bridge_connection_lost_message, p_main};

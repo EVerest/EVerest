@@ -50,5 +50,11 @@ void slacImpl::handle_dlink_pause() {
     mod->mqtt_v.publish(topic, "{}");
 }
 
+void slacImpl::handle_count_bc(int& count) {
+    static const auto topic = mod->helper.get_topics().everest_to_extern("count_bc");
+    const auto data = generic::serialize(count);
+    mod->mqtt_v.publish(topic, data);
+}
+
 } // namespace main
 } // namespace module

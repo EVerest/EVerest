@@ -61,6 +61,8 @@ void ISO15118_chargerImpl::init() {
 
     v2g_ctx->tls_key_logging = mod->config.tls_key_logging;
     v2g_ctx->tls_key_logging_path = mod->config.tls_key_logging_path;
+    v2g_ctx->tcp_port = static_cast<uint16_t>(mod->config.tcp_port);
+    v2g_ctx->tls_port = static_cast<uint16_t>(mod->config.tls_port);
 
     if (mod->config.tls_key_logging == true) {
         dlog(DLOG_LEVEL_DEBUG, "tls-key-logging enabled (path: %s)", mod->config.tls_key_logging_path.c_str());
@@ -193,7 +195,7 @@ void ISO15118_chargerImpl::handle_set_charging_parameters(types::iso15118::Setup
 
 void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::PaymentOption>& payment_options,
                                                 bool& supported_certificate_service,
-                                                bool& central_contract_validation_allowed) {
+                                                bool& central_contract_validation_allowed, bool& fake_dc_enabled) {
     if (not v2g_ctx->hlc_pause_active) {
         v2g_ctx->evse_v2g_data.payment_option_list.clear();
         if (not payment_options.empty()) {
@@ -257,6 +259,7 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     v2g_ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = (uint8_t)iso2_EVSEProcessingType_Ongoing;
 
     v2g_ctx->evse_v2g_data.central_contract_validation_allowed = central_contract_validation_allowed;
+    v2g_ctx->is_fake_dc = fake_dc_enabled;
 }
 
 void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
@@ -313,6 +316,12 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     pthread_cond_signal(&v2g_ctx->mqtt_cond);
     /* unlock */
     pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
+}
+
+void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
+    // Not consumed yet: EvseV2G does not implement the [V2G-DC-988]/[V2G2-920..922] CP State B
+    // checks before WeldingDetection/SessionStop (follow-up; the Evse15118D20 stack does).
+    (void)cp_state;
 }
 
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
@@ -507,7 +516,7 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         }
     }
 
-    if (mod->config.supported_DIN70121 and not v2g_ctx->is_dc_charger) {
+    if (mod->config.supported_DIN70121 and not v2g_ctx->is_dc_charger and not v2g_ctx->is_fake_dc) {
         v2g_ctx->supported_protocols &= ~(1 << V2G_PROTO_DIN70121);
         dlog(DLOG_LEVEL_WARNING, "Removed DIN70121 from the list of supported protocols as AC is enabled");
     }
@@ -658,6 +667,23 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         /* signal changes to possible waiters, according to man page, it never returns an error code */
         pthread_mutex_lock(&v2g_ctx->mqtt_lock);
         v2g_ctx->intl_emergency_shutdown = true;
+        pthread_cond_signal(&v2g_ctx->mqtt_cond);
+        /* unlock */
+        pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
+        break;
+    case types::iso15118::EvseError::Error_ErrorShutdown:
+        /* Error shutdown (IEC 61851-23 Table CC.10): energy transfer is already stopped by the
+         * EvseManager. Unlike an emergency shutdown, the session is kept alive so the next
+         * response still reports the shutdown cause (EVSEStatusCode = EVSE_EmergencyShutdown and,
+         * for an isolation fault, EVSEIsolationStatus = Fault) with an OK response code instead of
+         * a FAILED response, which must omit the optional status elements (ISO 15118-4). */
+        memset(v2g_ctx->evse_v2g_data.evse_status_code,
+               static_cast<int>(iso2_DC_EVSEStatusCodeType_EVSE_EmergencyShutdown),
+               sizeof(v2g_ctx->evse_v2g_data.evse_status_code));
+        v2g_ctx->evse_v2g_data.evse_notification = static_cast<uint8_t>(iso2_EVSENotificationType_StopCharging);
+        /* signal changes to possible waiters, according to man page, it never returns an error code */
+        pthread_mutex_lock(&v2g_ctx->mqtt_lock);
+        v2g_ctx->error_shutdown = true;
         pthread_cond_signal(&v2g_ctx->mqtt_cond);
         /* unlock */
         pthread_mutex_unlock(&v2g_ctx->mqtt_lock);

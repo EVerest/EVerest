@@ -15,18 +15,25 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 )
 
 target_sources(${TEST_TARGET_NAME} PRIVATE
+    BspCapabilitiesStoreTest.cpp
+    CpStateFrameEmitterTest.cpp
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp
     IECStateMachineTest.cpp
+    PpAmpacityForwarderTest.cpp
     OverVoltageMonitorTest.cpp
+    PowermeterLimitsTest.cpp
+    RandomDelayDurationTest.cpp
     SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../SessionLog.cpp
     ../backtrace.cpp
     ../energy_transfer_modes.cpp
+    ../powermeter_limits.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
     ../v2gMessage.cpp

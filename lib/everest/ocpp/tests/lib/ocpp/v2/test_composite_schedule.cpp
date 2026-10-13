@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/common/constants.hpp"
 #include "ocpp/common/types.hpp"
@@ -12,13 +12,16 @@
 #include "ocpp/v2/utils.hpp"
 
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <filesystem>
+#include <future>
 #include <gtest/gtest.h>
 #include <iostream>
 #include <memory>
 #include <sqlite3.h>
 #include <string>
+#include <thread>
 
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/evse.hpp>
@@ -1458,6 +1461,513 @@ TEST_F(CompositeScheduleTestFixtureV2, OfflineDuration_OfflineTooLong_InvalidAft
                                                                  ChargingRateUnitEnum::W, false, false);
 
     ASSERT_EQ(actual_schedule, expected_schedule);
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerDeletesAtDeadline) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified, disconnected] {
+        EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+        EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+        notified->set_value();
+    });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerKeepsReusableProfile) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = false;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified, disconnected] {
+        EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+        EXPECT_EQ(database_handler->get_all_charging_profiles().size(), 1);
+        notified->set_value();
+    });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    const auto remaining = database_handler->get_all_charging_profiles();
+    ASSERT_EQ(remaining.size(), 1);
+    EXPECT_EQ(remaining.front().id, profile.id);
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerDeletesAtSeparateDeadlines) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    profile.id += 1;
+    profile.maxOfflineDuration = 2;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_notification = first->get_future();
+    auto second_notification = second->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call())
+        .Times(2)
+        .WillOnce([this, first, disconnected, id = profile.id] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+            const auto remaining = database_handler->get_all_charging_profiles();
+            EXPECT_EQ(remaining.size(), 1);
+            if (!remaining.empty()) {
+                EXPECT_EQ(remaining.front().id, id);
+            }
+            first->set_value();
+        })
+        .WillOnce([this, second, disconnected] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(2));
+            EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+            second->set_value();
+        });
+    smart_charging.on_connection_lost();
+
+    ASSERT_EQ(first_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    ASSERT_EQ(second_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_TimerCancelledOnReconnect) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 1;
+    profile.invalidAfterOfflineDuration = false;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    profile.id += 1;
+    profile.maxOfflineDuration = 3;
+    profile.invalidAfterOfflineDuration = true;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+
+    auto first = std::make_shared<std::promise<void>>();
+    auto restored = std::make_shared<std::promise<void>>();
+    auto restored_notification = restored->get_future();
+    auto unexpected = std::make_shared<std::promise<void>>();
+    auto calls = std::make_shared<std::atomic<unsigned>>(0);
+    auto first_notification = first->get_future();
+    auto unexpected_notification = unexpected->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).WillRepeatedly([first, restored, unexpected, calls] {
+        const auto count = ++*calls;
+        if (count == 1) {
+            first->set_value();
+        } else if (count == 2) {
+            restored->set_value();
+        } else if (count == 3) {
+            unexpected->set_value();
+        }
+    });
+    smart_charging.on_connection_lost();
+    ASSERT_EQ(first_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+
+    const auto offline_duration = std::chrono::steady_clock::now() - disconnected;
+    ASSERT_LT(offline_duration, std::chrono::seconds(3));
+    smart_charging.on_connection_restored(offline_duration);
+    ASSERT_EQ(restored_notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_EQ(unexpected_notification.wait_until(disconnected + std::chrono::milliseconds(3250)),
+              std::future_status::timeout);
+    EXPECT_EQ(calls->load(), 2);
+    EXPECT_EQ(database_handler->get_all_charging_profiles().size(), 2);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_DisconnectDatabaseFailureRetriesOffThread) {
+    const auto disconnected = std::chrono::steady_clock::now();
+    const auto caller = std::this_thread::get_id();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto retried = std::make_shared<std::promise<void>>();
+    auto retry = retried->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([caller]() -> std::vector<ChargingProfile> {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([retried, disconnected] {
+            EXPECT_GE(std::chrono::steady_clock::now(), disconnected + std::chrono::seconds(1));
+            retried->set_value();
+            return std::vector<ChargingProfile>{};
+        });
+    EXPECT_NO_THROW(handler->on_connection_lost());
+    EXPECT_EQ(retry.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectDatabaseFailureRetriesOffThread) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    const auto caller = std::this_thread::get_id();
+    const auto started = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(started - std::chrono::seconds(900)));
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([caller]() -> std::vector<ChargingProfile> {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([caller, started, profile] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            EXPECT_GE(std::chrono::steady_clock::now(), started + std::chrono::seconds(1));
+            return std::vector<ChargingProfile>{profile};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified, caller] {
+        EXPECT_NE(std::this_thread::get_id(), caller);
+        notified->set_value();
+    });
+    EXPECT_NO_THROW(handler->on_connection_restored(std::chrono::seconds(900)));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ShorterReconnectRetainsPendingDeletions) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_scan = first->get_future();
+    auto second_scan = second->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([first]() -> std::vector<ChargingProfile> {
+            first->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce([second]() -> std::vector<ChargingProfile> {
+            second->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{profile}));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+
+    handler->on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(first_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(300)));
+    handler->on_connection_lost();
+    ASSERT_EQ(second_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler->on_connection_restored(std::chrono::seconds(300));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_PendingReconnectExcludesExpiredProfile) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+    ON_CALL(*database_handler, get_charging_profiles_for_evse(DEFAULT_EVSE_ID))
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+    ASSERT_EQ(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).size(), 1);
+
+    auto scanned = std::make_shared<std::promise<void>>();
+    auto scan = scanned->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([scanned]() -> std::vector<ChargingProfile> {
+            scanned->set_value();
+            throw std::runtime_error("database unavailable");
+        })
+        .WillRepeatedly(testing::Throw(std::runtime_error("database unavailable")));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Return(std::vector<std::int32_t>{profile.id}));
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+
+    handler->on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(300)));
+    handler->on_connection_lost();
+    EXPECT_TRUE(handler->get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectCallbackFailureRetainsNotification) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    const auto caller = std::this_thread::get_id();
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{profile}))
+        .WillOnce(testing::Return(std::vector<ChargingProfile>{}));
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{profile.id}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    auto first_attempt = std::make_shared<std::chrono::steady_clock::time_point>();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call())
+        .Times(2)
+        .WillOnce([first_attempt, caller] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            *first_attempt = std::chrono::steady_clock::now();
+            throw std::runtime_error("consumer unavailable");
+        })
+        .WillOnce([first_attempt, notified, caller] {
+            EXPECT_NE(std::this_thread::get_id(), caller);
+            EXPECT_GE(std::chrono::steady_clock::now() - *first_attempt, std::chrono::seconds(1));
+            notified->set_value();
+        });
+    EXPECT_NO_THROW(handler->on_connection_restored(std::chrono::seconds(900)));
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_PartialDeletionRetainsNotification) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    auto second = profile;
+    second.id += 1;
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto deleted = std::make_shared<std::atomic<bool>>(false);
+    ON_CALL(*database_handler, get_all_charging_profiles()).WillByDefault([profile, second, deleted] {
+        return deleted->load() ? std::vector<ChargingProfile>{second} : std::vector<ChargingProfile>{profile, second};
+    });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(profile.id), testing::_))
+        .WillOnce([deleted, profile] {
+            deleted->store(true);
+            return std::vector<std::int32_t>{profile.id};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::Eq(second.id), testing::_))
+        .WillOnce(testing::Throw(std::runtime_error("delete failed")))
+        .WillOnce(testing::Return(std::vector<std::int32_t>{}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    handler->on_connection_lost();
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_CallbackFailureRetriesWithBackoff) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    profile.invalidAfterOfflineDuration = false;
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now()));
+    ON_CALL(*database_handler, get_all_charging_profiles())
+        .WillByDefault(testing::Return(std::vector<ChargingProfile>{profile}));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    auto attempts = std::make_shared<std::vector<std::chrono::steady_clock::time_point>>();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(3).WillRepeatedly([attempts, notified] {
+        attempts->push_back(std::chrono::steady_clock::now());
+        if (attempts->size() < 3) {
+            throw std::runtime_error("consumer unavailable");
+        }
+        EXPECT_GE(attempts->at(1) - attempts->at(0), std::chrono::seconds(1));
+        EXPECT_GE(attempts->at(2) - attempts->at(1), std::chrono::seconds(2));
+        notified->set_value();
+    });
+    handler->on_connection_lost();
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(6)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ProfileAddedAfterDisconnectArmsTimer) {
+    const auto disconnected = std::chrono::steady_clock::now();
+    ON_CALL(connectivity_manager, get_time_disconnected()).WillByDefault(testing::Return(disconnected));
+    auto scanned = std::make_shared<std::promise<void>>();
+    auto scan = scanned->get_future();
+    auto stored = std::make_shared<std::atomic<bool>>(false);
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    profile.invalidAfterOfflineDuration = false;
+    ON_CALL(*database_handler, get_all_charging_profiles()).WillByDefault([stored, scanned, profile] {
+        if (stored->load()) {
+            return std::vector<ChargingProfile>{profile};
+        }
+        scanned->set_value();
+        return std::vector<ChargingProfile>{};
+    });
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    handler->on_connection_lost();
+    ASSERT_EQ(scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    stored->store(true);
+    ASSERT_EQ(handler->add_profile(profile, DEFAULT_EVSE_ID).status, ChargingProfileStatusEnum::Accepted);
+    EXPECT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectDeletesExpiredProfile) {
+    const auto profiles = SmartChargingTestUtils::get_charging_profiles_from_directory(
+        BASE_JSON_PATH_V2 + "/offline_duration/invalid_after_offline_duration/");
+    for (auto profile : profiles) {
+        profile.stackLevel -= 1;
+        database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    }
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+
+    const auto remaining = database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID);
+    ASSERT_EQ(remaining.size(), 1);
+    EXPECT_EQ(remaining.front().id, 1);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::time_point{}));
+    const auto schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 0);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().limit, 2000.0);
+    EXPECT_FALSE(schedule.chargingSchedulePeriod.front().setpoint.has_value());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ZeroExpiresWithinOneSecond) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    profile.maxOfflineDuration = 0;
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+
+    EXPECT_CALL(connectivity_manager, get_time_disconnected()).WillRepeatedly(testing::Invoke([] {
+        return std::chrono::steady_clock::now() - std::chrono::milliseconds(100);
+    }));
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+    testing::Mock::VerifyAndClearExpectations(&set_charging_profiles_callback_mock);
+
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::milliseconds(100));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectKeepsReusableProfile) {
+    const auto profiles = SmartChargingTestUtils::get_charging_profiles_from_directory(
+        BASE_JSON_PATH_V2 + "/offline_duration/valid_after_offline_duration/");
+    for (const auto& profile : profiles) {
+        database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    }
+    evse_manager->open_transaction(DEFAULT_EVSE_ID, TX_ID);
+
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+    const auto offline_schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(offline_schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(offline_schedule.chargingSchedulePeriod.front().stackLevel, 1);
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([this, notified] {
+        const auto schedule = smart_charging.calculate_composite_schedule(
+            ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+            ChargingRateUnitEnum::W, false, false);
+        ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+        EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 2);
+        notified->set_value();
+    });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_EQ(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).size(), 2);
+
+    // A later outage must not be mistaken for the outage already handled on reconnect.
+    ON_CALL(connectivity_manager, get_time_disconnected())
+        .WillByDefault(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(800)));
+    const auto schedule = smart_charging.calculate_composite_schedule(
+        ocpp::DateTime{"2024-01-17T18:00:00"}, ocpp::DateTime{"2024-01-18T06:00:00"}, DEFAULT_EVSE_ID,
+        ChargingRateUnitEnum::W, false, false);
+    ASSERT_EQ(schedule.chargingSchedulePeriod.size(), 1);
+    EXPECT_EQ(schedule.chargingSchedulePeriod.front().stackLevel, 1);
+}
+
+TEST_F(CompositeScheduleTestFixtureV21, OfflineDuration_ReconnectKeepsUnexpiredProfile) {
+    const auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    auto first = std::make_shared<std::promise<void>>();
+    auto second = std::make_shared<std::promise<void>>();
+    auto first_scan = first->get_future();
+    auto second_scan = second->get_future();
+    EXPECT_CALL(*database_handler, get_all_charging_profiles())
+        .WillOnce([first, profile] {
+            first->set_value();
+            return std::vector<ChargingProfile>{profile};
+        })
+        .WillOnce([second, profile] {
+            second->set_value();
+            return std::vector<ChargingProfile>{profile};
+        });
+    EXPECT_CALL(*database_handler, clear_charging_profiles_matching_criteria(testing::_, testing::_)).Times(0);
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    handler->on_connection_restored(std::chrono::seconds(300));
+    ASSERT_EQ(first_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler->on_connection_restored(std::chrono::seconds(600));
+    EXPECT_EQ(second_scan.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    handler.reset();
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_ReconnectDeletesAcrossEvsesOnce) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    for (const auto evse_id : {0, 1, 2}) {
+        profile.id = evse_id + 10;
+        database_handler->insert_or_update_charging_profile(evse_id, profile);
+    }
+
+    auto notified = std::make_shared<std::promise<void>>();
+    auto notification = notified->get_future();
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(1).WillOnce([notified] { notified->set_value(); });
+    smart_charging.on_connection_restored(std::chrono::seconds(900));
+    ASSERT_EQ(notification.wait_for(std::chrono::seconds(4)), std::future_status::ready);
+    EXPECT_TRUE(database_handler->get_all_charging_profiles().empty());
+}
+
+TEST_F(SmartChargingTestV21, OfflineDuration_OfflineDeletionDoesNotNotify) {
+    auto profile = SmartChargingTestUtils::get_charging_profile_from_file(
+        "offline_duration/invalid_after_offline_duration/TxProfile_invalid_after_offline_duration.json");
+    database_handler->insert_or_update_charging_profile(DEFAULT_EVSE_ID, profile);
+    EXPECT_CALL(connectivity_manager, get_time_disconnected())
+        .WillRepeatedly(testing::Return(std::chrono::steady_clock::now() - std::chrono::seconds(900)));
+
+    EXPECT_CALL(set_charging_profiles_callback_mock, Call()).Times(0);
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
+    EXPECT_TRUE(database_handler->get_charging_profiles_for_evse(DEFAULT_EVSE_ID).empty());
+    EXPECT_TRUE(smart_charging.get_valid_profiles_for_evse(DEFAULT_EVSE_ID, {}).empty());
 }
 
 TEST_F(CompositeScheduleTestFixtureV2, Q03_CentralSetpoint_PreservedInCompositeSchedule) {

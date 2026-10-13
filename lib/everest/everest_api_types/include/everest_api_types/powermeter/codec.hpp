@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #pragma once
 
@@ -33,6 +33,7 @@ std::string serialize(TransactionStatus val) noexcept;
 std::string serialize(ReplyStartTransaction const& val) noexcept;
 std::string serialize(ReplyStopTransaction const& val) noexcept;
 std::string serialize(RequestStartTransaction const& val) noexcept;
+std::string serialize(Capabilities const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, OCMFUserIdentificationStatus const& val);
 std::ostream& operator<<(std::ostream& os, OCMFIdentificationFlags const& val);
@@ -57,6 +58,7 @@ std::ostream& operator<<(std::ostream& os, TransactionStatus const& val);
 std::ostream& operator<<(std::ostream& os, ReplyStartTransaction const& val);
 std::ostream& operator<<(std::ostream& os, ReplyStopTransaction const& val);
 std::ostream& operator<<(std::ostream& os, RequestStartTransaction const& val);
+std::ostream& operator<<(std::ostream& os, Capabilities const& val);
 
 #include <everest_api_types/utilities/deserialize_templates.inc>
 

@@ -4,7 +4,7 @@ description: >-
 config:
   device:
     description: >-
-      The ethernet device on which the messages are to be captured
+      The libpcap device on which the messages are to be captured
     type: string
     default: eth1
   session_logging_path:
@@ -17,6 +17,8 @@ config:
 requires:
   evse_manager:
     interface: evse_manager
+capabilities:
+  - CAP_NET_RAW
 metadata:
   license: https://opensource.org/licenses/Apache-2.0
   authors:

@@ -39,7 +39,7 @@ public:
 class RemoteTransactionControl : public RemoteTransactionControlInterface {
 public:
     RemoteTransactionControl(const FunctionalBlockContext& functional_block_context, TransactionInterface& transaction,
-                             SmartChargingInterface& smart_charging, MeterValuesInterface& meter_values,
+                             SmartChargingInterface* smart_charging, MeterValuesInterface& meter_values,
                              AvailabilityInterface& availability, FirmwareUpdateInterface& firmware_update,
                              SecurityInterface& security, ReservationInterface* reservation,
                              ProvisioningInterface& provisioning, UnlockConnectorCallback unlock_connector_callback,
@@ -55,7 +55,7 @@ private:
     const FunctionalBlockContext& context;
 
     TransactionInterface& transaction;
-    SmartChargingInterface& smart_charging;
+    SmartChargingInterface* smart_charging;
     MeterValuesInterface& meter_values;
     AvailabilityInterface& availability;
     FirmwareUpdateInterface& firmware_update;
@@ -88,7 +88,7 @@ private:
     /// \param group_id_token   The group id token to check if it is reserved for that group id.
     /// \return The status of the reservation for this evse, id token and group id token.
     ///
-    ReservationCheckStatus is_evse_reserved_for_other(EvseInterface& evse, const IdToken& id_token,
+    ReservationCheckStatus is_evse_reserved_for_other(const EvseInterface& evse, const IdToken& id_token,
                                                       const std::optional<IdToken>& group_id_token) const;
 };
 } // namespace ocpp::v2

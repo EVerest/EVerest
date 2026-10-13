@@ -19,6 +19,7 @@ void BUOcppConsumer::init() {
 void BUOcppConsumer::ready() {
     invoke_ready(*p_ocpp);
     invoke_ready(*p_ocpp_data_transfer);
+    p_ocpp->publish_ready(true);
     std::cout << "Ready...\n";
 }
 

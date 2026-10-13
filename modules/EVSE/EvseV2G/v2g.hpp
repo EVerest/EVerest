@@ -211,6 +211,8 @@ struct v2g_context {
 
     std::string tls_key_logging_path;
 
+    uint16_t tcp_port;
+    uint16_t tls_port;
     uint32_t network_read_timeout;     /* in milli seconds */
     uint32_t network_read_timeout_tls; /* in milli seconds */
 
@@ -249,6 +251,7 @@ struct v2g_context {
     int state;                         /* holds the current state id */
     bool is_dc_charger; /* Is set to true if it is a DC charger. Value is configured after configuration of the
                            supported energy type */
+    bool is_fake_dc;    /* Is set to true if fake DC (AC with SoC) is active */
     bool debugMode;     /* To activate/deactivate the debug mode */
     std::atomic<int8_t>
         supported_protocols; /* Is an bit mask and holds the supported app protocols. See v2g_protocol enum */
@@ -256,6 +259,14 @@ struct v2g_context {
     std::atomic<bool>
         intl_emergency_shutdown; /* Is set to true if an internal emergency_shutdown has occurred (send failed response,
                                     configure emergency shutdown in EVSEStatus and close tcp connection) */
+    std::atomic<bool>
+        error_shutdown; /* Is set to true on an error shutdown (IEC 61851-23 Table CC.10, e.g. isolation
+                           fault): energy transfer is already stopped by the EvseManager, but the session
+                           is kept alive so the next response can report the shutdown cause (EVSEStatusCode,
+                           EVSEIsolationStatus) instead of a FAILED response that must omit them */
+    std::atomic<bool> error_shutdown_reported; /* Is set to true once a response carrying the error shutdown status has
+                                                  been sent; subsequent requests that would continue the energy transfer
+                                                  are answered with FAILED */
     std::atomic_bool stop_hlc; /* is set to true if a shutdown of the charging session should be initiated (send failed
                       response and close tcp connection) */
     std::atomic_bool is_connection_terminated; /* Is set to true if the connection is terminated (CP State A/F, shutdown
@@ -426,6 +437,16 @@ struct v2g_connection {
     } exi_out;
 
     dLinkAction d_link_action; /* signaled data-link action after connection is closed */
+
+    /* Armed by the session-stop handlers when a positive SessionStopRes is pending; consumed right
+     * after the response hit the wire to publish session_stop_res_sent ([V2G-DC-968] retain anchor).
+     * v2g_connection is calloc'd, so NONE must stay 0. */
+    enum class SessionStopResPending {
+        NONE = 0,
+        TERMINATE,
+        PAUSE
+    };
+    SessionStopResPending session_stop_res_pending;
 };
 
 #endif /* V2G_H */

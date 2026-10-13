@@ -14,15 +14,17 @@ set_target_properties(framework PROPERTIES SOVERSION ${PROJECT_VERSION})
 
 target_sources(framework
     PRIVATE
+        capabilities.cpp
         config.cpp
         config/mqtt_settings.cpp
         config/settings.cpp
+        config/config_service_core.cpp
+        config/slot_manager.cpp
         config/sqlite_storage.cpp
-        config/storage_types.cpp
         config/userconfig_storage.cpp
         config/types.cpp
         config_cache.cpp
-        config_service.cpp
+        mqtt_config_service.cpp
         conversions.cpp
         error/error.cpp
         error/error_database_map.cpp
@@ -96,15 +98,34 @@ target_link_libraries(framework
         ${ATOMIC_LIBS}
 )
 
+# hide symbols of statically linked dependencies
+# this prevents consumers from resolving them through libframework.so
+# and forces them to link those libraries themselves.
+target_link_options(framework PRIVATE "LINKER:--exclude-libs,ALL")
+
 collect_migration_files(
      LOCATION ${PROJECT_SOURCE_DIR}/schemas/migrations
      INSTALL_DESTINATION "${CMAKE_INSTALL_DATADIR}/everest/migrations"
 )
 
 target_compile_definitions(framework
-    PRIVATE
+    PUBLIC
         TARGET_MIGRATION_FILE_VERSION=${TARGET_MIGRATION_FILE_VERSION}
 )
+
+
+if (CMAKE_INSTALL_PREFIX)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_PREFIX="${CMAKE_INSTALL_PREFIX}"
+    )
+endif()
+
+if (CMAKE_INSTALL_LIBDIR)
+    set_property(SOURCE runtime.cpp APPEND PROPERTY
+        COMPILE_DEFINITIONS EVEREST_INSTALL_LIBDIR="${CMAKE_INSTALL_LIBDIR}"
+    )
+endif()
+
 
 set_target_properties(framework
     PROPERTIES

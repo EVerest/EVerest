@@ -151,13 +151,24 @@ ChargePointImpl::ChargePointImpl(
                             << this->connectors.size() << " connectors including connector 0.";
                 return;
             }
+            const std::chrono::seconds minimum_status_duration(
+                this->configuration.getMinimumStatusDuration().value_or(0));
+
+            // Supersede a status that has not yet been stable for MinimumStatusDuration.
             this->status_notification_timers.at(connector)->stop();
-            this->status_notification_timers.at(connector)->timeout(
-                [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
-                    this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
-                                              vendor_error_code);
-                },
-                std::chrono::seconds(this->configuration.getMinimumStatusDuration().value_or(0)));
+
+            if (minimum_status_duration == std::chrono::seconds::zero()) {
+                // No debounce was configured, so there is nothing to wait for. Deferring to the timer thread
+                // would only expose the notification to cancellation by the next status change.
+                this->status_notification(connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code);
+            } else {
+                this->status_notification_timers.at(connector)->timeout(
+                    [this, connector, errorCode, status, timestamp, info, vendor_id, vendor_error_code]() {
+                        this->status_notification(connector, errorCode, status, timestamp, info, vendor_id,
+                                                  vendor_error_code);
+                    },
+                    minimum_status_duration);
+            }
 
             // Check if the changed status should trigger to send a metervalue.
             const std::shared_ptr<Connector>& c = this->connectors.at(connector);
@@ -179,7 +190,8 @@ ChargePointImpl::ChargePointImpl(
             }
 
             c->previous_status = status;
-        });
+        },
+        this->configuration.getReportClearedErrors().value_or(false));
 
     for (int id = 0; id <= this->configuration.getNumberOfConnectors(); id++) {
         this->connectors.insert(std::make_pair(id, std::make_shared<Connector>(id)));
@@ -213,11 +225,11 @@ ChargePointImpl::ChargePointImpl(
             };
         this->ocsp_request_timer = std::make_unique<Everest::SteadyTimer>(&this->io_context, [this]() {
             this->update_ocsp_cache();
-            int32_t ocsp_request_interval = 604800; // default to 12 hours if not configured
+            int32_t ocsp_request_interval = OCSP_REQUEST_INTERVAL_DEFAULT;
             try {
                 ocsp_request_interval = this->configuration.getOcspRequestInterval();
-            } catch (const std::runtime_error& e) {
-                EVLOG_error << "OCSP request interval could not be loaded (Using default 168 hours): " << e.what();
+            } catch (const std::exception& e) {
+                EVLOG_error << "OCSP request interval could not be loaded, using 7 day default: " << e.what();
             }
             this->ocsp_request_timer->interval(std::chrono::seconds(ocsp_request_interval));
         });
@@ -257,6 +269,11 @@ ChargePointImpl::ChargePointImpl(
         this->init_connectivity_manager();
     }
     this->connectivity_manager->set_logging(this->logging);
+}
+
+ChargePointImpl::~ChargePointImpl() {
+    // Suppress deferred websocket callbacks before any member is destroyed.
+    this->connectivity_manager->disarm_connection_callbacks();
 }
 
 std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_message_queue() {
@@ -309,11 +326,11 @@ std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_me
         this->external_notify, this->database_handler, start_transaction_message_retry_callback);
 }
 
-void ChargePointImpl::on_websocket_connected(const int /*configuration_slot*/,
-                                             const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
+void ChargePointImpl::on_websocket_connected(const int configuration_slot,
+                                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                                              const ocpp::OcppProtocolVersion /*ocpp_version*/) {
     if (this->connection_state_changed_callback != nullptr) {
-        this->connection_state_changed_callback(true);
+        this->connection_state_changed_callback(true, configuration_slot, network_connection_profile);
     }
     this->publish_default_price(false);
     this->message_queue->resume(this->message_queue_resume_delay);
@@ -331,10 +348,10 @@ void ChargePointImpl::on_websocket_connected(const int /*configuration_slot*/,
     }
 }
 
-void ChargePointImpl::on_websocket_disconnected(
-    const int /*configuration_slot*/, const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/) {
+void ChargePointImpl::on_websocket_disconnected(const int configuration_slot,
+                                                const ocpp::v2::NetworkConnectionProfile& network_connection_profile) {
     if (this->connection_state_changed_callback != nullptr) {
-        this->connection_state_changed_callback(false);
+        this->connection_state_changed_callback(false, configuration_slot, network_connection_profile);
     }
     this->publish_default_price(true);
     this->message_queue->pause();
@@ -429,6 +446,10 @@ void ChargePointImpl::disconnect_websocket() {
     if (this->connectivity_manager->is_websocket_connected()) {
         this->connectivity_manager->disconnect();
     }
+}
+
+void ChargePointImpl::reload_network_profiles() {
+    this->connectivity_manager->reload_network_profiles();
 }
 
 void ChargePointImpl::call_set_connection_timeout() {
@@ -1287,13 +1308,14 @@ bool ChargePointImpl::stop() {
             }
         }
 
-        this->security_profile_revert_timer.stop();
-
         this->stop_all_transactions();
 
-        this->database_handler->close_connection();
-        this->connectivity_manager->disconnect();
         this->message_queue->stop();
+        this->security_profile_revert_timer.stop();
+        this->database_handler->close_connection();
+        // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
+        // ~ChargePointImpl() disarms.
+        this->connectivity_manager->disconnect();
 
         this->stopped = true;
         this->initialized = false;
@@ -1531,7 +1553,7 @@ void ChargePointImpl::handle_message(const EnhancedMessage<v16::MessageType>& me
         break;
 
     case MessageType::StartTransactionResponse:
-        this->handleStartTransactionResponse(json_message);
+        this->handleStartTransactionResponse(message);
         break;
 
     case MessageType::StopTransactionResponse:
@@ -1853,8 +1875,7 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
     const auto kv = configuration.get(key);
 
     if (kv || key == "AuthorizationKey") {
-        if (key != "AuthorizationKey" && kv.value().readonly) {
-            // supported but could not be changed
+        if (this->custom_key_validation_callback and not this->custom_key_validation_callback(key.get(), value.get())) {
             result = ConfigurationStatus::Rejected;
         } else {
             // TODO(kai): how to signal RebootRequired? or what does need reboot required?
@@ -1887,8 +1908,11 @@ ChargePointImpl::set_configuration_key_internal(CiString<50> key, CiString<500> 
                             message_dispatcher->dispatch_call_result(call_result);
                         }
                         response.reset(); // response has been sent
-                        this->connectivity_manager->set_websocket_authorization_key(
-                            this->configuration.getAuthorizationKey().value());
+                        this->message_queue->run_when_idle(
+                            [this, key = this->configuration.getAuthorizationKey().value()]() {
+                                this->connectivity_manager->set_websocket_authorization_key(key);
+                                return this->connectivity_manager->is_websocket_connected();
+                            });
                     } else {
                         EVLOG_info << "AuthorizationKey was changed while on security profile 3. Nothing to do.";
                     }
@@ -2022,6 +2046,14 @@ void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabil
 void ChargePointImpl::handleChangeConfigurationRequest(ocpp::Call<ChangeConfigurationRequest> call) {
     EVLOG_debug << "Received ChangeConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
 
+    if (const auto kv = configuration.get(call.msg.key); kv.has_value() && kv->readonly) {
+        ChangeConfigurationResponse response;
+        response.status = ConfigurationStatus::Rejected;
+        message_dispatcher->dispatch_call_result(
+            ocpp::CallResult<ChangeConfigurationResponse>(response, call.uniqueId));
+        return;
+    }
+
     const auto [_, response] = set_configuration_key_internal(call.msg.key, call.msg.value, call.uniqueId);
 
     if (response) {
@@ -2033,32 +2065,48 @@ void ChargePointImpl::handleChangeConfigurationRequest(ocpp::Call<ChangeConfigur
 void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, std::int32_t fallback_security_profile) {
     EVLOG_info << "Switching security profile from " << this->configuration.getSecurityProfile() << " to "
                << new_security_profile;
-    this->configuration.setSecurityProfile(new_security_profile);
+    // Pin the slot at switch time: the connection attempts below can move the active slot (multi-slot
+    // failover), and both the switch and a later revert must write the slot the switch targeted.
+    const auto switch_slot = this->connectivity_manager->get_active_network_configuration_slot();
+    const auto set_profile = [this, switch_slot](std::int32_t security_profile) {
+        if (switch_slot.has_value()) {
+            this->configuration.set_security_profile_for_slot(switch_slot.value(), security_profile);
+        } else {
+            this->configuration.setSecurityProfile(security_profile);
+        }
+    };
+    set_profile(new_security_profile);
     this->connectivity_manager->reload_network_profiles();
-    this->connectivity_manager->connect();
 
-    // Use the configured SwitchSecurityProfileConnectionTimeout (seconds) when present, falling back to the
-    // SECURITY_PROFILE_SWITCH_TIMEOUT default otherwise.
-    const std::chrono::seconds revert_timeout{this->configuration.getSwitchSecurityProfileConnectionTimeout().value_or(
-        SECURITY_PROFILE_SWITCH_TIMEOUT.count())};
+    this->message_queue->run_when_idle([this, fallback_security_profile, set_profile]() {
+        this->connectivity_manager->connect();
 
-    // Arm a revert timer: if the new security profile does not result in a successful connection within the timeout,
-    // revert to the fallback security profile. A successful connection cancels this timer via connected_callback().
-    this->security_profile_revert_timer.timeout(
-        [this, fallback_security_profile]() {
-            std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
-            if (this->connectivity_manager->is_websocket_connected()) {
-                EVLOG_info << "Security profile switch connected within the revert timeout window; not reverting.";
-                return;
-            }
-            EVLOG_warning << "Security profile switch did not connect within timeout; reverting.";
-            this->connectivity_manager
-                ->disconnect(); // ensures that connectivity_manager does not initiate a reconnect on its own
-            this->configuration.setSecurityProfile(fallback_security_profile);
-            this->connectivity_manager->reload_network_profiles();
-            this->connectivity_manager->connect();
-        },
-        revert_timeout);
+        // Use the configured SwitchSecurityProfileConnectionTimeout (seconds) when present, falling back to the
+        // SECURITY_PROFILE_SWITCH_TIMEOUT default otherwise.
+        const std::chrono::seconds revert_timeout{
+            this->configuration.getSwitchSecurityProfileConnectionTimeout().value_or(
+                SECURITY_PROFILE_SWITCH_TIMEOUT.count())};
+
+        // Arm a revert timer: if the new security profile does not result in a successful connection within the
+        // timeout, revert to the fallback security profile. A successful connection cancels this timer via
+        // connected_callback().
+        this->security_profile_revert_timer.timeout(
+            [this, fallback_security_profile, set_profile]() {
+                std::lock_guard<std::mutex> lock(this->security_profile_switch_mutex);
+                if (this->connectivity_manager->is_websocket_connected()) {
+                    EVLOG_info << "Security profile switch connected within the revert timeout window; not reverting.";
+                    return;
+                }
+                EVLOG_warning << "Security profile switch did not connect within timeout; reverting.";
+                this->connectivity_manager
+                    ->disconnect(); // ensures that connectivity_manager does not initiate a reconnect on its own
+                set_profile(fallback_security_profile);
+                this->connectivity_manager->reload_network_profiles();
+                this->connectivity_manager->connect();
+            },
+            revert_timeout);
+        return this->connectivity_manager->is_websocket_connected();
+    });
 }
 
 void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call) {
@@ -2352,7 +2400,10 @@ void ChargePointImpl::handleResetRequest(ocpp::Call<ResetRequest> call) {
     }
 }
 
-void ChargePointImpl::handleStartTransactionResponse(ocpp::CallResult<StartTransactionResponse> call_result) {
+void ChargePointImpl::handleStartTransactionResponse(const EnhancedMessage<v16::MessageType>& message) {
+
+    const CallResult<StartTransactionResponse> call_result = message.message;
+    const Call<StartTransactionRequest>& original_call = message.call_message;
 
     const StartTransactionResponse start_transaction_response = call_result.msg;
 
@@ -2394,9 +2445,8 @@ void ChargePointImpl::handleStartTransactionResponse(ocpp::CallResult<StartTrans
         }
 
         if (this->transaction_updated_callback != nullptr) {
-            this->transaction_updated_callback(connector, transaction->get_session_id(),
-                                               start_transaction_response.transactionId,
-                                               start_transaction_response.idTagInfo);
+            this->transaction_updated_callback(transaction->get_session_id(), original_call.msg,
+                                               start_transaction_response);
         }
     } else {
         EVLOG_warning << "Received StartTransaction.conf for transaction that is not known to transaction_handler";
@@ -2686,20 +2736,29 @@ void ChargePointImpl::handleTriggerMessageRequest(ocpp::Call<TriggerMessageReque
         if (!call.msg.connectorId.has_value()) {
             // send a status notification for every connector
             for (std::int32_t c = 0; c <= this->configuration.getNumberOfConnectors(); c++) {
-                const ErrorInfo error_info =
-                    this->status->get_latest_error(c).value_or(ErrorInfo("", ChargePointErrorCode::NoError, false));
-                this->status_notification(c, error_info.error_code, this->status->get_state(c), ocpp::DateTime(),
-                                          error_info.info, error_info.vendor_id, error_info.vendor_error_code, true);
+                this->triggered_status_notification(c);
             }
         } else {
-            const ErrorInfo error_info =
-                this->status->get_latest_error(connector).value_or(ErrorInfo("", ChargePointErrorCode::NoError, false));
-            this->status_notification(connector, error_info.error_code, this->status->get_state(connector),
-                                      ocpp::DateTime(), error_info.info, error_info.vendor_id,
-                                      error_info.vendor_error_code, true);
+            this->triggered_status_notification(connector);
         }
         break;
     }
+}
+
+void ChargePointImpl::triggered_status_notification(const std::int32_t connector) {
+    const auto latest_error = this->status->get_latest_error(connector);
+    const ErrorInfo error_info = latest_error.value_or(ErrorInfo("", ChargePointErrorCode::NoError, false));
+    const auto status = this->status->get_state(connector);
+
+    auto info = error_info.info;
+    if (not latest_error.has_value() and status == ChargePointStatus::SuspendedEVSE and
+        this->configuration.getReportSuspendedEVSEReasonChange()) {
+        // no error owns the info field, so report why the connector is suspended
+        info = this->status->get_suspend_reason(connector);
+    }
+
+    this->status_notification(connector, error_info.error_code, status, ocpp::DateTime(), info, error_info.vendor_id,
+                              error_info.vendor_error_code, true);
 }
 
 void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsRequest> call) {
@@ -2912,7 +2971,10 @@ void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSigne
 
     // reconnect with new certificate if valid and security profile is 3
     if (response.status == CertificateSignedStatusEnumType::Accepted && this->configuration.getSecurityProfile() == 3) {
-        this->connectivity_manager->on_charging_station_certificate_changed();
+        this->message_queue->run_when_idle([this]() {
+            this->connectivity_manager->on_charging_station_certificate_changed();
+            return this->connectivity_manager->is_websocket_connected();
+        });
     }
 }
 
@@ -4352,7 +4414,7 @@ void ChargePointImpl::start_transaction(std::shared_ptr<Transaction> transaction
     this->message_dispatcher->dispatch_call(call);
 
     if (this->transaction_started_callback != nullptr) {
-        this->transaction_started_callback(transaction->get_connector(), transaction->get_session_id());
+        this->transaction_started_callback(transaction->get_session_id(), call.msg);
     }
 }
 
@@ -4550,9 +4612,7 @@ void ChargePointImpl::stop_transaction(std::int32_t connector, Reason reason, st
     }
 
     if (this->transaction_stopped_callback != nullptr) {
-        this->transaction_stopped_callback(
-            connector, transaction->get_session_id(),
-            transaction->get_transaction_id().value_or(transaction->get_internal_transaction_id()));
+        this->transaction_stopped_callback(transaction->get_session_id(), connector, call.msg);
     }
 
     transaction->set_finished();
@@ -4637,6 +4697,11 @@ void ChargePointImpl::on_suspend_charging_ev(std::int32_t connector, const std::
 }
 
 void ChargePointImpl::on_suspend_charging_evse(std::int32_t connector, const std::optional<CiString<50>> info) {
+    if (not this->configuration.getReportSuspendedEVSEReasonChange() and
+        this->status->get_state(connector) == ChargePointStatus::SuspendedEVSE) {
+        // the SuspendedEVSE self transition is not offered to the state machine at all
+        return;
+    }
     this->status->submit_event(connector, FSMEvent::PauseChargingEVSE, ocpp::DateTime(), info);
 }
 
@@ -4865,8 +4930,14 @@ void ChargePointImpl::register_set_connection_timeout_callback(
     this->set_connection_timeout_callback = callback;
 }
 
+void ChargePointImpl::register_configure_network_connection_profile_callback(
+    ConfigureNetworkConnectionProfileCallback callback) {
+    this->connectivity_manager->set_configure_network_connection_profile_callback(std::move(callback));
+}
+
 void ChargePointImpl::register_connection_state_changed_callback(
-    const std::function<void(bool is_connected)>& callback) {
+    const std::function<void(const bool is_connected, const int configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile)>& callback) {
     this->connection_state_changed_callback = callback;
 }
 
@@ -4878,20 +4949,19 @@ void ChargePointImpl::register_get_15118_ev_certificate_response_callback(
 }
 
 void ChargePointImpl::register_transaction_started_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id)>& callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request)>& callback) {
     this->transaction_started_callback = callback;
 }
 
 void ChargePointImpl::register_transaction_stopped_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id)>& callback) {
+    const std::function<void(const std::string& session_id, const std::int32_t connector,
+                             const StopTransactionRequest& request)>& callback) {
     this->transaction_stopped_callback = callback;
 }
 
 void ChargePointImpl::register_transaction_updated_callback(
-    const std::function<void(const std::int32_t connector, const std::string& session_id,
-                             const std::int32_t transaction_id, const IdTagInfo& id_tag_info)>
-        callback) {
+    const std::function<void(const std::string& session_id, const StartTransactionRequest& request,
+                             const StartTransactionResponse& response)>& callback) {
     this->transaction_updated_callback = callback;
 }
 
@@ -4903,6 +4973,15 @@ void ChargePointImpl::register_configuration_key_changed_callback(
 void ChargePointImpl::register_generic_configuration_key_changed_callback(
     const std::function<void(const KeyValue& key_value)>& callback) {
     this->generic_configuration_key_changed_callback = callback;
+}
+
+void ChargePointImpl::register_custom_key_validation_callback(
+    const std::function<bool(const std::string& key, const std::string& value)>& callback) {
+    this->custom_key_validation_callback = callback;
+}
+
+ConfigurationStatus ChargePointImpl::set_custom_key_forced(const CiString<50>& key, const CiString<500>& value) {
+    return this->configuration.set_custom_key_forced(key, value);
 }
 
 void ChargePointImpl::register_security_event_callback(

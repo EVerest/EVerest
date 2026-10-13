@@ -1,0 +1,19 @@
+// SPDX-License-Identifier: Apache-2.0
+// Copyright Pionix GmbH and Contributors to EVerest
+
+#include "generic_errorImpl.hpp"
+
+namespace module {
+namespace generic_error {
+
+void generic_errorImpl::init() {
+}
+
+void generic_errorImpl::ready() {
+}
+
+void generic_errorImpl::shutdown() {
+}
+
+} // namespace generic_error
+} // namespace module

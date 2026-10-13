@@ -8,7 +8,8 @@ This plugin integrates with pytest-xdist to:
 1. Detect pre-existing veth pairs (created externally via setup-network-isolation.sh)
 2. Assign a unique interface to each xdist worker via workerinput
 3. Strip @pytest.mark.xdist_group(name="ISO15118") markers so those tests
-   can be distributed freely across workers
+   can be distributed freely across workers, or, with --iso15118-parallel N,
+   spread them over N groups so that at most N of them run at the same time
 4. Automatically inject a NetworkIsolationStrategy via the everest_config_strategies
    fixture override in conftest.py
 
@@ -23,6 +24,8 @@ import logging
 import os
 import subprocess
 from typing import Optional
+
+import pytest
 
 # Naming convention for veth pairs: ev_test0/ev_test0_peer, ev_test1/ev_test1_peer, ...
 VETH_PREFIX = "ev_test"
@@ -70,21 +73,26 @@ class NetworkIsolationPlugin:
     Behavior:
         --network-isolation passed AND veth pairs exist:
             -> Adopts interfaces, assigns one per worker, strips xdist_group markers
+               (or replaces them with N groups if --iso15118-parallel N is passed)
         --network-isolation passed but NO veth pairs:
             -> Logs a warning, xdist_group markers stay (sequential fallback)
         --network-isolation NOT passed:
             -> Plugin is not registered, everything works as before
     """
 
-    def __init__(self):
+    def __init__(self, iso15118_parallel: Optional[int] = None):
         self._num_workers: int = 0
         self._active = False  # True only if interfaces were found
+        self._iso15118_parallel = iso15118_parallel
 
     @staticmethod
     def register(config):
         """Register this plugin with pytest if --network-isolation is passed."""
         if config.getoption("--network-isolation", default=False):
-            plugin = NetworkIsolationPlugin()
+            iso15118_parallel = config.getoption("--iso15118-parallel", default=None)
+            if iso15118_parallel is not None and iso15118_parallel < 1:
+                raise pytest.UsageError("--iso15118-parallel must be at least 1")
+            plugin = NetworkIsolationPlugin(iso15118_parallel)
             config.pluginmanager.register(plugin, "network_isolation")
 
     def pytest_configure_node(self, node):
@@ -163,7 +171,10 @@ class NetworkIsolationPlugin:
         """Remove xdist_group('ISO15118') markers when network isolation is active.
 
         This allows ISO 15118 tests to be distributed freely across workers
-        instead of being forced into a single sequential group.
+        instead of being forced into a single sequential group. With
+        --iso15118-parallel N they are assigned round-robin to the groups
+        ISO15118_0 .. ISO15118_<N-1> instead. Each group runs on one worker,
+        so at most N ISO 15118 sessions share the CPU at any time.
 
         Markers can live on test functions, classes, or modules, so we strip
         from the item and all its parent nodes.
@@ -171,19 +182,24 @@ class NetworkIsolationPlugin:
         if not self._active:
             return
 
-        processed_parents = set()
-
-        for item in items:
-            # Check if this item inherits an ISO15118 xdist_group marker
-            has_iso_group = any(
+        # Select all items before stripping: once a shared class or module marker
+        # is stripped, the remaining items of that parent no longer inherit it.
+        iso_items = [
+            item for item in items
+            if any(
                 self._is_iso15118_xdist_marker(m)
                 for m in item.iter_markers("xdist_group")
             )
-            if not has_iso_group:
-                continue
+        ]
 
+        processed_parents = set()
+
+        for iso_index, item in enumerate(iso_items):
             # Strip from the item itself
             self._strip_marker_from_node(item)
+            if self._iso15118_parallel is not None:
+                group = f"{ISO15118_XDIST_GROUP}_{iso_index % self._iso15118_parallel}"
+                item.add_marker(pytest.mark.xdist_group(name=group))
 
             # Strip from parent nodes (class, module) — but only once per parent
             parent = item.parent

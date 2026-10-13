@@ -19,8 +19,17 @@
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 
-const static std::string MIGRATION_FILES_PATH = "./resources/v2/device_model_migration_files";
-const static std::string CONFIG_PATH = "./resources/example_config/v2/component_config";
+// The default paths assume the CMake test setup, which copies the resources to the build directory. The bazel
+// test targets override them with the paths of the source files within the runfiles tree.
+#ifndef DEVICE_MODEL_MIGRATION_FILES_PATH
+#define DEVICE_MODEL_MIGRATION_FILES_PATH "./resources/v2/device_model_migration_files"
+#endif
+#ifndef DEVICE_MODEL_CONFIG_PATH
+#define DEVICE_MODEL_CONFIG_PATH "./resources/example_config/v2/component_config"
+#endif
+
+const static std::string MIGRATION_FILES_PATH = DEVICE_MODEL_MIGRATION_FILES_PATH;
+const static std::string CONFIG_PATH = DEVICE_MODEL_CONFIG_PATH;
 const static std::string DEVICE_MODEL_DB_IN_MEMORY_PATH = "file::memory:?cache=shared";
 
 namespace ocpp {

@@ -27,13 +27,20 @@ the module config keys as described below for the module you are coming from.
 Coming from OCPP201
 -------------------
 
-All ``OCPP201`` config keys exist unchanged in OCPPmulti:
+These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
 ``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
-``DelayOcppStart``, ``ResetStopDelay``, and ``CustomMrecErrorMapPath``.
+``DelayOcppStart``, and ``ResetStopDelay``.
+
+``CustomMrecErrorMapPath`` has no counterpart. OCPPmulti reads a custom error
+mapping file from ``CustomErrorMappingPath`` instead, in a different format
+that covers OCPP 1.6 and 2.x (see the error reporting section of
+:ref:`OCPPmulti <everest_modules_OCPPmulti>`). An ``OCPP201`` techCode
+override ``"<error type>": "<techCode>"`` becomes the entry
+``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
 
 One new module config key is relevant: ``Mode`` selects the protocol
 generation. Its default ``Only2`` runs OCPP 2.x, matching the behavior of the
@@ -41,8 +48,8 @@ old ``OCPP201`` module, so no change is needed. Which OCPP 2.x version (2.0.1
 or 2.1) is offered to the CSMS during the websocket handshake is still
 controlled by the device model variable ``SupportedOcppVersions`` of the
 ``InternalCtrlr`` component (a comma-separated preference list, e.g.
-``ocpp2.1,ocpp2.0.1``). Everything else in an existing ``OCPP201``
-configuration carries over without changes.
+``ocpp2.1,ocpp2.0.1``). Apart from the custom error mapping, everything else
+in an existing ``OCPP201`` configuration carries over without changes.
 
 Coming from OCPP (1.6)
 ----------------------
@@ -158,8 +165,21 @@ module configuration parameters:
   ``NetworkConfiguration`` slot that network connection details
   (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``,
   ``HostName``, ``ChargePointId``) are written to during migration. Any
-  existing attribute values in the target slot are overwritten. Set to ``0``
-  to skip migration of network connection details entirely.
+  existing attribute values in the target slot are overwritten, the slot's
+  ``OcppInterface`` is pinned to ``Any`` unless the component config sets an
+  explicit attribute ``value`` (a ``default`` does not count), and
+  ``OCPPCommCtrlr/ActiveNetworkProfile`` is pointed at the
+  slot. Set to ``0`` to skip migration of network connection details entirely.
+
+  The target slot must be defined in the component configuration at
+  ``DeviceModelConfigPath``: a ``NetworkConfiguration_<N>`` component config
+  must exist for it; a missing component config skips the network connection
+  migration with an error log. Two independent gates apply afterwards: a slot
+  missing from the ``OCPPCommCtrlr/NetworkConfigurationPriority`` *value* is
+  migrated but not used for connecting, and a slot missing from that
+  variable's ``valuesList`` cannot be added to the priority at runtime
+  (each is logged as a warning). With the shipped example configs,
+  the default slot ``1`` satisfies all of this out of the box.
 
 These parameters define the source configuration, the target database, and the
 structural baseline that receives the migrated values.
@@ -287,9 +307,13 @@ What to keep in mind
   individual ``MeterPublicKey[N]`` variables, and
   ``ChargingScheduleAllowedChargingRateUnit`` values ``Current``/``Power`` are
   converted to ``A``/``W``.
-* The ``OCPP16LegacyCtrlr`` component configuration is always required for
-  OCPP 1.6 operation. If it is absent from ``DeviceModelConfigPath``, the
-  module injects a built-in default schema for it automatically.
+* The ``OCPP16LegacyCtrlr`` component configuration is always required, for
+  OCPP 1.6 as well as OCPP 2.x operation: the device model is shared between
+  all supported OCPP versions so that a station can switch between them
+  seamlessly, which requires the full set of components for every version to
+  be present. If it is absent from ``DeviceModelConfigPath`` (for example in a
+  directory copied from a release before this component existed), the module
+  injects a built-in default schema for it automatically.
 * Once configuration was migrated or changed by the CSMS the configuration is
   protected from being overwritten by defaults in the component configuration.
   This ensures that values are not accidentally reset to defaults on
@@ -307,9 +331,24 @@ so existing connections carry over:
   ``OCPP`` module required it).
 * ``charger_information`` is supported (0..1 connections, as in ``OCPP``; the
   old ``OCPP201`` module did not have it).
+* ``grid_support`` is new in OCPPmulti (optional, 0..128 connections);
+  neither old module had it, so no wiring change is needed unless you want
+  to use it.
 * All other requirements (``auth``, ``data_transfer``, ``display_message``,
   ``evse_energy_sink``, ``evse_manager``, ``extensions_15118``, ``security``,
   ``system``) are identical to both old modules.
+
+.. note::
+
+   OCPPmulti can delegate network preparation before every CSMS connection
+   attempt to the ``system`` provider's ``configure_network`` command. This is
+   off by default (``DelegateNetworkConfigurationToSystem: false``) and then behaves like
+   the old modules. Before enabling it, make sure the ``system`` provider
+   implements ``configure_network`` (``NotSupported`` is a valid answer), and
+   with the ``system_API`` module that every external client replies to
+   ``e2m/configure_network`` (again, ``NotSupported`` suffices). A client that
+   stays silent blocks each connection attempt until the request times out;
+   consider lowering ``system_API``'s ``cfg_request_reply_to_s`` accordingly.
 
 On the ``provides`` side, OCPPmulti offers the same interfaces as
 ``OCPP201`` (``auth_validator``, ``auth_provider``, ``data_transfer``,

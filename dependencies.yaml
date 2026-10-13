@@ -18,7 +18,7 @@ pugixml:
 libwebsockets:
   git: https://github.com/warmcat/libwebsockets.git
   git_tag: v4.5.2
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_ENABLE_ADMIN_PANEL_BACKEND"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp"
   options:
     - CMAKE_POLICY_VERSION_MINIMUM 3.5
     - CMAKE_POLICY_DEFAULT_CMP0077 NEW
@@ -74,12 +74,12 @@ libcurl:
 # Josev
 Josev:
   git: https://github.com/EVerest/ext-switchev-iso15118.git
-  git_tag: 26f79889e0472805422edb9799a8396d89437d63
+  git_tag: 1b3ea741ea7954bbe4288742446f33653ecb7849
   cmake_condition: "EVEREST_ENABLE_PY_SUPPORT AND EVEREST_DEPENDENCY_ENABLED_JOSEV"
 # linux_libnfc-nci for RFID
 libnfc-nci:
   git: https://github.com/EVerest/linux_libnfc-nci.git
-  git_tag: 2024.11.0
+  git_tag: 2026.10.0
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBNFC_NCI"
 # UI library for BringUp modules
 ftxui:
@@ -146,7 +146,7 @@ grpc-extended-cpp-plugin:
 nlohmann_json:
   git: https://github.com/nlohmann/json
   git_tag: v3.12.0
-  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers"
+  cmake_condition: "NOT EVEREST_LIBS_ONLY OR EVEREST_BUILD_LIB_ocpp OR EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_everest_api_types"
   options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
 nlohmann_json_schema_validator:
   git: https://github.com/pboettch/json-schema-validator

@@ -40,9 +40,15 @@ static HttpClientError client_error(const std::string& host, unsigned int port, 
 }
 
 static void setup_connection(CURL* connection, struct payloadInTransit& request_payload, std::string& response_body,
-                             curl_slist*& headers, const int command_timeout_ms) {
+                             curl_slist*& headers, const int command_timeout_ms, const bool forbid_reuse) {
     // Override the Content-Type header
     headers = curl_slist_append(nullptr, CONTENT_TYPE_HEADER);
+    // Suppress the "Expect: 100-continue" header libcurl adds to uploads
+    // (a header name with a colon and no value is libcurl's documented idiom
+    // for "never send this header", see CURLOPT_HTTPHEADER(3)):
+    // LEM-compatible meters with minimal HTTP servers (e.g. the AST DC650
+    // detached display unit) reject it with 405 instead of continuing.
+    headers = curl_slist_append(headers, "Expect:");
     if (curl_easy_setopt(connection, CURLOPT_HTTPHEADER, headers) != CURLE_OK) {
         throw std::runtime_error(
             "libcurl signals that HTTP is unsupported. Your build or linkage might be misconfigured.");
@@ -54,9 +60,20 @@ static void setup_connection(CURL* connection, struct payloadInTransit& request_
     curl_easy_setopt(connection, CURLOPT_READFUNCTION, send_data);
     curl_easy_setopt(connection, CURLOPT_READDATA, &request_payload);
     curl_easy_setopt(connection, CURLOPT_TIMEOUT_MS, command_timeout_ms);
+    // Declare the request body size. Without it, a body fed through
+    // CURLOPT_READFUNCTION goes out as "Transfer-Encoding: chunked", which
+    // the same minimal servers reject with 400. With the size declared,
+    // libcurl sends a plain Content-Length request, which every device
+    // accepts. (CURLOPT_INFILESIZE covers PUT, CURLOPT_POSTFIELDSIZE POST.)
+    if (!request_payload.data.empty()) {
+        curl_easy_setopt(connection, CURLOPT_INFILESIZE, (long)request_payload.data.size());
+        curl_easy_setopt(connection, CURLOPT_POSTFIELDSIZE, (long)request_payload.data.size());
+    }
 
     // Misc. settings come here
-    curl_easy_setopt(connection, CURLOPT_FORBID_REUSE, 1);
+    if (forbid_reuse) {
+        curl_easy_setopt(connection, CURLOPT_FORBID_REUSE, 1);
+    }
     if (curl_easy_setopt(connection, CURLOPT_FOLLOWLOCATION, 0) != CURLE_OK) {
         throw std::runtime_error(
             "libcurl signals that HTTP is unsupported. Your build or linkage might be misconfigured.");
@@ -103,7 +120,10 @@ HttpResponse HttpClient::perform_request(CURL* connection, const std::string& re
         request_body, 0
     };
     struct curl_slist* headers;
-    setup_connection(connection, request_payload, response_body, headers, command_timeout_ms);
+    // if there is no connection share, connections must not be reused: without the share, each
+    // request uses a fresh handle, and keeping its connection open would just leak it
+    setup_connection(connection, request_payload, response_body, headers, command_timeout_ms,
+                     /*forbid_reuse=*/this->share == nullptr);
 
     // Set up TLS options if TLS is enabled
     // we define dcbm_cert outside the "if" statement to ensure it outlives curl_easy_perform().
@@ -149,11 +169,17 @@ CURL* HttpClient::create_curl_handle_and_setup_url(const std::string& path) cons
             throw std::runtime_error("Could not bind to the specified network interface: " + this->network_interface);
         }
     }
+    if (this->share != nullptr) {
+        if (curl_easy_setopt(connection, CURLOPT_SHARE, this->share) != CURLE_OK) {
+            throw std::runtime_error("Could not attach the connection share to the CURL handle");
+        }
+    }
 
     return connection;
 }
 
 HttpResponse HttpClient::get(const std::string& path) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     if (curl_easy_setopt(connection, CURLOPT_HTTPGET, 1) != CURLE_OK) {
@@ -175,6 +201,7 @@ HttpResponse HttpClient::get(const std::string& path) const {
 }
 
 HttpResponse HttpClient::put(const std::string& path, const std::string& body) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     curl_easy_setopt(connection, CURLOPT_UPLOAD, 1);
@@ -192,6 +219,7 @@ HttpResponse HttpClient::put(const std::string& path, const std::string& body) c
 }
 
 HttpResponse HttpClient::post(const std::string& path, const std::string& body) const {
+    const auto request_execution_handle = this->request_execution_guard.handle();
     CURL* connection = this->create_curl_handle_and_setup_url(path);
 
     if (curl_easy_setopt(connection, CURLOPT_POST, 1) != CURLE_OK) {

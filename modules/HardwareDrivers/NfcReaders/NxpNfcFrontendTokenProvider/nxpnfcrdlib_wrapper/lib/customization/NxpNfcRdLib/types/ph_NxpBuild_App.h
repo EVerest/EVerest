@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 /* Definitions for the build of the NXP NFC Reader Library */
 /* Additional protocols, etc, need to be added here, if required*/

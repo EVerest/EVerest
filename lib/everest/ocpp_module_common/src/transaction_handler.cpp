@@ -33,8 +33,9 @@ void TransactionHandler::set_tx_stop_points(const std::set<TxStartStopPoint>& tx
     this->tx_stop_points = tx_stop_points;
 }
 
-TxEventEffect TransactionHandler::submit_event(const int32_t evse_id, const TxEvent tx_event) {
-    this->tx_start_stop_conditions[evse_id].submit_event(tx_event);
+TxEventEffect TransactionHandler::submit_event(const int32_t evse_id, const TxEvent tx_event,
+                                               const std::chrono::steady_clock::time_point now) {
+    this->tx_start_stop_conditions[evse_id].submit_event(tx_event, now);
 
     if (this->should_transaction_start(evse_id)) {
         return TxEventEffect::START_TRANSACTION;
@@ -45,6 +46,20 @@ TxEventEffect TransactionHandler::submit_event(const int32_t evse_id, const TxEv
     }
 
     return TxEventEffect::NONE;
+}
+
+bool TransactionHandler::is_ev_connect_timeout(const int32_t evse_id, const std::chrono::seconds ev_connection_timeout,
+                                               const std::chrono::steady_clock::time_point now) const {
+    const auto transaction_data = this->evse_id_transaction_data_map.find(evse_id);
+    const auto conditions = this->tx_start_stop_conditions.find(evse_id);
+    if (transaction_data == this->evse_id_transaction_data_map.end() or transaction_data->second == nullptr or
+        !transaction_data->second->started or conditions == this->tx_start_stop_conditions.end()) {
+        return false;
+    }
+    const auto& c = conditions->second;
+    constexpr auto tolerance = std::chrono::seconds(1);
+    return c.is_authorized and !c.is_ev_connected and c.authorized_at.has_value() and
+           now - c.authorized_at.value() >= ev_connection_timeout - tolerance;
 }
 
 void TransactionHandler::add_transaction_data(const int32_t evse_id,

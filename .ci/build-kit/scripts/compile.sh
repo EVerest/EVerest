@@ -1,5 +1,10 @@
 #!/bin/sh
 
+# Reset the ccache statistics so the summary after the build shows this build's hit rate.
+if command -v ccache > /dev/null; then
+    ccache --zero-stats
+fi
+
 cmake \
     -B "$EXT_MOUNT/build" \
     -S "$EXT_MOUNT/source" \
@@ -22,6 +27,12 @@ fi
 
 ninja -C "$EXT_MOUNT/build"
 retVal=$?
+
+# The statistics are also written to the workspace, so CI can show them in the job summary.
+if command -v ccache > /dev/null; then
+    ccache --show-stats | tee "$EXT_MOUNT/ccache-stats.txt"
+fi
+
 if [ $retVal -ne 0 ]; then
     echo "Compiling failed with return code $retVal"
     exit $retVal

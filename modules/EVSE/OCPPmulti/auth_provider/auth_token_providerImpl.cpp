@@ -12,5 +12,9 @@ void auth_token_providerImpl::init() {
 void auth_token_providerImpl::ready() {
 }
 
+void auth_token_providerImpl::shutdown() {
+    // no resources of its own to release, all OCPP state is owned by the module
+}
+
 } // namespace auth_provider
 } // namespace module

@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright 2026 Pionix GmbH and Contributors to EVerest
+ * Copyright Pionix GmbH and Contributors to EVerest
  *
  * json_utils.c - JSON parsing and generation utilities
  */

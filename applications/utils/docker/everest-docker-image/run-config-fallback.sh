@@ -10,7 +10,7 @@ usage() {
 
 export EVEREST_CONFIG=config-fallback.yaml
 export OCPP_CONFIG=ocpp-config.json
-export EVEREST_COMMAND="sh -c '/opt/everest/bin/manager --conf /opt/everest/config/config.yaml'"
+export EVEREST_COMMAND="sh -c '/opt/everest/bin/manager --config /opt/everest/config/config.yaml'"
 
 while [ ! -z "$1" ]; do
     if [ "$1" == "--conf" ]; then

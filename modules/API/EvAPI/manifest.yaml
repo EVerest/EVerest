@@ -1,6 +1,7 @@
 description: >-
   The EVerest EV API module, exposing some internal functionality on an external
   MQTT connection.
+  DEPRECATED in 2026.10.0, earliest removal in 2027.04.0, without a replacement.
 config: {}
 requires:
   ev_manager:

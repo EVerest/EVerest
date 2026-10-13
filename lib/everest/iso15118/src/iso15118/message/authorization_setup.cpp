@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/authorization_setup.hpp>
 
 #include <type_traits>
@@ -45,6 +45,7 @@ template <> void convert(const AuthorizationSetupRequest& in, iso20_Authorizatio
     convert(in.header, out.Header);
 }
 
+namespace {
 struct AuthorizationModeVisitor {
     AuthorizationModeVisitor(iso20_AuthorizationSetupResType& out_) : out(out_){};
     void operator()([[maybe_unused]] const datatypes::EIM_ASResAuthorizationMode& in) {
@@ -61,6 +62,7 @@ struct AuthorizationModeVisitor {
 private:
     iso20_AuthorizationSetupResType& out;
 };
+} // namespace
 
 template <> void convert(const AuthorizationSetupResponse& in, iso20_AuthorizationSetupResType& out) {
     init_iso20_AuthorizationSetupResType(&out);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 #include "connection_abstract.hpp"
 
@@ -26,7 +26,8 @@ struct SSLContext;
  */
 class ConnectionSSL : public IConnection {
 public:
-    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig& ssl_config);
+    ConnectionSSL(PollManager&, const std::string& interface_name, const config::SSLConfig& ssl_config,
+                  uint16_t tcp_port);
 
     void set_event_callback(const ConnectionEventCallback&) final;
     Ipv6EndPoint get_public_endpoint() const final;
@@ -35,6 +36,10 @@ public:
     ReadResult read(uint8_t* buf, size_t len) final;
 
     void close() final;
+
+    bool is_secure() const final {
+        return true;
+    }
 
     std::optional<sha512_hash_t> get_vehicle_cert_hash() const final;
 
@@ -49,6 +54,9 @@ private:
     ConnectionEventCallback event_callback{nullptr};
 
     bool handshake_complete{false};
+    // Idempotency guard for close(): guarantees CLOSED is delivered exactly once, on whichever
+    // teardown path runs first (session close, accept/handshake failure, peer EOF).
+    bool closed{false};
 
     void handle_connect();
     void handle_data();

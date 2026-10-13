@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp_data_transferImpl.hpp"
 
@@ -31,7 +31,7 @@ auto ocpp_data_transferImpl::generic_request_reply(T const& default_value, ReqT 
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::ocpp::DataTransferResponse

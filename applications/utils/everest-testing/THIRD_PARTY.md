@@ -15,7 +15,6 @@ pip-licenses --format=markdown --order=license --ignore-packages everest-testing
 
 | Name            | Version | License                                                         |
 |-----------------|---------|-----------------------------------------------------------------|
-| pyOpenSSL       | 23.0.0  | Apache Software License                                         |
 | pytest-asyncio  | 0.21.0  | Apache Software License                                         |
 | cryptography    | 39.0.2  | Apache Software License; BSD License                            |
 | packaging       | 23.0    | Apache Software License; BSD License                            |

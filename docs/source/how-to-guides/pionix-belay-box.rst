@@ -494,7 +494,7 @@ Then you can run your self-compiled version like this:
 
 .. code-block:: bash
 
-  /var/everest/bin/manager --conf /path/to/my/configfile
+  /var/everest/bin/manager --config /path/to/my/configfile
 
 .. _belaybox_yeti_flash:
 

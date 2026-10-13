@@ -17,7 +17,7 @@ target_link_libraries(${TARGET_NAME}
         everest::framework
         everest::log
         everest::sqlite
-        SQLite::SQLite3
+        SQLite3::SQLite3
         Catch2::Catch2WithMain
 )
 if(NOT DISABLE_EDM)

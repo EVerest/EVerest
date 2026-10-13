@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "extensions/status_request.hpp"
 #include "extensions/trusted_ca_keys.hpp"
@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cassert>
+#include <charconv>
 #include <csignal>
 #include <cstddef>
 #include <cstdint>
@@ -35,6 +36,7 @@
 #include <openssl/ssl.h>
 #include <openssl/tls1.h>
 #include <openssl/types.h>
+#include <openssl/x509_vfy.h>
 #include <utility>
 
 #ifdef UNIT_TEST
@@ -724,7 +726,7 @@ struct client_ctx {
 // Connection represents a TLS connection (client and server)
 
 Connection::Connection(SslContext* ctx, int soc, const char* ip_in, const char* service_in, std::int32_t timeout_ms) :
-    m_context(std::make_unique<connection_ctx>()), m_ip(ip_in), m_service(service_in), m_timeout_ms(timeout_ms) {
+    m_context(std::make_unique<connection_ctx>()), m_peer_host(ip_in), m_service(service_in), m_timeout_ms(timeout_ms) {
     m_context->ctx = SSL_ptr(SSL_new(ctx));
     m_context->soc = soc;
 
@@ -800,6 +802,16 @@ int Connection::socket() const {
     return m_context->soc;
 }
 
+bool Connection::is_valid() const {
+    // soc_bio is the fd's BIO_CLOSE owner, null only when the ctor's SSL_new or
+    // BIO_new_socket failed, in which case the fd was never adopted.
+    return m_context != nullptr && m_context->soc_bio != nullptr;
+}
+
+bool Connection::has_pending() const {
+    return m_context != nullptr && m_context->ctx != nullptr && SSL_has_pending(m_context->ctx.get()) == 1;
+}
+
 const Certificate* Connection::peer_certificate() const {
     assert(m_context != nullptr);
     return SSL_get0_peer_certificate(m_context->ctx.get());
@@ -823,18 +835,17 @@ int ssl_keylog_server_index{-1};
 
 void keylog_callback(const SSL* ssl, const char* line) {
 
+    // Registered CTX-wide, so it also fires for connections that skipped the
+    // per-connection key-log server and therefore carry no ex_data.
     auto keylog_server = static_cast<TlsKeyLoggingServer*>(SSL_get_ex_data(ssl, ssl_keylog_server_index));
 
-    std::string key_log_msg = "TLS Handshake keys on port ";
-    key_log_msg += std::to_string(keylog_server->get_port()) + ": ";
-    key_log_msg += std::string(line);
-
-    log_info(key_log_msg);
-
-    if (keylog_server->get_fd() != -1) {
-        const auto result = keylog_server->send(line);
-        if (result not_eq strlen(line)) {
-            log_error("key_logging_server send() failed!");
+    if (keylog_server != nullptr) {
+        // ex_data is only set for a server that came up, so there is nothing to re-check here.
+        const auto port = std::to_string(keylog_server->get_port());
+        if (keylog_server->send(line)) {
+            log_info("TLS handshake keys sent to port " + port + ": " + std::string(line));
+        } else {
+            log_error("key-log send to port " + port + " failed");
         }
     }
 
@@ -864,9 +875,30 @@ ServerConnection::ServerConnection(SslContext* ctx, int soc, const char* ip_in, 
         ServerTrustedCaKeys::set_data(m_context->ctx.get(), &m_tck_data);
 
         if (tls_key_interface != nullptr) {
-            const auto port = std::stoul(service_in);
-            m_keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
-            SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
+            // service_in comes from the accept path and may be empty or
+            // non-numeric, so parse it without throwing.
+            std::uint16_t port{0};
+            bool port_valid{false};
+            if (service_in != nullptr && *service_in != '\0') {
+                const char* const end = service_in + std::strlen(service_in);
+                const auto [ptr, ec] = std::from_chars(service_in, end, port);
+                port_valid = (ec == std::errc{}) && (ptr == end);
+            }
+            if (!port_valid) {
+                log_warning("ServerConnection: service string is not a port number; TLS key logging disabled for this "
+                            "connection");
+            } else {
+                // Keep the server only when it can actually send, so a non-null m_keylog_server
+                // always means a usable one and the key-log callback needs no further check.
+                auto keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
+                if (keylog_server->is_valid()) {
+                    m_keylog_server = std::move(keylog_server);
+                    SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
+                } else {
+                    log_warning("ServerConnection: key-log server setup failed; TLS key logging disabled for this "
+                                "connection");
+                }
+            }
         }
     }
 }
@@ -913,11 +945,48 @@ void ServerConnection::wait_all_closed() {
 // ----------------------------------------------------------------------------
 // ClientConnection represents a TLS client connection
 
+namespace {
+/// true when host is a numeric IPv4 or IPv6 address rather than a DNS name
+bool is_ip_literal(const std::string& host) {
+    unsigned char buf[sizeof(struct in6_addr)];
+    return ::inet_pton(AF_INET, host.c_str(), buf) == 1 || ::inet_pton(AF_INET6, host.c_str(), buf) == 1;
+}
+} // namespace
+
 ClientConnection::ClientConnection(SslContext* ctx, int soc, const char* ip_in, const char* service_in,
-                                   std::int32_t timeout_ms) :
+                                   std::int32_t timeout_ms, bool verify_subject_name) :
     Connection(ctx, soc, ip_in, service_in, timeout_ms) {
-    if (m_context->soc_bio != nullptr) {
-        SSL_set_connect_state(m_context->ctx.get());
+    if (m_context->soc_bio == nullptr) {
+        return;
+    }
+    SSL_set_connect_state(m_context->ctx.get());
+    if (m_peer_host.empty()) {
+        return;
+    }
+
+    auto* const ssl = m_context->ctx.get();
+    const bool ip_literal = is_ip_literal(m_peer_host);
+
+    // RFC 6066 section 3 does not permit a literal IP address in the SNI extension.
+    if (!ip_literal) {
+        SSL_set_tlsext_host_name(ssl, m_peer_host.c_str());
+    }
+
+    if (verify_subject_name) {
+        // An IP is pinned through X509_VERIFY_PARAM_set1_ip_asc so that it is matched against the
+        // certificate's iPAddress SAN entries. Whether SSL_set1_host recognises an IP literal and
+        // does the same varies by OpenSSL version, so the call is made explicitly rather than
+        // relying on it.
+        // A failed pin faults the connection so the handshake fails closed
+        // instead of silently downgrading to chain-of-trust only.
+        const int pinned = ip_literal ? X509_VERIFY_PARAM_set1_ip_asc(SSL_get0_param(ssl), m_peer_host.c_str())
+                                      : SSL_set1_host(ssl, m_peer_host.c_str());
+        if (pinned != 1) {
+            log_error(ip_literal ? "X509_VERIFY_PARAM_set1_ip_asc" : "SSL_set1_host");
+            m_state = state_t::fault;
+            return;
+        }
+        SSL_set_hostflags(ssl, X509_CHECK_FLAG_NO_PARTIAL_WILDCARDS);
     }
 }
 
@@ -994,6 +1063,27 @@ bool Server::init_socket(const config_t& cfg) {
     return result;
 }
 
+std::uint16_t Server::bound_port() const {
+    if (m_socket == INVALID_SOCKET) {
+        return 0;
+    }
+
+    sockaddr_storage addr{};
+    socklen_t addr_len = sizeof(addr);
+    if (::getsockname(m_socket, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+        return 0;
+    }
+
+    switch (addr.ss_family) {
+    case AF_INET:
+        return ntohs(reinterpret_cast<const sockaddr_in*>(&addr)->sin_port);
+    case AF_INET6:
+        return ntohs(reinterpret_cast<const sockaddr_in6*>(&addr)->sin6_port);
+    default:
+        return 0;
+    }
+}
+
 int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
     // The verify upgrade only takes effect when the negotiated protocol will be
     // TLS 1.3. Both sides must allow it: the client must advertise TLS 1.3 in
@@ -1049,9 +1139,11 @@ bool Server::init_ssl(const config_t& cfg) {
     SSL_CTX* ctx = nullptr;
 
     if (result) {
-        // use the first server chain
+        // Default chain served to a peer that matches none: the first chain that passed
+        // verification. Reached only when cfg.chains is non-empty (see `result` above).
+        const auto default_index = (m_default_chain_index < cfg.chains.size()) ? m_default_chain_index : 0;
         const ssl_ctx_params params{true, cfg.ciphersuites, cfg.cipher_list, true, cfg.enforce_tls_1_3};
-        result = configure_ssl_ctx(ctx, cfg.chains[0], params);
+        result = configure_ssl_ctx(ctx, cfg.chains[default_index], params);
         if (result) {
 
             if (cfg.tls_key_logging) {
@@ -1103,10 +1195,13 @@ void Server::deinit_ssl() {
     m_context = std::make_unique<server_ctx>();
 }
 
-bool Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
+void Server::init_certificates(const std::vector<certificate_config_t>& chain_files) {
     std::vector<OcspCache::ocsp_entry_t> entries;
     openssl::chain_list chains;
+    m_default_chain_index = 0;
+    bool any_trust_anchors{false};
 
+    std::size_t config_index{0};
     for (const auto& i : chain_files) {
         auto certs = openssl::load_certificates(i.certificate_chain_file);
         auto tas = openssl::load_certificates(i.trust_anchor_file);
@@ -1136,26 +1231,55 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                 log_warning("<n> certificates != <n> OCSP responses");
             }
 
+            switch (i.tls_version) {
+            case TlsVersion::tls_1_2:
+                chain.tls_version = TLS1_2_VERSION;
+                break;
+            case TlsVersion::tls_1_3:
+                chain.tls_version = TLS1_3_VERSION;
+                break;
+            case TlsVersion::any:
+            default:
+                chain.tls_version = 0;
+                break;
+            }
+
             /*
              * If there are no trust anchors then the chain can't be verified
-             * it also means that trusted_ca_keys can't be supported for the
-             * chain.
+             * and trusted_ca_keys can't match it (matching is on the anchors).
+             * The chain is still kept so that it can be selected by the
+             * negotiated TLS version.
              */
+
+            chain.chain.leaf = std::move(certs[0]);
+            // remove server cert from intermediate list
+            certs.erase(certs.begin());
+            chain.chain.chain = std::move(certs);
+            chain.private_key = std::move(pkey);
 
             if (!tas.empty()) {
                 // update trusted CA keys information
-                chain.chain.leaf = std::move(certs[0]);
-                // remove server cert from intermediate list
-                certs.erase(certs.begin());
-                chain.chain.chain = std::move(certs);
                 chain.chain.trust_anchors = std::move(tas);
-                chain.private_key = std::move(pkey);
-
                 if (openssl::verify_chain(chain)) {
+                    if (chains.empty()) {
+                        m_default_chain_index = config_index;
+                    }
+                    any_trust_anchors = true;
                     chains.emplace_back(std::move(chain));
+                } else {
+                    const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
+                    std::string msg("chain verification failed, excluding chain (leaf:");
+                    for (const auto& item : subject) {
+                        msg += ' ';
+                        msg += item.first;
+                        msg += ':';
+                        msg += item.second;
+                    }
+                    msg += ')';
+                    log_warning(msg);
                 }
             } else {
-                const auto subject = openssl::certificate_subject(certs[0].get());
+                const auto subject = openssl::certificate_subject(chain.chain.leaf.get());
                 std::string msg("No trust anchors for certificate:");
                 for (const auto& item : subject) {
                     msg += ' ';
@@ -1164,29 +1288,42 @@ bool Server::init_certificates(const std::vector<certificate_config_t>& chain_fi
                     msg += item.second;
                 }
                 log_warning(msg);
+                chains.emplace_back(std::move(chain));
             }
+        } else {
+            const auto* file = static_cast<const char*>(i.certificate_chain_file);
+            std::string msg("certificate chain file yielded no certificates: ");
+            msg += (file != nullptr) ? file : "<not set>";
+            log_warning(msg);
         }
+        config_index++;
     }
 
-    bool result{true};
-
-    if (chains.empty()) {
+    if (!any_trust_anchors) {
         // continue without trusted_ca_keys support
         log_warning("trusted_ca_keys support disabled");
+        if (!chain_files.empty()) {
+            log_warning("no configured chain passed verification; the SSL_CTX default certificate remains "
+                        "chains[0] and clients may not be able to build a path for it");
+        }
+    } else if (m_default_chain_index != 0) {
+        std::string msg("first ");
+        msg += std::to_string(m_default_chain_index);
+        msg += " configured chain(s) unusable (see warnings above); serving chains[";
+        msg += std::to_string(m_default_chain_index);
+        msg += "] as the default certificate";
+        log_warning(msg);
     }
     m_server_trusted_ca_keys.update(std::move(chains));
 
-    // don't error when there are no OCSP cached responses
-    if (!entries.empty()) {
-        if (!m_cache.load(entries)) {
-            result = false;
-        }
-    } else {
-        // remove any existing entries
-        (void)m_cache.load(entries);
+    // A response that cannot be loaded only costs the stapling for its
+    // certificate: the responses that did load are kept and the server still
+    // comes up, since a stale or corrupt cache file must not take TLS down.
+    // Without entries the cache is cleared.
+    if (!m_cache.load(entries)) {
+        log_warning("one or more OCSP responses could not be loaded; the affected certificates are served "
+                    "without OCSP stapling");
     }
-
-    return result;
 }
 
 void Server::deinit_certificates() {
@@ -1284,8 +1421,13 @@ Server::ConnectionPtr Server::wrap_accepted_fd(int soc, const char* ip, const ch
     if ((m_context == nullptr) || (m_context->ctx == nullptr)) {
         return nullptr;
     }
-    return std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms,
-                                              m_tls_key_interface);
+    auto conn =
+        std::make_unique<ServerConnection>(m_context->ctx.get(), soc, ip, service, m_timeout_ms, m_tls_key_interface);
+    if (!conn->is_valid()) {
+        // No BIO_CLOSE owner took the fd, so the caller still owns it.
+        return nullptr;
+    }
+    return conn;
 }
 
 void Server::configure_signal_handler(int interrupt_signal) {
@@ -1316,10 +1458,8 @@ bool Server::update(const config_t& cfg) {
 
     m_timeout_ms = cfg.io_timeout_ms;
     // always try init_certificates() and init_ssl()
-    bool result = init_certificates(cfg.chains);
-    if (!init_ssl(cfg)) {
-        result = false;
-    }
+    init_certificates(cfg.chains);
+    const bool result = init_ssl(cfg);
     m_state = (result) ? state_t::init_complete : state_t::init_socket;
     return result;
 }
@@ -1446,7 +1586,14 @@ bool Client::init(const config_t& cfg, const override_t& override) {
     assert(override.trusted_ca_keys_add != nullptr);
     assert(override.trusted_ca_keys_free != nullptr);
 
+    if (cfg.verify_subject_name && !cfg.verify_server) {
+        log_error("verify_subject_name requires verify_server; refusing to initialise the client because the "
+                  "hostname it was asked to pin cannot be enforced");
+        return false;
+    }
+
     m_timeout_ms = cfg.io_timeout_ms;
+    m_verify_subject_name = cfg.verify_subject_name;
     m_trusted_ca_keys = cfg.trusted_ca_keys_data;
     SSL_CTX* ctx = nullptr;
     Server::certificate_config_t cert_config{};
@@ -1574,12 +1721,27 @@ std::unique_ptr<ClientConnection> Client::connect(const char* host, const char* 
             }
 
             if (connected) {
-                result = std::make_unique<ClientConnection>(m_context->ctx.get(), socket, host, service, m_timeout_ms);
+                result = std::make_unique<ClientConnection>(m_context->ctx.get(), socket, host, service, m_timeout_ms,
+                                                            m_verify_subject_name);
             }
         }
     }
 
     return result;
+}
+
+Client::ConnectionPtr Client::wrap_connecting_fd(int fd, const char* host_for_sni) {
+    if (m_context == nullptr) {
+        return nullptr;
+    }
+    auto conn =
+        std::make_unique<ClientConnection>(m_context->ctx.get(), fd, (host_for_sni != nullptr) ? host_for_sni : "", "",
+                                           m_timeout_ms, m_verify_subject_name);
+    if (!conn->is_valid()) {
+        // No BIO_CLOSE owner took the fd, so the caller still owns it.
+        return nullptr;
+    }
+    return conn;
 }
 
 Client::override_t Client::default_overrides() {
@@ -1662,9 +1824,14 @@ TlsKeyLoggingServer::~TlsKeyLoggingServer() {
     }
 }
 
-ssize_t TlsKeyLoggingServer::send(const char* line) {
-    return sendto(fd, line, strlen(line), 0, reinterpret_cast<const sockaddr*>(&destination_address),
-                  sizeof(destination_address));
+bool TlsKeyLoggingServer::send(const char* line) {
+    if (fd == -1 || line == nullptr) {
+        return false;
+    }
+    const auto length = std::strlen(line);
+    const auto sent = sendto(fd, line, length, 0, reinterpret_cast<const sockaddr*>(&destination_address),
+                             sizeof(destination_address));
+    return sent >= 0 && static_cast<std::size_t>(sent) == length;
 }
 
 } // namespace tls

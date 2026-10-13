@@ -4,6 +4,7 @@
 #pragma once
 
 #include <functional>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -14,6 +15,7 @@
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/grid_support.hpp>
 #include <generated/types/iso15118.hpp>
+#include <generated/types/network.hpp>
 #include <generated/types/ocpp.hpp>
 #include <generated/types/reservation.hpp>
 #include <generated/types/system.hpp>
@@ -226,6 +228,17 @@ to_everest_registration_status(const ocpp::v2::RegistrationStatusEnum& registrat
 /// types::ocpp::StatusInfoType
 types::ocpp::StatusInfoType to_everest_status_info_type(const ocpp::v2::StatusInfo& status_info);
 
+/// \brief Converts a given ocpp::OcppProtocolVersion \p protocol_version to the OCPP version string used on the
+/// EVerest ocpp interface (1.6, 2.0.1 or 2.1)
+/// \returns std::nullopt for ocpp::OcppProtocolVersion::Unknown
+std::optional<std::string> to_everest_ocpp_version(ocpp::OcppProtocolVersion protocol_version);
+
+/// \brief Converts the arguments of a connection state change to a types::ocpp::ConnectionStatus
+types::ocpp::ConnectionStatus
+to_everest_connection_status(bool is_connected, int32_t configuration_slot,
+                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                             ocpp::OcppProtocolVersion protocol_version);
+
 /// \brief Converts a given ocpp::v2::GetVariableResult \p get_variable_result_vector to a
 /// std::vector<types::ocpp::GetVariableResult>
 std::vector<types::ocpp::GetVariableResult>
@@ -309,6 +322,10 @@ to_everest_allowed_energy_transfer_mode(const ocpp::v2::EnergyTransferModeEnum& 
 std::vector<types::iso15118::EnergyTransferMode> to_everest_allowed_energy_transfer_modes(
     const std::vector<ocpp::v2::EnergyTransferModeEnum>& allowed_energy_transfer_modes);
 
+/// \brief Converts a given types::iso15118::EnergyTransferMode \p transfer_mode to an
+/// ocpp::v2::EnergyTransferModeEnum
+ocpp::v2::EnergyTransferModeEnum to_ocpp_energy_transfer_mode(types::iso15118::EnergyTransferMode transfer_mode);
+
 ocpp::v2::OperationalStatusEnum to_ocpp_operational_status(types::ocpp::OperationalStatusEnumType value);
 types::ocpp::ChangeAvailabilityStatusEnumType
 to_everest_change_availability_status(ocpp::v2::ChangeAvailabilityStatusEnum value);
@@ -318,6 +335,19 @@ ocpp::v2::ChangeAvailabilityRequest
 to_ocpp_change_availability_request(const types::ocpp::ChangeAvailabilityRequest& request);
 types::ocpp::ChangeAvailabilityResponse
 to_everest_change_availability_response(const ocpp::v2::ChangeAvailabilityResponse& response);
+
+/// \brief Converts a given ocpp::v2::OCPPInterfaceEnum \p iface to a types::network::InterfaceClass.
+types::network::InterfaceClass to_everest_interface_class(const ocpp::v2::OCPPInterfaceEnum iface);
+
+/// \brief Converts a given ocpp::v2::APN \p apn to a types::network::APN.
+types::network::APN to_everest_network_apn(const ocpp::v2::APN& apn);
+
+/// \brief Converts a given ocpp::v2::VPN \p vpn to a types::network::VPN.
+types::network::VPN to_everest_network_vpn(const ocpp::v2::VPN& vpn);
+
+/// \brief Converts \p profile and \p request_id (correlation id) to a types::network::ConfigureNetworkRequest.
+types::network::ConfigureNetworkRequest
+to_everest_configure_network_request(const int32_t request_id, const ocpp::v2::NetworkConnectionProfile& profile);
 
 /// \brief Converts a given ocpp::v2::DERControlEnum \p control_type to a types::grid_support::DirectiveType.
 /// \details Total over the 22 OCPP DERControlEnum values; the 6 ISO-only DirectiveType values have no OCPP producer.

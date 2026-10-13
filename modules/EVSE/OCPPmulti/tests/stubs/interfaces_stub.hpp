@@ -17,6 +17,7 @@
 
 #include <list>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace stubs {
@@ -37,17 +38,25 @@ struct MqttStub : public Everest::MQTTAbstraction {
     }
     void publish(const std::string& topic, const nlohmann::json& json) override {
     }
-    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) override {
+    void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
     }
     void publish(const std::string& topic, const std::string& data) override {
     }
-    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) override {
+    void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                 bool record_retained = true) override {
     }
     void subscribe(const std::string& topic) override {
     }
     void subscribe(const std::string& topic, QOS qos) override {
     }
     void unsubscribe(const std::string& topic) override {
+    }
+    bool set_lwt(const std::string& topic, const json& json, QOS qos = QOS::QOS2, bool retain = true) override {
+        return true;
+    }
+    bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2, bool retain = true) override {
+        return true;
     }
     void clear_retained_topics() override {
     }
@@ -120,6 +129,8 @@ private:
     void publish_fn(const std::string& interface, const std::string& variable, int instance, const json& value);
 
     var_cb_list_t m_subscribe_var_callbacks;
+    // guarded by m_cmd_response_mutex: commands may be invoked from module threads concurrently
+    std::mutex m_cmd_response_mutex;
     std::list<json> m_cmd_response_list;
 
 protected:
@@ -155,6 +166,7 @@ protected:
     virtual std::optional<json> reservation_call_exists_reservation(const Requirement& req, const json& args);
     virtual std::optional<json> reservation_call_reserve_now(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_allow_firmware_installation(const Requirement& req, const json& args);
+    virtual std::optional<json> system_call_configure_network(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_get_boot_reason(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_is_reset_allowed(const Requirement& req, const json& args);
     virtual std::optional<json> system_call_reset(const Requirement& req, const json& args);
@@ -252,6 +264,8 @@ struct ocppImplStub : public ocppImplBase {
                 (types::ocpp::ChangeAvailabilityRequest & request), (override));
     MOCK_METHOD(void, handle_monitor_variables, (std::vector<types::ocpp::ComponentVariable> & component_variables),
                 (override));
+    MOCK_METHOD(std::vector<types::ocpp::GetVariableResult>, handle_monitor_and_get_variables,
+                (std::vector<types::ocpp::ComponentVariable> & component_variables), (override));
 };
 
 struct session_costImplStub : public session_costImplBase {

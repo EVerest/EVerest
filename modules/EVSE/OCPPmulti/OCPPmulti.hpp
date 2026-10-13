@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 2
+// template version 3
 //
 
 #include "ld-ev.hpp"
@@ -49,9 +49,10 @@ public:
     [[nodiscard]] std::string getChargePointConfigPath() const override;
     [[nodiscard]] int getCompositeScheduleIntervalS() const override;
     [[nodiscard]] std::string getCoreDatabasePath() const override;
-    [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
+    [[nodiscard]] std::string getCustomErrorMappingPath() const override;
     [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
+    [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override;
     [[nodiscard]] std::string getDeviceModelConfigMappings() const override;
     [[nodiscard]] std::string getDeviceModelConfigPath() const override;
     [[nodiscard]] std::string getDeviceModelDatabasePath() const override;
@@ -78,25 +79,26 @@ struct Conf {
     std::string ChargePointConfigPath;
     int CompositeScheduleIntervalS;
     std::string CoreDatabasePath;
-    std::string CustomMrecErrorMapPath;
+    std::string CustomErrorMappingPath;
     std::string DatabasePath;
     int DelayOcppStart;
+    bool DelegateNetworkConfigurationToSystem;
     std::string DeviceModelConfigPath;
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
     bool EnableLegacyConfigMigration;
     std::string DeviceModelConfigMappings;
-    int Ocpp16NetworkConfigSlot;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
+    int GridSupportHeartbeatS;
     std::string MessageLogPath;
     int MessageQueueResumeDelay;
+    std::string Mode;
+    int Ocpp16NetworkConfigSlot;
     int RequestCompositeScheduleDurationS;
     std::string RequestCompositeScheduleUnit;
     int ResetStopDelay;
     std::string UserConfigPath;
-    std::string Mode;
-    int GridSupportHeartbeatS;
 };
 
 class OCPPmulti : public Everest::ModuleBase {
@@ -182,6 +184,7 @@ private:
     friend class LdEverest;
     void init();
     void ready();
+    void shutdown();
 
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here

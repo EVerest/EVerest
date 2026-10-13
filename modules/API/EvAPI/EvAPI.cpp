@@ -36,6 +36,11 @@ EvSessionInfo::operator std::string() {
 }
 
 void EvAPI::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : EvAPI\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : none, the module is removed without a replacement";
+
     std::vector<std::string> ev_connectors;
     std::string var_ev_connectors = this->api_base + "ev_connectors";
 

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/database/sqlite/connection.hpp>
 #include <everest/database/sqlite/statement.hpp>
@@ -51,6 +51,23 @@ TEST_F(ConnectionWalTest, FileDatabaseUsesWalJournalMode) {
 TEST_F(ConnectionWalTest, InMemoryDatabaseOpensWithoutWalFailure) {
     Connection db(fs::path("file::memory:?cache=shared"));
     ASSERT_TRUE(db.open_connection());
+    db.close_connection();
+}
+
+TEST_F(ConnectionWalTest, FailedOpenDoesNotLeakOpenCount) {
+    // A directory cannot be opened as a database file, so every open attempt fails.
+    fs::create_directories(db_path);
+    Connection db(db_path);
+
+    EXPECT_FALSE(db.open_connection());
+    // Before the refcount fix the failed attempt above leaked an open_count increment,
+    // making this second call short-circuit to "already opened" with an unusable handle.
+    EXPECT_FALSE(db.open_connection());
+
+    // Once the obstacle is gone, the same Connection can be opened normally.
+    fs::remove(db_path);
+    EXPECT_TRUE(db.open_connection());
+    EXPECT_TRUE(db.execute_statement("CREATE TABLE t(id INTEGER);"));
     db.close_connection();
 }
 

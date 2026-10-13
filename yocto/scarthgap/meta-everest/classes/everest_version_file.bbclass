@@ -53,7 +53,6 @@ def everest_important_packages(d):
 
     # recipes from recipes-core
     important = [
-        "everest-admin-panel",
         "everest-cmake",
         "everest-core",
         "everest-framework",

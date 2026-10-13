@@ -3,6 +3,7 @@
 
 #include "interfaces_stub.hpp"
 #include <everest/logging.hpp>
+#include <generated/types/evse_manager.hpp>
 #include <utils/error/error_database.hpp>
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_manager_req.hpp>
@@ -411,6 +412,8 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     //   additionalProperties: false
     //   required:
     //     - id
+    //     - charge_mode
+    //     - hlc_capable
     //   properties:
     //     id:
     //       description: Id of the connector. Connectors should be numbered starting with 1 counting upwards
@@ -420,12 +423,29 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     //       description: Type of the connector
     //       type: string
     //       $ref: /evse_manager#/ConnectorTypeEnum
+    //     charge_mode:
+    //       description: AC or DC power topology of this connector's power path
+    //       type: string
+    //       $ref: /evse_manager#/ChargeMode
+    //     hlc_capable:
+    //       description: Whether an ISO 15118 session can ever occur on this connector
+    //       type: boolean
 
     EVLOG_debug << "Call call_get_evse: " << args.dump();
     publish_fn("evse_manager", "call_get_evse", req.index, args);
-    json default_result = R"({"id": 0,"connectors":[{"id":1}]})"_json;
-    default_result["id"] = req.index + 1;
-    auto result = get_cmd_response(default_result);
+    // Built from the generated type rather than a JSON literal: to_json always emits every required
+    // member, so adding a required field to Connector or Evse cannot leave this payload missing a
+    // key and undeserializable, which takes down the whole binary from fixture setup.
+    types::evse_manager::Connector connector;
+    connector.id = 1;
+    connector.charge_mode = types::evse_manager::ChargeMode::AC;
+    connector.hlc_capable = false;
+
+    types::evse_manager::Evse evse;
+    evse.id = req.index + 1;
+    evse.connectors = {connector};
+
+    auto result = get_cmd_response(json(evse));
     if (result) {
         EVLOG_debug << "result:             " << result.value().dump();
     }
@@ -562,7 +582,7 @@ std::optional<json> ModuleAdapter::evse_manager_call_update_allowed_energy_trans
 std::optional<json> ModuleAdapter::external_energy_limits_call_set_external_limits(const Requirement& req,
                                                                                    const json& args) {
     EVLOG_debug << "Call call_set_external_limits: " << args.dump();
-    publish_fn("external_energy_limits", "call_set_external_limits", args);
+    publish_fn("external_energy_limits", "call_set_external_limits", static_cast<int>(req.index), args);
     return {};
 }
 
@@ -813,6 +833,33 @@ std::optional<json> ModuleAdapter::system_call_reset(const Requirement& req, con
     return {};
 }
 
+std::optional<json> ModuleAdapter::system_call_configure_network(const Requirement& req, const json& args) {
+    // system interface
+    // configure_network:
+    //   description: >-
+    //     Request preparation of the given network interface (e.g. modem/APN/VPN bring-up). May answer directly
+    //     with Ready/Failed/Rejected, or with Processing, in which case the final outcome is published on the
+    //     configure_network_status var with the same request_id. Providers without network-configuration support
+    //     return NotSupported.
+    //   arguments:
+    //     request:
+    //       description: The network configuration request
+    //       type: object
+    //       $ref: /network#/ConfigureNetworkRequest
+    //   result:
+    //     description: Direct response to the configuration request
+    //     type: object
+    //     $ref: /network#/ConfigureNetworkResponse
+
+    EVLOG_debug << "Call configure_network: " << args.dump();
+    publish_fn("system", "call_configure_network", args);
+    auto result = get_cmd_response(R"({"status":"NotSupported"})"_json);
+    if (result) {
+        EVLOG_debug << "result:               " << result.value().dump();
+    }
+    return result;
+}
+
 std::optional<json> ModuleAdapter::system_call_set_system_time(const Requirement& req, const json& args) {
     // system interface
     // set_system_time:
@@ -966,6 +1013,7 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
     m_call_implementations.insert({"cancel_reservation", &ModuleAdapter::reservation_call_cancel_reservation});
     m_call_implementations.insert(
         {"clear_display_message", &ModuleAdapter::display_message_call_clear_display_message});
+    m_call_implementations.insert({"configure_network", &ModuleAdapter::system_call_configure_network});
     m_call_implementations.insert({"data_transfer", &ModuleAdapter::ocpp_data_transfer_call_data_transfer});
     m_call_implementations.insert({"enable_disable", &ModuleAdapter::evse_manager_call_enable_disable});
     m_call_implementations.insert({"exists_reservation", &ModuleAdapter::reservation_call_exists_reservation});
@@ -1088,6 +1136,7 @@ std::shared_ptr<Everest::config::ConfigServiceClient> ModuleAdapter::get_config_
 
 std::optional<json> ModuleAdapter::get_cmd_response(const std::optional<json>& default_response) {
     auto result = default_response;
+    std::lock_guard<std::mutex> lock(m_cmd_response_mutex);
     if (!m_cmd_response_list.empty()) {
         result = m_cmd_response_list.front();
         m_cmd_response_list.pop_front();
@@ -1124,6 +1173,7 @@ void ModuleAdapter::publish(const Requirement& req, const std::string& fn, json 
 }
 
 void ModuleAdapter::add_cmd_result(const json& data) {
+    std::lock_guard<std::mutex> lock(m_cmd_response_mutex);
     m_cmd_response_list.push_back(data);
 }
 

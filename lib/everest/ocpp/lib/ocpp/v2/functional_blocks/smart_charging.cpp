@@ -358,7 +358,8 @@ SmartCharging::SmartCharging(const FunctionalBlockContext& functional_block_cont
                              StopTransactionCallback stop_transaction_callback) :
     context(functional_block_context),
     set_charging_profiles_callback(set_charging_profiles_callback),
-    stop_transaction_callback(stop_transaction_callback) {
+    stop_transaction_callback(stop_transaction_callback),
+    m_offline_timer([this] { this->on_offline_deadline(); }) {
     // K28: only stand up the Dynamic-profile machinery (reaper thread + adaptive timer) when the
     // device model advertises support; otherwise leave the optional disengaged to save the resources.
     const bool supports_dynamic_profiles =
@@ -485,9 +486,18 @@ ProfileValidationResultEnum SmartCharging::validate_phase_conflict(const Chargin
 
 std::pair<bool, bool> SmartCharging::validate_profile_with_offline_time(const ChargingProfile& profile) {
     const auto time_disconnected = this->context.connectivity_manager.get_time_disconnected();
-    // Being online means the profile is valid
-    if (time_disconnected.time_since_epoch() == 0s) {
-        return {true, false};
+    {
+        auto state = this->m_offline_state.handle();
+        // Permanently invalid under an outage whose reconnect cleanup has not completed yet
+        if (state->pending_reconnect.has_value() && profile.invalidAfterOfflineDuration.value_or(false) &&
+            profile.maxOfflineDuration.has_value() &&
+            state->pending_reconnect.value() > std::chrono::seconds(profile.maxOfflineDuration.value())) {
+            return {false, true};
+        }
+        // Being online means the profile is valid
+        if (time_disconnected.time_since_epoch() == 0s || time_disconnected == state->restored) {
+            return {true, false};
+        }
     }
 
     // Absent maxOfflineDuration means the profile is valid independent of the offline time
@@ -496,13 +506,126 @@ std::pair<bool, bool> SmartCharging::validate_profile_with_offline_time(const Ch
     }
 
     // Not being offline for long enough means profile is valid
-    if (std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - time_disconnected)
-            .count() <= profile.maxOfflineDuration.value()) {
+    if (std::chrono::steady_clock::now() - time_disconnected <=
+        std::chrono::seconds(profile.maxOfflineDuration.value())) {
         return {true, false};
     }
 
     // Profile must be cleared when we are offline for too long and invalidAfterOfflineDuration is set
     return {false, profile.invalidAfterOfflineDuration.value_or(false)};
+}
+
+void SmartCharging::on_connection_lost() {
+    auto state = this->m_offline_state.handle();
+    const auto disconnected = this->context.connectivity_manager.get_time_disconnected();
+    if (disconnected.time_since_epoch() == 0s) {
+        return;
+    }
+    if (state->disconnected != disconnected) {
+        state->disconnected = disconnected;
+        state->processed_profiles.clear();
+        state->retry_delay = 1s;
+    }
+    this->m_offline_timer.timeout(0s);
+}
+
+void SmartCharging::on_offline_deadline() {
+    try {
+        bool notify_pending = false;
+        std::chrono::steady_clock::time_point restored;
+        std::optional<std::chrono::steady_clock::duration> pending_reconnect;
+        {
+            auto state = this->m_offline_state.handle();
+            if (!state->disconnected.has_value() && !state->pending_reconnect.has_value()) {
+                return;
+            }
+            pending_reconnect = state->pending_reconnect;
+            restored = state->restored;
+            const auto now = std::chrono::steady_clock::now();
+            std::optional<std::chrono::steady_clock::time_point> next_deadline;
+            for (const auto& profile : this->context.database_handler.get_all_charging_profiles()) {
+                if (!profile.maxOfflineDuration.has_value()) {
+                    continue;
+                }
+                if (pending_reconnect.has_value()) {
+                    if (pending_reconnect.value() <= std::chrono::seconds(profile.maxOfflineDuration.value())) {
+                        continue;
+                    }
+                    state->notify_pending = true;
+                } else {
+                    if (state->processed_profiles.count(profile.id) != 0) {
+                        continue;
+                    }
+                    const auto deadline =
+                        state->disconnected.value() + std::chrono::seconds(profile.maxOfflineDuration.value());
+                    if (deadline > now) {
+                        if (!next_deadline.has_value() || deadline < next_deadline.value()) {
+                            next_deadline = deadline;
+                        }
+                        continue;
+                    }
+                }
+                if (profile.invalidAfterOfflineDuration.value_or(false)) {
+                    const auto cleared_ids = this->context.database_handler.clear_charging_profiles_matching_criteria(
+                        profile.id, std::nullopt);
+                    for (const auto id : cleared_ids) {
+                        state->notify_pending = true;
+                        if (this->dynamic_schedule_manager.has_value()) {
+                            this->dynamic_schedule_manager->erase_tracking(id);
+                        }
+                    }
+                } else {
+                    state->notify_pending = true;
+                }
+                if (!pending_reconnect.has_value()) {
+                    state->processed_profiles.insert(profile.id);
+                }
+            }
+            if (next_deadline.has_value()) {
+                this->m_offline_timer.timeout(std::max(0ns, next_deadline.value() - std::chrono::steady_clock::now()));
+            } else {
+                this->m_offline_timer.stop();
+            }
+            notify_pending = state->notify_pending;
+        }
+        if (notify_pending) {
+            this->set_charging_profiles_callback();
+        }
+        {
+            auto state = this->m_offline_state.handle();
+            if (notify_pending) {
+                state->notify_pending = false;
+            }
+            if (pending_reconnect.has_value() && state->pending_reconnect == pending_reconnect &&
+                state->restored == restored) {
+                state->pending_reconnect.reset();
+                if (state->disconnected.has_value()) {
+                    this->m_offline_timer.timeout(0s);
+                }
+            }
+            state->retry_delay = 1s;
+        }
+        return;
+    } catch (const std::exception& e) {
+        EVLOG_error << "Could not process offline charging profile deadline: " << e.what();
+    } catch (...) {
+        EVLOG_error << "Could not process offline charging profile deadline: unknown exception";
+    }
+    auto state = this->m_offline_state.handle();
+    if (state->disconnected.has_value() || state->pending_reconnect.has_value()) {
+        this->m_offline_timer.timeout(state->retry_delay);
+        state->retry_delay = std::min(state->retry_delay * 2, 60s);
+    }
+}
+
+void SmartCharging::on_connection_restored(std::chrono::steady_clock::duration offline_duration) {
+    auto state = this->m_offline_state.handle();
+    this->m_offline_timer.stop();
+    // ConnectivityManager clears its timestamp after the reconnect callback returns.
+    state->restored = this->context.connectivity_manager.get_time_disconnected();
+    state->disconnected.reset();
+    state->pending_reconnect = std::max(state->pending_reconnect.value_or(offline_duration), offline_duration);
+    this->m_offline_timer.timeout(0s);
 }
 
 bool SmartCharging::has_dc_input_phase_control(const std::int32_t evse_id) const {
@@ -1261,6 +1384,14 @@ SetChargingProfileResponse SmartCharging::add_profile(ChargingProfile& profile, 
                     << " until next profile change";
     }
 
+    {
+        auto state = this->m_offline_state.handle();
+        if (state->disconnected.has_value()) {
+            state->processed_profiles.erase(profile.id);
+            this->m_offline_timer.timeout(0s);
+        }
+    }
+
     return response;
 }
 
@@ -1689,7 +1820,13 @@ SmartCharging::get_valid_profiles_for_evse(std::int32_t evse_id,
                 // Q12
                 EVLOG_debug << "Clearing profile with ID: " << profile.id
                             << ", because it is invalid after offline duration";
-                this->context.database_handler.clear_charging_profiles_matching_criteria(profile.id, std::nullopt);
+                const auto cleared_ids =
+                    this->context.database_handler.clear_charging_profiles_matching_criteria(profile.id, std::nullopt);
+                for (const auto id : cleared_ids) {
+                    if (this->dynamic_schedule_manager.has_value()) {
+                        this->dynamic_schedule_manager->erase_tracking(id);
+                    }
+                }
             }
             continue;
         }

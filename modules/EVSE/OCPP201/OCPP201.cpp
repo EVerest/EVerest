@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "OCPP201.hpp"
+#include <set>
 
 #include <fmt/core.h>
 #include <fstream>
@@ -381,6 +382,11 @@ ocpp::v2::ChargingRateUnitEnum get_unit_or_default(const std::string& unit_strin
 }
 
 void OCPP201::init() {
+    EVLOG_warning << "DEPRECATED MODULE\n"
+                     "  component       : OCPP201 (OCPP 2.0.1 / 2.1)\n"
+                     "  deprecated      : 2026.10.0, earliest removal 2027.04.0\n"
+                     "  migration guide : Migrate to the Combined OCPPmulti Module";
+
     invoke_init(*p_auth_provider);
     invoke_init(*p_auth_validator);
 
@@ -564,18 +570,17 @@ void OCPP201::ready() {
 
     callbacks.connector_effective_operative_status_changed_callback =
         [this](const int32_t evse_id, const int32_t connector_id, const ocpp::v2::OperationalStatusEnum new_status) {
-            if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Enable, 5000})) {
-                    this->charge_point->on_enabled(evse_id, connector_id);
-                }
+            const auto enable_state = (new_status == ocpp::v2::OperationalStatusEnum::Operative)
+                                          ? types::evse_manager::Enable_state::Enable
+                                          : types::evse_manager::Enable_state::Disable;
+            // returns the effective enabled state across all sources, not a success flag
+            const bool is_enabled =
+                this->r_evse_manager.at(evse_id - 1)
+                    ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+            if (is_enabled) {
+                this->charge_point->on_enabled(evse_id, connector_id);
             } else {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Disable, 5000})) {
-                    this->charge_point->on_unavailable(evse_id, connector_id);
-                }
+                this->charge_point->on_unavailable(evse_id, connector_id);
             }
         };
 
@@ -883,15 +888,16 @@ void OCPP201::ready() {
     }
 
     callbacks.connection_state_changed_callback =
-        [this](const bool is_connected, const int /*configuration_slot*/,
-               const ocpp::v2::NetworkConnectionProfile& /*network_connection_profile*/,
+        [this](const bool is_connected, const int configuration_slot,
+               const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                const ocpp::OcppProtocolVersion protocol_version) {
             if (is_connected) {
                 ocpp_protocol_version = protocol_version;
             } else {
                 ocpp_protocol_version = ocpp::OcppProtocolVersion::Unknown;
             }
-            this->p_ocpp_generic->publish_is_connected(is_connected);
+            this->p_ocpp_generic->publish_connection_status(conversions::to_everest_connection_status(
+                is_connected, configuration_slot, network_connection_profile, protocol_version));
         };
 
     callbacks.security_event_callback = [this](const ocpp::CiString<50>& event_type,
@@ -1016,8 +1022,8 @@ void OCPP201::ready() {
     this->everest_device_model_storage = std::make_shared<device_model::EverestDeviceModelStorage>(
         r_evse_manager, r_extensions_15118, this->evse_hardware_capabilities_map,
         this->evse_supported_energy_transfer_modes, this->evse_service_renegotiation_supported,
-        /*with_der_components=*/false, everest_device_model_database_path, device_model_database_migration_path,
-        get_config_service_client());
+        /*with_der_components=*/false, /*der_wired_evse_ids=*/std::set<int32_t>{}, everest_device_model_database_path,
+        device_model_database_migration_path, get_config_service_client());
 
     // initialize composed device model, this will be provided to the ChargePoint constructor
     auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
@@ -1087,6 +1093,7 @@ void OCPP201::ready() {
     // database and potentially triggers enable/disable callbacks at the evse.
     this->charge_point->start(boot_reason, false);
     this->started = true;
+    this->p_ocpp_generic->publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
     for (const auto& evse : this->r_evse_manager) {
@@ -1148,6 +1155,14 @@ void OCPP201::ready() {
             evse_event_queue.pop();
         }
     }
+}
+
+void OCPP201::shutdown() {
+    invoke_shutdown(*p_auth_validator);
+    invoke_shutdown(*p_auth_provider);
+    invoke_shutdown(*p_data_transfer);
+    invoke_shutdown(*p_ocpp_generic);
+    invoke_shutdown(*p_session_cost);
 }
 
 void OCPP201::charging_schedules_timer_callback() {
@@ -1536,6 +1551,9 @@ void OCPP201::process_session_started(const int32_t evse_id, const int32_t conne
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
     if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
         this->charge_point->on_session_started(evse_id, connector_id);
+    } else if (reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
     }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
@@ -1617,6 +1635,10 @@ void OCPP201::process_transaction_started(const int32_t evse_id, const int32_t c
     transaction_data->trigger_reason = trigger_reason;
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, tx_event);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);
+    if (transaction_started.reservation_id.has_value()) {
+        // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+        this->charge_point->on_reservation_cleared(evse_id, connector_id);
+    }
     if (tx_event == TxEvent::EV_CONNECTED) {
         this->everest_device_model_storage->update_connected_ev_available(evse_id, true);
     }
@@ -1763,7 +1785,19 @@ void OCPP201::process_deauthorized(const int32_t evse_id, const int32_t connecto
                                    const types::evse_manager::SessionEvent& session_event) {
     auto transaction_data = this->transaction_handler->get_transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = this->charge_point->request_value<int32_t>(
+            ocpp::v2::ControllerComponents::TxCtrlr, ocpp::v2::Variable{EV_CONNECTION_TIMEOUT_VAR_NAME},
+            ocpp::v2::AttributeEnum::Actual);
+        // E03.FR.05
+        if (ev_connection_timeout.status == ocpp::v2::GetVariableStatusEnum::Accepted and
+            ev_connection_timeout.value.has_value() and
+            this->transaction_handler->is_ev_connect_timeout(
+                evse_id, std::chrono::seconds(ev_connection_timeout.value.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = this->transaction_handler->submit_event(evse_id, TxEvent::DEAUTHORIZED);
     this->process_tx_event_effect(evse_id, tx_event_effect, session_event);

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef OCPP_COMMON_MESSAGE_QUEUE_HPP
 #define OCPP_COMMON_MESSAGE_QUEUE_HPP
 
@@ -99,12 +99,13 @@ class MalformedRpcMessage : public std::runtime_error {
 inline MessageTransmissionPriority get_message_transmission_priority(bool is_boot_notification_message, bool triggered,
                                                                      bool registration_already_accepted,
                                                                      bool is_transaction_related,
-                                                                     bool queue_all_message) {
+                                                                     bool queue_all_message,
+                                                                     bool queue_until_accepted = false) {
     if (registration_already_accepted || is_boot_notification_message || triggered) {
         return MessageTransmissionPriority::SendImmediately;
     }
 
-    if (is_transaction_related || queue_all_message) {
+    if (is_transaction_related || queue_all_message || queue_until_accepted) {
         return MessageTransmissionPriority::SendAfterRegistrationStatusAccepted;
     }
 
@@ -182,6 +183,7 @@ private:
     bool paused;
     // Transiently true while the queue is paused, but is waiting to unpause
     bool resuming;
+    std::deque<std::function<bool()>> idle_actions;
     bool running;
     bool new_message;
     bool is_registration_status_accepted;
@@ -547,8 +549,25 @@ public:
                 using namespace std::chrono_literals;
                 // It's safe to wait on the cv here because we're guaranteed to only lock this->message_mutex once
                 this->cv.wait(lk, [this]() {
-                    return !this->running || (!this->paused && this->new_message && this->in_flight == nullptr);
+                    return !this->running || (!this->idle_actions.empty() && this->in_flight == nullptr) ||
+                           (!this->paused && this->new_message && this->in_flight == nullptr);
                 });
+                if (this->running && !this->idle_actions.empty() && this->in_flight == nullptr) {
+                    const auto action = std::move(this->idle_actions.front());
+                    this->idle_actions.pop_front();
+                    const bool paused_for_action = !this->paused;
+                    if (paused_for_action) {
+                        this->pause();
+                    }
+                    const auto pause_resume_ctr_before = this->pause_resume_ctr;
+                    lk.unlock();
+                    const bool still_connected = action();
+                    lk.lock();
+                    if (paused_for_action && still_connected && pause_resume_ctr_before == this->pause_resume_ctr) {
+                        this->resume(std::chrono::seconds(0));
+                    }
+                    continue;
+                }
                 EVLOG_debug << "There are " << this->normal_message_queue.size()
                             << " messages in the normal message queue.";
                 EVLOG_debug << "There are " << this->transaction_message_queue.size()
@@ -664,8 +683,16 @@ public:
                     this->handle_timeout_or_callerror(std::nullopt);
                 } else {
                     EVLOG_debug << "Successfully sent message. UID: " << this->in_flight->uniqueId();
-                    this->in_flight_timeout_timer.timeout([this]() { this->handle_timeout_or_callerror(std::nullopt); },
-                                                          this->current_message_timeout(message->message_attempts));
+                    const auto message_id = message->uniqueId();
+                    this->in_flight_timeout_timer.timeout(
+                        [this, message, message_id]() {
+                            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+                            if (this->in_flight != message || this->in_flight->uniqueId() != message_id) {
+                                return;
+                            }
+                            this->handle_timeout_or_callerror(std::nullopt);
+                        },
+                        this->current_message_timeout(message->message_attempts));
                 }
                 if (this->transaction_message_queue.empty() && this->normal_message_queue.empty()) {
                     this->new_message = false;
@@ -753,7 +780,8 @@ public:
         } else {
             // all other messages are allowed to "jump the queue" to improve user experience
             // TODO: decide if we only want to allow this for a subset of messages
-            if (!this->paused || this->resuming || this->config.check_queue(control_message->messageType) ||
+            if (!this->paused || this->resuming || control_message->stall_until_accepted ||
+                this->config.check_queue(control_message->messageType) ||
                 control_message->messageType == M::BootNotification) {
                 this->add_to_normal_message_queue(control_message);
             }
@@ -856,6 +884,15 @@ public:
                 const std::lock_guard<std::recursive_mutex> lk(this->next_message_mutex);
                 next_message_to_send.reset();
             }
+            // The CALLRESULT payload must be an object.
+            // Anything else must not count as an answer to the message in flight and take the CALLERROR path instead.
+            if (enhanced_message.messageTypeId == MessageTypeId::CALLRESULT and
+                not(enhanced_message.message.size() > CALLRESULT_PAYLOAD and
+                    enhanced_message.message.at(CALLRESULT_PAYLOAD).is_object())) {
+                EVLOG_error << "Received a CALLRESULT without an object payload for message with UID: "
+                            << enhanced_message.uniqueId << ", treating it as CALLERROR";
+                enhanced_message.messageTypeId = MessageTypeId::CALLERROR;
+            }
             // we need to remove Call messages from in_flight if we receive a CallResult OR a CallError
 
             // TODO(kai): we need to do some error handling in the CallError case
@@ -932,6 +969,7 @@ public:
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
             this->running = false;
+            this->idle_actions.clear();
         }
         this->cv.notify_one();
         this->worker_thread.join();
@@ -949,8 +987,25 @@ public:
         this->resume_timer.stop();
         this->paused = true;
         this->resuming = false;
+        // A CALL sent on the lost connection is never answered, so settle it as a timeout
+        if (this->in_flight != nullptr) {
+            this->handle_timeout_or_callerror(std::nullopt);
+        }
         this->cv.notify_one();
         EVLOG_debug << "pause() notified message queue";
+    }
+
+    /// \brief Runs \p action on the queue thread once no CALL is in flight, in FIFO order and before further CALLs.
+    /// Sending is paused while \p action runs. If the queue was running before, it resumes after \p action when
+    /// \p action returns true because the socket is still connected and nobody paused or resumed meanwhile.
+    /// \p action must not call stop(), and stop() must not be called from the websocket receive thread while actions
+    /// may run.
+    void run_when_idle(std::function<bool()> action) {
+        {
+            const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
+            this->idle_actions.push_back(std::move(action));
+        }
+        this->cv.notify_one();
     }
 
     /// \brief Resumes the message queue
@@ -977,6 +1032,7 @@ public:
         {
             const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
             this->is_registration_status_accepted = true;
+            this->new_message = true;
         }
         this->cv.notify_all();
     }
@@ -1024,6 +1080,7 @@ public:
 
     /// \brief Set message_timeout to given \p timeout (in seconds)
     void update_message_timeout(const int timeout) {
+        const std::lock_guard<std::recursive_mutex> lk(this->message_mutex);
         this->config.message_timeout_seconds = timeout;
     }
 

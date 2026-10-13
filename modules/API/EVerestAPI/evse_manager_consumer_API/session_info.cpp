@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "session_info.hpp"
 #include <everest/logging.hpp>
@@ -49,6 +49,8 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             this->ext.state = EvseStateEnum::Preparing;
             break;
         case Event::TransactionStarted:
+            // EvseManager consumes the reservation at transaction start without sending ReservationEnd
+            this->ext.reserved = false;
             this->handle_transaction_started(session_event);
             break;
         case Event::ChargingStarted:
@@ -77,7 +79,11 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             this->handle_session_finished(session_event);
             break;
         case Event::ReservationStart:
+            this->ext.reserved = true;
+            break;
         case Event::ReservationEnd:
+            this->ext.reserved = false;
+            break;
         default:
             break;
         }

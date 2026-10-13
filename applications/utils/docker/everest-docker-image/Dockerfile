@@ -115,4 +115,4 @@ WORKDIR /opt/everest
 COPY --from=builder /opt/everest ./
 COPY ./scripts/initialize.sh /opt/everest
 
-CMD [ "/opt/everest/bin/manager", "--conf", "/opt/everest/config/config.yaml" ]
+CMD [ "/opt/everest/bin/manager", "--config", "/opt/everest/config/config.yaml" ]

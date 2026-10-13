@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #ifndef FUSION_CHARGER_MODBUS_EXTENSIONS__DUMMY_HPP
 #define FUSION_CHARGER_MODBUS_EXTENSIONS__DUMMY_HPP
 

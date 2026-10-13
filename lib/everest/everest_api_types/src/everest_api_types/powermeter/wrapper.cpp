@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "powermeter/wrapper.hpp"
 #include "generated/types/units_signed.hpp"
@@ -684,6 +684,20 @@ RequestStartTransaction_External to_external_api(const RequestStartTransaction_I
         result.identification_data = val.identification_data;
     }
     result.tariff_text = val.tariff_text;
+    return result;
+}
+
+Capabilities_Internal to_internal_api(Capabilities_External const& val) {
+    Capabilities_Internal result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
+    return result;
+}
+
+Capabilities_External to_external_api(Capabilities_Internal const& val) {
+    Capabilities_External result;
+    result.min_export_current_A = val.min_export_current_A;
+    result.min_import_current_A = val.min_import_current_A;
     return result;
 }
 

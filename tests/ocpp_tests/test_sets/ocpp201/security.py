@@ -4,15 +4,13 @@
 import asyncio
 import logging
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
 import pytest
-from OpenSSL import crypto
 from cryptography import x509
-from cryptography.hazmat.backends import default_backend
-from cryptography.hazmat.primitives._serialization import PublicFormat, Encoding
+from cryptography.hazmat.primitives.serialization import PublicFormat, Encoding
 from everest.testing.core_utils.controller.test_controller_interface import (
     TestController,
 )
@@ -396,8 +394,7 @@ class TestSecurityOCPPE2E(_BaseTest):
 
     @classmethod
     def _parse_certificate_request(cls, csr: str) -> _ParsedCSR:
-        request = x509.load_pem_x509_csr(
-            csr.encode("utf-8"), default_backend())
+        request = x509.load_pem_x509_csr(csr.encode("utf-8"))
         email_address = None
         if request.subject.get_attributes_for_oid(x509.NameOID.EMAIL_ADDRESS):
             email_address = request.subject.get_attributes_for_oid(
@@ -643,43 +640,38 @@ class TestSecurityOCPPE2E(_BaseTest):
     def assert_websocket_client_sslproto_certificate_equals_certificate(
         self, websocket_client_cert: dict[str, Any], certificate: str
     ):
-        x509_cert = crypto.load_certificate(
-            crypto.FILETYPE_PEM, certificate.encode("utf-8")
-        )
+        x509_cert = x509.load_pem_x509_certificate(certificate.encode("utf-8"))
 
         def _compare_websocket_and_cert_components(
-            websocket_components, cert_components
+            websocket_components, cert_name: x509.Name
         ):
             websocket_cert_subject_dict = {
                 k: v for ((k, v),) in websocket_components}
-            cert_subject_dict = {k: v for (k, v) in cert_components}
-            for websocket_key, cert_key in [
-                ("countryName", b"C"),
-                ("commonName", b"CN"),
-                ("organizationName", b"O"),
-                ("domainComponent", b"DC"),
+            cert_subject_dict = {
+                attribute.oid: attribute.value for attribute in cert_name}
+            for websocket_key, cert_oid in [
+                ("countryName", x509.NameOID.COUNTRY_NAME),
+                ("commonName", x509.NameOID.COMMON_NAME),
+                ("organizationName", x509.NameOID.ORGANIZATION_NAME),
+                ("domainComponent", x509.NameOID.DOMAIN_COMPONENT),
             ]:
                 assert websocket_cert_subject_dict.get(
                     websocket_key, ""
-                ) == cert_subject_dict.get(cert_key, b"").decode("utf-8")
+                ) == cert_subject_dict.get(cert_oid, "")
 
         _compare_websocket_and_cert_components(
-            websocket_client_cert["subject"], x509_cert.get_subject(
-            ).get_components()
+            websocket_client_cert["subject"], x509_cert.subject
         )
         _compare_websocket_and_cert_components(
-            websocket_client_cert["issuer"], x509_cert.get_issuer(
-            ).get_components()
+            websocket_client_cert["issuer"], x509_cert.issuer
         )
         assert (
             int(websocket_client_cert["serialNumber"], 16)
-            == x509_cert.get_serial_number()
+            == x509_cert.serial_number
         )
         assert datetime.strptime(
             websocket_client_cert["notBefore"], "%b %d %H:%M:%S %Y GMT"
-        ) == datetime.strptime(
-            x509_cert.get_notBefore().decode("utf-8"), "%Y%m%d%H%M%SZ"
-        )
+        ).replace(tzinfo=timezone.utc) == x509_cert.not_valid_before_utc
 
     @pytest.mark.csms_tls(verify_client_certificate=True)
     @pytest.mark.ocpp_config_adaptions(

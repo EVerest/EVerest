@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "everest-management-api-cli"
+version = "0.1.0"
+description = "Command line tool for driving EVerest's lifecycle and configuration management APIs over MQTT"
+readme = "README.md"
+license = { text = "Apache-2.0" }
+requires-python = ">=3.8"
+dependencies = [
+    "paho-mqtt>=1.6",
+    "pyyaml>=5.4",
+]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+]
+
+[project.optional-dependencies]
+test = ["pytest"]
+
+[project.scripts]
+everest-management-api-cli = "everest_management_api_cli.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.autopep8]
+max_line_length = 120

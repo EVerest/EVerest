@@ -1,5 +1,6 @@
-load("@rules_cc//cc:defs.bzl", "cc_library")
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
 load("//modules:module.bzl", "cc_everest_module")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
 
 cc_library(
     name = "auth_handler",
@@ -39,4 +40,45 @@ cc_everest_module(
         ":auth_handler",
     ],
     impls = IMPLS,
+)
+
+# Like the CMake test target, this compiles the lib sources instead of using
+# :auth_handler: the tests replace the generated kvs interface with the stub
+# under tests/stubs, which must be consistent across the whole binary.
+cc_test(
+    name = "Auth_tests",
+    srcs = glob([
+        "lib/*.cpp",
+        "include/*.hpp",
+    ]) + [
+        "tests/FakeAuthReceiver.hpp",
+        "tests/auth_tests.cpp",
+        "tests/reservation_tests.cpp",
+        "tests/stubs/generated/interfaces/kvs/Interface.hpp",
+    ],
+    copts = ["-std=c++17"],
+    includes = [
+        "include",
+        "tests",
+        "tests/stubs",
+    ],
+    local_defines = [
+        "BUILD_TZ_LIB=ON",
+        "USE_SYSTEM_TZ_DB=ON",
+        "USE_OS_TZDB=1",
+        "USE_AUTOLOAD=0",
+        "HAS_REMOTE_API=0",
+    ],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        "//interfaces:interfaces_lib",
+        "//lib/everest/framework",
+        "//lib/everest/helpers",
+        "//lib/everest/timer:libtimer",
+        "//lib/everest/util",
+        "//types:types_lib",
+        "@boost.asio",
+        "@com_github_HowardHinnant_date//:date",
+        "@googletest//:gtest_main",
+    ],
 )

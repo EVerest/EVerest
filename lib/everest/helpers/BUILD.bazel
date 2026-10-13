@@ -2,8 +2,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
     name = "helpers",
-    srcs = ["src/helpers.cpp"],
-    hdrs = ["include/everest/helpers/helpers.hpp",],
+    srcs = [
+        "src/helpers.cpp",
+        "src/phase_rotation.cpp",
+    ],
+    hdrs = [
+        "include/everest/helpers/helpers.hpp",
+        "include/everest/helpers/phase_rotation.hpp",
+    ],
     copts = ["-std=c++17"],
     includes = ["include"],
     visibility = ["//visibility:public"],

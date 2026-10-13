@@ -35,13 +35,20 @@ public:
     virtual void publish(const std::string& topic, const nlohmann::json& json) = 0;
 
     /// \brief publishes the given \p json on the given \p topic with the given \p qos
-    virtual void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false) = 0;
+    ///
+    /// A retained publish is remembered for clear_retained_topics() unless \p record_retained is false, which
+    /// is for retained topics that have to outlive the clear
+    virtual void publish(const std::string& topic, const nlohmann::json& json, QOS qos, bool retain = false,
+                         bool record_retained = true) = 0;
 
     /// \brief publishes the given \p data on the given \p topic with QOS level 0
     virtual void publish(const std::string& topic, const std::string& data) = 0;
 
     /// \brief publishes the given \p data on the given \p topic with the given \p qos
-    virtual void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false) = 0;
+    ///
+    /// \see publish(const std::string&, const nlohmann::json&, QOS, bool, bool) for \p record_retained.
+    virtual void publish(const std::string& topic, const std::string& data, QOS qos, bool retain = false,
+                         bool record_retained = true) = 0;
 
     /// \brief subscribes to the given \p topic with QOS level 0
     virtual void subscribe(const std::string& topic) = 0;
@@ -51,6 +58,20 @@ public:
 
     /// \brief unsubscribes from the given \p topic
     virtual void unsubscribe(const std::string& topic) = 0;
+
+    /// \brief sets a last-will-testament publishing \p json on the given \p topic
+    ///
+    /// MQTT allows exactly one last-will-testament per connection, and it must be set before connect().
+    /// \returns true if the last-will-testament was set, false otherwise (already set, called after connect,
+    ///          empty topic, or an underlying error)
+    virtual bool set_lwt(const std::string& topic, const nlohmann::json& json, QOS qos = QOS::QOS2,
+                         bool retain = true) = 0;
+
+    /// \brief sets a last-will-testament publishing \p data on the given \p topic
+    ///
+    /// \see set_lwt(const std::string&, const nlohmann::json&, QOS, bool)
+    virtual bool set_lwt(const std::string& topic, const std::string& data, QOS qos = QOS::QOS2,
+                         bool retain = true) = 0;
 
     /// \brief clears any previously published topics that had the retain flag set
     virtual void clear_retained_topics() = 0;

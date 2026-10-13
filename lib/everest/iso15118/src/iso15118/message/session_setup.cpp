@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/session_setup.hpp>
 
 #include <type_traits>
@@ -20,7 +20,9 @@ template <> void convert(const struct iso20_SessionSetupReqType& in, SessionSetu
 }
 
 template <> void convert(const struct iso20_SessionSetupResType& in, SessionSetupResponse& out) {
+    cb_convert_enum(in.ResponseCode, out.response_code);
     convert(in.Header, out.header);
+    cb_convert_enum(in.ResponseCode, out.response_code);
     out.evseid = CB2CPP_STRING(in.EVSEID);
 }
 

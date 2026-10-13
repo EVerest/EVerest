@@ -1,6 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
+
+#include <cstdint>
+
+#include <algorithm>
+#include <vector>
 
 #include "helper.hpp"
 
@@ -9,6 +14,7 @@
 #include <iso15118/d20/state/session_stop.hpp>
 
 #include <iso15118/d20/config.hpp>
+#include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/message/ac_der_iec_charge_loop.hpp>
 #include <iso15118/message/power_delivery.hpp>
 #include <iso15118/message/session_setup.hpp>
@@ -16,19 +22,19 @@
 
 using namespace iso15118;
 
+constexpr std::uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
+
 namespace dt = message_20::datatypes;
 
-SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
+namespace {
 
+session::EvseSetupConfig make_evse_setup(const std::vector<dt::ServiceCategory>& supported_energy_services) {
     const auto evse_id = std::string("everest se");
-    const std::vector<dt::ServiceCategory> supported_energy_services = {
-        dt::ServiceCategory::AC_DER_IEC,
-    };
     const auto cert_install = false;
     const std::vector<dt::Authorization> auth_services = {dt::Authorization::EIM};
     const std::vector<uint16_t> vas_services{};
 
-    d20::DcTransferLimits dc_limits;
+    const d20::DcTransferLimits dc_limits;
 
     d20::AcTransferLimits ac_limits;
     ac_limits.charge_power.max = dt::from_float(11000);
@@ -41,36 +47,50 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     der_iec_limits.nominal_charge_power = dt::from_float(11000);
     der_iec_limits.nominal_discharge_power = dt::from_float(11000);
 
-    d20::DcTransferLimits powersupply_limits;
+    const d20::DcTransferLimits powersupply_limits;
 
-    d20::DerSetupConfig der_setup_config;
+    d20::DerIecSetupConfig der_setup_config;
     der_setup_config.grid_connection_mode = iec::GridConnectionMode::GridConnected;
     der_setup_config.operating_mode = iec::OperatingMode::GridFollowing;
-
-    const auto no_der_function_selected = std::bitset<12>{};
 
     const std::vector<d20::ControlMobilityNeedsModes> control_mobility_modes = {
         {dt::ControlMode::Scheduled, dt::MobilityNeedsMode::ProvidedByEvcc}};
 
-    const d20::EvseSetupConfig evse_setup{evse_id,
-                                          supported_energy_services,
-                                          auth_services,
-                                          vas_services,
-                                          cert_install,
-                                          dc_limits,
-                                          ac_limits,
-                                          der_iec_limits,
-                                          control_mobility_modes,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          std::nullopt,
-                                          der_setup_config,
-                                          powersupply_limits};
+    session::EvseSetupConfig setup{};
+    setup.evse_id = evse_id;
+    setup.supported_energy_services = supported_energy_services;
+    setup.authorization_services = auth_services;
+    setup.supported_vas_services = vas_services;
+    setup.enable_certificate_install_service = cert_install;
+    setup.dc_limits = dc_limits;
+    setup.ac_limits = ac_limits;
+    setup.der_iec_limits = der_iec_limits;
+    setup.der_sae_limits = std::nullopt;
+    setup.control_mobility_modes = control_mobility_modes;
+    setup.der_iec_setup_config = der_setup_config;
+    setup.powersupply_limits = powersupply_limits;
+    return setup;
+}
+
+} // namespace
+
+SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
+
+    const std::vector<dt::ServiceCategory> supported_energy_services = {
+        dt::ServiceCategory::AC_DER_IEC,
+    };
+
+    const auto no_der_function_selected = std::bitset<12>{};
+
+    const auto evse_setup = make_evse_setup(supported_energy_services);
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
-    session::feedback::Callbacks callbacks{};
 
-    auto state_helper = FsmStateHelper(d20::SessionConfig(evse_setup), pause_ctx, callbacks);
+    std::vector<session::feedback::Signal> signals;
+    session::feedback::Callbacks callbacks{};
+    callbacks.signal = [&signals](session::feedback::Signal signal) { signals.push_back(signal); };
+
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
     auto ctx = state_helper.get_context();
 
     GIVEN("Bad case - Unknown session") {
@@ -299,7 +319,8 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
         present_power.present_active_power = {11, 3};
         state_helper.set_active_control_event(present_power);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
-        const d20::UpdateDynamicModeParameters dynamic_parameters = {std::time(nullptr) + 40, 95, 80};
+        const d20::UpdateDynamicModeParameters dynamic_parameters = {
+            d20::now_in_secc_time() / MICROSECONDS_PER_SECOND + 40, 95, 80};
         state_helper.set_active_control_event(dynamic_parameters);
         fsm.feed(d20::Event::CONTROL_MESSAGE);
 
@@ -356,12 +377,12 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
     GIVEN("Good case - Der control functions") {
         fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::AC_DER_IEC_ChargeLoop>()};
 
-        ctx.session_config.der_setup_config.supported_der_control_functions.clear();
+        ctx.session_config.der_iec_setup_config.supported_der_control_functions.clear();
 
-        ctx.session_config.der_setup_config
+        ctx.session_config.der_iec_setup_config
             .supported_der_control_functions[iec::DERControlName::DSOQSetpointProvision] =
             iec::DSOQSetpoint{50, std::nullopt, std::nullopt, false, 0};
-        ctx.session_config.der_setup_config
+        ctx.session_config.der_iec_setup_config
             .supported_der_control_functions[iec::DERControlName::DSOCosPhiSetpointProvision] =
             iec::DSOCosPhiSetpoint{345, std::nullopt, std::nullopt, iec::PowerFactorExcitation::OverExcited, true, 422};
 
@@ -534,6 +555,45 @@ SCENARIO("ISO15118-20 der iec ac charge loop state transitions") {
 
             const auto& session_setup_res = response_message.value();
             REQUIRE(session_setup_res.response_code == dt::ResponseCode::FAILED_SequenceError);
+        }
+    }
+
+    GIVEN("Good case - shutdown requested during power delivery") {
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+
+        d20::SelectedServiceParameters service_parameters = d20::SelectedServiceParameters(
+            dt::ServiceCategory::AC_DER_IEC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230, no_der_function_selected);
+
+        ctx.session = d20::Session(service_parameters);
+        ctx.request_shutdown();
+        signals.clear();
+
+        message_20::PowerDeliveryRequest req;
+        req.header.session_id = ctx.session.get_id();
+        req.header.timestamp = 1691411798;
+        req.processing = dt::Processing::Ongoing;
+        req.charge_progress = dt::Progress::Start;
+
+        state_helper.handle_request(req);
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("Session stops instead of entering the DER IEC charge loop") {
+            REQUIRE(result.transitioned() == true);
+            REQUIRE(fsm.get_current_state_id() == d20::StateID::SessionStop);
+
+            const auto response_message = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(response_message.has_value());
+
+            const auto& res = response_message.value();
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.status.has_value());
+            REQUIRE(res.status.value().notification == dt::EvseNotification::Terminate);
+
+            REQUIRE(std::find(signals.begin(), signals.end(), session::feedback::Signal::CHARGE_LOOP_FINISHED) !=
+                    signals.end());
+            REQUIRE(std::find(signals.begin(), signals.end(), session::feedback::Signal::AC_OPEN_CONTACTOR) !=
+                    signals.end());
         }
     }
 }

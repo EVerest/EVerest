@@ -43,6 +43,8 @@ std::string leaf_certificate_type_to_string(LeafCertificateType e) {
         return "MF";
     case LeafCertificateType::MO:
         return "MO";
+    case LeafCertificateType::V2G20:
+        return "V2G20";
     default:
         throw std::out_of_range("Could not convert LeafCertificateType to string");
     }
@@ -58,6 +60,8 @@ std::string leaf_certificate_type_to_filename(LeafCertificateType e) {
         return "MF_LEAF_";
     case LeafCertificateType::MO:
         return "MO_LEAF_";
+    case LeafCertificateType::V2G20:
+        return "SECC_LEAF_20_";
     default:
         throw std::out_of_range("Could not convert LeafCertificateType to string");
     }

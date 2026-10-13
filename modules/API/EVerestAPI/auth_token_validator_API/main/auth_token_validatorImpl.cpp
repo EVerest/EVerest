@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "auth_token_validatorImpl.hpp"
 
@@ -32,7 +32,7 @@ auto auth_token_validatorImpl::generic_request_reply(T const& default_value, Req
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::authorization::ValidationResult

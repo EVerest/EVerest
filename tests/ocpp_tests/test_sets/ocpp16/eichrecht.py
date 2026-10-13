@@ -5,6 +5,7 @@ from everest.testing.core_utils.controller.test_controller_interface import (
 )
 from everest.testing.ocpp_utils.charge_point_utils import (
     wait_for_and_validate,
+    wait_for_payload,
     TestUtility,
 )
 from everest.testing.ocpp_utils.central_system import ChargePoint16
@@ -145,6 +146,9 @@ async def test_meter_public_key(
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-two-connectors.yaml")
 )
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Core", "ClockAlignedDataInterval", 0)])
+)
 async def test_meter_signed_meter_values(
     charge_point_v16: ChargePoint16, test_utility: TestUtility, test_controller: TestController, test_config: OcppTestConfiguration,
 ):
@@ -177,7 +181,7 @@ async def test_meter_signed_meter_values(
 
     # Because the StartTransaction message can not contain a signed meter value, it is sent in a separate MeterValues message
     meter_values_msg: call.MeterValues = call.MeterValues(
-        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
+        **await wait_for_payload(
             test_utility,
             charge_point_v16,
             "MeterValues",
@@ -208,7 +212,7 @@ async def test_meter_signed_meter_values(
 
     # expect StopTransaction.req
     stop_transaction_msg: call.StopTransaction = call.StopTransaction(
-        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
+        **await wait_for_payload(
             test_utility,
             charge_point_v16,
             "StopTransaction",
@@ -242,6 +246,9 @@ async def test_meter_signed_meter_values(
 @pytest.mark.asyncio
 @pytest.mark.everest_core_config(
     get_everest_config_path_str("everest-config-two-connectors.yaml")
+)
+@pytest.mark.ocpp_config_adaptions(
+    GenericOCPP16ConfigAdjustment([("Core", "ClockAlignedDataInterval", 0)])
 )
 @pytest.mark.everest_config_adaptions(YetiSimulatorDisableMeterTransactionStartStrategy())
 async def test_meter_signed_meter_values_no_start(
@@ -287,7 +294,7 @@ async def test_meter_signed_meter_values_no_start(
 
     # expect StopTransaction.req
     stop_transaction_msg: call.StopTransaction = call.StopTransaction(
-        **await wait_for_and_validate(  # pyright: ignore[reportCallIssue]
+        **await wait_for_payload(
             test_utility,
             charge_point_v16,
             "StopTransaction",

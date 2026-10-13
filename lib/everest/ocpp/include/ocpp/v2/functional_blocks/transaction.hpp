@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <everest/util/async/monitor.hpp>
+
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -82,7 +84,7 @@ class TransactionBlock : public TransactionInterface {
 public:
     TransactionBlock(const FunctionalBlockContext& functional_block_context,
                      MessageQueue<v2::MessageType>& message_queue, AuthorizationInterface& authorization,
-                     AvailabilityInterface& availability, SmartChargingInterface& smart_charging,
+                     AvailabilityInterface& availability, SmartChargingInterface* smart_charging,
                      TariffAndCostInterface& tariff_and_cost, StopTransactionCallback stop_transaction_callback,
                      PauseChargingCallback pause_charging_callback,
                      std::optional<TransactionEventCallback> transaction_event_callback,
@@ -120,7 +122,7 @@ private:
     MessageQueue<v2::MessageType>& message_queue;
     AuthorizationInterface& authorization;
     AvailabilityInterface& availability;
-    SmartChargingInterface& smart_charging;
+    SmartChargingInterface* smart_charging;
     TariffAndCostInterface& tariff_and_cost;
     StopTransactionCallback stop_transaction_callback;
     PauseChargingCallback pause_charging_callback;
@@ -128,7 +130,9 @@ private:
     std::optional<TransactionEventResponseCallback> transaction_event_response_callback;
     ResetCallback reset_callback;
 
-    std::map<std::int32_t, std::pair<IdToken, std::int32_t>> remote_start_id_per_evse;
+    /// \brief Written by the message-handler thread (handle_remote_start_transaction_request), read and
+    /// erased by the EVerest module thread (on_authorized / on_charging_state_changed via transaction_event_req).
+    everest::lib::util::monitor<std::map<std::int32_t, std::pair<IdToken, std::int32_t>>> remote_start_id_per_evse;
     /// \brief Used when an 'OnIdle' reset is requested, to perform the reset after the charging has stopped.
     bool reset_scheduled;
     /// \brief If `reset_scheduled` is true and the reset is for a specific evse id, it will be stored in this member.

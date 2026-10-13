@@ -27,6 +27,13 @@ A typical EVerest deployment consists of the following components:
   between module instances;
 * A **manager process**, which orchestrates the execution of module instances.
 
+.. seealso::
+
+  How the manager process starts, restarts and shuts down module instances is
+  described in :ref:`Manager Lifecycle State Machine <exp-manager-lifecycle>`.
+  How the run configuration below is stored, booted from and changed at runtime
+  is described in :ref:`EVerest Configuration Service <exp-configuration-service>`.
+
 .. image:: images/everest-manager-modules-mqtt.png
   :width: 360px
   :align: center

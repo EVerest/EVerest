@@ -1,0 +1,53 @@
+{
+  "$schema": "custom_error_mapping.schema.json",
+  "generic/VendorError#YourCustomErrorType": {
+    "v16": {
+      "error_code": "OtherError",
+      "vendor_id": "com.example",
+      "vendor_error_code": "T-210",
+      "info": "Temperature error: ${message}"
+    },
+    "v2": {
+      "tech_code": "T-210",
+      "component_name": "Connector",
+      "variable_name": "Problem",
+      "severity": 5,
+      "tech_info": "Connector temperature error on EVSE ${evse}: ${message}"
+    }
+  },
+  "evse_board_support/MREC3HighTemperature": {
+    "v16": {
+      "error_code": "HighTemperature",
+      "vendor_id": "com.example",
+      "vendor_error_code": "T-210",
+      "info": "Temperature error: ${message}"
+    },
+    "v2": {
+      "tech_code": "T-210",
+      "severity": 3,
+      "tech_info": "The Connector temperature is high"
+    }
+  },
+  "generic/VendorError#SurgeProtectionDevice1": {
+    "v2": {
+      "tech_code": "SPD-1"
+    }
+  },
+  "generic/VendorError#SurgeProtectionDevice2": {
+    "v2": {
+      "tech_code": "SPD-2"
+    }
+  },
+  "connector_lock/MREC1ConnectorLockFailure": {
+    "v16": {
+      "error_code": "ConnectorLockFailure",
+      "vendor_id": "com.example",
+      "vendor_error_code": "L-110"
+    },
+    "v2": {
+      "tech_code": "L-110",
+      "component_name": "Connector",
+      "variable_name": "Problem"
+    }
+  }
+}

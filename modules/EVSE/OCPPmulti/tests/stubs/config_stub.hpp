@@ -11,9 +11,10 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string ChargePointConfigPath{"config"};
     int CompositeScheduleIntervalS{500};
     std::string CoreDatabasePath{"core.db"};
-    std::string CustomMrecErrorMapPath{};
+    std::string CustomErrorMappingPath{};
     std::string DatabasePath{};
     int DelayOcppStart{1};
+    bool DelegateNetworkConfigurationToSystem{false};
     std::string DeviceModelConfigMappings{};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
@@ -39,14 +40,17 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] std::string getCoreDatabasePath() const override {
         return CoreDatabasePath;
     }
-    [[nodiscard]] std::string getCustomMrecErrorMapPath() const override {
-        return CustomMrecErrorMapPath;
+    [[nodiscard]] std::string getCustomErrorMappingPath() const override {
+        return CustomErrorMappingPath;
     }
     [[nodiscard]] int getDelayOcppStart() const override {
         return DelayOcppStart;
     }
     [[nodiscard]] std::string getDatabasePath() const override {
         return DeviceModelConfigPath;
+    }
+    [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override {
+        return DelegateNetworkConfigurationToSystem;
     }
     [[nodiscard]] std::string getDeviceModelConfigMappings() const override {
         return DeviceModelConfigMappings;

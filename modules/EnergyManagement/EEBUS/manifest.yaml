@@ -31,34 +31,27 @@ config:
   certificate_path:
     description: Path to the certificate file used by eebus go client. If relative will be prefixed with everest prefix + etc/everest/certs. Otherwise absolute file path is used, required/used when manage_eebus_grpc_api_binary=true
     type: string
-    required: false
     default: eebus/evse_cert
   private_key_path:
     description: Path to the private key file used by eebus go client. If relative will be prefixed with everest prefix + etc/everest/certs. Otherwise absolute file path is used, required/used when manage_eebus_grpc_api_binary=true
     type: string
-    required: false
     default: eebus/evse_key
   eebus_grpc_api_binary_path:
     description: Path to the eebus grpc api binary. If relative will be prefixed with everest prefix + libexec. Otherwise absolute file path is used, required/used when manage_eebus_grpc_api_binary=true
     type: string
-    required: false
     default: eebus_grpc_api
   vendor_code:
     description: Vendor code for the configuration of the control service
     type: string
-    required: true
   device_brand:
     description: Device brand for the configuration of the control service
     type: string
-    required: true
   device_model:
     description: Device model for the configuration of the control service
     type: string
-    required: true
   serial_number:
     description: Serial number for the configuration of the control service
     type: string
-    required: true
   failsafe_control_limit_W:
     description: Failsafe control limit for LPC use case. This will also be used for the default consumption limit, unit is Watts
     type: integer

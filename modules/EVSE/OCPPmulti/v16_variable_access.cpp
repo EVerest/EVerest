@@ -3,12 +3,15 @@
 
 #include "v16_variable_access.hpp"
 
-#include <algorithm>
 #include <utility>
 
 #include <fmt/core.h>
 
 #include <everest/logging.hpp>
+#include <ocpp/common/constants.hpp>
+#include <ocpp/v2/comparators.hpp>
+#include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_helpers.hpp>
 
 namespace {
 
@@ -32,6 +35,12 @@ ocpp::v2::StatusInfo read_only_derived_status_info() {
     ocpp::v2::StatusInfo info;
     info.reasonCode = "ReadOnly";
     info.additionalInfo = ocpp::CiString<1024>(READ_ONLY_DERIVED_INFO);
+    return info;
+}
+
+ocpp::v2::StatusInfo reason_code_status_info(const std::string& reason_code) {
+    ocpp::v2::StatusInfo info;
+    info.reasonCode = reason_code;
     return info;
 }
 
@@ -67,8 +76,13 @@ namespace ocpp_multi {
 
 V16VariableAccess::V16VariableAccess(const ocpp::v16::VariableResolver& resolver,
                                      ocpp::v2::DeviceModelInterface& device_model, get_keys_fn get_keys,
-                                     set_key_fn set_key) :
-    m_resolver(resolver), m_device_model(device_model), m_get_keys(std::move(get_keys)), m_set_key(std::move(set_key)) {
+                                     set_key_fn set_key, on_connection_config_changed_fn on_connection_config_changed) :
+    m_resolver(resolver),
+    m_device_model(device_model),
+    m_connection_config_validator(device_model),
+    m_get_keys(std::move(get_keys)),
+    m_set_key(std::move(set_key)),
+    m_on_connection_config_changed(std::move(on_connection_config_changed)) {
 }
 
 void V16VariableAccess::warn_deprecated_key(const std::string& key) {
@@ -89,6 +103,9 @@ void V16VariableAccess::warn_deprecated_key(const std::string& key) {
 //   path 3, direct:     no 1.6 key -> device-model access; writes moderated by CVClass
 //   path 4, ambiguous:  CV mapped by several custom keys -> Rejected, never a silent pick
 // Checked in order 1, 4, 2, 3: ambiguity must be ruled out before a key counts as usable.
+// Connection config (CVClass::ConnectionConfig) is only reachable via path 3 or a standard key whose
+// reboot/reconnect semantics live in the 1.6 stack: custom mappings targeting connection-config CVs
+// are rejected when the mapping file is loaded, so a custom key on paths 1/2 can never carry one.
 std::vector<ocpp::v2::GetVariableResult>
 V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
     std::vector<ocpp::v2::GetVariableResult> results;
@@ -198,6 +215,12 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
     std::vector<SetVariableOutcome> outcomes;
     outcomes.reserve(requests.size());
 
+    const auto is_committed = [](ocpp::v2::SetVariableStatusEnum status) {
+        return status == ocpp::v2::SetVariableStatusEnum::Accepted ||
+               status == ocpp::v2::SetVariableStatusEnum::RebootRequired;
+    };
+    bool connection_config_changed = false;
+
     for (const auto& request : requests) {
         SetVariableOutcome outcome;
         outcome.result.component = request.component;
@@ -206,8 +229,24 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
         if (request.component.name.get().empty()) {
             // path 1, legacy key routing
             warn_deprecated_key(request.variable.name.get());
+            // a custom key mapping can target a connection-config CV (no standard key does)
+            const auto cv = m_resolver.key_to_cv(request.variable.name.get());
+            const bool connection_config =
+                cv.has_value() && m_resolver.classify(cv->first, cv->second) == ocpp::v16::CVClass::ConnectionConfig;
+            if (connection_config) {
+                if (const auto reason = m_connection_config_validator.validate_write(cv->first, cv->second,
+                                                                                     request.attributeValue.get())) {
+                    outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
+                    outcome.result.attributeStatusInfo = reason_code_status_info(reason.value());
+                    outcomes.push_back(std::move(outcome));
+                    continue;
+                }
+            }
             const ocpp::CiString<500> value = static_cast<std::string>(request.attributeValue);
             outcome.result.attributeStatus = convert(m_set_key(request.variable.name, value));
+            if (connection_config && is_committed(outcome.result.attributeStatus)) {
+                connection_config_changed = true;
+            }
             outcomes.push_back(std::move(outcome));
             continue;
         }
@@ -228,8 +267,22 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
                 outcomes.push_back(std::move(outcome));
                 continue;
             }
+            const bool connection_config =
+                m_resolver.classify(request.component, request.variable) == ocpp::v16::CVClass::ConnectionConfig;
+            if (connection_config) {
+                if (const auto reason = m_connection_config_validator.validate_write(
+                        request.component, request.variable, request.attributeValue.get())) {
+                    outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
+                    outcome.result.attributeStatusInfo = reason_code_status_info(reason.value());
+                    outcomes.push_back(std::move(outcome));
+                    continue;
+                }
+            }
             const ocpp::CiString<500> value = static_cast<std::string>(request.attributeValue);
             outcome.result.attributeStatus = convert(m_set_key(reverse.key.value(), value));
+            if (connection_config && is_committed(outcome.result.attributeStatus)) {
+                connection_config_changed = true;
+            }
             outcomes.push_back(std::move(outcome));
             continue;
         }
@@ -261,10 +314,23 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
             continue;
         }
 
-        // Free / ConnectionConfig: set_value only, never set_read_only_value
+        if (cv_class == ocpp::v16::CVClass::ConnectionConfig) {
+            // B09-style protection of the in-use network configuration, mirroring the 2.x SetVariables path
+            if (const auto reason = m_connection_config_validator.validate_write(request.component, request.variable,
+                                                                                 request.attributeValue.get())) {
+                outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::Rejected;
+                outcome.result.attributeStatusInfo = reason_code_status_info(reason.value());
+                outcomes.push_back(std::move(outcome));
+                continue;
+            }
+        }
+
+        // Free / ConnectionConfig: allow writing ReadOnly variables, mirroring the 2.x consumer path
+        // (Provisioning::set_variables); this API is a trusted local channel, and mutability models the
+        // CSMS-facing contract. ReadOnlyDerived CVs stay rejected above.
         const auto attribute = request.attributeType.value_or(ocpp::v2::AttributeEnum::Actual);
         const auto status = m_device_model.set_value(request.component, request.variable, attribute,
-                                                     request.attributeValue.get(), source);
+                                                     request.attributeValue.get(), source, true);
         // every committed write carries a monitor value (write-only values masked);
         // ConnectionConfig then forces RebootRequired semantics
         const bool committed = (status == ocpp::v2::SetVariableStatusEnum::Accepted) ||
@@ -276,13 +342,66 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
             outcome.result.attributeStatus = (cv_class == ocpp::v16::CVClass::ConnectionConfig)
                                                  ? ocpp::v2::SetVariableStatusEnum::RebootRequired
                                                  : status;
+            if (cv_class == ocpp::v16::CVClass::ConnectionConfig) {
+                connection_config_changed = true;
+            }
+            if (is_actual(request.attributeType)) {
+                clear_active_slot_override(request.component, request.variable);
+            }
         } else {
             outcome.result.attributeStatus = status;
         }
         outcomes.push_back(std::move(outcome));
     }
 
+    // Once per batch, mirroring the 2.x SetVariables handling
+    if (connection_config_changed && m_on_connection_config_changed) {
+        m_on_connection_config_changed();
+    }
+
     return outcomes;
+}
+
+// Mirrors the 2.x SetVariables path (Provisioning::handle_variable_changed, B09.FR.26/27): a committed
+// write to the SecurityCtrlr Identity/BasicAuthPassword global clears the per-slot override on the active
+// NetworkConfiguration slot, so connection-time reads fall back to the new global per B09.FR.16. Without
+// this, a per-slot value (e.g. written by the legacy 1.6 migration) masks the new global indefinitely.
+void V16VariableAccess::clear_active_slot_override(const ocpp::v2::Component& component,
+                                                   const ocpp::v2::Variable& variable) {
+    namespace CC = ocpp::v2::ControllerComponentVariables;
+    namespace NC = ocpp::v2::NetworkConfigurationComponentVariables;
+    const ocpp::v2::ComponentVariable cv = {component, variable, std::nullopt};
+    const ocpp::v2::Variable* slot_variable = nullptr;
+    const char* reason_tag = nullptr;
+    if (cv == CC::BasicAuthPassword) {
+        slot_variable = &NC::BasicAuthPassword;
+        reason_tag = "B09.FR.27";
+    } else if (cv == CC::SecurityCtrlrIdentity) {
+        slot_variable = &NC::Identity;
+        reason_tag = "B09.FR.26";
+    } else {
+        return;
+    }
+    const auto active_slot = ocpp::v2::get_optional_value<int>(m_device_model, CC::ActiveNetworkProfile);
+    if (!active_slot.has_value()) {
+        return;
+    }
+    const auto slot_cv = NC::get_component_variable(active_slot.value(), *slot_variable);
+    if (!slot_cv.variable.has_value()) {
+        return;
+    }
+    // clear_value bypasses value validation; per-slot BasicAuthPassword declares minLimit=16, which
+    // would reject the empty-string sentinel through set_value.
+    const auto status =
+        m_device_model.clear_value(slot_cv.component, slot_cv.variable.value(), ocpp::v2::AttributeEnum::Actual,
+                                   ocpp::VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+    if (status == ocpp::v2::SetVariableStatusEnum::Accepted) {
+        EVLOG_info << "Cleared " << slot_variable->name.get() << " on active NetworkConfiguration slot "
+                   << active_slot.value() << " (" << reason_tag << ")";
+    } else {
+        EVLOG_warning << "Could not clear " << slot_variable->name.get() << " on active NetworkConfiguration slot "
+                      << active_slot.value() << " (" << reason_tag << "): set rejected";
+    }
 }
 
 } // namespace ocpp_multi

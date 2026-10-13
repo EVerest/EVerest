@@ -203,10 +203,5 @@ std::vector<EnergyTransferModeEnum> iso15118_energy_transfer_modes_to_json_rpc_a
     return tmp;
 }
 
-void to_json(json& j, const EnergyTransferModeEnum& k) {
-    // the required parts of the type
-    j = energy_transfer_mode_enum_to_string(k);
-}
-
 } // namespace json_rpc_api
 } // namespace types

@@ -11,7 +11,7 @@ from everest.testing.core_utils.controller.test_controller_interface import Test
 
 sys.path.append(os.path.abspath(
     os.path.join(os.path.dirname(__file__), "../..")))
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility, ValidationMode
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility, ValidationMode
 from everest.testing.ocpp_utils.fixtures import *
 from ocpp.routing import on, after, create_route_map
 from ocpp.v201.enums import (IdTokenEnumType as IdTokenTypeEnum, TriggerMessageStatusEnumType)
@@ -125,9 +125,9 @@ async def test_F01_F02_F03(
         validate_status_notification_201,
     )
 
-    # send RequestStartTransaction while EVSE in unavailable and expect rejected
+    # send RequestStartTransaction targeting the unavailable EVSE and expect rejected (F01.FR.23)
     await charge_point_v201.request_start_transaction_req(
-        id_token=id_token, remote_start_id=remote_start_id
+        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
     )
     assert await wait_for_and_validate(
         test_utility,
@@ -157,22 +157,11 @@ async def test_F01_F02_F03(
 
     await asyncio.sleep(2)
 
-    # send RequestStartTransaction without evse_id and expect Rejected
+    # send RequestStartTransaction without evse_id and expect Accepted: with no evse_id given the
+    # request is accepted as long as at least one EVSE can start a transaction (F01.FR.07). The
+    # transaction is then started on the first available EVSE once the vehicle is plugged in.
     await charge_point_v201.request_start_transaction_req(
         id_token=id_token, remote_start_id=remote_start_id
-    )
-    assert await wait_for_and_validate(
-        test_utility,
-        charge_point_v201,
-        "RequestStartTransaction",
-        call_result201.RequestStartTransaction(
-            status=RequestStartStopStatusEnumType.rejected
-        ),
-    )
-
-    # send RequestStartTransaction and expect Accepted
-    await charge_point_v201.request_start_transaction_req(
-        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
     )
     assert await wait_for_and_validate(
         test_utility,
@@ -245,7 +234,7 @@ async def test_F01_F02_F03(
 
     # because AuthorizeRemoteStart is false we directly expect a TransactionEvent(eventType=Started)
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -295,7 +284,7 @@ async def test_F01_F02_F03(
     )
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "TransactionEvent", {
                 "eventType": "Ended"}
         )
@@ -307,9 +296,81 @@ async def test_F01_F02_F03(
     assert transaction.stopped_reason == ReasonEnumType.remote
     assert transaction.remote_start_id == remote_start_id
 
+    tx_meter_values = [
+        mv for mv in r.meter_value
+        if mv["sampled_value"][0]["context"] != ReadingContextEnumType.sample_clock
+    ]
     assert validate_measurands_match(
-        MeterValueType(**r.meter_value[0]), expected_ended_measurands
+        MeterValueType(**tx_meter_values[0]), expected_ended_measurands
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.parametrize(
+    "tx_stop_point", ["Authorized", "PowerPathClosed", "EVConnected,Authorized"]
+)
+async def test_E03_ev_connect_timeout(
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+    tx_stop_point: str,
+):
+    """
+    E03.FR.05
+    """
+
+    evse_id = 1
+    remote_start_id = 1
+    id_token = IdTokenType(id_token="DEADBEEF", type=IdTokenTypeEnum.iso14443)
+
+    for component, variable, value in [
+        ("TxCtrlr", "TxStartPoint", "Authorized"),
+        ("TxCtrlr", "TxStopPoint", tx_stop_point),
+        ("TxCtrlr", "EVConnectionTimeOut", "5"),
+        ("AuthCtrlr", "AuthorizeRemoteStart", "false"),
+    ]:
+        r: call_result201.SetVariables = (
+            await charge_point_v201.set_config_variables_req(component, variable, value)
+        )
+        set_variable_result: SetVariableResultType = SetVariableResultType(
+            **r.set_variable_result[0]
+        )
+        assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    await charge_point_v201.request_start_transaction_req(
+        id_token=id_token, remote_start_id=remote_start_id, evse_id=evse_id
+    )
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "RequestStartTransaction",
+        call_result201.RequestStartTransaction(
+            status=RequestStartStopStatusEnumType.accepted
+        ),
+    )
+
+    r: call201.TransactionEvent = call201.TransactionEvent(
+        **await wait_for_and_validate(
+            test_utility,
+            charge_point_v201,
+            "TransactionEvent",
+            {"eventType": "Started"},
+        )
+    )
+    assert r.trigger_reason == TriggerReasonEnumType.remote_start
+
+    # the EV never plugs in
+    r: call201.TransactionEvent = call201.TransactionEvent(
+        **await wait_for_and_validate(
+            test_utility,
+            charge_point_v201,
+            "TransactionEvent",
+            {"eventType": "Ended"},
+        )
+    )
+    transaction = TransactionType(**r.transaction_info)
+    assert r.trigger_reason == TriggerReasonEnumType.ev_connect_timeout
+    assert transaction.stopped_reason == ReasonEnumType.timeout
 
 
 @pytest.mark.asyncio
@@ -495,7 +556,7 @@ async def test_F06(
                 assert value.context == ReadingContextEnumType.trigger
 
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 1}
         )
     )
@@ -510,13 +571,13 @@ async def test_F06(
         r.status) == TriggerMessageStatusEnumType.accepted
 
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 1}
         )
     )
     check_meter_value(r)
     r: call201.MeterValues = call201.MeterValues(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility, charge_point_v201, "MeterValues", {"evseId": 2}
         )
     )
@@ -600,7 +661,7 @@ async def test_F06(
     test_controller.plug_in()
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -654,7 +715,7 @@ async def test_F06(
     test_controller.plug_in(connector_id=2)
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",
@@ -664,7 +725,7 @@ async def test_F06(
     transaction_2: TransactionType = TransactionType(**r.transaction_info)
 
     r: call201.TransactionEvent = call201.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v201,
             "TransactionEvent",

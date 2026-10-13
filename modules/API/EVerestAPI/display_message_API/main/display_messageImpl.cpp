@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "display_messageImpl.hpp"
 
@@ -32,7 +32,7 @@ auto display_messageImpl::generic_request_reply(T const& default_value, ReqT con
     if (!result) {
         return default_value;
     }
-    return result.value();
+    return std::move(*result);
 }
 
 types::display_message::SetDisplayMessageResponse

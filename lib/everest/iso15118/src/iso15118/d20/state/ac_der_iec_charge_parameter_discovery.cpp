@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/d20/state/ac_der_iec_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
 
@@ -248,12 +248,14 @@ handle_request(const message_20::DER_AC_ChargeParameterDiscoveryRequest& req, co
     message_20::DER_AC_ChargeParameterDiscoveryResponse res;
 
     if (not validate_and_setup_header(res.header, session, req.header.session_id)) {
-        return response_with_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        set_response_code(res, message_20::datatypes::ResponseCode::FAILED_UnknownSession);
+        return res;
     }
 
     if (not der_limits.has_value()) {
         logf_error("No DER limits are provided. Shutdown the session");
-        return response_with_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        set_response_code(res, dt::ResponseCode::FAILED_WrongChargeParameter);
+        return res;
     }
 
     // NOTE(SL): At this point, it's clear that it can only be DER TransferMode
@@ -294,13 +296,14 @@ handle_request(const message_20::DER_AC_ChargeParameterDiscoveryRequest& req, co
     mode.grid_connection_mode = grid_connection_mode;
     mode.der_control = der_control;
 
-    return response_with_code(res, message_20::datatypes::ResponseCode::OK);
+    set_response_code(res, message_20::datatypes::ResponseCode::OK);
+    return res;
 }
 
 } // namespace
 
 void AC_DER_IEC_ChargeParameterDiscovery::enter() {
-    m_ctx.log.enter_state("AC_DER_IEC_ChargeParameterDiscovery");
+    logf_debug("Enter state: AC_DER_IEC_ChargeParameterDiscovery");
     present_powers = m_ctx.cache_ac_present_power.value_or(AcPresentPower{});
 }
 
@@ -323,19 +326,20 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::DER_AC_CPDReqEnergyTransferMode>(req->transfer_mode);
 
+        // TODO(mlitre): Should be not a problem but maybe its better to assign the values directly
         const auto operating_mode =
-            static_cast<dt::OperatingMode>(m_ctx.session_config.der_setup_config.operating_mode);
+            static_cast<dt::OperatingMode>(m_ctx.session_config.der_iec_setup_config.operating_mode);
         const auto grid_connection_mode =
-            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_setup_config.grid_connection_mode);
+            static_cast<dt::GridConnectionMode>(m_ctx.session_config.der_iec_setup_config.grid_connection_mode);
 
-        const auto& der_functions = m_ctx.session_config.der_setup_config.supported_der_control_functions;
+        const auto& der_functions = m_ctx.session_config.der_iec_setup_config.supported_der_control_functions;
         const auto& selected_services = m_ctx.session.get_selected_services();
 
         const auto der_control = create_der_control(selected_services.selected_der_control_functions, der_functions);
 
         const auto res =
             handle_request(*req, m_ctx.session, m_ctx.session_config.ac_limits, present_powers,
-                           m_ctx.session_config.der_limits, operating_mode, grid_connection_mode, der_control);
+                           m_ctx.session_config.der_iec_limits, operating_mode, grid_connection_mode, der_control);
 
         m_ctx.respond(res);
 
@@ -344,8 +348,8 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             return {};
         }
 
-        // TODO(SL): Check [V2G20-3154]: It is possible that the EV sends a ServiceDiscoveryReq if the settings from
-        // evse is not accepted from the ev.
+        // An EV that does not accept the settings may restart the service selection, but only once this
+        // state has finished. The schedule exchange state answers that ServiceDiscoveryReq.
 
         m_ctx.feedback.ac_limits(req->transfer_mode);
 
@@ -358,11 +362,12 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
         const auto res = handle_request(*req, m_ctx.session);
 
         m_ctx.respond(res);
+        mark_session_stop_response(m_ctx, *req, res);
         m_ctx.session_stopped = true;
 
         return {};
     }
-    m_ctx.log("expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
+    logf_warning("Expected AC_ChargeParameterDiscovery! But code type id: %d", variant->get_type());
     m_ctx.session_stopped = true;
 
     // Sequence Error

@@ -354,9 +354,11 @@ This module currently deviates from the MREC specification in the following poin
 * Simultaneous errors: MREC requires reporting simultaneous errors by reporting them in a single **StatusNotification.req** by separating 
   the information of the fields **vendorId** and **info** by a semicolon. This module sends one **StatusNotification.req** per individual error 
   because of the limited maximum characters of the **info** field.
-* MREC requires always using the value **Faulted** for the **status** field when reporting an error. The OCPP1.6 specification defines the 
-  **Faulted** value as follows: "When a Charge Point or connector has reported an error and is not available for energy delivery.  
+* MREC requires always using the value **Faulted** for the **status** field when reporting an error. The OCPP1.6 specification defines the
+  **Faulted** value as follows: "When a Charge Point or connector has reported an error and is not available for energy delivery.
   (Inoperative)." This module, therefore, only reports **Faulted** when the Charge Point is not available for energy delivery.
+
+  When an MREC error is raised, the EVerest error message is written to the ``info`` property instead of ``vendorId``.
 
 Energy Management and Smart Charging Integration
 ================================================
@@ -440,10 +442,18 @@ The following module configuration parameters are relevant for device model back
 * **DeviceModelConfigMappings**: optional YAML file mapping non-standard OCPP 1.6 keys to device model
   component/variable targets; only used with **"device_model_with_migration"**. The built-in mapping for
   standard OCPP 1.6 keys is documented in
-  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
+  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
+  Mappings must not target the connection configuration (``NetworkConfiguration`` slots, the
+  ``OCPPCommCtrlr`` network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity``
+  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys, and a mapping file
+  containing such a target is rejected at startup
 * **Ocpp16NetworkConfigSlot**: ``NetworkConfiguration`` slot number that OCPP 1.6 network connection
   details (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ``HostName``,
-  ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip)
+  ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip).
+  The migration pins the slot's ``OcppInterface`` to ``"Any"`` unless the component config sets an explicit
+  attribute value, points ``OCPPCommCtrlr/ActiveNetworkProfile`` at the slot, and requires a
+  ``NetworkConfiguration_<N>`` component config for the slot (missing: the network part is skipped with an
+  error log)
 * **EnableDeviceModelFallbackToLegacyJson**: if ``true`` and device model initialization or integrity check
   fails at startup, the module falls back to the legacy JSON backend; requires **ChargePointConfigPath** to
   exist (default: ``false``)

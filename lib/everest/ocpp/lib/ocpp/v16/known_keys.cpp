@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v2/ocpp_enums.hpp"
 #include <everest/logging.hpp>
@@ -51,6 +51,7 @@ using ocpp::v16::keys::valid_keys;
     key(WebsocketPingPayload) \
     key(WebsocketPongTimeout) \
     key(QueueAllMessages) \
+    key(ReportClearedErrors) \
     key(MessageTypesDiscardForQueueing) \
     key(MessageQueueSizeThreshold) \
     key(ConnectorPhaseRotationMaxLength) \
@@ -77,7 +78,6 @@ using ocpp::v16::keys::valid_keys;
     key(CertificateStoreMaxLength) \
     key(LocalAuthListMaxLength) \
     key(SendLocalListMaxLength) \
-    key(CustomDisplayCostAndPrice) \
     key(NumberOfDecimalsForCostValues) \
     key(CustomMultiLanguageMessages) \
     key(SupportedLanguages) \

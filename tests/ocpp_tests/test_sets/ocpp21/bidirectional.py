@@ -23,7 +23,7 @@ from everest_test_utils import * # Needs to be before the datatypes below since 
 from ocpp.v21.enums import (Action, ConnectorStatusEnumType, AuthorizationStatusEnumType, EnergyTransferModeEnumType, AttributeEnumType, GetVariableStatusEnumType, NotifyEVChargingNeedsStatusEnumType, NotifyAllowedEnergyTransferStatusEnumType)
 from validations import validate_status_notification_201
 from everest.testing.core_utils._configuration.libocpp_configuration_helper import GenericOCPP2XConfigAdjustment
-from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, TestUtility
+from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate, wait_for_payload, TestUtility
 # fmt: on
 
 log = logging.getLogger("bidirectionalTest")
@@ -483,7 +483,7 @@ async def test_q02_no_service_renegotiation(
     )
     test_controller.swipe(id_token.id_token)
     r: call21.TransactionEvent = call21.TransactionEvent(
-        **await wait_for_and_validate(
+        **await wait_for_payload(
             test_utility,
             charge_point_v21,
             "TransactionEvent",

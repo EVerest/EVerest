@@ -1,6 +1,6 @@
 /*
  * SPDX-License-Identifier: Apache-2.0
- * Copyright 2026 Pionix GmbH and Contributors to EVerest
+ * Copyright Pionix GmbH and Contributors to EVerest
  *
  * cbv2g_json_wrapper.h - JSON-based API wrapper for libcbv2g
  *
@@ -48,11 +48,11 @@ extern "C" {
 #define CBV2G_ERROR_UNKNOWN_MESSAGE     -8
 #define CBV2G_ERROR_INTERNAL            -9
 
-/* Namespace constants matching Josev's Namespace enum.
- * Only the App Handshake (SAP) namespace is supported in this initial PR.
- * Per-protocol namespaces are added in subsequent PRs together with their
- * converter implementations. */
+/* Namespace constants matching Josev's Namespace enum. */
 #define NS_SAP                  "urn:iso:15118:2:2010:AppProtocol"
+#define NS_DIN_MSG_DEF          "urn:din:70121:2012:MsgDef"
+#define NS_ISO_V2_MSG_DEF       "urn:iso:15118:2:2013:MsgDef"
+#define NS_XML_DSIG             "http://www.w3.org/2000/09/xmldsig#"
 
 /**
  * @brief Encode a JSON message to EXI format

@@ -3,6 +3,8 @@
 
 #include "v2_chargepoint.hpp"
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 #include <algorithm>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
@@ -300,9 +302,12 @@ void ChargePointV2::cb_variable_listener(
     const std::string& value_previous, const std::string& value_current) {
     // copy under lock, invoke outside
     const listener_t listener = *m_variable_listener.handle();
-    if (listener != nullptr) {
-        listener(component, variable, value_current);
+    if (listener == nullptr) {
+        return;
     }
+    const bool write_only =
+        attribute.mutability.value_or(ocpp::v2::MutabilityEnum::ReadWrite) == ocpp::v2::MutabilityEnum::WriteOnly;
+    listener(component, variable, write_only ? std::string{} : value_current);
 }
 
 std::optional<bool> ChargePointV2::get_bool(const ocpp::v2::Component& component_id,
@@ -401,20 +406,21 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
                                                          const auto& network_connection_profile) {
         return m_callbacks_ptr->cb_validate_network_profile(network_connection_profile);
     };
-    callbacks.configure_network_connection_profile_callback = [this](auto /* configuration_slot */,
-                                                                     const auto& /* network_connection_profile */) {
-        return m_callbacks_ptr->cb_configure_network_connection_profile();
+    callbacks.configure_network_connection_profile_callback = [this](auto&&... args) {
+        return m_callbacks_ptr->cb_configure_network_connection_profile(args...);
     };
     callbacks.all_connectors_unavailable_callback = [this]() { m_callbacks_ptr->cb_all_connectors_unavailable(); };
     callbacks.transaction_event_callback = [this](const ocpp::v2::TransactionEventRequest& transaction_event) {
         // in 2.x the session id doubles as the transaction id
-        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get());
+        m_callbacks_ptr->cb_transaction_event(transaction_event, transaction_event.transactionInfo.transactionId.get(),
+                                              transaction_event.timestamp);
     };
     callbacks.transaction_event_response_callback =
         [this](const ocpp::v2::TransactionEventRequest& transaction_event,
                const ocpp::v2::TransactionEventResponse& transaction_event_response) {
             m_callbacks_ptr->cb_transaction_event_response(transaction_event, transaction_event_response,
-                                                           transaction_event.transactionInfo.transactionId.get());
+                                                           transaction_event.transactionInfo.transactionId.get(),
+                                                           transaction_event.timestamp);
         };
     callbacks.boot_notification_callback = [this](auto&&... args) { m_callbacks_ptr->cb_boot_notification(args...); };
     callbacks.set_display_message_callback = [this](auto&&... args) {
@@ -428,9 +434,14 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
     };
     callbacks.set_running_cost_callback = [this](auto&&... args) { m_callbacks_ptr->cb_set_running_cost(args...); };
     callbacks.data_transfer_callback = [this](auto&&... args) { return m_callbacks_ptr->cb_data_transfer(args...); };
-    callbacks.connection_state_changed_callback =
-        [this](auto is_connected, auto /*configuration_slot*/, const auto& /*network_connection_profile*/,
-               auto protocol_version) { m_callbacks_ptr->cb_connection_state_changed(is_connected, protocol_version); };
+    callbacks.connection_state_changed_callback = [this](auto is_connected, auto configuration_slot,
+                                                         const auto& network_connection_profile,
+                                                         auto protocol_version) {
+        m_callbacks_ptr->cb_connection_state_changed(
+            module::conversions::to_everest_connection_status(is_connected, configuration_slot,
+                                                              network_connection_profile, protocol_version),
+            protocol_version);
+    };
     callbacks.security_event_callback = [this](const auto& event_type, const auto& tech_info) {
         m_callbacks_ptr->cb_security_event(event_type, tech_info);
     };
@@ -461,12 +472,8 @@ void ChargePointV2::init(init_args_t& args) {
         args.v2_device_model_config_path);
 
     // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = std::make_unique<module::device_model::ComposedDeviceModelStorage>();
-
-    // register both device model storages
-    // note - this processing causes a slight delay, scope for performance tuning
-    composed_device_model_storage->register_device_model_storage("OCPP", std::move(libocpp_device_model_storage));
-    composed_device_model_storage->register_device_model_storage("EVEREST", args.everest_device_model);
+    auto composed_device_model_storage = module::device_model::make_composed_device_model_storage(
+        std::move(libocpp_device_model_storage), args.everest_device_model);
 
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
@@ -585,14 +592,19 @@ void ChargePointV2::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRe
 }
 void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
-    if (event.error) {
-        // TODO(james-ctc): needs tidying up. MREC error map is in generic_ocpp
-        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {});
-        std::string updated;
-        m_callbacks_ptr->map_error(event.error->type, updated);
-        event_data.techCode = std::move(updated);
-        m_charge_point->on_event({event_data});
+    if (!event.error) {
+        return;
     }
+
+    m_charge_point->on_event({convert_error(event)});
+}
+
+ocpp::v2::EventData ChargePointV2::convert_error(const EventInfo& event) {
+    const auto& error = event.error.value();
+    auto event_data = ocpp_module_common::to_v2_event_data(error, event.event_cleared, event.event_id);
+    // the configured mapping file only overrides single fields of the built-in result
+    const auto custom = m_callbacks_ptr->custom_error_mapping();
+    return custom != nullptr ? custom->overlay(error, std::move(event_data)) : event_data;
 }
 void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
                                         const types::evse_manager::SessionEvent& session_event) {
@@ -604,7 +616,15 @@ void ChargePointV2::on_event_deauthorised(std::int32_t evse_id, std::int32_t con
     check_configured("on_event_deauthorised");
     auto transaction_data = m_callbacks_ptr->transaction_data(evse_id);
     if (transaction_data != nullptr) {
-        transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        const auto ev_connection_timeout = get_ev_connection_timeout();
+        // E03.FR.05
+        if (ev_connection_timeout.has_value() and m_callbacks_ptr->transaction_is_ev_connect_timeout(
+                                                      evse_id, std::chrono::seconds(ev_connection_timeout.value()))) {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::EVConnectTimeout;
+            transaction_data->stop_reason = ocpp::v2::ReasonEnum::Timeout;
+        } else {
+            transaction_data->trigger_reason = ocpp::v2::TriggerReasonEnum::StopAuthorized;
+        }
     }
     const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, module::TxEvent::DEAUTHORIZED);
     process_tx_event_effect(evse_id, tx_event_effect, session_event);
@@ -759,6 +779,9 @@ ChargePointV2::on_event_session_started(std::int32_t evse_id, std::int32_t conne
         process_tx_event_effect(evse_id, tx_event_effect, session_event);
         if (session_started.reason == types::evse_manager::StartSessionReason::EVConnected) {
             m_charge_point->on_session_started(evse_id, connector_id);
+        } else if (reservation_id.has_value()) {
+            // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+            m_charge_point->on_reservation_cleared(evse_id, connector_id);
         }
         result = tx_event == module::TxEvent::EV_CONNECTED;
     } else {
@@ -891,6 +914,10 @@ ChargePointV2::on_event_transaction_started(std::int32_t evse_id, std::int32_t c
             transaction_data->trigger_reason = trigger_reason;
             const auto tx_event_effect = m_callbacks_ptr->transaction_event(evse_id, tx_event);
             process_tx_event_effect(evse_id, tx_event_effect, session_event);
+            if (transaction_started.reservation_id.has_value()) {
+                // H03.FR.09/10: authorizing with the reserving token consumes the reservation
+                m_charge_point->on_reservation_cleared(evse_id, connector_id);
+            }
             result = tx_event == module::TxEvent::EV_CONNECTED;
         }
     } else {

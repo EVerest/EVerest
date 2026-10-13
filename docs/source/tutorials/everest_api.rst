@@ -63,11 +63,10 @@ Configuration
 The ``config/bringup/config-bringup-EVerestAPI-entrypoint.yaml`` configuration file demonstrates the API in action.
 It does not implement internal functionality, but provides several API and BringUp modules for manual interaction.
 
-.. hint::
+.. note::
 
-    It is advisable to set the access specification in the configuration to ``allow_global_read: true`` for EVerestAPI modules.
-    This allows the modules to determine if multiple EVerestAPI modules are active, preventing the initial ``ready_beacon``
-    from being sent multiple times.
+    Set the access specification ``allow_global_read: true`` for every EVerestAPI module.
+    Without it, the ``ready_beacon`` gives no guarantee, see :ref:`tutorial_everest_api_ready_beacon`.
 
 Example
 =======
@@ -82,7 +81,7 @@ Start the example configuration:
 
 You will see the EVerest log alongside two panes showing power supply control UIs.
 
-A ``everest_api/ready_beacon`` with an empty JSON payload indicates that an EVerestAPI is available.
+A ``everest_api/ready_beacon`` with an empty JSON payload indicates that the entrypoint API can be queried.
 Following this, messages will be periodically published to topics such as:
 ``everest_api/1/power_supply_DC/ps_dc_1/e2m/heartbeat``.
 
@@ -185,12 +184,52 @@ This pattern applies to both directions (API module calling a client command and
 entrypoint_API
 ==============
 
+.. warning::
+
+   The entrypoint_API is currently **experimental**: its channels, operations and message
+   payloads may change without further notice. It is exempt from the stability guarantees
+   and the deprecation period of the EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
+
 The **entrypoint_API** allows clients to discover available API endpoints dynamically.
+
+.. _tutorial_everest_api_ready_beacon:
 
 ready_beacon
 ------------
 
 The ``everest_api/ready_beacon`` mentioned earlier is part of this discovery system.
+Its payload is an empty JSON object and it is not retained.
+
+Each EVerestAPI module (any module whose type ends in ``_API``) reads the module configurations it has access to.
+The module with the alphabetically lowest module id among the API modules it can see sends the beacon once,
+at the end of its ``ready()``. A module can always read its own configuration, but reading the others requires
+``allow_global_read: true``:
+
+.. code-block:: yaml
+
+    active_modules:
+      dm_1:
+        module: display_message_API
+        access:
+          config:
+            allow_global_read: true
+      ps_dc_1:
+        module: power_supply_DC_API
+        access:
+          config:
+            allow_global_read: true
+
+Without this setting, each API module sees only itself and sends its own beacon.
+
+Clients must follow these rules:
+
+- Be prepared to receive the beacon more than once.
+- If every API module has ``allow_global_read: true``, the beacon guarantees that the entrypoint_API is ready:
+  ``discover`` and ``query-modules/{api_type}`` requests are answered. Without that setting it guarantees nothing.
+- The beacon never means that the API modules themselves are ready. Use each API's own mechanisms, such as
+  ``heartbeat``, to determine that (see `Communication Monitoring`_).
+- The beacon is not retained. A client connecting after it was sent should send a ``discover`` request on its own.
 
 Discovering the API
 -------------------

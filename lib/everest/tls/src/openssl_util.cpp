@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2024 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 
 #include <cassert>
 #include <cstddef>
@@ -8,12 +8,15 @@
 #include <iostream>
 #include <memory>
 #include <string>
+#include <vector>
 
 #include <everest/tls/openssl_util.hpp>
 
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 
 #include <openssl/bio.h>
+#include <openssl/bn.h>
+#include <openssl/core_names.h>
 #include <openssl/crypto.h>
 #include <openssl/ecdsa.h>
 #include <openssl/err.h>
@@ -423,6 +426,27 @@ pkey_ptr load_private_key(const char* filename, const char* password) {
         BIO_free(bio);
     }
 
+    return private_key;
+}
+
+pkey_ptr pem_to_private_key(const std::string& pem, const char* password) {
+    {
+        OpenSSLProvider provider; // ensure providers are loaded
+    }
+
+    pkey_ptr private_key{nullptr, nullptr};
+    auto* bio = BIO_new_mem_buf(pem.data(), static_cast<int>(pem.size()));
+    if (bio != nullptr) {
+        // password is passed to password_cb() as parameter u which is never
+        // written to, hence const_cast is okay
+        auto* pkey = PEM_read_bio_PrivateKey(bio, nullptr, &password_cb, const_cast<char*>(password));
+        if (pkey != nullptr) {
+            private_key = pkey_ptr{pkey, &EVP_PKEY_free};
+        } else {
+            log_error("PEM_read_bio_PrivateKey");
+        }
+        BIO_free(bio);
+    }
     return private_key;
 }
 
@@ -876,14 +900,36 @@ bool certificate_subject_public_key_sha_1(openssl::sha_1_digest_t& digest, const
     assert(cert != nullptr);
 
     bool bResult{false};
-    const auto* pubkey = X509_get_X509_PUBKEY(cert);
-    if (pubkey != nullptr) {
-        unsigned char* data{nullptr};
-        const auto len = i2d_X509_PUBKEY(pubkey, &data);
-        if (len > 0) {
-            bResult = openssl::sha_1(data, len, digest);
+    const auto* pubkey = X509_get0_pubkey(cert);
+    if (pubkey == nullptr) {
+        return bResult;
+    }
+
+    if (EVP_PKEY_is_a(pubkey, "RSA")) {
+        // RFC 6066 6: the big-endian modulus without leading zero bytes
+        BIGNUM* modulus{nullptr};
+        if (EVP_PKEY_get_bn_param(pubkey, OSSL_PKEY_PARAM_RSA_N, &modulus) == 1) {
+            const auto len = BN_num_bytes(modulus);
+            if (len > 0) {
+                std::vector<std::uint8_t> bytes(static_cast<std::size_t>(len));
+                if (BN_bn2bin(modulus, bytes.data()) == len) {
+                    bResult = openssl::sha_1(bytes.data(), bytes.size(), digest);
+                }
+            }
+            BN_free(modulus);
         }
-        OPENSSL_free(data);
+        return bResult;
+    }
+
+    // RFC 6066 6: for DSA and ECDSA keys the hash covers the subjectPublicKey
+    // BIT STRING contents, not the whole SubjectPublicKeyInfo
+    const auto* key_bits = X509_get0_pubkey_bitstr(cert);
+    if (key_bits != nullptr) {
+        const auto* data = ASN1_STRING_get0_data(key_bits);
+        const auto len = ASN1_STRING_length(key_bits);
+        if ((data != nullptr) && (len > 0)) {
+            bResult = openssl::sha_1(data, static_cast<std::size_t>(len), digest);
+        }
     }
 
     return bResult;

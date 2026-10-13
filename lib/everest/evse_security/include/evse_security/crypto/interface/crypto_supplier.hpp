@@ -35,6 +35,9 @@ public:
     static std::string x509_to_string(X509Handle* handle);
     static std::string x509_get_responder_url(X509Handle* handle);
     static std::string x509_get_key_hash(X509Handle* handle);
+    /// @brief Name of the public key algorithm: the EC curve name for EC keys (e.g. "prime256v1",
+    /// "secp521r1"), otherwise the key type name (e.g. "ED448", "RSA"). Empty on error.
+    static std::string x509_get_public_key_algorithm(X509Handle* handle);
     static std::string x509_get_serial_number(X509Handle* handle);
     static std::string x509_get_issuer_name_hash(X509Handle* handle);
     static std::string x509_get_common_name(X509Handle* handle);
@@ -55,6 +58,9 @@ public:
     /// @brief Verifies the provided target against the certificate chain
     /// @param target       Target to verify
     /// @param parents      Parents chain, until the root
+    /// @param untrusted_subcas Intermediate certificates that may be used to build the chain
+    /// @param allow_future_certificates If the target is not yet valid, verify the whole chain at the target's
+    /// notBefore instead of the current time
     /// @param dir_path     Optional directory path that can be used for certificate store lookup
     /// @param file_path    Optional certificate file path that can be used for certificate store lookup
     /// @return

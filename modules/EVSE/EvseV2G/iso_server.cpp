@@ -83,6 +83,24 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         *v2g_response_code = iso2_responseCodeType_FAILED;
     }
 
+    /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
+     * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus),
+     * which a FAILED response must omit (ISO 15118-4). Once that has been reported, requests that
+     * would continue the energy transfer are answered with FAILED; the stop sequence
+     * (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed to complete normally. */
+    if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
+        switch (conn->ctx->current_v2g_msg) {
+        case V2G_CABLE_CHECK_MSG:
+        case V2G_PRE_CHARGE_MSG:
+        case V2G_CURRENT_DEMAND_MSG:
+        case V2G_CHARGING_STATUS_MSG: // AC: without failing ChargingStatus the session would never terminate
+            *v2g_response_code = iso2_responseCodeType_FAILED;
+            break;
+        default:
+            break;
+        }
+    }
+
     /* [V2G2-460]: check whether the session id matches the expected one of the active session */
     *v2g_response_code =
         ((conn->ctx->current_v2g_msg != V2G_SESSION_SETUP_MSG) && (conn->ctx->ev_v2g_data.received_session_id != 0) &&
@@ -113,6 +131,13 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         (*v2g_response_code <= iso2_responseCodeType_FAILED_CertificateRevoked)) {
         dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s",
              v2g_msg_type[conn->ctx->current_v2g_msg], isoResponse[*v2g_response_code]);
+    }
+
+    /* The error shutdown counts as reported only when the response actually leaves with an OK
+     * response code, i.e. carrying the shutdown status; a response that fails for another reason
+     * (unknown session, sequence error) must not consume the one-shot report. */
+    if ((conn->ctx->error_shutdown == true) && (*v2g_response_code < iso2_responseCodeType_FAILED)) {
+        conn->ctx->error_shutdown_reported = true;
     }
 
     return next_event;
@@ -255,6 +280,23 @@ static telemetry_types::ChargeProgress to_telemetry_charge_progress(iso2_chargeP
         return telemetry_types::ChargeProgress::Renegotiate;
     default:
         return telemetry_types::ChargeProgress::Terminate;
+    }
+}
+
+/*!
+ * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
+ * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
+ * [IEC 61851-23:2023 CC.7.5.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
+ * preserved.
+ * \param ctx points to the V2G context.
+ */
+static void set_dc_shutdown_status_code(struct v2g_context* ctx) {
+    for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
+        uint8_t& status_code = ctx->evse_v2g_data.evse_status_code[phase];
+        if ((status_code == iso2_DC_EVSEStatusCodeType_EVSE_NotReady) ||
+            (status_code == iso2_DC_EVSEStatusCodeType_EVSE_Ready)) {
+            status_code = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
+        }
     }
 }
 
@@ -1418,6 +1460,7 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
             transport.set(&telemetry_types::V2gTransport::charge_parameter_discovery_requested, true);
         });
     }
+    const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
 
     /* At first, publish the received ev request message to the MQTT interface */
     publish_iso_charge_parameter_discovery_req(conn->ctx, req);
@@ -1560,11 +1603,8 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     } else {
 
         if (conn->ctx->evse_v2g_data.sae_bidi_data.enabled_sae_v2h == true) {
-            static bool first_req = true;
-
             if (first_req == true) {
                 res->EVSEProcessing = iso2_EVSEProcessingType_Ongoing;
-                first_req = false;
             } else {
                 // Check if second req message contains neg values
                 // Check if bulk soc is set
@@ -1578,8 +1618,6 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
                     res->ResponseCode = iso2_responseCodeType::iso2_responseCodeType_FAILED_WrongEnergyTransferMode;
                 }
                 res->EVSEProcessing = iso2_EVSEProcessingType_Finished;
-                // reset first_req
-                first_req = true;
             }
         }
 
@@ -1648,6 +1686,24 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
                 conn->ctx->evse_v2g_data.no_energy_pause == NoEnergyPauseStatus::BeforeCableCheck
                     ? 0
                     : PAUSE_NOTIFICATION_DELAY;
+        }
+    }
+
+    /* If fake HLC DC is active, try to stop the charging session over EVSENotification and EVSEStatusCode first.
+     * If the EV is ignoring the shutdown request, stop the charging session in the next response message with a failed
+     * response code.
+     */
+    if (conn->ctx->is_fake_dc) {
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSENotification = iso2_EVSENotificationType_StopCharging;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.NotificationMaxDelay = 0;
+        res->DC_EVSEChargeParameter.DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Shutdown;
+
+        if (first_req == true) {
+            dlog(DLOG_LEVEL_INFO, "Initiate stop of the fake HLC ISO DC session");
+            res->EVSEProcessing = iso2_EVSEProcessingType_Ongoing;
+        } else {
+            res->ResponseCode = iso2_responseCodeType_FAILED;
+            res->EVSEProcessing = iso2_EVSEProcessingType_Finished;
         }
     }
 
@@ -1763,6 +1819,7 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             // state is checked by other module
             conn->ctx->p_charger->publish_ac_open_contactor(nullptr);
         } else {
+            set_dc_shutdown_status_code(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         }
@@ -1815,8 +1872,10 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
     res->ResponseCode =
         (entry_found == false) ? iso2_responseCodeType_FAILED_TariffSelectionInvalid : res->ResponseCode; // [V2G2-479]
 
-    /* Check EV charging profile values [V2G2-478] */
-    check_iso2_charging_profile_values(req, res, conn, sa_schedule_tuple_idx);
+    if (entry_found == true) {
+        /* Check EV charging profile values [V2G2-478] */
+        check_iso2_charging_profile_values(req, res, conn, sa_schedule_tuple_idx);
+    }
 
     const auto last_v2g_msg = conn->ctx->last_v2g_msg;
 
@@ -2114,7 +2173,8 @@ static enum v2g_event handle_iso_cable_check(struct v2g_connection* conn) {
     res->EVSEProcessing =
         static_cast<iso2_EVSEProcessingType>(conn->ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION]);
 
-    if (conn->ctx->intl_emergency_shutdown == false && res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
+    if (conn->ctx->intl_emergency_shutdown == false && conn->ctx->error_shutdown == false &&
+        res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
         res->DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     } else {
         res->DC_EVSEStatus.EVSEStatusCode = get_emergency_status_code(conn->ctx, PHASE_ISOLATION);
@@ -2432,6 +2492,15 @@ static enum v2g_event handle_iso_session_stop(struct v2g_connection* conn) {
         /* Set next expected req msg */
         conn->d_link_action = dLinkAction::D_LINK_ACTION_TERMINATE;
         conn->ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_TERMINATED_SESSION);
+    }
+
+    /* Only a positive SessionStopRes anchors the CP-oscillator retain time ([V2G-DC-968] analogue);
+     * iso_validate_response_code may have downgraded the ResponseCode to FAILED* without changing
+     * the event, so gate on the final code here */
+    if (res->ResponseCode == iso2_responseCodeType_OK) {
+        conn->session_stop_res_pending = (conn->d_link_action == dLinkAction::D_LINK_ACTION_PAUSE)
+                                             ? v2g_connection::SessionStopResPending::PAUSE
+                                             : v2g_connection::SessionStopResPending::TERMINATE;
     }
 
     return V2G_EVENT_SEND_AND_TERMINATE; // Charging must be terminated after sending the response message [V2G2-571]

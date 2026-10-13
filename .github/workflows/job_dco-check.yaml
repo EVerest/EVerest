@@ -10,14 +10,14 @@ on:
 
 jobs:
   dco_check:
-    name: DCO Check
+    name: check
     runs-on: ${{ inputs.runner }}
     steps:
-      - uses: actions/checkout@v3
+      - uses: actions/checkout@v7
         if: github.event_name == 'pull_request'
       - name: Set up Python 3.x
         if: github.event_name == 'pull_request'
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v7
         with:
           python-version: '3.x'
       - name: Install dco-check

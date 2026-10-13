@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2023 Pionix GmbH and Contributors to EVerest
+// Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/service_detail.hpp>
 
 #include <type_traits>
@@ -245,6 +245,7 @@ template <> void convert(const ServiceDetailRequest& in, iso20_ServiceDetailReqT
     convert(in.header, out.Header);
 }
 
+namespace {
 struct ParameterValueVisitor {
     ParameterValueVisitor(iso20_ParameterType& parameter_) : parameter(parameter_){};
     void operator()(const bool& in) {
@@ -276,6 +277,7 @@ struct ParameterValueVisitor {
 private:
     iso20_ParameterType& parameter;
 };
+} // namespace
 
 template <> void convert(const ServiceDetailResponse& in, iso20_ServiceDetailResType& out) {
     init_iso20_ServiceDetailResType(&out);

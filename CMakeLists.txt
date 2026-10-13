@@ -104,6 +104,7 @@ if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TEST
     set(everest-timer_BUILD_TESTING ON)
     set(everest-log_BUILD_TESTING ON)
     set(IEEE2030_BUILD_TESTING ON)
+    set(BUILD_CBV2G_JSON_WRAPPER_TESTS ON)
 endif()
 # This is a flag for building development tests, but not necessarily to run them, for expample in case
 # tests requires hardware.
@@ -191,7 +192,9 @@ if(NOT DISABLE_EDM)
 else()
     if(NOT EVEREST_LIBS_ONLY)
         find_package(PalSigslot REQUIRED)
-        find_package(libnfc-nci REQUIRED)
+        if(EVEREST_DEPENDENCY_ENABLED_LIBNFC_NCI)
+            find_package(libnfc-nci REQUIRED)
+        endif()
         find_package(pugixml REQUIRED)
         find_package(CURL 7.84.0 REQUIRED)
         find_package(ftxui 6 QUIET) # optional, if not available BringUp module will not be built

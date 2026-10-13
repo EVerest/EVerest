@@ -29,6 +29,7 @@ int EebusConnectionHandler::get_poll_fd() {
 }
 
 EebusConnectionHandler::~EebusConnectionHandler() {
+    unregister_recorded_events();
     stop();
 }
 

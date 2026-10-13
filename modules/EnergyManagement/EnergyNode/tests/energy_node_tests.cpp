@@ -226,3 +226,37 @@ TEST_F(EnergyNodeTest, TestConfigurableVoltage240V) {
     EXPECT_TRUE(schedule[0].limits_to_root.ac_max_current_A.has_value());
     EXPECT_EQ(schedule[0].limits_to_root.ac_max_current_A->value, expected_current);
 }
+
+// Helper to create an energy flow request node with a given uuid
+static types::energy::EnergyFlowRequest create_energy_flow_request(const std::string& uuid) {
+    types::energy::EnergyFlowRequest request;
+    request.uuid = uuid;
+    request.node_type = types::energy::NodeType::Generic;
+    return request;
+}
+
+/// Test uuid containment on a single node without children
+TEST_F(EnergyNodeTest, TestContainsUuidSingleNode) {
+    auto request = create_energy_flow_request("root");
+
+    EXPECT_TRUE(module::energy_grid::energy_flow_request_contains_uuid(request, "root"));
+    EXPECT_FALSE(module::energy_grid::energy_flow_request_contains_uuid(request, "other"));
+}
+
+/// Test uuid containment finds all nested descendants but not nodes of other branches
+TEST_F(EnergyNodeTest, TestContainsUuidNestedTree) {
+    auto request = create_energy_flow_request("root");
+    auto child = create_energy_flow_request("child");
+    child.children.push_back(create_energy_flow_request("grandchild"));
+    request.children.push_back(child);
+    request.children.push_back(create_energy_flow_request("sibling"));
+
+    EXPECT_TRUE(module::energy_grid::energy_flow_request_contains_uuid(request, "root"));
+    EXPECT_TRUE(module::energy_grid::energy_flow_request_contains_uuid(request, "child"));
+    EXPECT_TRUE(module::energy_grid::energy_flow_request_contains_uuid(request, "grandchild"));
+    EXPECT_TRUE(module::energy_grid::energy_flow_request_contains_uuid(request, "sibling"));
+    EXPECT_FALSE(module::energy_grid::energy_flow_request_contains_uuid(request, "unknown"));
+
+    // A branch does not contain nodes of its sibling branch
+    EXPECT_FALSE(module::energy_grid::energy_flow_request_contains_uuid(request.children[0], "sibling"));
+}
