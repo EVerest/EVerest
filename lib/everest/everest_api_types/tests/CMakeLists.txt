@@ -96,9 +96,11 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/strict_inputs.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/serialization/ev_controller.cpp
+  manual_tests/serialization/ev_driver_sim.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
   manual_tests/spec_check/e2m_channel_depth.cpp
   manual_tests/spec_check/ev_controller_spec.cpp
+  manual_tests/spec_check/ev_driver_sim_spec.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE

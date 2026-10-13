@@ -59,6 +59,9 @@ target_sources(everest_api_types
   src/everest_api_types/ev_controller/json_codec.cpp
   src/everest_api_types/ev_controller/wrapper.cpp
 
+  src/everest_api_types/ev_driver_sim/codec.cpp
+  src/everest_api_types/ev_driver_sim/json_codec.cpp
+
   src/everest_api_types/evse_board_support/codec.cpp
   src/everest_api_types/evse_board_support/json_codec.cpp
 
