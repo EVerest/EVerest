@@ -1,0 +1,32 @@
+stateDiagram-v2
+    direction LR
+
+    state "Pilot gate" as GateBox {
+        [*] --> Withheld : plugged_at_startup false
+        [*] --> Passed : plugged_at_startup true
+        Withheld --> Passed : plug / A to car
+        Passed --> Withheld : unplug / board CP A, Disconnected to car
+    }
+
+    note right of GateBox
+        Withheld: board events, measurements and EV info
+        are dropped; car CP commands do not reach the board.
+        Passed: everything passes through.
+    end note
+
+    state "World fault" as FaultBox {
+        [*] --> NoFault
+        NoFault --> DiodeFail : inject_fault DiodeFail / board diode_fail(true)
+        NoFault --> RcdError : inject_fault RcdError / board set_rcd_error(mA)
+        NoFault --> CpErrorE : inject_fault CpErrorE (pilot passed) / board CP E
+        DiodeFail --> NoFault : clear_fault / car's last diode_fail
+        RcdError --> NoFault : clear_fault / car's last set_rcd_error
+        CpErrorE --> NoFault : clear_fault / car's last CP
+        CpErrorE --> NoFault : unplug
+    }
+
+    note right of FaultBox
+        One fault at a time; a second injection is rejected.
+        While a fault is active, the matching car command is
+        remembered instead of reaching the board (CP E re-sends E).
+    end note

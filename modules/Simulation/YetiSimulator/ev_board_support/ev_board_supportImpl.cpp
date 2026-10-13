@@ -31,18 +31,22 @@ void ev_board_supportImpl::handle_set_cp_state(types::ev_board_support::EvCpStat
     types::board_support_common::Event event;
     switch (cp_state) {
     case EvCpState::A:
+        simdata_setting.error_e = false;
         simdata_setting.cp_voltage = CP_VOLTAGE_A;
         event = types::board_support_common::Event::A;
         break;
     case EvCpState::B:
+        simdata_setting.error_e = false;
         simdata_setting.cp_voltage = CP_VOLTAGE_B;
         event = types::board_support_common::Event::B;
         break;
     case EvCpState::C:
+        simdata_setting.error_e = false;
         simdata_setting.cp_voltage = CP_VOLTAGE_C;
         event = types::board_support_common::Event::C;
         break;
     case EvCpState::D:
+        simdata_setting.error_e = false;
         simdata_setting.cp_voltage = CP_VOLTAGE_D;
         event = types::board_support_common::Event::D;
         break;

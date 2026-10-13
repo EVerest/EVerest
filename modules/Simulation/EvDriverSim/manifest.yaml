@@ -1,0 +1,41 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+description: SIL world driver that gates the EV pilot and injects electrical faults.
+provides:
+  board_support:
+    interface: ev_board_support
+    description: Gated board support for the EV controller.
+requires:
+  ev_board_support:
+    interface: ev_board_support
+    min_connections: 1
+    max_connections: 1
+config:
+  ev_controller_module_id:
+    description: EV controller whose heartbeat is expected at startup.
+    type: string
+    default: ev_manager
+  plugged_at_startup:
+    description: Pass the pilot at startup.
+    type: boolean
+    default: false
+  heartbeat_wait_s:
+    description: Seconds to wait for the first EV controller heartbeat.
+    type: integer
+    minimum: 0
+    default: 10
+  cfg_heartbeat_interval_ms:
+    description: External API heartbeat interval in milliseconds; zero disables it.
+    type: integer
+    minimum: 0
+    default: 1000
+  cfg_communication_check_to_s:
+    description: External API communication check timeout in seconds; zero disables it.
+    type: integer
+    minimum: 0
+    default: 0
+enable_external_mqtt: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - Martin Litre

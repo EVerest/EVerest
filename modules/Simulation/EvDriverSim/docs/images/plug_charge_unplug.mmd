@@ -1,0 +1,29 @@
+sequenceDiagram
+    autonumber
+    participant Test
+    participant Car as EvController
+    participant Driver as EvDriverSim
+    participant Yeti as YetiSimulator
+    participant Evse as EvseManager
+
+    Test->>Car: m2e/configure_session
+    Test->>Driver: m2e/plug
+    Driver->>Car: bsp_event A
+    Driver-->>Test: e2m/world_state Passed, command_ack Accepted
+
+    Note over Car: A begins the configured session
+    Car->>Driver: set_cp_state(B)
+    Driver->>Yeti: set_cp_state(B)
+    Yeti->>Evse: pilot B
+    Evse->>Yeti: PWM on
+    Yeti->>Driver: bsp_measurement (duty)
+    Driver->>Car: bsp_measurement (duty)
+    Car->>Driver: set_cp_state(C), allow_power_on(true)
+    Driver->>Yeti: set_cp_state(C), allow_power_on(true)
+    Note over Car,Evse: Charging
+
+    Test->>Driver: m2e/unplug
+    Driver->>Yeti: set_cp_state(A)
+    Driver->>Car: bsp_event Disconnected
+    Driver-->>Test: e2m/world_state Withheld, command_ack Accepted
+    Note over Car: Unplugged

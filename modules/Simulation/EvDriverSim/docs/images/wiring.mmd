@@ -1,0 +1,39 @@
+flowchart LR
+    Test["Test / operator<br/>(external MQTT)"]
+
+    Car["EvController<br/>requires ev_board_support"]
+
+    subgraph Driver["EvDriverSim, provides ev_board_support as board_support"]
+        Faults["WorldFaults"]
+        Gate["PilotGate"]
+        Req["requires ev_board_support"]
+        Scenario["ScenarioRunner"]
+    end
+
+    subgraph Yeti["YetiSimulator"]
+        EvBsp["ev_board_support<br/>(EV side)"]
+        EvseBsp["board_support<br/>evse_board_support (charger side)"]
+    end
+
+    Evse["EvseManager"]
+
+    Car -->|set_cp_state| Faults
+    Car -->|"straight through: enable, allow_power_on,<br/>set_ac_max_current, set_three_phases"| Req
+    Faults -->|"set_cp_state, masked while a fault is active"| Gate
+    Gate ==>|"gated: set_cp_state"| Req
+    Faults -->|"diode_fail, set_rcd_error, CP E"| Req
+    Req -->|ev_board_support calls| EvBsp
+    EvBsp -->|bsp_event, bsp_measurement, ev_info| Req
+    Req -->|bsp_event, bsp_measurement, ev_info| Gate
+    Gate ==>|"gated: bsp_event, bsp_measurement, ev_info,<br/>synthetic A / Disconnected"| Car
+    EvBsp ---|simulated pilot| EvseBsp
+    EvseBsp <-->|evse_board_support| Evse
+
+    Test -->|m2e/plug, unplug| Gate
+    Test -->|m2e/inject_fault, clear_fault| Faults
+    Test -->|m2e/run_scenario| Scenario
+    Scenario -->|plug, unplug| Gate
+    Scenario -->|inject_fault, clear_fault| Faults
+    Scenario <-->|"sends m2e/configure_session, stop_session, pause_session, resume_session<br/>reads e2m/heartbeat, configure_session command_ack"| Car
+    Driver -->|"e2m/world_state, command_ack,<br/>scenario_event, heartbeat"| Test
+    Car -.->|e2m/heartbeat| Driver
