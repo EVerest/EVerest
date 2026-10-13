@@ -62,7 +62,16 @@ public:
     }
 
     ~CommCheckHandlerBase() {
+        shutting_down.store(true);
         check_active.store(false);
+        heartbeat_active.store(false);
+        comm_check_value.set(false);
+        if (handler.joinable()) {
+            handler.join();
+        }
+        if (heartbeat_handler.joinable()) {
+            heartbeat_handler.join();
+        }
     }
 
     void set_value(bool value) {
@@ -111,6 +120,9 @@ private:
         raise_error(init_sub_type);
         while (check_active.load()) {
             auto check = comm_check_value.wait_for(timeout);
+            if (shutting_down.load()) {
+                break;
+            }
             if (check.has_value()) {
                 check_active.store(check.value());
                 if (check_error()) {
@@ -132,6 +144,7 @@ private:
     std::thread heartbeat_handler;
     std::atomic_bool check_active{true};
     std::atomic_bool heartbeat_active{false};
+    std::atomic_bool shutting_down{false};
     const std::string error_type;
     const std::string init_sub_type{"Initial communication check"};
     const std::string default_sub_type;
