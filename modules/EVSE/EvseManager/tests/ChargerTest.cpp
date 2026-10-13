@@ -1027,6 +1027,23 @@ TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterHlcDlinkErrorGoesToStepEF) {
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
 }
 
+// A link lost during an EV pause: the error routine meets a state it does not act in and no HLC session is left to
+// report the loss. The matching failure on the resume is a new one and goes to E/F directly.
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineIgnoredDuringPauseStillClearsDataLink) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::ChargingPausedEV;
+    charger->get_hlc_use_5percent_current_session() = true;
+    charger->set_dlink_ready(true);
+
+    charger->request_error_sequence();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
 // The HLC reports the lost link while the EVSE is still in the X1 of the error sequence; the reinit it requests
 // replaces T_step_X1 without running its exit. The next ordinary T_step_X1 must not inherit the link-loss handling.
 TEST_F(ChargerDlinkErrorTest, LinkLossX1DoesNotOutliveReinit) {

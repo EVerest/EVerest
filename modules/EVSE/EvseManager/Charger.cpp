@@ -2416,8 +2416,9 @@ void Charger::request_error_sequence() {
             shared_context.current_state = EvseState::T_step_EF;
             signal_slac_reset();
         }
-        shared_context.dlink_established = false;
     }
+    // SLAC has given the link up whichever state the error routine met; the next one is a new matching failure.
+    shared_context.dlink_established = false;
 }
 
 void Charger::set_dlink_ready(bool ready) {
