@@ -2497,6 +2497,7 @@ void Charger::dlink_pause() {
 bool Charger::dlink_terminate() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_terminate);
+        shared_context.dlink_established = false;
         if (shared_context.current_state == EvseState::Idle) {
             // Late teardown signal of an already-unplugged session: see dlink_pause().
             return false;
@@ -2567,6 +2568,8 @@ void Charger::notify_hlc_session_started_by_ev() {
 void Charger::dlink_error() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_error);
+        // HLC handled the lost link; a later SLAC error routine is a new matching failure ([V2G3-M06-07]).
+        shared_context.dlink_established = false;
 
         if (shared_context.reinit_requested or shared_context.reinit_running) {
             EVLOG_debug << "Ignoring D-LINK_ERROR.req because reinit is active";

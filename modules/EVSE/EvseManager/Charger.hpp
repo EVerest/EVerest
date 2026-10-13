@@ -396,7 +396,8 @@ private:
         bool authorized_pnc;
         bool matching_started;
         std::atomic_bool slac_matched{false};
-        // D-LINK_READY(link established) was indicated since the session or the last error sequence started.
+        // D-LINK_READY(link established) was indicated since the session or the last error sequence started, and HLC
+        // has not reported the link lost since.
         bool dlink_established{false};
         float max_current;
         std::chrono::time_point<std::chrono::steady_clock> max_current_valid_until;

@@ -1017,6 +1017,16 @@ TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterLostDataLinkGoesThroughX1) {
     EXPECT_FALSE(ctx.dlink_established);
 }
 
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterHlcDlinkErrorGoesToStepEF) {
+    setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+    charger->set_dlink_ready(true);
+
+    charger->dlink_error();
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
