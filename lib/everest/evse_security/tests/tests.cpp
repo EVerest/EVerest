@@ -1652,8 +1652,8 @@ TEST_F(EvseSecurityTests, ctl_directory_reads_real_ctl) {
     paths.directories.secc_leaf_cert_directory = root / "secc_leaf_cert";
     paths.directories.secc_leaf_key_directory = root / "secc_leaf_key";
 
-    paths.directories.ctl_directory = fs::path("../../../../../lib/everest/evse_security/CTL/");
-    const fs::path real_ctl = fs::path("../../../../../lib/everest/evse_security/CTL/CTL-7-28-2026_NEW-ASN1.der");
+    paths.directories.ctl_directory = fs::path("CTL/");
+    const fs::path real_ctl = fs::path("CTL/CTL-7-28-2026_NEW-ASN1.der");
 
     // Fresh EvseSecurity -> constructor scans ctl_directory and applies the CTL.
     auto fresh = std::make_unique<EvseSecurity>(paths, std::nullopt);
