@@ -59,6 +59,8 @@ target_sources(everest_api_types
   src/everest_api_types/ev_controller/json_codec.cpp
   src/everest_api_types/ev_controller/wrapper.cpp
 
+  src/everest_api_types/ev_driver_sim/codec.cpp
+  src/everest_api_types/ev_driver_sim/json_codec.cpp
 
   src/everest_api_types/yeti_simulator/codec.cpp
   src/everest_api_types/yeti_simulator/json_codec.cpp

@@ -88,6 +88,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/evse_manager.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/serialization/ev_controller.cpp
+  manual_tests/serialization/ev_driver_sim.cpp
   manual_tests/serialization/yeti_simulator.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )

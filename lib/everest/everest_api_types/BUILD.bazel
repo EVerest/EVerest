@@ -3,13 +3,14 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 cc_library(
     name = "everest_api_types",
     # NOTE: only the framework-free API modules are exposed here. The
-    # configuration, generic, lifecycle, telemetry and
+    # configuration, ev_driver_sim, generic, lifecycle, telemetry and
     # yeti_simulator modules have no wrapper.cpp
     # and therefore need neither the generated interface headers nor
     # everest::framework, which keeps this target a leaf (nlohmann_json only).
     # Modules with a wrapper.cpp are intentionally left out.
     srcs = glob([
         "src/everest_api_types/configuration/*.cpp",
+        "src/everest_api_types/ev_driver_sim/*.cpp",
         "src/everest_api_types/generic/*.cpp",
         "src/everest_api_types/lifecycle/*.cpp",
         "src/everest_api_types/telemetry/*.cpp",
@@ -20,11 +21,13 @@ cc_library(
     ],
     hdrs = glob([
         "include/everest_api_types/configuration/*.hpp",
+        "include/everest_api_types/ev_driver_sim/*.hpp",
         "include/everest_api_types/generic/*.hpp",
         "include/everest_api_types/lifecycle/*.hpp",
         "include/everest_api_types/telemetry/*.hpp",
         "include/everest_api_types/yeti_simulator/*.hpp",
         "private_include/everest_api_types/configuration/*.hpp",
+        "private_include/everest_api_types/ev_driver_sim/*.hpp",
         "private_include/everest_api_types/generic/*.hpp",
         "private_include/everest_api_types/lifecycle/*.hpp",
         "private_include/everest_api_types/telemetry/*.hpp",
