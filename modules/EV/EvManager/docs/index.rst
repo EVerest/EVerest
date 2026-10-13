@@ -16,7 +16,27 @@ Configuration
 External MQTT
 -------------
 
-The module listens to the following MQTT topics:
+The SIL Node-RED dashboards use EvController's versioned MQTT API for
+session configuration, enable, pause, resume and stop, and EvDriverSim's
+API for plug and unplug. They no longer use the legacy ``carsim`` topics.
+Car Plugin configures the selected mode and plugs only after an accepted
+``configure_session`` acknowledgement. Car Stop leaves the cable connected;
+use Car unplug before starting another session.
+
+The AC flow is used with ``config-sil.yaml``. The two-car flows correspond
+to ``config-sil-two-evse.yaml`` and ``config-sil-energy-management.yaml``;
+each car has independent controls, and car 2 offers only AcIec.
+Both DC flows default to DcIso2 for ``config-sil-dc.yaml`` (including its
+ISO-2 bidirectional support). Select DC ISO15118-20 or DC ISO15118-20 BPT
+with ``config-sil-dc-d20.yaml``, or DC ISO15118-20 MCS with
+``config-sil-mcs.yaml``.
+The AC dashboard's error switches use YetiSimulator's versioned
+``raise_error`` and ``clear_error`` API.
+
+See :ref:`everest_modules_handwritten_EvController` and
+:ref:`everest_modules_handwritten_EvDriverSim` for the API contracts.
+
+EvManager itself still listens to the following legacy MQTT topics:
 
 ``everest_external/nodered/{connector_id}/carsim/cmd/enable``
     | Used to enable the car simulator.
