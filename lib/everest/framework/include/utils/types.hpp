@@ -5,7 +5,7 @@
 
 #include <cstddef>
 #include <filesystem>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <map>
 #include <optional>
 #include <string>

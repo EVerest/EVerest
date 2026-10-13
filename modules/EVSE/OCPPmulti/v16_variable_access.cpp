@@ -5,7 +5,7 @@
 
 #include <utility>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <everest/logging.hpp>
 #include <ocpp/common/constants.hpp>

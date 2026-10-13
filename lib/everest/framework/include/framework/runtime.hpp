@@ -11,7 +11,7 @@
 #include <everest/utils/yaml_loader.hpp>
 
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <sys/prctl.h>
 
 #include <cstdint>

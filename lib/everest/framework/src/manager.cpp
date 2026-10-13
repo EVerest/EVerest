@@ -27,7 +27,7 @@
 #include <boost/program_options.hpp>
 
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include <configuration_api.hpp>

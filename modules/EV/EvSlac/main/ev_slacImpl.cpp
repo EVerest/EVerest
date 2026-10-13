@@ -12,7 +12,7 @@
 #include <everest/logging.hpp>
 #include <everest/slac/fsm/ev/context.hpp>
 #include <everest/slac/slac_event.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "fsm_controller.hpp"
 

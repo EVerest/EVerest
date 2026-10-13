@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "everest/logging.hpp"
 #include "scoped_lock_timeout.hpp"

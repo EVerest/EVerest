@@ -3,6 +3,8 @@
 
 #include "evse_board_supportImpl.hpp"
 
+#include <fmt/format.h>
+
 namespace module {
 namespace board_support {
 static types::board_support_common::BspEvent cast_event_type(CpState cp_state) {

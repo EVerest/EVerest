@@ -10,11 +10,11 @@
 #include <date/tz.h>
 #include <everest/helpers/helpers.hpp>
 #include <filesystem>
+#include <fmt/format.h>
 #include <optional>
 #include <utils/date.hpp>
 
 #include <boost/algorithm/string.hpp>
-#include <fmt/core.h>
 
 namespace module {
 

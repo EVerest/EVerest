@@ -8,7 +8,7 @@
 #include <optional>
 #include <string>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>

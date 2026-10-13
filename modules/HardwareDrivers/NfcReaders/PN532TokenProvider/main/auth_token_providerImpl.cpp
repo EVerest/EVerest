@@ -5,7 +5,7 @@
 
 #include <everest/helpers/helpers.hpp>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module {
 namespace main {

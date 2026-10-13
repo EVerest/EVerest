@@ -4,6 +4,8 @@
 #ifndef _EVSEMANAGER_UTILS_H_
 #define _EVSEMANAGER_UTILS_H_
 
+#include <fmt/format.h>
+
 #include <everest/helpers/helpers.hpp>
 #include <generated/types/evse_manager.hpp>
 #include <generated/types/powermeter.hpp>

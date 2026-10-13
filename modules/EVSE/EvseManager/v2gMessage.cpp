@@ -6,7 +6,7 @@
 #include <date/date.h>
 #include <date/tz.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module {
 

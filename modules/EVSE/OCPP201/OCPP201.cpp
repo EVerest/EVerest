@@ -3,7 +3,7 @@
 #include "OCPP201.hpp"
 #include <set>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fstream>
 
 #include <websocketpp_utils/uri.hpp>
