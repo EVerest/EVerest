@@ -37,6 +37,9 @@ public:
     /// \brief Every connection except the primary, ordered by name.
     std::vector<OcppConnection*> secondaries();
 
+    /// \brief Permanently suppresses the deferred websocket callbacks of every connection.
+    void disarm_connection_callbacks();
+
     /// \brief Number of registered connections, at least one once the primary has been added.
     [[nodiscard]] std::size_t size() const;
 

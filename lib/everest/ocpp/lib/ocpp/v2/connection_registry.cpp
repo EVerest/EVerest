@@ -55,6 +55,12 @@ std::vector<OcppConnection*> ConnectionRegistry::secondaries() {
     return result;
 }
 
+void ConnectionRegistry::disarm_connection_callbacks() {
+    for (const auto& entry : this->connections) {
+        entry.second->connectivity_manager().disarm_connection_callbacks();
+    }
+}
+
 std::size_t ConnectionRegistry::size() const {
     return this->connections.size();
 }

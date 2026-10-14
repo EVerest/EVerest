@@ -546,6 +546,19 @@ TEST_F(ConnectionRoutingDispatcherTest, registry_rejects_a_duplicate_connection)
     EXPECT_THROW(add_primary(), std::invalid_argument);
 }
 
+TEST_F(ConnectionRoutingDispatcherTest, registry_disarms_the_callbacks_of_every_connection) {
+    add_primary();
+    add_secondary();
+
+    for (auto* connection : registry.all()) {
+        auto mock = std::dynamic_pointer_cast<ConnectivityManagerMock>(connection->connectivity_manager_ptr());
+        ASSERT_NE(mock, nullptr);
+        EXPECT_CALL(*mock, disarm_connection_callbacks()).Times(1);
+    }
+
+    registry.disarm_connection_callbacks();
+}
+
 TEST_F(ConnectionRoutingDispatcherTest, registry_without_a_primary_reports_a_logic_error) {
     add_secondary();
     EXPECT_THROW(registry.primary(), std::logic_error);

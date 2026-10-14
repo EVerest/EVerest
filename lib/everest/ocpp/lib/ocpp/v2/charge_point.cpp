@@ -105,8 +105,9 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
 }
 
 ChargePoint::~ChargePoint() {
-    // Suppress deferred websocket callbacks before any member is destroyed.
-    this->connectivity_manager->disarm_connection_callbacks();
+    // Suppress deferred websocket callbacks before any member is destroyed. Every connection's callbacks
+    // capture this charge point, not only the primary's.
+    this->connection_registry.disarm_connection_callbacks();
 }
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
