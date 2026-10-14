@@ -9,6 +9,8 @@
 #include <iso15118/d20/state/session_stop.hpp>
 #include <iso15118/d20/timeout.hpp>
 
+#include <variant>
+
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/dc_pre_charge.hpp>
 #include <iso15118/detail/d20/state/power_delivery.hpp>
@@ -21,6 +23,31 @@ namespace iso15118::d20::state {
 constexpr uint32_t AC_CLOSE_CONTACTOR_TIMEOUT = 1400;
 
 namespace dt = message_20::datatypes;
+
+namespace {
+
+const dt::Scheduled_EVPPTControlMode* scheduled_profile(const message_20::PowerDeliveryRequest& req) {
+    if (req.charge_progress != dt::Progress::Start or not req.power_profile.has_value()) {
+        return nullptr;
+    }
+    return std::get_if<dt::Scheduled_EVPPTControlMode>(&req.power_profile->control_mode);
+}
+
+// [V2G20-1944] for a confirmed tolerance. A declined one is WARNING only if the SECC renegotiates the schedule
+// ([V2G20-1946], [V2G20-1601]). This SECC does not support a schedule renegotiation, so it stops the session
+// ([V2G20-1945]).
+dt::ResponseCode power_tolerance_response_code(const message_20::PowerDeliveryRequest& req) {
+    const auto* scheduled = scheduled_profile(req);
+    if (scheduled == nullptr or not scheduled->power_tolerance_acceptance.has_value()) {
+        return dt::ResponseCode::OK;
+    }
+    if (*scheduled->power_tolerance_acceptance == dt::PowerToleranceAcceptance::NotConfirmed) {
+        return dt::ResponseCode::FAILED_PowerToleranceNotConfirmed;
+    }
+    return dt::ResponseCode::OK_PowerToleranceConfirmed;
+}
+
+} // namespace
 
 message_20::PowerDeliveryResponse handle_request(const message_20::PowerDeliveryRequest& req,
                                                  const d20::Session& session, bool contactor_error,
@@ -38,6 +65,16 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
         return res;
     }
 
+    const auto tolerance_code = power_tolerance_response_code(req);
+    if (tolerance_code >= dt::ResponseCode::FAILED) {
+        // [V2G20-1402]: the SECC terminates the session.
+        set_response_code(res, tolerance_code);
+        auto& notification = res.status.emplace();
+        notification.notification = dt::EvseNotification::Terminate;
+        notification.notification_max_delay = 0;
+        return res;
+    }
+
     if (shutdown_requested) {
         auto& notification = res.status.emplace();
         notification.notification = dt::EvseNotification::Terminate;
@@ -52,7 +89,7 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
         return res;
     }
 
-    set_response_code(res, dt::ResponseCode::OK);
+    set_response_code(res, tolerance_code);
     return res;
 }
 
