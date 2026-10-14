@@ -63,7 +63,7 @@ _FAKE_MANAGER = textwrap.dedent("""\
 _CONFIG = textwrap.dedent("""\
     active_modules:
       car_simulator:
-        module: EvSimulator
+        module: EvController
         config_module:
           connector_id: 1
       yeti_driver:

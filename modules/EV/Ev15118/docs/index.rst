@@ -37,14 +37,14 @@ from the ``iso2_ac_*`` options. A BPT or DER mode has no -2 / DIN equivalent and
 degrades to the matching unidirectional mode, with a warning when the pre-20
 generation is offered at all.
 
-Which payment option the EV picks is config driven, because the ``EvManager``
-default payment option is ``auto``: with ``enable_pnc`` and TLS the EV prefers
-Contract whenever the SECC offers it, and the -2 engine falls back to EIM when
-it does not. ``SelectedPaymentOption`` only overrides that per session; an
-explicit ``ExternalPayment`` turns the preference off for that session, an
-explicit ``Contract`` keeps it on. ``enforce_payment_option`` makes the EV
-select Contract even when the SECC does not offer it (negative testing).
-Without ``enable_pnc`` the EV offers EIM only.
+EvController always passes a payment option, from ``configure_session.params.payment``:
+``ExternalPayment`` (the default) or ``Contract``. Contract is therefore used
+only when configured, never from ``enable_pnc`` alone. For Plug & Charge,
+configure ``Contract`` and enable ``enable_pnc`` and TLS on Ev15118. The -2
+engine falls back to EIM when the SECC does not offer Contract.
+EvController's ``force_payment_option`` passes ``enforce_payment_option`` to
+Ev15118, allowing Contract selection even when the SECC does not offer it
+(negative testing). Without ``enable_pnc`` the EV offers EIM only.
 
 The session runs over plain TCP or TLS (``tls_active`` / ``enforce_tls``). The
 AC DER IEC and AC DER SAE services are also negotiated (assuming a three-phase

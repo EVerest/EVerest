@@ -7,11 +7,8 @@
 # DER availability is asserted the same way as in the SAE config; see the header
 # comment there for the set_der_available call and its timing.
 #
-# Note that IEC advertising is not directly observable from the log: there is no
-# IEC counterpart to the SAE advertising line, and the EV cannot confirm it by
-# selection because it is started with AC_BPT. What this config does verify is
-# that AC_DER_SAE never appears. The IEC branch itself is covered by
-# EnergyTransferModesTest in modules/EVSE/EvseManager/tests/.
+# The EV defaults to AcIsoD20DerIec and waits for an explicit EvDriverSim plug.
+# To negotiate an ISO session, set ac_hlc_use_5percent to true before startup.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -83,22 +80,28 @@ active_modules:
   slac:
     module: SlacSimulator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
+      default_session: '{"mode":"AcIsoD20DerIec"}'
       connector_id: 1
-      auto_enable: true
-      auto_exec: true
-      auto_exec_commands: sleep 20;iso_wait_slac_matched;iso_start_v2g_session AC_BPT;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 20;iso_wait_v2g_session_stopped;unplug
     connections:
       ev_board_support:
-        - module_id: connector_1_powerpath
-          implementation_id: ev_board_support
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       ev:
         - module_id: iso15118_car
           implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
+    config_module:
+      ev_controller_module_id: ev_manager
+    connections:
+      ev_board_support:
+        - module_id: connector_1_powerpath
+          implementation_id: ev_board_support
   auth:
     module: Auth
     config_module:

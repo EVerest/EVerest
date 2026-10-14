@@ -1,5 +1,5 @@
-# MCS SIL. auto_exec is off: start the car with iso_start_v2g_session MCS, as auto_exec_commands
-# does. A DC start on the cMCS connector fails at ServiceDiscovery.
+# MCS SIL. Start the car with an EvController DcIsoD20 session with mcs_enabled, which requests MCS.
+# A plain DC start on the cMCS connector fails at ServiceDiscovery.
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -65,24 +65,29 @@ active_modules:
         selftest_success: true
     module: IMDSimulator
   ev_manager:
-    module: EvManager
+    module: EvController
     config_module:
       connector_id: 1
-      auto_enable: true
-      auto_exec: false
-      auto_exec_commands: sleep 3;iso_wait_slac_matched;iso_start_v2g_session MCS;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 15;iso_wait_v2g_session_stopped;unplug;
       dc_target_current: 20
       dc_target_voltage: 400
     connections:
       ev_board_support:
-        - module_id: yeti_driver
-          implementation_id: ev_board_support
+        - module_id: ev_manager_driver
+          implementation_id: board_support
       ev:
         - module_id: iso15118_car
           implementation_id: ev
       slac:
         - module_id: slac
           implementation_id: ev
+  ev_manager_driver:
+    module: EvDriverSim
+    config_module:
+      ev_controller_module_id: ev_manager
+    connections:
+      ev_board_support:
+        - module_id: yeti_driver
+          implementation_id: ev_board_support
   auth:
     module: Auth
     config_module:

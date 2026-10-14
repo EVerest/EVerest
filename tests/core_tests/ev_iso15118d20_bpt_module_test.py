@@ -6,15 +6,19 @@ from unittest.mock import Mock
 
 import pytest
 
+from everest.testing.core_utils.controller.evctl_test_controller import DEFAULT_BPT
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
-from everest.testing.core_utils.controller.test_controller_interface import (
-    TestController,
-)
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import (
+    AcFivePercentAdjustmentStrategy,
+    _ev_device_adaptions,
+    start_iso_session,
+    stop_iso_session,
+    wait_for_call,
+)
 
 
 # The SECC publishes these literals for any negotiated AC / DC ISO 15118-20 namespace.
@@ -39,17 +43,9 @@ BPT_CHANNELS = ("Unified", "Separated")
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-bpt-d20.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        # sleep 1: let the modules reach steady state before SLAC matching starts.
-        # The rest of the chain is event-gated (iso_wait_*), so no further sleeps.
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC_BPT;"
-        "iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 10;"
-        "iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions(), AcFivePercentAdjustmentStrategy())
 async def test_ev_iso15118d20_ac_bpt_session(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: Ev15118 negotiates an AC ISO 15118-20 BPT session.
 
@@ -59,7 +55,7 @@ async def test_ev_iso15118d20_ac_bpt_session(
     limits in the CPD response. The SIL charge loop still moves power in the
     charge direction; only the negotiated service is bidirectional.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -76,6 +72,7 @@ async def test_ev_iso15118d20_ac_bpt_session(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "AcIsoD20", bpt=DEFAULT_BPT)
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -102,6 +99,7 @@ async def test_ev_iso15118d20_ac_bpt_session(
 
     await wait_for_call(ac_target_power_mock, timeout=30)
 
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)
 
 
@@ -114,29 +112,20 @@ async def test_ev_iso15118d20_ac_bpt_session(
     }
 )
 @pytest.mark.everest_core_config("config-sil-dc-bpt-d20.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        # sleep 1: let the modules reach steady state before SLAC matching starts.
-        # The rest of the chain is event-gated (iso_wait_*), so no further sleeps.
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC_BPT;"
-        "iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 10;"
-        "iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions())
 async def test_ev_iso15118d20_dc_bpt_session(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: Ev15118 negotiates a DC ISO 15118-20 BPT session.
 
     The gate proves BPT NEGOTIATION happened, not reverse power flow: the SECC
     reports DC_BPT as the service the EV selected, and the EV then reaches the
     charge loop, which the EV-side CPD state can only do after accepting BPT DC
-    limits in the CPD response. iso_dc_power_on blocks the auto_exec chain until
-    dc_power_on is published, so the chain only advances once the DC charge loop
-    has run on both sides. Power still flows in the charge direction; only the
+    limits in the CPD response. The dc_power_on publication confirms the DC
+    charge loop has run on both sides. Power still flows in the charge direction; only the
     negotiated service is bidirectional.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -153,6 +142,7 @@ async def test_ev_iso15118d20_dc_bpt_session(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "DcIsoD20", bpt=DEFAULT_BPT)
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -179,4 +169,5 @@ async def test_ev_iso15118d20_dc_bpt_session(
 
     await wait_for_call(dc_power_on_mock, timeout=30)
 
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)

@@ -1989,12 +1989,12 @@
         "label": "Simulation enable (HIL)",
         "tooltip": "",
         "group": "b364f7eb4621082b",
-        "order": 10,
+        "order": 12,
         "width": 0,
         "height": 0,
         "passthru": true,
         "decouple": "false",
-        "topic": "everest_external/nodered/#/carsim/cmd/enable",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/m2e/enable",
         "topicType": "str",
         "style": "",
         "onvalue": "true",
@@ -2010,7 +2010,7 @@
         "y": 880,
         "wires": [
             [
-                "361b3d846c4e6673"
+                "620b0d248a89ece0"
             ]
         ]
     },
@@ -2020,7 +2020,7 @@
         "z": "ed603c51db9dcbb9",
         "name": "",
         "group": "b364f7eb4621082b",
-        "order": 8,
+        "order": 13,
         "width": "3",
         "height": "1",
         "passthru": false,
@@ -2029,9 +2029,9 @@
         "color": "",
         "bgcolor": "",
         "icon": "",
-        "payload": "start",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/execute_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/m2e/configure_session",
         "topicType": "str",
         "x": 170,
         "y": 980,
@@ -2047,18 +2047,18 @@
         "z": "ed603c51db9dcbb9",
         "name": "",
         "group": "b364f7eb4621082b",
-        "order": 9,
+        "order": 16,
         "width": "3",
         "height": "1",
         "passthru": false,
-        "label": "Stop & Unplug",
+        "label": "Car Stop",
         "tooltip": "",
         "color": "",
         "bgcolor": "",
         "icon": "",
-        "payload": "stop",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/modify_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/m2e/stop_session",
         "topicType": "str",
         "x": 180,
         "y": 940,
@@ -2100,10 +2100,10 @@
         "z": "ed603c51db9dcbb9",
         "name": "",
         "label": "Car Simulation",
-        "tooltip": "",
+        "tooltip": "Select the car's session before Car Plugin",
         "place": "Select option",
         "group": "b364f7eb4621082b",
-        "order": 10,
+        "order": 11,
         "width": 0,
         "height": 0,
         "passthru": true,
@@ -2111,42 +2111,22 @@
         "options": [
             {
                 "label": "AC 3ph 16A",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 36000#unplug#pause;sleep 3600#draw_power_regulated 16,3;sleep 36000",
+                "value": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
                 "type": "str"
             },
             {
                 "label": "AC 1ph 32A",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 32,1;sleep 36000#unplug#pause;sleep 3600#draw_power_regulated 32,1;sleep 36000",
-                "type": "str"
-            },
-            {
-                "label": "AC Diode Fail",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 32,3;sleep 5;diode_fail;sleep 36000#unplug",
-                "type": "str"
-            },
-            {
-                "label": "AC Error E",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 3;error_e;sleep 36000#unplug",
-                "type": "str"
-            },
-            {
-                "label": "AC RCD Error",
-                "value": "sleep 1;rcd_current 10.3;sleep 10;rcd_current 0.1#unplug",
+                "value": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":32,\"three_phases\":false}}",
                 "type": "str"
             },
             {
                 "label": "AC ISO15118-2",
-                "value": "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC 86400 0;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 36000#iso_stop_charging;iso_wait_v2g_session_stopped;unplug#iso_pause_charging;iso_wait_for_resume#iso_start_bcb_toggle 3;iso_wait_pwm_is_running;iso_start_v2g_session AC 86400 0;iso_wait_pwr_ready;iso_draw_power_regulated 16,3;sleep 36000",
-                "type": "str"
-            },
-            {
-                "label": "DC ISO15118-2",
-                "value": "sleep 1;iso_wait_slac_matched;iso_start_v2g_session DC 86400 0;iso_wait_pwr_ready;iso_dc_power_on;iso_wait_for_stop 36000#iso_stop_charging;iso_wait_v2g_session_stopped;unplug#iso_pause_charging;iso_wait_for_resume#iso_start_bcb_toggle 3;iso_wait_pwm_is_running;iso_start_v2g_session DC 86400 0;iso_wait_pwr_ready;iso_dc_power_on;sleep 36000;",
+                "value": "{\"mode\":\"AcIso2\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
                 "type": "str"
             }
         ],
         "payload": "",
-        "topic": "sim_commands",
+        "topic": "session_mode",
         "topicType": "str",
         "x": 180,
         "y": 1120,
@@ -2160,20 +2140,18 @@
         "id": "620b0d248a89ece0",
         "type": "function",
         "z": "ed603c51db9dcbb9",
-        "name": "Buffer sim commands",
-        "func": "if (msg.topic.indexOf('sim_commands') > -1) {\n    const s = msg.payload.split('#');\n    flow.set('sim_commands_start', s[0]);\n    flow.set('sim_commands_stop', s[1]);\n    flow.set('sim_commands_pause', s[2]);\n    flow.set('sim_commands_resume', s[3]);\n} else if (msg.payload == 'start') {\n    msg.payload = flow.get('sim_commands_start');\n    return msg;\n} else if (msg.payload == 'stop') {\n    msg.payload = flow.get('sim_commands_stop');\n    return msg;\n} else if (msg.payload == 'pause') {\n    msg.payload = flow.get('sim_commands_pause');\n    return msg;\n} else if (msg.payload == 'resume') {\n    msg.payload = flow.get('sim_commands_resume');\n    return msg;\n} else {\n    msg.payload = 'NONE';\n    return msg;\n}\n",
+        "name": "Configure session then plug",
+        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  const elapsed = Date.now() - context.get('pending_start');\n  context.set('pending_start', 0);\n  if (ack.status !== 'Accepted' || elapsed > 10000) {\n    node.warn(ack.reason || 'Session configuration was rejected or timed out');\n    return null;\n  }\n  return {topic: 'everest_api/1/ev_driver_sim/ev_manager_1_driver/m2e/plug', payload: '{}', retain: false};\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_1/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  return {topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false};\n}\ncontext.set('pending_start', 0);\nreturn msg;\n",
         "outputs": 1,
         "noerr": 0,
-        "initialize": "",
+        "initialize": "context.set('pending_start', 0);",
         "finalize": "",
         "libs": [],
         "x": 440,
         "y": 960,
         "wires": [
             [
-                "361b3d846c4e6673",
-                "cc42c210398a8d50",
-                "fb1511183c9a660f"
+                "f96ccb60614f9f18"
             ]
         ]
     },
@@ -2212,8 +2190,8 @@
         "crontab": "",
         "once": true,
         "onceDelay": "1",
-        "topic": "sim_commands",
-        "payload": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 36000#unplug#pause;sleep 3600#draw_power_regulated 16,3;sleep 36000",
+        "topic": "session_mode",
+        "payload": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
         "payloadType": "str",
         "x": 150,
         "y": 1180,
@@ -2246,7 +2224,7 @@
         "z": "ed603c51db9dcbb9",
         "name": "",
         "group": "b364f7eb4621082b",
-        "order": 9,
+        "order": 14,
         "width": "3",
         "height": "1",
         "passthru": false,
@@ -2256,9 +2234,9 @@
         "bgcolor": "",
         "className": "",
         "icon": "",
-        "payload": "pause",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/modify_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/m2e/pause_session",
         "topicType": "str",
         "x": 160,
         "y": 1020,
@@ -2274,7 +2252,7 @@
         "z": "ed603c51db9dcbb9",
         "name": "",
         "group": "b364f7eb4621082b",
-        "order": 9,
+        "order": 15,
         "width": "3",
         "height": "1",
         "passthru": false,
@@ -2284,9 +2262,9 @@
         "bgcolor": "",
         "className": "",
         "icon": "",
-        "payload": "resume",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/modify_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/m2e/resume_session",
         "topicType": "str",
         "x": 170,
         "y": 1060,
@@ -2832,12 +2810,12 @@
         "label": "Simulation enable (HIL)",
         "tooltip": "",
         "group": "21e40a4a97a50168",
-        "order": 10,
+        "order": 12,
         "width": 0,
         "height": 0,
         "passthru": true,
         "decouple": "false",
-        "topic": "everest_external/nodered/#/carsim/cmd/enable",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/m2e/enable",
         "topicType": "str",
         "style": "",
         "onvalue": "true",
@@ -2853,7 +2831,7 @@
         "y": 860,
         "wires": [
             [
-                "1a55c4272ab7ef25"
+                "cdef4125b099333e"
             ]
         ]
     },
@@ -2863,7 +2841,7 @@
         "z": "1922139a3ea7cac2",
         "name": "",
         "group": "21e40a4a97a50168",
-        "order": 8,
+        "order": 13,
         "width": "3",
         "height": "1",
         "passthru": false,
@@ -2872,9 +2850,9 @@
         "color": "",
         "bgcolor": "",
         "icon": "",
-        "payload": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 36000;unplug",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/execute_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/m2e/configure_session",
         "topicType": "str",
         "x": 170,
         "y": 960,
@@ -2890,7 +2868,7 @@
         "z": "1922139a3ea7cac2",
         "name": "",
         "group": "21e40a4a97a50168",
-        "order": 9,
+        "order": 17,
         "width": "3",
         "height": "1",
         "passthru": false,
@@ -2899,15 +2877,15 @@
         "color": "",
         "bgcolor": "",
         "icon": "",
-        "payload": "unplug",
-        "payloadType": "str",
-        "topic": "everest_external/nodered/#/carsim/cmd/modify_charging_session",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_driver_sim/ev_manager_2_driver/m2e/unplug",
         "topicType": "str",
         "x": 170,
         "y": 920,
         "wires": [
             [
-                "1a55c4272ab7ef25"
+                "cdef4125b099333e"
             ]
         ]
     },
@@ -2943,10 +2921,10 @@
         "z": "1922139a3ea7cac2",
         "name": "",
         "label": "Simulation",
-        "tooltip": "",
+        "tooltip": "Select the car's session before Car Plugin",
         "place": "Select option",
         "group": "21e40a4a97a50168",
-        "order": 10,
+        "order": 11,
         "width": 0,
         "height": 0,
         "passthru": true,
@@ -2954,32 +2932,17 @@
         "options": [
             {
                 "label": "AC 3ph 16A",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 36000;unplug",
+                "value": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
                 "type": "str"
             },
             {
                 "label": "AC 1ph 32A",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 32,1;sleep 36000;unplug",
-                "type": "str"
-            },
-            {
-                "label": "AC Diode Fail",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 32,3;sleep 5;diode_fail;sleep 36000;unplug",
-                "type": "str"
-            },
-            {
-                "label": "AC Error E",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 3;error_e;sleep 36000;unplug",
-                "type": "str"
-            },
-            {
-                "label": "AC RCD Error",
-                "value": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 3;rcd_current 10.3;sleep 36000;unplug",
+                "value": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":32,\"three_phases\":false}}",
                 "type": "str"
             }
         ],
         "payload": "",
-        "topic": "sim_commands",
+        "topic": "session_mode",
         "topicType": "str",
         "x": 170,
         "y": 1020,
@@ -2993,18 +2956,18 @@
         "id": "cdef4125b099333e",
         "type": "function",
         "z": "1922139a3ea7cac2",
-        "name": "Buffer sim commands",
-        "func": "if (msg.topic.indexOf('sim_commands') > -1) {\n    flow.set('sim_commands', msg.payload);\n} else {\n    msg.payload = flow.get('sim_commands');\n    return msg;\n}\n",
+        "name": "Configure session then plug",
+        "func": "if (msg.topic === 'session_mode') {\n  context.set('session', msg.payload);\n  return null;\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/e2m/command_ack') {\n  const ack = msg.payload;\n  if (ack.command !== 'configure_session' || !context.get('pending_start')) return null;\n  const elapsed = Date.now() - context.get('pending_start');\n  context.set('pending_start', 0);\n  if (ack.status !== 'Accepted' || elapsed > 10000) {\n    node.warn(ack.reason || 'Session configuration was rejected or timed out');\n    return null;\n  }\n  return {topic: 'everest_api/1/ev_driver_sim/ev_manager_2_driver/m2e/plug', payload: '{}', retain: false};\n}\nif (msg.topic === 'everest_api/1/ev_controller/ev_manager_2/m2e/configure_session') {\n  if (context.get('pending_start') && Date.now() - context.get('pending_start') < 10000) return null;\n  context.set('pending_start', Date.now());\n  return {topic: msg.topic, payload: context.get('session') || '{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}', retain: false};\n}\ncontext.set('pending_start', 0);\nreturn msg;\n",
         "outputs": 1,
         "noerr": 0,
-        "initialize": "",
+        "initialize": "context.set('pending_start', 0);",
         "finalize": "",
         "libs": [],
         "x": 440,
         "y": 940,
         "wires": [
             [
-                "1a55c4272ab7ef25"
+                "871a53340e257a24"
             ]
         ]
     },
@@ -3042,14 +3005,162 @@
         "crontab": "",
         "once": true,
         "onceDelay": "1",
-        "topic": "sim_commands",
-        "payload": "sleep 1;iec_wait_pwr_ready;sleep 1;draw_power_regulated 16,3;sleep 36000;unplug",
+        "topic": "session_mode",
+        "payload": "{\"mode\":\"AcIec\",\"params\":{\"charging_current_a\":16,\"three_phases\":true}}",
         "payloadType": "str",
         "x": 150,
         "y": 1080,
         "wires": [
             [
                 "3ce436b7f3df46a5"
+            ]
+        ]
+    },
+    {
+        "id": "744091202af6ad22",
+        "type": "ui_button",
+        "z": "ed603c51db9dcbb9",
+        "name": "",
+        "group": "b364f7eb4621082b",
+        "order": 17,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "Car unplug",
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "icon": "",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_driver_sim/ev_manager_1_driver/m2e/unplug",
+        "topicType": "str",
+        "x": 170,
+        "y": 1420,
+        "wires": [
+            [
+                "620b0d248a89ece0"
+            ]
+        ]
+    },
+    {
+        "id": "3382692427616b07",
+        "type": "mqtt in",
+        "z": "ed603c51db9dcbb9",
+        "name": "Session configuration acknowledgement",
+        "topic": "everest_api/1/ev_controller/ev_manager_1/e2m/command_ack",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "fc8686af.48d178",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "x": 240,
+        "y": 1520,
+        "wires": [
+            [
+                "620b0d248a89ece0"
+            ]
+        ]
+    },
+    {
+        "id": "41acd2e43c2eb078",
+        "type": "ui_button",
+        "z": "1922139a3ea7cac2",
+        "name": "",
+        "group": "21e40a4a97a50168",
+        "order": 14,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "Car Pause",
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "icon": "",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/m2e/pause_session",
+        "topicType": "str",
+        "x": 170,
+        "y": 1340,
+        "wires": [
+            [
+                "cdef4125b099333e"
+            ]
+        ]
+    },
+    {
+        "id": "f8861802415d9021",
+        "type": "ui_button",
+        "z": "1922139a3ea7cac2",
+        "name": "",
+        "group": "21e40a4a97a50168",
+        "order": 15,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "Car Resume",
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "icon": "",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/m2e/resume_session",
+        "topicType": "str",
+        "x": 170,
+        "y": 1380,
+        "wires": [
+            [
+                "cdef4125b099333e"
+            ]
+        ]
+    },
+    {
+        "id": "4b3887400decf366",
+        "type": "ui_button",
+        "z": "1922139a3ea7cac2",
+        "name": "",
+        "group": "21e40a4a97a50168",
+        "order": 16,
+        "width": "3",
+        "height": "1",
+        "passthru": false,
+        "label": "Car Stop",
+        "tooltip": "",
+        "color": "",
+        "bgcolor": "",
+        "icon": "",
+        "payload": "{}",
+        "payloadType": "json",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/m2e/stop_session",
+        "topicType": "str",
+        "x": 170,
+        "y": 1420,
+        "wires": [
+            [
+                "cdef4125b099333e"
+            ]
+        ]
+    },
+    {
+        "id": "ef74381fbf06f19a",
+        "type": "mqtt in",
+        "z": "1922139a3ea7cac2",
+        "name": "Session configuration acknowledgement",
+        "topic": "everest_api/1/ev_controller/ev_manager_2/e2m/command_ack",
+        "qos": "1",
+        "datatype": "json",
+        "broker": "fc8686af.48d178",
+        "nl": false,
+        "rap": true,
+        "rh": 0,
+        "x": 240,
+        "y": 1520,
+        "wires": [
+            [
+                "cdef4125b099333e"
             ]
         ]
     }

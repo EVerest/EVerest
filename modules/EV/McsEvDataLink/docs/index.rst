@@ -19,7 +19,7 @@ line communication. **There is no SLAC** - no CM_SET_KEY, no sounding, no
 CM_SLAC_MATCH, no logical network to join. What ISO 15118-10 keeps are the
 **D-LINK service primitives** of ISO 15118-3, which is what the EVerest
 ``ev_slac`` interface carries, so this module provides ``ev_slac`` and
-``EvManager`` needs no modification.
+``EvController`` needs no modification.
 
 The interface name is a misnomer here and the states read differently:
 
@@ -217,7 +217,7 @@ D-LINK_ERROR (V2G10-039)
 Withdrawing the basic-signalling condition
    There is no ``leave_bcd`` counterpart. The module learns that the EV is no
    longer requesting the link only from ``reset`` (or from the carrier
-   disappearing). ``EvManager`` does call ``reset`` before every matching attempt,
+   disappearing). ``EvController`` calls ``reset`` on unplug,
    so this is harmless in practice, but a consumer that never calls ``reset``
    would leave the module believing the request still stands. Consumers should
    call ``reset`` on unplug.
@@ -317,7 +317,7 @@ Implementation notes
 * Interface commands arrive on framework threads and only ever append to a
   monitor-guarded FIFO and notify an ``event_fd``. The state machine, the liveness
   judgement and the timers are touched by exactly one thread. The FIFO preserves
-  command order, which matters here: ``EvManager`` calls ``reset`` and then
+  command order, which matters here: ``EvController`` calls ``reset`` and then
   ``trigger_matching``, and swapping them would leave the module unmatched with
   nothing pending.
 

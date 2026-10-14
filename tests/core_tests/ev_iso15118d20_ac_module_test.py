@@ -8,13 +8,16 @@ import pytest
 
 from everest.testing.core_utils.common import Requirement
 from everest.testing.core_utils.fixtures import *
-from everest.testing.core_utils.controller.test_controller_interface import (
-    TestController,
-)
 from everest.testing.core_utils.everest_core import EverestCore
 from everest.testing.core_utils.probe_module import ProbeModule
 
-from ev_iso15118d20_common import _ev_config_adaptions, wait_for_call
+from ev_iso15118d20_common import (
+    AcFivePercentAdjustmentStrategy,
+    _ev_device_adaptions,
+    start_iso_session,
+    stop_iso_session,
+    wait_for_call,
+)
 
 
 # The SECC publishes this literal for any negotiated AC ISO 15118-20 namespace.
@@ -30,21 +33,15 @@ D20_AC_PROTOCOL = "ISO15118-20:AC and similar"
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-d20-plaintext.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        # sleep 1: let the modules reach steady state before SLAC matching starts.
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC;"
-        "iso_wait_pwr_ready;iso_wait_for_stop 5;iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions(), AcFivePercentAdjustmentStrategy())
 async def test_ev_iso15118d20_ac_session(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: the C++ Ev15118 module negotiates an AC ISO 15118-20 session.
 
     The two-connection probe observes the SECC view of protocol selection.
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     selected_protocol_mock = Mock()
@@ -53,8 +50,7 @@ async def test_ev_iso15118d20_ac_session(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
-
-    # The EvManager auto_exec sequence drives SLAC matching and the V2G session.
+    events = await start_iso_session(evctl_test_controller, "AcIsoD20")
 
     await wait_for_call(selected_protocol_mock, timeout=30)
     selected_protocol = selected_protocol_mock.call_args[0][0]
@@ -62,6 +58,8 @@ async def test_ev_iso15118d20_ac_session(
         f"selected_protocol '{selected_protocol}' != expected "
         f"ISO 15118-20 AC protocol literal '{D20_AC_PROTOCOL}'"
     )
+
+    await stop_iso_session(evctl_test_controller, events)
 
 
 @pytest.mark.asyncio
@@ -73,27 +71,19 @@ async def test_ev_iso15118d20_ac_session(
     }
 )
 @pytest.mark.everest_core_config("config-sil-ac-d20-plaintext.yaml")
-@pytest.mark.everest_config_adaptions(
-    *_ev_config_adaptions(
-        # sleep 1: let the modules reach steady state before SLAC matching starts.
-        # The rest of the chain is event-gated (iso_wait_*), so no further sleeps.
-        "sleep 1;iso_wait_slac_matched;iso_start_v2g_session AC;"
-        "iso_wait_pwr_ready;iso_draw_power_regulated 16,3;iso_wait_for_stop 10;"
-        "iso_wait_v2g_session_stopped;unplug"
-    )
-)
+@pytest.mark.everest_config_adaptions(*_ev_device_adaptions(), AcFivePercentAdjustmentStrategy())
 async def test_ev_iso15118d20_full_ac_charge_loop(
-    test_controller: TestController, everest_core: EverestCore
+    evctl_test_controller, everest_core: EverestCore
 ):
     """SIL gate: Ev15118 completes a full AC ISO 15118-20 charge loop.
 
-    The EvManager auto_exec walks the whole AC flow to a clean SessionStop. The
+    EvController drives the AC flow to a clean SessionStop. The
     EV-side publishes, in order, drive the charge loop:
       - ev_power_ready (the EVCC is ready for power)
       - ac_evse_target_power (the EVSE target power in the charge loop)
       - v2g_session_finished (clean end)
     """
-    test_controller.start()
+    everest_core.start()
     probe_module = ProbeModule(everest_core.get_runtime_session())
 
     power_ready_mock = Mock()
@@ -106,10 +96,12 @@ async def test_ev_iso15118d20_full_ac_charge_loop(
 
     probe_module.start()
     await probe_module.wait_to_be_ready()
+    events = await start_iso_session(evctl_test_controller, "AcIsoD20")
 
     await wait_for_call(power_ready_mock, timeout=30)
     assert power_ready_mock.call_args[0][0] is True, "ev_power_ready published without a true value"
 
     await wait_for_call(ac_target_power_mock, timeout=30)
 
+    await stop_iso_session(evctl_test_controller, events)
     await wait_for_call(finished_mock, timeout=40)
