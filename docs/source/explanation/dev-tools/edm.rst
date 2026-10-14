@@ -100,7 +100,6 @@ dependencies for EVerest:
 	├── everest-framework
 	├── everest-sqlite
 	├── everest-utils
-	├── Josev
 	├── libcbv2g
 	├── libevse-security
 	├── libfsm
@@ -485,7 +484,7 @@ following command.
 
 .. code-block:: bash
 
-  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/everest* https://github.com/EVerest/ext-switchev-iso15118.git
+  edm --create-config custom-config.yaml --include-remotes https://github.com/EVerest/everest*
 
 If you want to include all repositories, including external dependencies, in
 the config you can use the following command:
