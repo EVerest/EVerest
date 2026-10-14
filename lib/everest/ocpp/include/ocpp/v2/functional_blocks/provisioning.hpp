@@ -154,17 +154,21 @@ private:
     std::optional<std::string> validate_set_variable(const SetVariableData& set_variable_data);
     std::optional<std::string> validate_set_network_configuration_slot(const SetVariableData& set_variable_data,
                                                                        const ComponentVariable& cv);
-    std::optional<std::string> validate_network_configuration_priority(const SetVariableData& set_variable_data);
+    /// \brief Validate a new NetworkConfigurationPriority of \p connection
+    std::optional<std::string> validate_network_configuration_priority(const SetVariableData& set_variable_data,
+                                                                       const ConnectionId& connection);
 
     /// \brief Check that a network profile's URL scheme matches its security profile
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_content(int32_t configuration_slot,
                                                                 const NetworkConnectionProfile& profile);
 
-    /// \brief Validate certificate preconditions for a priority slot above the active security profile
+    /// \brief Validate certificate preconditions for a priority slot above the active security profile of
+    /// \p connection
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_security_preconditions(int32_t configuration_slot,
-                                                                               const NetworkConnectionProfile& profile);
+                                                                               const NetworkConnectionProfile& profile,
+                                                                               const ConnectionId& connection);
 
     /// \brief B09.FR.26/27: Clear the given NetworkConfiguration variable on the currently active slot
     /// so subsequent reads fall back to the SecurityCtrlr global per B09.FR.16. Does nothing if no slot

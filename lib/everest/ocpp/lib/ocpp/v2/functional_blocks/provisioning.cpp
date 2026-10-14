@@ -44,6 +44,9 @@ std::optional<std::vector<int>> parse_network_configuration_priority(const std::
 
 bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots);
 
+/// The connection whose NetworkConfigurationPriority \p cv is, if it is one.
+std::optional<ConnectionId> connection_of_network_configuration_priority(const ComponentVariable& cv);
+
 bool component_variable_change_requires_websocket_option_update_without_reconnect(
     const ComponentVariable& component_variable);
 } // namespace
@@ -934,11 +937,9 @@ std::optional<std::string> Provisioning::validate_network_profile_content(const 
     return std::nullopt;
 }
 
-std::optional<std::string>
-Provisioning::validate_network_profile_security_preconditions(const int32_t configuration_slot,
-                                                              const NetworkConnectionProfile& profile) {
-    const auto active_security_profile =
-        this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
+std::optional<std::string> Provisioning::validate_network_profile_security_preconditions(
+    const int32_t configuration_slot, const NetworkConnectionProfile& profile, const ConnectionId& connection) {
+    const auto active_security_profile = this->confirmed_security_profile(connection);
 
     if (profile.securityProfile <= active_security_profile) {
         return std::nullopt;
@@ -962,15 +963,17 @@ Provisioning::validate_network_profile_security_preconditions(const int32_t conf
 }
 
 std::optional<std::string>
-Provisioning::validate_network_configuration_priority(const SetVariableData& set_variable_data) {
+Provisioning::validate_network_configuration_priority(const SetVariableData& set_variable_data,
+                                                      const ConnectionId& connection) {
     const auto slots = parse_network_configuration_priority(set_variable_data.attributeValue.get(), false);
     if (!slots.has_value()) {
         return "InvalidNetworkConf";
     }
 
     std::vector<int> stored_slots;
-    const auto current_priority = this->context.device_model.get_optional_value<std::string>(
-        ControllerComponentVariables::NetworkConfigurationPriority);
+    const auto current_priority =
+        this->context.device_model.get_optional_value<std::string>(ConnectionComponentVariables::get_component_variable(
+            connection, ConnectionComponentVariables::NetworkConfigurationPriority));
     if (current_priority.has_value()) {
         stored_slots = parse_network_configuration_priority(current_priority.value(), true).value();
     }
@@ -1000,7 +1003,8 @@ Provisioning::validate_network_configuration_priority(const SetVariableData& set
             }
         }
         // A05.FR.02/03: certificate preconditions apply to every slot in the requested priority list.
-        if (const auto result = this->validate_network_profile_security_preconditions(slot, profile_opt.value());
+        if (const auto result =
+                this->validate_network_profile_security_preconditions(slot, profile_opt.value(), connection);
             result.has_value()) {
             return result;
         }
@@ -1019,8 +1023,8 @@ std::optional<std::string> Provisioning::validate_set_variable(const SetVariable
         }
     }
 
-    if (cv == ControllerComponentVariables::NetworkConfigurationPriority) {
-        return this->validate_network_configuration_priority(set_variable_data);
+    if (const auto connection = connection_of_network_configuration_priority(cv); connection.has_value()) {
+        return this->validate_network_configuration_priority(set_variable_data, connection.value());
     }
 
     return std::nullopt;
@@ -1188,6 +1192,25 @@ std::optional<std::vector<int>> parse_network_configuration_priority(const std::
         }
     }
     return slots;
+}
+
+std::optional<ConnectionId> connection_of_network_configuration_priority(const ComponentVariable& cv) {
+    if (!(cv.component.name == ControllerComponents::OCPPCommCtrlr.name)) {
+        return std::nullopt;
+    }
+    ConnectionId connection = ConnectionId::primary();
+    if (cv.component.instance.has_value()) {
+        const std::string instance = cv.component.instance.value().get();
+        if (!ConnectionId::is_valid_instance_name(instance)) {
+            return std::nullopt;
+        }
+        connection = ConnectionId::secondary(instance);
+    }
+    if (!(cv == ConnectionComponentVariables::get_component_variable(
+                    connection, ConnectionComponentVariables::NetworkConfigurationPriority))) {
+        return std::nullopt;
+    }
+    return connection;
 }
 
 bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots) {
