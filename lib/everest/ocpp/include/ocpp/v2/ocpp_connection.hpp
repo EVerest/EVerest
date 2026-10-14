@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <chrono>
+#include <functional>
 #include <memory>
 
 #include <ocpp/common/connectivity_manager.hpp>
@@ -11,6 +13,8 @@
 #include <ocpp/common/message_queue.hpp>
 #include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/types.hpp>
+
+#include <everest/timer.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -57,6 +61,22 @@ public:
     /// \brief The dispatcher that writes into this connection's queue.
     MessageDispatcherInterface<MessageType>& dispatcher();
 
+    /// \brief Whether the charging station may send \p message_type to this connection.
+    ///
+    /// The primary connection may send anything. A secondary connection may send only what it has
+    /// been granted, which today means only the messages that keep the connection itself alive.
+    /// The UpstreamMsgs allow list of application note section 3.5 refines this.
+    [[nodiscard]] bool may_send(MessageType message_type) const;
+
+    /// \brief Starts this connection's heartbeat.
+    ///
+    /// Each connection keeps its own heartbeat, at its own interval, so a secondary connection going
+    /// quiet never affects the primary connection's liveness towards the CSMS.
+    void start_heartbeat(std::function<void()> send, std::chrono::seconds interval);
+
+    /// \brief Stops this connection's heartbeat. Safe to call when it was never started.
+    void stop_heartbeat();
+
 private:
     ConnectionId m_id;
     // Declared before m_connectivity_manager so it outlives it: the manager holds a reference to it.
@@ -66,6 +86,7 @@ private:
     std::shared_ptr<MessageQueue<MessageType>> m_message_queue;
     // Declared last: the dispatcher holds a reference to the queue.
     std::unique_ptr<MessageDispatcherInterface<MessageType>> m_dispatcher;
+    Everest::SteadyTimer m_heartbeat_timer;
 };
 
 } // namespace v2

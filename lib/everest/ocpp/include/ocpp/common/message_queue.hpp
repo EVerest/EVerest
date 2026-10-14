@@ -16,6 +16,8 @@
 #include <everest/timer.hpp>
 
 #include <ocpp/common/call_types.hpp>
+#include <optional>
+
 #include <ocpp/common/database/database_handler_common.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/v16/messages/StopTransaction.hpp>
@@ -38,6 +40,11 @@ template <typename M> struct MessageQueueConfig {
                                                     // Heartbeat)
 
     int message_timeout_seconds = 30;
+
+    /// \brief OCPP connection this queue belongs to, as an OCPPCommCtrlr component instance name.
+    /// std::nullopt is the primary connection. Persisted alongside every queued message so that a
+    /// charging station with several connections keeps their queues apart across a reboot.
+    std::optional<std::string> connection;
     int boot_notification_retry_interval_seconds =
         60; // interval for BootNotification.req in case response by CSMS is CALLERROR or CSMS does not respond at all
             // (within specified MessageTimeout)
@@ -258,7 +265,8 @@ private:
                     message->message, messagetype_to_string(message->messageType), message->message_attempts,
                     message->timestamp, message->uniqueId()};
                 try {
-                    this->database_handler->insert_message_queue_message(db_message, QueueType::Normal);
+                    this->database_handler->insert_message_queue_message(db_message, QueueType::Normal,
+                                                                         this->config.connection);
                 } catch (const everest::db::QueryExecutionException& e) {
                     EVLOG_warning << "Could not insert message into transaction queue: " << e.what();
                 }
@@ -278,7 +286,8 @@ private:
                 message->message, messagetype_to_string(message->messageType), message->message_attempts,
                 message->timestamp, message->uniqueId()};
             try {
-                this->database_handler->insert_message_queue_message(db_message);
+                this->database_handler->insert_message_queue_message(db_message, QueueType::Transaction,
+                                                                     this->config.connection);
             } catch (const everest::db::QueryExecutionException& e) {
                 EVLOG_warning << "Could not insert message into transaction queue: " << e.what();
             }
@@ -360,8 +369,8 @@ private:
                 }
                 try {
                     // also drop the message from the database
-                    this->database_handler->remove_message_queue_message(this->in_flight->initial_unique_id,
-                                                                         queue_type);
+                    this->database_handler->remove_message_queue_message(this->in_flight->initial_unique_id, queue_type,
+                                                                         this->config.connection);
                 } catch (const everest::db::QueryExecutionException& e) {
                     EVLOG_warning << "Could not delete message from transaction queue: " << e.what();
                 } catch (const std::exception& e) {
@@ -443,7 +452,8 @@ private:
             }
             if (this->config.queue_all_messages) {
                 try {
-                    database_handler->remove_message_queue_message((*it)->initial_unique_id, QueueType::Normal);
+                    database_handler->remove_message_queue_message((*it)->initial_unique_id, QueueType::Normal,
+                                                                   this->config.connection);
                 } catch (const everest::db::QueryExecutionException& e) {
                     EVLOG_warning << "Could not delete message from normal message queue: " << e.what();
                 } catch (const std::exception& e) {
@@ -473,7 +483,8 @@ private:
                 transaction_message_queue.size() > 1) {
                 EVLOG_debug << "Drop transactional message " << element->initial_unique_id;
                 try {
-                    database_handler->remove_message_queue_message(element->initial_unique_id);
+                    database_handler->remove_message_queue_message(element->initial_unique_id, QueueType::Transaction,
+                                                                   this->config.connection);
                 } catch (const everest::db::QueryExecutionException& e) {
                     EVLOG_warning << "Could not delete message from transaction queue: " << e.what();
                 } catch (const std::exception& e) {
@@ -716,7 +727,8 @@ public:
         // do for Normal and Transaction queue
         for (const auto queue_type : queue_types) {
             try {
-                const auto persisted_messages = database_handler->get_message_queue_messages(queue_type);
+                const auto persisted_messages =
+                    database_handler->get_message_queue_messages(queue_type, this->config.connection);
                 if (!persisted_messages.empty()) {
                     for (auto& persisted_message : persisted_messages) {
 
@@ -724,8 +736,8 @@ public:
                             persisted_message.message_type == "SecurityEventNotification") {
                             try {
                                 // remove from database in case SecurityEventNotification.req should not be sent
-                                this->database_handler->remove_message_queue_message(persisted_message.unique_id,
-                                                                                     queue_type);
+                                this->database_handler->remove_message_queue_message(
+                                    persisted_message.unique_id, queue_type, this->config.connection);
                             } catch (const everest::db::QueryExecutionException& e) {
                                 EVLOG_warning << "Could not delete message from message queue: " << e.what();
                             } catch (const std::exception& e) {
@@ -757,7 +769,7 @@ public:
             try {
                 // make sure to clear normal message queue table in case queue_all_messages is false, since without
                 // clearing it here messages would not be removed in handle_call_result or handle_call_timeout_or_error
-                this->database_handler->clear_message_queue(QueueType::Normal);
+                this->database_handler->clear_message_queue(QueueType::Normal, this->config.connection);
             } catch (const everest::db::QueryExecutionException& e) {
                 EVLOG_warning << "Could not clear normal message queue from database: " << e.what();
             }
@@ -942,8 +954,8 @@ public:
                 try {
                     // We only remove the message as soon as a response is received. Otherwise we might miss a message
                     // if the charging station just boots after sending, but before receiving the result.
-                    this->database_handler->remove_message_queue_message(this->in_flight->initial_unique_id,
-                                                                         queue_type);
+                    this->database_handler->remove_message_queue_message(this->in_flight->initial_unique_id, queue_type,
+                                                                         this->config.connection);
                 } catch (const everest::db::QueryExecutionException& e) {
                     EVLOG_warning << "Could not delete message from message queue: " << e.what();
                 } catch (const std::exception& e) {

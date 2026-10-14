@@ -128,6 +128,100 @@ class _OCPP2XNetworkConnectionProfileAdjustment(OCPPConfigAdjustmentStrategy):
         return config
 
 
+class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
+    """ Declares a secondary OCPP connection in the OCPP 2.X device model configuration.
+
+    A secondary connection exists because an ``OCPPCommCtrlr`` component instance exists for it, so
+    this injects that component plus a ``NetworkConnectionProfile`` for the network configuration
+    slot it is given. libocpp creates the matching ``NetworkConfiguration_<slot>`` component itself
+    when it migrates the profile blob, so none has to be supplied here.
+
+    Utilized by the `LibOCPP2XConfigurationHelper`.
+    """
+
+    def __init__(self, connection_id: str, central_system_port: int | str, central_system_host: str = "127.0.0.1",
+                 network_configuration_slot: int = 3, security_profile: int = 1, identity: str | None = None,
+                 enabled: bool = True, upstream_msgs: str = "", downstream_msgs: str = "",
+                 allow_set_variables: str = ""):
+        self._connection_id = connection_id
+        self._central_system_port = central_system_port
+        self._central_system_host = central_system_host
+        self._slot = network_configuration_slot
+        self._security_profile = security_profile
+        self._identity = identity
+        self._enabled = enabled
+        self._upstream_msgs = upstream_msgs
+        self._downstream_msgs = downstream_msgs
+        self._allow_set_variables = allow_set_variables
+
+    @staticmethod
+    def _variable(variable_name: str, data_type: str, mutability: str, value=None, description: str = ""):
+        attribute = {"type": "Actual", "mutability": mutability}
+        if value is not None:
+            attribute["value"] = value
+        return {
+            "variable_name": variable_name,
+            "characteristics": {"supportsMonitoring": True, "dataType": data_type},
+            "attributes": [attribute],
+            "description": description,
+            "type": "string" if data_type in ("string", "MemberList", "SequenceList") else data_type,
+        }
+
+    def _ocpp_comm_ctrlr_component(self) -> dict:
+        return {
+            "description": f"Secondary OCPP connection {self._connection_id} (injected by everest-testing)",
+            "type": "object",
+            "name": "OCPPCommCtrlr",
+            "instance": self._connection_id,
+            "properties": {
+                "OCPPCommCtrlrEnabled": self._variable("Enabled", "boolean", "ReadWrite", self._enabled),
+                "NetworkConfigurationPriority": self._variable(
+                    "NetworkConfigurationPriority", "SequenceList", "ReadWrite", str(self._slot)),
+                "ActiveNetworkProfile": self._variable("ActiveNetworkProfile", "integer", "ReadOnly"),
+                "SecurityProfile": self._variable("SecurityProfile", "integer", "ReadOnly"),
+                "HeartbeatInterval": self._variable("HeartbeatInterval", "integer", "ReadWrite"),
+                "DownstreamMsgs": self._variable(
+                    "DownstreamMsgs", "MemberList", "ReadWrite", self._downstream_msgs),
+                "UpstreamMsgs": self._variable("UpstreamMsgs", "MemberList", "ReadWrite", self._upstream_msgs),
+                "AllowSetVariables": self._variable(
+                    "AllowSetVariables", "string", "ReadWrite", self._allow_set_variables),
+            },
+        }
+
+    def adjust_ocpp_configuration(self, config: dict):
+        config = deepcopy(config)
+
+        # The component config dict is keyed by file stem, and every entry is written back out as a
+        # file, so a new stem simply materializes as a new component config.
+        config[f"OCPPCommCtrlr_{self._connection_id}"] = self._ocpp_comm_ctrlr_component()
+
+        protocol = "ws" if self._security_profile == 1 else "wss"
+        profile = {
+            "configurationSlot": self._slot,
+            "connectionData": {
+                "messageTimeout": 30,
+                "ocppCsmsUrl": f"{protocol}://{self._central_system_host}:{self._central_system_port}",
+                "ocppInterface": "Wired0",
+                "ocppTransport": "JSON",
+                "ocppVersion": "OCPP20",
+                "securityProfile": self._security_profile,
+            },
+        }
+        if self._identity is not None:
+            profile["connectionData"]["identity"] = self._identity
+
+        profiles = json.loads(GenericOCPP2XConfigAdjustment._get_value_from_v2_config(
+            config, OCPP2XConfigVariableIdentifier("InternalCtrlr", "NetworkConnectionProfiles", "Actual")))
+        # Replace rather than append, so re-running against an already adjusted config is idempotent.
+        profiles = [p for p in profiles if p.get("configurationSlot") != self._slot]
+        profiles.append(profile)
+        GenericOCPP2XConfigAdjustment._set_value_in_v2_config(
+            config, OCPP2XConfigVariableIdentifier("InternalCtrlr", "NetworkConnectionProfiles", "Actual"),
+            json.dumps(profiles))
+
+        return config
+
+
 class _OCPP16ComponentConfigCsmsUrlAdjustment(OCPPConfigAdjustmentStrategy):
     """ Rewrites the ``OcppCsmsUrl`` of every ``NetworkConfiguration_N`` component (device-model
     backed OCPP1.6 configuration) that carries a non-empty value or non-empty default to the test

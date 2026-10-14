@@ -635,6 +635,27 @@ void ChargePointV16::disconnect_websocket() {
     check_configured("disconnect_websocket");
     m_charge_point->disconnect_websocket();
 }
+
+void ChargePointV16::connect_all() {
+    // OCPP 1.6 has no secondary connections, so this is just the CSMS connection.
+    connect_websocket();
+}
+void ChargePointV16::connect_websocket(const ocpp::v2::ConnectionId& connection) {
+    if (!connection.is_primary()) {
+        EVLOG_warning << "Ignoring connect of " << connection.to_string()
+                      << ": secondary OCPP connections are an OCPP 2.x feature";
+        return;
+    }
+    connect_websocket();
+}
+void ChargePointV16::disconnect_websocket(const ocpp::v2::ConnectionId& connection) {
+    if (!connection.is_primary()) {
+        EVLOG_warning << "Ignoring disconnect of " << connection.to_string()
+                      << ": secondary OCPP connections are an OCPP 2.x feature";
+        return;
+    }
+    disconnect_websocket();
+}
 void ChargePointV16::set_message_queue_resume_delay(std::chrono::seconds delay) {
     check_configured("set_message_queue_resume_delay");
     m_charge_point->set_message_queue_resume_delay(delay);

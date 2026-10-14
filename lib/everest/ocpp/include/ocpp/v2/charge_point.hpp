@@ -385,6 +385,21 @@ public:
     /// \return the configured connections; misconfigured ones are logged and left out.
     virtual std::vector<ConnectionInfo> get_connections() = 0;
 
+    /// \brief Connects every OCPP connection.
+    ///
+    /// Each connection dials independently, so an unreachable secondary connection never delays or
+    /// blocks the primary one. Each connects once no CALL is in flight on its own queue. Does nothing
+    /// after stop().
+    virtual void connect_all() = 0;
+
+    /// \brief Connects one OCPP connection once no CALL is in flight on its queue. Does nothing after stop().
+    /// Unknown connections are logged and ignored.
+    virtual void connect_websocket(const ConnectionId& connection) = 0;
+
+    /// \brief Disconnects one OCPP connection once no CALL is in flight on its queue. Does nothing after
+    /// stop(). Unknown connections are logged and ignored.
+    virtual void disconnect_websocket(const ConnectionId& connection) = 0;
+
     /// \brief Gets the configured NetworkConnectionProfile based on the given \p configuration_slot . The
     /// central system uri of the connection options will not contain ws:// or wss:// because this method removes it if
     /// present. This returns the value from the cached network connection profiles. \param
@@ -413,6 +428,11 @@ class ChargePoint : public ChargePointInterface, private ocpp::ChargingStationBa
 private:
     std::shared_ptr<DeviceModelAbstract> device_model;
     std::unique_ptr<EvseManager> evse_manager;
+    // Registration status of each secondary connection. Owned here, and declared before the
+    // registry, so that the dispatchers referencing them outlive nothing. A secondary connection is
+    // Accepted from the start and stays that way: the application note says its
+    // BootNotificationResponse is ignored, so waiting for one would stall its queue forever.
+    std::vector<std::unique_ptr<std::atomic<RegistrationStatusEnum>>> secondary_registration_statuses;
     // Owns every OCPP connection. Declared before message_dispatcher, which routes between the
     // connections and therefore has to be destroyed first.
     ConnectionRegistry connection_registry;
@@ -502,6 +522,25 @@ private:
     /// the duration of the call through ConnectionScope, which is how any response produced while
     /// handling the message finds its way back to the connection that asked.
     void message_callback(const ConnectionId& connection_id, const std::string& message);
+
+    /// \brief Wires the websocket lifecycle callbacks of \p connectivity_manager so that they carry
+    ///        \p connection_id, letting the handlers tell the connections apart.
+    void wire_connectivity_callbacks(ConnectivityManagerInterface& connectivity_manager,
+                                     const ConnectionId& connection_id);
+
+    void on_websocket_connected(const ConnectionId& connection_id, std::int32_t configuration_slot,
+                                const NetworkConnectionProfile& network_connection_profile,
+                                OcppProtocolVersion ocpp_version);
+    void on_websocket_disconnected(const ConnectionId& connection_id, std::int32_t configuration_slot,
+                                   const NetworkConnectionProfile& network_connection_profile);
+    void on_websocket_connection_failed(const ConnectionId& connection_id, ConnectionFailedReason reason);
+
+    /// \brief Builds and registers a secondary OCPP connection from its device model configuration.
+    void add_secondary_connection(const ConnectionInfo& info);
+
+    /// \brief Starts the heartbeat of \p connection at its configured interval, falling back to the
+    ///        primary connection's HeartbeatInterval when the connection sets none.
+    void start_heartbeat_for(OcppConnection& connection);
 
     /// \brief Get the value optional offline flag
     /// \return true if the charge point is offline. std::nullopt if it is online;
@@ -735,6 +774,10 @@ public:
                                                                        const ChargingRateUnitEnum& unit) override;
 
     std::vector<ConnectionInfo> get_connections() override;
+
+    void connect_all() override;
+    void connect_websocket(const ConnectionId& connection) override;
+    void disconnect_websocket(const ConnectionId& connection) override;
 
     std::optional<NetworkConnectionProfile>
     get_network_connection_profile(const std::int32_t configuration_slot) const override;

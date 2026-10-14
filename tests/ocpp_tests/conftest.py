@@ -19,6 +19,10 @@ from everest.testing.ocpp_utils.fixtures import (
     central_system_v21,
     central_system_v16_standalone,
     test_utility,
+    secondary_csms_specs,
+    secondary_central_systems,
+    secondary_connections,
+    secondary_charge_points,
 )
 
 import test_sets.everest_test_utils as everest_test_utils

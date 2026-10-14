@@ -162,7 +162,9 @@ TEST_F(ConnectionRoutingDispatcherTest, a_call_fans_out_to_every_connection) {
     EXPECT_CALL(*primary_leaf, dispatch_call(_, false)).WillOnce(SaveArg<0>(&to_primary));
     EXPECT_CALL(*secondary_leaf, dispatch_call(_, false)).WillOnce(SaveArg<0>(&to_secondary));
 
-    const auto call = make_call("TransactionEvent");
+    // A message type the secondary connection is allowed to be sent; what it is allowed is the
+    // subject of the allow list tests below.
+    const auto call = make_call("Heartbeat");
     dispatcher.dispatch_call(call);
 
     EXPECT_EQ(to_primary, call);
@@ -179,7 +181,7 @@ TEST_F(ConnectionRoutingDispatcherTest, a_secondary_copy_gets_its_own_message_id
     EXPECT_CALL(*primary_leaf, dispatch_call(_, false)).WillOnce(SaveArg<0>(&to_primary));
     EXPECT_CALL(*secondary_leaf, dispatch_call(_, false)).WillOnce(SaveArg<0>(&to_secondary));
 
-    dispatcher.dispatch_call(make_call("MeterValues"));
+    dispatcher.dispatch_call(make_call("Heartbeat"));
 
     EXPECT_EQ(to_primary.at(MESSAGE_ID), ORIGINAL_MESSAGE_ID);
     EXPECT_NE(to_secondary.at(MESSAGE_ID), ORIGINAL_MESSAGE_ID);
@@ -269,6 +271,45 @@ TEST_F(ConnectionRoutingDispatcherTest, an_unknown_origin_answers_on_the_primary
 
     const ConnectionScope scope(ConnectionId::secondary("NotRegistered"));
     dispatcher.dispatch_call_result(json::array({3, ORIGINAL_MESSAGE_ID, json::object()}));
+}
+
+// --- what a secondary connection is allowed to be sent -----------------------------------------
+
+TEST_F(ConnectionRoutingDispatcherTest, a_secondary_is_sent_nothing_it_was_not_granted) {
+    add_primary();
+    add_secondary();
+
+    // Application note section 3.6: a secondary system gets nothing by default. Until an
+    // UpstreamMsgs allow list says otherwise, station business never reaches it.
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(3);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(0);
+
+    dispatcher.dispatch_call(make_call("TransactionEvent"));
+    dispatcher.dispatch_call(make_call("MeterValues"));
+    dispatcher.dispatch_call(make_call("StatusNotification"));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, a_secondary_is_still_sent_what_keeps_its_own_link_alive) {
+    add_primary();
+    add_secondary();
+
+    // These are about the pipe rather than about the charging station's business, so a connection
+    // that exists at all may send them: otherwise it could neither announce itself nor stay alive.
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(2);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(2);
+
+    dispatcher.dispatch_call(make_call("BootNotification"));
+    dispatcher.dispatch_call(make_call("Heartbeat"));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, a_pinned_call_still_respects_what_the_connection_may_send) {
+    add_primary();
+    add_secondary();
+
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(0);
+
+    const ConnectionTargetScope target(ConnectionId::secondary(SECONDARY_INSTANCE));
+    dispatcher.dispatch_call(make_call("TransactionEvent"));
 }
 
 // --- registry -----------------------------------------------------------------------------------

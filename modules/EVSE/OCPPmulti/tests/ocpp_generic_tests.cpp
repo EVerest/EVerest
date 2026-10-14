@@ -1296,6 +1296,48 @@ TEST_F(GenericOcppSecondaryConnectionTester, publishConnectionsIncludesTheSecond
                    "connection_role":"Secondary"}]})"_json);
 }
 
+TEST_F(GenericOcppSecondaryConnectionTester, publishSecondaryConnectionStatus) {
+    // cb_secondary_connection_state_changed publishes on its own var and refreshes the roster.
+    std::vector<json> secondary_status;
+    interfaces->subscribe_var(
+        "ocpp_generic", "secondary_connection_status",
+        [&secondary_status](const auto&, const auto&, const auto& data) { secondary_status.push_back(data); });
+    std::vector<json> rosters;
+    interfaces->subscribe_var("ocpp_generic", "connections",
+                              [&rosters](const auto&, const auto&, const auto& data) { rosters.push_back(data); });
+
+    types::ocpp::ConnectionStatus connected;
+    connected.connected = true;
+    connected.connection_id = "EMS";
+    connected.connection_role = types::ocpp::ConnectionRole::Secondary;
+    connected.csms_url = "ws://localhost:9001";
+    ocpp->cb_secondary_connection_state_changed(connected);
+
+    ASSERT_EQ(secondary_status.size(), 1);
+    EXPECT_EQ(secondary_status[0], R"({"connected":true,"connection_id":"EMS","connection_role":"Secondary",
+        "csms_url":"ws://localhost:9001"})"_json);
+
+    // The roster now shows the secondary as up, while the primary entry is untouched.
+    ASSERT_EQ(rosters.size(), 1);
+    EXPECT_EQ(rosters[0], R"({"connections":[{"connected":false,"connection_role":"Primary"},
+        {"connected":true,"connection_id":"EMS","connection_role":"Secondary",
+         "csms_url":"ws://localhost:9001"}]})"_json);
+}
+
+TEST_F(GenericOcppSecondaryConnectionTester, primaryStatusChangeAlsoRefreshesTheRoster) {
+    std::vector<json> rosters;
+    interfaces->subscribe_var("ocpp_generic", "connections",
+                              [&rosters](const auto&, const auto&, const auto& data) { rosters.push_back(data); });
+
+    types::ocpp::ConnectionStatus primary_connected;
+    primary_connected.connected = true;
+    ocpp->cb_connection_state_changed(primary_connected, ocpp::OcppProtocolVersion::v201);
+
+    ASSERT_EQ(rosters.size(), 1);
+    EXPECT_EQ(rosters[0], R"({"connections":[{"connected":true},
+        {"configuration_slot":3,"connected":false,"connection_id":"EMS","connection_role":"Secondary"}]})"_json);
+}
+
 TEST_F(GenericOcppSecondaryConnectionTester, secondaryStatusIsNotPublishedOnConnectionStatus) {
     // connection_status keeps describing the primary connection only, so an existing consumer such
     // as the API module never sees a secondary connection's state on it.

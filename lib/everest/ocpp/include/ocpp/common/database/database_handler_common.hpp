@@ -4,6 +4,7 @@
 #pragma once
 
 #include <memory>
+#include <optional>
 #include <string>
 #include <vector>
 
@@ -51,26 +52,38 @@ public:
 
     /// \brief Get messages from messages queue table specified by \p queue_type
     /// \param queue_type , defaults to QueueType::Transaction
+    /// \param connection Only return messages belonging to this OCPP connection. std::nullopt is the
+    ///        primary connection, which is also what rows written before connections were tagged are.
+    ///        A charging station with several connections must not replay another connection's
+    ///        messages, so each queue asks only for its own.
     /// \return The transaction messages.
     virtual std::vector<DBTransactionMessage>
-    get_message_queue_messages(const QueueType queue_type = QueueType::Transaction);
+    get_message_queue_messages(const QueueType queue_type = QueueType::Transaction,
+                               const std::optional<std::string>& connection = std::nullopt);
 
     /// \brief Insert a new message into messages queue table specified by \p queue_type
     /// \param message  The message to be stored.
     /// \param queue_type , defaults to QueueType::Transaction
+    /// \param connection The OCPP connection the message belongs to; std::nullopt is the primary.
     virtual void insert_message_queue_message(const DBTransactionMessage& message,
-                                              const QueueType queue_type = QueueType::Transaction);
+                                              const QueueType queue_type = QueueType::Transaction,
+                                              const std::optional<std::string>& connection = std::nullopt);
 
     /// \brief Remove a message from the messages queue table specified by \p queue_type
     /// \param unique_id    The unique id of the transaction message
     /// \param queue_type , defaults to QueueType::Transaction
+    /// \param connection Only remove the message if it belongs to this OCPP connection, so that one
+    ///        connection can never delete another's message.
     /// \return True on success.
     virtual void remove_message_queue_message(const std::string& unique_id,
-                                              const QueueType queue_type = QueueType::Transaction);
+                                              const QueueType queue_type = QueueType::Transaction,
+                                              const std::optional<std::string>& connection = std::nullopt);
 
     /// \brief Deletes all entries from message queue table specified by \p queue_type
     /// \param queue_type , defaults to QueueType::Transaction
-    virtual void clear_message_queue(const QueueType queue_type = QueueType::Transaction);
+    /// \param connection Only clear the entries of this OCPP connection; std::nullopt is the primary.
+    virtual void clear_message_queue(const QueueType queue_type = QueueType::Transaction,
+                                     const std::optional<std::string>& connection = std::nullopt);
 };
 
 } // namespace ocpp::common

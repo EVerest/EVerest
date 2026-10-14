@@ -157,6 +157,17 @@ struct Callbacks {
                                      const OcppProtocolVersion ocpp_version)>>
         connection_state_changed_callback;
 
+    /// \brief Called when a *secondary* OCPP connection connects or disconnects.
+    ///
+    /// Additive on purpose: connection_state_changed_callback keeps reporting the primary connection
+    /// only, so an integration that knows nothing about secondary connections keeps behaving exactly
+    /// as before and never sees a secondary connection's state mistaken for the charging station's.
+    /// The first argument is the connection's OCPPCommCtrlr component instance name.
+    std::optional<std::function<void(const std::string& connection_id, bool is_connected, int configuration_slot,
+                                     const NetworkConnectionProfile& network_connection_profile,
+                                     OcppProtocolVersion ocpp_version)>>
+        secondary_connection_state_changed_callback;
+
     /// \brief Callback functions called for get / set / clear display messages
     std::optional<std::function<std::vector<DisplayMessage>(const GetDisplayMessagesRequest& request)>>
         get_display_message_callback;

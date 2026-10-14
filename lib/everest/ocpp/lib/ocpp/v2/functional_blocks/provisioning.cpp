@@ -10,6 +10,7 @@
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/evse_security.hpp>
 #include <ocpp/v2/component_state_manager.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/evse_manager.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
@@ -198,6 +199,15 @@ void Provisioning::notify_report_req(const int request_id, const std::vector<Rep
 }
 
 void Provisioning::handle_boot_notification_response(CallResult<BootNotificationResponse> call_result) {
+    if (const auto connection = ConnectionScope::current(); connection.has_value() and !connection->is_primary()) {
+        // Application note section 4.2: a BootNotificationResponse from a secondary system carries a
+        // status and a time, but the charging station ignores both. Acting on it would let a
+        // secondary connection change the station's registration status, its heartbeat interval and
+        // its clock.
+        EVLOG_debug << "Ignoring BootNotificationResponse from " << connection->to_string();
+        return;
+    }
+
     EVLOG_info << "Received BootNotificationResponse: " << call_result.msg
                << "\nwith messageId: " << call_result.uniqueId;
 

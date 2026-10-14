@@ -5,6 +5,7 @@
 #include "ocpp/v2/ocpp_enums.hpp"
 #include <ocpp/v2/functional_blocks/availability.hpp>
 
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
@@ -58,7 +59,12 @@ void Availability::status_notification_req(const std::int32_t evse_id, const std
 void Availability::heartbeat_req(const bool initiated_by_trigger_message) {
     const HeartbeatRequest req;
 
-    heartbeat_request_time = std::chrono::steady_clock::now();
+    // Only the primary connection's heartbeat is timed. A secondary connection's heartbeat runs on
+    // its own schedule, and letting it overwrite this would corrupt the time-of-flight the clock
+    // synchronisation below derives from the primary connection's answer.
+    if (const auto target = ConnectionTargetScope::current(); !target.has_value() or target->is_primary()) {
+        heartbeat_request_time = std::chrono::steady_clock::now();
+    }
     const ocpp::Call<HeartbeatRequest> call(req);
     this->context.message_dispatcher.dispatch_call(call, initiated_by_trigger_message);
 }
@@ -187,6 +193,11 @@ void Availability::handle_change_availability_req(Call<ChangeAvailabilityRequest
 }
 
 void Availability::handle_heartbeat_response(CallResult<HeartbeatResponse> call) {
+    if (const auto connection = ConnectionScope::current(); connection.has_value() and !connection->is_primary()) {
+        // The charging station takes its time from the CSMS, not from a secondary system.
+        return;
+    }
+
     if (this->time_sync_callback.has_value() and
         this->context.device_model.get_value<std::string>(ControllerComponentVariables::TimeSource).find("Heartbeat") !=
             std::string::npos) {

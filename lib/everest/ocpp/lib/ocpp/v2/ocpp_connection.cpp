@@ -53,5 +53,29 @@ MessageDispatcherInterface<MessageType>& OcppConnection::dispatcher() {
     return *this->m_dispatcher;
 }
 
+bool OcppConnection::may_send(const MessageType message_type) const {
+    if (this->m_id.is_primary()) {
+        return true;
+    }
+
+    // Default deny for a secondary connection, per application note section 3.6: a secondary system
+    // gets nothing it has not been granted. Only the messages that establish and keep the connection
+    // itself alive are exempt, because they are about the pipe rather than about the charging
+    // station's business. The UpstreamMsgs allow list will widen this.
+    return message_type == MessageType::BootNotification or message_type == MessageType::Heartbeat;
+}
+
+void OcppConnection::start_heartbeat(std::function<void()> send, const std::chrono::seconds interval) {
+    if (interval <= std::chrono::seconds(0)) {
+        this->stop_heartbeat();
+        return;
+    }
+    this->m_heartbeat_timer.interval(std::move(send), interval);
+}
+
+void OcppConnection::stop_heartbeat() {
+    this->m_heartbeat_timer.stop();
+}
+
 } // namespace v2
 } // namespace ocpp

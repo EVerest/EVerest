@@ -180,6 +180,18 @@ vars:
       primary (CSMS) connection only; see the connections var for the others.
     type: object
     $ref: /ocpp#/ConnectionStatus
+  secondary_connection_status:
+    description: >-
+      Indicates a connect or disconnect of a secondary OCPP connection, as described in
+      the OCA application note "Secondary OCPP Connection on a Charging Station"
+      (OCPP2.x only). The connection_id property says which connection it is and
+      connection_role is always Secondary. Published on connect and disconnect of a
+      secondary connection only: the primary connection is reported on connection_status
+      as before, so a consumer of connection_status never observes a secondary
+      connection's state. Not published by implementations that support a single
+      connection.
+    type: object
+    $ref: /ocpp#/ConnectionStatus
   connections:
     description: >-
       Every OCPP connection the charging station is configured for: the primary CSMS

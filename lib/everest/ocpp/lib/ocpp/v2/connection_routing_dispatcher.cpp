@@ -8,6 +8,7 @@
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/connection_registry.hpp>
 #include <ocpp/v2/connection_scope.hpp>
+#include <ocpp/v2/ocpp_enums.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -20,10 +21,19 @@ ConnectionId ConnectionRoutingDispatcher::responding_connection() const {
 }
 
 void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered) {
+    const auto message_type = conversions::string_to_messagetype(call.at(CALL_ACTION));
+
     if (const auto target = ConnectionTargetScope::current(); target.has_value()) {
         auto* connection = this->registry.find(target.value());
         if (connection == nullptr) {
             EVLOG_warning << "Dropping message for unknown OCPP connection " << target->to_string();
+            return;
+        }
+        // Pinning a message to a connection says where it goes, not that the connection is allowed
+        // to be sent it. A connection never receives a message type it has not been granted.
+        if (!connection->may_send(message_type)) {
+            EVLOG_debug << "Not sending " << conversions::messagetype_to_string(message_type) << " to "
+                        << target->to_string() << ": not in its allowed upstream messages";
             return;
         }
         connection->dispatcher().dispatch_call(call, triggered);
@@ -31,6 +41,9 @@ void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered
     }
 
     for (auto* connection : this->registry.all()) {
+        if (!connection->may_send(message_type)) {
+            continue;
+        }
         if (connection->id().is_primary()) {
             // Verbatim, messageId included: the primary connection must see exactly what the
             // functional block produced.

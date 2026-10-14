@@ -54,6 +54,9 @@ struct ChargePointStub : public ocpp_multi::GenericChargePointInterface {
     MOCK_METHOD(void, set_mode, (modes_t args), (override));
 
     MOCK_METHOD(void, connect_websocket, (), (override));
+    MOCK_METHOD(void, connect_all, (), (override));
+    MOCK_METHOD(void, connect_websocket, (const ocpp::v2::ConnectionId& connection), (override));
+    MOCK_METHOD(void, disconnect_websocket, (const ocpp::v2::ConnectionId& connection), (override));
     MOCK_METHOD(void, disconnect_websocket, (), (override));
     MOCK_METHOD(void, set_message_queue_resume_delay, (std::chrono::seconds delay), (override));
     MOCK_METHOD(bool, restart, (), (override));

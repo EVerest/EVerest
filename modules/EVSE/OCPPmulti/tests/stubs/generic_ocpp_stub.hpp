@@ -51,6 +51,7 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::cb_reserve_now;
     using ocpp_multi::GenericOcpp::cb_reset;
     using ocpp_multi::GenericOcpp::cb_resume_charging;
+    using ocpp_multi::GenericOcpp::cb_secondary_connection_state_changed;
     using ocpp_multi::GenericOcpp::cb_security_event;
     using ocpp_multi::GenericOcpp::cb_service_renegotiation_supported;
     using ocpp_multi::GenericOcpp::cb_session_event;
@@ -130,7 +131,7 @@ protected:
     // the ocpp_generic "ready" var is published from within ready(), hence it must be recorded
     // during SetUp() - a test subscribing afterwards would already have missed it
     std::vector<nlohmann::json> published_ready;
-    // number of "ready" publications observed at the time connect_websocket() was called
+    // number of "ready" publications observed at the time connect_all() was called
     std::size_t published_ready_before_websocket{0};
     // the ocpp_generic "connections" var is published from within ready() too
     std::vector<nlohmann::json> published_connections;
@@ -164,7 +165,7 @@ protected:
         EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
             .Times(1);
         EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
-        EXPECT_CALL(chargepoint, connect_websocket()).Times(1).WillOnce([this]() {
+        EXPECT_CALL(chargepoint, connect_all()).Times(1).WillOnce([this]() {
             published_ready_before_websocket = published_ready.size();
         });
         EXPECT_CALL(chargepoint, get_connections()).Times(1).WillOnce(::testing::Return(connections_roster()));
@@ -225,7 +226,7 @@ protected:
         EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
             .Times(1);
         EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
-        EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
+        EXPECT_CALL(chargepoint, connect_all()).Times(1);
         ocpp->init();
     }
 

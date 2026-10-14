@@ -52,6 +52,9 @@ public:
 
     void connect_websocket() override;
     void disconnect_websocket() override;
+    void connect_all() override;
+    void connect_websocket(const ocpp::v2::ConnectionId& connection) override;
+    void disconnect_websocket(const ocpp::v2::ConnectionId& connection) override;
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;
     bool restart() override;
     void start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,

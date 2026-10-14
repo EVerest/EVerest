@@ -91,6 +91,12 @@ struct GenericChargePointCallbacks {
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
                                              ocpp::OcppProtocolVersion protocol_version) = 0;
+    /// \brief A secondary OCPP connection connected or disconnected.
+    ///
+    /// Separate from cb_connection_state_changed on purpose: that one keeps reporting the primary
+    /// connection only, because consumers collapse it into a single station-wide "connected"
+    /// indication.
+    virtual void cb_secondary_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
@@ -247,6 +253,12 @@ struct GenericChargePointInterface {
 
     virtual void connect_websocket() = 0;
     virtual void disconnect_websocket() = 0;
+    /// \brief Connects every configured OCPP connection, each independently of the others.
+    virtual void connect_all() = 0;
+    /// \brief Connects one OCPP connection by its name; the empty name is the primary connection.
+    virtual void connect_websocket(const ocpp::v2::ConnectionId& connection) = 0;
+    /// \brief Disconnects one OCPP connection by its name; the empty name is the primary connection.
+    virtual void disconnect_websocket(const ocpp::v2::ConnectionId& connection) = 0;
     virtual void set_message_queue_resume_delay(std::chrono::seconds delay) = 0;
     virtual bool restart() = 0;
     /// \param resuming_session_ids session ids of sessions that have been resumed (e.g. after power loss) and whose

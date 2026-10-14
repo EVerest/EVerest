@@ -175,6 +175,12 @@ private:
     std::atomic_bool mv_started{false};
     std::atomic_bool mv_shutting_down{false};
 
+    /// \brief Last published state of every configured OCPP connection, keyed by connection name
+    /// with the empty name being the primary connection. Seeded in ready() from the charge point's
+    /// roster, then kept up to date as connections come and go, so the connections var always
+    /// describes the whole set rather than just the connection that last changed.
+    everest::lib::util::monitor<std::map<std::string, types::ocpp::ConnectionStatus>> mv_connections;
+
     everest::lib::util::monitor<std::map<std::int32_t, std::string>> mv_evse_evcc_id;
     everest::lib::util::monitor<std::map<std::int32_t, bool>> mv_evse_ready_map;
     everest::lib::util::monitor<std::map<std::int32_t, std::optional<float>>> mv_evse_soc_map;
@@ -289,6 +295,12 @@ public:
     /// consumer that waits for ready always sees it.
     void publish_connections();
 
+    /// \brief Seed the connection roster from the charge point's configuration, all entries down.
+    void init_connections();
+
+    /// \brief Record the new state of one connection and republish the roster.
+    void update_connection(const types::ocpp::ConnectionStatus& status);
+
     // Gate our own callers before GenericChargePoint::shutdown() so they avoid calling into the
     // charge point: command handlers return failure responses where applicable or become no-ops,
     // events are queued, and any in-flight schedule recompute is waited out.
@@ -301,6 +313,14 @@ public:
     void disconnect_websocket() {
         mv_charge_point.disconnect_websocket();
     }
+
+    /// \brief Connect one OCPP connection by name; an empty name is the primary connection, "*"
+    ///        every connection. An unknown name is logged and ignored.
+    void connect_websocket(const std::string& connection_name);
+
+    /// \brief Disconnect one OCPP connection by name; an empty name is the primary connection, "*"
+    ///        every connection. An unknown name is logged and ignored.
+    void disconnect_websocket(const std::string& connection_name);
 
     // ------------------------------------------------------------------------
     // public handlers/callbacks
@@ -377,6 +397,7 @@ protected:
                                                  ocpp::v2::OperationalStatusEnum new_status) override;
     void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
                                      ocpp::OcppProtocolVersion protocol_version) override;
+    void cb_secondary_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status) override;
     ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) override;
     void cb_default_price(const types::session_cost::DefaultPrice& messages) override;
     void cb_der_active_directives(const std::vector<ocpp::v21::SetDERControlRequest>& active_controls) override;

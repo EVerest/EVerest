@@ -69,6 +69,19 @@ void GenericChargePoint::disconnect_websocket() {
     m_active_ptr->disconnect_websocket();
 }
 
+void GenericChargePoint::connect_all() {
+    check_configured("connect_all");
+    m_active_ptr->connect_all();
+}
+void GenericChargePoint::connect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("connect_websocket");
+    m_active_ptr->connect_websocket(connection);
+}
+void GenericChargePoint::disconnect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("disconnect_websocket");
+    m_active_ptr->disconnect_websocket(connection);
+}
+
 void GenericChargePoint::set_message_queue_resume_delay(std::chrono::seconds delay) {
     check_configured("set_message_queue_resume_delay");
     m_active_ptr->set_message_queue_resume_delay(delay);
