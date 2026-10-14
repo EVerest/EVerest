@@ -61,6 +61,7 @@ private:
     void setup_ev_parameters();
     void call_ev_board_support_functions();
     void subscribe_to_external_mqtt();
+    void publish_evcc_id(const std::string& evcc_id);
     void reset_car_simulation_defaults();
     void update_command_queue(std::string& value);
     void set_execution_active(bool value);

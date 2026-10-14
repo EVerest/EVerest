@@ -52,6 +52,15 @@ config:
     description: If true, the ev will select all offered services
     type: boolean
     default: false
+  evcc_id:
+    description: >-
+      EVCCID announced in SessionSetupReq, overriding the MAC address of the HLC network interface. Accepts an
+      optional "VID:" prefix and any of the usual separators, e.g. "VID:0242AC110099", "02:42:AC:11:00:99" or
+      "0242ac110099". Leave empty to use the interface MAC address. Can be changed at runtime with the
+      set_evcc_id command. Only applies to DIN 70121 and ISO 15118-2; ISO 15118-20 announces a manufacturer
+      string rather than a MAC address, so the override is ignored there.
+    type: string
+    default: ""
   supported_d20_energy_services:
     description: >-
       The supported ISO15118-20 energy services (DC, DC_BPT, AC, AC_BPT) the EV supports,
