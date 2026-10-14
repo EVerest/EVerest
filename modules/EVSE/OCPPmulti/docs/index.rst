@@ -1357,6 +1357,35 @@ evaluated per connection:
   profile than the primary, which section 3.4.1 requires; what it may not do is
   downgrade its own.
 
+Charging limits from a secondary connection
+"""""""""""""""""""""""""""""""""""""""""""
+
+An energy management system on a secondary connection sets its limits as
+``ChargingStationExternalConstraints`` or ``LocalGeneration`` charging profiles.
+That keeps them separate from the CSMS's own schedules: the charging station
+combines the two by taking the tightest constraint, so neither side can
+overwrite the other and no new precedence rule is needed (application note
+section 4.3).
+
+Which purposes each side may use are mirror images of each other:
+
+* The CSMS may not set a ``ChargingStationExternalConstraints`` profile
+  (K01.FR.22), nor clear one (K10.FR.06). Those are not its profiles.
+* A secondary connection may set and clear **only**
+  ``ChargingStationExternalConstraints`` and ``LocalGeneration`` profiles.
+  Anything else is rejected, and a request to clear a profile it does not own is
+  answered ``Unknown``, because from its point of view a profile it may not
+  touch is not there.
+
+A profile records the connection that set it in its ``chargingLimitSource``, so
+it can be traced back to the system responsible. A connection name longer than
+the twenty characters that field allows is recorded as ``EMS`` instead of being
+truncated into something misleading.
+
+``LocalGeneration`` profiles are accepted by the connection gate but still
+rejected by the profile validator, which does not implement that purpose yet.
+The usable purpose today is ``ChargingStationExternalConstraints``.
+
 Observing the connections
 """""""""""""""""""""""""
 

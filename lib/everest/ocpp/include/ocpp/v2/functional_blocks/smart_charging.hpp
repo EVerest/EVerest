@@ -14,6 +14,7 @@
 #include <everest/timer.hpp>
 #include <everest/util/async/monitor.hpp>
 
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/dynamic_schedule_manager.hpp>
 #include <ocpp/v2/message_handler.hpp>
 
@@ -351,6 +352,14 @@ protected:
 
     /// \brief Clears profiles using \p request and reports the ids actually deleted in
     /// \p cleared_ids (exactly the rows the DB removed; no mirrored filter).
+    /// \brief Clears only the profiles an external system owns, for a request from \p connection.
+    ///
+    /// Application note section 4.3. Reports Unknown when the request matches nothing that
+    /// connection may clear.
+    ClearChargingProfileResponse clear_external_system_profiles(const ClearChargingProfileRequest& request,
+                                                                const ConnectionId& connection,
+                                                                std::vector<std::int32_t>& cleared_ids);
+
     ClearChargingProfileResponse clear_profiles(const ClearChargingProfileRequest& request,
                                                 std::vector<std::int32_t>& cleared_ids);
 

@@ -11,6 +11,7 @@
 #include <ocpp/common/constants.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
@@ -1322,6 +1323,39 @@ ProfileValidationResultEnum SmartCharging::validate_profile_schedules(ChargingPr
     return ProfileValidationResultEnum::Valid;
 }
 
+namespace {
+
+/// \brief The profile purposes an external system owns.
+///
+/// Application note section 4.3: a system on a secondary OCPP connection tags its limits as
+/// ChargingStationExternalConstraints or LocalGeneration, which keeps them separate from the CSMS's
+/// own schedules and lets the charging station combine the two by taking the tightest constraint.
+/// Those two are therefore the only purposes a secondary connection may set or clear.
+bool is_external_system_purpose(const ChargingProfilePurposeEnum purpose) {
+    return purpose == ChargingProfilePurposeEnum::ChargingStationExternalConstraints or
+           purpose == ChargingProfilePurposeEnum::LocalGeneration;
+}
+
+/// \brief What to record as a profile's chargingLimitSource for \p connection.
+///
+/// The connection's own name, so a profile can be attributed to the system that set it. The field
+/// is only 20 characters, while a connection name may be longer, so an over-long name falls back to
+/// the standard "external system" source rather than being silently truncated into a different one.
+CiString<20> charging_limit_source_for(const ConnectionId& connection) {
+    if (connection.is_primary()) {
+        return ChargingLimitSourceEnumStringType::CSO;
+    }
+    const auto& name = connection.instance().value();
+    if (name.size() > 20) {
+        EVLOG_warning << "Connection name '" << name
+                      << "' does not fit a chargingLimitSource; recording its profiles as EMS instead";
+        return ChargingLimitSourceEnumStringType::EMS;
+    }
+    return CiString<20>(name);
+}
+
+} // namespace
+
 ProfileValidationResultEnum
 SmartCharging::verify_no_conflicting_external_constraints_id(const ChargingProfile& profile) const {
     // K01.FR.81: OCPP 2.1: When MaxExternalConstraintsId is set and the chargingProfile id is less or equal than
@@ -1332,6 +1366,16 @@ SmartCharging::verify_no_conflicting_external_constraints_id(const ChargingProfi
         if (max_external_constraints_id.has_value() && profile.id <= max_external_constraints_id.value()) {
             return ProfileValidationResultEnum::ChargingProfileIdSmallerThanMaxExternalConstraintsId;
         }
+    }
+
+    // K01.FR.05 stops a SetChargingProfileRequest replacing a ChargingStationExternalConstraints
+    // profile, because such a profile is not the CSMS's to overwrite. It does not apply to the
+    // external system whose profiles these are: application note section 4.3 has it set and clear
+    // them, which means updating them too.
+    if (const auto connection = ConnectionScope::current();
+        connection.has_value() and !connection->is_primary() and
+        is_external_system_purpose(profile.chargingProfilePurpose)) {
+        return ProfileValidationResultEnum::Valid;
     }
 
     auto result = ProfileValidationResultEnum::Valid;
@@ -1390,6 +1434,56 @@ SetChargingProfileResponse SmartCharging::add_profile(ChargingProfile& profile, 
             state->processed_profiles.erase(profile.id);
             this->m_offline_timer.timeout(0s);
         }
+    }
+
+    return response;
+}
+
+ClearChargingProfileResponse SmartCharging::clear_external_system_profiles(const ClearChargingProfileRequest& request,
+                                                                           const ConnectionId& connection,
+                                                                           std::vector<std::int32_t>& cleared_ids) {
+    ClearChargingProfileResponse response;
+    response.status = ClearChargingProfileStatusEnum::Unknown;
+
+    try {
+        // An explicit id short-circuits the criteria (K10.FR.03), so the purpose has to be checked
+        // before deleting rather than filtered in the delete.
+        if (request.chargingProfileId.has_value()) {
+            for (const auto& profile : this->context.database_handler.get_all_charging_profiles()) {
+                if (profile.id != request.chargingProfileId.value()) {
+                    continue;
+                }
+                if (!is_external_system_purpose(profile.chargingProfilePurpose)) {
+                    EVLOG_debug << connection.to_string() << " may not clear charging profile " << profile.id
+                                << ", which it does not own";
+                    return response;
+                }
+                break;
+            }
+            return this->clear_profiles(request, cleared_ids);
+        }
+
+        // Otherwise the criteria are run once per purpose the connection owns, since the criteria
+        // can only name one purpose at a time.
+        for (const auto purpose : {ChargingProfilePurposeEnum::ChargingStationExternalConstraints,
+                                   ChargingProfilePurposeEnum::LocalGeneration}) {
+            auto scoped = request;
+            auto criteria = scoped.chargingProfileCriteria.value_or(ClearChargingProfile{});
+            if (criteria.chargingProfilePurpose.has_value() and criteria.chargingProfilePurpose.value() != purpose) {
+                // The request asked for a different purpose, which this connection cannot own.
+                continue;
+            }
+            criteria.chargingProfilePurpose = purpose;
+            scoped.chargingProfileCriteria = criteria;
+
+            std::vector<std::int32_t> ids;
+            if (this->clear_profiles(scoped, ids).status == ClearChargingProfileStatusEnum::Accepted) {
+                response.status = ClearChargingProfileStatusEnum::Accepted;
+                cleared_ids.insert(cleared_ids.end(), ids.begin(), ids.end());
+            }
+        }
+    } catch (const everest::db::QueryExecutionException& e) {
+        EVLOG_error << "Could not clear ChargingProfiles from the database: " << e.what();
     }
 
     return response;
@@ -1482,12 +1576,24 @@ void SmartCharging::handle_set_charging_profile_req(Call<SetChargingProfileReque
         return;
     }
 
-    // K01.FR.22: Reject ChargingStationExternalConstraints profiles in SetChargingProfileRequest
-    if (msg.chargingProfile.chargingProfilePurpose == ChargingProfilePurposeEnum::ChargingStationExternalConstraints) {
+    const auto connection = ConnectionScope::current().value_or(ConnectionId::primary());
+    const auto purpose = msg.chargingProfile.chargingProfilePurpose;
+
+    // Two mirror-image rules. K01.FR.22 keeps the CSMS out of the purposes an external system owns;
+    // application note section 4.3 keeps an external system out of everything else. Between them,
+    // the CSMS's schedules and an external system's limits can never overwrite one another, and the
+    // charging station combines them by taking the tightest constraint.
+    const bool refused = connection.is_primary()
+                             ? purpose == ChargingProfilePurposeEnum::ChargingStationExternalConstraints
+                             : !is_external_system_purpose(purpose);
+    if (refused) {
         response.statusInfo = StatusInfo();
         response.statusInfo->reasonCode = "InvalidValue";
-        response.statusInfo->additionalInfo = "ChargingStationExternalConstraintsInSetChargingProfileRequest";
-        EVLOG_debug << "Rejecting SetChargingProfileRequest:\n reasonCode: " << response.statusInfo->reasonCode.get()
+        response.statusInfo->additionalInfo = connection.is_primary()
+                                                  ? "ChargingStationExternalConstraintsInSetChargingProfileRequest"
+                                                  : "ChargingProfilePurposeNotAllowedOnThisConnection";
+        EVLOG_debug << "Rejecting SetChargingProfileRequest from " << connection.to_string()
+                    << ":\n reasonCode: " << response.statusInfo->reasonCode.get()
                     << "\nadditionalInfo: " << response.statusInfo->additionalInfo->get();
 
         const ocpp::CallResult<SetChargingProfileResponse> call_result(response, call.uniqueId);
@@ -1496,7 +1602,8 @@ void SmartCharging::handle_set_charging_profile_req(Call<SetChargingProfileReque
         return;
     }
 
-    response = this->conform_validate_and_add_profile(msg.chargingProfile, msg.evseId);
+    response =
+        this->conform_validate_and_add_profile(msg.chargingProfile, msg.evseId, charging_limit_source_for(connection));
     if (response.status == ChargingProfileStatusEnum::Accepted) {
         EVLOG_debug << "Accepting SetChargingProfileRequest";
         this->set_charging_profiles_callback();
@@ -1524,15 +1631,29 @@ void SmartCharging::handle_clear_charging_profile_req(Call<ClearChargingProfileR
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatusEnum::Unknown;
 
-    // K10.FR.06
-    if (msg.chargingProfileCriteria.has_value() and
-        msg.chargingProfileCriteria.value().chargingProfilePurpose.has_value() and
-        msg.chargingProfileCriteria.value().chargingProfilePurpose.value() ==
-            ChargingProfilePurposeEnum::ChargingStationExternalConstraints) {
+    const auto connection = ConnectionScope::current().value_or(ConnectionId::primary());
+
+    if (!connection.is_primary()) {
+        // Application note section 4.3, the mirror image of K10.FR.06: an external system may clear
+        // only the profiles it owns. Reported as Unknown rather than as an error, because from that
+        // system's point of view a profile it may not touch is a profile that is not there.
+        std::vector<std::int32_t> cleared_ids;
+        response = this->clear_external_system_profiles(msg, connection, cleared_ids);
+        if (response.status == ClearChargingProfileStatusEnum::Accepted and
+            this->dynamic_schedule_manager.has_value()) {
+            for (const auto id : cleared_ids) {
+                this->dynamic_schedule_manager->erase_tracking(id);
+            }
+        }
+    } else if (msg.chargingProfileCriteria.has_value() and
+               msg.chargingProfileCriteria.value().chargingProfilePurpose.has_value() and
+               msg.chargingProfileCriteria.value().chargingProfilePurpose.value() ==
+                   ChargingProfilePurposeEnum::ChargingStationExternalConstraints) {
+        // K10.FR.06: the CSMS may not clear the profiles an external system owns.
         response.statusInfo = StatusInfo();
         response.statusInfo->reasonCode = "InvalidValue";
         response.statusInfo->additionalInfo = "ChargingStationExternalConstraintsInClearChargingProfileRequest";
-        EVLOG_debug << "Rejecting SetChargingProfileRequest:\n reasonCode: " << response.statusInfo->reasonCode.get()
+        EVLOG_debug << "Rejecting ClearChargingProfileRequest:\n reasonCode: " << response.statusInfo->reasonCode.get()
                     << "\nadditionalInfo: " << response.statusInfo->additionalInfo->get();
     } else {
         // K28.FR.10: the DELETE returns exactly the ids it removed, so dropping their deadline

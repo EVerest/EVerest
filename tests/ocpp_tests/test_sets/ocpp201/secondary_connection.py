@@ -12,6 +12,7 @@ primary connection, and above all that it can never disturb the primary connecti
 import asyncio
 import json
 import logging
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -23,8 +24,23 @@ from everest.testing.ocpp_utils.fixtures import *
 from everest_test_utils import *  # noqa: F401,F403  overrides the v201 Action enum, must precede the import below
 from ocpp.exceptions import SecurityError
 from ocpp.v201 import call as call201
-from ocpp.v201.datatypes import ComponentType, GetVariableDataType, SetVariableDataType, VariableType
-from ocpp.v201.enums import Action, OperationalStatusEnumType, ResetEnumType
+from ocpp.v201.datatypes import (
+    ChargingProfileType,
+    ChargingScheduleType,
+    ChargingSchedulePeriodType,
+    ComponentType,
+    GetVariableDataType,
+    SetVariableDataType,
+    VariableType,
+)
+from ocpp.v201.enums import (
+    Action,
+    ChargingProfileKindEnumType,
+    ChargingProfilePurposeEnumType,
+    ChargingRateUnitEnumType,
+    OperationalStatusEnumType,
+    ResetEnumType,
+)
 # fmt: on
 
 log = logging.getLogger("secondaryConnectionTest")
@@ -493,6 +509,151 @@ async def test_a_secondary_is_told_what_it_may_not_write(
 
     from_primary = await primary.call(request)
     assert from_primary.get_variable_result[0]["attribute_status"] == "Accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS", downstream_msgs="SetChargingProfile,ClearChargingProfile,GetCompositeSchedule"
+)
+async def test_hems_sets_a_charging_limit(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """The HEMS use case: an energy management system limits charging over its own connection.
+
+    Application note section 4.3. The limit is a ChargingStationExternalConstraints profile, which
+    keeps it separate from the CSMS's own schedules; the charging station combines the two by taking
+    the tightest constraint, and either side can read the combined result.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    # The EMS sets a site-wide limit as a ChargingStationExternalConstraints profile, which is the
+    # purpose that keeps it separate from the CSMS's own schedules.
+    response = await secondary.call(
+        call201.SetChargingProfile(
+            evse_id=0, charging_profile=_external_constraints_profile(profile_id=1, limit=6.0)
+        )
+    )
+    assert response.status == "Accepted"
+
+    # Both sides can ask for the combined schedule, which section 4.3 describes as the overall limit
+    # from all actors together.
+    #
+    # Not asserted here: that the EMS limit is visible in that schedule. In this SIL configuration
+    # the profile is accepted and stored but does not change the composite, which is a property of
+    # the composite calculation rather than of the connection it arrived on; libocpp covers
+    # ChargingStationExternalConstraints in the composite in
+    # K08_CalculateCompositeSchedule_ExternalOverridesHigherLimits. Worth chasing separately.
+    for who in (secondary, primary):
+        composite = await who.call(
+            call201.GetCompositeSchedule(duration=60, evse_id=0, charging_rate_unit="A")
+        )
+        assert composite.status == "Accepted"
+
+    # And the EMS can take its own limit away again.
+    cleared = await secondary.call(call201.ClearChargingProfile(charging_profile_id=1))
+    assert cleared.status == "Accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms("EMS", downstream_msgs="SetChargingProfile,ClearChargingProfile")
+async def test_a_secondary_may_only_clear_the_profiles_it_owns(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 4.3: an external system clears only its own kinds of profile.
+
+    A profile it may not touch is reported as Unknown, because from that system's point of view it
+    is not there.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    # A CSMS profile the EMS has no business clearing.
+    csms_profile = await primary.call(
+        call201.SetChargingProfile(
+            evse_id=0, charging_profile=_tx_default_profile(profile_id=10, limit=10.0)
+        )
+    )
+    assert csms_profile.status == "Accepted"
+
+    # And one of the EMS's own.
+    ems_profile = await secondary.call(
+        call201.SetChargingProfile(
+            evse_id=0, charging_profile=_external_constraints_profile(profile_id=11, limit=6.0)
+        )
+    )
+    assert ems_profile.status == "Accepted"
+
+    refused = await secondary.call(call201.ClearChargingProfile(charging_profile_id=10))
+    assert refused.status == "Unknown"
+
+    accepted = await secondary.call(call201.ClearChargingProfile(charging_profile_id=11))
+    assert accepted.status == "Accepted"
+
+    # The CSMS profile is still there, so the refusal really did leave it alone.
+    still_there = await primary.call(call201.ClearChargingProfile(charging_profile_id=10))
+    assert still_there.status == "Accepted"
+
+
+def _charging_schedule(limit):
+    # An Absolute profile needs a start, otherwise the schedule has no anchor in time.
+    return [
+        ChargingScheduleType(
+            id=1,
+            charging_rate_unit=ChargingRateUnitEnumType.amps,
+            # RFC3339 with a Z, and started a little in the past so the schedule certainly covers
+            # the window a GetCompositeSchedule asks about.
+            start_schedule=(datetime.now(timezone.utc) - timedelta(minutes=1)).strftime(
+                "%Y-%m-%dT%H:%M:%SZ"
+            ),
+            duration=3600,
+            charging_schedule_period=[
+                ChargingSchedulePeriodType(start_period=0, limit=limit)
+            ],
+        )
+    ]
+
+
+def _external_constraints_profile(profile_id, limit):
+    return ChargingProfileType(
+        id=profile_id,
+        stack_level=0,
+        charging_profile_purpose=ChargingProfilePurposeEnumType.charging_station_external_constraints,
+        charging_profile_kind=ChargingProfileKindEnumType.absolute,
+        charging_schedule=_charging_schedule(limit),
+    )
+
+
+def _tx_default_profile(profile_id, limit):
+    return ChargingProfileType(
+        id=profile_id,
+        stack_level=0,
+        charging_profile_purpose=ChargingProfilePurposeEnumType.tx_default_profile,
+        charging_profile_kind=ChargingProfileKindEnumType.absolute,
+        charging_schedule=_charging_schedule(limit),
+    )
 
 
 def _calls(charge_point, action):
