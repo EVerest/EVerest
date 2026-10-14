@@ -53,10 +53,10 @@ public:
     ///                                    OCPP Connection on a Charging Station". The shipped component config has
     ///                                    no such instance, so tests that need one opt in here. Each instance
     ///                                    carries Enabled, NetworkConfigurationPriority, ActiveNetworkProfile,
-    ///                                    SecurityProfile, HeartbeatInterval, DownstreamMsgs, UpstreamMsgs and
-    ///                                    AllowSetVariables, all initially unset apart from Enabled, which is
-    ///                                    false. Names are seeded verbatim so a test can also check that an
-    ///                                    unusable name is rejected.
+    ///                                    SecurityProfile, HeartbeatInterval, DownstreamMsgs, UpstreamMsgs,
+    ///                                    AllowSetVariables and EnableFirmwareStatusNotificationOtherConnection,
+    ///                                    all initially unset apart from the two booleans, which are false. Names are
+    ///                                    seeded verbatim so a test can also check that an unusable name is rejected.
     explicit DeviceModelTestHelper(const std::string& database_path = DEVICE_MODEL_DB_IN_MEMORY_PATH,
                                    const std::string& migration_files_path = MIGRATION_FILES_PATH,
                                    const std::string& config_path = CONFIG_PATH, bool seed_der_ctrlr_enabled = false,

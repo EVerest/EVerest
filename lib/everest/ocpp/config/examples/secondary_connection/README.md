@@ -48,10 +48,21 @@ station from reaching its CSMS.
 
 This is being implemented in steps. Right now the charging station discovers a configured secondary
 connection, validates it, reports it on the `connections` variable of the `ocpp` interface, dials
-it, and restricts it with all three of `UpstreamMsgs`, `DownstreamMsgs` and `AllowSetVariables`.
+it, restricts it with all three of `UpstreamMsgs`, `DownstreamMsgs` and `AllowSetVariables`, and
+sends the asynchronous messages answering a request back to the connection that asked for it
+(section 5.3): the `NotifyReport`s of a `GetBaseReport` or `GetReport`, the
+`NotifyMonitoringReport`s of a `GetMonitoringReport`, the `NotifyCustomerInformation` of a
+`CustomerInformation`, the `LogStatusNotification`s of a `GetLog`, and the
+`FirmwareStatusNotification`s of an `UpdateFirmware`. A connection that wants to see the firmware
+status of an update *another* connection asked for sets
+`EnableFirmwareStatusNotificationOtherConnection` to `true` (section 5.3.2).
 
-Not implemented yet: the asynchronous follow-up messages of section 5.3, so a connection granted
-`GetBaseReport` or `UpdateFirmware` will see its follow-ups go to the CSMS rather than to itself;
-the monitor routing of section 5.5; and the per-connection TLS trust anchors of section 3.4.3. The
-instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr` and `SecurityCtrlr` components
-the application note also describes will be added together with the features that read them.
+Being allowed to ask a question does not by itself allow the answer to be sent: a connection granted
+`GetBaseReport` in `DownstreamMsgs` also needs `NotifyReport` in `UpstreamMsgs`, and so on for each
+of the pairs above.
+
+Not implemented yet: the monitor routing of section 5.5, the connection-scoped security events of
+section 5.6, the per-connection meter values of section 4.5, and the per-connection TLS trust
+anchors of section 3.4.3. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr`
+and `SecurityCtrlr` components the application note also describes will be added together with the
+features that read them.

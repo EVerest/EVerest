@@ -135,6 +135,10 @@ private:
     /// \brief The security profile \p connection last connected with, or 0 if it never has.
     std::int32_t confirmed_security_profile(const ConnectionId& connection);
 
+    /// \brief Records which connection asked for the report with this requestId, so its
+    ///        NotifyReports go back to that connection.
+    void remember_report_origin(std::int32_t request_id);
+
     /// \brief Reports as ReadOnly, to the connection currently being served, every variable that
     ///        connection may not actually write.
     void apply_connection_mutability(std::vector<ReportData>& report_data);

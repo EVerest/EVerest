@@ -1152,12 +1152,12 @@ Secondary OCPP connections
 
 .. warning::
 
-   Under construction. Message and device-model restrictions are enforced, but
-   the asynchronous follow-up messages of application note section 5.3, the
-   monitor routing of section 5.5 and the per-connection TLS trust anchors of
-   section 3.4.3 are not implemented yet. A connection granted ``GetBaseReport``
-   or ``UpdateFirmware`` will see its follow-up messages go to the CSMS rather
-   than to itself.
+   Under construction. Message and device-model restrictions are enforced and
+   the messages answering a request go back to the connection that asked, but
+   the monitor routing of application note section 5.5, the connection-scoped
+   security events of section 5.6, the per-connection meter values of section
+   4.5 and the per-connection TLS trust anchors of section 3.4.3 are not
+   implemented yet.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1211,6 +1211,10 @@ the station really does offer a secondary connection.
    * - Device model entries the connection may write
      - ``OCPPCommCtrlr`` / instance ``<name>``
      - ``AllowSetVariables``
+   * - Also see firmware status of another connection's update
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``EnableFirmwareStatusNotificationOtherConnection`` (ReadWrite, default
+       false)
 
 Network configuration slots are **station wide** and each slot belongs to at
 most one connection. The shipped configuration gives slots 1 and 2 to the
@@ -1303,6 +1307,52 @@ CSMS makes an EVSE inoperative and a secondary connection that has been granted
 ``ChangeAvailability`` then makes it operative, operative is what it becomes.
 Whether a connection may do that at all is the allow list's decision; once it
 may, its command is as authoritative as any other.
+
+Answers that arrive later
+"""""""""""""""""""""""""
+
+Some requests are confirmed straight away and then answered over time by a
+series of further messages, tied to the original request only by a
+``requestId``. Those messages go back to the connection that asked:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Request
+     - Answered by
+   * - ``GetBaseReport``, ``GetReport``
+     - ``NotifyReport``
+   * - ``GetMonitoringReport``
+     - ``NotifyMonitoringReport``
+   * - ``CustomerInformation``
+     - ``NotifyCustomerInformation``
+   * - ``GetLog``
+     - ``LogStatusNotification``
+   * - ``UpdateFirmware``
+     - ``FirmwareStatusNotification``
+
+Being allowed to ask a question does not by itself allow the answer to be sent.
+A connection granted ``GetBaseReport`` in ``DownstreamMsgs`` also needs
+``NotifyReport`` in ``UpstreamMsgs``, and so on for each row above; otherwise
+the request is accepted and its answers are dropped.
+
+``requestId`` values are chosen per connection, so two connections readily pick
+the same one. The charging station therefore remembers the requesting connection
+per request *kind* as well, and forgets it as soon as the last answer has been
+sent, which narrows a collision to two connections having the same kind of
+request outstanding at the same moment. In that case the connection that asked
+most recently owns the id. A ``requestId`` nobody is recorded for — because the
+charging station started the firmware update itself, for instance — is answered
+to the CSMS.
+
+A ``FirmwareStatusNotification`` is the one answer another connection can also
+ask to see: setting ``OCPPCommCtrlr[<name>].EnableFirmwareStatusNotificationOtherConnection``
+to ``true`` sends that connection the firmware status of updates it did not
+request. It defaults to ``false``, because firmware status for an update a CSMS
+knows nothing about is more likely to confuse it than to inform it. The
+connection that asked for the update always hears about it regardless of the
+setting, and is never sent the notification twice.
 
 What a secondary connection may change
 """"""""""""""""""""""""""""""""""""""

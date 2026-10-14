@@ -15,6 +15,7 @@ namespace ocpp {
 namespace v2 {
 
 class ConnectionRegistry;
+class OcppConnection;
 
 /// \brief The dispatcher the functional blocks talk to, routing each message to the right OCPP
 ///        connection.
@@ -65,6 +66,10 @@ private:
     /// \brief The connection a response or an asynchronous request belongs to: the one being handled
     ///        if any, else the primary.
     ConnectionId responding_connection() const;
+
+    /// \brief Hands \p call to one connection: verbatim for the primary, and as a copy with its own
+    ///        messageId and any registered transforms applied for a secondary.
+    void deliver_to(OcppConnection& connection, MessageType message_type, const json& call, bool triggered);
 
     ConnectionRegistry& registry;
     std::vector<OutboundTransform> transforms;

@@ -23,6 +23,7 @@
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
+#include <ocpp/v2/request_origin_registry.hpp>
 #include <ocpp/v2/types.hpp>
 #include <ocpp/v2/utils.hpp>
 
@@ -440,6 +441,10 @@ private:
     // OcppConnection; kept here because most of this class still means "the primary connection"
     // when it talks about the connection.
     std::shared_ptr<ConnectivityManagerInterface> connectivity_manager;
+
+    // Which connection asked for each request that is answered by later messages, so those
+    // messages go back to it. Shared with the functional blocks through their context.
+    RequestOriginRegistry request_origins;
 
     // Routes each message to the connection it belongs to. The functional blocks see only
     // MessageDispatcherInterface and are unaware that there can be more than one connection.

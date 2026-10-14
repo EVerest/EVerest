@@ -39,6 +39,7 @@ from ocpp.v201.enums import (
     ChargingProfilePurposeEnumType,
     ChargingRateUnitEnumType,
     OperationalStatusEnumType,
+    ReportBaseEnumType,
     ResetEnumType,
 )
 # fmt: on
@@ -615,6 +616,100 @@ async def test_a_secondary_may_only_clear_the_profiles_it_owns(
     # The CSMS profile is still there, so the refusal really did leave it alone.
     still_there = await primary.call(call201.ClearChargingProfile(charging_profile_id=10))
     assert still_there.status == "Accepted"
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS", downstream_msgs="GetBaseReport", upstream_msgs="NotifyReport"
+)
+async def test_reports_go_back_to_the_connection_that_asked_for_them(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 5.3: a NotifyReport answers a GetBaseReport, tied to it only by the
+    requestId. It has to reach the connection that asked, not the CSMS.
+
+    The grant covers both directions: GetBaseReport downstream so the request is accepted at all,
+    NotifyReport upstream so the answer may be sent. Being allowed to ask a question does not by
+    itself make the charging station allowed to answer it.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    response = await secondary.call(
+        call201.GetBaseReport(
+            request_id=42, report_base=ReportBaseEnumType.summary_inventory
+        )
+    )
+    assert response.status == "Accepted"
+
+    report = await _wait_for_call(secondary, "NotifyReport")
+    assert report is not None, "the EMS never received the report it asked for"
+    assert report[3]["requestId"] == 42
+
+    # Not a copy, not a stray: the CSMS was not sent an answer to somebody else's question.
+    assert not _calls(primary, "NotifyReport")
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS", downstream_msgs="GetBaseReport", upstream_msgs="NotifyReport"
+)
+async def test_the_same_request_id_on_two_connections_does_not_cross_over(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Section 5.3.1: requestIds are chosen per connection, so two connections readily pick the
+    same one. Each answer still goes only to the connection that asked."""
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    same_request_id = 4711
+
+    primary_response = await primary.call(
+        call201.GetBaseReport(
+            request_id=same_request_id, report_base=ReportBaseEnumType.summary_inventory
+        )
+    )
+    assert primary_response.status == "Accepted"
+    assert await _wait_for_call(primary, "NotifyReport") is not None
+    reports_to_the_csms = len(_calls(primary, "NotifyReport"))
+
+    secondary_response = await secondary.call(
+        call201.GetBaseReport(
+            request_id=same_request_id, report_base=ReportBaseEnumType.summary_inventory
+        )
+    )
+    assert secondary_response.status == "Accepted"
+
+    report = await _wait_for_call(secondary, "NotifyReport")
+    assert report is not None, "the EMS never received the report it asked for"
+    assert report[3]["requestId"] == same_request_id
+
+    # The CSMS's own request finished before the EMS asked, so its entry was already gone and the
+    # EMS's reports could not have been mistaken for the CSMS's.
+    assert len(_calls(primary, "NotifyReport")) == reports_to_the_csms
 
 
 def _charging_schedule(limit):

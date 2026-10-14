@@ -45,6 +45,8 @@ std::vector<DeviceModelVariable> make_secondary_connection_variables() {
         make_variable("DownstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
         make_variable("UpstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
         make_variable("AllowSetVariables", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("EnableFirmwareStatusNotificationOtherConnection", DataEnum::boolean, MutabilityEnum::ReadWrite,
+                      "false"),
     };
 }
 

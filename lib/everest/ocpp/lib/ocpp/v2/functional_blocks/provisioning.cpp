@@ -177,6 +177,16 @@ Provisioning::set_variables(const std::vector<SetVariableData>& set_variable_dat
 }
 
 void Provisioning::notify_report_req(const int request_id, const std::vector<ReportData>& report_data) {
+    // Application note section 5.3: the reports answering a request go back to the connection that
+    // asked for it, found by the requestId that ties them to it. All of this request's reports are
+    // produced here, so the entry is dropped straight away.
+    const auto origin =
+        this->context.request_origins.lookup(RequestOriginRegistry::RequestKind::Report, request_id, true);
+    std::optional<ConnectionTargetScope> target;
+    if (origin.has_value() and !origin->is_primary()) {
+        target.emplace(origin.value());
+    }
+
     NotifyReportRequest req;
     req.requestId = request_id;
     req.seqNo = 0;
@@ -194,7 +204,14 @@ void Provisioning::notify_report_req(const int request_id, const std::vector<Rep
                 .value_or(DEFAULT_MAX_MESSAGE_SIZE),
             []() { return ocpp::create_message_id(); }};
         for (const auto& msg : splitter.create_call_payloads()) {
-            this->message_queue.push_call(msg);
+            if (target.has_value()) {
+                // Routed, because these have to reach a secondary connection's queue rather than
+                // the primary's. The primary keeps going straight onto its own queue, as before,
+                // since the split payloads are already complete calls.
+                this->context.message_dispatcher.dispatch_call(msg);
+            } else {
+                this->message_queue.push_call(msg);
+            }
         }
     }
 }
@@ -318,6 +335,14 @@ std::int32_t Provisioning::confirmed_security_profile(const ConnectionId& connec
         .value_or(0);
 }
 
+void Provisioning::remember_report_origin(const std::int32_t request_id) {
+    const auto connection = ConnectionScope::current();
+    if (!connection.has_value()) {
+        return;
+    }
+    this->context.request_origins.remember(RequestOriginRegistry::RequestKind::Report, request_id, connection.value());
+}
+
 void Provisioning::apply_connection_mutability(std::vector<ReportData>& report_data) {
     const auto connection = ConnectionScope::current();
     if (!connection.has_value() or connection->is_primary()) {
@@ -407,6 +432,7 @@ void Provisioning::handle_get_base_report_req(Call<GetBaseReportRequest> call) {
     this->context.message_dispatcher.dispatch_call_result(call_result);
 
     if (response.status == GenericDeviceModelStatusEnum::Accepted) {
+        this->remember_report_origin(msg.requestId);
         auto report_data = this->context.device_model.get_base_report_data(msg.reportBase);
         this->apply_connection_mutability(report_data);
         this->notify_report_req(msg.requestId, report_data);
@@ -459,6 +485,7 @@ void Provisioning::handle_get_report_req(const EnhancedMessage<MessageType>& mes
 
         // TODO(piet): Propably split this up into several NotifyReport.req depending on ItemsPerMessage /
         // BytesPerMessage
+        this->remember_report_origin(msg.requestId);
         report_data = this->context.device_model.get_custom_report_data(msg.componentVariable, msg.componentCriteria);
         this->apply_connection_mutability(report_data);
         if (report_data.empty()) {

@@ -255,8 +255,26 @@ TEST_F(ConnectionRoutingDispatcherTest, a_target_scope_pins_a_call_to_one_connec
     const ConnectionTargetScope target(ConnectionId::secondary(SECONDARY_INSTANCE));
     dispatcher.dispatch_call(call);
 
-    // Pinned rather than copied, so it keeps the messageId it was built with.
-    EXPECT_EQ(to_secondary, call);
+    // Pinning says where the message goes, not what a secondary connection may see of it: it is
+    // prepared for the secondary exactly as a copy would be, with a messageId of its own.
+    EXPECT_EQ(to_secondary.at(CALL_ACTION), call.at(CALL_ACTION));
+    EXPECT_EQ(to_secondary.at(CALL_PAYLOAD), call.at(CALL_PAYLOAD));
+    EXPECT_NE(to_secondary.at(MESSAGE_ID), call.at(MESSAGE_ID));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, a_call_pinned_to_the_primary_is_left_exactly_as_it_is) {
+    add_primary();
+    add_secondary();
+
+    json to_primary;
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(0);
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, false)).WillOnce(SaveArg<0>(&to_primary));
+
+    const auto call = make_call("Heartbeat");
+    const ConnectionTargetScope target(ConnectionId::primary());
+    dispatcher.dispatch_call(call);
+
+    EXPECT_EQ(to_primary, call);
 }
 
 TEST_F(ConnectionRoutingDispatcherTest, an_asynchronous_call_is_never_fanned_out) {

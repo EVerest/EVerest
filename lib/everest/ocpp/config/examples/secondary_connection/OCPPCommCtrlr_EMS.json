@@ -132,6 +132,23 @@
       ],
       "description": "Comma separated device model entries this connection may write, in the form [EvseId[#ConnectorId]/]Component[#Instance][&Variable[#Instance]] (application note section 3.6). Empty or absent means the connection may write nothing, which is the default. Never writable by the secondary connection itself.",
       "type": "string"
+    },
+    "EnableFirmwareStatusNotificationOtherConnection": {
+      "variable_name": "EnableFirmwareStatusNotificationOtherConnection",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": false
+        }
+      ],
+      "description": "Whether this connection is also sent the FirmwareStatusNotifications of a firmware update another OCPP connection asked for (application note section 5.3.2). The notifications answering this connection's own UpdateFirmware always come back to it regardless of this setting.",
+      "default": false,
+      "type": "boolean"
     }
   }
 }

@@ -5,6 +5,7 @@
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/database_handler.hpp>
 #include <ocpp/v2/device_model.hpp>
@@ -71,6 +72,24 @@ void Diagnostics::handle_message(const ocpp::EnhancedMessage<MessageType>& messa
     }
 }
 
+void Diagnostics::remember_origin(const RequestOriginRegistry::RequestKind kind, const std::int32_t request_id) {
+    if (const auto connection = ConnectionScope::current(); connection.has_value()) {
+        this->context.request_origins.remember(kind, request_id, connection.value());
+    }
+}
+
+std::shared_ptr<ConnectionTargetScope> Diagnostics::target_for(const RequestOriginRegistry::RequestKind kind,
+                                                               const std::int32_t request_id, const bool last) {
+    // Application note section 5.3: the messages answering a request go back to the connection that
+    // asked, found by the requestId that ties them to it. Nothing recorded means the CSMS asked, or
+    // the charging station produced this by itself, and the ordinary routing applies.
+    const auto origin = this->context.request_origins.lookup(kind, request_id, last);
+    if (!origin.has_value() or origin->is_primary()) {
+        return nullptr;
+    }
+    return std::make_shared<ConnectionTargetScope>(origin.value());
+}
+
 void Diagnostics::notify_event_req(const std::vector<EventData>& events) {
     NotifyEventRequest req;
     req.eventData = events;
@@ -100,6 +119,8 @@ void Diagnostics::process_triggered_monitors() {
 }
 
 void Diagnostics::notify_customer_information_req(const std::string& data, const std::int32_t request_id) {
+    // Every part of this answer is produced here, so the record of who asked can be dropped now.
+    const auto target = this->target_for(RequestOriginRegistry::RequestKind::CustomerInformation, request_id, true);
     size_t pos = 0;
     std::int32_t seq_no = 0;
     while (pos < data.length() or (pos == 0 and data.empty())) {
@@ -122,6 +143,7 @@ void Diagnostics::notify_customer_information_req(const std::string& data, const
 }
 
 void Diagnostics::notify_monitoring_report_req(const int request_id, std::vector<MonitoringData>& montoring_data) {
+    const auto target = this->target_for(RequestOriginRegistry::RequestKind::MonitoringReport, request_id, true);
     static constexpr std::int32_t MAXIMUM_VARIABLE_SEND = 10;
 
     for (auto& element : montoring_data) {
@@ -177,6 +199,7 @@ void Diagnostics::notify_monitoring_report_req(const int request_id, std::vector
 }
 
 void Diagnostics::handle_get_log_req(Call<GetLogRequest> call) {
+    this->remember_origin(RequestOriginRegistry::RequestKind::Log, call.msg.requestId);
     const GetLogResponse response = this->get_log_request_callback(call.msg);
 
     const ocpp::CallResult<GetLogResponse> call_result(response, call.uniqueId);
@@ -184,6 +207,7 @@ void Diagnostics::handle_get_log_req(Call<GetLogRequest> call) {
 }
 
 void Diagnostics::handle_customer_information_req(Call<CustomerInformationRequest> call) {
+    this->remember_origin(RequestOriginRegistry::RequestKind::CustomerInformation, call.msg.requestId);
     CustomerInformationResponse response;
     const auto& msg = call.msg;
     response.status = CustomerInformationStatusEnum::Accepted;
@@ -325,6 +349,7 @@ void Diagnostics::handle_set_variable_monitoring_req(const EnhancedMessage<Messa
 }
 
 void Diagnostics::handle_get_monitoring_report_req(Call<GetMonitoringReportRequest> call) {
+    this->remember_origin(RequestOriginRegistry::RequestKind::MonitoringReport, call.msg.requestId);
     GetMonitoringReportResponse response;
     const auto& msg = call.msg;
 

@@ -100,6 +100,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/message_queue.cpp
             ocpp/v2/ocpp_enums.cpp
             ocpp/v2/profile.cpp
+            ocpp/v2/request_origin_registry.cpp
             ocpp/v2/ocpp_types.cpp
             ocpp/v2/ocsp_updater.cpp
             ocpp/v2/monitoring_updater.cpp

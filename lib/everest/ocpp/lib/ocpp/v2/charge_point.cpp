@@ -483,8 +483,18 @@ void ChargePoint::on_log_status_notification(UploadLogStatusEnum status, std::in
     this->upload_log_status = status;
     this->upload_log_status_id = requestId;
 
+    // Application note section 5.3: back to whoever asked for the log, and once the upload has
+    // stopped there is nothing more to report for this requestId.
+    const bool last = status != UploadLogStatusEnum::Uploading;
+    const auto origin = this->request_origins.lookup(RequestOriginRegistry::RequestKind::Log, requestId, last);
+
     const ocpp::Call<LogStatusNotificationRequest> call(request);
-    this->message_dispatcher->dispatch_call(call);
+    if (origin.has_value() and !origin->is_primary()) {
+        const ConnectionTargetScope target(origin.value());
+        this->message_dispatcher->dispatch_call(call);
+    } else {
+        this->message_dispatcher->dispatch_call(call);
+    }
 }
 
 void ChargePoint::on_security_event(const CiString<50>& event_type, const std::optional<CiString<255>>& tech_info,
@@ -675,7 +685,7 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
     functional_block_context = std::make_unique<FunctionalBlockContext>(
         *this->message_dispatcher, *this->device_model, *this->connectivity_manager, *this->evse_manager,
         *this->database_handler, *this->evse_security, *this->component_state_manager, this->ocpp_version,
-        this->connection_registry);
+        this->connection_registry, this->request_origins);
 
     this->device_model->register_variable_listener(
         [this](const std::unordered_map<std::int64_t, VariableMonitoringMeta>& /*monitors*/, const Component& component,

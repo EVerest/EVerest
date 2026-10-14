@@ -39,6 +39,32 @@ ConnectionId ConnectionRoutingDispatcher::responding_connection() const {
     return ConnectionScope::current().value_or(ConnectionId::primary());
 }
 
+void ConnectionRoutingDispatcher::deliver_to(OcppConnection& connection, const MessageType message_type,
+                                             const json& call, const bool triggered) {
+    if (connection.id().is_primary()) {
+        // Verbatim, messageId included: the primary connection must see exactly what the functional
+        // block produced.
+        connection.dispatcher().dispatch_call(call, triggered);
+        return;
+    }
+
+    // A copy for a secondary connection gets its own messageId. The two endpoints number their
+    // messages independently, and an endpoint that counts rather than using UUIDs could otherwise
+    // produce a messageId that is already in flight on the other connection.
+    json copy = call;
+    copy[MESSAGE_ID] = create_message_id().get();
+
+    for (const auto& transform : this->transforms) {
+        auto transformed = transform(connection.id(), message_type, copy);
+        if (!transformed.has_value()) {
+            return;
+        }
+        copy = std::move(transformed.value());
+    }
+
+    connection.dispatcher().dispatch_call(copy, triggered);
+}
+
 void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered) {
     const auto message_type = conversions::string_to_messagetype(call.at(CALL_ACTION));
 
@@ -55,7 +81,7 @@ void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered
                         << target->to_string() << ": not in its allowed upstream messages";
             return;
         }
-        connection->dispatcher().dispatch_call(call, triggered);
+        this->deliver_to(*connection, message_type, call, triggered);
         return;
     }
 
@@ -63,33 +89,7 @@ void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered
         if (!connection->may_send(message_type)) {
             continue;
         }
-        if (connection->id().is_primary()) {
-            // Verbatim, messageId included: the primary connection must see exactly what the
-            // functional block produced.
-            connection->dispatcher().dispatch_call(call, triggered);
-            continue;
-        }
-
-        // A copy for a secondary connection gets its own messageId. The two endpoints number their
-        // messages independently, and an endpoint that counts rather than using UUIDs could
-        // otherwise produce a messageId that is already in flight on the other connection.
-        json copy = call;
-        copy[MESSAGE_ID] = create_message_id().get();
-
-        bool suppressed = false;
-        for (const auto& transform : this->transforms) {
-            auto transformed = transform(connection->id(), message_type, copy);
-            if (!transformed.has_value()) {
-                suppressed = true;
-                break;
-            }
-            copy = std::move(transformed.value());
-        }
-        if (suppressed) {
-            continue;
-        }
-
-        connection->dispatcher().dispatch_call(copy, triggered);
+        this->deliver_to(*connection, message_type, call, triggered);
     }
 }
 
