@@ -9,12 +9,12 @@ py_test(
     srcs = ["//applications/utils:scripts/check_rust_pins.py"],
     args = [
         "$(rootpath //modules:Cargo.lock)",
-        "$(rootpath scarthgap/meta-everest/recipes-core/everest/everest-core-rust.inc)",
+        "$(rootpath meta-everest-common/recipes-core/everest/everest-core-rust.inc)",
         "zvt",
         "zvt_feig_terminal",
     ],
     data = [
-        "scarthgap/meta-everest/recipes-core/everest/everest-core-rust.inc",
+        "meta-everest-common/recipes-core/everest/everest-core-rust.inc",
         "//modules:Cargo.lock",
     ],
     main = "//applications/utils:scripts/check_rust_pins.py",
