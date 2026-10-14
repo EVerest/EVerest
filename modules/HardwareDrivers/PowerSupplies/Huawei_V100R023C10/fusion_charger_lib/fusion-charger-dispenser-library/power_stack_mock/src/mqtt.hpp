@@ -1,34 +1,31 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <mqtt.h>
+#pragma once
 
-#include <mutex>
+#include <atomic>
 #include <string>
 #include <thread>
-#include <vector>
+
+#include <everest/io/event/event_fd.hpp>
+#include <everest/io/event/fd_event_handler.hpp>
+#include <everest/io/mqtt/mqtt_client.hpp>
 
 class MqttClient {
 public:
-    MqttClient(std::string mqtt_host, std::string mqtt_port);
+    MqttClient(const std::string& mqtt_host, const std::string& mqtt_port);
     ~MqttClient();
+
+    MqttClient(const MqttClient&) = delete;
+    MqttClient& operator=(const MqttClient&) = delete;
+    MqttClient(MqttClient&&) = delete;
+    MqttClient& operator=(MqttClient&&) = delete;
 
     void publish(const std::string& topic, const std::string& message);
 
 private:
-    struct mqtt_client client;
-    char sendbuf[500 * 1024];
-    char recvbuf[1024];
-    std::thread background_thread;
-    bool stop_flag = false;
-
-    struct PublishQueueEntry {
-        std::string topic;
-        std::string message;
-    };
-    std::mutex publish_queue_mutex;
-    std::vector<PublishQueueEntry> publish_queue;
-
-    static int open_socket(std::string host, std::string port);
-
-    void background_thread_fn();
+    everest::lib::io::mqtt::mqtt_client client;
+    everest::lib::io::event::fd_event_handler event_handler;
+    everest::lib::io::event::event_fd stop_event;
+    std::atomic_bool running{true};
+    std::thread event_thread;
 };

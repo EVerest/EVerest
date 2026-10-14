@@ -25,7 +25,6 @@ DEPENDS = " \
     libpcap \
     libwebsockets \
     mosquitto \
-    mqttc \
     nlohmann-json \
     openssl \
     pugixml \

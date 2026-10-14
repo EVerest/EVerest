@@ -1,5 +1,12 @@
 # Changelog
 
+## October 2026
+
+### Mock
+
+- The mock publishes to MQTT with the `everest::io` MQTT client instead of MQTT-C. It connects with MQTT v5, reconnects automatically and keeps running while the broker is unreachable, logging the connection error.
+- The mock is only built as part of EVerest, a standalone build of `fusion_charger_lib` builds the libraries only.
+
 ## December 2025
 
 ### Module
