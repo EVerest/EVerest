@@ -454,7 +454,9 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                 const auto connectors = provided_token.connectors.value();
                 std::for_each(connectors.begin(), connectors.end(),
                               [this, provided_token, validation_result, &lk](int32_t connector) {
-                                  this->notify_evse(connector, provided_token, validation_result, lk);
+                                  if (this->evses.find(connector) != this->evses.end()) {
+                                      this->notify_evse(connector, provided_token, validation_result, lk);
+                                  }
                               });
             }
             return TokenHandlingResult::REJECTED;
