@@ -57,11 +57,13 @@ public:
     /// '/', '#' and '&' a meaning.
     static bool is_valid_instance_name(const std::string& instance);
 
+    /// \brief Instance names compare case insensitively, as Component::instance does in the device
+    ///        model, so every spelling that addresses a connection's OCPPCommCtrlr names it.
     friend bool operator==(const ConnectionId& lhs, const ConnectionId& rhs);
     friend bool operator!=(const ConnectionId& lhs, const ConnectionId& rhs);
-    /// \brief Orders the primary connection before every secondary, then secondaries by name, so
-    ///        that iteration over a std::map or std::set keyed by ConnectionId reaches the primary
-    ///        first and is otherwise stable.
+    /// \brief Orders the primary connection before every secondary, then secondaries by name, case
+    ///        insensitively, so that iteration over a std::map or std::set keyed by ConnectionId
+    ///        reaches the primary first and is otherwise stable.
     friend bool operator<(const ConnectionId& lhs, const ConnectionId& rhs);
 
 private:

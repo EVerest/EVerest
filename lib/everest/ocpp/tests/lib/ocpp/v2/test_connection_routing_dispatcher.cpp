@@ -546,6 +546,25 @@ TEST_F(ConnectionRoutingDispatcherTest, registry_rejects_a_duplicate_connection)
     EXPECT_THROW(add_primary(), std::invalid_argument);
 }
 
+// The device model matches component instances case insensitively, so a CSMS may address a
+// connection's OCPPCommCtrlr in any casing; the registry has to find the connection the same way.
+TEST_F(ConnectionRoutingDispatcherTest, registry_finds_a_connection_however_its_instance_is_spelled) {
+    add_primary();
+    add_secondary();
+
+    const auto respelled = ConnectionId::secondary("ems");
+    const auto cv =
+        ConnectionComponentVariables::get_component_variable(respelled, ConnectionComponentVariables::UpstreamMsgs);
+    ASSERT_EQ(this->dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "MeterValues", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    auto* connection = registry.find(respelled);
+    ASSERT_NE(connection, nullptr);
+    EXPECT_EQ(connection->id().instance(), std::optional<std::string>(SECONDARY_INSTANCE));
+    connection->reload_permissions();
+    EXPECT_TRUE(connection->may_send(MessageType::MeterValues));
+}
+
 TEST_F(ConnectionRoutingDispatcherTest, registry_disarms_the_callbacks_of_every_connection) {
     add_primary();
     add_secondary();

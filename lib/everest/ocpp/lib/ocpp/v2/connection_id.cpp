@@ -6,6 +6,8 @@
 #include <algorithm>
 #include <stdexcept>
 
+#include <ocpp/common/utils.hpp>
+
 namespace ocpp {
 namespace v2 {
 
@@ -49,7 +51,10 @@ bool ConnectionId::is_valid_instance_name(const std::string& instance) {
 }
 
 bool operator==(const ConnectionId& lhs, const ConnectionId& rhs) {
-    return lhs.m_instance == rhs.m_instance;
+    if (lhs.is_primary() or rhs.is_primary()) {
+        return lhs.is_primary() == rhs.is_primary();
+    }
+    return ocpp::iequals(lhs.m_instance.value(), rhs.m_instance.value());
 }
 
 bool operator!=(const ConnectionId& lhs, const ConnectionId& rhs) {
@@ -57,9 +62,11 @@ bool operator!=(const ConnectionId& lhs, const ConnectionId& rhs) {
 }
 
 bool operator<(const ConnectionId& lhs, const ConnectionId& rhs) {
-    // std::optional orders a disengaged value before every engaged one, which puts the primary
-    // connection first; engaged values then compare by the contained instance name.
-    return lhs.m_instance < rhs.m_instance;
+    // The primary connection sorts first; secondaries then compare by instance name.
+    if (lhs.is_primary() or rhs.is_primary()) {
+        return lhs.is_primary() and !rhs.is_primary();
+    }
+    return ocpp::iless(lhs.m_instance.value(), rhs.m_instance.value());
 }
 
 } // namespace v2

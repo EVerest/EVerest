@@ -78,9 +78,9 @@ TEST(ConnectionIdTest, equality) {
     EXPECT_EQ(ConnectionId::secondary("EMS"), ConnectionId::secondary("EMS"));
     EXPECT_NE(ConnectionId::primary(), ConnectionId::secondary("EMS"));
     EXPECT_NE(ConnectionId::secondary("EMS"), ConnectionId::secondary("MAINT"));
-    // Instance names are matched exactly; the device model treats component names case
-    // insensitively but the connection identity itself is the string that was configured.
-    EXPECT_NE(ConnectionId::secondary("EMS"), ConnectionId::secondary("ems"));
+    // Instance names are identifierStrings, matched case insensitively like Component::instance.
+    EXPECT_EQ(ConnectionId::secondary("EMS"), ConnectionId::secondary("ems"));
+    EXPECT_EQ(ConnectionId::secondary("ems").instance(), std::optional<std::string>("ems"));
 }
 
 TEST(ConnectionIdTest, ordering_puts_primary_first_then_sorts_by_name) {
@@ -96,6 +96,17 @@ TEST(ConnectionIdTest, ordering_puts_primary_first_then_sorts_by_name) {
         order.push_back(entry.second);
     }
     EXPECT_EQ(order, (std::vector<int>{0, 1, 2}));
+}
+
+TEST(ConnectionIdTest, ordering_ignores_case) {
+    EXPECT_FALSE(ConnectionId::secondary("EMS") < ConnectionId::secondary("ems"));
+    EXPECT_FALSE(ConnectionId::secondary("ems") < ConnectionId::secondary("EMS"));
+    EXPECT_LT(ConnectionId::secondary("ems"), ConnectionId::secondary("MAINT"));
+    EXPECT_LT(ConnectionId::primary(), ConnectionId::secondary("ems"));
+    EXPECT_FALSE(ConnectionId::secondary("ems") < ConnectionId::primary());
+
+    std::map<ConnectionId, int> connections{{ConnectionId::secondary("EMS"), 1}};
+    EXPECT_EQ(connections.count(ConnectionId::secondary("Ems")), 1u);
 }
 
 } // namespace v2
