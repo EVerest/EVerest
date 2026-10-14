@@ -1128,6 +1128,29 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_invalid_post_authorize_enabl
               AuthorizationStatusEnum::Invalid);
 }
 
+TEST_F(AuthorizationTest, validate_token_auth_cache_blocked_offline_tx_for_unknown_id_enabled) {
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    this->set_local_authorize_offline(this->device_model, true);
+    this->set_disable_post_authorize(this->device_model, false);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_offline_tx_for_unknown_id_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    // A token the CSMS rejected is known, so OfflineTxForUnknownIdEnabled must not accept it
+    AuthorizationCacheEntry authorization_cache_entry =
+        create_authorization_cache_entry(AuthorizationStatusEnum::Blocked, true, false, false, 5000);
+
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_))
+        .WillOnce(Return(authorization_cache_entry));
+
+    IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Blocked);
+}
+
 TEST_F(AuthorizationTest, validate_token_auth_cache_cache_expired_and_status_invalid) {
     // Enable auth cache.
     this->set_auth_cache_enabled(this->device_model, true);
