@@ -225,9 +225,9 @@ StartSessionResult TbdController::start_session(int connected_fd, const StartSes
         std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd, start_options.vehicle_cert_hash);
     {
         std::lock_guard<std::mutex> lock(session_mutex);
-        session =
-            std::make_unique<Session>(std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks,
-                                      pause_ctx, d2_pause_ctx, start_options.skip_app_protocol_negotiation);
+        session = std::make_unique<Session>(
+            std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx,
+            start_options.skip_app_protocol_negotiation, config.throttle_same_type_only);
     }
     shutdown_active.store(false);
     shutdown_signaled = false;
@@ -289,9 +289,9 @@ void TbdController::tick() {
 
     if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
         std::lock_guard<std::mutex> lock(session_mutex);
-        session =
-            std::make_unique<Session>(connection_factory(poll_manager, interface_name),
-                                      session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx);
+        session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
+                                            session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx,
+                                            d2_pause_ctx, false, config.throttle_same_type_only);
     }
 }
 
@@ -618,7 +618,7 @@ void TbdController::handle_sdp_server_input() {
     {
         std::lock_guard<std::mutex> lock(session_mutex);
         session = std::make_unique<Session>(std::move(connection), std::move(session_config), callbacks, pause_ctx,
-                                            d2_pause_ctx);
+                                            d2_pause_ctx, false, config.throttle_same_type_only);
     }
     // Deliberately NOT cancelled here: sending the SDP response does not end the communication-setup
     // phase, since the EV has not yet opened TCP. Leaving it running is what tears the session down in

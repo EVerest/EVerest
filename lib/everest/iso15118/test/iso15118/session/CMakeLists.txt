@@ -91,3 +91,7 @@ target_link_libraries(test_communication_setup_anchor
 )
 
 catch_discover_tests(test_communication_setup_anchor)
+
+add_executable(test_session session.cpp)
+target_link_libraries(test_session PRIVATE iso15118 Catch2::Catch2WithMain)
+catch_discover_tests(test_session)

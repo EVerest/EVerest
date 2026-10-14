@@ -57,6 +57,9 @@ public:
     bool has_response() const {
         return response_available;
     }
+    message_20::Type peek_response_type() const {
+        return response_type;
+    }
 
 private:
     // input

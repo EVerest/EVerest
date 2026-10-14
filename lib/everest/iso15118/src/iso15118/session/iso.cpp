@@ -232,8 +232,10 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
 
 Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionConfig session_config,
                  const session::feedback::Callbacks& callbacks_, std::optional<d20::PauseContext>& pause_ctx_,
-                 std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation) :
+                 std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation,
+                 bool throttle_same_type_only_) :
     Session(std::move(connection_), std::move(session_config), callbacks_, pause_ctx_, d2_pause_ctx_) {
+    throttle_same_type_only = throttle_same_type_only_;
     if (skip_app_protocol_negotiation) {
         // External SAP on a handed-over socket: the handshake already ran, so start directly on the -20
         // engine, which expects a SessionSetupReq first. The vehicle certificate hash arrives with the
@@ -407,8 +409,21 @@ TimePoint const& Session::poll() {
     // Send a pending response, but not before it is due: -2/DIN and the handshake pace it
     // RESPONSE_DELAY_AFTER_REQUEST_MS after the request, ISO 15118-20 only keeps responses
     // MIN_RESPONSE_INTERVAL_MS apart. Overrunning the window sends immediately and warns.
+    // The opt-in policy instead paces only a repeated protocol/message type, sends terminal
+    // responses at once and rechecks held responses on every poll.
     const bool has_outgoing = visit_engine([](const auto& e) { return e.has_outgoing(); });
     if (has_outgoing) {
+        if (throttle_same_type_only) {
+            if (visit_engine([](const auto& e) { return e.is_stopping(); })) {
+                response_send_after = now;
+            } else {
+                const auto response_type = visit_engine([](const auto& e) { return e.peek_response_type(); });
+                response_send_after =
+                    last_response_tx_time.has_value() and response_type == last_response_type
+                        ? offset_time_point_by_ms(last_response_tx_time.value(), MIN_RESPONSE_INTERVAL_MS)
+                        : now;
+            }
+        }
         if (not response_send_after.has_value()) {
             const bool pace_after_request =
                 visit_engine([](const auto& e) { return e.delay_response_after_request(); });
@@ -562,6 +577,7 @@ void Session::send_response() {
     const auto response_size = setup_response_header(response_buffer, outgoing->payload_type, outgoing->payload_size);
     connection->write(response_buffer, response_size);
     last_response_tx_time = get_current_time_point();
+    last_response_type = response_type;
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, sequence_timeout_after_response(response_type));
 
