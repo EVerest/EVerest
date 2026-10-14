@@ -49,7 +49,6 @@ want to have on your base system. This image can be based e.g. on
 
    CORE_IMAGE_EXTRA_INSTALL += "\
            everest-core \
-           libocpp \
            openssh \
            mosquitto \
            tzdata \
@@ -64,8 +63,16 @@ want to have on your base system. This image can be based e.g. on
 
 .. note::
 
-   libocpp is part of everest-core as of today (2026), whereas older version
-   still rely on libocpp being hosted separately.
+   Since ``2026.10.0``, *meta-everest* has no individual recipes for the
+   EVerest libraries inside the EVerest monorepo.
+   ``everest-core`` includes all of these. If you have images or recipes
+   written for older EVerest releases, please ensure that they do not rely on
+   any of the following anymore: ``everest-framework``, ``everest-sqlite``,
+   ``libcbv2g``, ``libevse-security``, ``libfsm``, ``libiso15118``, ``liblog``,
+   ``libocpp``, ``libslac`` and ``libtimer``. You must remove these entries
+   from your ``IMAGE_INSTALL``, ``CORE_IMAGE_EXTRA_INSTALL``, ``DEPENDS`` or
+   ``RDEPENDS``, otherwise parsing will fail with ``Nothing PROVIDES`` or
+   ``Nothing RPROVIDES``.
 
 The minimal required packages are ``everest-core`` and ``mosquitto``. The
 package ``tmux`` is only needed for the BringUp & Qualification tools.
