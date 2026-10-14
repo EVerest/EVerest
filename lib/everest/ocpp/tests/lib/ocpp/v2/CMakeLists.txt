@@ -11,6 +11,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_connection_discovery.cpp
         test_connection_id.cpp
         test_message_permission.cpp
+        test_variable_permission.cpp
         test_connection_routing_dispatcher.cpp
         test_database_handler.cpp
         test_database_migration_files.cpp

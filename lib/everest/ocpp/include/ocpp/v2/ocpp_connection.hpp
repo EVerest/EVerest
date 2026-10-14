@@ -14,6 +14,7 @@
 #include <ocpp/common/message_queue.hpp>
 #include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/types.hpp>
+#include <ocpp/v2/variable_permission.hpp>
 
 #include <everest/timer.hpp>
 
@@ -83,6 +84,22 @@ public:
     /// station itself sent.
     [[nodiscard]] bool may_receive(MessageType message_type) const;
 
+    /// \brief Whether this connection may write \p variable of \p component.
+    ///
+    /// The primary connection may write anything it has the mutability for. A secondary connection
+    /// may write only what its AllowSetVariables grants it, and never the three variables that
+    /// define its own privileges, whatever the grant says (application note sections 3.6 and
+    /// 3.6.2).
+    [[nodiscard]] bool may_set_variable(const Component& component, const Variable& variable) const;
+
+    /// \brief Whether \p variable of \p component is one of this connection's own privilege
+    ///        variables, which a secondary connection may never write.
+    ///
+    /// AllowSetVariables, UpstreamMsgs and DownstreamMsgs of any connection's OCPPCommCtrlr
+    /// instance: a secondary system must not be able to widen its own privileges, nor another
+    /// connection's.
+    [[nodiscard]] static bool is_privilege_variable(const Component& component, const Variable& variable);
+
     /// \brief Re-reads this connection's permissions from the device model.
     ///
     /// Called at startup and whenever the allow list changes, so that a CSMS granting or revoking a
@@ -114,6 +131,7 @@ private:
     /// it from every connection's receive thread.
     mutable everest::lib::util::monitor<std::set<MessageType>> m_upstream_msgs;
     mutable everest::lib::util::monitor<std::set<MessageType>> m_downstream_msgs;
+    mutable everest::lib::util::monitor<VariablePermissionList> m_allow_set_variables;
 };
 
 } // namespace v2

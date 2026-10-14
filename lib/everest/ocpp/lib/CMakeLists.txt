@@ -76,6 +76,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
             ocpp/v2/connection_connectivity_configuration.cpp
+            ocpp/v2/connection_directory.cpp
             ocpp/v2/connection_discovery.cpp
             ocpp/v2/connection_id.cpp
             ocpp/v2/connection_registry.cpp
@@ -87,6 +88,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp
             ocpp/v2/device_model.cpp
+            ocpp/v2/device_model_helpers.cpp
             ocpp/v2/device_model_storage_sqlite.cpp
             ocpp/v2/enums.cpp
             ocpp/v2/evse.cpp
@@ -104,6 +106,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/transaction.cpp
             ocpp/v2/types.cpp
             ocpp/v2/utils.cpp
+            ocpp/v2/variable_permission.cpp
             ocpp/v2/component_state_manager.cpp
             ocpp/v2/message_dispatcher.cpp
             ocpp/v2/functional_blocks/authorization.cpp

@@ -12,6 +12,7 @@
 #include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_helpers.hpp>
 #include <ocpp/v2/evse_manager.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/notify_report_requests_splitter.hpp>
@@ -277,8 +278,92 @@ void Provisioning::handle_set_variables_req(Call<SetVariablesRequest> call) {
     const ocpp::CallResult<SetVariablesResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);
 
+    this->record_external_config_change(set_variables_response);
+
     // post handling of changed variables after the SetVariables.conf has been queued
     this->handle_variables_changed(set_variables_response);
+}
+
+ConnectionId Provisioning::connection_owning_slot(const std::int32_t slot) {
+    for (const auto& connection : this->context.connections.connection_ids()) {
+        const auto priority = this->context.device_model.get_optional_value<std::string>(
+            ConnectionComponentVariables::get_component_variable(
+                connection, ConnectionComponentVariables::NetworkConfigurationPriority));
+        if (!priority.has_value()) {
+            continue;
+        }
+        for (const auto& token : ocpp::split_string(priority.value(), ',', true)) {
+            try {
+                if (!token.empty() and std::stoi(token) == slot) {
+                    return connection;
+                }
+            } catch (const std::exception&) {
+                continue;
+            }
+        }
+    }
+    // A slot no connection claims is treated as the primary's, which is the stricter choice: it
+    // compares against the station's confirmed profile rather than against nothing.
+    return ConnectionId::primary();
+}
+
+std::int32_t Provisioning::confirmed_security_profile(const ConnectionId& connection) {
+    if (connection.is_primary()) {
+        return this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
+    }
+    // Zero until the connection has actually connected once, so nothing is protected yet.
+    return this->context.device_model
+        .get_optional_value<std::int32_t>(ConnectionComponentVariables::get_component_variable(
+            connection, ConnectionComponentVariables::SecurityProfile))
+        .value_or(0);
+}
+
+void Provisioning::apply_connection_mutability(std::vector<ReportData>& report_data) {
+    const auto connection = ConnectionScope::current();
+    if (!connection.has_value() or connection->is_primary()) {
+        return;
+    }
+
+    // Application note sections 3.6 and 3.6.2: a report a secondary system asked for shows what it
+    // may actually change, so that it does not attempt writes the charging station would refuse.
+    // The device model itself knows nothing about connections; this adjusts only what is reported.
+    for (auto& data : report_data) {
+        if (this->context.connections.may_set_variable(connection.value(), data.component, data.variable)) {
+            continue;
+        }
+        for (auto& attribute : data.variableAttribute) {
+            if (attribute.mutability.value_or(MutabilityEnum::ReadWrite) != MutabilityEnum::WriteOnly) {
+                attribute.mutability = MutabilityEnum::ReadOnly;
+            }
+        }
+    }
+}
+
+void Provisioning::record_external_config_change(
+    const std::map<SetVariableData, SetVariableResult>& set_variable_results) {
+    const auto connection = ConnectionScope::current();
+    if (!connection.has_value() or connection->is_primary()) {
+        return;
+    }
+
+    const auto changed = std::any_of(set_variable_results.begin(), set_variable_results.end(), [](const auto& entry) {
+        return entry.second.attributeStatus == SetVariableStatusEnum::Accepted;
+    });
+    if (!changed) {
+        return;
+    }
+
+    // Application note section 3.6.1: lets a CSMS notice that something in the device model has
+    // been changed by someone else since the report it last asked for, either by reading this or by
+    // putting a monitor on it. Optional, so its absence is not an error.
+    const auto cv = ConnectionComponentVariables::get_component_variable(
+        ConnectionId::primary(), ConnectionComponentVariables::ExternalConfigChangeDate);
+    if (!this->context.device_model.get_variable_meta_data(cv.component, cv.variable.value()).has_value()) {
+        return;
+    }
+    this->context.device_model.set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                                   ocpp::DateTime().to_rfc3339(),
+                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
 }
 
 void Provisioning::handle_get_variables_req(const EnhancedMessage<MessageType>& message) {
@@ -322,7 +407,8 @@ void Provisioning::handle_get_base_report_req(Call<GetBaseReportRequest> call) {
     this->context.message_dispatcher.dispatch_call_result(call_result);
 
     if (response.status == GenericDeviceModelStatusEnum::Accepted) {
-        const auto report_data = this->context.device_model.get_base_report_data(msg.reportBase);
+        auto report_data = this->context.device_model.get_base_report_data(msg.reportBase);
+        this->apply_connection_mutability(report_data);
         this->notify_report_req(msg.requestId, report_data);
     }
 }
@@ -374,6 +460,7 @@ void Provisioning::handle_get_report_req(const EnhancedMessage<MessageType>& mes
         // TODO(piet): Propably split this up into several NotifyReport.req depending on ItemsPerMessage /
         // BytesPerMessage
         report_data = this->context.device_model.get_custom_report_data(msg.componentVariable, msg.componentCriteria);
+        this->apply_connection_mutability(report_data);
         if (report_data.empty()) {
             response.status = GenericDeviceModelStatusEnum::EmptyResultSet;
         } else {
@@ -740,36 +827,47 @@ Provisioning::validate_set_network_configuration_slot(const SetVariableData& set
         // B09.FR.22: Reject SetVariables targeting the currently active slot or any slot listed
         // in the current NetworkConfigurationPriority. The spec mandates a single reasonCode
         // `PriorityNetworkConf` for every such slot (no separate "active" reason code).
-        const auto active_slot_opt =
-            this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
-        if (active_slot_opt.has_value() && slot == active_slot_opt.value()) {
-            EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
-                          << " which is the currently active network profile";
-            return "PriorityNetworkConf";
-        }
+        // B09.FR.22, over every connection rather than just the primary one: slots are numbered
+        // station wide, so a slot in use by any connection is protected from being reconfigured
+        // underneath it, not only one the CSMS happens to be using.
+        for (const auto& connection : this->context.connections.connection_ids()) {
+            const auto active_slot_opt =
+                this->context.device_model.get_optional_value<int>(ConnectionComponentVariables::get_component_variable(
+                    connection, ConnectionComponentVariables::ActiveNetworkProfile));
+            if (active_slot_opt.has_value() && slot == active_slot_opt.value()) {
+                EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
+                              << " which is the active network profile of " << connection.to_string();
+                return "PriorityNetworkConf";
+            }
 
-        const auto priority_slot_opt = this->context.device_model.get_optional_value<std::string>(
-            ControllerComponentVariables::NetworkConfigurationPriority);
-        if (priority_slot_opt.has_value()) {
+            const auto priority_slot_opt = this->context.device_model.get_optional_value<std::string>(
+                ConnectionComponentVariables::get_component_variable(
+                    connection, ConnectionComponentVariables::NetworkConfigurationPriority));
+            if (!priority_slot_opt.has_value()) {
+                continue;
+            }
             const auto priority_slots = parse_network_configuration_priority(priority_slot_opt.value(), true).value();
             for (const auto priority_slot : priority_slots) {
                 if (priority_slot == slot) {
                     EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
-                                  << " which is a priority network profile";
+                                  << " which is a priority network profile of " << connection.to_string();
                     return "PriorityNetworkConf";
                 }
             }
         }
 
-        // B09.FR.35: Reject security profile downgrades
+        // B09.FR.35, per connection. Application note section 3.4.1: a connection may not have its
+        // own security profile downgraded, but a secondary connection may legitimately run at a
+        // lower profile than the primary, so the comparison is against the profile of whichever
+        // connection owns this slot rather than against the station's.
         if (cv.variable.value().name == "SecurityProfile") {
             try {
                 const int new_profile = std::stoi(set_variable_data.attributeValue.get());
-                const int active_profile =
-                    this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile);
+                const auto owner = this->connection_owning_slot(slot);
+                const int active_profile = this->confirmed_security_profile(owner);
                 if (new_profile < active_profile) {
-                    EVLOG_warning << "Cannot downgrade SecurityProfile from " << active_profile << " to "
-                                  << new_profile;
+                    EVLOG_warning << "Cannot downgrade SecurityProfile of slot " << slot << ", owned by "
+                                  << owner.to_string() << ", from " << active_profile << " to " << new_profile;
                     return "NoSecurityDowngrade";
                 }
             } catch (const std::exception& e) {
@@ -908,6 +1006,25 @@ Provisioning::set_variables_internal(const std::vector<SetVariableData>& set_var
         set_variable_result.component = set_variable_data.component;
         set_variable_result.variable = set_variable_data.variable;
         set_variable_result.attributeType = set_variable_data.attributeType.value_or(AttributeEnum::Actual);
+
+        // Application note section 3.6: by default a secondary system may change no device model
+        // variable, and only what AllowSetVariables grants it. Keyed on the connection currently
+        // being served, so a write from EVerest or from a local configuration tool, which happens
+        // outside any inbound message, is not subject to the gate.
+        const auto connection = ConnectionScope::current();
+        if (connection.has_value() and
+            !this->context.connections.may_set_variable(connection.value(), set_variable_data.component,
+                                                        set_variable_data.variable)) {
+            EVLOG_warning << "Refusing to let " << connection->to_string() << " write "
+                          << to_component_variable_hierarchy(set_variable_data.component, set_variable_data.variable);
+            set_variable_result.attributeStatus = SetVariableStatusEnum::Rejected;
+            StatusInfo status_info;
+            status_info.reasonCode = "NotSupported";
+            status_info.additionalInfo = "Not allowed on this OCPP connection";
+            set_variable_result.attributeStatusInfo = status_info;
+            response[set_variable_data] = set_variable_result;
+            continue;
+        }
 
         // validates variable against business logic of the spec
         const auto validation_result = this->validate_set_variable(set_variable_data);

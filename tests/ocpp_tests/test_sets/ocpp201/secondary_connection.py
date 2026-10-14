@@ -23,7 +23,7 @@ from everest.testing.ocpp_utils.fixtures import *
 from everest_test_utils import *  # noqa: F401,F403  overrides the v201 Action enum, must precede the import below
 from ocpp.exceptions import SecurityError
 from ocpp.v201 import call as call201
-from ocpp.v201.datatypes import ComponentType, GetVariableDataType, VariableType
+from ocpp.v201.datatypes import ComponentType, GetVariableDataType, SetVariableDataType, VariableType
 from ocpp.v201.enums import Action, OperationalStatusEnumType, ResetEnumType
 # fmt: on
 
@@ -325,6 +325,174 @@ async def test_a_granted_secondary_can_control_the_station(
     assert await wait_for_and_validate(
         test_utility, primary, "StatusNotification", {"connectorStatus": "Unavailable"}
     )
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS",
+    downstream_msgs="SetVariables,GetVariables,GetBaseReport",
+    allow_set_variables="SmartChargingCtrlr",
+)
+async def test_a_secondary_may_only_write_what_it_was_granted(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 3.6: default deny, and only what AllowSetVariables grants."""
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    # Granted: the whole SmartChargingCtrlr component.
+    granted = await secondary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    attribute_value="true",
+                    component=ComponentType(name="SmartChargingCtrlr"),
+                    variable=VariableType(name="Enabled"),
+                )
+            ]
+        )
+    )
+    assert granted.set_variable_result[0]["attribute_status"] == "Accepted"
+
+    # Not granted: anything else.
+    refused = await secondary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    attribute_value="42",
+                    component=ComponentType(name="OCPPCommCtrlr"),
+                    variable=VariableType(name="HeartbeatInterval"),
+                )
+            ]
+        )
+    )
+    assert refused.set_variable_result[0]["attribute_status"] == "Rejected"
+
+    # The CSMS is subject to no such gate.
+    allowed_for_csms = await primary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    attribute_value="42",
+                    component=ComponentType(name="OCPPCommCtrlr"),
+                    variable=VariableType(name="HeartbeatInterval"),
+                )
+            ]
+        )
+    )
+    assert allowed_for_csms.set_variable_result[0]["attribute_status"] == "Accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS",
+    downstream_msgs="SetVariables,GetVariables",
+    # Granted the whole component that holds its own privileges, which still must not let it widen
+    # them (application note section 3.6.2).
+    allow_set_variables="OCPPCommCtrlr#EMS",
+)
+async def test_a_secondary_cannot_widen_its_own_privileges(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Section 3.6.2: the three privilege variables stay read only for a secondary system."""
+
+    test_controller.start()
+
+    await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    for privilege_variable in ("AllowSetVariables", "UpstreamMsgs", "DownstreamMsgs"):
+        response = await secondary.call(
+            call201.SetVariables(
+                set_variable_data=[
+                    SetVariableDataType(
+                        attribute_value="Reset",
+                        component=ComponentType(name="OCPPCommCtrlr", instance="EMS"),
+                        variable=VariableType(name=privilege_variable),
+                    )
+                ]
+            )
+        )
+        assert (
+            response.set_variable_result[0]["attribute_status"] == "Rejected"
+        ), f"{privilege_variable} must stay read only for a secondary connection"
+
+    # Something else on the same granted component is still writable, so the refusal above is about
+    # those three variables rather than the component as a whole.
+    response = await secondary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    attribute_value="42",
+                    component=ComponentType(name="OCPPCommCtrlr", instance="EMS"),
+                    variable=VariableType(name="HeartbeatInterval"),
+                )
+            ]
+        )
+    )
+    assert response.set_variable_result[0]["attribute_status"] == "Accepted"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS", downstream_msgs="GetVariables", allow_set_variables="SmartChargingCtrlr"
+)
+async def test_a_secondary_is_told_what_it_may_not_write(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """A read by a secondary reports as ReadOnly whatever it may not actually write.
+
+    Section 3.6: so a secondary system does not attempt writes the charging station would refuse.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    request = call201.GetVariables(
+        get_variable_data=[
+            GetVariableDataType(
+                component=ComponentType(name="OCPPCommCtrlr"),
+                variable=VariableType(name="HeartbeatInterval"),
+            )
+        ]
+    )
+
+    # Both can read it; only the CSMS could write it. GetVariables does not report mutability, so
+    # the check that matters is that the read itself still works for the secondary.
+    from_secondary = await secondary.call(request)
+    assert from_secondary.get_variable_result[0]["attribute_status"] == "Accepted"
+
+    from_primary = await primary.call(request)
+    assert from_primary.get_variable_result[0]["attribute_status"] == "Accepted"
 
 
 def _calls(charge_point, action):

@@ -1152,11 +1152,12 @@ Secondary OCPP connections
 
 .. warning::
 
-   Under construction. A secondary connection is discovered, dialled, and
-   restricted in both directions by its allow lists. ``AllowSetVariables`` is
-   not enforced yet, so a connection granted ``SetVariables`` can still change
-   any device model variable; do not grant it to a party you would not trust
-   with the whole device model.
+   Under construction. Message and device-model restrictions are enforced, but
+   the asynchronous follow-up messages of application note section 5.3, the
+   monitor routing of section 5.5 and the per-connection TLS trust anchors of
+   section 3.4.3 are not implemented yet. A connection granted ``GetBaseReport``
+   or ``UpdateFirmware`` will see its follow-up messages go to the CSMS rather
+   than to itself.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1209,7 +1210,7 @@ the station really does offer a secondary connection.
      - ``UpstreamMsgs``
    * - Device model entries the connection may write
      - ``OCPPCommCtrlr`` / instance ``<name>``
-     - ``AllowSetVariables`` (not enforced yet)
+     - ``AllowSetVariables``
 
 Network configuration slots are **station wide** and each slot belongs to at
 most one connection. The shipped configuration gives slots 1 and 2 to the
@@ -1302,6 +1303,59 @@ CSMS makes an EVSE inoperative and a secondary connection that has been granted
 ``ChangeAvailability`` then makes it operative, operative is what it becomes.
 Whether a connection may do that at all is the allow list's decision; once it
 may, its command is as authoritative as any other.
+
+What a secondary connection may change
+""""""""""""""""""""""""""""""""""""""
+
+By default, nothing. ``AllowSetVariables`` is a comma separated list of device
+model entries in the hierarchy notation of *OCPP Referenced Components and
+Variables* section 2.20, extended with an ``&Variable`` part::
+
+    [EvseId[#ConnectorId]/]Component[#Instance][&Variable[#Instance]]
+
+An entry naming only a component grants every variable of that component;
+naming a variable grants just that one. An omitted instance, EVSE or connector
+names the component or variable that has none, rather than matching any, so
+being unspecific never widens a grant. Examples:
+``SmartChargingCtrlr``, ``NetworkConfiguration#3``,
+``NetworkConfiguration#3&OcppCsmsUrl``, ``1#2/Connector&AvailabilityState``.
+
+Three variables stay read only for a secondary connection whatever the grant
+says: ``AllowSetVariables``, ``UpstreamMsgs`` and ``DownstreamMsgs`` on any
+``OCPPCommCtrlr`` instance. Granting a secondary connection its own whole
+``OCPPCommCtrlr`` instance is therefore safe: it can change its heartbeat
+interval, but not widen its own privileges (application note section 3.6.2).
+
+A report a secondary connection asks for shows every variable it may not
+actually write as ``ReadOnly``, so it does not attempt writes the charging
+station would refuse. The device model itself is untouched by this; only what
+is reported to that connection changes.
+
+The gate applies to what arrives on a connection, not to writes from inside the
+charging station. A write from EVerest or from a local configuration tool,
+through the ``ocpp`` interface's **set_variables** command, is not subject to it
+— that is the local configuration path of application note section 3.1, and it
+is how a secondary connection is set up in the first place.
+
+When a secondary connection does change something, the charging station records
+the time in ``OCPPCommCtrlr.ExternalConfigChangeDate`` on the instance-less
+component. A CSMS can read it, or put a delta monitor on it, to notice that
+something changed since the report it last asked for (section 3.6.1). It is
+never written for a change the CSMS made itself.
+
+Network configuration slots, per connection
+"""""""""""""""""""""""""""""""""""""""""""
+
+Two rules that used to be evaluated against the primary connection alone are now
+evaluated per connection:
+
+* A ``NetworkConfiguration`` slot in use by **any** connection is protected from
+  being reconfigured underneath it (B09.FR.22), not just one the CSMS is using.
+* A slot's security profile may not be downgraded below the profile the
+  connection that owns the slot last connected with (B09.FR.35). A secondary
+  connection may therefore legitimately be configured at a lower security
+  profile than the primary, which section 3.4.1 requires; what it may not do is
+  downgrade its own.
 
 Observing the connections
 """""""""""""""""""""""""

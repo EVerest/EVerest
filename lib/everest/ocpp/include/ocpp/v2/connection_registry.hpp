@@ -7,23 +7,12 @@
 #include <memory>
 #include <vector>
 
+#include <ocpp/v2/connection_directory.hpp>
 #include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/ocpp_connection.hpp>
 
 namespace ocpp {
 namespace v2 {
-
-/// \brief Read only view of which OCPP connections exist.
-///
-/// Handed to the parts that need to reason about the set of connections without being able to
-/// change it, such as the check that no two connections claim the same network configuration slot.
-class ConnectionDirectory {
-public:
-    virtual ~ConnectionDirectory() = default;
-
-    /// \brief Every configured connection, primary first, secondaries then ordered by name.
-    [[nodiscard]] virtual std::vector<ConnectionId> connection_ids() const = 0;
-};
 
 /// \brief Owns the charging station's OCPP connections.
 ///
@@ -52,6 +41,8 @@ public:
     [[nodiscard]] std::size_t size() const;
 
     [[nodiscard]] std::vector<ConnectionId> connection_ids() const override;
+    [[nodiscard]] bool may_set_variable(const ConnectionId& connection, const Component& component,
+                                        const Variable& variable) const override;
 
 private:
     // Ordered by ConnectionId, which sorts the primary before every secondary, so iteration order is

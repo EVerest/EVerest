@@ -59,6 +59,15 @@ std::size_t ConnectionRegistry::size() const {
     return this->connections.size();
 }
 
+bool ConnectionRegistry::may_set_variable(const ConnectionId& connection, const Component& component,
+                                          const Variable& variable) const {
+    const auto it = this->connections.find(connection);
+    if (it == this->connections.end()) {
+        return false;
+    }
+    return it->second->may_set_variable(component, variable);
+}
+
 std::vector<ConnectionId> ConnectionRegistry::connection_ids() const {
     std::vector<ConnectionId> result;
     result.reserve(this->connections.size());

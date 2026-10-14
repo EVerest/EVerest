@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -127,6 +128,21 @@ private:
     /// \brief Helper function to determine if the requested change results in a state that the Connector(s) is/are
     /// already in \param request \return
     void handle_variable_changed(const SetVariableData& set_variable_data);
+    /// \brief The connection whose NetworkConfigurationPriority lists \p slot, or the primary
+    ///        connection when none does.
+    ConnectionId connection_owning_slot(std::int32_t slot);
+
+    /// \brief The security profile \p connection last connected with, or 0 if it never has.
+    std::int32_t confirmed_security_profile(const ConnectionId& connection);
+
+    /// \brief Reports as ReadOnly, to the connection currently being served, every variable that
+    ///        connection may not actually write.
+    void apply_connection_mutability(std::vector<ReportData>& report_data);
+
+    /// \brief Records that a secondary connection changed the device model, so that a CSMS can tell
+    ///        something changed since the report it last asked for.
+    void record_external_config_change(const std::map<SetVariableData, SetVariableResult>& set_variable_results);
+
     void handle_variables_changed(const std::map<SetVariableData, SetVariableResult>& set_variable_results);
     /// \brief Validate a SetVariable request
     /// \param set_variable_data The variable data to validate

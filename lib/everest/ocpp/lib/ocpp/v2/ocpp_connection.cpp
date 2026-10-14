@@ -56,11 +56,41 @@ void OcppConnection::reload_permissions() {
 
     auto upstream = read(ConnectionComponentVariables::UpstreamMsgs);
     auto downstream = read(ConnectionComponentVariables::DownstreamMsgs);
+    auto writable = VariablePermissionList::parse(
+        this->m_device_model
+            .get_optional_value<std::string>(ConnectionComponentVariables::get_component_variable(
+                this->m_id, ConnectionComponentVariables::AllowSetVariables))
+            .value_or(""));
 
-    EVLOG_info << this->m_id.to_string() << " may be sent " << upstream.size() << " message type(s) and may send "
-               << downstream.size();
+    EVLOG_info << this->m_id.to_string() << " may be sent " << upstream.size() << " message type(s), may send "
+               << downstream.size() << ", and may write " << (writable.empty() ? "nothing" : "some variables");
     *this->m_upstream_msgs.handle() = std::move(upstream);
     *this->m_downstream_msgs.handle() = std::move(downstream);
+    *this->m_allow_set_variables.handle() = std::move(writable);
+}
+
+bool OcppConnection::is_privilege_variable(const Component& component, const Variable& variable) {
+    if (!(component.name == ControllerComponents::OCPPCommCtrlr.name)) {
+        return false;
+    }
+    return variable.name == ConnectionComponentVariables::AllowSetVariables.name or
+           variable.name == ConnectionComponentVariables::UpstreamMsgs.name or
+           variable.name == ConnectionComponentVariables::DownstreamMsgs.name;
+}
+
+bool OcppConnection::may_set_variable(const Component& component, const Variable& variable) const {
+    if (this->m_id.is_primary()) {
+        return true;
+    }
+
+    // Section 3.6.2: these stay read only for a secondary system even when the whole OCPPCommCtrlr
+    // component has been granted, so that it can never widen its own privileges.
+    if (is_privilege_variable(component, variable)) {
+        return false;
+    }
+
+    auto handle = this->m_allow_set_variables.handle();
+    return handle->allows(component, variable);
 }
 
 bool OcppConnection::may_receive(const MessageType message_type) const {
