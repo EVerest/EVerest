@@ -1801,6 +1801,28 @@ TEST_F(AuthTest, test_plug_and_charge_rejected) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a rejected token referencing an unknown evse only notifies the known evses
+TEST_F(AuthTest, test_rejected_token_with_unknown_evse) {
+    this->auth_receiver->authorize(0);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    const auto provided_token = get_provided_token(INVALID_TOKEN, std::vector<int32_t>{1, 99});
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Rejected));
+
+    TokenHandlingResult result;
+    ASSERT_NO_THROW(result = this->auth_handler->on_token(provided_token));
+    ASSERT_TRUE(result == TokenHandlingResult::REJECTED);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 /// \brief Test empty intersection of referenced connectors in provided token and in validation result
 TEST_F(AuthTest, test_empty_intersection) {
 
