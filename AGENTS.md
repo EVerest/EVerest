@@ -71,7 +71,7 @@ with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in t
 that manifests, lock file and recipe name the same revision.
 
 The Yocto layer `yocto/scarthgap/meta-everest` builds everest-core from this tree. Its
-`rust` PACKAGECONFIG needs Rust 1.82 or newer, on scarthgap the meta-lts-mixins
+`rust` PACKAGECONFIG needs Rust 1.86 or newer, on scarthgap the meta-lts-mixins
 `scarthgap/rust` layer, see `docs/source/explanation/linux-yocto/building-yocto.rst`.
 
 ## Running

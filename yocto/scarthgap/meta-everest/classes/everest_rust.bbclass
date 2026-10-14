@@ -1,4 +1,4 @@
-# The EVerest crates need Rust 1.82 or newer; scarthgap ships 1.75. The scarthgap/rust
+# The EVerest crates need Rust 1.86 or newer; scarthgap ships 1.75. The scarthgap/rust
 # branch of meta-lts-mixins (https://git.yoctoproject.org/meta-lts-mixins) provides a
 # current toolchain under poky's recipe names, so cargo_common and its siblings work
 # unchanged. Later releases ship a new enough Rust themselves.
