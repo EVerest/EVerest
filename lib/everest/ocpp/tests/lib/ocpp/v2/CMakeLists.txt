@@ -9,6 +9,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_charge_point.cpp
         test_connection_connectivity_configuration.cpp
         test_connection_id.cpp
+        test_connection_routing_dispatcher.cpp
         test_database_handler.cpp
         test_database_migration_files.cpp
         test_device_model_storage_sqlite.cpp

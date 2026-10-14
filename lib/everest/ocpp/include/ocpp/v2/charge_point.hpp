@@ -16,6 +16,9 @@
 #include <ocpp/v2/average_meter_values.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
 #include <ocpp/v2/connection_connectivity_configuration.hpp>
+#include <ocpp/v2/connection_registry.hpp>
+#include <ocpp/v2/connection_routing_dispatcher.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
@@ -404,12 +407,16 @@ class ChargePoint : public ChargePointInterface, private ocpp::ChargingStationBa
 private:
     std::shared_ptr<DeviceModelAbstract> device_model;
     std::unique_ptr<EvseManager> evse_manager;
-    // Declared before connectivity_manager so it is destroyed after it: the manager holds a
-    // reference to this configuration. Only set when we create the manager ourselves; an externally
-    // injected ConnectivityManager brings its own configuration.
-    std::unique_ptr<ConnectionConnectivityConfiguration> primary_connectivity_configuration;
+    // Owns every OCPP connection. Declared before message_dispatcher, which routes between the
+    // connections and therefore has to be destroyed first.
+    ConnectionRegistry connection_registry;
+    // The primary connection's connectivity manager and message queue. Shared with its
+    // OcppConnection; kept here because most of this class still means "the primary connection"
+    // when it talks about the connection.
     std::shared_ptr<ConnectivityManagerInterface> connectivity_manager;
 
+    // Routes each message to the connection it belongs to. The functional blocks see only
+    // MessageDispatcherInterface and are unaware that there can be more than one connection.
     std::unique_ptr<MessageDispatcherInterface<MessageType>> message_dispatcher;
 
     // Functional blocks
@@ -483,7 +490,12 @@ private:
     /// Idempotent. Invoked at construction and from the variable listener when Available flips false->true.
     void build_der_control_if_enabled();
 
-    void message_callback(const std::string& message);
+    /// \brief Handles a message received on \p connection_id.
+    ///
+    /// Bound per connection, so the connection is known before parsing begins. It is published for
+    /// the duration of the call through ConnectionScope, which is how any response produced while
+    /// handling the message finds its way back to the connection that asked.
+    void message_callback(const ConnectionId& connection_id, const std::string& message);
 
     /// \brief Get the value optional offline flag
     /// \return true if the charge point is offline. std::nullopt if it is online;

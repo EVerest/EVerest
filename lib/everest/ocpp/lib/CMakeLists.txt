@@ -77,6 +77,10 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/charge_point_callbacks.cpp
             ocpp/v2/connection_connectivity_configuration.cpp
             ocpp/v2/connection_id.cpp
+            ocpp/v2/connection_registry.cpp
+            ocpp/v2/connection_routing_dispatcher.cpp
+            ocpp/v2/connection_scope.cpp
+            ocpp/v2/ocpp_connection.cpp
             ocpp/v2/connector.cpp
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp
