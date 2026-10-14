@@ -828,6 +828,51 @@ async def test_a_secondary_cannot_unsubscribe_the_csms_from_its_own_monitors(
     assert from_csms.set_variable_result[0]["attribute_status"] == "Accepted"
 
 
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms("EMS", upstream_msgs="SecurityEventNotification")
+@pytest.mark.secondary_csms("MAINT", network_configuration_slot=4)
+async def test_a_station_wide_security_event_reaches_every_connection_allowed_it(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 5.6: a security event is like a hardwired notification and goes to
+    every connection allowed SecurityEventNotification, unless it is about one connection's own
+    security.
+
+    StartupOfTheDevice is about the charging station rather than about a link, so both the CSMS and
+    an EMS allowed the message hear it, while MAINT, which is allowed nothing, does not. It is also
+    raised before any connection is up, so this doubles as a check that a secondary connection's
+    queue survives until it connects.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    ems = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+    maint = await secondary_central_systems["MAINT"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    def is_startup(payload):
+        return payload["type"] == "StartupOfTheDevice"
+
+    for connection in (primary, ems):
+        event = await _wait_for_call(
+            connection, "SecurityEventNotification", match=is_startup
+        )
+        assert event is not None, "the connection was not told the station had started"
+
+    assert not _calls(maint, "SecurityEventNotification")
+
+
 def _charging_schedule(limit):
     # An Absolute profile needs a start, otherwise the schedule has no anchor in time.
     return [
@@ -877,12 +922,16 @@ def _calls(charge_point, action):
     return frames
 
 
-async def _wait_for_call(charge_point, action, timeout=10):
-    """Waits for a CALL of the given action, returning the frame or None on timeout."""
+async def _wait_for_call(charge_point, action, timeout=10, match=None):
+    """Waits for a CALL of the given action, returning the frame or None on timeout.
+
+    `match` is an optional predicate on the payload, for actions the charging station sends more
+    than one of.
+    """
     for _ in range(timeout * 10):
-        found = _calls(charge_point, action)
-        if found:
-            return found[0]
+        for frame in _calls(charge_point, action):
+            if match is None or match(frame[3]):
+                return frame
         await asyncio.sleep(0.1)
     return None
 

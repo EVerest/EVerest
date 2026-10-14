@@ -66,7 +66,11 @@ connection that installed it, an unsubscribed monitor reports to the CSMS, and h
 notifications go to everyone allowed `NotifyEvent`. That needs a `MonitoringCtrlr` instance for the
 connection, so `MonitoringCtrlr_EMS.json` ships here too.
 
-Not implemented yet: the connection-scoped security events of section 5.6, the per-connection meter
-values of section 4.5, and the per-connection TLS trust anchors of section 3.4.3. The instanced
+Security events reach every connection allowed `SecurityEventNotification`, except the seven that
+are about one connection's own credentials, certificates or TLS parameters, which go only to the
+connection they concern (section 5.6).
+
+Not implemented yet: the per-connection meter values of section 4.5 and the per-connection TLS
+trust anchors of section 3.4.3. The instanced
 `AlignedDataCtrlr`, `SampledDataCtrlr` and `SecurityCtrlr` components the application note also
 describes will be added together with the features that read them.

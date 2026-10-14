@@ -25,6 +25,9 @@ set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helpe
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/security.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/message_queue.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SecurityEventNotification.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CertificateSigned.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/DeleteCertificate.cpp

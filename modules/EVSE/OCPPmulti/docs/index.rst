@@ -1154,10 +1154,9 @@ Secondary OCPP connections
 
    Under construction. Message and device-model restrictions are enforced, the
    messages answering a request go back to the connection that asked, and
-   NotifyEvents are routed by monitor subscription, but the connection-scoped
-   security events of application note section 5.6, the per-connection meter
-   values of section 4.5 and the per-connection TLS trust anchors of section
-   3.4.3 are not implemented yet.
+   NotifyEvents and security events are routed per connection, but the
+   per-connection meter values of application note section 4.5 and the
+   per-connection TLS trust anchors of section 3.4.3 are not implemented yet.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1402,6 +1401,28 @@ A secondary connection that has no ``MonitoringCtrlr`` instance configured
 cannot be subscribed to anything, so its monitors report to the CSMS instead.
 An example instance ships alongside the ``OCPPCommCtrlr`` one in
 ``config/examples/secondary_connection/`` of libocpp.
+
+Security events
+"""""""""""""""
+
+A security event is like a hardwired notification: it goes to every connection
+allowed ``SecurityEventNotification``. The exception is an event about one
+connection's own security, which goes only to the connection it concerns
+(application note section 5.6):
+
+* ``FailedToAuthenticateAtCsms``
+* ``CsmsFailedToAuthenticate``
+* ``InvalidCsmsCertificate``
+* ``InvalidChargingStationCertificate``
+* ``DiscardedRenewedClientCertificate``
+* ``InvalidTLSVersion``
+* ``InvalidTLSCipherSuite``
+
+So a secondary connection that cannot authenticate reports that to itself,
+where it is queued until it does connect, rather than telling the CSMS that the
+charging station has an authentication problem. One of these events raised
+without a connection to attribute it to is the primary connection's, which is
+where every security event went before there were secondary connections.
 
 What a secondary connection may change
 """"""""""""""""""""""""""""""""""""""

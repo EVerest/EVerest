@@ -481,7 +481,9 @@ private:
     std::atomic<UploadLogStatusEnum> upload_log_status{UploadLogStatusEnum::Idle};
     std::atomic<std::int32_t> upload_log_status_id;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
-    bool skip_invalid_csms_certificate_notifications{false};
+    /// The connections that have already been told about an invalid CSMS certificate since they
+    /// last connected, so a connection retrying in a loop reports it once rather than every time.
+    std::set<ConnectionId> invalid_csms_certificate_reported;
 
     /// \brief Component responsible for maintaining and persisting the operational status of CS, EVSEs, and connectors.
     std::shared_ptr<ComponentStateManagerInterface> component_state_manager;

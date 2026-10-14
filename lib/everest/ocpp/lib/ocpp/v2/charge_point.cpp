@@ -1410,6 +1410,10 @@ void ChargePoint::on_websocket_connected(const ConnectionId& connection_id, cons
     }
     connection->message_queue().resume(this->message_queue_resume_delay);
 
+    // This connection is up again, so the next time it fails the notification is worth sending
+    // again.
+    this->invalid_csms_certificate_reported.erase(connection_id);
+
     if (!connection_id.is_primary()) {
         // A secondary connection reports itself so the far end knows who it is talking to, but its
         // BootNotificationResponse is ignored (application note section 4.2) and its registration
@@ -1461,9 +1465,6 @@ void ChargePoint::on_websocket_connected(const ConnectionId& connection_id, cons
         }
     }
 
-    // We have a connection again so next time it fails we should send the notification again
-    this->skip_invalid_csms_certificate_notifications = false;
-
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(true, configuration_slot, network_connection_profile,
                                                                   ocpp_version);
@@ -1511,22 +1512,22 @@ void ChargePoint::on_websocket_disconnected(const ConnectionId& connection_id, c
 void ChargePoint::on_websocket_connection_failed(const ConnectionId& connection_id,
                                                  const ConnectionFailedReason reason) {
     if (!connection_id.is_primary()) {
-        // Section 5.6: a security event about one connection's own security concerns only that
-        // connection. Reporting a secondary connection's failure to authenticate to the CSMS as if
-        // it were the station's own would be wrong, and retrying is that connection's business.
         EVLOG_warning << "Connection attempt of " << connection_id.to_string() << " failed";
-        return;
     }
-    this->on_websocket_connection_failed(reason);
-}
 
-void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) {
+    // Section 5.6: a security event about one connection's own security concerns only that
+    // connection, so it is reported to that connection and to nobody else. Telling the CSMS that a
+    // secondary connection failed to authenticate would present somebody else's link problem as
+    // the charging station's own.
+    const ConnectionTargetScope target(connection_id);
+
     switch (reason) {
     case ConnectionFailedReason::InvalidCSMSCertificate:
-        if (!this->skip_invalid_csms_certificate_notifications) {
+        // Once per connection per successful connect, so a connection retrying in a loop does not
+        // fill its own queue with the same event.
+        if (this->invalid_csms_certificate_reported.insert(connection_id).second) {
             this->security->security_event_notification_req(CiString<50>(ocpp::security_events::INVALIDCSMSCERTIFICATE),
                                                             std::nullopt, true, true);
-            this->skip_invalid_csms_certificate_notifications = true;
         } else {
             EVLOG_debug << "Skipping InvalidCsmsCertificate SecurityEvent since it has been sent already";
         }
@@ -1544,6 +1545,10 @@ void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) 
         break;
     }
     }
+}
+
+void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) {
+    this->on_websocket_connection_failed(ConnectionId::primary(), reason);
 }
 
 void ChargePoint::update_dm_availability_state(const std::int32_t evse_id, const std::int32_t connector_id,

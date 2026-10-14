@@ -79,6 +79,13 @@ std::optional<float> get_total_power_active_import(const MeterValue& meter_value
 /// \brief Determines if a given \p security_event is critical as defined in the OCPP 2.0.1 appendix
 bool is_critical(const std::string& security_event);
 
+/// \brief Whether \p security_event concerns the security of one OCPP connection rather than the
+///        charging station as a whole (application note section 5.6).
+///
+/// Such an event is sent only to the connection it is about; every other security event is sent to
+/// every connection that is allowed SecurityEventNotification.
+bool is_connection_specific(const std::string& security_event);
+
 /// \brief Converts the given comma separated purposes into a vector of charging profile purposes.
 std::vector<ChargingProfilePurposeEnum> get_charging_profile_purposes(const std::string& csl);
 

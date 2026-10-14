@@ -9,6 +9,7 @@
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
@@ -172,6 +173,16 @@ void Security::security_event_notification_req(const CiString<50>& event_type,
     req.techInfo = tech_info;
     this->logging.security(json(req).dump());
     if (critical) {
+        // Section 5.6: a security event is like a hardwired notification and goes to every
+        // connection allowed SecurityEventNotification, except for the ones that are about one
+        // connection's own security. Those are pinned by the caller that knows which connection
+        // failed; a connection-specific event raised without a target is the primary's, which is
+        // where every security event went before there were secondary connections.
+        std::optional<ConnectionTargetScope> target;
+        if (utils::is_connection_specific(event_type.get()) and !ConnectionTargetScope::current().has_value()) {
+            target.emplace(ConnectionId::primary());
+        }
+
         const ocpp::Call<SecurityEventNotificationRequest> call(req);
         this->context.message_dispatcher.dispatch_call(call);
     }
