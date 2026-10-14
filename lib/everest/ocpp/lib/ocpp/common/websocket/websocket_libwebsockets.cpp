@@ -244,7 +244,21 @@ public:
         return owner;
     }
 
+    /// \brief Scratch buffer for the frame currently being written, owned by this connection.
+    ///
+    /// Only ever touched from this connection's own lws service thread, which is the thread that
+    /// runs lws_service and therefore the only one that reaches on_conn_writable. It must not be
+    /// shared between connections: two service threads writing at once would overwrite each
+    /// other's payload, and a resize on one thread would invalidate the pointer the other has
+    /// already handed to lws_write.
+    std::vector<char>& get_send_buffer() {
+        return send_buffer;
+    }
+
 private:
+    // Frame scratch buffer, see get_send_buffer()
+    std::vector<char> send_buffer;
+
     // Openssl context, must be destroyed in this order
     std::unique_ptr<SSL_CTX> sec_context;
     // libwebsockets state
@@ -1139,9 +1153,10 @@ void WebsocketLibwebsockets::reconnect(long delay) {
 }
 
 namespace {
-bool send_internal(lws* wsi, WebsocketMessage* msg) {
-    static std::vector<char> buff;
-
+/// \param buff The calling connection's own scratch buffer. Deliberately not a static local: this
+///             runs on the lws service thread of one connection, and a charging station can have
+///             several connections servicing at the same time.
+bool send_internal(lws* wsi, WebsocketMessage* msg, std::vector<char>& buff) {
     std::string& message = msg->payload;
     const size_t message_len = message.length();
     const size_t buff_req_size = message_len + LWS_PRE;
@@ -1805,7 +1820,7 @@ void WebsocketLibwebsockets::on_conn_writable() {
         }
 
         // Continue sending message part, for a single message only
-        const bool sent = send_internal(local_data->get_conn(), message.get());
+        const bool sent = send_internal(local_data->get_conn(), message.get(), local_data->get_send_buffer());
 
         // If we failed, attempt again later
         if (!sent) {
