@@ -2185,6 +2185,9 @@ const Variable EnableFirmwareStatusNotificationOtherConnection = {"EnableFirmwar
 const Variable ExternalConfigChangeDate = {"ExternalConfigChangeDate"};
 const Variable SubscribedMonitors = {"SubscribedMonitors"};
 
+const Variable Interval = {"Interval"};
+const Variable Measurands = {"Measurands"};
+
 const Variable SecurityProfile = {"SecurityProfile"};
 
 namespace {

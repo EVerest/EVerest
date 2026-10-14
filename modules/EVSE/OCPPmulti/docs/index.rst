@@ -1154,9 +1154,10 @@ Secondary OCPP connections
 
    Under construction. Message and device-model restrictions are enforced, the
    messages answering a request go back to the connection that asked, and
-   NotifyEvents and security events are routed per connection, but the
-   per-connection meter values of application note section 4.5 and the
-   per-connection TLS trust anchors of section 3.4.3 are not implemented yet.
+   NotifyEvents, security events and clock-aligned meter values are routed per
+   connection. Not implemented yet: the per-connection sampled measurands
+   inside TransactionEvent copies of application note section 4.5.2, and the
+   per-connection TLS trust anchors of section 3.4.3.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1306,6 +1307,48 @@ CSMS makes an EVSE inoperative and a secondary connection that has been granted
 ``ChangeAvailability`` then makes it operative, operative is what it becomes.
 Whether a connection may do that at all is the allow list's decision; once it
 may, its command is as authoritative as any other.
+
+Meter values at a connection's own rate
+"""""""""""""""""""""""""""""""""""""""
+
+A connection granted ``MeterValues`` in ``UpstreamMsgs`` receives copies of the
+charging station's own meter values, at the charging station's rate. An energy
+management system usually needs them far more often than is practical towards
+the CSMS over a mobile network, so a connection can also be given a rate and a
+set of measurands of its own (application note section 4.5.1):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Seconds between this connection's own meter values, 0 for none
+     - ``AlignedDataCtrlr`` / instance ``<name>``
+     - ``Interval`` (ReadWrite, default 0)
+   * - Which measurands they carry
+     - ``AlignedDataCtrlr`` / instance ``<name>``
+     - ``Measurands`` (ReadWrite)
+
+These ``MeterValues`` go to that connection and to nobody else, and each
+connection averages over its own window, so a fast connection neither disturbs
+a slow one nor disturbs the charging station's own clock-aligned data. Unlike
+the charging station's, they are sent whether or not a transaction is running,
+which is the point: an energy management system needs to see what is happening
+while a car is charging. They are additional to any ``TransactionEvent`` copies
+the connection receives.
+
+The variables are set by the operator or locally, not by the secondary system,
+which usually has no ``SetVariables`` grant. Changes take effect immediately.
+
+Section 4.5.2, a different set of sampled measurands inside the
+``TransactionEvent`` copies sent to a connection
+(``SampledDataCtrlr[<name>].TxUpdatedMeasurands`` and ``TxUpdatedInterval``), is
+**not implemented**: a connection's ``TransactionEvent`` copies currently carry
+the same meter values as the CSMS's. Configuring
+``AlignedDataCtrlr[<name>].Interval`` covers the same need for a connection that
+wants live readings.
 
 Answers that arrive later
 """""""""""""""""""""""""

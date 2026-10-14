@@ -180,7 +180,8 @@ def secondary_connections(secondary_csms_specs, secondary_central_systems, test_
             enabled=spec.get("enabled", True),
             upstream_msgs=spec.get("upstream_msgs", ""),
             downstream_msgs=spec.get("downstream_msgs", ""),
-            allow_set_variables=spec.get("allow_set_variables", "")))
+            allow_set_variables=spec.get("allow_set_variables", ""),
+            aligned_data_interval=spec.get("aligned_data_interval", 0)))
     return connections
 
 

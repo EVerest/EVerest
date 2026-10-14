@@ -873,6 +873,55 @@ async def test_a_station_wide_security_event_reaches_every_connection_allowed_it
     assert not _calls(maint, "SecurityEventNotification")
 
 
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS", upstream_msgs="MeterValues", aligned_data_interval=2
+)
+@pytest.mark.secondary_csms("MAINT", network_configuration_slot=4, upstream_msgs="MeterValues")
+async def test_a_connection_gets_clock_aligned_meter_values_at_its_own_rate(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 4.5.1: an energy management system usually needs meter values far
+    more often than is practical towards the CSMS over a mobile network, so a connection can be
+    given a sampling rate and a set of measurands of its own. Those MeterValues go only to it.
+
+    MAINT is allowed MeterValues too but has no interval configured, which is what separates "sent
+    its own clock-aligned values" from "sent copies of the station's": it must receive none of
+    EMS's.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    ems = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+    maint = await secondary_central_systems["MAINT"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    # The station's own AlignedDataInterval is 900 s in the test configuration, so anything
+    # arriving within a few seconds is the EMS's own.
+    assert await _wait_for_call(ems, "MeterValues", timeout=15) is not None
+
+    # A count over a window rather than an exact cadence: the point is that they keep coming, not
+    # that they arrive on a particular tick.
+    before = len(_calls(ems, "MeterValues"))
+    await asyncio.sleep(5)
+    after = len(_calls(ems, "MeterValues"))
+    assert after > before, "the EMS stopped receiving its clock-aligned meter values"
+
+    assert not _calls(primary, "MeterValues"), "the CSMS was sent the EMS's meter values"
+    assert not _calls(maint, "MeterValues"), "MAINT was sent the EMS's meter values"
+
+
 def _charging_schedule(limit):
     # An Absolute profile needs a start, otherwise the schedule has no anchor in time.
     return [

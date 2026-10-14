@@ -142,7 +142,8 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
     def __init__(self, connection_id: str, central_system_port: int | str, central_system_host: str = "127.0.0.1",
                  network_configuration_slot: int = 3, security_profile: int = 1, identity: str | None = None,
                  enabled: bool = True, upstream_msgs: str = "", downstream_msgs: str = "",
-                 allow_set_variables: str = ""):
+                 allow_set_variables: str = "", aligned_data_interval: int = 0,
+                 aligned_data_measurands: str = "Energy.Active.Import.Register,Power.Active.Import"):
         self._connection_id = connection_id
         self._central_system_port = central_system_port
         self._central_system_host = central_system_host
@@ -153,6 +154,8 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
         self._upstream_msgs = upstream_msgs
         self._downstream_msgs = downstream_msgs
         self._allow_set_variables = allow_set_variables
+        self._aligned_data_interval = aligned_data_interval
+        self._aligned_data_measurands = aligned_data_measurands
 
     @staticmethod
     def _variable(variable_name: str, data_type: str, mutability: str, value=None, description: str = ""):
@@ -207,6 +210,21 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
             },
         }
 
+    def _aligned_data_ctrlr_component(self) -> dict:
+        """ The connection's own clock-aligned meter values (section 4.5.1). """
+        return {
+            "description": f"Clock-aligned meter values of secondary OCPP connection {self._connection_id} "
+                           "(injected by everest-testing)",
+            "type": "object",
+            "name": "AlignedDataCtrlr",
+            "instance": self._connection_id,
+            "properties": {
+                "Interval": self._variable("Interval", "integer", "ReadWrite", self._aligned_data_interval),
+                "Measurands": self._variable(
+                    "Measurands", "MemberList", "ReadWrite", self._aligned_data_measurands),
+            },
+        }
+
     def adjust_ocpp_configuration(self, config: dict):
         config = deepcopy(config)
 
@@ -214,6 +232,7 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
         # file, so a new stem simply materializes as a new component config.
         config[f"OCPPCommCtrlr_{self._connection_id}"] = self._ocpp_comm_ctrlr_component()
         config[f"MonitoringCtrlr_{self._connection_id}"] = self._monitoring_ctrlr_component()
+        config[f"AlignedDataCtrlr_{self._connection_id}"] = self._aligned_data_ctrlr_component()
 
         protocol = "ws" if self._security_profile == 1 else "wss"
         profile = {

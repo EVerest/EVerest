@@ -5,8 +5,13 @@
 
 #include <ocpp/v2/message_handler.hpp>
 
+#include <map>
+#include <memory>
+#include <mutex>
+
 #include <ocpp/common/aligned_timer.hpp>
 #include <ocpp/v2/average_meter_values.hpp>
+#include <ocpp/v2/connection_id.hpp>
 
 namespace ocpp::v2 {
 struct FunctionalBlockContext;
@@ -40,10 +45,39 @@ public:
     void meter_values_req(const std::int32_t evse_id, const std::vector<MeterValue>& meter_values,
                           const bool initiated_by_trigger_message = false) override;
 
+private: // Types
+    /// \brief The clock-aligned meter values of one secondary OCPP connection.
+    ///
+    /// Application note section 4.5.1: a connection can be given a sampling rate and a set of
+    /// measurands of its own, typically a much higher rate than is practical towards the CSMS over
+    /// a mobile network. It therefore needs its own timer and its own averaging, so that reading
+    /// values for one connection neither disturbs another nor disturbs the charging station's own
+    /// clock-aligned data.
+    struct ConnectionAlignedData {
+        ClockAlignedTimer timer;
+        AverageMeterValues evse0;
+        std::map<std::int32_t, AverageMeterValues> per_evse;
+    };
+
 private: // Members
     const FunctionalBlockContext& context;
 
     ClockAlignedTimer aligned_meter_values_timer;
     AverageMeterValues aligned_data_evse0; // represents evseId = 0 meter value
+
+    /// Entries are created when a connection is first configured with an interval and then kept,
+    /// with the timer stopped, rather than removed: a timer that is being destroyed while its own
+    /// callback runs is not worth the saving.
+    std::map<ConnectionId, std::unique_ptr<ConnectionAlignedData>> secondary_aligned_data;
+    std::mutex secondary_aligned_data_mutex;
+
+private: // Functions
+    /// \brief Starts, restarts or stops the clock-aligned meter value timer of every secondary
+    ///        connection, following what the device model currently says.
+    void update_secondary_aligned_data_intervals();
+
+    /// \brief Sends \p connection the clock-aligned meter values it has accumulated.
+    void send_secondary_aligned_meter_values(const ConnectionId& connection, ConnectionAlignedData& data,
+                                             std::chrono::seconds interval);
 };
 } // namespace ocpp::v2

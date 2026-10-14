@@ -736,7 +736,12 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
             EVLOG_error << "Out of range exception while updating the heartbeat interval: " << e.what();
         }
     }
-    if (component_variable == ControllerComponentVariables::AlignedDataInterval) {
+    // Any AlignedDataCtrlr Interval, instanced or not: a secondary connection has one of its own
+    // (application note section 4.5.1) and it takes effect without a restart just as the charging
+    // station's does.
+    if (component_variable.component.name == ControllerComponents::AlignedDataCtrlr.name and
+        component_variable.variable.has_value() and
+        component_variable.variable->name == ConnectionComponentVariables::Interval.name) {
         this->meter_values.update_aligned_data_interval();
     }
 

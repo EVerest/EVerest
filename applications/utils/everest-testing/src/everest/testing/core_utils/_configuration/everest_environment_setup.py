@@ -48,6 +48,8 @@ class EverestEnvironmentOCPPSecondaryConnection:
     upstream_msgs: str = ""
     downstream_msgs: str = ""
     allow_set_variables: str = ""
+    aligned_data_interval: int = 0
+    aligned_data_measurands: str = "Energy.Active.Import.Register,Power.Active.Import"
 
 
 @dataclass
@@ -290,7 +292,9 @@ class EverestTestEnvironmentSetup:
                 enabled=secondary.enabled,
                 upstream_msgs=secondary.upstream_msgs,
                 downstream_msgs=secondary.downstream_msgs,
-                allow_set_variables=secondary.allow_set_variables))
+                allow_set_variables=secondary.allow_set_variables,
+                aligned_data_interval=secondary.aligned_data_interval,
+                aligned_data_measurands=secondary.aligned_data_measurands))
         return strategies
 
     def _create_everest_configuration_strategies(self, temporary_paths: _EverestEnvironmentTemporaryPaths):

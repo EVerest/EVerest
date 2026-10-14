@@ -1,0 +1,43 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Example AlignedDataCtrlr instance giving a secondary OCPP connection clock-aligned meter values of its own, as described in the OCA application note 'Secondary OCPP Connection on a Charging Station' section 4.5.1. Typically a much higher sampling rate than is practical towards the CSMS. Needed only for that; a connection granted MeterValues in UpstreamMsgs receives copies of the charging station's own meter values without it. The instance name must match the OCPPCommCtrlr instance that declares the connection.",
+  "type": "object",
+  "name": "AlignedDataCtrlr",
+  "instance": "EMS",
+  "properties": {
+    "Interval": {
+      "variable_name": "Interval",
+      "characteristics": {
+        "unit": "s",
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": 0
+        }
+      ],
+      "description": "How often, in seconds, this connection is sent clock-aligned meter values of its own. Zero, the default, means none. These are sent whether or not a transaction is running, and are additional to any TransactionEvent copies the connection receives.",
+      "default": 0,
+      "type": "integer"
+    },
+    "Measurands": {
+      "variable_name": "Measurands",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "MemberList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": "Energy.Active.Import.Register,Power.Active.Import"
+        }
+      ],
+      "description": "The measurands this connection's own clock-aligned meter values carry. Nothing is sent if this is absent.",
+      "type": "string"
+    }
+  }
+}

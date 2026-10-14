@@ -21,7 +21,7 @@ class DeviceModelInterface;
 ///
 struct RequiredComponentVariable : ComponentVariable {
     /// \brief Constructor
-    RequiredComponentVariable() : required_for({OcppProtocolVersion::v201, OcppProtocolVersion::v21}){};
+    RequiredComponentVariable() : required_for({OcppProtocolVersion::v201, OcppProtocolVersion::v21}) {};
 
     ///
     /// \brief RequiredComponentVariable
@@ -502,6 +502,14 @@ extern const Variable SubscribedMonitors;
 /// Read only; written by the charging station when a connection is established. Unused for the
 /// primary connection, which keeps using SecurityCtrlr.SecurityProfile.
 extern const Variable SecurityProfile;
+
+/// \brief How often clock-aligned meter values are sent to a connection, and which measurands
+///        they carry (application note section 4.5.1).
+///
+/// On the AlignedDataCtrlr component of the connection. Absent, or zero, means the connection is
+/// sent no clock-aligned meter values of its own.
+extern const Variable Interval;
+extern const Variable Measurands;
 
 /// \brief The OCPPCommCtrlr component for \p connection: instance-less for the primary, instanced
 ///        with the connection name for a secondary.
