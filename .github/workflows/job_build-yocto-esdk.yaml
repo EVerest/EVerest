@@ -56,8 +56,11 @@ jobs:
           docker run --rm \
             --volume "$GITHUB_WORKSPACE:/work/everest" \
             "$ESDK_IMAGE" \
-            bash -euo pipefail -c '
+            bash -c '
+              # The environment setup does not work with errexit: its buildtools part exits
+              # silently with 127 when the host has no pkg-config, like the image.
               . /opt/esdk/environment-setup-* > /dev/null
+              set -euo pipefail
               # Debug info makes up most of the ~20 GB build directory of everest-core.
               echo "DEBUG_FLAGS:pn-everest-core = \"\"" >> /opt/esdk/conf/local.conf
               devtool modify -n everest-core /work/everest
