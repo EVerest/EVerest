@@ -121,3 +121,21 @@ to the corresponding migration guide.
        Stop reading ``severity`` from error objects and do not treat it as
        required; drop ``severity_filter`` from ``get_errors`` requests and
        filter by ``type_filter``, ``origin_filter`` or ``state_filter`` instead.
+   * - ``settings.run_as_user`` in the EVerest config file
+     - 2026.10.0
+     - 2027.04.0
+     - Start the manager as the unprivileged user from the service manager
+       instead, e.g. ``User=everest`` in the systemd unit, and grant
+       privileged modules file capabilities (see
+       :doc:`/how-to-guides/security-best-practices`). The manager logs a
+       warning at startup when the setting is used.
+   * - ``capabilities`` key of a module entry in the EVerest config file
+       (``active_modules.<id>.capabilities``)
+     - 2026.10.0
+     - 2027.04.0
+     - Remove the key. Modules declare their capabilities in their
+       ``manifest.yaml``, and the deployment grants them as file capabilities:
+       the ``everest_file_capabilities`` class in meta-everest, or
+       ``applications/utils/scripts/set_module_capabilities.py`` elsewhere (see
+       :doc:`/how-to-guides/security-best-practices`). The key is already
+       ignored, and the manager logs a warning at startup.

@@ -950,6 +950,7 @@ int Manager::run() {
     }
     if (not ms.run_as_user.empty()) {
         EVLOG_info << "EVerest will run as system user: " << ms.run_as_user;
+        EVLOG_warning << "Setting 'run_as_user' is deprecated; start the manager as that user instead.";
     }
     if (ms.runtime_settings.forward_exceptions) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";
