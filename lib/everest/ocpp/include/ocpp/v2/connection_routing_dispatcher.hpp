@@ -3,6 +3,10 @@
 
 #pragma once
 
+#include <functional>
+#include <optional>
+#include <vector>
+
 #include <ocpp/common/message_dispatcher.hpp>
 #include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/types.hpp>
@@ -43,13 +47,36 @@ public:
     void dispatch_call_result(const json& call_result) override;
     void dispatch_call_error(const json& call_error) override;
 
+    /// \brief Adjusts a request on its way to one connection, or drops it for that connection.
+    ///
+    /// Applied only to copies bound for a secondary connection; the primary connection always
+    /// receives the request exactly as the functional block built it. Used where a secondary system
+    /// must see less than the CSMS does, such as a TransactionEvent copy with the idToken removed.
+    ///
+    /// \return The message to send, or std::nullopt to send nothing to that connection.
+    using OutboundTransform =
+        std::function<std::optional<json>(const ConnectionId& connection, MessageType message_type, const json& call)>;
+
+    /// \brief Registers a transform. Transforms are applied in registration order; the first one to
+    ///        return std::nullopt suppresses the message for that connection.
+    void add_outbound_transform(OutboundTransform transform);
+
 private:
     /// \brief The connection a response or an asynchronous request belongs to: the one being handled
     ///        if any, else the primary.
     ConnectionId responding_connection() const;
 
     ConnectionRegistry& registry;
+    std::vector<OutboundTransform> transforms;
 };
+
+/// \brief The transform the charging station installs on its router: a TransactionEvent copy bound
+///        for a secondary connection carries no idToken.
+///
+/// Application note sections 4.2 and 6.2. A secondary system has no business knowing who is
+/// charging, and could not return idTokenInfo for it anyway. Everything else about the message is
+/// left as it is.
+ConnectionRoutingDispatcher::OutboundTransform make_transaction_event_id_token_transform();
 
 } // namespace v2
 } // namespace ocpp

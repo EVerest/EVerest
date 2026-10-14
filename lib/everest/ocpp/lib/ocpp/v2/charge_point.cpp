@@ -650,7 +650,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
     this->connection_registry.add(std::make_unique<OcppConnection>(
         ConnectionId::primary(), std::move(primary_connectivity_configuration), this->connectivity_manager,
         this->message_queue,
-        std::make_unique<MessageDispatcher>(*this->message_queue, *this->device_model, registration_status)));
+        std::make_unique<MessageDispatcher>(*this->message_queue, *this->device_model, registration_status),
+        *this->device_model));
 
     // Secondary connections come from the device model. Registered after the primary so that the
     // primary is fully usable even if building a secondary one goes wrong.
@@ -666,7 +667,9 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         }
     }
 
-    this->message_dispatcher = std::make_unique<ConnectionRoutingDispatcher>(this->connection_registry);
+    auto routing_dispatcher = std::make_unique<ConnectionRoutingDispatcher>(this->connection_registry);
+    routing_dispatcher->add_outbound_transform(make_transaction_event_id_token_transform());
+    this->message_dispatcher = std::move(routing_dispatcher);
 
     // Construct functional blocks.
     functional_block_context = std::make_unique<FunctionalBlockContext>(
@@ -681,6 +684,17 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") &&
                 (variable.name == "Enabled" || variable.name == "Available") && value_current == "true") {
                 this->build_der_control_if_enabled();
+            }
+
+            // A connection's allow list is meant to be changed at runtime by the CSMS, so granting
+            // or revoking a message must take effect without a restart.
+            if (component.name == ControllerComponents::OCPPCommCtrlr.name and component.instance.has_value() and
+                variable.name == ConnectionComponentVariables::UpstreamMsgs.name) {
+                if (auto* connection =
+                        this->connection_registry.find(ConnectionId::secondary(component.instance.value().get()));
+                    connection != nullptr) {
+                    connection->reload_permissions();
+                }
             }
         });
 
@@ -1183,6 +1197,19 @@ void ChargePoint::message_callback(const ConnectionId& connection_id, const std:
     enhanced_message.message_size = message.size();
     auto json_message = enhanced_message.message;
     this->logging->central_system(conversions::messagetype_to_string(enhanced_message.messageType), message);
+
+    // Every connection delivers on its own websocket receive thread, but the functional blocks,
+    // the device model, the EVSEs and the database behind them are shared and were written for a
+    // single one. Serialising the handling makes the several-connection case behave exactly like
+    // the single-connection case, at the cost of one lock per inbound message, which is nothing at
+    // OCPP message rates.
+    //
+    // This holds only because no code path under handle_message blocks on a response future:
+    // every dispatch_call_async caller (Authorize, Get15118EVCertificate, DataTransfer) is reached
+    // from EVerest or from a timer, never from an inbound message. Keep it that way, or a
+    // connection waiting for its own answer would deadlock every other connection.
+    const std::lock_guard<std::recursive_mutex> inbound_lock(this->inbound_mutex);
+
     try {
         if (this->registration_status == RegistrationStatusEnum::Accepted) {
             this->handle_message(enhanced_message);
@@ -1619,9 +1646,9 @@ void ChargePoint::add_secondary_connection(const ConnectionInfo& info) {
 
     auto dispatcher = std::make_unique<MessageDispatcher>(*message_queue, *this->device_model, registration_status);
 
-    this->connection_registry.add(std::make_unique<OcppConnection>(info.id, std::move(configuration),
-                                                                   std::move(connectivity_manager),
-                                                                   std::move(message_queue), std::move(dispatcher)));
+    this->connection_registry.add(
+        std::make_unique<OcppConnection>(info.id, std::move(configuration), std::move(connectivity_manager),
+                                         std::move(message_queue), std::move(dispatcher), *this->device_model));
     EVLOG_info << "Registered secondary OCPP connection " << info.id.to_string();
 }
 

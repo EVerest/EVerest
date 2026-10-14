@@ -171,6 +171,75 @@ async def test_secondary_that_never_connects_does_not_delay_the_primary(
     )
 
 
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms("EMS", upstream_msgs="TransactionEvent,MeterValues")
+async def test_granted_transaction_events_are_copied_without_the_id_token(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """The Data Collection / HEMS use case: a secondary system granted TransactionEvent gets copies.
+
+    Application note sections 4.2 and 6.2. The copy is the same message with its own messageId, but
+    the idToken is left out: a secondary system has no business knowing who is charging.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    test_controller.plug_in()
+    test_controller.swipe(_ID_TOKEN)
+
+    # The CSMS gets the transaction with the idToken, because it is the one that authorizes.
+    assert await wait_for_and_validate(
+        test_utility,
+        primary,
+        "TransactionEvent",
+        {"eventType": "Started", "idToken": {"idToken": _ID_TOKEN, "type": "ISO14443"}},
+    )
+
+    # The secondary gets the same transaction, without it.
+    started = await _wait_for_call(secondary, "TransactionEvent")
+    assert started is not None, "secondary connection never received the TransactionEvent copy"
+    payload = started[3]
+    assert payload["eventType"] == "Started"
+    assert "idToken" not in payload, "the copy for a secondary connection must carry no idToken"
+    assert "transactionInfo" in payload
+
+    # Its own messageId numbering, so the two endpoints can never collide.
+    primary_ids = {frame[1] for frame in _calls(primary, "TransactionEvent")}
+    secondary_ids = {frame[1] for frame in _calls(secondary, "TransactionEvent")}
+    assert primary_ids.isdisjoint(secondary_ids)
+
+
+def _calls(charge_point, action):
+    """Every CALL of \p action the given CSMS has received so far."""
+    frames = []
+    for raw in charge_point.pipeline:
+        frame = json.loads(raw)
+        if frame[0] == 2 and frame[2] == action:
+            frames.append(frame)
+    return frames
+
+
+async def _wait_for_call(charge_point, action, timeout=10):
+    """Waits for a CALL of \p action, returning the frame or None on timeout."""
+    for _ in range(timeout * 10):
+        found = _calls(charge_point, action)
+        if found:
+            return found[0]
+        await asyncio.sleep(0.1)
+    return None
+
+
 def validate_boot_notification_shape(_meta_data, msg, _exp_payload):
     """A BootNotification is a BootNotification whatever it is sent to."""
     return "chargingStation" in msg.payload and "reason" in msg.payload

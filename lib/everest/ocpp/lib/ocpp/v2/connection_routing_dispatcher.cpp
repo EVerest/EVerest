@@ -16,6 +16,25 @@ namespace v2 {
 ConnectionRoutingDispatcher::ConnectionRoutingDispatcher(ConnectionRegistry& registry) : registry(registry) {
 }
 
+void ConnectionRoutingDispatcher::add_outbound_transform(OutboundTransform transform) {
+    this->transforms.push_back(std::move(transform));
+}
+
+ConnectionRoutingDispatcher::OutboundTransform make_transaction_event_id_token_transform() {
+    return [](const ConnectionId& connection, const MessageType message_type, const json& call) -> std::optional<json> {
+        if (connection.is_primary() or message_type != MessageType::TransactionEvent) {
+            return call;
+        }
+        json copy = call;
+        // Defensive: a transform runs on whatever the functional block produced and must not be
+        // able to throw out of dispatch, taking the connection down over a malformed payload.
+        if (copy.size() > CALL_PAYLOAD and copy.at(CALL_PAYLOAD).is_object()) {
+            copy.at(CALL_PAYLOAD).erase("idToken");
+        }
+        return copy;
+    };
+}
+
 ConnectionId ConnectionRoutingDispatcher::responding_connection() const {
     return ConnectionScope::current().value_or(ConnectionId::primary());
 }
@@ -56,6 +75,20 @@ void ConnectionRoutingDispatcher::dispatch_call(const json& call, bool triggered
         // otherwise produce a messageId that is already in flight on the other connection.
         json copy = call;
         copy[MESSAGE_ID] = create_message_id().get();
+
+        bool suppressed = false;
+        for (const auto& transform : this->transforms) {
+            auto transformed = transform(connection->id(), message_type, copy);
+            if (!transformed.has_value()) {
+                suppressed = true;
+                break;
+            }
+            copy = std::move(transformed.value());
+        }
+        if (suppressed) {
+            continue;
+        }
+
         connection->dispatcher().dispatch_call(copy, triggered);
     }
 }

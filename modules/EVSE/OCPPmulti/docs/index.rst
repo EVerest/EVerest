@@ -1152,10 +1152,10 @@ Secondary OCPP connections
 
 .. warning::
 
-   Under construction. The charging station discovers and reports configured
-   secondary connections, but does not dial them yet and does not enforce their
-   message or device-model restrictions. Do not rely on a secondary connection
-   for isolation until those land.
+   Under construction. A secondary connection is discovered, dialled, and only
+   sent the messages it has been granted. It does not yet enforce
+   ``DownstreamMsgs`` or ``AllowSetVariables``, so do not yet grant one a
+   connection you would not trust with the whole device model.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1205,7 +1205,7 @@ the station really does offer a secondary connection.
      - ``DownstreamMsgs`` (not enforced yet)
    * - Messages the station may send to the connection
      - ``OCPPCommCtrlr`` / instance ``<name>``
-     - ``UpstreamMsgs`` (not enforced yet)
+     - ``UpstreamMsgs``
    * - Device model entries the connection may write
      - ``OCPPCommCtrlr`` / instance ``<name>``
      - ``AllowSetVariables`` (not enforced yet)
@@ -1242,6 +1242,40 @@ off, or when it has no usable slot left. An individual slot is skipped when no
 ``NetworkConfiguration`` instance exists for it, or when another connection
 already claims it. The primary connection claims its slots first and can never
 lose one to a secondary.
+
+What a secondary connection is sent
+"""""""""""""""""""""""""""""""""""
+
+Nothing it has not been granted. ``UpstreamMsgs`` is a comma separated list of
+OCPP message names without the ``Request`` suffix, the same spelling as the
+``Action`` field of a CALL, and an absent or empty list means the connection is
+sent nothing at all. A name that is not a known OCPP message is logged and
+skipped rather than voiding the rest of the list, so one typo in a list written
+by a CSMS cannot silently revoke everything else in it. Changes take effect
+immediately; no restart is needed.
+
+``BootNotification`` and ``Heartbeat`` are always sent, whatever the list says.
+They are about the connection's own link rather than the charging station's
+business, and a connection that could not announce itself or stay alive would be
+useless.
+
+Copies bound for a secondary connection differ from what the CSMS receives in
+two ways. Each gets its own ``messageId``, because the two endpoints number
+their messages independently and an endpoint that counts rather than using
+UUIDs could otherwise collide with one already in flight. And a
+``TransactionEvent`` copy carries no ``idToken``: a secondary system has no
+business knowing who is charging, and could not return ``idTokenInfo`` for it
+anyway. The primary connection always receives the message exactly as the
+charging station built it.
+
+A response from a secondary connection never affects the charging station. Its
+``BootNotificationResponse`` and ``TransactionEventResponse`` are read and
+discarded, so a secondary system cannot change the station's registration
+status, clock, heartbeat interval, or an authorization the CSMS granted.
+
+For the Data Collection and HEMS use cases of the application note this is the
+whole upstream story: grant ``TransactionEvent`` and ``MeterValues`` and the
+secondary system receives a copy of each.
 
 Observing the connections
 """""""""""""""""""""""""

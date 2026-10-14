@@ -81,6 +81,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/connection_registry.cpp
             ocpp/v2/connection_routing_dispatcher.cpp
             ocpp/v2/connection_scope.cpp
+            ocpp/v2/message_permission.cpp
             ocpp/v2/ocpp_connection.cpp
             ocpp/v2/connector.cpp
             ocpp/v2/ctrlr_component_variables.cpp

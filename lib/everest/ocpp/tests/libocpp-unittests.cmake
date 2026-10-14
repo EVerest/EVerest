@@ -51,6 +51,7 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/common/websocket/websocket_uri.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/types.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ocpp_types.cpp

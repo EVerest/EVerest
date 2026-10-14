@@ -6,6 +6,7 @@
 #include <chrono>
 #include <functional>
 #include <memory>
+#include <set>
 
 #include <ocpp/common/connectivity_manager.hpp>
 #include <ocpp/common/connectivity_manager_configuration.hpp>
@@ -18,6 +19,8 @@
 
 namespace ocpp {
 namespace v2 {
+
+class DeviceModelAbstract;
 
 /// \brief One OCPP connection of the charging station: everything that is per connection rather
 ///        than per charging station.
@@ -42,10 +45,13 @@ public:
     /// \param message_queue  Queue of messages bound for this connection's endpoint.
     /// \param dispatcher     Dispatcher writing into \p message_queue. This is the leaf dispatcher
     ///                       of a single connection, not the router that fans out across them.
+    /// \param device_model  Shared device model, read for this connection's permissions. Must
+    ///                      outlive this connection.
     OcppConnection(ConnectionId id, std::unique_ptr<ocpp::ConnectivityManagerConfiguration> configuration,
                    std::shared_ptr<ConnectivityManagerInterface> connectivity_manager,
                    std::shared_ptr<MessageQueue<MessageType>> message_queue,
-                   std::unique_ptr<MessageDispatcherInterface<MessageType>> dispatcher);
+                   std::unique_ptr<MessageDispatcherInterface<MessageType>> dispatcher,
+                   DeviceModelAbstract& device_model);
 
     OcppConnection(const OcppConnection&) = delete;
     OcppConnection& operator=(const OcppConnection&) = delete;
@@ -63,10 +69,17 @@ public:
 
     /// \brief Whether the charging station may send \p message_type to this connection.
     ///
-    /// The primary connection may send anything. A secondary connection may send only what it has
-    /// been granted, which today means only the messages that keep the connection itself alive.
-    /// The UpstreamMsgs allow list of application note section 3.5 refines this.
+    /// The primary connection may send anything. A secondary connection may send only what its
+    /// UpstreamMsgs grants it (application note section 3.5), plus the messages that establish and
+    /// keep its own link alive, which are about the pipe rather than the charging station's
+    /// business and so are never withheld.
     [[nodiscard]] bool may_send(MessageType message_type) const;
+
+    /// \brief Re-reads this connection's permissions from the device model.
+    ///
+    /// Called at startup and whenever the allow list changes, so that a CSMS granting or revoking a
+    /// message takes effect without a restart.
+    void reload_permissions();
 
     /// \brief Starts this connection's heartbeat.
     ///
@@ -87,6 +100,11 @@ private:
     // Declared last: the dispatcher holds a reference to the queue.
     std::unique_ptr<MessageDispatcherInterface<MessageType>> m_dispatcher;
     Everest::SteadyTimer m_heartbeat_timer;
+
+    DeviceModelAbstract& m_device_model;
+    /// Guarded: reloaded from the device model on a variable listener thread while dispatch reads
+    /// it from every connection's receive thread.
+    mutable everest::lib::util::monitor<std::set<MessageType>> m_upstream_msgs;
 };
 
 } // namespace v2

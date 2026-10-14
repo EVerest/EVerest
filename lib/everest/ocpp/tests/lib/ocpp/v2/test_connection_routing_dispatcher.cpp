@@ -12,11 +12,14 @@
 #include <message_dispatcher_mock.hpp>
 #include <test_temp_paths.hpp>
 
+#include <device_model_test_helper.hpp>
 #include <ocpp/common/call_types.hpp>
 #include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/connection_registry.hpp>
 #include <ocpp/v2/connection_routing_dispatcher.hpp>
 #include <ocpp/v2/connection_scope.hpp>
+
+#include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/database_handler.hpp>
 #include <ocpp/v2/ocpp_connection.hpp>
 
@@ -33,7 +36,7 @@ constexpr const char* ORIGINAL_MESSAGE_ID = "original-message-id";
 
 /// A CALL as the functional blocks build it: [MessageTypeId, messageId, action, payload].
 json make_call(const std::string& action, const std::string& message_id = ORIGINAL_MESSAGE_ID) {
-    return json::array({2, message_id, action, json{{"some"}, {"payload"}}});
+    return json::array({2, message_id, action, json::object({{"some", "payload"}})});
 }
 } // namespace
 
@@ -41,8 +44,18 @@ json make_call(const std::string& action, const std::string& message_id = ORIGIN
 /// observed exactly where the bytes would leave for one connection's queue.
 class ConnectionRoutingDispatcherTest : public ::testing::Test {
 protected:
+    // A real device model, because a connection reads its allowed message list from it.
+    DeviceModelTestHelper device_model_test_helper{
+        DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, {SECONDARY_INSTANCE}};
+    DeviceModel* dm{device_model_test_helper.get_device_model()};
+
     ConnectionRegistry registry;
     ConnectionRoutingDispatcher dispatcher{registry};
+
+    void SetUp() override {
+        // The very transform ChargePoint installs, so these tests exercise shipped behaviour.
+        dispatcher.add_outbound_transform(make_transaction_event_id_token_transform());
+    }
 
     // Kept so the test can set expectations after the connections have been registered.
     MockMessageDispatcher* primary_leaf{nullptr};
@@ -74,9 +87,21 @@ protected:
         auto leaf = std::make_unique<NiceMock<MockMessageDispatcher>>();
         auto* leaf_ptr = leaf.get();
 
-        this->registry.add(std::make_unique<OcppConnection>(
-            id, nullptr, std::make_shared<NiceMock<ConnectivityManagerMock>>(), message_queue, std::move(leaf)));
+        this->registry.add(std::make_unique<OcppConnection>(id, nullptr,
+                                                            std::make_shared<NiceMock<ConnectivityManagerMock>>(),
+                                                            message_queue, std::move(leaf), *this->dm));
         return leaf_ptr;
+    }
+
+    /// Grants \p csv to the secondary connection and reloads it, as a CSMS write would.
+    void grant_upstream(const std::string& csv) {
+        const auto cv = ConnectionComponentVariables::get_component_variable(
+            ConnectionId::secondary(SECONDARY_INSTANCE), ConnectionComponentVariables::UpstreamMsgs);
+        ASSERT_EQ(this->dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, csv, "test"),
+                  SetVariableStatusEnum::Accepted);
+        auto* connection = this->registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
+        ASSERT_NE(connection, nullptr);
+        connection->reload_permissions();
     }
 };
 
@@ -310,6 +335,99 @@ TEST_F(ConnectionRoutingDispatcherTest, a_pinned_call_still_respects_what_the_co
 
     const ConnectionTargetScope target(ConnectionId::secondary(SECONDARY_INSTANCE));
     dispatcher.dispatch_call(make_call("TransactionEvent"));
+}
+
+// --- the UpstreamMsgs allow list ----------------------------------------------------------------
+
+TEST_F(ConnectionRoutingDispatcherTest, a_granted_message_reaches_the_secondary) {
+    add_primary();
+    add_secondary();
+    grant_upstream("TransactionEvent,MeterValues");
+
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(2);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(2);
+
+    dispatcher.dispatch_call(make_call("TransactionEvent"));
+    dispatcher.dispatch_call(make_call("MeterValues"));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, a_message_outside_the_grant_still_does_not_reach_the_secondary) {
+    add_primary();
+    add_secondary();
+    grant_upstream("MeterValues");
+
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(2);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(1);
+
+    dispatcher.dispatch_call(make_call("MeterValues"));
+    dispatcher.dispatch_call(make_call("TransactionEvent"));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, an_unknown_name_in_the_grant_does_not_void_the_rest) {
+    add_primary();
+    add_secondary();
+    // A typo in a list written by a CSMS must not silently revoke everything else in it.
+    grant_upstream("NotAnOcppMessage,MeterValues");
+
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(1);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(1);
+
+    dispatcher.dispatch_call(make_call("MeterValues"));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, revoking_a_grant_takes_effect_immediately) {
+    add_primary();
+    add_secondary();
+    grant_upstream("MeterValues");
+
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).Times(2);
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).Times(1);
+
+    dispatcher.dispatch_call(make_call("MeterValues"));
+    grant_upstream("");
+    dispatcher.dispatch_call(make_call("MeterValues"));
+}
+
+// --- what a secondary is allowed to see ---------------------------------------------------------
+
+TEST_F(ConnectionRoutingDispatcherTest, a_transaction_event_copy_carries_no_id_token) {
+    add_primary();
+    add_secondary();
+    grant_upstream("TransactionEvent");
+
+    json to_primary;
+    json to_secondary;
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _)).WillOnce(SaveArg<0>(&to_primary));
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).WillOnce(SaveArg<0>(&to_secondary));
+
+    auto call = make_call("TransactionEvent");
+    call[CALL_PAYLOAD] =
+        json{{"eventType", "Started"}, {"idToken", {{"idToken", "DEADBEEF"}, {"type", "ISO14443"}}}, {"seqNo", 0}};
+    dispatcher.dispatch_call(call);
+
+    // The CSMS needs the idToken to authorize; a secondary system has no business knowing who is
+    // charging and could not return idTokenInfo for it anyway.
+    EXPECT_TRUE(to_primary.at(CALL_PAYLOAD).contains("idToken"));
+    EXPECT_FALSE(to_secondary.at(CALL_PAYLOAD).contains("idToken"));
+    // Everything else is the same message.
+    EXPECT_EQ(to_secondary.at(CALL_PAYLOAD).at("eventType"), "Started");
+    EXPECT_EQ(to_secondary.at(CALL_PAYLOAD).at("seqNo"), 0);
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, other_messages_are_copied_unchanged) {
+    add_primary();
+    add_secondary();
+    grant_upstream("MeterValues");
+
+    json to_secondary;
+    EXPECT_CALL(*primary_leaf, dispatch_call(_, _));
+    EXPECT_CALL(*secondary_leaf, dispatch_call(_, _)).WillOnce(SaveArg<0>(&to_secondary));
+
+    auto call = make_call("MeterValues");
+    call[CALL_PAYLOAD] = json{{"evseId", 1}, {"meterValue", json::array()}};
+    dispatcher.dispatch_call(call);
+
+    EXPECT_EQ(to_secondary.at(CALL_PAYLOAD), call.at(CALL_PAYLOAD));
 }
 
 // --- registry -----------------------------------------------------------------------------------

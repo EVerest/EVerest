@@ -523,6 +523,10 @@ private:
     /// handling the message finds its way back to the connection that asked.
     void message_callback(const ConnectionId& connection_id, const std::string& message);
 
+    /// Serialises the handling of inbound messages across all connections; see message_callback().
+    /// Recursive because handling a message can re-enter the charge point.
+    std::recursive_mutex inbound_mutex;
+
     /// \brief Wires the websocket lifecycle callbacks of \p connectivity_manager so that they carry
     ///        \p connection_id, letting the handlers tell the connections apart.
     void wire_connectivity_callbacks(ConnectivityManagerInterface& connectivity_manager,

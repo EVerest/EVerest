@@ -47,8 +47,9 @@ station from reaching its CSMS.
 ## What is honoured today
 
 This is being implemented in steps. Right now the charging station discovers a configured secondary
-connection, validates it and reports it on the `connections` variable of the `ocpp` interface. It
-does not dial it yet, and `UpstreamMsgs`, `DownstreamMsgs` and `AllowSetVariables` are not enforced
-yet. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr` and `SecurityCtrlr`
-components the application note also describes will be added together with the features that read
-them.
+connection, validates it, reports it on the `connections` variable of the `ocpp` interface, dials
+it, and sends it only what `UpstreamMsgs` grants it. `DownstreamMsgs` and `AllowSetVariables` are
+not enforced yet, so do not yet grant a secondary connection to a party you would not trust with the
+whole device model. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr` and
+`SecurityCtrlr` components the application note also describes will be added together with the
+features that read them.
