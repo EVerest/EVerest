@@ -32,6 +32,13 @@
 //! the token-id itself is the invoice token. The module keeps the mapping
 //! from token-id to invoice token for the lifetime of the transaction.
 //!
+//! ## Connection to the terminal
+//!
+//! If the `ip` config is set, the module connects to the terminal under this
+//! address. Otherwise it looks up the address via mDNS from the `feig_serial`
+//! and repeats the lookup whenever the connection fails - the terminal may
+//! have received a new address in the meantime.
+//!
 //! ## Implementation details
 //!
 //! For more details checkout the
@@ -83,6 +90,8 @@ fn invoice_token_from_additional_info(id_token: &IdToken) -> Option<String> {
         .find(|info| info.r#type == INVOICE_TOKEN_ADDITIONAL_INFO_TYPE)
         .map(|info| info.value.clone())
 }
+
+mod dns;
 
 mod backoff {
     use std::cmp::min;
@@ -173,12 +182,17 @@ mod backoff {
 }
 
 mod sync_feig {
+    use crate::backoff::Backoff;
+    use crate::dns;
     use anyhow::Result;
     use std::sync::Mutex;
     use zvt_feig_terminal::{
         config::Config,
-        feig::{CardInfo, Feig, TransactionSummary},
+        feig::{CardInfo, Error, Feig, TransactionSummary},
     };
+
+    /// The maximum backoff (in sec) between two reconnects via mDNS.
+    const MDNS_MAX_BACKOFF_SECS: u64 = 60;
 
     pub struct SyncFeig {
         /// Tokio runtime to call the Feig functions.
@@ -186,6 +200,23 @@ mod sync_feig {
 
         /// The async impl of the Feig.
         inner: Mutex<Feig>,
+
+        /// The serial to look up the terminal via mDNS. Only set if no fixed
+        /// ip-address is configured.
+        mdns_feig_serial: Option<String>,
+
+        /// Throttles the reconnects via mDNS while the terminal is gone.
+        mdns_backoff: Mutex<Backoff>,
+    }
+
+    /// Returns true if the error may stem from the terminal having moved to
+    /// another ip-address.
+    fn needs_reconnect(err: &anyhow::Error) -> bool {
+        err.downcast_ref::<std::io::Error>().is_some()
+            || matches!(
+                err.downcast_ref::<Error>(),
+                Some(Error::IncorrectDeviceId { .. })
+            )
     }
 
     /// Sync interface for the Feig.
@@ -198,13 +229,36 @@ mod sync_feig {
     #[allow(dead_code)]
     #[cfg_attr(test, mockall::automock)]
     impl SyncFeig {
-        pub fn new(config: Config) -> Self {
+        /// Creates the Feig. With `use_mdns` the ip-address of the `config` is
+        /// only a placeholder and the address is looked up via mDNS instead.
+        pub fn new(config: Config, use_mdns: bool) -> Self {
             // Create a runtime for the Feig terminal.
             let rt = tokio::runtime::Builder::new_multi_thread()
                 .max_blocking_threads(1)
                 .enable_all()
                 .build()
                 .unwrap();
+
+            // Don't block the startup until the terminal shows up. If the
+            // lookup fails we keep the placeholder: the operations on the
+            // terminal will fail and trigger the next lookup.
+            let mdns_feig_serial = use_mdns.then(|| config.feig_serial.clone());
+            let config = match &mdns_feig_serial {
+                Some(feig_serial) => match rt.block_on(dns::resolve(feig_serial)) {
+                    Ok(ip_address) => {
+                        log::info!("Found the feig_serial {feig_serial} at {ip_address}");
+                        Config {
+                            ip_address,
+                            ..config
+                        }
+                    }
+                    Err(err) => {
+                        log::warn!("Failed to look up the feig_serial {feig_serial}: {err:?}");
+                        config
+                    }
+                },
+                None => config,
+            };
 
             // Create the Feig terminal itself.
             let feig = rt.block_on(async {
@@ -225,32 +279,114 @@ mod sync_feig {
             Self {
                 rt,
                 inner: Mutex::new(feig),
+                mdns_feig_serial,
+                mdns_backoff: Mutex::new(Backoff::from_secs(MDNS_MAX_BACKOFF_SECS)),
             }
         }
 
+        // The functions below release the lock on `inner` before calling
+        // `reconnect_on_error`, which locks it again.
+
         pub fn read_card(&self, read_card_control: u8) -> Result<CardInfo> {
-            let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.read_card(read_card_control))
+            let res = self
+                .rt
+                .block_on(self.inner.lock().unwrap().read_card(read_card_control));
+            self.reconnect_on_error(res)
         }
 
         pub fn begin_transaction(&self, token: &str, amount: usize) -> Result<()> {
-            let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.begin_transaction(token, amount))
+            let res = self
+                .rt
+                .block_on(self.inner.lock().unwrap().begin_transaction(token, amount));
+            self.reconnect_on_error(res)
         }
 
         pub fn cancel_transaction(&self, token: &str) -> Result<()> {
-            let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.cancel_transaction(token))
+            let res = self
+                .rt
+                .block_on(self.inner.lock().unwrap().cancel_transaction(token));
+            self.reconnect_on_error(res)
         }
 
         pub fn commit_transaction(&self, token: &str, amount: u64) -> Result<TransactionSummary> {
-            let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.commit_transaction(token, amount))
+            let res = self
+                .rt
+                .block_on(self.inner.lock().unwrap().commit_transaction(token, amount));
+            self.reconnect_on_error(res)
         }
 
         pub fn configure(&self) -> Result<()> {
+            let res = self.rt.block_on(self.inner.lock().unwrap().configure());
+            self.reconnect_on_error(res)
+        }
+    }
+
+    // Unused in tests, which mock the `SyncFeig`.
+    #[cfg_attr(test, allow(dead_code))]
+    impl SyncFeig {
+        /// Looks up the terminal via mDNS and reconnects if `res` failed with
+        /// an error which may stem from the terminal having moved to another
+        /// ip-address. Returns `res` unchanged.
+        ///
+        /// Must not be called with the lock on `inner` held.
+        fn reconnect_on_error<T>(&self, res: Result<T>) -> Result<T> {
+            let (Some(feig_serial), Err(err)) = (&self.mdns_feig_serial, &res) else {
+                return res;
+            };
+            if !needs_reconnect(err) {
+                return res;
+            }
+            // Skip if another thread is already reconnecting.
+            let Ok(mut backoff) = self.mdns_backoff.try_lock() else {
+                return res;
+            };
+            if !backoff.is_ready() {
+                return res;
+            }
+
+            log::warn!("{err}: Reconnecting...");
+            match self.reconnect(feig_serial) {
+                Ok(()) => backoff.record_success(),
+                Err(err) => {
+                    log::warn!("Failed to reconnect: {err:?}");
+                    backoff.record_failure();
+                }
+            }
+            res
+        }
+
+        fn reconnect(&self, feig_serial: &str) -> Result<()> {
+            let ip_address = self.rt.block_on(dns::resolve(feig_serial))?;
+            log::info!("Found the feig_serial {feig_serial} at {ip_address}");
             let mut inner = self.inner.lock().unwrap();
-            self.rt.block_on(inner.configure())
+            self.rt.block_on(inner.reconnect(ip_address))
+        }
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+
+        #[test]
+        fn needs_reconnect_on_io_errors() {
+            let err = std::io::Error::new(std::io::ErrorKind::ConnectionRefused, "refused");
+            assert!(needs_reconnect(&err.into()));
+        }
+
+        #[test]
+        fn needs_reconnect_on_incorrect_device_id() {
+            let err = Error::IncorrectDeviceId {
+                expected: "foo".to_string(),
+                received: "bar".to_string(),
+            };
+            assert!(needs_reconnect(&err.into()));
+        }
+
+        #[test]
+        fn needs_no_reconnect_on_other_errors() {
+            assert!(!needs_reconnect(&Error::NoCardPresented.into()));
+            assert!(!needs_reconnect(&Error::TidMismatch.into()));
+            assert!(!needs_reconnect(&anyhow::anyhow!("other")));
         }
     }
 }
@@ -689,10 +825,16 @@ fn main(module: &Module) -> Result<()> {
     let config = module.get_config();
     log::info!("Received the config {config:?}");
 
-    let pt_config = Config {
+    // Without a fixed ip-address we look up the terminal via mDNS.
+    let use_mdns = config.ip.is_empty();
+    let mut pt_config = Config {
         terminal_id: config.terminal_id,
         feig_serial: config.feig_serial,
-        ip_address: Ipv4Addr::from_str(&config.ip)?,
+        ip_address: if use_mdns {
+            Ipv4Addr::UNSPECIFIED
+        } else {
+            Ipv4Addr::from_str(&config.ip)?
+        },
         feig_config: FeigConfig {
             currency: config.currency as usize,
             read_card_timeout: config.read_card_timeout as u8,
@@ -702,12 +844,17 @@ fn main(module: &Module) -> Result<()> {
         },
         transactions_max_num: config.transactions_max_num as usize,
     };
+    if use_mdns {
+        // Fail fast: retrying a stale ip-address won't help, a new lookup
+        // will.
+        pt_config.feig_config.max_retry_attempts = 1;
+    }
 
     let (tx, rx) = channel();
 
     let pt_module = Arc::new(PaymentTerminalModule {
         tx,
-        feig: SyncFeig::new(pt_config),
+        feig: SyncFeig::new(pt_config, use_mdns),
         card_type_to_connector: Mutex::new(default_card_type_to_connector()),
         pre_authorization_amount: Mutex::new(config.pre_authorization_amount as usize),
         bank_transactions: Mutex::new(HashMap::new()),
