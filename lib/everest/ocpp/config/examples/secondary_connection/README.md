@@ -15,7 +15,7 @@ secondary connection.
 
 ## Using them
 
-Copy both files into the directory the `DeviceModelConfigPath` module configuration option points
+Copy the files into the directory the `DeviceModelConfigPath` module configuration option points
 at, alongside the standardized component configs, then edit them:
 
 1. **Choose the connection name.** Change the `"instance"` field of `OCPPCommCtrlr_EMS.json`. The
@@ -61,8 +61,12 @@ Being allowed to ask a question does not by itself allow the answer to be sent: 
 `GetBaseReport` in `DownstreamMsgs` also needs `NotifyReport` in `UpstreamMsgs`, and so on for each
 of the pairs above.
 
-Not implemented yet: the monitor routing of section 5.5, the connection-scoped security events of
-section 5.6, the per-connection meter values of section 4.5, and the per-connection TLS trust
-anchors of section 3.4.3. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr`
-and `SecurityCtrlr` components the application note also describes will be added together with the
-features that read them.
+`NotifyEvent`s are routed by monitor subscription (section 5.5): installing a monitor subscribes the
+connection that installed it, an unsubscribed monitor reports to the CSMS, and hardwired
+notifications go to everyone allowed `NotifyEvent`. That needs a `MonitoringCtrlr` instance for the
+connection, so `MonitoringCtrlr_EMS.json` ships here too.
+
+Not implemented yet: the connection-scoped security events of section 5.6, the per-connection meter
+values of section 4.5, and the per-connection TLS trust anchors of section 3.4.3. The instanced
+`AlignedDataCtrlr`, `SampledDataCtrlr` and `SecurityCtrlr` components the application note also
+describes will be added together with the features that read them.

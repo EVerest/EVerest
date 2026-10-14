@@ -70,12 +70,22 @@ void OcppConnection::reload_permissions() {
 }
 
 bool OcppConnection::is_privilege_variable(const Component& component, const Variable& variable) {
-    if (!(component.name == ControllerComponents::OCPPCommCtrlr.name)) {
-        return false;
+    if (component.name == ControllerComponents::OCPPCommCtrlr.name) {
+        // Section 3.6.2: a secondary system may never widen its own privileges.
+        return variable.name == ConnectionComponentVariables::AllowSetVariables.name or
+               variable.name == ConnectionComponentVariables::UpstreamMsgs.name or
+               variable.name == ConnectionComponentVariables::DownstreamMsgs.name;
     }
-    return variable.name == ConnectionComponentVariables::AllowSetVariables.name or
-           variable.name == ConnectionComponentVariables::UpstreamMsgs.name or
-           variable.name == ConnectionComponentVariables::DownstreamMsgs.name;
+
+    // Section 5.5: the instance-less SubscribedMonitors is the CSMS's own list of monitors it wants
+    // NotifyEvents for. It stays the CSMS's even when the whole MonitoringCtrlr component has been
+    // granted, so that a secondary system can never unsubscribe the CSMS from its own monitors. A
+    // connection's own instanced list is an ordinary variable and can be granted.
+    if (component.name == ControllerComponents::MonitoringCtrlr.name and !component.instance.has_value()) {
+        return variable.name == ConnectionComponentVariables::SubscribedMonitors.name;
+    }
+
+    return false;
 }
 
 bool OcppConnection::may_set_variable(const Component& component, const Variable& variable) const {

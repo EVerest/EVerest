@@ -54,6 +54,7 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/monitor_subscription.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/request_origin_registry.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp

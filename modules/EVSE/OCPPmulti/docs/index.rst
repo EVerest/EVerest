@@ -1152,12 +1152,12 @@ Secondary OCPP connections
 
 .. warning::
 
-   Under construction. Message and device-model restrictions are enforced and
-   the messages answering a request go back to the connection that asked, but
-   the monitor routing of application note section 5.5, the connection-scoped
-   security events of section 5.6, the per-connection meter values of section
-   4.5 and the per-connection TLS trust anchors of section 3.4.3 are not
-   implemented yet.
+   Under construction. Message and device-model restrictions are enforced, the
+   messages answering a request go back to the connection that asked, and
+   NotifyEvents are routed by monitor subscription, but the connection-scoped
+   security events of application note section 5.6, the per-connection meter
+   values of section 4.5 and the per-connection TLS trust anchors of section
+   3.4.3 are not implemented yet.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1353,6 +1353,55 @@ request. It defaults to ``false``, because firmware status for an update a CSMS
 knows nothing about is more likely to confuse it than to inform it. The
 connection that asked for the update always hears about it regardless of the
 setting, and is never sent the notification twice.
+
+Monitors and NotifyEvent
+""""""""""""""""""""""""
+
+A ``NotifyEvent`` names the monitor that produced it by ``monitorId``, and a
+system that did not install that monitor has no idea what the id refers to.
+Events are therefore routed by subscription rather than copied to everyone
+(application note section 5.5).
+
+Each connection has a list of the monitor ids it wants events for, in
+``MonitoringCtrlr[<name>].SubscribedMonitors`` for a secondary connection and in
+the instance-less ``MonitoringCtrlr.SubscribedMonitors`` for the CSMS. The
+charging station maintains the list itself: installing a monitor subscribes the
+connection that installed it, and clearing a monitor drops it from every list.
+The list can also be written by hand, so one connection can subscribe to
+another's monitor - within what ``AllowSetVariables`` permits.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Kind of event
+     - Goes to
+   * - Hardwired notification or hardwired monitor
+     - Every connection allowed ``NotifyEvent``
+   * - Monitor listed in one or more subscriptions
+     - Exactly those connections
+   * - Monitor listed in no subscription
+     - The CSMS
+
+The last row is what makes preconfigured monitors behave as the note requires
+without anything having to write them into the CSMS's list at startup: an
+unsubscribed monitor is the CSMS's business, which is also where every event
+went before secondary connections existed.
+
+A batch of events is split rather than duplicated: each connection is sent one
+``NotifyEvent`` carrying only the events it is subscribed to.
+
+The instance-less ``MonitoringCtrlr.SubscribedMonitors`` is never writable by a
+secondary connection, even when the whole ``MonitoringCtrlr`` component has been
+granted to it, so a secondary system can never unsubscribe the CSMS from its own
+monitors. Note also that granting ``MonitoringCtrlr`` covers the instance-less
+component only; a connection's own list is granted as
+``MonitoringCtrlr#<name>``.
+
+A secondary connection that has no ``MonitoringCtrlr`` instance configured
+cannot be subscribed to anything, so its monitors report to the CSMS instead.
+An example instance ships alongside the ``OCPPCommCtrlr`` one in
+``config/examples/secondary_connection/`` of libocpp.
 
 What a secondary connection may change
 """"""""""""""""""""""""""""""""""""""

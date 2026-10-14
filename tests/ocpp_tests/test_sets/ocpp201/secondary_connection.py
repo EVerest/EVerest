@@ -22,6 +22,9 @@ from everest.testing.ocpp_utils.central_system import CentralSystem
 from everest.testing.ocpp_utils.charge_point_utils import TestUtility, wait_for_and_validate
 from everest.testing.ocpp_utils.fixtures import *
 from everest_test_utils import *  # noqa: F401,F403  overrides the v201 Action enum, must precede the import below
+from everest.testing.core_utils._configuration.everest_configuration_strategies.evse_board_support_api_configuration_strategy import (
+    EvseBoardSupportApiConfigAdjustment,
+)
 from ocpp.exceptions import SecurityError
 from ocpp.v201 import call as call201
 from ocpp.v201.datatypes import (
@@ -710,6 +713,119 @@ async def test_the_same_request_id_on_two_connections_does_not_cross_over(
     # The CSMS's own request finished before the EMS asked, so its entry was already gone and the
     # EMS's reports could not have been mistaken for the CSMS's.
     assert len(_calls(primary, "NotifyReport")) == reports_to_the_csms
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.everest_config_adaptions(EvseBoardSupportApiConfigAdjustment())
+@pytest.mark.secondary_csms("EMS", upstream_msgs="NotifyEvent")
+@pytest.mark.secondary_csms("MAINT", network_configuration_slot=4)
+async def test_a_hardwired_notification_reaches_every_connection_allowed_it(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 5.5: a hardwired notification is the charging station reporting on
+    itself rather than on a monitor somebody installed, so there is no subscription to consult and
+    everybody allowed NotifyEvent hears it.
+
+    MAINT is configured but granted nothing, which is what makes this a routing test rather than a
+    broadcast test: the same event that reaches EMS must not reach MAINT.
+    """
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    ems = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+    maint = await secondary_central_systems["MAINT"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    test_controller.publish(
+        f"{test_controller._mqtt_external_prefix}everest_api/1/evse_board_support/bsp_1/m2e/raise_error",
+        json.dumps({"type": "MREC2GroundFailure", "message": "secondary connection test"}),
+    )
+
+    assert await _wait_for_call(primary, "NotifyEvent") is not None
+    assert await _wait_for_call(ems, "NotifyEvent") is not None
+
+    # Not granted NotifyEvent, so it is sent nothing however hardwired the notification is.
+    assert not _calls(maint, "NotifyEvent")
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms(
+    "EMS",
+    downstream_msgs="SetVariables",
+    allow_set_variables="MonitoringCtrlr,MonitoringCtrlr#EMS",
+)
+async def test_a_secondary_cannot_unsubscribe_the_csms_from_its_own_monitors(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Section 5.5: MonitoringCtrlr.SubscribedMonitors without an instance is the CSMS's own list.
+    It stays the CSMS's even when the whole MonitoringCtrlr component has been granted, which is
+    the case here. Note that a grant of ``MonitoringCtrlr`` covers the instance-less component
+    only, so the connection's own instanced list has to be granted separately."""
+
+    test_controller.start()
+
+    primary = await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    refused = await secondary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    component=ComponentType(name="MonitoringCtrlr"),
+                    variable=VariableType(name="SubscribedMonitors"),
+                    attribute_value="1,2,3",
+                )
+            ]
+        )
+    )
+    assert refused.set_variable_result[0]["attribute_status"] == "Rejected"
+
+    # Its own list is an ordinary variable, and the grant covers it.
+    accepted = await secondary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    component=ComponentType(name="MonitoringCtrlr", instance="EMS"),
+                    variable=VariableType(name="SubscribedMonitors"),
+                    attribute_value="1,2,3",
+                )
+            ]
+        )
+    )
+    assert accepted.set_variable_result[0]["attribute_status"] == "Accepted"
+
+    # And the CSMS can still write its own.
+    from_csms = await primary.call(
+        call201.SetVariables(
+            set_variable_data=[
+                SetVariableDataType(
+                    component=ComponentType(name="MonitoringCtrlr"),
+                    variable=VariableType(name="SubscribedMonitors"),
+                    attribute_value="4,5",
+                )
+            ]
+        )
+    )
+    assert from_csms.set_variable_result[0]["attribute_status"] == "Accepted"
 
 
 def _charging_schedule(limit):

@@ -11,6 +11,7 @@
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/authorization.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
+#include <ocpp/v2/monitor_subscription.hpp>
 #include <ocpp/v2/utils.hpp>
 
 #include <ocpp/v2/messages/ClearVariableMonitoring.hpp>
@@ -90,20 +91,119 @@ std::shared_ptr<ConnectionTargetScope> Diagnostics::target_for(const RequestOrig
     return std::make_shared<ConnectionTargetScope>(origin.value());
 }
 
-void Diagnostics::notify_event_req(const std::vector<EventData>& events) {
-    NotifyEventRequest req;
-    req.eventData = events;
-    if (this->context.ocpp_version != OcppProtocolVersion::v21) {
-        // severity was introduced in OCPP 2.1; OCPP 2.0.1 EventDataType allows no additional properties
-        for (auto& event : req.eventData) {
-            event.severity.reset();
+std::set<std::int32_t> Diagnostics::subscribed_monitors(const ConnectionId& connection) {
+    const auto value = this->context.device_model.get_optional_value<std::string>(
+        {ConnectionComponentVariables::monitoring_ctrlr(connection), ConnectionComponentVariables::SubscribedMonitors});
+    if (!value.has_value()) {
+        return {};
+    }
+    return parse_monitor_id_list(value.value());
+}
+
+void Diagnostics::set_subscribed_monitors(const ConnectionId& connection, const std::set<std::int32_t>& ids) {
+    const auto component = ConnectionComponentVariables::monitoring_ctrlr(connection);
+    const auto result = this->context.device_model.set_value(
+        component, ConnectionComponentVariables::SubscribedMonitors, AttributeEnum::Actual, to_monitor_id_list(ids),
+        VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+    if (result != SetVariableStatusEnum::Accepted) {
+        // Nothing is broken by this: an unlisted monitor's events fall back to the CSMS, which is
+        // where they went before there were any secondary connections. Worth saying out loud
+        // though, because it usually means the connection has no MonitoringCtrlr instance
+        // configured and its own monitors will never reach it.
+        EVLOG_warning << "Could not record the monitor subscription of OCPP connection " << connection.to_string()
+                      << ": " << conversions::set_variable_status_enum_to_string(result);
+    }
+}
+
+void Diagnostics::subscribe_monitors(const std::vector<std::int32_t>& monitor_ids) {
+    // Section 5.5: a connection is subscribed to the monitors it installs, so that its NotifyEvents
+    // come back to it and to nobody else. Only what a connection created; a monitor installed by
+    // the CSMS is the CSMS's.
+    const auto connection = ConnectionScope::current();
+    if (!connection.has_value() or monitor_ids.empty()) {
+        return;
+    }
+
+    auto ids = this->subscribed_monitors(connection.value());
+    const auto before = ids.size();
+    ids.insert(monitor_ids.begin(), monitor_ids.end());
+    if (ids.size() != before) {
+        this->set_subscribed_monitors(connection.value(), ids);
+    }
+}
+
+void Diagnostics::unsubscribe_monitors(const std::vector<std::int32_t>& monitor_ids) {
+    if (monitor_ids.empty()) {
+        return;
+    }
+
+    // A cleared monitor exists nowhere any more, so it is dropped from every list rather than only
+    // from the list of whoever cleared it. Leaving it behind would silently resubscribe a
+    // connection if the id were ever handed out again.
+    for (const auto& connection : this->context.connections.connection_ids()) {
+        auto ids = this->subscribed_monitors(connection);
+        const auto before = ids.size();
+        for (const auto id : monitor_ids) {
+            ids.erase(id);
+        }
+        if (ids.size() != before) {
+            this->set_subscribed_monitors(connection, ids);
         }
     }
-    req.generatedAt = DateTime();
-    req.seqNo = 0;
+}
 
-    const ocpp::Call<NotifyEventRequest> call(req);
-    this->context.message_dispatcher.dispatch_call(call);
+std::vector<ConnectionId> Diagnostics::subscribers_for(const EventData& event) {
+    // Hardwired notifications are the charging station talking about itself, so everyone allowed
+    // NotifyEvent hears them. Letting them fan out normally is also what keeps a single-connection
+    // charging station's behaviour exactly as it was.
+    if (is_hardwired_notification(event) or !event.variableMonitoringId.has_value()) {
+        return this->context.connections.connection_ids();
+    }
+
+    std::vector<ConnectionId> subscribers;
+    for (const auto& connection : this->context.connections.connection_ids()) {
+        if (this->subscribed_monitors(connection).count(event.variableMonitoringId.value()) != 0) {
+            subscribers.push_back(connection);
+        }
+    }
+
+    if (subscribers.empty()) {
+        // Section 5.5: a monitor nobody has subscribed to is the CSMS's. That covers the
+        // preconfigured monitors, which belong to the CSMS by default without having to be written
+        // into its list at startup.
+        subscribers.push_back(ConnectionId::primary());
+    }
+
+    return subscribers;
+}
+
+void Diagnostics::notify_event_req(const std::vector<EventData>& events) {
+    // Section 5.5: a NotifyEvent is only meaningful to the system that installed the monitor it
+    // reports, since nobody else recognises the monitorId. Events are therefore split per
+    // connection rather than copied to everyone.
+    std::map<ConnectionId, std::vector<EventData>> per_connection;
+    for (const auto& event : events) {
+        for (const auto& connection : this->subscribers_for(event)) {
+            per_connection[connection].push_back(event);
+        }
+    }
+
+    for (const auto& [connection, connection_events] : per_connection) {
+        NotifyEventRequest req;
+        req.eventData = connection_events;
+        if (this->context.ocpp_version != OcppProtocolVersion::v21) {
+            // severity was introduced in OCPP 2.1; OCPP 2.0.1 EventDataType allows no additional properties
+            for (auto& event : req.eventData) {
+                event.severity.reset();
+            }
+        }
+        req.generatedAt = DateTime();
+        req.seqNo = 0;
+
+        const ConnectionTargetScope target(connection);
+        const ocpp::Call<NotifyEventRequest> call(req);
+        this->context.message_dispatcher.dispatch_call(call);
+    }
 }
 
 void Diagnostics::stop_monitoring() {
@@ -344,6 +444,14 @@ void Diagnostics::handle_set_variable_monitoring_req(const EnhancedMessage<Messa
         EVLOG_error << "Set monitors failed:" << e.what();
     }
 
+    std::vector<std::int32_t> created;
+    for (const auto& result : response.setMonitoringResult) {
+        if (result.status == SetMonitoringStatusEnum::Accepted and result.id.has_value()) {
+            created.push_back(result.id.value());
+        }
+    }
+    this->subscribe_monitors(created);
+
     const ocpp::CallResult<SetVariableMonitoringResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);
 }
@@ -398,6 +506,14 @@ void Diagnostics::handle_clear_variable_monitoring_req(Call<ClearVariableMonitor
     } catch (const DeviceModelError& e) {
         EVLOG_error << "Clear variable monitoring failed:" << e.what();
     }
+
+    std::vector<std::int32_t> cleared;
+    for (const auto& result : response.clearMonitoringResult) {
+        if (result.status == ClearMonitoringStatusEnum::Accepted) {
+            cleared.push_back(result.id);
+        }
+    }
+    this->unsubscribe_monitors(cleared);
 
     const ocpp::CallResult<ClearVariableMonitoringResponse> call_result(response, call.uniqueId);
     this->context.message_dispatcher.dispatch_call_result(call_result);

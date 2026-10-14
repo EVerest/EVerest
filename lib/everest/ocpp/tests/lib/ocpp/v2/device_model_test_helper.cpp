@@ -50,6 +50,14 @@ std::vector<DeviceModelVariable> make_secondary_connection_variables() {
     };
 }
 
+/// The MonitoringCtrlr instance a secondary OCPP connection needs to hold its own list of the
+/// monitors it wants NotifyEvents for.
+std::vector<DeviceModelVariable> make_secondary_monitoring_variables() {
+    return {
+        make_variable("SubscribedMonitors", DataEnum::MemberList, MutabilityEnum::ReadWrite, ""),
+    };
+}
+
 } // namespace
 
 DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, const std::string& migration_files_path,
@@ -304,6 +312,11 @@ void DeviceModelTestHelper::create_device_model_db() {
         ocpp_comm_ctrlr.name = "OCPPCommCtrlr";
         ocpp_comm_ctrlr.instance = instance;
         component_configs.insert(std::make_pair(ocpp_comm_ctrlr, make_secondary_connection_variables()));
+
+        ComponentKey monitoring_ctrlr;
+        monitoring_ctrlr.name = "MonitoringCtrlr";
+        monitoring_ctrlr.instance = instance;
+        component_configs.insert(std::make_pair(monitoring_ctrlr, make_secondary_monitoring_variables()));
     }
 
     db.initialize_database(component_configs, true);

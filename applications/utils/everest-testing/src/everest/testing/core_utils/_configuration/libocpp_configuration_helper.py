@@ -185,6 +185,25 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
                 "UpstreamMsgs": self._variable("UpstreamMsgs", "MemberList", "ReadWrite", self._upstream_msgs),
                 "AllowSetVariables": self._variable(
                     "AllowSetVariables", "string", "ReadWrite", self._allow_set_variables),
+                "EnableFirmwareStatusNotificationOtherConnection": self._variable(
+                    "EnableFirmwareStatusNotificationOtherConnection", "boolean", "ReadWrite", False),
+            },
+        }
+
+    def _monitoring_ctrlr_component(self) -> dict:
+        """ The connection's own list of monitors it wants NotifyEvents for (section 5.5).
+
+        Without it the connection cannot be subscribed to anything and its monitors report to the
+        CSMS instead, so it is injected for every secondary connection rather than on request.
+        """
+        return {
+            "description": f"Monitor subscriptions of secondary OCPP connection {self._connection_id} "
+                           "(injected by everest-testing)",
+            "type": "object",
+            "name": "MonitoringCtrlr",
+            "instance": self._connection_id,
+            "properties": {
+                "SubscribedMonitors": self._variable("SubscribedMonitors", "MemberList", "ReadWrite", ""),
             },
         }
 
@@ -194,6 +213,7 @@ class _OCPP2XSecondaryConnectionAdjustment(OCPPConfigAdjustmentStrategy):
         # The component config dict is keyed by file stem, and every entry is written back out as a
         # file, so a new stem simply materializes as a new component config.
         config[f"OCPPCommCtrlr_{self._connection_id}"] = self._ocpp_comm_ctrlr_component()
+        config[f"MonitoringCtrlr_{self._connection_id}"] = self._monitoring_ctrlr_component()
 
         protocol = "ws" if self._security_profile == 1 else "wss"
         profile = {
