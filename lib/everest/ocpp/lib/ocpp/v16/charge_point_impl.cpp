@@ -3617,6 +3617,20 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
                 } catch (const QueryExecutionException& e) {
                     EVLOG_warning << "Could not request authorization cache entry: " << e.what();
                 }
+            } else if (!this->connectivity_manager->is_websocket_connected()) {
+                try {
+                    const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
+                    // Invalid means the identifier is unknown (7.2), so AllowOfflineTxForUnknownId still applies
+                    if (auth_cache_entry.has_value() and auth_cache_entry->status != AuthorizationStatus::Accepted and
+                        auth_cache_entry->status != AuthorizationStatus::Invalid) {
+                        EVLOG_info << "Found rejected id_tag " << id_token.get()
+                                   << " in AuthorizationCache whilst offline: Not authorized";
+                        enhanced_id_tag_info.id_tag_info = auth_cache_entry.value();
+                        return enhanced_id_tag_info;
+                    }
+                } catch (const QueryExecutionException& e) {
+                    EVLOG_warning << "Could not request authorization cache entry: " << e.what();
+                }
             }
         }
     }
