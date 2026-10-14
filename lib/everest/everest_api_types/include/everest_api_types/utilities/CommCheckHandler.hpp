@@ -117,13 +117,14 @@ public:
 
 private:
     void communication_check_handler() {
-        raise_error(init_sub_type);
+        auto timeout_sub_type = init_sub_type;
         while (check_active.load()) {
             auto check = comm_check_value.wait_for(timeout);
             if (shutting_down.load()) {
                 break;
             }
             if (check.has_value()) {
+                timeout_sub_type = default_sub_type;
                 check_active.store(check.value());
                 if (check_error()) {
                     EVLOG_info << "Communication check: SUCCESS " << std::endl;
@@ -132,7 +133,7 @@ private:
             } else {
                 if (!check_error()) {
                     EVLOG_info << "Communication check: FAILURE " << std::endl;
-                    raise_error(default_sub_type);
+                    raise_error(timeout_sub_type);
                 }
             }
         }

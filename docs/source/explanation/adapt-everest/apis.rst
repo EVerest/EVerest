@@ -297,9 +297,10 @@ EVerest API clients are completely independent applications. They have
 to be started independently of EVerest, possibly by their own *systemd*
 service.
 
-EVerest cannot start them, since it is agnostic of them. On EVerest
-startup, the API modules raise an initial communication check error (if
-communication check is enabled). This error is cleared with the first
+EVerest cannot start them, since it is agnostic of them. If communication
+check is enabled and no communication check message arrives within
+*cfg_communication_check_to_s* seconds of EVerest startup, the API modules
+raise an initial communication check error. This error is cleared with the first
 communication check message sent from the client. It is raised again
 when a timeout occurs or a request is not answered. Sending a
 communication check message clears the error again.

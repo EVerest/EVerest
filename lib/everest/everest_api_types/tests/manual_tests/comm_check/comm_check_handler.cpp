@@ -99,14 +99,26 @@ TEST_F(CommCheckHandlerTest, set_error_before_start_raises_default_sub_type) {
     EXPECT_TRUE(handler->check_error());
 }
 
-TEST_F(CommCheckHandlerTest, start_raises_initial_error) {
+TEST_F(CommCheckHandlerTest, initial_error_raised_only_after_timeout) {
     handler->start(1);
-    EXPECT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 500ms));
+    std::this_thread::sleep_for(500ms);
+    EXPECT_FALSE(is_active(init_sub_type));
+    EXPECT_EQ(raised_count(), 0);
+
+    EXPECT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 2s));
+}
+
+TEST_F(CommCheckHandlerTest, value_before_timeout_prevents_initial_error) {
+    handler->start(1);
+    handler->set_value(true);
+    std::this_thread::sleep_for(800ms);
+    EXPECT_FALSE(is_active(init_sub_type));
+    EXPECT_EQ(raised_count(), 0);
 }
 
 TEST_F(CommCheckHandlerTest, value_clears_initial_error) {
     handler->start(1);
-    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 500ms));
+    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 2s));
 
     handler->set_value(true);
     EXPECT_TRUE(wait_until([this] { return not is_active(init_sub_type); }, 500ms));
@@ -115,11 +127,10 @@ TEST_F(CommCheckHandlerTest, value_clears_initial_error) {
 
 TEST_F(CommCheckHandlerTest, timeout_raises_default_error) {
     handler->start(1);
-    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 500ms));
     handler->set_value(true);
-    ASSERT_TRUE(wait_until([this] { return not handler->check_error(); }, 500ms));
 
     EXPECT_TRUE(wait_until([this] { return is_active(default_sub_type); }, 3s));
+    EXPECT_FALSE(is_active(init_sub_type));
 }
 
 TEST_F(CommCheckHandlerTest, value_after_timeout_clears_default_error) {
@@ -133,13 +144,11 @@ TEST_F(CommCheckHandlerTest, value_after_timeout_clears_default_error) {
 
 TEST_F(CommCheckHandlerTest, false_value_stops_checks) {
     handler->start(1);
-    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 500ms));
-
     handler->set_value(false);
-    EXPECT_TRUE(wait_until([this] { return not handler->check_error(); }, 500ms));
 
     std::this_thread::sleep_for(1500ms);
     EXPECT_FALSE(handler->check_error());
+    EXPECT_EQ(raised_count(), 0);
 
     handler->set_error();
     EXPECT_FALSE(is_active(default_sub_type));
@@ -182,7 +191,7 @@ TEST_F(CommCheckHandlerTest, destruction_stops_running_threads) {
         ++calls;
         return true;
     }));
-    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 500ms));
+    ASSERT_TRUE(wait_until([this] { return is_active(init_sub_type); }, 2s));
 
     const auto begin = std::chrono::steady_clock::now();
     handler.reset();
