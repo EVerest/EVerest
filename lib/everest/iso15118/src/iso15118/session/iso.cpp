@@ -329,6 +329,15 @@ TimePoint const& Session::poll() {
             state.new_data = false;
             break;
         case V2GTPReadResult::invalid_header:
+            if (std::holds_alternative<DinSeccEngine>(engine)) {
+                // DIN SPEC 70121 closes the TCP connection on a version / inverse version error
+                // ([V2G-DC-169]) or a payload length it cannot process ([V2G-DC-173]); ISO 15118-2 and -20
+                // ignore the message instead ([V2G2-800]).
+                logf_error("Closing the TCP connection: invalid V2GTP header in a DIN SPEC 70121 session");
+                packet.reset();
+                connection->close();
+                break;
+            }
             // new_data stays set: bytes already buffered inside OpenSSL never raise poll() again.
             logf_warning("Dropping V2GTP packet with an invalid header");
             packet.reset();
