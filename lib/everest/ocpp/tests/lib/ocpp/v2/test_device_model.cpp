@@ -594,5 +594,76 @@ TEST_F(DeviceModelTest, test_check_integrity_missing_required_evse_power) {
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }
 
+/// \brief Device model holding an instance of OCPPCommCtrlr, i.e. a secondary OCPP connection as
+///        described in the OCA application note "Secondary OCPP Connection on a Charging Station".
+class DeviceModelSecondaryConnectionTest : public ::testing::Test {
+protected:
+    static constexpr const char* INSTANCE = "EMS";
+
+    DeviceModelTestHelper device_model_test_helper{DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH,
+                                                   false, INSTANCE};
+    DeviceModel* dm{device_model_test_helper.get_device_model()};
+
+    static Component ocpp_comm_ctrlr_instance() {
+        Component component;
+        component.name = "OCPPCommCtrlr";
+        component.instance = INSTANCE;
+        return component;
+    }
+};
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_reports_the_instance) {
+    EXPECT_EQ(dm->get_component_instances("OCPPCommCtrlr"), std::vector<std::string>{INSTANCE});
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_ignores_unknown_components) {
+    EXPECT_TRUE(dm->get_component_instances("NoSuchCtrlr").empty());
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_matches_the_name_case_insensitively) {
+    // Component names are compared case insensitively everywhere else in the device model.
+    EXPECT_EQ(dm->get_component_instances("ocppcommctrlr"), std::vector<std::string>{INSTANCE});
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_skips_the_instance_less_component) {
+    // AlignedDataCtrlr ships without an instance, so it must not be reported as one.
+    EXPECT_TRUE(dm->get_component_instances("AlignedDataCtrlr").empty());
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_returns_sorted_unique_names) {
+    // NetworkConfiguration ships with slots 1 and 2, which are component instances too.
+    EXPECT_EQ(dm->get_component_instances("NetworkConfiguration"), (std::vector<std::string>{"1", "2"}));
+}
+
+/// Component equality includes the instance, so the internal write path has to recognise an
+/// instanced OCPPCommCtrlr explicitly; otherwise a secondary connection could never record its
+/// active network profile.
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_values_can_be_set_on_an_instanced_ocpp_comm_ctrlr) {
+    const auto component = ocpp_comm_ctrlr_instance();
+    const Variable variable{"ActiveNetworkProfile"};
+
+    EXPECT_EQ(dm->set_read_only_value(component, variable, AttributeEnum::Actual, "3", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_optional_value<int>(component, variable, AttributeEnum::Actual), 3);
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_values_can_still_be_set_on_the_instance_less_ocpp_comm_ctrlr) {
+    const auto& cv = ControllerComponentVariables::ActiveNetworkProfile;
+
+    EXPECT_EQ(dm->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "2", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_optional_value<int>(cv), 2);
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_writes_are_still_refused_for_other_components) {
+    Component component;
+    component.name = "AlignedDataCtrlr";
+    component.instance = INSTANCE;
+    const Variable variable{"Interval"};
+
+    EXPECT_THROW(dm->set_read_only_value(component, variable, AttributeEnum::Actual, "5", "internal"),
+                 std::invalid_argument);
+}
+
 } // namespace v2
 } // namespace ocpp

@@ -552,9 +552,14 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
     this->configure_message_logging_format(message_log_path);
 
     if (this->connectivity_manager == nullptr) {
-        // connectivity manager was not provided in constructor. Create a new one and set the message callbacks
-        this->connectivity_manager =
-            std::make_shared<ConnectivityManager>(*this->device_model, this->evse_security, this->share_path);
+        // connectivity manager was not provided in constructor. Create a new one and set the message callbacks.
+        // The device model is reached through a per-connection configuration adapter rather than directly, so
+        // that every connection is configured the same way. For the primary connection the adapter delegates
+        // everything unchanged.
+        this->primary_connectivity_configuration =
+            std::make_unique<ConnectionConnectivityConfiguration>(*this->device_model, ConnectionId::primary());
+        this->connectivity_manager = std::make_shared<ConnectivityManager>(*this->primary_connectivity_configuration,
+                                                                           this->evse_security, this->share_path);
         this->connectivity_manager->set_websocket_connected_callback(
             [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
                    const OcppProtocolVersion ocpp_version) {

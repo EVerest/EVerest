@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <set>
 
 #include <everest/database/exceptions.hpp>
 #include <ocpp/common/constants.hpp>
@@ -35,10 +36,17 @@ bool allow_set_read_only_value(const Component& component, const Variable& varia
         return false;
     }
 
+    // A secondary OCPP connection is configured on an instance of OCPPCommCtrlr. Component equality
+    // includes the instance, so the instance-less constant below does not match it and internal
+    // writes such as ActiveNetworkProfile would be silently rejected. Accept only the
+    // connection-scoped shape: an instanced OCPPCommCtrlr is never EVSE or connector scoped.
+    const bool is_connection_ocpp_comm_ctrlr = component.name == ControllerComponents::OCPPCommCtrlr.name and
+                                               component.instance.has_value() and not component.evse.has_value();
+
     return component == ControllerComponents::AuthCacheCtrlr or component == ControllerComponents::LocalAuthListCtrlr or
-           component == ControllerComponents::OCPPCommCtrlr or component == ControllerComponents::SecurityCtrlr or
-           variable == EvseComponentVariables::AvailabilityState or variable == EvseComponentVariables::Power or
-           variable == ConnectorComponentVariables::AvailabilityState;
+           component == ControllerComponents::OCPPCommCtrlr or is_connection_ocpp_comm_ctrlr or
+           component == ControllerComponents::SecurityCtrlr or variable == EvseComponentVariables::AvailabilityState or
+           variable == EvseComponentVariables::Power or variable == ConnectorComponentVariables::AvailabilityState;
 }
 
 } // namespace
@@ -447,6 +455,26 @@ bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int
         throw;
     }
     return true;
+}
+
+std::vector<std::string> DeviceModel::get_component_instances(const std::string& component_name) const {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    // Served from the in-memory map rather than the storage backend: it is already the authoritative
+    // view of the device model and is refreshed whenever a component is created at runtime.
+    std::set<std::string> instances;
+    for (const auto& entry : this->device_model_map) {
+        // Compared with CiString::operator==, i.e. case insensitively, to match how Component
+        // equality and the device model map itself treat component names.
+        const auto& component = entry.first;
+        if (!(component.name == component_name.c_str()) or !component.instance.has_value()) {
+            continue;
+        }
+        const auto& instance = component.instance.value().get();
+        if (!instance.empty()) {
+            instances.insert(instance);
+        }
+    }
+    return {instances.begin(), instances.end()};
 }
 
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,

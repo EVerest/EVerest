@@ -75,6 +75,8 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/average_meter_values.cpp
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
+            ocpp/v2/connection_connectivity_configuration.cpp
+            ocpp/v2/connection_id.cpp
             ocpp/v2/connector.cpp
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp

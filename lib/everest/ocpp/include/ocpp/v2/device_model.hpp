@@ -120,6 +120,8 @@ public:
 
     bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
 
+    std::vector<std::string> get_component_instances(const std::string& component_name) const override;
+
     SetVariableStatusEnum set_read_only_value(const Component& component_id, const Variable& variable_id,
                                               const AttributeEnum& attribute_enum, const std::string& value,
                                               const std::string& source) override;

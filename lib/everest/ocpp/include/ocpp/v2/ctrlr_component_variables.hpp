@@ -8,6 +8,7 @@
 #include <optional>
 #include <set>
 
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
 namespace ocpp {
@@ -454,6 +455,73 @@ bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const
 void migrate_from_blob_if_needed(DeviceModelInterface& dm);
 void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
 } // namespace NetworkConfigurationComponentVariables
+
+/// \brief Device model addressing for a specific OCPP connection.
+///
+/// The primary (CSMS) connection is configured on the instance-less controller components; a
+/// secondary connection is configured on an instance of the same components, named after the
+/// connection (OCA application note "Secondary OCPP Connection on a Charging Station", section 3.3).
+/// The helpers here build that addressing from a ConnectionId, so a caller never has to know whether
+/// it is talking about the primary or a secondary connection.
+namespace ConnectionComponentVariables {
+
+// Variables that exist on the instance-less OCPPCommCtrlr today and gain an instanced counterpart
+// for each secondary connection.
+extern const Variable ActiveNetworkProfile;
+extern const Variable Enabled;
+extern const Variable HeartbeatInterval;
+extern const Variable NetworkConfigurationPriority;
+
+// Variables introduced by the application note.
+/// \brief Section 3.6. Comma separated device model hierarchy entries a secondary connection may
+///        write. Absent or empty means the connection may write nothing.
+extern const Variable AllowSetVariables;
+/// \brief Section 3.5. Comma separated OCPP action names a connection may receive.
+extern const Variable DownstreamMsgs;
+/// \brief Section 3.5. Comma separated OCPP action names a connection may send.
+extern const Variable UpstreamMsgs;
+/// \brief Section 5.3.2. Whether this connection wants FirmwareStatusNotifications for a firmware
+///        update it did not request itself.
+extern const Variable EnableFirmwareStatusNotificationOtherConnection;
+/// \brief Section 3.6.1. Timestamp of the most recent device model change made by a secondary
+///        connection. Lives on the instance-less OCPPCommCtrlr only.
+extern const Variable ExternalConfigChangeDate;
+/// \brief Section 5.5. Comma separated monitorIds whose NotifyEvents this connection receives.
+///        Lives on MonitoringCtrlr, instance-less for the primary.
+extern const Variable SubscribedMonitors;
+
+/// \brief EVerest extension: the security profile of the currently active connection, recorded per
+///        connection on OCPPCommCtrlr[<instance>].
+///
+/// The specification keeps a single SecurityProfile on the instance-less SecurityCtrlr. Section
+/// 3.4.1 of the application note requires the "no security profile downgrade" rules to be evaluated
+/// per connection, which needs a per-connection value. Instancing SecurityCtrlr instead would drag
+/// Identity, BasicAuthPassword, OrganizationName and the certificate expiry timers into the
+/// per-connection world for no benefit, so this variable is placed on OCPPCommCtrlr.
+///
+/// Read only; written by the charging station when a connection is established. Unused for the
+/// primary connection, which keeps using SecurityCtrlr.SecurityProfile.
+extern const Variable SecurityProfile;
+
+/// \brief The OCPPCommCtrlr component for \p connection: instance-less for the primary, instanced
+///        with the connection name for a secondary.
+Component ocpp_comm_ctrlr(const ConnectionId& connection);
+/// \brief The AlignedDataCtrlr component for \p connection (application note section 4.5).
+Component aligned_data_ctrlr(const ConnectionId& connection);
+/// \brief The SampledDataCtrlr component for \p connection (application note section 4.5).
+Component sampled_data_ctrlr(const ConnectionId& connection);
+/// \brief The MonitoringCtrlr component for \p connection (application note section 5.5).
+Component monitoring_ctrlr(const ConnectionId& connection);
+/// \brief The SecurityCtrlr component for \p connection (application note section 3.4.2).
+Component security_ctrlr(const ConnectionId& connection);
+
+/// \brief \p variable on the OCPPCommCtrlr component of \p connection.
+///
+/// This is the common case, so it gets the short name. For the other controllers combine the
+/// component builders above with a Variable explicitly.
+ComponentVariable get_component_variable(const ConnectionId& connection, const Variable& variable);
+
+} // namespace ConnectionComponentVariables
 
 namespace DERComponentVariables {
 extern const Variable Available;

@@ -11,12 +11,53 @@ using namespace everest::db;
 using namespace everest::db::sqlite;
 
 namespace ocpp::v2 {
+
+namespace {
+
+DeviceModelVariable make_variable(const std::string& name, const DataEnum data_type, const MutabilityEnum mutability,
+                                  const std::optional<std::string>& value) {
+    DeviceModelVariable variable;
+    variable.name = name;
+
+    VariableCharacteristics characteristics;
+    characteristics.dataType = data_type;
+    characteristics.supportsMonitoring = true;
+    variable.characteristics = characteristics;
+
+    DbVariableAttribute attribute;
+    attribute.variable_attribute.type = AttributeEnum::Actual;
+    attribute.variable_attribute.mutability = mutability;
+    attribute.variable_attribute.value = value;
+    variable.attributes = std::vector<DbVariableAttribute>{attribute};
+
+    return variable;
+}
+
+/// The variables an OCPPCommCtrlr instance needs to describe a secondary OCPP connection. Mirrors
+/// the shape of the shipped OCPPCommCtrlr component config, restricted to what a secondary uses.
+std::vector<DeviceModelVariable> make_secondary_connection_variables() {
+    return {
+        make_variable("Enabled", DataEnum::boolean, MutabilityEnum::ReadWrite, "false"),
+        make_variable("NetworkConfigurationPriority", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("ActiveNetworkProfile", DataEnum::integer, MutabilityEnum::ReadOnly, std::nullopt),
+        make_variable("SecurityProfile", DataEnum::integer, MutabilityEnum::ReadOnly, std::nullopt),
+        make_variable("HeartbeatInterval", DataEnum::integer, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("DownstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("UpstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("AllowSetVariables", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+    };
+}
+
+} // namespace
+
 DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, const std::string& migration_files_path,
-                                             const std::string& config_path, bool seed_der_ctrlr_enabled) :
+                                             const std::string& config_path, bool seed_der_ctrlr_enabled,
+                                             const std::optional<std::string>& seed_secondary_connection) :
     database_path(database_path),
     migration_files_path(migration_files_path),
     config_path(config_path),
     seed_der_ctrlr_enabled(seed_der_ctrlr_enabled),
+    seed_secondary_connection(seed_secondary_connection),
     database_connection(std::make_unique<everest::db::sqlite::Connection>(database_path)) {
     this->database_connection->open_connection();
     this->device_model = create_device_model();
@@ -254,6 +295,13 @@ void DeviceModelTestHelper::create_device_model_db() {
                 variables.push_back(der_enabled);
             }
         }
+    }
+
+    if (this->seed_secondary_connection.has_value()) {
+        ComponentKey ocpp_comm_ctrlr;
+        ocpp_comm_ctrlr.name = "OCPPCommCtrlr";
+        ocpp_comm_ctrlr.instance = this->seed_secondary_connection.value();
+        component_configs.insert(std::make_pair(ocpp_comm_ctrlr, make_secondary_connection_variables()));
     }
 
     db.initialize_database(component_configs, true);

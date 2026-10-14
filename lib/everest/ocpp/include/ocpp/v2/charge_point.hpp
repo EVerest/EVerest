@@ -15,6 +15,7 @@
 
 #include <ocpp/v2/average_meter_values.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
+#include <ocpp/v2/connection_connectivity_configuration.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 #include <ocpp/v2/ocsp_updater.hpp>
@@ -403,6 +404,10 @@ class ChargePoint : public ChargePointInterface, private ocpp::ChargingStationBa
 private:
     std::shared_ptr<DeviceModelAbstract> device_model;
     std::unique_ptr<EvseManager> evse_manager;
+    // Declared before connectivity_manager so it is destroyed after it: the manager holds a
+    // reference to this configuration. Only set when we create the manager ourselves; an externally
+    // injected ConnectivityManager brings its own configuration.
+    std::unique_ptr<ConnectionConnectivityConfiguration> primary_connectivity_configuration;
     std::shared_ptr<ConnectivityManagerInterface> connectivity_manager;
 
     std::unique_ptr<MessageDispatcherInterface<MessageType>> message_dispatcher;
