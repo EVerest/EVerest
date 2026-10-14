@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <set>
 
+#include <everest/logging.hpp>
 #include <ocpp/v2/device_model_composition.hpp>
 
 namespace ocpp {
@@ -76,6 +78,79 @@ Composition compose_device_model(DeviceModelMap& component_config, std::map<std:
         }
     }
     return composition;
+}
+
+StoredValues::StoredValues(DeviceModelStorageInterface& storage) : storage{storage} {
+    for (auto& stored : this->storage.get_stored_values()) {
+        auto key = std::make_tuple(stored.component, stored.variable, stored.attribute);
+        this->values.emplace(std::move(key), std::move(stored));
+    }
+}
+
+void StoredValues::restore(const std::string& source, const Component& component, const Variable& variable,
+                           VariableMetaData& meta_data, const ValueValidator& is_valid) {
+    for (auto& attribute : meta_data.attributes) {
+        const auto attribute_enum = attribute.type.value_or(AttributeEnum::Actual);
+        const auto stored_it = this->values.find(std::make_tuple(component, variable, attribute_enum));
+        if (stored_it == this->values.end()) {
+            continue;
+        }
+        auto& stored = stored_it->second;
+        if (!attribute.persistent.value_or(true) or !is_valid(stored.value)) {
+            EVLOG_warning << "Discarding the stored value '" << stored.value << "' of " << component << "." << variable
+                          << ": it does not fit the variable as source " << source << " registers it";
+            this->storage.remove_stored_value(component, variable, attribute_enum);
+            this->values.erase(stored_it);
+            continue;
+        }
+
+        attribute.value = stored.value;
+        if (stored.source != source) {
+            stored.source = source;
+            if (this->storage.set_stored_value(stored) != SetVariableStatusEnum::Accepted) {
+                EVLOG_warning << "Could not record the source of the stored value of " << component << "." << variable;
+            }
+        }
+    }
+}
+
+SetVariableStatusEnum StoredValues::store(StoredVariableValue value) {
+    const auto result = this->storage.set_stored_value(value);
+    if (result != SetVariableStatusEnum::Accepted) {
+        return result;
+    }
+    auto key = std::make_tuple(value.component, value.variable, value.attribute);
+    this->values[std::move(key)] = std::move(value);
+    return result;
+}
+
+void StoredValues::remove_unregistered(const Registration& registration,
+                                       const std::vector<RejectedVariable>& rejected) {
+    for (auto it = this->values.begin(); it != this->values.end();) {
+        const auto& [component, variable, attribute] = it->first;
+        if (it->second.source != registration.source) {
+            ++it;
+            continue;
+        }
+        const auto component_it = registration.variables.find(component);
+        if (component_it != registration.variables.end() and component_it->second.count(variable) != 0) {
+            ++it;
+            continue;
+        }
+        const bool is_rejected =
+            std::any_of(rejected.begin(), rejected.end(),
+                        [&component = component, &variable = variable](const RejectedVariable& rejected_variable) {
+                            return rejected_variable.component == component and rejected_variable.variable == variable;
+                        });
+        if (is_rejected) {
+            ++it;
+            continue;
+        }
+        EVLOG_warning << "Removing the stored value of " << component << "." << variable << ": source "
+                      << registration.source << " no longer registers the variable";
+        this->storage.remove_stored_value(component, variable, attribute);
+        it = this->values.erase(it);
+    }
 }
 
 } // namespace v2

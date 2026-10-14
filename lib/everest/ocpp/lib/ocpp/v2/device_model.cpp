@@ -577,7 +577,7 @@ DeviceModel::AppliedValue DeviceModel::store_value(const Component& component, c
                 return {result, std::nullopt};
             }
         } else if (registration->provider == nullptr) {
-            const auto result = this->device_model->set_stored_value(
+            const auto result = this->stored_values.store(
                 StoredVariableValue{component, variable, attribute_enum, value, source, registration->source});
             if (result != SetVariableStatusEnum::Accepted) {
                 return {result, std::nullopt};
@@ -665,7 +665,8 @@ SetVariableStatusEnum DeviceModel::set_value_through_provider(VariableValueProvi
 DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_model_storage_interface) :
     device_model{std::move(device_model_storage_interface)},
     component_config{this->device_model->get_device_model()},
-    monitors{*this->device_model} {
+    monitors{*this->device_model},
+    stored_values{*this->device_model} {
     this->monitors.load();
     this->recompose();
 }
@@ -805,11 +806,12 @@ ComponentRegistrationResult DeviceModel::register_components(const std::string& 
             for (const auto& attribute : registered_variable.attributes) {
                 attributes.push_back(normalize_registered_attribute(attribute));
             }
-            registration.variables[component][variable] =
-                this->build_registered_variable(source, component, registered_variable, std::move(attributes));
+            registration.variables[component][variable] = this->build_registered_variable(
+                source, component, registered_variable, std::move(attributes), provider != nullptr);
         }
     }
 
+    this->stored_values.remove_unregistered(registration, result.rejected);
     this->registrations.insert_or_assign(source, std::move(registration));
     this->recompose();
     this->monitors.remove_of_vanished_variables(source, [this](const Component& component, const Variable& variable) {
@@ -829,7 +831,8 @@ ComponentRegistrationResult DeviceModel::register_components(const std::string& 
 
 VariableMetaData DeviceModel::build_registered_variable(const std::string& source, const Component& component,
                                                         const RegisteredVariable& registered_variable,
-                                                        std::vector<VariableAttribute> attributes) {
+                                                        std::vector<VariableAttribute> attributes,
+                                                        const bool with_provider) {
     const auto& variable = registered_variable.variable;
     VariableMetaData meta_data;
     meta_data.characteristics = registered_variable.characteristics;
@@ -842,6 +845,13 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& sourc
     if (overrides_component_config) {
         EVLOG_warning << "The component config defines " << component << "." << variable << ", which source " << source
                       << " registers: the registration overrides the component config";
+    }
+
+    // A provider keeps the values of its variables, a stored value only applies without one
+    if (!with_provider) {
+        this->stored_values.restore(source, component, variable, meta_data, [&](const std::string& value) {
+            return fits_data_type(meta_data.characteristics, value);
+        });
     }
 
     const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);

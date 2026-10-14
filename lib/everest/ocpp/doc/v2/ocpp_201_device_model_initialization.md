@@ -107,6 +107,9 @@ a registration is held in memory and repeated at every start. The rules:
   of the model is dormant, invisible to the CSMS and active again when the variable is registered; a source that
   registers without the variable removes its monitors, as does a registration whose characteristics no longer fit
   the monitor.
+- A stored value of a persistent attribute follows the variable like a monitor: it is kept while its owner does not
+  register, removed when the owner registers without the variable, and applied at registration if it still fits
+  the registered characteristics.
 - A write from the local channel (`set_value` with `allow_read_only`, which `ChargePoint::set_variables` uses)
   reaches the component config only. A registered variable is rejected there whatever its mutability: its owner or
   the CSMS change it.

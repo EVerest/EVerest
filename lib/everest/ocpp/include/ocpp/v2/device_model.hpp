@@ -51,6 +51,7 @@ private:
     /// \brief The model the CSMS sees, composed from component_config and registrations
     ComposedModel model;
     MonitorStore monitors;
+    StoredValues stored_values;
     ProviderCalls provider_calls;
 
     /// \brief Listener for the internal change of a variable
@@ -67,10 +68,10 @@ private:
     /// \brief The runtime source that registered the variable, if any
     std::optional<std::string> runtime_owner(const Component& component, const Variable& variable) const;
 
-    /// \brief Builds the variable that \p source registers, with its monitors. Requires the mutex.
+    /// \brief Builds the variable that \p source registers, with its stored values and monitors. Requires the mutex.
     VariableMetaData build_registered_variable(const std::string& source, const Component& component,
                                                const RegisteredVariable& registered_variable,
-                                               std::vector<VariableAttribute> attributes);
+                                               std::vector<VariableAttribute> attributes, bool with_provider);
 
     /// \brief Writes \p value through the provider of the owner of the variable, if it has one, and to the model
     /// otherwise. Releases \p lock.
