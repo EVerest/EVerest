@@ -35,10 +35,11 @@ vars:
     type: string
   capabilities:
     description: >-
-      Capabilities of this power meter. Optional: meters without restrictions do
-      not need to publish this. If supported, publish at least once during start up
-      and on every change. Absence of this var or of individual fields means no
-      restriction.
+      Capabilities of this power meter (accuracy limits and/or supported
+      measurements). Optional: meters without anything to report do not need to
+      publish this. If supported, publish at least once during start up and on
+      every change. Absence of this var or of individual fields means no
+      restriction / unknown for that field.
     type: object
     $ref: /powermeter#/Capabilities
 errors:
