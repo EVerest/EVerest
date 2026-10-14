@@ -443,7 +443,7 @@ def get_everest_config_path_str(config_name):
 
 def parametrize_secc_config(d20_config: str, evsev2g_config: str):
     """Run an ISO 15118 test against both SECC stacks: Evse15118D20 and the
-    legacy EvseV2G (paired with PyEvJosev on the EV side).
+    legacy EvseV2G.
 
     The everest_core_config marker is carried per param; it overrides a
     class-level config marker, but a function-level one would win over it,

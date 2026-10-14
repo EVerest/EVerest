@@ -5,6 +5,7 @@
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
+#include "sae_trip_curves.hpp"
 
 using namespace iso15118;
 
@@ -125,11 +126,11 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             0x80, 0x0c, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x4b, 0xfe, 0x1b, 0x60, 0x62, 0x00,
             0x00, 0xf0, 0x00, 0x00, 0xf4, 0x55, 0x65, 0x34, 0x52, 0xd4, 0xd4, 0x55, 0x44, 0x55, 0x22, 0xd3, 0x03, 0x11,
             0xc0, 0xba, 0xc0, 0x62, 0x5f, 0xf0, 0xdb, 0x03, 0x28, 0x10, 0x00, 0x78, 0x40, 0x20, 0xc0, 0x28, 0x22, 0x00,
-            0x00, 0x04, 0x41, 0x80, 0x49, 0x02, 0x40, 0x0c, 0x08, 0x00, 0x88, 0x02, 0x04, 0x00, 0x00, 0x80, 0x80, 0x0a,
-            0x00, 0x20, 0x3f, 0x80, 0x10, 0x61, 0x20, 0x06, 0x04, 0x00, 0x62, 0x00, 0x82, 0x00, 0x00, 0x80, 0x40, 0x05,
-            0x00, 0x08, 0x1f, 0xc0, 0x08, 0x34, 0x04, 0x84, 0x18, 0x10, 0x00, 0x7c, 0x08, 0x00, 0x01, 0x01, 0x00, 0x07,
-            0xe0, 0x7f, 0x00, 0x50, 0xc2, 0x42, 0x0c, 0x08, 0x00, 0x3a, 0x04, 0x00, 0x00, 0x80, 0x80, 0x03, 0x90, 0x3f,
-            0x80, 0x28, 0x68, 0x40, 0x40, 0x07, 0xe8, 0x08, 0x08, 0x00, 0xcf, 0x01, 0x01, 0x00, 0x07, 0xa0, 0x20, 0x00,
+            0x00, 0x04, 0x41, 0x80, 0x49, 0x02, 0x46, 0x00, 0x07, 0xf0, 0x02, 0x04, 0x00, 0x50, 0x01, 0x00, 0x80, 0x00,
+            0x10, 0x40, 0x04, 0x40, 0x10, 0x61, 0x23, 0x00, 0x03, 0xf8, 0x01, 0x02, 0x00, 0x28, 0x00, 0x40, 0x40, 0x00,
+            0x10, 0x20, 0x03, 0x10, 0x04, 0x34, 0x04, 0x8c, 0x08, 0x0f, 0xe0, 0x0a, 0x08, 0x00, 0x3f, 0x01, 0x00, 0x00,
+            0x20, 0x80, 0x03, 0xe0, 0xc2, 0x46, 0x04, 0x07, 0xf0, 0x05, 0x04, 0x00, 0x1c, 0x80, 0x80, 0x00, 0x10, 0x40,
+            0x01, 0xd0, 0x68, 0x40, 0x40, 0x07, 0xe8, 0x08, 0x08, 0x00, 0xcf, 0x01, 0x01, 0x00, 0x07, 0xa0, 0x20, 0x00,
             0xec, 0x04, 0x00, 0x56, 0x01, 0x01, 0x00, 0x07, 0x80, 0x40, 0x03, 0xc0, 0x01, 0x00, 0x10, 0x7e, 0x05, 0xf2,
             0x13, 0x01, 0x00, 0x10, 0x0f, 0xa0, 0x48, 0x07, 0xe0, 0x05, 0x21, 0x10, 0x00, 0x0a, 0x14, 0x49, 0x40, 0xc0,
             0x20, 0xc0, 0x58, 0x22, 0x0c, 0x03, 0xc4, 0x00, 0x00};
@@ -179,25 +180,26 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             REQUIRE(der_control.voltage_trip.has_value());
             const auto& ov = der_control.voltage_trip.value().over_voltage_must_trip_curve;
             REQUIRE(ov.enable == true);
-            REQUIRE(ov.x_unit == dtsae::DERUnit::V);
-            REQUIRE(ov.y_unit == dtsae::DERUnit::s);
+            require_trip_curve(ov, dtsae::DERUnit::V);
             REQUIRE(ov.curve_data_points.size() == 2);
-            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[0].x_value) == 264);
-            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[0].y_value) == 1);
-            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[1].x_value) == 288);
-            REQUIRE_THAT(dt::from_RationalNumber(ov.curve_data_points[1].y_value),
+            REQUIRE_THAT(dt::from_RationalNumber(ov.curve_data_points[0].x_value),
                          Catch::Matchers::WithinRel(0.2, 0.001));
+            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[0].y_value) == 288);
+            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[1].x_value) == 1);
+            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[1].y_value) == 264);
             const auto& uv = der_control.voltage_trip.value().under_voltage_must_trip_curve;
+            require_trip_curve(uv, dtsae::DERUnit::V);
             REQUIRE(uv.curve_data_points.size() == 2);
-            REQUIRE(dt::from_RationalNumber(uv.curve_data_points[0].x_value) == 196);
+            REQUIRE(dt::from_RationalNumber(uv.curve_data_points[1].y_value) == 196);
 
             // FrequencyTrip curve coverage
             REQUIRE(der_control.frequency_trip.has_value());
             const auto& of = der_control.frequency_trip.value().over_frequency_must_trip_curve;
             REQUIRE(of.enable == true);
-            REQUIRE(of.x_unit == dtsae::DERUnit::Hz);
+            require_trip_curve(of, dtsae::DERUnit::Hz);
             REQUIRE(of.curve_data_points.size() == 2);
-            REQUIRE(dt::from_RationalNumber(of.curve_data_points[0].x_value) == 62);
+            REQUIRE(dt::from_RationalNumber(of.curve_data_points[1].y_value) == 62);
+            require_trip_curve(der_control.frequency_trip.value().under_frequency_must_trip_curve, dtsae::DERUnit::Hz);
 
             // ReactivePowerSupport: ConstantPowerFactor
             REQUIRE(der_control.reactive_power_support_cl_res.has_value());
@@ -251,36 +253,8 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             mode.present_active_power = {9, 3};
 
             auto& der_control = mode.der_control_cl_res;
-
-            dtsae::VoltageTrip voltage_trip;
-            auto& ov_must = voltage_trip.over_voltage_must_trip_curve;
-            ov_must.enable = true;
-            ov_must.x_unit = dtsae::DERUnit::V;
-            ov_must.y_unit = dtsae::DERUnit::s;
-            ov_must.curve_data_points.push_back(dtsae::DataTuple{{264, 0}, {1, 0}});
-            ov_must.curve_data_points.push_back(dtsae::DataTuple{{288, 0}, {2, -1}});
-            auto& uv_must = voltage_trip.under_voltage_must_trip_curve;
-            uv_must.enable = true;
-            uv_must.x_unit = dtsae::DERUnit::V;
-            uv_must.y_unit = dtsae::DERUnit::s;
-            uv_must.curve_data_points.push_back(dtsae::DataTuple{{196, 0}, {2, 0}});
-            uv_must.curve_data_points.push_back(dtsae::DataTuple{{160, 0}, {2, -1}});
-            der_control.voltage_trip = voltage_trip;
-
-            dtsae::FrequencyTrip frequency_trip;
-            auto& of_must = frequency_trip.over_frequency_must_trip_curve;
-            of_must.enable = true;
-            of_must.x_unit = dtsae::DERUnit::Hz;
-            of_must.y_unit = dtsae::DERUnit::s;
-            of_must.curve_data_points.push_back(dtsae::DataTuple{{62, 0}, {1, 0}});
-            of_must.curve_data_points.push_back(dtsae::DataTuple{{63, 0}, {5, -1}});
-            auto& uf_must = frequency_trip.under_frequency_must_trip_curve;
-            uf_must.enable = true;
-            uf_must.x_unit = dtsae::DERUnit::Hz;
-            uf_must.y_unit = dtsae::DERUnit::s;
-            uf_must.curve_data_points.push_back(dtsae::DataTuple{{58, 0}, {1, 0}});
-            uf_must.curve_data_points.push_back(dtsae::DataTuple{{57, 0}, {5, -1}});
-            der_control.frequency_trip = frequency_trip;
+            der_control.voltage_trip = make_voltage_trip();
+            der_control.frequency_trip = make_frequency_trip();
 
             auto& enter_service = der_control.enter_service_cl_res;
             enter_service.permit_service = true;
@@ -335,11 +309,11 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             0x80, 0x0c, 0x04, 0x1e, 0xa6, 0x5f, 0xc9, 0x9b, 0xa7, 0x6c, 0x4d, 0x8c, 0x4b, 0xfe, 0x1b, 0x60, 0x62,
             0x00, 0x00, 0xf0, 0x00, 0x00, 0xf4, 0x55, 0x65, 0x34, 0x52, 0xd4, 0xd4, 0x55, 0x44, 0x55, 0x22, 0xd3,
             0x03, 0x11, 0xc0, 0xba, 0xc0, 0x62, 0x5f, 0xf0, 0xdb, 0x03, 0x28, 0x10, 0x00, 0x78, 0x30, 0xa0, 0x38,
-            0x01, 0xe0, 0xa0, 0x01, 0x41, 0x06, 0x01, 0x41, 0x10, 0x00, 0x00, 0x22, 0x0c, 0x02, 0x48, 0x12, 0x00,
-            0x60, 0x40, 0x04, 0x40, 0x10, 0x20, 0x00, 0x04, 0x04, 0x00, 0x50, 0x01, 0x01, 0xfc, 0x00, 0x83, 0x09,
-            0x00, 0x30, 0x20, 0x03, 0x10, 0x04, 0x10, 0x00, 0x04, 0x02, 0x00, 0x28, 0x00, 0x40, 0xfe, 0x00, 0x41,
-            0xa0, 0x24, 0x20, 0xc0, 0x80, 0x03, 0xe0, 0x40, 0x00, 0x08, 0x08, 0x00, 0x3f, 0x03, 0xf8, 0x02, 0x86,
-            0x12, 0x10, 0x60, 0x40, 0x01, 0xd0, 0x20, 0x00, 0x04, 0x04, 0x00, 0x1c, 0x81, 0xfc, 0x01, 0x43, 0x42,
+            0x01, 0xe0, 0xa0, 0x01, 0x41, 0x06, 0x01, 0x41, 0x10, 0x00, 0x00, 0x22, 0x0c, 0x02, 0x48, 0x12, 0x30,
+            0x00, 0x3f, 0x80, 0x10, 0x20, 0x02, 0x80, 0x08, 0x04, 0x00, 0x00, 0x82, 0x00, 0x22, 0x00, 0x83, 0x09,
+            0x18, 0x00, 0x1f, 0xc0, 0x08, 0x10, 0x01, 0x40, 0x02, 0x02, 0x00, 0x00, 0x81, 0x00, 0x18, 0x80, 0x21,
+            0xa0, 0x24, 0x60, 0x40, 0x7f, 0x00, 0x50, 0x40, 0x01, 0xf8, 0x08, 0x00, 0x01, 0x04, 0x00, 0x1f, 0x06,
+            0x12, 0x30, 0x20, 0x3f, 0x80, 0x28, 0x20, 0x00, 0xe4, 0x04, 0x00, 0x00, 0x82, 0x00, 0x0e, 0x83, 0x42,
             0x02, 0x00, 0x3f, 0x40, 0x40, 0x40, 0x06, 0x78, 0x08, 0x08, 0x00, 0x3d, 0x01, 0x00, 0x07, 0x63, 0x09,
             0x00, 0x10, 0x01, 0x00, 0x80, 0x0c, 0xf0, 0x10, 0x41, 0x80, 0x18, 0x08, 0x00, 0xfd, 0x01, 0x04, 0x18,
             0x81, 0x06, 0x20, 0x00, 0x14, 0x48, 0x00, 0xe6, 0x01, 0x00, 0xac, 0x02, 0x21, 0x10, 0x03, 0x08, 0x30,
@@ -393,13 +367,17 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             REQUIRE(der_control.voltage_trip.has_value());
             const auto& ov = der_control.voltage_trip.value().over_voltage_must_trip_curve;
             REQUIRE(ov.enable == true);
+            require_trip_curve(ov, dtsae::DERUnit::V);
             REQUIRE(ov.curve_data_points.size() == 2);
-            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[0].x_value) == 264);
-            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[1].x_value) == 288);
+            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[0].y_value) == 288);
+            REQUIRE(dt::from_RationalNumber(ov.curve_data_points[1].y_value) == 264);
+            require_trip_curve(der_control.voltage_trip.value().under_voltage_must_trip_curve, dtsae::DERUnit::V);
 
             // FrequencyTrip curve coverage
             REQUIRE(der_control.frequency_trip.has_value());
             REQUIRE(der_control.frequency_trip.value().over_frequency_must_trip_curve.curve_data_points.size() == 2);
+            require_trip_curve(der_control.frequency_trip.value().over_frequency_must_trip_curve, dtsae::DERUnit::Hz);
+            require_trip_curve(der_control.frequency_trip.value().under_frequency_must_trip_curve, dtsae::DERUnit::Hz);
 
             // ReactivePowerSupport: VoltVar
             REQUIRE(der_control.reactive_power_support_cl_res.has_value());
@@ -463,36 +441,8 @@ SCENARIO("Se/Deserialize ac der sae charge loop response messages") {
             mode.present_active_power = {9, 3};
 
             auto& der_control = mode.der_control_cl_res;
-
-            dtsae::VoltageTrip voltage_trip;
-            auto& ov_must = voltage_trip.over_voltage_must_trip_curve;
-            ov_must.enable = true;
-            ov_must.x_unit = dtsae::DERUnit::V;
-            ov_must.y_unit = dtsae::DERUnit::s;
-            ov_must.curve_data_points.push_back(dtsae::DataTuple{{264, 0}, {1, 0}});
-            ov_must.curve_data_points.push_back(dtsae::DataTuple{{288, 0}, {2, -1}});
-            auto& uv_must = voltage_trip.under_voltage_must_trip_curve;
-            uv_must.enable = true;
-            uv_must.x_unit = dtsae::DERUnit::V;
-            uv_must.y_unit = dtsae::DERUnit::s;
-            uv_must.curve_data_points.push_back(dtsae::DataTuple{{196, 0}, {2, 0}});
-            uv_must.curve_data_points.push_back(dtsae::DataTuple{{160, 0}, {2, -1}});
-            der_control.voltage_trip = voltage_trip;
-
-            dtsae::FrequencyTrip frequency_trip;
-            auto& of_must = frequency_trip.over_frequency_must_trip_curve;
-            of_must.enable = true;
-            of_must.x_unit = dtsae::DERUnit::Hz;
-            of_must.y_unit = dtsae::DERUnit::s;
-            of_must.curve_data_points.push_back(dtsae::DataTuple{{62, 0}, {1, 0}});
-            of_must.curve_data_points.push_back(dtsae::DataTuple{{63, 0}, {5, -1}});
-            auto& uf_must = frequency_trip.under_frequency_must_trip_curve;
-            uf_must.enable = true;
-            uf_must.x_unit = dtsae::DERUnit::Hz;
-            uf_must.y_unit = dtsae::DERUnit::s;
-            uf_must.curve_data_points.push_back(dtsae::DataTuple{{58, 0}, {1, 0}});
-            uf_must.curve_data_points.push_back(dtsae::DataTuple{{57, 0}, {5, -1}});
-            der_control.frequency_trip = frequency_trip;
+            der_control.voltage_trip = make_voltage_trip();
+            der_control.frequency_trip = make_frequency_trip();
 
             auto& enter_service = der_control.enter_service_cl_res;
             enter_service.permit_service = true;

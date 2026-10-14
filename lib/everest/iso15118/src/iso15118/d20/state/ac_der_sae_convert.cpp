@@ -107,13 +107,8 @@ void gate_function(dt_sae::FrequencyTrip& out, std::uint32_t supported_modes) {
                         "under frequency may trip curve");
 }
 
-constexpr DerFn excitation_function(dt_sae::PowerFactorExcitation excitation) {
-    return excitation == dt_sae::PowerFactorExcitation::OverExcited ? DerFn::ConstantPowerFactorOverExcitedFunction
-                                                                    : DerFn::ConstantPowerFactorUnderExcitedFunction;
-}
-
 bool excitation_declared(std::uint32_t supported_modes, dt_sae::PowerFactorExcitation excitation) {
-    return is_function_set(supported_modes, excitation_function(excitation));
+    return is_function_set(supported_modes, sae::excitation_function(excitation));
 }
 
 bool excitation_declared(std::uint32_t supported_modes,

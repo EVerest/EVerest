@@ -1,9 +1,4 @@
 active_modules:
-  iso15118_charger:
-    module: PyJosev
-    config_module:
-      device: auto
-      supported_DIN70121: false
   iso15118_car:
     module: JsCarV2G
     config_implementation:
@@ -35,9 +30,6 @@ active_modules:
       slac:
         - module_id: slac
           implementation_id: evse
-      hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
   connector_2:
     module: EvseManager
     config_module:
@@ -62,9 +54,6 @@ active_modules:
       slac:
         - module_id: slac
           implementation_id: evse
-      hlc:
-        - module_id: iso15118_charger
-          implementation_id: charger
   yeti_driver_1:
     module: JsYetiSimulator
   yeti_driver_2:
