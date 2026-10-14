@@ -1256,6 +1256,61 @@ TEST_F(GenericOcppProvidesTester, publishConnectionStatus) {
     EXPECT_EQ(received[2], R"({"connected":false})"_json);
 }
 
+TEST_F(GenericOcppProvidesTester, publishConnections) {
+    // publish_connections() called from ready(); the fixture recorded it during SetUp()
+
+    ASSERT_EQ(published_connections.size(), 1);
+    // A charging station with no secondary connection configured reports just the primary, and the
+    // primary carries no connection_id because it has no OCPPCommCtrlr component instance.
+    EXPECT_EQ(published_connections[0], R"({"connections":[{"connected":false,"connection_role":"Primary"}]})"_json);
+}
+
+TEST_F(GenericOcppProvidesTester, publishConnectionsBeforeReady) {
+    // A consumer that waits for the ready var must already be able to read the roster.
+    ASSERT_EQ(published_connections.size(), 1);
+    ASSERT_EQ(published_ready.size(), 1);
+}
+
+/// \brief Charging station with a secondary OCPP connection declared in its device model.
+struct GenericOcppSecondaryConnectionTester : public GenericOcppProvidesTester {
+    std::vector<ocpp::v2::ConnectionInfo> connections_roster() const override {
+        ocpp::v2::ConnectionInfo primary;
+        primary.id = ocpp::v2::ConnectionId::primary();
+        primary.enabled = true;
+
+        ocpp::v2::ConnectionInfo secondary;
+        secondary.id = ocpp::v2::ConnectionId::secondary("EMS");
+        secondary.enabled = true;
+        secondary.network_configuration_slots = {3};
+        secondary.active_network_profile_slot = 3;
+
+        return {primary, secondary};
+    }
+};
+
+TEST_F(GenericOcppSecondaryConnectionTester, publishConnectionsIncludesTheSecondary) {
+    ASSERT_EQ(published_connections.size(), 1);
+    EXPECT_EQ(published_connections[0],
+              R"({"connections":[{"connected":false,"connection_role":"Primary"},
+                  {"configuration_slot":3,"connected":false,"connection_id":"EMS",
+                   "connection_role":"Secondary"}]})"_json);
+}
+
+TEST_F(GenericOcppSecondaryConnectionTester, secondaryStatusIsNotPublishedOnConnectionStatus) {
+    // connection_status keeps describing the primary connection only, so an existing consumer such
+    // as the API module never sees a secondary connection's state on it.
+    std::vector<json> received;
+    interfaces->subscribe_var("ocpp_generic", "connection_status",
+                              [&received](const auto&, const auto&, const auto& data) { received.push_back(data); });
+
+    types::ocpp::ConnectionStatus primary_connected;
+    primary_connected.connected = true;
+    ocpp->cb_connection_state_changed(primary_connected, ocpp::OcppProtocolVersion::v201);
+
+    ASSERT_EQ(received.size(), 1);
+    EXPECT_EQ(received[0], R"({"connected":true})"_json);
+}
+
 TEST_F(GenericOcppProvidesTester, publishReady) {
     // publish_ready() called from ready() once the module accepts commands
     // (the publications were recorded by the fixture, see GenericOcppProvidesTester)

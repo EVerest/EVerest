@@ -1458,6 +1458,12 @@ std::vector<EnhancedCompositeSchedule> ChargePoint::get_all_composite_schedules(
     return this->smart_charging->get_all_composite_schedules(duration_s, unit);
 }
 
+std::vector<ConnectionInfo> ChargePoint::get_connections() {
+    // Read from the device model rather than from the registry: this reports how the charging
+    // station is configured, which includes connections that are not currently dialled.
+    return discover_connections(*this->device_model);
+}
+
 std::optional<NetworkConnectionProfile>
 ChargePoint::get_network_connection_profile(const std::int32_t configuration_slot) const {
     return this->connectivity_manager->get_network_connection_profile(configuration_slot);

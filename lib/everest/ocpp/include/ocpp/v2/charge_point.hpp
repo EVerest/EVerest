@@ -16,6 +16,7 @@
 #include <ocpp/v2/average_meter_values.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
 #include <ocpp/v2/connection_connectivity_configuration.hpp>
+#include <ocpp/v2/connection_discovery.hpp>
 #include <ocpp/v2/connection_registry.hpp>
 #include <ocpp/v2/connection_routing_dispatcher.hpp>
 #include <ocpp/v2/connection_scope.hpp>
@@ -379,6 +380,11 @@ public:
     virtual std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
                                                                                const ChargingRateUnitEnum& unit) = 0;
 
+    /// \brief Gets the OCPP connections the charging station is configured for: the primary CSMS
+    /// connection, always first, plus any secondary connection declared in the device model.
+    /// \return the configured connections; misconfigured ones are logged and left out.
+    virtual std::vector<ConnectionInfo> get_connections() = 0;
+
     /// \brief Gets the configured NetworkConnectionProfile based on the given \p configuration_slot . The
     /// central system uri of the connection options will not contain ws:// or wss:// because this method removes it if
     /// present. This returns the value from the cached network connection profiles. \param
@@ -727,6 +733,8 @@ public:
                                                                     ChargingRateUnitEnum unit) override;
     std::vector<EnhancedCompositeSchedule> get_all_composite_schedules(const std::int32_t duration,
                                                                        const ChargingRateUnitEnum& unit) override;
+
+    std::vector<ConnectionInfo> get_connections() override;
 
     std::optional<NetworkConnectionProfile>
     get_network_connection_profile(const std::int32_t configuration_slot) const override;

@@ -76,6 +76,7 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
             ocpp/v2/connection_connectivity_configuration.cpp
+            ocpp/v2/connection_discovery.cpp
             ocpp/v2/connection_id.cpp
             ocpp/v2/connection_registry.cpp
             ocpp/v2/connection_routing_dispatcher.cpp

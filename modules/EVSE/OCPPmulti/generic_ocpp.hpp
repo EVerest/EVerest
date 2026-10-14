@@ -282,6 +282,13 @@ public:
     void init();
     void ready(const ConfigServiceClient& client);
 
+    /// \brief Publish the set of configured OCPP connections on the ocpp interface.
+    ///
+    /// Reads the roster from the charge point, so it reflects what the device model declares rather
+    /// than what is currently connected. Called once during ready(), before the ready var, so a
+    /// consumer that waits for ready always sees it.
+    void publish_connections();
+
     // Gate our own callers before GenericChargePoint::shutdown() so they avoid calling into the
     // charge point: command handlers return failure responses where applicable or become no-ops,
     // events are queued, and any in-flight schedule recompute is waited out.

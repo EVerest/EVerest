@@ -22,6 +22,7 @@
 #include <ocpp/v16/messages/GetConfiguration.hpp>
 #include <ocpp/v2/charge_point.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
+#include <ocpp/v2/connection_discovery.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/messages/Authorize.hpp>
 #include <ocpp/v2/messages/ChangeAvailability.hpp>
@@ -256,6 +257,11 @@ struct GenericChargePointInterface {
 
     virtual std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) = 0;
+
+    /// \brief The OCPP connections this charging station is configured for: the primary CSMS
+    ///        connection, always first, plus any secondary connection declared in the device model.
+    ///        OCPP 1.6 always reports just the primary. Requires init() to have run.
+    virtual std::vector<ocpp::v2::ConnectionInfo> get_connections() = 0;
 
     virtual std::vector<ocpp::v2::EnhancedCompositeSchedule>
     get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) = 0;

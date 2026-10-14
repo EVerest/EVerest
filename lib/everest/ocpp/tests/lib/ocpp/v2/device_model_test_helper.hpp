@@ -17,6 +17,7 @@
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
@@ -47,18 +48,19 @@ public:
     ///                                initial "true"). The shipped DER config carries no `Enabled` variable, so tests
     ///                                that need to flip it must opt in here; leaving it false keeps the absent-variable
     ///                                path intact for existing tests.
-    /// \param seed_secondary_connection  When set, seed an OCPPCommCtrlr component instanced with this name,
-    ///                                    i.e. a secondary OCPP connection as described in the OCA application
-    ///                                    note "Secondary OCPP Connection on a Charging Station". The shipped
-    ///                                    component config has no such instance, so tests that need one opt in
-    ///                                    here. The instance carries Enabled, NetworkConfigurationPriority,
-    ///                                    ActiveNetworkProfile, SecurityProfile, HeartbeatInterval,
-    ///                                    DownstreamMsgs, UpstreamMsgs and AllowSetVariables, all initially unset
-    ///                                    apart from Enabled, which is false.
+    /// \param seed_secondary_connections  Instance names to seed an OCPPCommCtrlr component for, i.e. secondary
+    ///                                    OCPP connections as described in the OCA application note "Secondary
+    ///                                    OCPP Connection on a Charging Station". The shipped component config has
+    ///                                    no such instance, so tests that need one opt in here. Each instance
+    ///                                    carries Enabled, NetworkConfigurationPriority, ActiveNetworkProfile,
+    ///                                    SecurityProfile, HeartbeatInterval, DownstreamMsgs, UpstreamMsgs and
+    ///                                    AllowSetVariables, all initially unset apart from Enabled, which is
+    ///                                    false. Names are seeded verbatim so a test can also check that an
+    ///                                    unusable name is rejected.
     explicit DeviceModelTestHelper(const std::string& database_path = DEVICE_MODEL_DB_IN_MEMORY_PATH,
                                    const std::string& migration_files_path = MIGRATION_FILES_PATH,
                                    const std::string& config_path = CONFIG_PATH, bool seed_der_ctrlr_enabled = false,
-                                   const std::optional<std::string>& seed_secondary_connection = std::nullopt);
+                                   const std::vector<std::string>& seed_secondary_connections = {});
     DeviceModel* get_device_model();
 
     ///
@@ -127,7 +129,7 @@ private:
     const std::string& migration_files_path;
     const std::string& config_path;
     bool seed_der_ctrlr_enabled;
-    std::optional<std::string> seed_secondary_connection;
+    std::vector<std::string> seed_secondary_connections;
 
     // Connection as member so the database keeps open and is not destroyed (because this is an in memory
     // database).

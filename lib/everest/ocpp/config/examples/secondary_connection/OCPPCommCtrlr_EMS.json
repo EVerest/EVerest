@@ -1,0 +1,137 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "description": "Example OCPPCommCtrlr instance declaring a secondary OCPP connection, as described in the OCA application note 'Secondary OCPP Connection on a Charging Station' section 3.3. The instance name is the connection name and is free to choose; 'EMS' here is only a convention. Not installed by default: a charging station should report an OCPPCommCtrlr instance only if it really offers a secondary connection.",
+  "type": "object",
+  "name": "OCPPCommCtrlr",
+  "instance": "EMS",
+  "properties": {
+    "OCPPCommCtrlrEnabled": {
+      "variable_name": "Enabled",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": false
+        }
+      ],
+      "description": "Whether this secondary connection is switched on. Off by default: enabling a secondary connection delegates capabilities to another party and must be a deliberate act.",
+      "default": false,
+      "type": "boolean"
+    },
+    "NetworkConfigurationPriority": {
+      "variable_name": "NetworkConfigurationPriority",
+      "characteristics": {
+        "valuesList": "3",
+        "supportsMonitoring": true,
+        "dataType": "SequenceList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "Comma separated ordered list of the network configuration slots this connection may dial. Must not overlap the slots of any other connection, including the primary connection's OCPPCommCtrlr.NetworkConfigurationPriority.",
+      "type": "string"
+    },
+    "ActiveNetworkProfile": {
+      "variable_name": "ActiveNetworkProfile",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Network configuration slot this connection last connected on.",
+      "type": "integer"
+    },
+    "SecurityProfile": {
+      "variable_name": "SecurityProfile",
+      "characteristics": {
+        "minLimit": 0,
+        "maxLimit": 3,
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "EVerest extension. Security profile this connection last connected with, kept per connection so that the rule against downgrading a security profile is evaluated per connection (application note section 3.4.1). A secondary connection may legitimately run at a lower security profile than the primary. The instance-less SecurityCtrlr.SecurityProfile continues to describe the primary connection.",
+      "minimum": 0,
+      "maximum": 3,
+      "type": "integer"
+    },
+    "HeartbeatInterval": {
+      "variable_name": "HeartbeatInterval",
+      "characteristics": {
+        "unit": "s",
+        "supportsMonitoring": true,
+        "dataType": "integer"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "Heartbeat interval for this connection. Falls back to the primary connection's value when unset.",
+      "type": "integer"
+    },
+    "DownstreamMsgs": {
+      "variable_name": "DownstreamMsgs",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "MemberList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "Comma separated OCPP message names this connection is allowed to send to the charging station, without the Request suffix (application note section 3.5). Anything else is rejected with CALLERROR(SecurityError). Empty or absent means the connection may send nothing.",
+      "type": "string"
+    },
+    "UpstreamMsgs": {
+      "variable_name": "UpstreamMsgs",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "MemberList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "Comma separated OCPP message names the charging station is allowed to send to this connection, without the Request suffix (application note section 3.5). Empty or absent means nothing is sent to it.",
+      "type": "string"
+    },
+    "AllowSetVariables": {
+      "variable_name": "AllowSetVariables",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "string"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite"
+        }
+      ],
+      "description": "Comma separated device model entries this connection may write, in the form [EvseId[#ConnectorId]/]Component[#Instance][&Variable[#Instance]] (application note section 3.6). Empty or absent means the connection may write nothing, which is the default. Never writable by the secondary connection itself.",
+      "type": "string"
+    }
+  }
+}

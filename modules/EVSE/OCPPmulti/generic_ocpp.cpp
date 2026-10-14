@@ -642,6 +642,8 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // observed empty, so queued events always stay ahead of live-path events
     ready_event_queue();
     EVLOG_info << "OCPP started";
+    // Before the ready var: a consumer that waits for ready must be able to read the roster.
+    publish_connections();
     mv_provides.ocpp_generic.publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
@@ -1165,6 +1167,29 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
     }
 
     return result;
+}
+
+void GenericOcpp::publish_connections() {
+    types::ocpp::Connections connections;
+
+    for (const auto& info : mv_charge_point.get_connections()) {
+        types::ocpp::ConnectionStatus status;
+        // The roster describes how the charging station is configured. Whether a connection happens
+        // to be up is reported separately, as it changes; a freshly discovered connection is down.
+        status.connected = false;
+        status.connection_role =
+            info.id.is_primary() ? types::ocpp::ConnectionRole::Primary : types::ocpp::ConnectionRole::Secondary;
+        if (!info.id.is_primary()) {
+            status.connection_id = info.id.instance().value();
+        }
+        if (info.active_network_profile_slot.has_value()) {
+            status.configuration_slot = info.active_network_profile_slot.value();
+        }
+        connections.connections.push_back(std::move(status));
+    }
+
+    EVLOG_info << "OCPP connections configured: " << connections.connections.size();
+    mv_provides.ocpp_generic.publish_connections(connections);
 }
 
 void GenericOcpp::cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,

@@ -132,6 +132,17 @@ protected:
     std::vector<nlohmann::json> published_ready;
     // number of "ready" publications observed at the time connect_websocket() was called
     std::size_t published_ready_before_websocket{0};
+    // the ocpp_generic "connections" var is published from within ready() too
+    std::vector<nlohmann::json> published_connections;
+
+    /// \brief Roster the charge point reports during ready(). Override to test a charging station
+    ///        that has secondary OCPP connections configured.
+    virtual std::vector<ocpp::v2::ConnectionInfo> connections_roster() const {
+        ocpp::v2::ConnectionInfo primary;
+        primary.id = ocpp::v2::ConnectionId::primary();
+        primary.enabled = true;
+        return {primary};
+    }
 
     void SetUp() override {
         using ::testing::_;
@@ -156,8 +167,12 @@ protected:
         EXPECT_CALL(chargepoint, connect_websocket()).Times(1).WillOnce([this]() {
             published_ready_before_websocket = published_ready.size();
         });
+        EXPECT_CALL(chargepoint, get_connections()).Times(1).WillOnce(::testing::Return(connections_roster()));
         interfaces->subscribe_var("ocpp_generic", "ready", [this](const auto&, const auto&, const auto& data) {
             published_ready.push_back(data);
+        });
+        interfaces->subscribe_var("ocpp_generic", "connections", [this](const auto&, const auto&, const auto& data) {
+            published_connections.push_back(data);
         });
         ocpp->init();
         // ocpp.ready() waits for the EVSE managers to be ready

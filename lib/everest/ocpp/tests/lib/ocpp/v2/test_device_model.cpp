@@ -600,8 +600,8 @@ class DeviceModelSecondaryConnectionTest : public ::testing::Test {
 protected:
     static constexpr const char* INSTANCE = "EMS";
 
-    DeviceModelTestHelper device_model_test_helper{DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH,
-                                                   false, INSTANCE};
+    DeviceModelTestHelper device_model_test_helper{
+        DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, {INSTANCE}};
     DeviceModel* dm{device_model_test_helper.get_device_model()};
 
     static Component ocpp_comm_ctrlr_instance() {

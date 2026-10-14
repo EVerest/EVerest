@@ -1145,6 +1145,119 @@ at startup to register monitors and obtain the initial values in a single
 call, without losing an update between the first read and the monitor
 registration.
 
+.. _handwritten_ocppmulti_secondary-connections:
+
+Secondary OCPP connections
+==========================
+
+.. warning::
+
+   Under construction. The charging station discovers and reports configured
+   secondary connections, but does not dial them yet and does not enforce their
+   message or device-model restrictions. Do not rely on a secondary connection
+   for isolation until those land.
+
+A **secondary OCPP connection** is an additional, deliberately limited OCPP
+connection kept alongside the primary CSMS connection, as described in the OCA
+application note *Secondary OCPP Connection on a Charging Station* (OCPP 2.0.1
+and 2.1 only). Typical users are a home energy management system, a delegated
+maintenance party, or a data collector. The primary CSMS connection stays
+authoritative: a secondary connection may do only what it has explicitly been
+granted, and its failures never affect the primary connection.
+
+Declaring a connection
+""""""""""""""""""""""
+
+A secondary connection exists because an **instance of the** ``OCPPCommCtrlr``
+**component** exists for it. The instance name is the connection name. Names are
+free to choose; ``EMS``, ``MAINT``, ``MONITOR`` and ``DATACOLLECTION`` are
+conventions that hint to the CSMS what a connection is for and carry no meaning
+in the implementation.
+
+Instances are added through the component config directory, the same way as any
+other component (see `Device model configuration via component configs`_).
+A worked example ships in ``config/examples/secondary_connection/`` of libocpp,
+with a README. It is deliberately **not installed**: a stock charging station
+reports no ``OCPPCommCtrlr`` instance, because reporting one tells a CSMS that
+the station really does offer a secondary connection.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Connection switched on
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``Enabled`` (ReadWrite, default false)
+   * - Slots this connection may dial
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``NetworkConfigurationPriority`` (ReadWrite)
+   * - Currently active slot (report only)
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``ActiveNetworkProfile`` (ReadOnly)
+   * - Security profile last connected with
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``SecurityProfile`` (ReadOnly, EVerest extension)
+   * - Messages the connection may send to the station
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``DownstreamMsgs`` (not enforced yet)
+   * - Messages the station may send to the connection
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``UpstreamMsgs`` (not enforced yet)
+   * - Device model entries the connection may write
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``AllowSetVariables`` (not enforced yet)
+
+Network configuration slots are **station wide** and each slot belongs to at
+most one connection. The shipped configuration gives slots 1 and 2 to the
+primary connection, so a secondary connection needs a slot of its own, with a
+matching ``NetworkConfiguration`` instance.
+
+``SecurityProfile`` on the instanced ``OCPPCommCtrlr`` is an EVerest extension.
+The specification keeps a single ``SecurityCtrlr``/``SecurityProfile``, but the
+rule against downgrading a security profile has to be evaluated per connection,
+since a secondary connection may legitimately run at a lower security profile
+than the primary. The instance-less ``SecurityCtrlr``/``SecurityProfile``
+continues to describe the primary connection and is never written on behalf of a
+secondary one.
+
+Only adding a connection needs a config file and a restart. Everything else -
+the URL, the credentials, the three permission variables and ``Enabled`` - is
+writable at runtime, either by the CSMS with **SetVariables** or locally through
+the ``ocpp`` interface's **set_variables** command.
+
+Discovery and validation
+""""""""""""""""""""""""
+
+At startup the charging station reads the device model and reports the
+connections it found. A secondary connection is reported when it is switched on
+and has at least one usable slot.
+
+Misconfiguration is logged and skipped, never fatal: a broken secondary
+connection must not be able to stop the charging station reaching its CSMS. A
+connection is skipped when its instance name is unusable, when it is switched
+off, or when it has no usable slot left. An individual slot is skipped when no
+``NetworkConfiguration`` instance exists for it, or when another connection
+already claims it. The primary connection claims its slots first and can never
+lose one to a secondary.
+
+Observing the connections
+"""""""""""""""""""""""""
+
+The ``ocpp`` interface publishes the roster on the **connections** variable,
+once during startup before **ready**, so a consumer that waits for **ready**
+always sees it. Each entry carries ``connection_role``, and ``connection_id``
+for secondary connections; the primary connection has no ``connection_id``
+because it has no component instance.
+
+The existing **connection_status** variable is unchanged and keeps describing
+the **primary connection only**. Consumers such as the API module collapse it
+into a single station-wide "connected" indication, so reporting a secondary
+connection's state there would wrongly show the station as offline while the
+CSMS link is healthy.
+
 .. _handwritten_ocppmulti_migration-from-ocpp16-key-addressing:
 
 Migration from OCPP 1.6 key addressing

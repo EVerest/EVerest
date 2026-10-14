@@ -134,6 +134,7 @@ public:
     std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) override;
 
+    std::vector<ocpp::v2::ConnectionInfo> get_connections() override;
     std::vector<ocpp::v2::EnhancedCompositeSchedule>
     get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) override;
     std::vector<ocpp::v2::GetVariableResult>

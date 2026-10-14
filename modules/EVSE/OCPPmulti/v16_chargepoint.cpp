@@ -703,6 +703,14 @@ std::optional<std::string> ChargePointV16::get_tx_stop_point() {
     return {};
 }
 
+std::vector<ocpp::v2::ConnectionInfo> ChargePointV16::get_connections() {
+    // Secondary OCPP connections are an OCPP 2.x feature; OCPP 1.6 only ever has the CSMS connection.
+    ocpp::v2::ConnectionInfo primary;
+    primary.id = ocpp::v2::ConnectionId::primary();
+    primary.enabled = true;
+    return {primary};
+}
+
 std::vector<ocpp::v2::EnhancedCompositeSchedule>
 ChargePointV16::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) {
     check_configured("get_all_composite_schedules");

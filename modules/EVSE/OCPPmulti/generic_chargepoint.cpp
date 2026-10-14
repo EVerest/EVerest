@@ -142,6 +142,11 @@ GenericChargePoint::get_all_composite_schedules(std::int32_t duration_s, ocpp::v
     return m_active_ptr->get_all_composite_schedules(duration_s, unit);
 }
 
+std::vector<ocpp::v2::ConnectionInfo> GenericChargePoint::get_connections() {
+    check_configured("get_connections");
+    return m_active_ptr->get_connections();
+}
+
 std::vector<ocpp::v2::GetVariableResult>
 GenericChargePoint::get_variables(const std::vector<ocpp::v2::GetVariableData>& get_variable_data_vector) {
     check_configured("get_variables");

@@ -52,12 +52,12 @@ std::vector<DeviceModelVariable> make_secondary_connection_variables() {
 
 DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, const std::string& migration_files_path,
                                              const std::string& config_path, bool seed_der_ctrlr_enabled,
-                                             const std::optional<std::string>& seed_secondary_connection) :
+                                             const std::vector<std::string>& seed_secondary_connections) :
     database_path(database_path),
     migration_files_path(migration_files_path),
     config_path(config_path),
     seed_der_ctrlr_enabled(seed_der_ctrlr_enabled),
-    seed_secondary_connection(seed_secondary_connection),
+    seed_secondary_connections(seed_secondary_connections),
     database_connection(std::make_unique<everest::db::sqlite::Connection>(database_path)) {
     this->database_connection->open_connection();
     this->device_model = create_device_model();
@@ -297,10 +297,10 @@ void DeviceModelTestHelper::create_device_model_db() {
         }
     }
 
-    if (this->seed_secondary_connection.has_value()) {
+    for (const auto& instance : this->seed_secondary_connections) {
         ComponentKey ocpp_comm_ctrlr;
         ocpp_comm_ctrlr.name = "OCPPCommCtrlr";
-        ocpp_comm_ctrlr.instance = this->seed_secondary_connection.value();
+        ocpp_comm_ctrlr.instance = instance;
         component_configs.insert(std::make_pair(ocpp_comm_ctrlr, make_secondary_connection_variables()));
     }
 

@@ -20,8 +20,8 @@ constexpr const char* SOURCE = "test";
 
 class ConnectionConnectivityConfigurationTest : public ::testing::Test {
 protected:
-    DeviceModelTestHelper device_model_test_helper{DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH,
-                                                   false, SECONDARY_INSTANCE};
+    DeviceModelTestHelper device_model_test_helper{
+        DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, {SECONDARY_INSTANCE}};
     DeviceModel* dm{device_model_test_helper.get_device_model()};
 
     ConnectionConnectivityConfiguration primary{*dm, ConnectionId::primary()};

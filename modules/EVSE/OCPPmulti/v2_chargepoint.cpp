@@ -561,6 +561,11 @@ std::optional<std::string> ChargePointV2::get_tx_stop_point() {
                       ocpp::v2::AttributeEnum::Actual);
 }
 
+std::vector<ocpp::v2::ConnectionInfo> ChargePointV2::get_connections() {
+    check_configured("get_connections");
+    return m_charge_point->get_connections();
+}
+
 std::vector<ocpp::v2::EnhancedCompositeSchedule>
 ChargePointV2::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) {
     check_configured("get_all_composite_schedules");

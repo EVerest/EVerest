@@ -110,6 +110,7 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
                 (const ocpp::v2::GetCompositeScheduleRequest& request), (override));
     MOCK_METHOD(std::optional<ocpp::v2::EnhancedCompositeSchedule>, get_composite_schedule,
                 (std::int32_t evse_id, std::chrono::seconds duration, ocpp::v2::ChargingRateUnitEnum unit), (override));
+    MOCK_METHOD(std::vector<ocpp::v2::ConnectionInfo>, get_connections, (), (override));
     MOCK_METHOD(std::vector<ocpp::v2::EnhancedCompositeSchedule>, get_all_composite_schedules,
                 (const std::int32_t duration, const ocpp::v2::ChargingRateUnitEnum& unit), (override));
     MOCK_METHOD(std::optional<ocpp::v2::NetworkConnectionProfile>, get_network_connection_profile,
