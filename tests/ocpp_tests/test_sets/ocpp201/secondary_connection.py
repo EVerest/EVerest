@@ -41,6 +41,7 @@ from ocpp.v201.enums import (
     ChargingProfileKindEnumType,
     ChargingProfilePurposeEnumType,
     ChargingRateUnitEnumType,
+    InstallCertificateUseEnumType,
     OperationalStatusEnumType,
     ReportBaseEnumType,
     ResetEnumType,
@@ -920,6 +921,43 @@ async def test_a_connection_gets_clock_aligned_meter_values_at_its_own_rate(
 
     assert not _calls(primary, "MeterValues"), "the CSMS was sent the EMS's meter values"
     assert not _calls(maint, "MeterValues"), "MAINT was sent the EMS's meter values"
+
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+@pytest.mark.secondary_csms("EMS", downstream_msgs="InstallCertificate")
+async def test_a_secondary_may_not_install_a_root_certificate(
+    central_system: CentralSystem,
+    secondary_central_systems,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """Application note section 3.4.3: only the CSMS installs root certificates.
+
+    A root installed by a secondary system would go into the trust store every connection is
+    verified against, the CSMS's included, so the request is refused even though this connection
+    has been granted InstallCertificate.
+    """
+
+    test_controller.start()
+
+    await central_system.wait_for_chargepoint()
+    secondary = await secondary_central_systems["EMS"].wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    response = await secondary.call(
+        call201.InstallCertificate(
+            certificate_type=InstallCertificateUseEnumType.csms_root_certificate,
+            certificate="-----BEGIN CERTIFICATE-----\nnot a certificate\n-----END CERTIFICATE-----\n",
+        )
+    )
+
+    assert response.status == "Rejected"
+    assert response.status_info["additional_info"] == "OnlyTheCsmsMayInstallARootCertificate"
 
 
 def _charging_schedule(limit):

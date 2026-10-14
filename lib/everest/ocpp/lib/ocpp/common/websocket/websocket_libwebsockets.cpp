@@ -1,22 +1,27 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
+#include <ocpp/common/certificate_pin.hpp>
 #include <ocpp/common/websocket/websocket_libwebsockets.hpp>
 
 #include <everest/logging.hpp>
 
 #include <libwebsockets.h>
 
+#include <array>
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
 #include <fstream>
+#include <iomanip>
 #include <memory>
 #include <mutex>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 
 #include <openssl/opensslv.h>
+#include <openssl/pem.h>
 #include <openssl/ssl.h>
 #include <openssl/x509v3.h>
 
@@ -289,6 +294,46 @@ int wildcard_X509_check_host(bool allow_wildcards, X509* server_cert, const std:
                                nullptr);
     }
     return X509_check_host(server_cert, hostname.c_str(), hostname.length(), X509_CHECK_FLAG_NO_WILDCARDS, nullptr);
+}
+
+/// \brief The PEM encoding of \p certificate, or an empty string when it cannot be written.
+std::string to_pem(X509* certificate) {
+    std::unique_ptr<BIO, decltype(&BIO_free)> bio(BIO_new(BIO_s_mem()), &BIO_free);
+    if (bio == nullptr or PEM_write_bio_X509(bio.get(), certificate) != 1) {
+        return {};
+    }
+
+    BUF_MEM* buffer = nullptr;
+    BIO_get_mem_ptr(bio.get(), &buffer);
+    if (buffer == nullptr or buffer->data == nullptr) {
+        return {};
+    }
+    return std::string(buffer->data, buffer->length);
+}
+
+/// \brief Whether the chain that verified the server's certificate ends at the root the network
+///        configuration slot names (application note section 3.4.5).
+///
+/// The trust store carries the root of every system the charging station talks to, so a successful
+/// verification only says the server is one of them. Where a slot names its root, being any of
+/// them is not enough: a primary connection rerouted to a secondary system must be refused.
+bool verify_expected_root(X509_STORE_CTX* ctx, const ocpp::CertificateHashDataType& expected) {
+    const STACK_OF(X509)* chain = X509_STORE_CTX_get0_chain(ctx);
+    if (chain == nullptr or sk_X509_num(chain) == 0) {
+        EVLOG_error << "Cannot check the server's root certificate: no verified chain";
+        return false;
+    }
+
+    // The trust anchor the chain was built to, which for a chain OpenSSL has just verified is its
+    // last element.
+    X509* root = sk_X509_value(chain, sk_X509_num(chain) - 1);
+    if (!ocpp::certificate_matches(to_pem(root), expected)) {
+        EVLOG_error << "The server's certificate chain does not end at the root certificate configured for this "
+                       "network configuration slot, so the server is not the one this connection is for";
+        return false;
+    }
+
+    return true;
 }
 
 bool verify_csms_cn(const std::string& hostname, bool preverified, const X509_STORE_CTX* ctx, bool allow_wildcards) {
@@ -1242,6 +1287,26 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
 
     switch (reason) {
     case LWS_CALLBACK_OPENSSL_PERFORM_SERVER_CERT_VERIFICATION:
+
+        // Section 3.4.5 of the secondary connection application note: when the slot names its root
+        // certificate, the chain has to end there and not merely somewhere in the trust store.
+        // Checked at depth 0, where the chain OpenSSL built is complete.
+        if (this->connection_options.csms_root_certificate.has_value() and len == 1) {
+            // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed for appropriate type
+            auto* store_ctx = reinterpret_cast<X509_STORE_CTX*>(user);
+            if (X509_STORE_CTX_get_error_depth(store_ctx) == 0 and
+                !verify_expected_root(store_ctx, this->connection_options.csms_root_certificate.value())) {
+                this->push_deferred_callback([this]() {
+                    if (this->connection_failed_callback) {
+                        this->connection_failed_callback(ConnectionFailedReason::InvalidCSMSCertificate);
+                    } else {
+                        EVLOG_error << "Connection failed callback not registered!";
+                    }
+                });
+                // Return 1 to fail the cert
+                return 1;
+            }
+        }
 
         // TODO (ioan): remove this option after we figure out why libwebsockets does not take the param set
         // at 'tls_init' into account

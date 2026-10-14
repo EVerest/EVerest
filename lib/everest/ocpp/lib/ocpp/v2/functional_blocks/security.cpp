@@ -650,6 +650,16 @@ void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call
 }
 
 std::optional<StatusInfo> Security::check_certificate_install_allowed(InstallCertificateUseEnum cert_type) const {
+    // Application note section 3.4.3: only the CSMS installs root certificates. A secondary system
+    // installing one would put a root of its choosing into the trust store that every connection,
+    // the CSMS's included, verifies against. Refused whatever InstallCertificate grant it has,
+    // for the same reason a secondary system cannot widen its own privileges.
+    if (const auto connection = ConnectionScope::current();
+        connection.has_value() and !connection->is_primary() and
+        cert_type == InstallCertificateUseEnum::CSMSRootCertificate) {
+        return make_status_info(reason_code_unspecified, "OnlyTheCsmsMayInstallARootCertificate");
+    }
+
     if (cert_type == InstallCertificateUseEnum::OEMRootCertificate) {
         // FIXME: Implement OEMRootCertificate. Refused independently of the security profile, because the conversion
         // towards evse_security has no OEM equivalent and throws.

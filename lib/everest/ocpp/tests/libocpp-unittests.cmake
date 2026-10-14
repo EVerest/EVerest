@@ -37,6 +37,8 @@ set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/call_types.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/evse_security.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/certificate_pin.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/evse_security_impl.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/database/database_handler_common.cpp
 )
 

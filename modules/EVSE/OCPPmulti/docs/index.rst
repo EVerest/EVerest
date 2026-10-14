@@ -1154,10 +1154,9 @@ Secondary OCPP connections
 
    Under construction. Message and device-model restrictions are enforced, the
    messages answering a request go back to the connection that asked, and
-   NotifyEvents, security events and clock-aligned meter values are routed per
-   connection. Not implemented yet: the per-connection sampled measurands
-   inside TransactionEvent copies of application note section 4.5.2, and the
-   per-connection TLS trust anchors of section 3.4.3.
+   NotifyEvents, security events, clock-aligned meter values and TLS trust
+   anchors are per connection. Not implemented: the per-connection sampled
+   measurands inside TransactionEvent copies of application note section 4.5.2.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1519,6 +1518,65 @@ evaluated per connection:
   connection may therefore legitimately be configured at a lower security
   profile than the primary, which section 3.4.1 requires; what it may not do is
   downgrade its own.
+
+TLS and certificates
+""""""""""""""""""""
+
+A secondary connection running at security profile 2 or 3 needs the root
+certificate of its own server in the charging station's trust store, installed
+as ``CSMSRootCertificate`` even though the server is not the CSMS: that is the
+certificate type an OCPP client uses to validate the TLS server certificate,
+whoever the server is (application note section 3.4.3). If the secondary system
+shares the CSMS's root, nothing has to be installed.
+
+**Only the CSMS installs root certificates.** An ``InstallCertificate`` for a
+``CSMSRootCertificate`` from a secondary connection is refused even when that
+connection has been granted ``InstallCertificate``, because the root would land
+in the trust store that every connection, the CSMS's included, is verified
+against. Other certificate types follow the ordinary allow list.
+
+Once two roots are in the trust store, either of them satisfies an ordinary TLS
+verification, so a primary connection rerouted to the secondary system would
+accept its certificate. Naming the root per network configuration slot stops
+that (sections 3.4.3 and 3.4.5):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Hash algorithm, always ``SHA256``
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateHashAlgorithm``
+   * - Hash of the root's name
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateIssuerNameHash``
+   * - Hash of the root's public key
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateIssuerKeyHash``
+   * - The root's serial number
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateSerialNumber``
+
+The four values are exactly what a ``GetInstalledCertificateIdsResponse``
+reports for that root, so they can be copied from there. With them set, a
+connection on that slot accepts a server only if the chain that verified it
+ends at that root; without them, as before, any root in the trust store will
+do. All four are needed: a partly filled set is logged and ignored rather than
+guessed at. Setting them for the primary slots too is what protects the primary
+connection, and is strongly recommended once a secondary connection exists.
+
+``SecurityCtrlr.AdditionalRootCertificateCheck`` (section 3.4.6) requires a new
+root to be signed by the existing one, which a secondary system's root will not
+be unless both connections share a PKI. It has to be ``false`` for a secondary
+connection on a separate PKI.
+
+For mTLS at security profile 3 (section 3.4.4) the charging station can present
+the same client certificate to both systems when they share a PKI. Otherwise
+the secondary system has to sign one itself, which means granting the
+connection ``SignCertificate`` upstream and ``CertificateSigned`` downstream.
 
 Charging limits from a secondary connection
 """""""""""""""""""""""""""""""""""""""""""

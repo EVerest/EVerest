@@ -75,7 +75,14 @@ own (section 4.5.1), through `AlignedDataCtrlr_EMS.json`. Those go to that conne
 sent whether or not a transaction is running, and are additional to any copies of the charging
 station's own messages the connection receives.
 
-Not implemented yet: the per-connection sampled measurands inside `TransactionEvent` copies of
-section 4.5.2, and the per-connection TLS trust anchors of section 3.4.3. The instanced
-`SampledDataCtrlr` and `SecurityCtrlr` components the application note also describes will be added
-together with the features that read them.
+For a connection at security profile 2 or 3, the root certificate of its server goes into the trust
+store as a `CSMSRootCertificate`, and only the CSMS may install it (section 3.4.3). Setting the four
+`CsmsRootCertificate*` variables of a slot, in `NetworkConfiguration_3.json` here, pins that slot to
+one root, so a connection rerouted to the wrong system is refused (section 3.4.5). Set them for the
+primary slots too, or the primary connection is the one left unprotected.
+`SecurityCtrlr.AdditionalRootCertificateCheck` has to be `false` when the secondary system is on a
+different PKI (section 3.4.6).
+
+Not implemented: the per-connection sampled measurands inside `TransactionEvent` copies of
+section 4.5.2. The instanced `SampledDataCtrlr` and `SecurityCtrlr` components the application note
+also describes will be added together with the features that read them.

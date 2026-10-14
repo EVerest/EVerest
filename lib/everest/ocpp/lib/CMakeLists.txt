@@ -26,6 +26,7 @@ target_sources(ocpp
         ocpp/common/schemas.cpp
         ocpp/common/types.cpp
         ocpp/common/utils.cpp
+        ocpp/common/certificate_pin.cpp
         ocpp/common/evse_security_impl.cpp
         ocpp/common/evse_security.cpp
         ocpp/common/database/database_handler_common.cpp

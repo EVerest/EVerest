@@ -665,5 +665,77 @@ TEST_F(DeviceModelSecondaryConnectionTest, read_only_writes_are_still_refused_fo
                  std::invalid_argument);
 }
 
+/// Application note section 3.4.3: a network configuration slot can name the root certificate its
+/// connection must be verified against, so that a trust store holding several systems' roots does
+/// not let any of them stand in for another.
+class CsmsRootCertificateTest : public DeviceModelTest {
+protected:
+    static constexpr std::int32_t SLOT = 1;
+
+    void set(const Variable& variable, const std::string& value) {
+        const auto cv = NetworkConfigurationComponentVariables::get_component_variable(SLOT, variable);
+        ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    void set_complete_hash_data() {
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateHashAlgorithm, "SHA256");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerNameHash, "aabb");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerKeyHash, "ccdd");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateSerialNumber, "01");
+    }
+};
+
+TEST_F(CsmsRootCertificateTest, ASlotThatNamesNoCertificatePinsNothing) {
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, ASlotThatNamesACertificatePinsIt) {
+    set_complete_hash_data();
+
+    const auto pinned = dm->read_csms_root_certificate(SLOT);
+    ASSERT_TRUE(pinned.has_value());
+    EXPECT_EQ(pinned->hashAlgorithm, HashAlgorithmEnumType::SHA256);
+    EXPECT_EQ(pinned->issuerNameHash, "aabb");
+    EXPECT_EQ(pinned->issuerKeyHash, "ccdd");
+    EXPECT_EQ(pinned->serialNumber, "01");
+}
+
+TEST_F(CsmsRootCertificateTest, AHalfWrittenSetPinsNothing) {
+    // All four values identify a certificate together. Filling in the gaps by guessing would mean
+    // guessing which certificate to trust, so an incomplete set is ignored and logged instead.
+    set_complete_hash_data();
+    set(NetworkConfigurationComponentVariables::CsmsRootCertificateSerialNumber, "");
+
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, AnAlgorithmThatIsNotAHashAlgorithmPinsNothing) {
+    set_complete_hash_data();
+    set(NetworkConfigurationComponentVariables::CsmsRootCertificateHashAlgorithm, "ROT13");
+
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, TheConnectionOptionsOfASlotCarryItsPin) {
+    // The slot needs enough of a profile for connection options to be built at all.
+    set(NetworkConfigurationComponentVariables::OcppCsmsUrl, "wss://example.invalid/");
+    set(NetworkConfigurationComponentVariables::SecurityProfile, "2");
+    set(NetworkConfigurationComponentVariables::OcppInterface, "Wired0");
+    set(NetworkConfigurationComponentVariables::OcppTransport, "JSON");
+    set(NetworkConfigurationComponentVariables::MessageTimeout, "30");
+
+    const auto without_pin = dm->get_websocket_connection_options(SLOT);
+    ASSERT_TRUE(without_pin.has_value());
+    EXPECT_FALSE(without_pin->csms_root_certificate.has_value());
+
+    set_complete_hash_data();
+
+    const auto with_pin = dm->get_websocket_connection_options(SLOT);
+    ASSERT_TRUE(with_pin.has_value());
+    ASSERT_TRUE(with_pin->csms_root_certificate.has_value());
+    EXPECT_EQ(with_pin->csms_root_certificate->issuerNameHash, "aabb");
+}
+
 } // namespace v2
 } // namespace ocpp

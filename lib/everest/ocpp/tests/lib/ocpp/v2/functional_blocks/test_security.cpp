@@ -2314,3 +2314,46 @@ TEST_F(SecurityEventRoutingTest, EverySectionFiveSixEventIsTreatedAsConnectionSp
         EXPECT_FALSE(utils::is_connection_specific(event_type)) << event_type;
     }
 }
+
+/// Application note section 3.4.3: a root certificate installed by a secondary system would end up
+/// in the trust store every connection verifies against, the CSMS's included, so only the CSMS may
+/// install one.
+class RootCertificateInstallationTest : public SecurityTest {
+protected:
+    InstallCertificateStatusEnum install(const ConnectionId& connection, const InstallCertificateUseEnum type) {
+        auto status = InstallCertificateStatusEnum::Accepted;
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([&status](const json& call_result) {
+            status = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>().status;
+        }));
+
+        const ConnectionScope scope(connection);
+        security.handle_message(create_example_install_certificate_request(type));
+        return status;
+    }
+};
+
+TEST_F(RootCertificateInstallationTest, ASecondaryConnectionMayNotInstallARootCertificate) {
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+
+    EXPECT_EQ(install(ConnectionId::secondary("EMS"), InstallCertificateUseEnum::CSMSRootCertificate),
+              InstallCertificateStatusEnum::Rejected);
+}
+
+TEST_F(RootCertificateInstallationTest, TheCsmsMayInstallARootCertificate) {
+    EXPECT_CALL(evse_security, install_ca_certificate(_, ocpp::CaCertificateType::CSMS))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+
+    EXPECT_EQ(install(ConnectionId::primary(), InstallCertificateUseEnum::CSMSRootCertificate),
+              InstallCertificateStatusEnum::Accepted);
+}
+
+TEST_F(RootCertificateInstallationTest, TheRuleIsAboutRootCertificatesRatherThanAboutSecondaryConnections) {
+    // A V2G root is not what section 3.4.3 protects: it is not what an OCPP connection is verified
+    // against. Whether a connection may send InstallCertificate at all remains the allow list's
+    // decision.
+    EXPECT_CALL(evse_security, install_ca_certificate(_, ocpp::CaCertificateType::V2G))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+
+    EXPECT_EQ(install(ConnectionId::secondary("EMS"), InstallCertificateUseEnum::V2GRootCertificate),
+              InstallCertificateStatusEnum::Accepted);
+}

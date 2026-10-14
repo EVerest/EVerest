@@ -180,6 +180,12 @@ public:
     std::int32_t get_security_profile() override;
     std::optional<std::int32_t> get_network_config_timeout() override;
     std::optional<WebsocketConnectionOptions> get_websocket_connection_options(std::int32_t slot) override;
+
+    /// \brief The root certificate network configuration slot \p slot names, if it names one.
+    ///
+    /// std::nullopt when the slot names none, or names one incompletely, in which case the whole
+    /// trust store is acceptable for that slot as it was before.
+    std::optional<ocpp::CertificateHashDataType> read_csms_root_certificate(std::int32_t slot);
     void set_active_security_profile(std::int32_t security_profile, const std::string& source) override;
     void set_active_network_profile_slot(std::int32_t slot, const std::string& source) override;
     std::optional<std::int32_t> get_active_network_profile_slot() override;
