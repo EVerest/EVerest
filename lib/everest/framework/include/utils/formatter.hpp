@@ -4,7 +4,7 @@
 #define UTILS_FORMATTER_HPP
 
 #include <atomic>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 #include <string>
 

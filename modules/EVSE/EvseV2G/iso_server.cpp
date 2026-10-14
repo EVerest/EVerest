@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2023 chargebyte GmbH
-// Copyright (C) 2023 Contributors to EVerest
+// Copyright (C) 2023 - 2026 Contributors to EVerest
 #include <cbv2g/common/exi_bitstream.h>
 #include <cbv2g/exi_v2gtp.h> //for V2GTP_HEADER_LENGTHs
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <everest/util/misc/change_tracker.hpp>
+#include <fmt/format.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>

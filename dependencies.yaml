@@ -174,7 +174,7 @@ date:
     ]
 libfmt:
   git: https://github.com/fmtlib/fmt.git
-  git_tag: 12.1.0
+  git_tag: 12.2.0
   cmake_condition: "EVEREST_BUILD_LIB_framework OR EVEREST_BUILD_LIB_helpers OR EVEREST_BUILD_LIB_run_application"
   options:
     [

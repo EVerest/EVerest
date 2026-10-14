@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"

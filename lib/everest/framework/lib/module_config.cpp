@@ -3,7 +3,7 @@
 
 #include <future>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>

@@ -3,6 +3,8 @@
 
 #include <exception>
 
+#include <fmt/format.h>
+
 #include <everest/logging.hpp>
 
 #include <utils/config.hpp>

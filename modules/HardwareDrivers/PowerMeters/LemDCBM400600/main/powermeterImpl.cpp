@@ -7,7 +7,7 @@
 #include "poll_scheduler.hpp"
 #include <chrono>
 #include <everest/logging.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <string>
 #include <thread>
 

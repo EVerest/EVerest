@@ -15,7 +15,7 @@
 #include "ocpp/v16/types.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>

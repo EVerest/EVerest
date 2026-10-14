@@ -5,6 +5,7 @@
 #define EVEREST_CORE_MODULE_ISAIEMDCRCONTROLLER_H
 
 #include "httpClientInterface.hpp"
+#include <fmt/format.h>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
 #include <mutex>

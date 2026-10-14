@@ -5,7 +5,7 @@
 #include "constants.hpp"
 
 #include <everest/logging.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 constexpr double MS_FACTOR = (1.0 / 60.0 / 60.0 / 1000.0);
 

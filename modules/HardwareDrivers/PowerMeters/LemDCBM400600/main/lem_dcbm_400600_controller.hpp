@@ -8,6 +8,7 @@
 #include "lem_dcbm_time_sync_helper.hpp"
 #include <chrono>
 #include <everest/util/async/monitor.hpp>
+#include <fmt/format.h>
 #include <functional>
 #include <generated/interfaces/powermeter/Implementation.hpp>
 #include <string>

@@ -13,7 +13,7 @@
 #include <utility>
 
 #include <date/date.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <utils/date.hpp>
 
 #include "everest/logging.hpp"

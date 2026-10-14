@@ -3,7 +3,7 @@
 
 #include "powermeterImpl.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module {
 namespace main {

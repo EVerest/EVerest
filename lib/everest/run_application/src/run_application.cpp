@@ -39,7 +39,7 @@ namespace everest_boost_process = boost::process;
 #include <variant>
 #include <vector>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <everest/logging.hpp>
 

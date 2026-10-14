@@ -8,7 +8,7 @@
 #include <utils/date.hpp>
 
 #include <everest_api_types/telemetry/json_codec.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "SessionLog.hpp"
 #include "energy_transfer_modes.hpp"

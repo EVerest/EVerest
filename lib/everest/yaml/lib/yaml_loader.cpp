@@ -8,7 +8,7 @@
 #include <limits>
 #include <stdexcept>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <ryml.hpp>
 #include <ryml_std.hpp>
 

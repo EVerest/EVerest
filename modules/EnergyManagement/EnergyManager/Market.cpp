@@ -3,7 +3,7 @@
 
 #include "Market.hpp"
 #include <everest/logging.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module {
 
