@@ -75,6 +75,14 @@ public:
     /// business and so are never withheld.
     [[nodiscard]] bool may_send(MessageType message_type) const;
 
+    /// \brief Whether this connection may send \p message_type to the charging station.
+    ///
+    /// The primary connection may send anything. A secondary connection may send only what its
+    /// DownstreamMsgs grants it (application note section 3.5); anything else is refused with a
+    /// CALLERROR. Responses are never subject to this: a response answers something the charging
+    /// station itself sent.
+    [[nodiscard]] bool may_receive(MessageType message_type) const;
+
     /// \brief Re-reads this connection's permissions from the device model.
     ///
     /// Called at startup and whenever the allow list changes, so that a CSMS granting or revoking a
@@ -105,6 +113,7 @@ private:
     /// Guarded: reloaded from the device model on a variable listener thread while dispatch reads
     /// it from every connection's receive thread.
     mutable everest::lib::util::monitor<std::set<MessageType>> m_upstream_msgs;
+    mutable everest::lib::util::monitor<std::set<MessageType>> m_downstream_msgs;
 };
 
 } // namespace v2

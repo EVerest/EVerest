@@ -689,7 +689,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             // A connection's allow list is meant to be changed at runtime by the CSMS, so granting
             // or revoking a message must take effect without a restart.
             if (component.name == ControllerComponents::OCPPCommCtrlr.name and component.instance.has_value() and
-                variable.name == ConnectionComponentVariables::UpstreamMsgs.name) {
+                (variable.name == ConnectionComponentVariables::UpstreamMsgs.name or
+                 variable.name == ConnectionComponentVariables::DownstreamMsgs.name)) {
                 if (auto* connection =
                         this->connection_registry.find(ConnectionId::secondary(component.instance.value().get()));
                     connection != nullptr) {
@@ -1197,6 +1198,19 @@ void ChargePoint::message_callback(const ConnectionId& connection_id, const std:
     enhanced_message.message_size = message.size();
     auto json_message = enhanced_message.message;
     this->logging->central_system(conversions::messagetype_to_string(enhanced_message.messageType), message);
+
+    // Application note section 3.5: a request a connection has not been granted is refused with a
+    // CALLERROR(SecurityError). Only requests are gated. A response is never refused, because it
+    // answers something the charging station itself chose to send.
+    if (enhanced_message.messageTypeId == MessageTypeId::CALL and
+        !connection->may_receive(enhanced_message.messageType)) {
+        const auto action = conversions::messagetype_to_string(enhanced_message.messageType);
+        EVLOG_warning << "Refusing " << action << " from " << connection_id.to_string()
+                      << ": not in its allowed downstream messages";
+        this->message_dispatcher->dispatch_call_error(CallError(
+            enhanced_message.uniqueId, "SecurityError", action + " is not allowed on this OCPP connection", json({})));
+        return;
+    }
 
     // Every connection delivers on its own websocket receive thread, but the functional blocks,
     // the device model, the EVSEs and the database behind them are shared and were written for a

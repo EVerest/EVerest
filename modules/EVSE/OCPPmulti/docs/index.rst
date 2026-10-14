@@ -1152,10 +1152,11 @@ Secondary OCPP connections
 
 .. warning::
 
-   Under construction. A secondary connection is discovered, dialled, and only
-   sent the messages it has been granted. It does not yet enforce
-   ``DownstreamMsgs`` or ``AllowSetVariables``, so do not yet grant one a
-   connection you would not trust with the whole device model.
+   Under construction. A secondary connection is discovered, dialled, and
+   restricted in both directions by its allow lists. ``AllowSetVariables`` is
+   not enforced yet, so a connection granted ``SetVariables`` can still change
+   any device model variable; do not grant it to a party you would not trust
+   with the whole device model.
 
 A **secondary OCPP connection** is an additional, deliberately limited OCPP
 connection kept alongside the primary CSMS connection, as described in the OCA
@@ -1202,7 +1203,7 @@ the station really does offer a secondary connection.
      - ``SecurityProfile`` (ReadOnly, EVerest extension)
    * - Messages the connection may send to the station
      - ``OCPPCommCtrlr`` / instance ``<name>``
-     - ``DownstreamMsgs`` (not enforced yet)
+     - ``DownstreamMsgs``
    * - Messages the station may send to the connection
      - ``OCPPCommCtrlr`` / instance ``<name>``
      - ``UpstreamMsgs``
@@ -1276,6 +1277,31 @@ status, clock, heartbeat interval, or an authorization the CSMS granted.
 For the Data Collection and HEMS use cases of the application note this is the
 whole upstream story: grant ``TransactionEvent`` and ``MeterValues`` and the
 secondary system receives a copy of each.
+
+What a secondary connection may send
+""""""""""""""""""""""""""""""""""""
+
+Nothing it has not been granted, again. ``DownstreamMsgs`` lists the requests a
+connection may make of the charging station, in the same spelling as
+``UpstreamMsgs``, and an absent or empty list means it may make none. A request
+outside the list is refused with ``CALLERROR(SecurityError)`` naming the message,
+and never reaches the charging station's logic. Responses are never refused: a
+response answers something the charging station itself chose to send.
+
+Nothing is special-cased about what a granted message does. Once the allow list
+lets a request through it takes exactly the same path as the same request from
+the CSMS, handled by the ordinary functional block, and its answer goes back to
+the connection that asked rather than to the CSMS. That includes the messages
+that control the charging station: grant ``ChangeAvailability``, ``Reset``,
+``UnlockConnector`` or ``RequestStartTransaction`` and the connection can do
+those things for real.
+
+Availability in particular is *station* state, not per-connection state. Every
+OCPP connection shares one enable/disable source towards the EVSE, so if the
+CSMS makes an EVSE inoperative and a secondary connection that has been granted
+``ChangeAvailability`` then makes it operative, operative is what it becomes.
+Whether a connection may do that at all is the allow list's decision; once it
+may, its command is as authoritative as any other.
 
 Observing the connections
 """""""""""""""""""""""""

@@ -48,8 +48,8 @@ station from reaching its CSMS.
 
 This is being implemented in steps. Right now the charging station discovers a configured secondary
 connection, validates it, reports it on the `connections` variable of the `ocpp` interface, dials
-it, and sends it only what `UpstreamMsgs` grants it. `DownstreamMsgs` and `AllowSetVariables` are
-not enforced yet, so do not yet grant a secondary connection to a party you would not trust with the
-whole device model. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr` and
+it, and restricts it in both directions with `UpstreamMsgs` and `DownstreamMsgs`.
+`AllowSetVariables` is not enforced yet, so a connection granted `SetVariables` can still change any
+device model variable; do not grant it to a party you would not trust with the whole device model. The instanced `AlignedDataCtrlr`, `SampledDataCtrlr`, `MonitoringCtrlr` and
 `SecurityCtrlr` components the application note also describes will be added together with the
 features that read them.

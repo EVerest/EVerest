@@ -46,14 +46,33 @@ void OcppConnection::reload_permissions() {
         return;
     }
 
-    const auto upstream = this->m_device_model
-                              .get_optional_value<std::string>(ConnectionComponentVariables::get_component_variable(
-                                  this->m_id, ConnectionComponentVariables::UpstreamMsgs))
-                              .value_or("");
-    auto parsed = parse_message_permissions(upstream);
+    const auto read = [this](const Variable& variable) {
+        return parse_message_permissions(
+            this->m_device_model
+                .get_optional_value<std::string>(
+                    ConnectionComponentVariables::get_component_variable(this->m_id, variable))
+                .value_or(""));
+    };
 
-    EVLOG_info << this->m_id.to_string() << " may be sent " << parsed.size() << " message type(s)";
-    *this->m_upstream_msgs.handle() = std::move(parsed);
+    auto upstream = read(ConnectionComponentVariables::UpstreamMsgs);
+    auto downstream = read(ConnectionComponentVariables::DownstreamMsgs);
+
+    EVLOG_info << this->m_id.to_string() << " may be sent " << upstream.size() << " message type(s) and may send "
+               << downstream.size();
+    *this->m_upstream_msgs.handle() = std::move(upstream);
+    *this->m_downstream_msgs.handle() = std::move(downstream);
+}
+
+bool OcppConnection::may_receive(const MessageType message_type) const {
+    if (this->m_id.is_primary()) {
+        return true;
+    }
+
+    // Default deny, as for may_send. Nothing is exempt here: unlike sending, there is no message a
+    // secondary connection needs to be able to send in order to keep its own link alive, and the
+    // link's own messages travel the other way.
+    auto handle = this->m_downstream_msgs.handle();
+    return handle->find(message_type) != handle->end();
 }
 
 const ConnectionId& OcppConnection::id() const {

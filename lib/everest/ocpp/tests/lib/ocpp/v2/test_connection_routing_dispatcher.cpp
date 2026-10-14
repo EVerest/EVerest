@@ -95,8 +95,16 @@ protected:
 
     /// Grants \p csv to the secondary connection and reloads it, as a CSMS write would.
     void grant_upstream(const std::string& csv) {
-        const auto cv = ConnectionComponentVariables::get_component_variable(
-            ConnectionId::secondary(SECONDARY_INSTANCE), ConnectionComponentVariables::UpstreamMsgs);
+        grant(ConnectionComponentVariables::UpstreamMsgs, csv);
+    }
+
+    void grant_downstream(const std::string& csv) {
+        grant(ConnectionComponentVariables::DownstreamMsgs, csv);
+    }
+
+    void grant(const Variable& variable, const std::string& csv) {
+        const auto cv =
+            ConnectionComponentVariables::get_component_variable(ConnectionId::secondary(SECONDARY_INSTANCE), variable);
         ASSERT_EQ(this->dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, csv, "test"),
                   SetVariableStatusEnum::Accepted);
         auto* connection = this->registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
@@ -428,6 +436,78 @@ TEST_F(ConnectionRoutingDispatcherTest, other_messages_are_copied_unchanged) {
     dispatcher.dispatch_call(call);
 
     EXPECT_EQ(to_secondary.at(CALL_PAYLOAD), call.at(CALL_PAYLOAD));
+}
+
+// --- the DownstreamMsgs allow list --------------------------------------------------------------
+
+TEST_F(ConnectionRoutingDispatcherTest, a_secondary_may_send_nothing_by_default) {
+    add_primary();
+    add_secondary();
+
+    auto* secondary = registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
+    ASSERT_NE(secondary, nullptr);
+
+    for (const auto message_type : {MessageType::Reset, MessageType::SetChargingProfile, MessageType::SetVariables,
+                                    MessageType::ChangeAvailability, MessageType::RequestStartTransaction}) {
+        EXPECT_FALSE(secondary->may_receive(message_type));
+    }
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, a_secondary_may_send_what_it_was_granted) {
+    add_primary();
+    add_secondary();
+    grant_downstream("SetChargingProfile,ClearChargingProfile,GetCompositeSchedule");
+
+    auto* secondary = registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
+    ASSERT_NE(secondary, nullptr);
+
+    EXPECT_TRUE(secondary->may_receive(MessageType::SetChargingProfile));
+    EXPECT_TRUE(secondary->may_receive(MessageType::ClearChargingProfile));
+    EXPECT_TRUE(secondary->may_receive(MessageType::GetCompositeSchedule));
+    // Not granted, so still refused.
+    EXPECT_FALSE(secondary->may_receive(MessageType::Reset));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, granting_a_control_message_is_all_it_takes) {
+    add_primary();
+    add_secondary();
+    // Nothing about controlling the charging station is special-cased: it is granted like anything
+    // else, and then handled by the ordinary functional block.
+    grant_downstream("ChangeAvailability,Reset,RequestStartTransaction");
+
+    auto* secondary = registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
+    ASSERT_NE(secondary, nullptr);
+
+    EXPECT_TRUE(secondary->may_receive(MessageType::ChangeAvailability));
+    EXPECT_TRUE(secondary->may_receive(MessageType::Reset));
+    EXPECT_TRUE(secondary->may_receive(MessageType::RequestStartTransaction));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, the_primary_may_send_anything) {
+    add_primary();
+
+    auto* primary = registry.find(ConnectionId::primary());
+    ASSERT_NE(primary, nullptr);
+
+    // The primary connection is the authoritative one and has no allow list at all.
+    EXPECT_TRUE(primary->may_receive(MessageType::Reset));
+    EXPECT_TRUE(primary->may_receive(MessageType::SetVariables));
+}
+
+TEST_F(ConnectionRoutingDispatcherTest, the_two_allow_lists_are_independent) {
+    add_primary();
+    add_secondary();
+    grant_upstream("MeterValues");
+    grant_downstream("SetChargingProfile");
+
+    auto* secondary = registry.find(ConnectionId::secondary(SECONDARY_INSTANCE));
+    ASSERT_NE(secondary, nullptr);
+
+    // What a connection may be sent says nothing about what it may send, and the other way round.
+    EXPECT_TRUE(secondary->may_send(MessageType::MeterValues));
+    EXPECT_FALSE(secondary->may_receive(MessageType::MeterValues));
+    EXPECT_TRUE(secondary->may_receive(MessageType::SetChargingProfile));
+    EXPECT_FALSE(secondary->may_send(MessageType::SetChargingProfile));
 }
 
 // --- registry -----------------------------------------------------------------------------------
