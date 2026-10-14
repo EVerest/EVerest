@@ -3,6 +3,7 @@
 #ifndef UTILS_ERROR_HPP
 #define UTILS_ERROR_HPP
 
+#include <optional>
 #include <string>
 
 #include <utils/date.hpp>
@@ -54,6 +55,14 @@ std::string state_to_string(const State& s);
 State string_to_state(const std::string& s);
 
 ///
+/// \brief The value that caused an error
+///
+struct CausedByValue {
+    /// the value itself, as the raising entity would print it
+    std::string actual_value;
+};
+
+///
 /// \brief The Error struct represents an error object
 ///
 struct Error {
@@ -79,6 +88,8 @@ struct Error {
     time_point timestamp;
     UUID uuid;
     State state;
+    /// unset when the raising entity named no value
+    std::optional<CausedByValue> caused_by_value;
 };
 
 using ErrorHandle = UUID;

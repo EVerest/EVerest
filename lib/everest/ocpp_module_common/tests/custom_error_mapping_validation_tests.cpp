@@ -110,11 +110,16 @@ TEST(ErrorMappingValuesTest, WarnsAboutStaticCodeOverOcppLimit) {
 }
 
 TEST(ErrorMappingValuesTest, WarnsAboutUnknownPlaceholder) {
-    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actual_value} deg"}}})");
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actal_value} deg"}}})");
     const auto finding = single(validate_values(mapping));
     EXPECT_EQ(finding.level, Finding::Level::Warning);
     EXPECT_EQ(finding.pointer, "/generic~1VendorError/v2/tech_info");
-    EXPECT_THAT(finding.message, HasSubstr("${actual_value}"));
+    EXPECT_THAT(finding.message, HasSubstr("${actal_value}"));
+}
+
+TEST(ErrorMappingValuesTest, AcceptsTheActualValuePlaceholder) {
+    const auto mapping = mapping_of(R"({"generic/VendorError": {"v2": {"tech_info": "at ${actual_value} deg"}}})");
+    EXPECT_TRUE(validate_values(mapping).empty());
 }
 
 TEST(ErrorMappingValuesTest, WarnsAboutUnterminatedPlaceholder) {
