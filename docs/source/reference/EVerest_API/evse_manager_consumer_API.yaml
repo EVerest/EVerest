@@ -254,6 +254,11 @@ channels:
     messages:
       receive_reply_get_supported_energy_transfer_modes:
         $ref: '#/components/messages/receive_reply_get_supported_energy_transfer_modes'
+  receive_all_errors_cleared:
+    address: 'e2m/all_errors_cleared'
+    messages:
+      receive_all_errors_cleared:
+        $ref: '#/components/messages/receive_all_errors_cleared'
 
   ########## evse_board_support
   receive_ac_nr_of_phases_available:
@@ -791,6 +796,11 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_get_supported_energy_transfer_modes'
+  receive_all_errors_cleared:
+    title: 'Receive all errors cleared event'
+    action: receive
+    channel:
+      $ref: '#/channels/receive_all_errors_cleared'
 
   ########## evse_board_support
   receive_ac_nr_of_phases_available:
@@ -1658,6 +1668,15 @@ components:
         oneOf:
           - $ref: '#/components/schemas/SupportedEnergyTransferModeList'
           - type: 'null'
+    receive_all_errors_cleared:
+      name: receive_all_errors_cleared
+      title: 'Receive all errors cleared event'
+      summary: >-
+        Emits true whenever the active error count of this EVSE and all hardware modules
+        it depends on reaches zero. May be published repeatedly.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/AllErrorsCleared'
 
     ########## evse_board_support
     receive_ac_nr_of_phases_available:
@@ -2034,6 +2053,12 @@ components:
 
 
   schemas:
+    AllErrorsCleared:
+      description: >-
+        Signals that no errors (including ones that do not prevent charging) are currently
+        active on this EVSE or any of the hardware modules it depends on. Published every
+        time the active error count reaches zero, which can happen repeatedly.
+      type: boolean
     AuthorizationEvent:
       description: Context for authorization event (Authorized or Deauthorized)
       type: object
