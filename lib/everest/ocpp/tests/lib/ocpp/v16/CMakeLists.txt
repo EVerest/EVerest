@@ -25,6 +25,13 @@ target_sources(libocpp_unit_tests PRIVATE
         test_message_queue.cpp
         test_charge_point_state_machine.cpp
         test_composite_schedule.cpp
+<<<<<<< HEAD
+=======
+        test_charge_point_connectivity.cpp
+        test_devicemodel_connectivity.cpp
+        test_charge_point_status_notification.cpp
+        test_charge_point_suspend_reason.cpp
+>>>>>>> 3b4ab6e (fix(ocpp): do not drop StatusNotification at 0 s (#2836))
         test_config_validation.cpp
         utils_tests.cpp
         test_configuration.cpp
