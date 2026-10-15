@@ -2289,6 +2289,11 @@ void EvseManager::cable_check() {
                 return;
             }
 
+            if (cable_check_should_exit()) {
+                fail_cable_check("Cancel cable check");
+                return;
+            }
+
             selftest_result.clear();
             r_imd[0]->call_start_self_test(config.cable_check_relays_open_voltage_V);
             EVLOG_info << "CableCheck: Early IMD self test started.";
@@ -2404,6 +2409,11 @@ void EvseManager::cable_check() {
 
         charger->get_stopwatch().mark("VRampUp");
 
+        if (cable_check_should_exit()) {
+            fail_cable_check("Cancel cable check");
+            return;
+        }
+
         // CC 4.1.3: Now relais are closed, voltage is up. We need to perform a self test of the IMD device
         if (config.cable_check_enable_imd_self_test) {
             if (not config.cable_check_enable_imd_self_test_relays_open) {
@@ -2452,7 +2462,13 @@ void EvseManager::cable_check() {
                        << " isolation measurement sample(s)";
             // Wait for N isolation measurement values
             for (int i = 0; i < config.cable_check_wait_number_of_imd_measurements; i++) {
-                if (not isolation_measurement.wait_for(m, 5s) or cable_check_should_exit()) {
+                const bool measurement_received = isolation_measurement.wait_for(m, 5s);
+                if (cable_check_should_exit()) {
+                    imd_stop();
+                    fail_cable_check("Cancel cable check");
+                    return;
+                }
+                if (not measurement_received) {
                     imd_stop();
                     fail_cable_check("CableCheck: Did not receive isolation measurement from IMD within 5 seconds.");
                     return;
