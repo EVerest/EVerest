@@ -83,6 +83,7 @@ option(EVEREST_ENABLE_DEBUG_BUILD "Enable debug build" OFF)
 # pytest workers would otherwise clobber shared .gcda files in the build tree.
 option(EVEREST_ENABLE_COVERAGE "Enable code coverage instrumentation and coverage targets" OFF)
 option(EVEREST_BUILD_APPLICATIONS "Build applications like drivers for the EVerest stable API" ON)
+option(EVEREST_BUILD_API_CLIENTS "Generate and build Python client packages for the EVerest API modules" OFF)
 option(EVEREST_LIBS_ONLY "Only build libraries, skip modules/applications/config" OFF)
 option(EVEREST_IO_WITH_MQTT "Build MQTT (mosquitto) support in everest::io" ON)
 set(EVEREST_INCLUDE_LIBS "" CACHE STRING "Semicolon-separated allowlist of libraries to build (empty = all)")

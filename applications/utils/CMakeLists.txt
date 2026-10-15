@@ -24,6 +24,17 @@ ev_add_pip_package(
 
 add_subdirectory(everest-testing)
 
+# interactive client for the EVerest API modules; generates one python client
+# package per API from its AsyncAPI spec using the in-tree Python generator
+# everest-api-client-gen (no npm/asyncapi toolchain)
+if(EVEREST_ENABLE_PY_SUPPORT AND EVEREST_BUILD_API_CLIENTS)
+    ev_add_pip_package(
+        NAME everest-api-client-gen
+        SOURCE_DIRECTORY everest-api-client-gen
+    )
+    add_subdirectory(everest-api-client)
+endif()
+
 # client for the management APIs; the management API tests import it
 if(EVEREST_CORE_BUILD_TESTING)
     ev_add_pip_package(

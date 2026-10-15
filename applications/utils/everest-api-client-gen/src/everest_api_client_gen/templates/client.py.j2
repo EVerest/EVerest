@@ -1,0 +1,116 @@
+from types import SimpleNamespace
+import threading
+import paho.mqtt.client as mqtt
+
+class _MQTTHelper:
+
+  def __init__(self, client: mqtt.Client, topics):
+    self._client = client
+    self._client.on_message = self._on_message
+    self._topics = topics
+    self._callbacks = {}
+    self._buffer = {}
+    self._events = {}
+
+    for topic in self._topics:
+      key = topic[:-2] if topic.endswith("+") else topic
+      self._client.subscribe(topic)
+      self._callbacks[key] = None
+      self._buffer[key] = []
+      self._events[key] = threading.Event()
+
+  def _on_message(self, client, userdata, message):
+    for key in self._buffer.keys():
+      if key in message.topic:
+        self._buffer[key].append(message.payload)
+        self._events[key].set()
+        if self._callbacks[key] is not None:
+          self._callbacks[key](message.payload)
+        return
+
+  def register_callback(self, topic, callback):
+    self._callbacks[topic] = callback
+
+  def read_and_clear_buffer(self, topic):
+    buffer = self._buffer[topic]
+    self._buffer[topic] = []
+    return buffer
+
+  def wait_for_message(self, topic, timeout=None):
+    while len(self._buffer[topic]) == 0:
+      if not self._events[topic].wait(timeout):
+        return None
+      self._events[topic].clear()
+    return self._buffer[topic].pop(0)
+
+class _SendOperationFunctions:
+  "This class is used to publish messages to the MQTT broker"
+
+  def __init__(self, client: mqtt.Client, topic):
+    self._client = client
+    self._topic = topic
+
+  def publish(self, data):
+    "Publishes data to the MQTT broker"
+    self._client.publish(self._topic, data)
+
+class _SendOperationFunctionsDynamicTopic:
+  "This class is used to publish messages to the MQTT broker"
+
+  def __init__(self, client: mqtt.Client):
+    self._client = client
+
+  def publish(self, topic, data):
+    "Publishes data to the MQTT broker"
+    self._client.publish(topic, data)
+
+class _ReceiveOperationFunctions:
+  "This class is used to receive messages from the MQTT broker"
+
+  def __init__(self, mqtt_helper: _MQTTHelper, topic):
+    self._mqtt_helper = mqtt_helper
+    self._topic = topic
+
+  def register_callback(self, callback):
+    "Registers a callback function to be called when a message is received on the topic"
+    self._mqtt_helper.register_callback(self._topic, callback)
+
+  def wait_for_message(self):
+    "Waits for a message to be received on the topic and returns it"
+    return self._mqtt_helper.wait_for_message(self._topic)
+
+  def read_and_clear_buffer(self):
+    "Reads and clears the buffer of messages received on the topic"
+    return self._mqtt_helper.read_and_clear_buffer(self._topic)
+
+class {{ model.class_name }}:
+
+  def __init__(self, connected_mqtt_client: mqtt.Client, mqtt_prefix: str, module_id: str):
+
+    self._client = connected_mqtt_client
+    self._mqtt_prefix =  f'{ mqtt_prefix }{{ model.pathname }}'
+    topics = {
+{% for op in model.recv_ops %}
+      f'{ self._mqtt_prefix }/{{ model.subscribe_topic(op) }}',
+{% endfor %}
+    }
+    self._mqtt_helper = _MQTTHelper(self._client, topics)
+
+    self._initialize_send_operations()
+    self._initialize_receive_operations()
+
+  def _initialize_send_operations(self):
+    self.send = SimpleNamespace()
+{% for op in model.send_ops %}
+{% if op.is_reply %}
+    self.send.{{ op.op_id }} = _SendOperationFunctionsDynamicTopic(self._client)
+{% else %}
+    self.send.{{ op.op_id }} = _SendOperationFunctions(self._client, f'{ self._mqtt_prefix }/{{ op.address }}')
+{% endif %}
+{% endfor %}
+
+  def _initialize_receive_operations(self):
+    self.receive = SimpleNamespace()
+{% for op in model.recv_ops %}
+    self.receive.{{ op.op_id }} = _ReceiveOperationFunctions(self._mqtt_helper, f'{ self._mqtt_prefix }/{{ model.receive_topic(op) }}')
+{% endfor %}
