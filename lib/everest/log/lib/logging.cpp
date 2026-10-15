@@ -1,10 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#ifdef LIBLOG_USE_BOOST_FILESYSTEM
-#include <boost/filesystem.hpp>
-#else
-#include <filesystem>
-#endif
 #include <boost/log/attributes/current_process_id.hpp>
 #include <boost/log/attributes/current_process_name.hpp>
 #include <boost/log/attributes/current_thread_id.hpp>
@@ -23,6 +18,7 @@
 #include <boost/log/utility/setup/from_stream.hpp>
 #include <boost/log/utility/setup/settings.hpp>
 #include <boost/log/utility/setup/settings_parser.hpp>
+#include <filesystem>
 #include <fstream>
 
 #include <everest/exceptions.hpp>
@@ -36,11 +32,7 @@
         throw(exception);                                                                                              \
     } while (0);
 
-#ifdef LIBLOG_USE_BOOST_FILESYSTEM
-namespace fs = boost::filesystem;
-#else
 namespace fs = std::filesystem;
-#endif
 namespace logging = boost::log::BOOST_LOG_VERSION_NAMESPACE;
 namespace attrs = logging::attributes;
 namespace expr = logging::expressions;

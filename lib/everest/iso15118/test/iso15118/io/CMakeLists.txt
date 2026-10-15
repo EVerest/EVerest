@@ -35,7 +35,7 @@ catch_discover_tests(test_sdp_server)
 add_executable(ssl_config_builder_test ssl_config_builder_test.cpp)
 target_link_libraries(ssl_config_builder_test
     PRIVATE
-        iso15118::iso15118
+        everest::iso15118
         everest::tls
         Catch2::Catch2WithMain
 )
@@ -55,7 +55,7 @@ target_sources(connection_openssl_test
 )
 target_link_libraries(connection_openssl_test
     PRIVATE
-        iso15118::iso15118
+        everest::iso15118
         Catch2::Catch2WithMain
         OpenSSL::SSL
         OpenSSL::Crypto

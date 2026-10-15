@@ -22,9 +22,9 @@ target_sources(${CONNECTION_HANDLE_TEST_NAME} PRIVATE
 
 target_link_libraries(${CONNECTION_HANDLE_TEST_NAME} PRIVATE
     GTest::gtest_main
-    cbv2g::din
-    cbv2g::iso2
-    cbv2g::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::framework
     everest::evse_security
     everest::tls

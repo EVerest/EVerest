@@ -9,7 +9,7 @@ target_sources(test_fsm_state_b
 
 target_link_libraries(test_fsm_state_b
     PRIVATE
-        ieee2030::ieee2030
+        everest::ieee2030
         Catch2::Catch2WithMain
 )
 

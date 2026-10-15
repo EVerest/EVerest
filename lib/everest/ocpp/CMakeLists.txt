@@ -1,21 +1,12 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(ocpp
     VERSION 0.31.1
     DESCRIPTION "A C++ implementation of the Open Charge Point Protocol"
     LANGUAGES CXX
 )
 
-find_package(everest-cmake 0.1 REQUIRED
-    PATHS ../everest-cmake
-)
-
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 option(LIBOCPP16_BUILD_EXAMPLES "Build charge_point binary" OFF)
-option(OCPP_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 option(LIBOCPP_ENABLE_DEPRECATED_WEBSOCKETPP "Websocket++ has been removed from the project" OFF)
 
 option(LIBOCPP_ENABLE_V16 "Enable OCPP 1.6 in the ocpp library" ON)
@@ -29,35 +20,17 @@ if(LIBOCPP_ENABLE_DEPRECATED_WEBSOCKETPP)
     message(FATAL_ERROR "Websocket++ has been removed")
 endif()
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(LIBOCPP_BUILD_TESTING ON)
-endif()
-
-if(LIBOCPP_BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
+if(BUILD_TESTING AND EVEREST_ENABLE_COVERAGE)
     evc_include(CodeCoverage)
     append_coverage_compiler_flags()
-endif()
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # dependencies
 find_package(Boost COMPONENTS program_options thread REQUIRED)
 find_package(SQLite3 REQUIRED)
-if(NOT TARGET SQLite3::SQLite3) # CMake < 4.3
-  set_target_properties(SQLite::SQLite3 PROPERTIES IMPORTED_GLOBAL TRUE)
-  add_library(SQLite3::SQLite3 ALIAS SQLite::SQLite3)
-endif()
 find_package(OpenSSL 3 REQUIRED)
 
-if(NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(OCPP_INSTALL OFF)
-else()
+if(DISABLE_EDM)
     find_package(date REQUIRED)
     find_package(nlohmann_json REQUIRED)
     find_package(nlohmann_json_schema_validator REQUIRED)
@@ -73,33 +46,20 @@ add_subdirectory(config/v2)
 add_subdirectory(lib)
 
 # packaging
-if (OCPP_INSTALL)
-    install(
-        TARGETS ocpp
-        EXPORT ocpp-targets
-    )
+install(
+    TARGETS ocpp
+    EXPORT everest-ocpp-targets
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-    )
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
 
-    install(
-        DIRECTORY 3rd_party/
-        TYPE INCLUDE
-    )
-
-    evc_setup_package(
-        NAME everest-ocpp
-        NAMESPACE everest
-        EXPORT ocpp-targets
-        ADDITIONAL_CONTENT
-            "find_dependency(everest-util)"
-            "find_dependency(OpenSSL)"
-            "find_dependency(SQLite3)"
-            "find_dependency(libwebsockets)"
-    )
-endif()
+install(
+    DIRECTORY 3rd_party/
+    TYPE INCLUDE
+)
 
 
 if(LIBOCPP16_BUILD_EXAMPLES)
@@ -129,8 +89,7 @@ if(CMAKE_RUN_CLANG_TIDY)
     -export-fixes=clang-tidy-fixes.yaml)
 endif()
 
-if(LIBOCPP_BUILD_TESTING)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
 

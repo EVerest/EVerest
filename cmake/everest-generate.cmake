@@ -931,6 +931,12 @@ function(ev_install_project)
             EVEREST_DATADIR
     )
 
+    write_basic_package_version_file(
+        ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config-version.cmake
+        VERSION ${PROJECT_VERSION}
+        COMPATIBILITY SameMinorVersion
+    )
+
     install(
         EXPORT everest-core-targets
         FILE "everest-core-targets.cmake"
@@ -941,6 +947,7 @@ function(ev_install_project)
     install(
         FILES
             ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config.cmake
+            ${CMAKE_CURRENT_BINARY_DIR}/${LIBRARY_PACKAGE_NAME}-config-version.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/everest-generate.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/ev-cli.cmake
             ${EV_CORE_CMAKE_SCRIPT_DIR}/project-config.cmake.in
@@ -952,6 +959,19 @@ function(ev_install_project)
         DESTINATION
             ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
     )
+
+    install(
+        DIRECTORY ${EV_CORE_CMAKE_SCRIPT_DIR}/assets
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${LIBRARY_PACKAGE_NAME}
+        PATTERN BUILD.bazel EXCLUDE
+    )
+
+    if(TARGET everest_system)
+        install(
+            FILES ${EV_CORE_CMAKE_SCRIPT_DIR}/compat/everest-everest_system-config.cmake
+            DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/everest-everest_system
+        )
+    endif()
 
     # the project_info sources are shipped as build assets, because consuming projects need to
     # compile them against their own generated version information

@@ -1,15 +1,3 @@
-cmake_minimum_required(VERSION 3.16)
-
-# MQTT support in everest::io is mandatory for this application. everest::io exports no property to
-# query it, so the cache variable (declared in the top level CMakeLists.txt, default ON) is the only
-# signal; if it is not defined at all, MQTT support is assumed to be present. As with ftxui below,
-# skip only this application instead of failing the whole project configuration.
-if(DEFINED EVEREST_IO_WITH_MQTT AND NOT EVEREST_IO_WITH_MQTT)
-    message(WARNING "Not building pionix_chargebridge because everest::io is built without MQTT support. "
-            "Set EVEREST_IO_WITH_MQTT=ON or disable EVEREST_BUILD_APPLICATIONS.")
-    return()
-endif()
-
 # ftxui powers the interactive terminal status UI and is mandatory for this application. It is
 # provided either by the dependency manager (EVEREST_DEPENDENCY_ENABLED_FTXUI) or, for system
 # dependency builds, by find_package(ftxui 6 QUIET) in the top level CMakeLists.txt. If it is not
@@ -86,12 +74,7 @@ add_custom_command(
 )
 
 
-# GTest is pulled in by the dependency manager only under EVEREST_CORE_BUILD_TESTING, which is not
-# implied by BUILD_TESTING when this project is configured as a dependency. As with ftxui above, skip
-# the tests with a warning instead of failing the configuration.
-if(BUILD_TESTING AND NOT TARGET GTest::gtest_main)
-    message(WARNING "Not building the pionix_chargebridge tests because GTest is not available.")
-elseif(BUILD_TESTING)
+if(BUILD_TESTING)
     # The carrier decision and the uptime reboot detection are pure functions in headers, so this
     # needs neither the application's objects nor any of its dependencies - only the include paths for
     # the headers and the mirrored protocol definitions they read CbLinkTechnology from.

@@ -83,7 +83,7 @@ function(add_libocpp_unittest)
     target_link_libraries(${arg_NAME} PRIVATE
         SQLite3::SQLite3
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         date::date-tz
         everest::log
         everest::util

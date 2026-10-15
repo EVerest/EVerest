@@ -14,18 +14,6 @@ target_link_libraries(everest_sqlite
         SQLite3::SQLite3
 )
 
-if (EVEREST_SQLITE_USE_BOOST_FILESYSTEM)
-    find_package(Boost REQUIRED COMPONENTS filesystem)
-    target_link_libraries(everest_sqlite
-        PRIVATE
-            Boost::filesystem
-    )
-    target_compile_definitions(everest_sqlite
-        PRIVATE
-            EVEREST_SQLITE_USE_BOOST_FILESYSTEM
-    )
-endif()
-
 target_include_directories(everest_sqlite
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>

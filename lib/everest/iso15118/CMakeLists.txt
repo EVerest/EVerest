@@ -1,86 +1,31 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(iso15118
     VERSION 0.9.1
     DESCRIPTION "iso15118 library suite"
 	LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.5
-    PATHS ../everest-cmake
-    NO_DEFAULT_PATH
-)
-find_package(everest-cmake 0.5)
-
 find_package(OpenSSL 3 REQUIRED)
 
-if (NOT everest-cmake_FOUND)
-    message(STATUS "Retrieving everest-cmake using FetchContent")
-    include(FetchContent)
-    FetchContent_Declare(
-        everest-cmake
-        GIT_REPOSITORY https://github.com/EVerest/everest-cmake.git
-        GIT_TAG        v0.5.3
-    )
-    FetchContent_MakeAvailable(everest-cmake)
-    set(everest-cmake_DIR "${everest-cmake_SOURCE_DIR}")
-    include("${everest-cmake_SOURCE_DIR}/everest-cmake-config.cmake")
-endif()
-
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
-option(ISO15118_INSTALL "Enable install target" ${EVC_MAIN_PROJECT})
-option(DISABLE_ISO15118_LOCAL_DEPENDENCIES "Disable local dependency lookup for libiso15118" OFF)
-option(ISO15118_USE_EXPORTED_BUILD "Use (experimental) exported build of libiso15118" OFF)
-option(${PROJECT_NAME}_USE_PYTHON_VENV "Use python venv for pip install targets" ON)
-
-if(${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME})
-    if(ISO15118_USE_EXPORTED_BUILD)
-        include(cmake/exported-build.cmake)
-    else()
-        include(cmake/local-build.cmake)
-    endif()
-endif()
 
 # list of compile options
 set(ISO15118_COMPILE_OPTIONS_WARNING "-Wall;-Wextra;-Wno-unused-function;-Werror" CACHE STRING "A list of compile options used")
 message(STATUS "Building libiso15118 with the following compile options: ${ISO15118_COMPILE_OPTIONS_WARNING}")
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(ISO15118_BUILD_TESTING ON)
-endif()
-
-# dependencies
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(ISO15118_INSTALL OFF)
-endif()
-
 add_subdirectory(src)
 
-if (ISO15118_BUILD_TESTING)
-    include(CTest)
+if (BUILD_TESTING)
     add_subdirectory(test)
 endif()
 
-if (ISO15118_INSTALL)
-    install(
-        TARGETS
-            iso15118
-        EXPORT iso15118-targets
-    )
+install(
+    TARGETS
+        iso15118
+    EXPORT everest-iso15118-targets
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-        PATTERN "detail" EXCLUDE
-    )
-
-    evc_setup_package(
-        NAME iso15118
-        EXPORT iso15118-targets
-        NAMESPACE iso15118
-    )
-endif()
+# detail headers included too: modules/EVSE/Evse15118D20 uses iso15118/detail/d20/config_validation.hpp
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)
