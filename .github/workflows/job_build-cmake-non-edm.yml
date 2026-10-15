@@ -1,0 +1,57 @@
+name: Build with CMake without EDM
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build_kit_artifact_name:
+        description: 'The name of the build kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to build in'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
+        required: false
+        default: '.ci/build-kit/scripts'
+        type: string
+
+jobs:
+  build-cmake-non-edm:
+    name: sysroot + build
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_kit_artifact_name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          path: source
+      - name: Setup run scripts
+        run: |
+          mkdir scripts
+          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
+      - name: Build the dependencies into a sysroot
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name setup-sysroot-container \
+          build-kit run-script setup_sysroot
+      - name: Compile and install without EDM
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name compile-non-edm-container \
+          build-kit run-script compile_non_edm
