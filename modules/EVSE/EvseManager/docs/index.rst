@@ -326,6 +326,17 @@ To enable PnC the config option ``payment_enable_contract`` must be set to
 true. If the car selects Contract instead of EIM PnC will be used instead of
 Autocharge.
 
+Some EVs use PnC for the authorization only and never enter the HLC charging
+loop: they close the TCP connection or send a SessionStop afterwards and expect
+basic charging. EvseManager keeps the 5 % duty cycle (or X1 after an X1 start)
+and the session until the data link ends, which the ISO 15118 stack bounds with
+``V2G_SECC_Sequence_Timeout``. The end of the link then switches to the nominal
+duty cycle with the authorization kept: through X1 and E/F for a lost link
+(D-LINK_ERROR, [V2G3-M07-04], [V2G3-M07-05]), through E/F for a
+SessionStop(Terminate).
+In X1 without a data link, e.g. once the matching retries are exhausted, a PnC
+authorization switches to the nominal duty cycle directly.
+
 Reservation
 -----------
 

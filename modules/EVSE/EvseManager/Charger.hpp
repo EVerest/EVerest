@@ -219,6 +219,9 @@ public:
     types::iso15118::DcEvseMinimumLimits get_evse_min_hlc_limits();
 
     void dlink_pause();
+    // AC HLC session authorized by PnC whose EV never started the charging loop: the data link ending is
+    // the EV asking for basic charging.
+    bool pnc_without_charging_loop() const;
     void dlink_error();
     // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
     // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
@@ -630,6 +633,8 @@ private:
     // after the wake-up sequence.
     static constexpr int STAY_IN_X1_AFTER_TSTEP_EF_MS = 750;
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
+    // EIM after plug-in with matching already started: time given to the HLC session to reach the charging loop
+    // before the switch to nominal PWM. A PnC authorization waits for the end of the data link instead.
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
     // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the
