@@ -29,23 +29,6 @@ target_link_libraries(ocpp_evse_security
         everest::framework
 )
 
-if (DISABLE_EDM)
-    install(
-        TARGETS ocpp_evse_security
-        EXPORT everest-core-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    )
-    evc_setup_package_no_export(
-        NAME everest-ocpp-evse-security
-        LIBRARY_NAME ocpp_evse_security
-        NAMESPACE everest
-        TYPE STATIC
-    )
-endif()
-
 
 # OCPP conversions
 
@@ -76,26 +59,4 @@ target_link_libraries(ocpp_conversions
     PRIVATE
         everest::ocpp
         everest::framework
-)
-
-if (DISABLE_EDM)
-    install(
-        TARGETS ocpp_conversions
-        EXPORT everest-core-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    )
-    evc_setup_package_no_export(
-        NAME everest-ocpp-conversions
-        LIBRARY_NAME ocpp_conversions
-        NAMESPACE everest
-        TYPE STATIC
-    )
-endif()
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
 )

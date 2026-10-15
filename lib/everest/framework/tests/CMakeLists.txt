@@ -1,7 +1,3 @@
-if(NOT DISABLE_EDM)
-    list(APPEND CMAKE_MODULE_PATH ${CPM_PACKAGE_catch2_SOURCE_DIR}/extras)
-endif()
-
 include(Catch)
 
 set(TEST_TARGET_NAME ${PROJECT_NAME}_tests)

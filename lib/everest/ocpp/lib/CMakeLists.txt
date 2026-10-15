@@ -160,8 +160,6 @@ endif()
 
 add_subdirectory(ocpp/common/websocket)
 
-option(LIBOCPP_USE_BOOST_FILESYSTEM "Usage of boost/filesystem.hpp instead of std::filesystem" OFF)
-
 target_include_directories(ocpp
     PUBLIC
         $<BUILD_INTERFACE:${PROJECT_SOURCE_DIR}/include>
@@ -221,7 +219,7 @@ target_link_libraries(ocpp
     PUBLIC
         everest::timer
         everest::util
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         everest::evse_security
         websockets_shared
         everest::sqlite
@@ -234,18 +232,6 @@ target_link_libraries(ocpp
         ryml::ryml
         date::date-tz
 )
-
-if(LIBOCPP_USE_BOOST_FILESYSTEM)
-    find_package(Boost REQUIRED COMPONENTS filesystem)
-    target_link_libraries(ocpp
-        PRIVATE
-            Boost::filesystem
-    )
-    target_compile_definitions(ocpp
-        PRIVATE
-            LIBOCPP_USE_BOOST_FILESYSTEM
-    )
-endif()
 
 target_link_libraries(ocpp
     PUBLIC

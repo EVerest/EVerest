@@ -25,17 +25,6 @@ target_link_libraries(everest_log
         Boost::log_setup
 )
 
-if (LIBLOG_USE_BOOST_FILESYSTEM)
-    target_link_libraries(everest_log
-        PRIVATE
-            Boost::filesystem
-    )
-    target_compile_definitions(everest_log
-        PRIVATE
-            LIBLOG_USE_BOOST_FILESYSTEM
-    )
-endif()
-
 # FIXME (aw): in case FindBoost.cmake was used we need to add things
 #             this should be removed no support for Boost < 1.74 is needed
 if (NOT Boost_DIR)

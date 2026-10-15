@@ -1,5 +1,3 @@
-cmake_minimum_required(VERSION 3.14)
-
 project(everest-utils
     VERSION 0.7.3
     DESCRIPTION "A collection of utilities for the EVerest project"
@@ -25,7 +23,7 @@ ev_add_pip_package(
 add_subdirectory(everest-testing)
 
 # client for the management APIs; the management API tests import it
-if(EVEREST_CORE_BUILD_TESTING)
+if(EVEREST_TEST_RUNTIME)
     ev_add_pip_package(
         NAME everest-management-api-cli
         SOURCE_DIRECTORY everest-management-api-cli

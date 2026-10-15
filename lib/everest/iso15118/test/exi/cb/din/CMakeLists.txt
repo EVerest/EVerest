@@ -5,7 +5,7 @@ function(create_din_exi_test_target NAME)
     target_link_libraries(test_din_exi_${NAME}
         PRIVATE
             iso15118
-            cbv2g::din
+            everest::cbv2g::din
             Catch2::Catch2WithMain
     )
     catch_discover_tests(test_din_exi_${NAME})

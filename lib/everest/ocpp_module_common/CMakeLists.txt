@@ -49,37 +49,19 @@ configure_file(
 )
 target_sources(ocpp_module_common PRIVATE "${CUSTOM_ERROR_MAPPING_SCHEMA_GENERATED}")
 
+if(DISABLE_EDM)
+    find_package(nlohmann_json_schema_validator REQUIRED)
+endif()
+
 target_link_libraries(ocpp_module_common
     PUBLIC
         everest::ocpp
         everest::framework
     PRIVATE
         everest::ocpp_conversions
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
 )
 
-if (DISABLE_EDM)
-    install(
-        TARGETS ocpp_module_common
-        EXPORT everest-core-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    )
-    evc_setup_package_no_export(
-        NAME everest-ocpp-module-common
-        LIBRARY_NAME ocpp_module_common
-        NAMESPACE everest
-        TYPE STATIC
-    )
-endif()
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()
