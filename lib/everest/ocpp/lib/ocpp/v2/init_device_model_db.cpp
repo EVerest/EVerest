@@ -17,6 +17,9 @@ const static std::string STANDARDIZED_COMPONENT_CONFIG_DIR = "standardized";
 const static std::string CUSTOM_COMPONENT_CONFIG_DIR = "custom";
 const static std::string OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG = "OCPP16LegacyCtrlr";
 const static std::string DEFAULT_SOURCE = "default";
+// An attribute is persistent and not constant unless its component config says otherwise.
+constexpr bool DEFAULT_PERSISTENT = true;
+constexpr bool DEFAULT_CONSTANT = false;
 
 using namespace everest::db;
 using namespace everest::db::sqlite;
@@ -610,8 +613,8 @@ void InitDeviceModelDb::insert_attribute(const VariableAttribute& attribute, con
     }
 
     insert_attributes_statement->bind_int("@variable_id", static_cast<int>(variable_id));
-    insert_attributes_statement->bind_int("@persistent", 1);
-    insert_attributes_statement->bind_int("@constant", 0);
+    insert_attributes_statement->bind_int("@persistent", attribute.persistent.value_or(DEFAULT_PERSISTENT) ? 1 : 0);
+    insert_attributes_statement->bind_int("@constant", attribute.constant.value_or(DEFAULT_CONSTANT) ? 1 : 0);
 
     if (attribute.mutability.has_value()) {
         insert_attributes_statement->bind_int("@mutability_id", static_cast<int>(attribute.mutability.value()));
@@ -708,23 +711,8 @@ void InitDeviceModelDb::update_attribute(const VariableAttribute& attribute, con
         update_statement->bind_null("@mutability_id");
     }
 
-    if (attribute.persistent.has_value()) {
-        update_statement->bind_int("@persistent", (attribute.persistent.value() ? 1 : 0));
-    } else if (db_attribute.variable_attribute.persistent.has_value()) {
-        update_statement->bind_int("@persistent", (db_attribute.variable_attribute.persistent.value() ? 1 : 0));
-    } else {
-        // Set default value.
-        update_statement->bind_int("@persistent", 1);
-    }
-
-    if (attribute.constant.has_value()) {
-        update_statement->bind_int("@constant", (attribute.constant.value() ? 1 : 0));
-    } else if (db_attribute.variable_attribute.constant.has_value()) {
-        update_statement->bind_int("@constant", (db_attribute.variable_attribute.constant.value() ? 1 : 0));
-    } else {
-        // Set default value.
-        update_statement->bind_int("@constant", 0);
-    }
+    update_statement->bind_int("@persistent", attribute.persistent.value_or(DEFAULT_PERSISTENT) ? 1 : 0);
+    update_statement->bind_int("@constant", attribute.constant.value_or(DEFAULT_CONSTANT) ? 1 : 0);
 
     if (attribute.type.has_value()) {
         update_statement->bind_int("@type_id", static_cast<int>(attribute.type.value()));
@@ -1527,13 +1515,10 @@ bool is_same_attribute_type(const VariableAttribute attribute1, const VariableAt
 /// @return True if characteristics of attribute are the same.
 ///
 bool is_attribute_different(const VariableAttribute& attribute1, const VariableAttribute& attribute2) {
-    // Constant and persistent are currently not set in the json file.
-    if ((attribute1.type == attribute2.type) && /*(attribute1.constant == attribute2.constant) &&*/
-        (attribute1.mutability == attribute2.mutability) && (attribute1.value == attribute2.value)
-        /* && (attribute1.persistent == attribute2.persistent)*/) {
-        return false;
-    }
-    return true;
+    return attribute1.type != attribute2.type or attribute1.mutability != attribute2.mutability or
+           attribute1.value != attribute2.value or
+           attribute1.persistent.value_or(DEFAULT_PERSISTENT) != attribute2.persistent.value_or(DEFAULT_PERSISTENT) or
+           attribute1.constant.value_or(DEFAULT_CONSTANT) != attribute2.constant.value_or(DEFAULT_CONSTANT);
 }
 
 ///

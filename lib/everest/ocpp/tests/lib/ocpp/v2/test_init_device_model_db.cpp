@@ -451,6 +451,64 @@ TEST_F(InitDeviceModelDbTest, default_device_model_config) {
     EXPECT_NO_THROW(db.initialize_database(component_configs, true));
 }
 
+namespace {
+std::string flags_component_config(const bool volatile_persistent, const bool fixed_constant) {
+    nlohmann::json config = {
+        {"name", "FlagsCtrlr"},
+        {"type", "object"},
+        {"properties",
+         {{"Default",
+           {{"variable_name", "Default"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes", {{{"type", "Actual"}, {"mutability", "ReadWrite"}, {"value", 1}}}},
+            {"type", "integer"}}},
+          {"Volatile",
+           {{"variable_name", "Volatile"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes",
+             {{{"type", "Actual"}, {"mutability", "ReadWrite"}, {"value", 2}, {"persistent", volatile_persistent}}}},
+            {"type", "integer"}}},
+          {"Fixed",
+           {{"variable_name", "Fixed"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes",
+             {{{"type", "Actual"}, {"mutability", "ReadOnly"}, {"value", 3}, {"constant", fixed_constant}}}},
+            {"type", "integer"}}}}}};
+    return config.dump();
+}
+} // namespace
+
+TEST_F(InitDeviceModelDbTest, attribute_flags_from_component_config) {
+    const auto read_flags = [this](const std::string& variable_name) {
+        auto statement = this->database->new_statement(
+            "SELECT va.PERSISTENT, va.CONSTANT FROM VARIABLE_ATTRIBUTE va JOIN VARIABLE v ON v.ID = va.VARIABLE_ID "
+            "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID WHERE c.NAME = 'FlagsCtrlr' AND v.NAME = @name");
+        statement->bind_text("@name", variable_name, SQLiteString::Transient);
+        EXPECT_EQ(statement->step(), SQLITE_ROW);
+        return std::pair{statement->column_int(0), statement->column_int(1)};
+    };
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    component_configs.insert(parse_component_config_from_string(flags_component_config(false, true)));
+    db.initialize_database(component_configs, true);
+
+    EXPECT_EQ(read_flags("Default"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Volatile"), std::pair(0, 0));
+    EXPECT_EQ(read_flags("Fixed"), std::pair(1, 1));
+
+    // A changed flag is applied when the database is initialized again
+    auto changed_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    changed_configs.insert(parse_component_config_from_string(flags_component_config(true, false)));
+    InitDeviceModelDb db_again(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db_again.database_exists = true;
+    db_again.initialize_database(changed_configs, false);
+
+    EXPECT_EQ(read_flags("Default"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Volatile"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Fixed"), std::pair(1, 0));
+}
+
 TEST_F(InitDeviceModelDbTest, wrong_type) {
     // Test if initializing fails when there is a missing required value.
     InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
