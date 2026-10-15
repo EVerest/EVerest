@@ -30,9 +30,12 @@ public:
     [[nodiscard]] Type get_type() const;
     [[nodiscard]] const std::string& get_error() const;
 
-    // The frame did not decode at all (empty payload, unsupported payload type, EXI decoder failure). A frame
-    // that decoded to a message type this stack does not handle is not undecodable: get_type() is None and
-    // get_error() names it, and the state machine answers it with a sequence error.
+    // True when the frame did not decode at all: empty payload, unsupported V2GTP payload type or an EXI
+    // decoder failure. The engines drop such a frame without a response [V2G20-800].
+    //
+    // False when the frame decoded but carries a message type this stack does not handle, e.g.
+    // VehicleCheckInReq. Such a variant has get_type() == Type::None and get_error() set, and the current
+    // state answers it with FAILED_SequenceError like any other unexpected message.
     [[nodiscard]] bool is_undecodable() const {
         return undecodable;
     }
