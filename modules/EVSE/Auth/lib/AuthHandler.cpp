@@ -11,16 +11,6 @@ using everest::helpers::is_equal_case_insensitive;
 
 namespace module {
 
-/// \brief helper method to intersect referenced_connectors (from ProvidedIdToken) with evses that are listed
-/// within ValidationResult
-std::vector<int> intersect(std::vector<int>& a, std::vector<int>& b) {
-    std::vector<int> result;
-    std::sort(a.begin(), a.end());
-    std::sort(b.begin(), b.end());
-    std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(result));
-    return result;
-}
-
 namespace conversions {
 std::string token_handling_result_to_string(const TokenHandlingResult& result) {
     switch (result) {
@@ -370,8 +360,9 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                     provided_token.id_token.value, static_cast<uint32_t>(evse_id), parent_id_token);
 
                 if (validation_result.evse_ids.has_value() and
-                    intersect(referenced_evses, validation_result.evse_ids.value()).empty()) {
-                    EVLOG_debug << "Empty intersection between referenced evses and evses that are authorized";
+                    std::find(validation_result.evse_ids->begin(), validation_result.evse_ids->end(), evse_id) ==
+                        validation_result.evse_ids->end()) {
+                    EVLOG_debug << "Selected evse#" << evse_id << " is not authorized by the validation result";
                     validation_result.authorization_status = AuthorizationStatus::NotAtThisLocation;
                 } else if (reservation_id == std::nullopt &&
                            !this->reservation_handler.is_charging_possible(static_cast<uint32_t>(evse_id))) {
