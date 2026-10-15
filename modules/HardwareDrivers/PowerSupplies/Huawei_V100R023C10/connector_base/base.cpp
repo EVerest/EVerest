@@ -275,7 +275,7 @@ void ConnectorBase::ev_handle_setExportVoltageCurrent(double voltage, double cur
     if (current > caps.max_export_current_A)
         current = caps.max_export_current_A;
     else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+        current = 0.;
 
     std::lock_guard lock(connector_mutex);
 

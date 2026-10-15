@@ -337,6 +337,8 @@ public:
     ///        meter's minimum measurable currents (e.g. calibration law accuracy limits).
     ///        Do NOT use for internal power supply control (setpoint clamping, cable check,
     ///        precharge, over-voltage thresholds) - use get_powersupply_capabilities() there.
+    ///        The only exception is the 0 A threshold during current demand, which is the minimum
+    ///        offered to the EV.
     types::power_supply_DC::Capabilities get_powersupply_capabilities_for_hlc();
 
     void set_external_derating(types::dc_external_derate::ExternalDerating d);
@@ -432,18 +434,44 @@ private:
     std::mutex dc_pause_ramp_mutex;
     std::optional<std::chrono::steady_clock::time_point> dc_pause_ramp_start;
     double dc_pause_ramp_from_A{0.};
-    std::atomic<double> last_power_supply_voltage{0.};
-    std::atomic<double> last_power_supply_current{0.};
     // Serializes powersupply_DC_set(): the cache check, the setpoint call and the cache update must not interleave
     // with a concurrent call, or the cache holds a setpoint the power supply never received last
     std::mutex powersupply_dc_set_mutex;
-    // EVSE maximum current the raw EV target was last clamped with. powersupply_DC_set() must not query the Charger:
-    // signal_dc_enforce_target_limits calls it with the Charger state machine mutex held.
-    std::atomic<double> latest_evse_max_current{0.};
 
     // Raw EV target values as received from ISO15118 stack
     std::atomic<double> raw_ev_target_voltage{0.};
     std::atomic<double> raw_ev_target_current{0.};
+    // The precharge target stays in raw_ev_target_* until the EV sends its first current demand target
+    // True once a target the EV sent during current demand has been received; the current demand rules of
+    // powersupply_DC_set apply from then on. Reset at cable check and precharge start.
+    std::atomic<bool> current_demand_target_received{false};
+    // current_demand: origin of the target as published by the HLC module (true: current demand, false:
+    // precharge); falls back to current_demand_active if the publisher does not set it.
+    void set_raw_ev_target(double voltage, double current, std::optional<bool> current_demand);
+    // EVSE maximum limits the raw EV target was last clamped with
+    std::atomic<double> latest_evse_max_current{0.};
+    std::atomic<double> latest_evse_max_discharge_current{0.};
+
+    // Inputs of the last setpoint sent to the power supply; a repeated request is not sent again. The charging
+    // phase is an input as well: a phase change with an unchanged setpoint (precharge and current demand target
+    // identical) must still reach the power supply as setMode(Export, <phase>).
+    struct DcSetpointInputs {
+        double voltage{0.};
+        double current{0.};
+        double ev_target_current{0.};
+        double evse_max_current{0.};
+        double evse_max_discharge_current{0.};
+        bool current_demand{false};
+        types::power_supply_DC::ChargingPhase phase{types::power_supply_DC::ChargingPhase::Other};
+        bool operator==(const DcSetpointInputs& other) const {
+            return voltage == other.voltage and current == other.current and
+                   ev_target_current == other.ev_target_current and evse_max_current == other.evse_max_current and
+                   evse_max_discharge_current == other.evse_max_discharge_current and
+                   current_demand == other.current_demand and phase == other.phase;
+        }
+    };
+    std::mutex last_dc_setpoint_inputs_mutex;
+    std::optional<DcSetpointInputs> last_dc_setpoint_inputs;
 
     types::authorization::ProvidedIdToken autocharge_token;
 

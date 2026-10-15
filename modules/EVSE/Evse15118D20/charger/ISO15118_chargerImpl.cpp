@@ -915,7 +915,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
     feedback::Callbacks callbacks;
 
     callbacks.dc_pre_charge_target_voltage = [this](float target_voltage) {
-        publish_dc_ev_target_voltage_current({target_voltage, 0});
+        publish_dc_ev_target_voltage_current({target_voltage, 0, false});
     };
 
     callbacks.notify_ev_charging_needs = [this](const dt::ServiceCategory& service_category,
@@ -1015,7 +1015,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
                 const auto target_voltage = dt::from_RationalNumber(scheduled_mode->target_voltage);
                 const auto target_current = dt::from_RationalNumber(scheduled_mode->target_current);
 
-                publish_dc_ev_target_voltage_current({target_voltage, target_current});
+                publish_dc_ev_target_voltage_current({target_voltage, target_current, not pre_charge_active});
 
                 // Each maximum is optional on its own (and DIN SPEC 70121 EVs commonly send voltage and
                 // current but no power limit), so publish whichever subset the EV actually sent instead
@@ -1031,7 +1031,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             } else if (const auto* bpt_scheduled_mode = std::get_if<BPT_ScheduleReqControlModeDC>(dc_control_mode)) {
                 const auto target_voltage = dt::from_RationalNumber(bpt_scheduled_mode->target_voltage);
                 const auto target_current = dt::from_RationalNumber(bpt_scheduled_mode->target_current);
-                publish_dc_ev_target_voltage_current({target_voltage, target_current});
+                publish_dc_ev_target_voltage_current({target_voltage, target_current, not pre_charge_active});
 
                 if (bpt_scheduled_mode->max_charge_current or bpt_scheduled_mode->max_voltage or
                     bpt_scheduled_mode->max_charge_power) {
@@ -1254,9 +1254,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         using Signal = feedback::Signal;
         switch (signal) {
         case Signal::PRE_CHARGE_STARTED:
+            pre_charge_active = true;
             publish_start_pre_charge(nullptr);
             break;
         case Signal::CHARGE_LOOP_STARTED:
+            pre_charge_active = false;
             publish_current_demand_started(nullptr);
             break;
         case Signal::SETUP_FINISHED:
@@ -1264,6 +1266,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             grid_event_detector.reset();
             // Clear the prior session's negotiated DER controls; the next session renegotiates them.
             ev_selected_der_control_functions.reset();
+            pre_charge_active = false;
             publish_v2g_setup_finished(nullptr);
             break;
         case Signal::START_CABLE_CHECK:
@@ -1564,6 +1567,7 @@ void ISO15118_chargerImpl::reset_session_state() {
     last_v2g_message.reset();
     last_charging_complete.reset();
     last_bulk_charging_complete.reset();
+    pre_charge_active = false;
 }
 
 void ISO15118_chargerImpl::report_hlc_session_failed() {
