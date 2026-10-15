@@ -44,9 +44,9 @@ config:
       Required when ConfigBackend is "device_model" or "device_model_with_migration".
     type: string
     default: component_config
-  DeviceModelConfigMappings:
+  Ocpp16KeyMappingsPath:
     description: >-
-      Optional path to a YAML file with custom OCPP1.6 to device model component-config mappings.
+      Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model variables.
       Relative paths are resolved against this module's share path.
       If empty, only built-in mappings are used.
       Only used when ConfigBackend is "device_model_with_migration".

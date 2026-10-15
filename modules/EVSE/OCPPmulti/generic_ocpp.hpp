@@ -123,7 +123,7 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
     [[nodiscard]] virtual bool getDelegateNetworkConfigurationToSystem() const = 0;
-    [[nodiscard]] virtual std::string getDeviceModelConfigMappings() const = 0;
+    [[nodiscard]] virtual std::string getOcpp16KeyMappingsPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabaseMigrationPath() const = 0;

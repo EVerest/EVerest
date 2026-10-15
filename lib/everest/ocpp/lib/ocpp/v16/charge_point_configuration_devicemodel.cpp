@@ -13,7 +13,7 @@
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -1197,10 +1197,10 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
     const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-    v2::Ocpp16CustomConfigMappings custom_config_mappings_) :
+    v2::Ocpp16KeyMappings custom_key_mappings_) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
-    custom_config_mappings(std::move(custom_config_mappings_)) {
+    custom_key_mappings(std::move(custom_key_mappings_)) {
     const auto profiles = get_optional<std::string>(*storage, keys::valid_keys::SupportedFeatureProfiles);
     const auto measurands = calculateSupportedMeasurands();
     ProfilesSet initial;
@@ -1213,7 +1213,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
         get_optional<std::string>(*storage, keys::valid_keys::ContractValidationOffline).has_value();
     const bool cost_and_price_config_present =
         get_optional<std::string>(*storage, keys::valid_keys::CustomDisplayCostAndPrice).has_value();
-    const bool custom_config_present = !custom_config_mappings.empty();
+    const bool custom_key_mappings_present = !custom_key_mappings.empty();
 
     if (pnc_config_present) {
         // add PnC behind the scenes as supported feature profile
@@ -1225,7 +1225,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
         initial.insert(conversions::string_to_supported_feature_profiles(cost_and_price_feature));
     }
 
-    if (custom_config_present) {
+    if (custom_key_mappings_present) {
         // add Custom behind the scenes as supported feature profile
         initial.insert(conversions::string_to_supported_feature_profiles(custom_feature));
     }
@@ -1383,8 +1383,8 @@ bool ChargePointConfigurationDeviceModel::shouldExposeKey(keys::valid_keys key) 
 }
 
 std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(const std::string& key) {
-    const auto it = custom_config_mappings.find(key);
-    if (it == custom_config_mappings.end()) {
+    const auto it = custom_key_mappings.find(key);
+    if (it == custom_key_mappings.end()) {
         return std::nullopt;
     }
 
@@ -1432,7 +1432,7 @@ void ChargePointConfigurationDeviceModel::appendMeterPublicKeyKeyValues(std::vec
 }
 
 void ChargePointConfigurationDeviceModel::appendCustomKeyValues(std::vector<KeyValue>& all) {
-    for (const auto& [ocpp16_key, _] : custom_config_mappings) {
+    for (const auto& [ocpp16_key, _] : custom_key_mappings) {
         const auto kv = getCustomKeyValue(ocpp16_key);
         if (kv.has_value()) {
             all.push_back(std::move(kv.value()));
@@ -1534,8 +1534,8 @@ void ChargePointConfigurationDeviceModel::appendSupportedMeasurandsKeyValue(
 
 std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::setCustomKey(const std::string& key,
                                                                                      const std::string& value) {
-    const auto it = custom_config_mappings.find(key);
-    if (it == custom_config_mappings.end()) {
+    const auto it = custom_key_mappings.find(key);
+    if (it == custom_key_mappings.end()) {
         return std::nullopt;
     }
 

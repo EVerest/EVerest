@@ -144,7 +144,7 @@ protected:
             (work_dir / "device_model_storage.db").string(),            // DeviceModelDatabasePath
             fs::absolute(LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR).string(), // DeviceModelDatabaseMigrationPath
             fs::absolute(LIBOCPP_COMPONENT_CONFIG_DIR).string(),        // DeviceModelConfigPath
-            "",                                                         // DeviceModelConfigMappings
+            "",                                                         // Ocpp16KeyMappingsPath
             1,                                                          // Ocpp16NetworkConfigSlot
             false,                                                      // EnableLegacyConfigMigration
             "",                                                         // ChargePointConfigPath

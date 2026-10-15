@@ -7,7 +7,7 @@
 
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 namespace ocpp::v2 {
 
@@ -15,7 +15,7 @@ namespace ocpp::v2 {
 ///
 /// For each OCPP 1.6 key that has a known OCPP 2.x mapping, writes the 1.6 value into the
 /// corresponding variable in \p component_configs. Keys without a standard mapping are looked
-/// up in \p custom_config_mappings. Patching is skipped when the target component/variable does
+/// up in \p custom_key_mappings. Patching is skipped when the target component/variable does
 /// not exist in \p component_configs.
 ///
 /// Network connection keys (CentralSystemURI, SecurityProfile, AuthorizationKey, HostName,
@@ -26,13 +26,13 @@ namespace ocpp::v2 {
 ///
 /// \param component_configs    In-memory component config map to patch (modified in place).
 /// \param ocpp16_config        Source OCPP 1.6 configuration to read values from.
-/// \param custom_config_mappings  Additional OCPP 1.6 key → ComponentVariable mappings used as
+/// \param custom_key_mappings  Additional OCPP 1.6 key → ComponentVariable mappings used as
 ///                             a fallback for keys absent from the built-in mapping table.
 /// \param network_config_slot  1-based NetworkConfiguration slot for connection-detail keys;
 ///                             0 disables migration of those keys.
 void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
                                         ocpp::v16::ChargePointConfiguration& ocpp16_config,
-                                        const Ocpp16CustomConfigMappings& custom_config_mappings = {},
+                                        const Ocpp16KeyMappings& custom_key_mappings = {},
                                         int32_t network_config_slot = 1);
 
 } // namespace ocpp::v2

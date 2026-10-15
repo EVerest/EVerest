@@ -101,7 +101,7 @@ Since its default is ``Only2``, an OCPP 1.6 deployment must set
 Unchanged keys: ``ChargePointConfigPath``, ``UserConfigPath``,
 ``DatabasePath``, ``DeviceModelDatabasePath``,
 ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``,
-``DeviceModelConfigMappings``, ``Ocpp16NetworkConfigSlot``,
+``Ocpp16KeyMappingsPath``, ``Ocpp16NetworkConfigSlot``,
 ``EnableExternalWebsocketControl``, ``MessageLogPath``,
 ``MessageQueueResumeDelay``, ``RequestCompositeScheduleUnit``,
 ``DelayOcppStart``, and ``ResetStopDelay``.
@@ -204,7 +204,7 @@ full list of built-in key mappings is documented in
 in the repository. A machine-readable list, generated from the code at build
 time, is installed as
 ``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``. That file is a
-reference only: do not point ``DeviceModelConfigMappings`` at it. Custom or
+reference only: do not point ``Ocpp16KeyMappingsPath`` at it. Custom or
 vendor-specific keys that are not covered by the built-in table need an
 explicit YAML mapping file.
 
@@ -219,7 +219,7 @@ Example:
        variable:
          name: ExampleConfigurationKey
 
-Point ``DeviceModelConfigMappings`` to this file. The mappings are applied
+Point ``Ocpp16KeyMappingsPath`` to this file. The mappings are applied
 both during the one-time migration and when serving the device-model-backed
 configuration at runtime.
 
@@ -302,7 +302,7 @@ What to keep in mind
 
 * Relative paths for ``DeviceModelDatabasePath``,
   ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``, and
-  ``DeviceModelConfigMappings`` are resolved against the module share path.
+  ``Ocpp16KeyMappingsPath`` are resolved against the module share path.
 * Only keys with a built-in mapping or an explicit custom mapping entry are
   migrated. Unknown keys produce a warning log at startup and are otherwise
   ignored. The complete built-in mapping table is in

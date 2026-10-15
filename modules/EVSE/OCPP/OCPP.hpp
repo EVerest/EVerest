@@ -86,7 +86,7 @@ struct Conf {
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
     std::string DeviceModelConfigPath;
-    std::string DeviceModelConfigMappings;
+    std::string Ocpp16KeyMappingsPath;
     std::string ConfigBackend;
     bool EnableDeviceModelFallbackToLegacyJson;
     bool EnableExternalWebsocketControl;
