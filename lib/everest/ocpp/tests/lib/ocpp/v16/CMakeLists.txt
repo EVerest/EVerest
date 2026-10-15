@@ -39,6 +39,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_custom_key_hooks.cpp
         test_utils.cpp
         test_variable_resolver.cpp
+        test_known_keys_yaml.cpp
 )
 
 # Copy the json files used for testing to the destination directory
