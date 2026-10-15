@@ -104,6 +104,7 @@ public:
     virtual std::optional<bool> getQueueAllMessages() = 0;
     virtual std::optional<bool> getRejectRemoteStartTransactionWithoutConnectorId() = 0;
     virtual std::optional<bool> getRemoteStartTransactionWithoutConnectorIdFindFirst() = 0;
+    virtual std::optional<bool> getAllowRemoteStartTransactionWhileFinishing() = 0;
     virtual std::optional<bool> getReportClearedErrors() = 0;
     virtual std::optional<int> getMessageQueueSizeThreshold() = 0;
     virtual std::optional<std::int32_t> getCompositeScheduleDefaultLimitAmps() = 0;
@@ -165,6 +166,7 @@ public:
     virtual std::optional<KeyValue> getQueueAllMessagesKeyValue() = 0;
     virtual std::optional<KeyValue> getRejectRemoteStartTransactionWithoutConnectorIdKeyValue() = 0;
     virtual std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() = 0;
+    virtual std::optional<KeyValue> getAllowRemoteStartTransactionWhileFinishingKeyValue() = 0;
     virtual std::optional<KeyValue> getReportClearedErrorsKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCommonNameKeyValue() = 0;
     virtual std::optional<KeyValue> getSeccLeafSubjectCountryKeyValue() = 0;
@@ -183,6 +185,7 @@ public:
     virtual void setOcspRequestInterval(std::int32_t ocsp_request_interval) = 0;
     virtual void setRejectRemoteStartTransactionWithoutConnectorId(bool reject) = 0;
     virtual void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) = 0;
+    virtual void setAllowRemoteStartTransactionWhileFinishing(bool allow) = 0;
     virtual void setReportSuspendedEVSEReasonChange(bool report_suspended_evse_reason_change) = 0;
     virtual void setRetryBackoffRandomRange(std::int32_t retry_backoff_random_range) = 0;
     virtual void setRetryBackoffRepeatTimes(std::int32_t retry_backoff_repeat_times) = 0;

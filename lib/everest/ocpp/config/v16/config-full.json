@@ -56,6 +56,7 @@
         "AllowChargingProfileWithoutStartSchedule": false,
         "RejectRemoteStartTransactionWithoutConnectorId": false,
         "RemoteStartTransactionWithoutConnectorIdFindFirst": false,
+        "AllowRemoteStartTransactionWhileFinishing": true,
         "WaitForStopTransactionsOnResetTimeout": 60,
         "SwitchSecurityProfileConnectionTimeout": 30,
         "QueueAllMessages": true,

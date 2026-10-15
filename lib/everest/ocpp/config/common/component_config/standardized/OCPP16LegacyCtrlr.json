@@ -213,6 +213,22 @@
             "type": "boolean",
             "default": false
         },
+        "AllowRemoteStartTransactionWhileFinishing": {
+            "variable_name": "AllowRemoteStartTransactionWhileFinishing",
+            "characteristics": {
+                "supportsMonitoring": true,
+                "dataType": "boolean"
+            },
+            "attributes": [
+                {
+                    "type": "Actual",
+                    "mutability": "ReadWrite"
+                }
+            ],
+            "description": "If true, RemoteStartTransaction requests are no longer rejected for connectors whose ChargePointStatus is Finishing",
+            "type": "boolean",
+            "default": false
+        },
         "WaitForStopTransactionsOnResetTimeout": {
             "variable_name": "WaitForStopTransactionsOnResetTimeout",
             "characteristics": {

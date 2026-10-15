@@ -330,6 +330,11 @@
             "type": "boolean",
             "readOnly": false
         },
+        "AllowRemoteStartTransactionWhileFinishing": {
+            "$comment": "If set to true, RemoteStartTransaction.req messages are no longer rejected for connectors whose ChargePointStatus is Finishing. If not set, defaults to false.",
+            "type": "boolean",
+            "readOnly": false
+        },
         "WaitForStopTransactionsOnResetTimeout": {
             "$comment": "Specifies the timeout that is used when transactions are stopped because of a Reset.req . If timeout exceeds, the reset callback is executed even if StopTransaction.conf messages not yet received for transactions that have been active.",
             "type": "integer",

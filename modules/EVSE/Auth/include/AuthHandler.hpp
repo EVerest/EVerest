@@ -67,7 +67,8 @@ class AuthHandler {
 public:
     AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                 bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                bool ignore_connector_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store);
+                bool ignore_connector_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store,
+                bool allow_new_session_while_finished = false);
     virtual ~AuthHandler();
 
     /**
@@ -286,6 +287,7 @@ private:
     bool prioritize_authorization_over_stopping_transaction;
     bool ignore_faults;
     bool stop_transaction_on_reswipe;
+    bool allow_new_session_while_finished;
     ReservationHandler reservation_handler;
 
     std::map<int, std::unique_ptr<EVSEContext>> evses;

@@ -17,7 +17,7 @@ void Auth::init() {
         string_to_selection_algorithm(this->config.selection_algorithm), this->config.connection_timeout,
         this->config.plug_in_timeout_enabled, this->config.prioritize_authorization_over_stopping_transaction,
         this->config.ignore_connector_faults, this->config.stop_transaction_on_reswipe, this->info.id,
-        (!this->r_kvs.empty() ? this->r_kvs.at(0).get() : nullptr));
+        (!this->r_kvs.empty() ? this->r_kvs.at(0).get() : nullptr), this->config.allow_new_session_while_finished);
 
     for (const auto& token_provider : this->r_token_provider) {
         token_provider->subscribe_provided_token([this](ProvidedIdToken provided_token) {

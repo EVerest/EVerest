@@ -48,13 +48,15 @@ std::string token_handling_result_to_string(const TokenHandlingResult& result) {
 
 AuthHandler::AuthHandler(const SelectionAlgorithm& selection_algorithm, const int connection_timeout,
                          bool plug_in_timeout_enabled, bool prioritize_authorization_over_stopping_transaction,
-                         bool ignore_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store) :
+                         bool ignore_faults, bool stop_transaction_on_reswipe, const std::string& id, kvsIntf* store,
+                         bool allow_new_session_while_finished) :
     selection_algorithm(selection_algorithm),
     connection_timeout(connection_timeout),
     plug_in_timeout_enabled(plug_in_timeout_enabled),
     prioritize_authorization_over_stopping_transaction(prioritize_authorization_over_stopping_transaction),
     ignore_faults(ignore_faults),
     stop_transaction_on_reswipe(stop_transaction_on_reswipe),
+    allow_new_session_while_finished(allow_new_session_while_finished),
     reservation_handler(evses, id, store) {
 }
 
@@ -891,6 +893,9 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
     case SessionEventEnum::TransactionFinished:
         this->evses.at(evse_id)->transaction_active = false;
         this->evses.at(evse_id)->identifier.reset();
+        if (this->allow_new_session_while_finished) {
+            this->submit_event_for_connector(evse_id, connector_id, ConnectorEvent::SESSION_FINISHED);
+        }
         break;
     case SessionEventEnum::SessionFinished: {
         this->evses.at(evse_id)->plugged_in = false;

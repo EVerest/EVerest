@@ -491,6 +491,10 @@ public:
     void setRemoteStartTransactionWithoutConnectorIdFindFirst(bool find_first) override;
     std::optional<KeyValue> getRemoteStartTransactionWithoutConnectorIdFindFirstKeyValue() override;
 
+    std::optional<bool> getAllowRemoteStartTransactionWhileFinishing() override;
+    void setAllowRemoteStartTransactionWhileFinishing(bool allow) override;
+    std::optional<KeyValue> getAllowRemoteStartTransactionWhileFinishingKeyValue() override;
+
     std::int32_t getWaitForStopTransactionsOnResetTimeout() override;
     void setWaitForStopTransactionsOnResetTimeout(std::int32_t wait_for_stop_transactions_on_reset_timeout) override;
     KeyValue getWaitForStopTransactionsOnResetTimeoutKeyValue() override;

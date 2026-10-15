@@ -82,6 +82,20 @@ config:
       affected by this option.
     type: boolean
     default: true
+  allow_new_session_while_finished:
+    description: >-
+      Optional feature, disabled by default. Normally, an EVSE whose transaction has finished is only
+      considered available again for a new authorization once the EV has been unplugged. If set to
+      true, the EVSE becomes available for a new authorization as soon as its transaction finishes,
+      even while the EV is still physically plugged in.
+
+      On its own, this flag only changes when the EVSE is considered available, it does not resume
+      charging by itself. For a new authorization to actually restart charging, it must be combined
+      with the EvseManager module `allow_start_charging_while_finished` config (and, when OCPP 1.6 is
+      used, the `AllowRemoteStartTransactionWhileFinishing` config key). Enabling this also makes the
+      EVSE eligible to satisfy pending reservations while still occupied.
+    type: boolean
+    default: false
 provides:
   main:
     description: This implements the auth interface for EVerest
