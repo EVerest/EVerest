@@ -112,7 +112,7 @@ options. There are three cases.
   ``schemas_dir``, ``configs_dir``, ``logging_config_file``), MQTT broker and
   prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
   ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
-  ``mqtt_external_prefix``), ``run_as_user``, ``telemetry_enabled``,
+  ``mqtt_external_prefix``), ``run_as_user`` (deprecated), ``telemetry_enabled``,
   ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
   Deployments that need any non-default setting pass ``--config`` alongside
   ``--db``.
