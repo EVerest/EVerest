@@ -437,14 +437,14 @@ private:
 
     struct ConfigContext {
         // non standard compliant option to enforce HLC in AC mode
-        bool ac_enforce_hlc;
+        bool ac_enforce_hlc{false};
         // ISO15118-3 SLAC retries: at most C_SEQU_RETRY with 5 percent, then X1 ([V2G3-M06-07]); none without 5
         // percent ([V2G3-A09-13])
         bool ac_limit_slac_init_retries{true};
         // Config option to use 5 percent PWM in HLC AC mode
-        bool ac_hlc_use_5percent;
+        bool ac_hlc_use_5percent{false};
         // Config option to enable HLC in AC mode
-        bool ac_hlc_enabled;
+        bool ac_hlc_enabled{false};
         // AC or DC
         ChargeMode charge_mode{0};
         // Delay when switching from 1ph to 3ph or 3ph to 1ph
@@ -460,9 +460,9 @@ private:
         // CP state to use during reinitialization
         std::string reinit_method{"CPStateF"};
         // Fail on powermeter errors
-        bool fail_on_powermeter_errors;
+        bool fail_on_powermeter_errors{false};
         // Raise MREC9 authorization timeout error
-        bool raise_mrec9;
+        bool raise_mrec9{false};
         // sleep before enabling pwm in hlc mode
         int sleep_before_enabling_pwm_hlc_mode_ms{1000};
         // type used to generate session ids
