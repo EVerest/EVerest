@@ -1,34 +1,39 @@
 SUMMARY = "Canonical libwebsockets.org websocket library"
 HOMEPAGE = "https://libwebsockets.org/"
-LICENSE = "MIT & Zlib & BSD-3-Clause & Apache-2.0"
-LIC_FILES_CHKSUM = "file://LICENSE;md5=b5d391cc7929bcba238f9ba6805f7574"
+LICENSE = "Apache-2.0 & BSD-3-Clause & MIT & OFL-1.1 & Zlib"
+LIC_FILES_CHKSUM = "file://LICENSE;md5=d1d99ab4e0f1be7992a891906e47add2"
 
 DEPENDS = "zlib"
 DEPENDS:append:class-native = " libcap-native"
 
 S = "${WORKDIR}/git"
-SRCREV = "85c6f7959fd40d8aaf7a50be3c9b75f08389a01c"
-SRC_URI = "git://github.com/warmcat/libwebsockets.git;protocol=https;branch=v4.5-stable"
+SRCREV = "2491a1b101283cf7886d05033345b7e821825319"
+SRCBRANCH = "v${@oe.utils.trim_version("${PV}", 2)}-stable"
+SRC_URI = " \
+    git://github.com/warmcat/libwebsockets.git;protocol=https;branch=${SRCBRANCH} \
+"
 
 UPSTREAM_CHECK_URI = "https://github.com/warmcat/${BPN}/releases"
 UPSTREAM_CHECK_GITTAGREGEX = "v(?P<pver>\d+(\.\d+)+)"
 
 inherit cmake pkgconfig
 
-PACKAGECONFIG ?= "libuv libcap client server http2 ssl streamcompress ${@bb.utils.filter('DISTRO_FEATURES', 'ipv6', d)}"
+PACKAGECONFIG ?= "libuv client server http2 ssl ${@bb.utils.filter('DISTRO_FEATURES', 'ipv6', d)}"
 PACKAGECONFIG[client] = "-DLWS_WITHOUT_CLIENT=OFF,-DLWS_WITHOUT_CLIENT=ON,"
-PACKAGECONFIG[examples] = "-DLWS_WITH_MINIMAL_EXAMPLES=ON,-DLWS_WITH_MINIMAL_EXAMPLES=OFF,"
 PACKAGECONFIG[http2] = "-DLWS_WITH_HTTP2=ON,-DLWS_WITH_HTTP2=OFF,"
+PACKAGECONFIG[http3] = "-DLWS_WITH_HTTP3=ON -DLWS_ROLE_QUIC=ON,-DLWS_WITH_HTTP3=OFF -DLWS_ROLE_QUIC=OFF,gnutls"
 PACKAGECONFIG[ipv6] = "-DLWS_IPV6=ON,-DLWS_IPV6=OFF,"
-PACKAGECONFIG[libcap] = "-DLWS_WITH_LIBCAP=ON,-DLWS_WITH_LIBCAP=OFF,libcap"
 PACKAGECONFIG[libevent] = "-DLWS_WITH_LIBEVENT=ON,-DLWS_WITH_LIBEVENT=OFF,libevent"
 PACKAGECONFIG[libev] = "-DLWS_WITH_LIBEV=ON,-DLWS_WITH_LIBEV=OFF,libev"
 PACKAGECONFIG[libuv] = "-DLWS_WITH_LIBUV=ON,-DLWS_WITH_LIBUV=OFF,libuv"
 PACKAGECONFIG[server] = "-DLWS_WITHOUT_SERVER=OFF,-DLWS_WITHOUT_SERVER=ON,"
-PACKAGECONFIG[ssl] = "-DLWS_WITH_SSL=ON,-DLWS_WITH_SSL=OFF,openssl"
+PACKAGECONFIG[ssl] = "-DLWS_WITH_SSL=ON,-DLWS_WITH_SSL=OFF,${SSL_DEPENDENCY} libcap"
+PACKAGECONFIG[gnutls] = "-DLWS_WITH_GNUTLS=ON,-DLWS_WITH_GNUTLS=OFF,gnutls"
 PACKAGECONFIG[static] = "-DLWS_WITH_STATIC=ON,-DLWS_WITH_STATIC=OFF -DLWS_LINK_TESTAPPS_DYNAMIC=ON,"
-PACKAGECONFIG[streamcompress] = "-DLWS_WITH_HTTP_STREAM_COMPRESSION=ON,-DLWS_WITH_HTTP_STREAM_COMPRESSION=OFF,zlib"
 PACKAGECONFIG[systemd] = "-DLWS_WITH_SDEVENT=ON,-DLWS_WITH_SDEVENT=OFF,systemd"
+PACKAGECONFIG[examples] = "-DLWS_WITH_MINIMAL_EXAMPLES=ON,-DLWS_WITH_MINIMAL_EXAMPLES=OFF"
+
+SSL_DEPENDENCY = "${@bb.utils.contains('PACKAGECONFIG', 'gnutls', '', 'openssl', d)}"
 
 python __anonymous() {
   if bb.utils.contains('PACKAGECONFIG', 'systemd', True, False, d) and not bb.utils.contains('DISTRO_FEATURES', 'systemd', True, False, d):
@@ -36,10 +41,18 @@ python __anonymous() {
 }
 
 EXTRA_OECMAKE += " \
-    -DLIB_SUFFIX=${@d.getVar('baselib').replace('lib', '')} \
+    -DLWS_WITHOUT_TESTAPPS=ON \
+    -DLWS_HAVE_HMAC_CTX_new=ON \
+    -DDISABLE_WERROR=ON \
 "
 
+do_compile:prepend() {
+    sed -i -e 's|/etc/ssl|${RECIPE_SYSROOT_NATIVE}/etc/ssl|g' ${S}/lib/tls/CMakeLists.txt
+}
+
 do_install:append() {
+    sed -i -e 's|${STAGING_BASELIBDIR}/libcap.so|cap|g' ${D}${libdir}/cmake/libwebsockets/libwebsockets-config.cmake
+    sed -i -e 's|${STAGING_BASELIBDIR}/libcap.so|cap|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libcrypto.so|crypto|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libssl.so|ssl|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
     sed -i -e 's|${STAGING_LIBDIR}/libuv.so|uv|g' ${D}${libdir}/cmake/libwebsockets/LibwebsocketsTargets.cmake
@@ -68,3 +81,6 @@ RDEPENDS:${PN}-dev += " ${@bb.utils.contains('PACKAGECONFIG', 'static', '${PN}-s
 SSTATE_SCAN_FILES += "*.cmake"
 
 BBCLASSEXTEND = "native"
+
+# fixed since 4.3.4
+CVE_CHECK_IGNORE += "CVE-2025-1866"
