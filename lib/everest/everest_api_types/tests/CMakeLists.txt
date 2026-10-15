@@ -137,20 +137,3 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
 add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv)
 
 add_subdirectory(${GENERATED_TESTS_LOCATION} ${GENERATED_TESTS_LOCATION})
-
-####################### CommCheckHandler tests
-
-set(COMM_CHECK_TEST_TARGET_NAME ${PROJECT_NAME}_comm_check_tests)
-
-add_executable(${COMM_CHECK_TEST_TARGET_NAME}
-  manual_tests/comm_check/comm_check_handler.cpp
-)
-
-target_link_libraries(${COMM_CHECK_TEST_TARGET_NAME} PRIVATE
-  GTest::gtest_main
-  everest::log
-  everest::framework
-  everest::everest_api_types
-)
-
-add_test(${COMM_CHECK_TEST_TARGET_NAME} ${COMM_CHECK_TEST_TARGET_NAME})

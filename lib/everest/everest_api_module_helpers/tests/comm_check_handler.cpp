@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <everest_api_types/utilities/CommCheckHandler.hpp>
+#include <everest_api_module_helpers/CommCheckHandler.hpp>
 
 #include <utils/error/error_database_map.hpp>
 #include <utils/error/error_type_map.hpp>

@@ -14,6 +14,7 @@ target_include_directories(everest_api_module_helpers
 target_sources(everest_api_module_helpers
   PRIVATE
     src/ApiHelper.cpp
+    src/CommCheckHandler.cpp
     src/ValidatingMqttProxy.cpp
 )
 
@@ -23,6 +24,8 @@ target_link_libraries(everest_api_module_helpers
   PUBLIC
     everest::everest_api_types
     everest::framework
+  PRIVATE
+    everest::log
 )
 
 install(TARGETS everest_api_module_helpers
@@ -34,3 +37,7 @@ install(
   DIRECTORY include/everest_api_module_helpers
   DESTINATION include
 )
+
+if(BUILD_TESTING)
+  add_subdirectory(tests)
+endif()
