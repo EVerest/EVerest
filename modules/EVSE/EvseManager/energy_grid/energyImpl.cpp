@@ -3,6 +3,8 @@
 
 #include "energyImpl.hpp"
 
+#include "../dc_setpoint.hpp"
+
 #include <everest/util/misc/container.hpp>
 
 #include <chrono>
@@ -575,9 +577,9 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
                     evse_max_limits.evse_maximum_discharge_current_limit =
                         powersupply_capabilities.max_import_current_A;
 
-                    evse_min_limits.evse_minimum_current_limit = powersupply_capabilities.min_export_current_A;
+                    evse_min_limits.evse_minimum_current_limit = offered_min_export_current_A(powersupply_capabilities);
                     evse_min_limits.evse_minimum_discharge_current_limit =
-                        powersupply_capabilities.min_import_current_A;
+                        offered_min_import_current_A(powersupply_capabilities);
 
                     float total_current{0.0};
 
@@ -612,10 +614,23 @@ void energyImpl::handle_enforce_limits(types::energy::EnforcedLimits& value) {
                     evse_max_limits.evse_maximum_discharge_power_limit = powersupply_capabilities.max_import_power_W;
 
                     evse_min_limits.evse_minimum_power_limit =
-                        powersupply_capabilities.min_export_voltage_V * powersupply_capabilities.min_export_current_A;
+                        powersupply_capabilities.min_export_voltage_V * evse_min_limits.evse_minimum_current_limit;
                     evse_min_limits.evse_minimum_discharge_power_limit =
                         powersupply_capabilities.min_import_voltage_V.value_or(0.0) *
-                        powersupply_capabilities.min_import_current_A.value_or(0.0);
+                        evse_min_limits.evse_minimum_discharge_current_limit.value_or(0.0);
+
+                    // An energy limit below the minimum offered to the EV cannot be delivered: the EV is told
+                    // 0 A and 0 W, the power supply delivers 0 A (dc_export_setpoint_current())
+                    if (total_current >= 0.0 and
+                        evse_max_limits.evse_maximum_current_limit < evse_min_limits.evse_minimum_current_limit) {
+                        evse_max_limits.evse_maximum_current_limit = 0.0;
+                        evse_max_limits.evse_maximum_power_limit = 0.0;
+                    } else if (total_current < 0.0 and
+                               evse_max_limits.evse_maximum_discharge_current_limit.value() <
+                                   evse_min_limits.evse_minimum_discharge_current_limit.value_or(0.0f)) {
+                        evse_max_limits.evse_maximum_discharge_current_limit = 0.0f;
+                        evse_max_limits.evse_maximum_discharge_power_limit = 0.0f;
+                    }
 
                     if (watt_leave_side >= 0) {
                         evse_max_limits.evse_maximum_power_limit =

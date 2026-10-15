@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
 #include <iomanip>
@@ -132,18 +132,12 @@ void power_supply_DCImpl::ready() {
 void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     EVLOG_info << "Set mode via CAN: " << mode << " with phase " << phase;
+    if (mode == types::power_supply_DC::Mode::Off or mode == types::power_supply_DC::Mode::Fault) {
+        below_minimum = false;
+    }
 
     // Enhanced power control with verification (Task 12)
-    bool power_result = false;
-    if (mode == types::power_supply_DC::Mode::Off) {
-        power_result = mod->acdc->handle_power_transition(false);
-    } else if (mode == types::power_supply_DC::Mode::Export) {
-        power_result = mod->acdc->handle_power_transition(true);
-    } else if (mode == types::power_supply_DC::Mode::Import) {
-        power_result = mod->acdc->handle_power_transition(true);
-    } else if (mode == types::power_supply_DC::Mode::Fault) {
-        power_result = mod->acdc->handle_power_transition(false);
-    }
+    const bool power_result = mod->acdc->handle_power_transition(output_enabled(mode));
 
     if (power_result) {
         EVLOG_info << " Mode change to " << mode << " initiated successfully";
@@ -162,10 +156,11 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
     else if (voltage < caps.min_export_voltage_V)
         voltage = caps.min_export_voltage_V;
 
+    const bool below_minimum_requested = current < caps.min_export_current_A;
     if (current > caps.max_export_current_A)
         current = caps.max_export_current_A;
-    else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+    else if (below_minimum_requested)
+        current = 0.;
 
     // Validate power limits: voltage * current must not exceed max power
     double requested_power = voltage * current;
@@ -186,6 +181,11 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
     exportVoltage.store(voltage);
     exportCurrentLimit.store(current);
 
+    if (below_minimum_requested) {
+        set_below_minimum(true);
+        return;
+    }
+
     const size_t active_module_count = last_module_count;
     if (active_module_count > 0) {
         const double current_per_module = exportCurrentLimit.load() / static_cast<double>(active_module_count);
@@ -197,7 +197,22 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
                    << exportCurrentLimit.load() << "A (but no active modules detected)";
     }
     mod->acdc->set_voltage_current(exportVoltage.load(), exportCurrentLimit.load());
+    set_below_minimum(false);
 };
+
+bool power_supply_DCImpl::output_enabled(types::power_supply_DC::Mode mode) const {
+    return (mode == types::power_supply_DC::Mode::Export or mode == types::power_supply_DC::Mode::Import) and
+           not below_minimum.load();
+}
+
+void power_supply_DCImpl::set_below_minimum(bool below) {
+    if (below_minimum.exchange(below) == below) {
+        return;
+    }
+    const bool enabled = output_enabled(mode.load());
+    EVLOG_info << " Current " << (below ? "below" : "at or above") << " minimum, output " << (enabled ? "on" : "off");
+    mod->acdc->handle_power_transition(enabled);
+}
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
     if (caps.min_import_voltage_V.has_value() && caps.max_import_current_A.has_value()) {
@@ -206,17 +221,24 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
         else if (voltage < caps.min_import_voltage_V.value())
             voltage = caps.min_import_voltage_V.value();
 
+        const bool below_minimum_requested = current < caps.min_import_current_A.value();
         if (current > caps.max_import_current_A.value())
             current = caps.max_import_current_A.value();
-        else if (current < caps.min_import_current_A.value())
-            current = caps.min_import_current_A.value();
+        else if (below_minimum_requested)
+            current = 0.;
 
         minImportVoltage.store(voltage);
         importCurrentLimit.store(current);
 
+        if (below_minimum_requested) {
+            set_below_minimum(true);
+            return;
+        }
+
         EVLOG_info << " Updating voltage/current via CAN: " << minImportVoltage.load() << "V / "
                    << importCurrentLimit.load() << "A";
         mod->acdc->set_voltage_current(minImportVoltage.load(), importCurrentLimit.load());
+        set_below_minimum(false);
     }
 }
 
