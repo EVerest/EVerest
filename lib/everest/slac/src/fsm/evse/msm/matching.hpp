@@ -76,7 +76,9 @@ struct Matching_def : public state_machine_def<Matching_def> {
         failed_matching_reset_once = false;
         validate.reset();
         ctx->validation_done = false;
-        ctx->enter_state(SlacState::Matching, D3State::Matching,
+        // Armed, no matching process yet: the published state stays UNMATCHED until the first CM_SLAC_PARM.REQ, so
+        // the consumer can tell an EIM before any SLAC from one during a running matching ([V2G3-M06-08]).
+        ctx->enter_state(SlacState::Matching, D3State::Unmatched,
                          "Entered Matching state, waiting for CM_SLAC_PARM.REQ");
     }
 

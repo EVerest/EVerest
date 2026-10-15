@@ -84,6 +84,11 @@ the whole procedure takes well under a second on a good connection.
    dlink_ready(true) is published:
    high level communication starts
 
+The published ``state`` follows the matching process, not the arming: it
+stays ``UNMATCHED`` while the module listens and becomes ``MATCHING`` with the
+first ``CM_SLAC_PARM.REQ``. EvseManager relies on this to tell an EIM that
+completes before any SLAC from one during a running matching ([V2G3-M06-08]).
+
 When the car is unplugged, EvseManager calls ``leave_bcd``. From a matched or
 failed session the module leaves the logical network, generates a new key and
 re-arms itself; while still matching it just returns to idle, since no network
