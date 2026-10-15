@@ -14,6 +14,15 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.sigslot.bazel",
     )
 
+    # the bazel-central-registry has no catch2 3.16.1 yet, upstream ships its own BUILD.bazel
+    maybe(
+        http_archive,
+        name = "catch2",
+        url = "https://github.com/catchorg/Catch2/archive/refs/tags/v3.16.1.tar.gz",
+        sha256 = "d16bd1b8b2364918bd472cb216394acb93bde6784890df0d91bccfb3f28d777d",
+        strip_prefix = "Catch2-3.16.1",
+    )
+
     maybe(
         http_archive,
         name = "com_github_HowardHinnant_date",
