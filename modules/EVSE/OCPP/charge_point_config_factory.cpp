@@ -8,7 +8,7 @@
 #include <optional>
 #include <string>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <nlohmann/json.hpp>
 
 #include <ocpp/v16/charge_point_configuration.hpp>

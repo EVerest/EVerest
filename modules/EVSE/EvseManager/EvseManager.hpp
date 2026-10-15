@@ -434,6 +434,12 @@ private:
     double dc_pause_ramp_from_A{0.};
     std::atomic<double> last_power_supply_voltage{0.};
     std::atomic<double> last_power_supply_current{0.};
+    // Serializes powersupply_DC_set(): the cache check, the setpoint call and the cache update must not interleave
+    // with a concurrent call, or the cache holds a setpoint the power supply never received last
+    std::mutex powersupply_dc_set_mutex;
+    // EVSE maximum current the raw EV target was last clamped with. powersupply_DC_set() must not query the Charger:
+    // signal_dc_enforce_target_limits calls it with the Charger state machine mutex held.
+    std::atomic<double> latest_evse_max_current{0.};
 
     // Raw EV target values as received from ISO15118 stack
     std::atomic<double> raw_ev_target_voltage{0.};

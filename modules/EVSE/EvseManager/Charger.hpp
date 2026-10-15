@@ -301,6 +301,9 @@ private:
     void clear_errors_on_unplug();
 
     void update_pwm_now(float duty_cycle);
+    bool pwm_signal_off() const;
+    void note_pwm_switched_off();
+    bool must_wait_in_x1_before_pwm();
     void update_pwm_now_if_changed(float duty_cycle);
     void update_pwm_now_if_changed_ampere(float duty_cycle);
     void update_pwm_max_every_5seconds_ampere(float duty_cycle);
@@ -504,6 +507,11 @@ private:
         bool t_step_ef_x1_pause{false};
         bool cp_state_F_active{false};
 
+        // Time at which a running PWM was switched off (X1 or 100 % duty cycle). IEC 61851-1:2017 Table A.6
+        // sequence 9.2 requires at least IEC_MIN_X1_BEFORE_PWM_MS in X1 before PWM is enabled again.
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> pwm_switched_off_at{};
+        bool min_x1_wait_logged{false};
+
         bool ac_x1_fallback_nominal_timeout_running{false};
         std::chrono::time_point<std::chrono::steady_clock> ac_x1_fallback_nominal_timeout_started;
         bool auth_received_printed{false};
@@ -586,6 +594,9 @@ private:
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
+    // IEC 61851-1:2017 Table A.6 sequence 9.2: after switching PWM off at state B (B2->B1) the EVSE shall wait at
+    // least 3 s before it enables PWM again (sequence 3.1, B1->B2).
+    static constexpr int IEC_MIN_X1_BEFORE_PWM_MS = 3000;
     // EV READY certification requires a small pause of 500-1000 ms in X1 after a t_step_EF sequence before going to X2-
     // This is not required by IEC61851-1, but it is allowed by the IEC. It helps some older EVs to start charging
     // after the wake-up sequence.
@@ -619,6 +630,9 @@ protected:
     void process_event(CPEvent event);
     constexpr auto& get_shared_context() {
         return shared_context;
+    }
+    constexpr auto& get_internal_context() {
+        return internal_context;
     }
     auto& get_hlc_use_5percent_current_session() {
         return hlc_use_5percent_current_session;

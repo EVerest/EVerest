@@ -13,7 +13,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace {
 inline void remove_start_and_stop_frame(std::vector<std::uint8_t>& vec) {

@@ -52,17 +52,31 @@ In the EVerest config file, add the following to the settings section:
 
    Make sure to use the correct groups and settings for your system.
 
-Specify this user in the EVerest config file in the settings section:
+Start the manager as this user, the modules it forks then run as the same
+user. With systemd, set ``User=`` and ``Group=`` in the unit, e.g. with a
+drop-in for ``everest.service``:
 
-.. code-block:: yaml
+.. code-block:: ini
 
-   settings:
-    run_as_user: everest
+   # /etc/systemd/system/everest.service.d/10-user.conf
+   [Service]
+   User=everest
+   Group=everest
 
-The systemd service should start the manager process as root. It will
-then change the user for the child processes it forks (the modules).
-Alternatively the manager process can be started with the appropriate
-Linux capability to allow user changes.
+The ``everest.service`` of the meta-everest layers starts the manager as
+root, so add such a drop-in in a bbappend of your layer.
+
+Do not set ``NoNewPrivileges=yes`` in the unit, and do not limit
+``CapabilityBoundingSet=`` below the capabilities the modules need,
+otherwise the file capabilities described below have no effect.
+
+.. note::
+
+   The ``run_as_user`` setting in the ``settings`` section of the EVerest
+   config file, with which a manager started as root switches itself and
+   the modules to another user, is deprecated (see
+   :ref:`project-deprecation-index`). It still works, and the manager logs
+   a warning at startup when it is set.
 
 Some modules need elevated privileges, e.g. SLAC module. Those modules
 should be given individual Linux capabilities via file based capabilities.
@@ -121,6 +135,8 @@ module, run with the same capabilities.
    Setting Linux capabilities for a module with the ``capabilities`` key
    in the EVerest config file is no longer supported. The key is still
    accepted, but the manager ignores it and logs a warning at startup.
+   The key is deprecated and will be removed (see
+   :ref:`project-deprecation-index`).
 
 - To ensure that internal services cannot be accessed via the powerline connection,
   iptables can be used with the following rules. In this example the powerline module

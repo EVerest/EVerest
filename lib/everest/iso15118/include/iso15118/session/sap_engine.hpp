@@ -39,8 +39,15 @@ public:
     void on_timeout(d20::TimeoutType);
 
     bool has_outgoing() const;
+    V2gMessageType peek_response_type() const {
+        return outgoing->message_type;
+    }
     std::optional<SeccOutgoing> take_outgoing();
 
+    // Includes a failed negotiation response that is still pending on the wire.
+    bool is_stopping() const {
+        return stopped;
+    }
     bool is_finished() const;
 
     bool is_paused() const {

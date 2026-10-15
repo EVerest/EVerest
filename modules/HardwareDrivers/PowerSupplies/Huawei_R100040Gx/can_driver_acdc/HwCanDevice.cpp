@@ -7,7 +7,7 @@
 #include <iostream>
 #include <unistd.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 HwCanDevice::~HwCanDevice() {
     exit_tx_thread = true;

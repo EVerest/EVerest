@@ -4,7 +4,7 @@
 #include "isolation_monitorImpl.hpp"
 #include "everest/logging.hpp"
 #include <chrono>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <thread>
 #include <utils/date.hpp>
 

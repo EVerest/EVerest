@@ -37,10 +37,10 @@ std::string print_yaml_location(ryml::Location const& loc) {
             error_msg << tmp;
         }
         error_msg << "\n  line " << loc.line;
-        if (loc.col) {
+        if (loc.col and loc.col != ryml::npos) {
             error_msg << " column " << loc.col;
         }
-        if (loc.offset) {
+        if (loc.offset and loc.offset != ryml::npos) {
             error_msg << " offset " << loc.offset << "B";
         }
         error_msg << "\n";
@@ -48,14 +48,27 @@ std::string print_yaml_location(ryml::Location const& loc) {
     return error_msg.str();
 }
 
-void yaml_error_handler(const char* msg, std::size_t len, ryml::Location loc, void*) {
+[[noreturn]] void throw_yaml_error(c4::csubstr msg, const ryml::Location& loc) {
     std::stringstream error_msg;
     error_msg << "YAML parsing error: ";
     error_msg << print_yaml_location(loc);
-    error_msg.write(msg, len);
+    error_msg.write(msg.str, static_cast<std::streamsize>(msg.len));
 
     std::cerr << error_msg.str() << std::endl;
     throw std::runtime_error(error_msg.str());
+}
+
+[[noreturn]] void yaml_error_basic(c4::csubstr msg, const ryml::ErrorDataBasic& err, void*) {
+    throw_yaml_error(msg, err.location);
+}
+
+[[noreturn]] void yaml_error_parse(c4::csubstr msg, const ryml::ErrorDataParse& err, void*) {
+    // ymlloc refers to the parsed document, cpploc to ryml's own sources
+    throw_yaml_error(msg, err.ymlloc);
+}
+
+[[noreturn]] void yaml_error_visit(c4::csubstr msg, const ryml::ErrorDataVisit& err, void*) {
+    throw_yaml_error(msg, err.cpploc);
 }
 
 void print_location(ryml::ConstNodeRef node, ryml::Parser& parser) {
@@ -122,7 +135,10 @@ bool get_node_impl(c4::yml::ConstNodeRef node, ryml::Parser& parser, std::string
 
 struct RymlCallbackInitializer {
     RymlCallbackInitializer() {
-        ryml::set_callbacks({nullptr, nullptr, nullptr, yaml_error_handler});
+        // ryml >= 0.11 replaced the single error callback with one per error kind
+        ryml::Callbacks callbacks;
+        callbacks.set_error_basic(yaml_error_basic).set_error_parse(yaml_error_parse).set_error_visit(yaml_error_visit);
+        ryml::set_callbacks(callbacks);
     }
 };
 

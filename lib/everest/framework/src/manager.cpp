@@ -27,7 +27,7 @@
 #include <boost/program_options.hpp>
 
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include <configuration_api.hpp>
@@ -950,6 +950,7 @@ int Manager::run() {
     }
     if (not ms.run_as_user.empty()) {
         EVLOG_info << "EVerest will run as system user: " << ms.run_as_user;
+        EVLOG_warning << "Setting 'run_as_user' is deprecated; start the manager as that user instead.";
     }
     if (ms.runtime_settings.forward_exceptions) {
         EVLOG_info << "Catching and forwarding command exceptions to callers";

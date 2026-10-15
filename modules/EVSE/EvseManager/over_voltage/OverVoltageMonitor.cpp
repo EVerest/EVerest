@@ -6,7 +6,7 @@
 #include <algorithm>
 #include <chrono>
 #include <condition_variable>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <thread>
 
 namespace module {
