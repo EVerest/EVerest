@@ -4,6 +4,8 @@
 #include <everest/logging.hpp>
 #include <everest_api_module_helpers/CommCheckHandler.hpp>
 
+#include <utility>
+
 namespace everest::lib::API {
 
 // ----------------------------------------------------------------------------
@@ -48,10 +50,11 @@ bool CommCheckHandlerBase::check_error() {
 }
 
 CommCheckHandlerBase::~CommCheckHandlerBase() {
-    shutting_down.store(true);
-    check_active.store(false);
-    heartbeat_active.store(false);
-    comm_check_value.set(false);
+    {
+        std::scoped_lock lock(state_mutex);
+        shutting_down = true;
+    }
+    state_cv.notify_all();
     if (handler.joinable()) {
         handler.join();
     }
@@ -61,7 +64,11 @@ CommCheckHandlerBase::~CommCheckHandlerBase() {
 }
 
 void CommCheckHandlerBase::set_value(bool value) {
-    comm_check_value.set(value);
+    {
+        std::scoped_lock lock(state_mutex);
+        comm_check_value = value;
+    }
+    state_cv.notify_all();
 }
 
 void CommCheckHandlerBase::set_error() {
@@ -81,24 +88,29 @@ void CommCheckHandlerBase::start(int timeout_s) {
 }
 
 bool CommCheckHandlerBase::heartbeat(int interval_ms, HeartBeatFtor const& ftor) {
-    if (interval_ms <= 0) {
-        return false;
-    }
-    auto interval = std::chrono::milliseconds(interval_ms);
-    heartbeat_active.store(true);
-    auto action = [this, interval, ftor]() {
-        while (heartbeat_active.load()) {
-            auto now = std::chrono::steady_clock::now();
-            auto result = ftor();
-            if (not result) {
-                heartbeat_active.store(false);
-                break;
+    bool started = false;
+    if (interval_ms > 0) {
+        auto interval = std::chrono::milliseconds(interval_ms);
+        auto action = [this, interval, ftor]() {
+            std::unique_lock lock(state_mutex);
+            while (not shutting_down) {
+                const auto next = std::chrono::steady_clock::now() + interval;
+                lock.unlock();
+                const auto result = ftor();
+                lock.lock();
+                if (not result) {
+                    break;
+                }
+                state_cv.wait_until(lock, next, [this] { return shutting_down; });
             }
-            std::this_thread::sleep_until(now + interval);
+        };
+        std::scoped_lock lock(state_mutex);
+        if (not shutting_down and not heartbeat_handler.joinable()) {
+            heartbeat_handler = std::thread(action);
+            started = true;
         }
-    };
-    heartbeat_handler = std::thread(action);
-    return true;
+    }
+    return started;
 }
 
 // ----------------------------------------------------------------------------
@@ -106,11 +118,14 @@ bool CommCheckHandlerBase::heartbeat(int interval_ms, HeartBeatFtor const& ftor)
 
 void CommCheckHandlerBase::communication_check_handler() {
     auto timeout_sub_type = init_sub_type;
+    std::unique_lock lock(state_mutex);
     while (check_active.load()) {
-        auto check = comm_check_value.wait_for(timeout);
-        if (shutting_down.load()) {
+        state_cv.wait_for(lock, timeout, [this] { return shutting_down or comm_check_value.has_value(); });
+        if (shutting_down) {
             break;
         }
+        const auto check = std::exchange(comm_check_value, std::nullopt);
+        lock.unlock();
         if (check.has_value()) {
             timeout_sub_type = default_sub_type;
             check_active.store(check.value());
@@ -124,6 +139,7 @@ void CommCheckHandlerBase::communication_check_handler() {
                 raise_error(timeout_sub_type);
             }
         }
+        lock.lock();
     }
 }
 

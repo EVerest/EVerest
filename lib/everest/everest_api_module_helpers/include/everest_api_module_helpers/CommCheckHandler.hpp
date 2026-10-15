@@ -3,12 +3,13 @@
 
 #pragma once
 
-#include "VarContainer.hpp"
-
 #include <atomic>
 #include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string_view>
 #include <thread>
 
@@ -40,12 +41,13 @@ private:
     void communication_check_handler();
 
     std::chrono::seconds timeout;
-    VarContainer<bool> comm_check_value;
+    std::mutex state_mutex;
+    std::condition_variable state_cv;
+    std::optional<bool> comm_check_value;
+    bool shutting_down{false};
     std::thread handler;
     std::thread heartbeat_handler;
     std::atomic_bool check_active{true};
-    std::atomic_bool heartbeat_active{false};
-    std::atomic_bool shutting_down{false};
     const std::string error_type;
     const std::string init_sub_type{"Initial communication check"};
     const std::string default_sub_type;

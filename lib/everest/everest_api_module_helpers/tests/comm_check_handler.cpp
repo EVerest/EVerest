@@ -184,6 +184,76 @@ TEST_F(CommCheckHandlerTest, heartbeat_stops_when_functor_fails) {
     EXPECT_EQ(calls.load(), 3);
 }
 
+TEST_F(CommCheckHandlerTest, heartbeat_rejects_second_start) {
+    std::atomic_int first_calls{0};
+    std::atomic_int second_calls{0};
+    ASSERT_TRUE(handler->heartbeat(10, [&first_calls] {
+        ++first_calls;
+        return true;
+    }));
+    EXPECT_FALSE(handler->heartbeat(10, [&second_calls] {
+        ++second_calls;
+        return true;
+    }));
+
+    EXPECT_TRUE(wait_until([&first_calls] { return first_calls.load() >= 5; }, 1s));
+    EXPECT_EQ(second_calls.load(), 0);
+}
+
+TEST_F(CommCheckHandlerTest, heartbeat_rejects_restart_after_functor_fails) {
+    std::atomic_int first_calls{0};
+    std::atomic_int second_calls{0};
+    ASSERT_TRUE(handler->heartbeat(10, [&first_calls] {
+        ++first_calls;
+        return false;
+    }));
+    ASSERT_TRUE(wait_until([&first_calls] { return first_calls.load() == 1; }, 1s));
+
+    EXPECT_FALSE(handler->heartbeat(10, [&second_calls] {
+        ++second_calls;
+        return true;
+    }));
+    std::this_thread::sleep_for(50ms);
+    EXPECT_EQ(first_calls.load(), 1);
+    EXPECT_EQ(second_calls.load(), 0);
+}
+
+TEST_F(CommCheckHandlerTest, heartbeat_starts_after_rejected_interval) {
+    std::atomic_int calls{0};
+    auto ftor = [&calls] {
+        ++calls;
+        return true;
+    };
+    EXPECT_FALSE(handler->heartbeat(0, ftor));
+    ASSERT_TRUE(handler->heartbeat(10, ftor));
+    EXPECT_TRUE(wait_until([&calls] { return calls.load() >= 2; }, 1s));
+}
+
+TEST_F(CommCheckHandlerTest, heartbeat_concurrent_starts_create_one_thread) {
+    constexpr int callers = 8;
+    std::atomic_int accepted{0};
+    std::atomic_int calls{0};
+    std::vector<std::thread> threads;
+    for (int i = 0; i < callers; ++i) {
+        threads.emplace_back([this, &accepted, &calls] {
+            if (handler->heartbeat(60000, [&calls] {
+                    ++calls;
+                    return true;
+                })) {
+                ++accepted;
+            }
+        });
+    }
+    for (auto& thread : threads) {
+        thread.join();
+    }
+
+    EXPECT_EQ(accepted.load(), 1);
+    ASSERT_TRUE(wait_until([&calls] { return calls.load() == 1; }, 1s));
+    std::this_thread::sleep_for(50ms);
+    EXPECT_EQ(calls.load(), 1);
+}
+
 TEST_F(CommCheckHandlerTest, destruction_stops_running_threads) {
     handler->start(1);
     std::atomic_int calls{0};
@@ -203,6 +273,22 @@ TEST_F(CommCheckHandlerTest, destruction_stops_running_threads) {
     const auto calls_after_reset = calls.load();
     std::this_thread::sleep_for(50ms);
     EXPECT_EQ(calls.load(), calls_after_reset);
+}
+
+TEST_F(CommCheckHandlerTest, destruction_interrupts_long_waits) {
+    handler->start(60);
+    std::atomic_int calls{0};
+    ASSERT_TRUE(handler->heartbeat(60000, [&calls] {
+        ++calls;
+        return true;
+    }));
+    ASSERT_TRUE(wait_until([&calls] { return calls.load() == 1; }, 1s));
+
+    const auto begin = std::chrono::steady_clock::now();
+    handler.reset();
+    EXPECT_LT(std::chrono::steady_clock::now() - begin, 500ms);
+    EXPECT_EQ(calls.load(), 1);
+    EXPECT_EQ(raised_count(), 0);
 }
 
 } // namespace
