@@ -30,8 +30,11 @@ const MDNS_IPV4: SocketAddr = SocketAddr::new(IpAddr::V4(Ipv4Addr::new(224, 0, 0
 /// rather retries. Keep it short, since the module blocks on it at startup.
 const MDNS_TIMEOUT: Duration = Duration::from_secs(5);
 
-/// UDP socket which reports every answer as coming from [MDNS_IPV4].
-struct MdnsUdpSocket(tokio::net::UdpSocket);
+/// UDP socket which reports every answer as coming from the name server.
+struct MdnsUdpSocket {
+    socket: tokio::net::UdpSocket,
+    name_server: SocketAddr,
+}
 
 impl DnsUdpSocket for MdnsUdpSocket {
     type Time = TokioTime;
@@ -41,10 +44,9 @@ impl DnsUdpSocket for MdnsUdpSocket {
         cx: &mut Context<'_>,
         buf: &mut [u8],
     ) -> Poll<io::Result<(usize, SocketAddr)>> {
-        let mut buf = tokio::io::ReadBuf::new(buf);
-        let address = ready!(self.0.poll_recv_from(cx, &mut buf))?;
+        let (len, address) = ready!(DnsUdpSocket::poll_recv_from(&self.socket, cx, buf))?;
         log::debug!("Received an answer from {address:?}");
-        Poll::Ready(Ok((buf.filled().len(), MDNS_IPV4)))
+        Poll::Ready(Ok((len, self.name_server)))
     }
 
     fn poll_send_to(
@@ -53,7 +55,7 @@ impl DnsUdpSocket for MdnsUdpSocket {
         buf: &[u8],
         target: SocketAddr,
     ) -> Poll<io::Result<usize>> {
-        self.0.poll_send_to(cx, buf, target)
+        DnsUdpSocket::poll_send_to(&self.socket, cx, buf, target)
     }
 }
 
@@ -83,24 +85,44 @@ impl RuntimeProvider for MdnsRuntimeProvider {
     fn bind_udp(
         &self,
         local_addr: SocketAddr,
-        _server_addr: SocketAddr,
+        server_addr: SocketAddr,
     ) -> Pin<Box<dyn Send + Future<Output = io::Result<Self::Udp>>>> {
+        // The stock provider only binds and doesn't connect the socket - we
+        // don't know the address which will answer.
+        let socket = self.0.bind_udp(local_addr, server_addr);
         Box::pin(async move {
-            let socket = tokio::net::UdpSocket::bind(local_addr).await?;
-            Ok(MdnsUdpSocket(socket))
+            Ok(MdnsUdpSocket {
+                socket: socket.await?,
+                name_server: server_addr,
+            })
         })
     }
 }
 
 /// Returns the ip-address of the Feig terminal with the given serial.
 pub async fn resolve(feig_serial: &str) -> anyhow::Result<Ipv4Addr> {
-    let stream = UdpClientStream::builder(MDNS_IPV4, MdnsRuntimeProvider::default())
-        .with_timeout(Some(MDNS_TIMEOUT))
+    query_a(
+        MDNS_IPV4,
+        &format!("cvend-{feig_serial}.local"),
+        MDNS_TIMEOUT,
+    )
+    .await
+}
+
+/// Queries the A record of `name` at the `name_server` and returns the first
+/// ip-address in the response.
+async fn query_a(
+    name_server: SocketAddr,
+    name: &str,
+    timeout: Duration,
+) -> anyhow::Result<Ipv4Addr> {
+    let stream = UdpClientStream::builder(name_server, MdnsRuntimeProvider::default())
+        .with_timeout(Some(timeout))
         .build();
     let (mut client, bg) = Client::connect(stream).await?;
     tokio::spawn(bg);
 
-    let name = Name::from_str(&format!("cvend-{feig_serial}.local"))?;
+    let name = Name::from_str(name)?;
     let response = client
         .query(name.clone(), DNSClass::IN, RecordType::A)
         .await?;
@@ -114,4 +136,84 @@ pub async fn resolve(feig_serial: &str) -> anyhow::Result<Ipv4Addr> {
             _ => None,
         })
         .ok_or_else(|| anyhow::anyhow!("No address for {name}"))
+}
+
+#[cfg(test)]
+mod test {
+    use super::*;
+    use hickory_client::proto::op::{Message, MessageType};
+    use hickory_client::proto::rr::rdata::A;
+    use hickory_client::proto::rr::Record;
+
+    /// Fake name-server which answers every A query with `ip` - but sends the
+    /// reply from a second socket, like a host answering an mDns query does.
+    /// With `junk_first` a datagram which is not a dns message precedes the
+    /// reply.
+    async fn spawn_responder(ip: Ipv4Addr, junk_first: bool) -> SocketAddr {
+        let server = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let replier = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let name_server = server.local_addr().unwrap();
+        tokio::spawn(async move {
+            let mut buf = [0u8; 512];
+            let (len, client) = server.recv_from(&mut buf).await.unwrap();
+            let request = Message::from_vec(&buf[..len]).unwrap();
+            let mut response = Message::new();
+            response
+                .set_id(request.id())
+                .set_message_type(MessageType::Response);
+            for query in request.queries() {
+                response.add_query(query.clone());
+                response.add_answer(Record::from_rdata(
+                    query.name().clone(),
+                    60,
+                    RData::A(A(ip)),
+                ));
+            }
+            if junk_first {
+                replier.send_to(b"not a dns message", client).await.unwrap();
+            }
+            replier
+                .send_to(&response.to_vec().unwrap(), client)
+                .await
+                .unwrap();
+        });
+        name_server
+    }
+
+    #[tokio::test]
+    async fn test_query_a_accepts_reply_from_another_address_than_the_name_server() {
+        let ip = Ipv4Addr::new(192, 168, 1, 23);
+        let name_server = spawn_responder(ip, false).await;
+        let resolved = query_a(name_server, "cvend-1234.local", Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(resolved, ip);
+    }
+
+    /// Guards against peeking instead of receiving: the junk datagram must be
+    /// consumed so that the real reply behind it can be read.
+    #[tokio::test]
+    async fn test_query_a_skips_junk_datagram_before_the_reply() {
+        let ip = Ipv4Addr::new(192, 168, 1, 23);
+        let name_server = spawn_responder(ip, true).await;
+        let resolved = query_a(name_server, "cvend-1234.local", Duration::from_secs(5))
+            .await
+            .unwrap();
+        assert_eq!(resolved, ip);
+    }
+
+    /// Without an answer the query must fail after the timeout
+    #[tokio::test]
+    async fn test_query_a_fails_after_timeout_without_reply() {
+        let silent = tokio::net::UdpSocket::bind((Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let name_server = silent.local_addr().unwrap();
+        let resolved = query_a(name_server, "cvend-1234.local", Duration::from_millis(100)).await;
+        assert!(resolved.is_err());
+    }
 }
