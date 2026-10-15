@@ -1354,6 +1354,7 @@ void EvseManager::ready() {
 
         r_slac[0]->subscribe_dlink_ready([this](const bool value) {
             session_log.evse(true, fmt::format("D-LINK_READY ({})", value));
+            charger->set_dlink_ready(value);
             if (hlc_enabled) {
                 r_hlc[0]->call_dlink_ready(value);
                 charger->get_stopwatch().mark("D-LINK_READY");
