@@ -406,7 +406,8 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
     if (!disabled_remote_auth) {
         response = this->authorize_req(id_token, certificate, ocsp_request_data);
 
-        if (auth_cache_enabled) {
+        // Offline, authorize_req answers Unknown without asking the CSMS, which must not be cached
+        if (auth_cache_enabled and is_online) {
             try {
                 this->authorization_cache_insert_entry(hashed_id_token, response.idTokenInfo);
             } catch (const everest::db::Exception& e) {
