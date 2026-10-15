@@ -4,6 +4,8 @@
 
 #include "../states.hpp"
 
+#include <optional>
+
 namespace iso15118::d20::state {
 
 struct DC_CableCheck : public StateBase {
@@ -16,7 +18,7 @@ struct DC_CableCheck : public StateBase {
 
 private:
     bool cable_check_initiated{false};
-    bool cable_check_done{false};
+    std::optional<bool> cable_check_result;
 };
 
 } // namespace iso15118::d20::state

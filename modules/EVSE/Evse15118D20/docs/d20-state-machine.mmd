@@ -32,7 +32,11 @@ stateDiagram-v2
 
     ScheduleExchange --> PowerDelivery : AC, AC_DER_IEC or AC_DER_SAE
     ScheduleExchange --> DC_CableCheck : DC, DC_BPT, MCS or MCS_BPT
-    DC_CableCheck --> DC_PreCharge : cable check done
+    DC_ChargeParameterDiscovery --> [*] : request after stop, FAILED_SequenceError
+    ScheduleExchange --> [*] : DC request after stop, FAILED_SequenceError
+    DC_CableCheck --> [*] : request after stop or failed check, FAILED_SequenceError and Finished
+    DC_PreCharge --> [*] : request after stop, FAILED_SequenceError
+    DC_CableCheck --> DC_PreCharge : cable check successful
     DC_PreCharge --> PowerDelivery : EV Processing Finished
 
     PowerDelivery --> AC_ChargeLoop : contactor closed

@@ -127,6 +127,10 @@ void ScheduleExchange::enter() {
 Result ScheduleExchange::feed(Event ev) {
 
     if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto stop = m_ctx.get_control_event<StopCharging>();
+            stop and *stop and m_ctx.session.is_dc_charger()) {
+            m_ctx.request_shutdown();
+        }
 
         // TODO(sl): Not sure if the data comes here just in time?
         if (const auto* control_data = m_ctx.get_control_event<UpdateDynamicModeParameters>()) {
@@ -152,6 +156,16 @@ Result ScheduleExchange::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::ScheduleExchangeRequest>()) {
+        if (m_ctx.session.is_dc_charger() and m_ctx.shutdown_requested()) {
+            auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.dc_limits.charge_limits.power.max,
+                                      dynamic_parameters, timeout_ongoing_reached);
+            if (res.response_code != dt::ResponseCode::FAILED_UnknownSession) {
+                set_response_code(res, dt::ResponseCode::FAILED_SequenceError);
+            }
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+            return {};
+        }
 
         if (first_req_msg) {
             m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_ONGOING);

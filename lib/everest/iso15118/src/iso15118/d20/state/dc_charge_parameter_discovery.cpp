@@ -97,6 +97,13 @@ void DC_ChargeParameterDiscovery::enter() {
 
 Result DC_ChargeParameterDiscovery::feed(Event ev) {
 
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto stop = m_ctx.get_control_event<StopCharging>(); stop and *stop) {
+            m_ctx.request_shutdown();
+        }
+        return {};
+    }
+
     if (ev != Event::V2GTP_MESSAGE) {
         return {};
     }
@@ -104,6 +111,16 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::DC_ChargeParameterDiscoveryRequest>()) {
+
+        auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.powersupply_limits);
+        if (m_ctx.shutdown_requested()) {
+            if (res.response_code != dt::ResponseCode::FAILED_UnknownSession) {
+                set_response_code(res, dt::ResponseCode::FAILED_SequenceError);
+            }
+            m_ctx.respond(res);
+            m_ctx.session_stopped = true;
+            return {};
+        }
 
         auto dc_max_limits = session::feedback::DcMaximumLimits{};
 
@@ -127,8 +144,6 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             // Set EV transfer limits
             m_ctx.session_ev_info.ev_transfer_limits.emplace<BPT_DC_ModeReq>(*mode);
         }
-
-        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.powersupply_limits);
 
         m_ctx.respond(res);
 
