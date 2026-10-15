@@ -208,6 +208,54 @@ SCENARIO("ISO 15118-2 SECC ChargeParameterDiscovery handling") {
         }
     }
 
+    GIVEN("An AC request with a negative AC_EVChargeParameter value") {
+        message_2::ChargeParameterDiscoveryRequest req;
+        req.requested_energy_transfer_mode = dt::EnergyTransferMode::AC_three_phase_core;
+        auto& ev = req.ac_ev_charge_parameter.emplace();
+        ev.e_amount = dt::to_physical_value(10000.0, dt::Unit::Wh);
+        ev.ev_max_voltage = dt::to_physical_value(230.0, dt::Unit::V);
+        ev.ev_max_current = dt::to_physical_value(32.0, dt::Unit::A);
+        ev.ev_min_current = dt::to_physical_value(6.0, dt::Unit::A);
+
+        const auto expect_wrong_charge_parameter = [&] {
+            const auto res = d2::state::handle_request(req, id, config);
+            REQUIRE(res.response_code == dt::ResponseCode::FAILED_WrongChargeParameter);
+            REQUIRE(res.evse_processing == dt::EVSEProcessing::Finished);
+            REQUIRE(res.ac_evse_charge_parameter.has_value()); // [V2G2-736]
+            REQUIRE_FALSE(res.sa_schedule_list.has_value());
+        };
+
+        WHEN("EVMaxCurrent is negative") {
+            ev.ev_max_current = dt::to_physical_value(-32.0, dt::Unit::A);
+            THEN("FAILED_WrongChargeParameter [V2G2-477]") {
+                expect_wrong_charge_parameter();
+            }
+        }
+        WHEN("EVMinCurrent is negative") {
+            ev.ev_min_current = dt::to_physical_value(-6.0, dt::Unit::A);
+            THEN("FAILED_WrongChargeParameter [V2G2-477]") {
+                expect_wrong_charge_parameter();
+            }
+        }
+        WHEN("EVMaxVoltage is negative") {
+            ev.ev_max_voltage = dt::to_physical_value(-230.0, dt::Unit::V);
+            THEN("FAILED_WrongChargeParameter [V2G2-477]") {
+                expect_wrong_charge_parameter();
+            }
+        }
+        WHEN("EAmount is negative") {
+            ev.e_amount = dt::to_physical_value(-10000.0, dt::Unit::Wh);
+            THEN("FAILED_WrongChargeParameter [V2G2-477]") {
+                expect_wrong_charge_parameter();
+            }
+        }
+        WHEN("Every value is non-negative") {
+            THEN("OK") {
+                REQUIRE(d2::state::handle_request(req, id, config).response_code == dt::ResponseCode::OK);
+            }
+        }
+    }
+
     GIVEN("A single-phase AC request on a charger that also offers three phases") {
         auto single_phase_config = make_config();
         single_phase_config.supported_energy_transfer_modes.push_back(dt::EnergyTransferMode::AC_single_phase_core);
