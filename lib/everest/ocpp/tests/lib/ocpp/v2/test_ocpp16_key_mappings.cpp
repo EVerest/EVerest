@@ -6,17 +6,17 @@
 #include <filesystem>
 #include <fstream>
 
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 #include <test_temp_paths.hpp>
 
 namespace ocpp::v2 {
 
-class Ocpp16CustomConfigMappingsTest : public ::testing::Test {
+class Ocpp16KeyMappingsTest : public ::testing::Test {
 protected:
     std::filesystem::path test_dir;
 
     void SetUp() override {
-        test_dir = libocpp_test::unique_temp_directory("ocpp16_custom_mapping_tests");
+        test_dir = libocpp_test::unique_temp_directory("ocpp16_key_mapping_tests");
     }
 
     void TearDown() override {
@@ -33,13 +33,13 @@ protected:
     }
 };
 
-TEST_F(Ocpp16CustomConfigMappingsTest, schema_contains_mappings_root_property) {
-    const auto schema = get_ocpp16_custom_mapping_schema();
+TEST_F(Ocpp16KeyMappingsTest, schema_contains_mappings_root_property) {
+    const auto schema = get_ocpp16_key_mapping_schema();
     ASSERT_TRUE(schema.contains("properties"));
     ASSERT_TRUE(schema.at("properties").contains("mappings"));
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, load_valid_yaml_returns_mappings) {
+TEST_F(Ocpp16KeyMappingsTest, load_valid_yaml_returns_mappings) {
     const auto yaml_file = write_yaml_file("valid.yaml", R"yaml(
 mappings:
   - ocpp16_key: CustomKey1
@@ -59,7 +59,7 @@ mappings:
       name: CustomVariable2
 )yaml");
 
-    const auto mappings = load_ocpp16_custom_config_mappings_from_yaml(yaml_file);
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
 
     ASSERT_EQ(mappings.size(), 2);
     ASSERT_TRUE(mappings.find("CustomKey1") != mappings.end());
@@ -85,7 +85,7 @@ mappings:
     EXPECT_FALSE(foo_mapping.second.instance.has_value());
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, invalid_schema_throws) {
+TEST_F(Ocpp16KeyMappingsTest, invalid_schema_throws) {
     const auto yaml_file = write_yaml_file("invalid_schema.yaml", R"yaml(
 not_mappings:
   - ocpp16_key: CustomKey3
@@ -95,10 +95,10 @@ not_mappings:
       name: CustomVariable3
 )yaml");
 
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, duplicate_keys_throw) {
+TEST_F(Ocpp16KeyMappingsTest, duplicate_keys_throw) {
     const auto yaml_file = write_yaml_file("duplicate.yaml", R"yaml(
 mappings:
   - ocpp16_key: DuplicateKey
@@ -113,15 +113,15 @@ mappings:
       name: CustomVariableDuplicateB
 )yaml");
 
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, missing_file_throws) {
+TEST_F(Ocpp16KeyMappingsTest, missing_file_throws) {
     const auto missing_file = test_dir / "does_not_exist.yaml";
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(missing_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(missing_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, network_configuration_target_throws) {
+TEST_F(Ocpp16KeyMappingsTest, network_configuration_target_throws) {
     // any NetworkConfiguration slot instance counts as connection config
     const auto yaml_file = write_yaml_file("network_configuration.yaml", R"yaml(
 mappings:
@@ -133,10 +133,10 @@ mappings:
       name: OcppCsmsUrl
 )yaml");
 
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, network_profile_selector_target_throws) {
+TEST_F(Ocpp16KeyMappingsTest, network_profile_selector_target_throws) {
     const auto yaml_file = write_yaml_file("profile_selector.yaml", R"yaml(
 mappings:
   - ocpp16_key: MyNetworkPriority
@@ -146,10 +146,10 @@ mappings:
       name: NetworkConfigurationPriority
 )yaml");
 
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, security_ctrlr_fallback_target_throws) {
+TEST_F(Ocpp16KeyMappingsTest, security_ctrlr_fallback_target_throws) {
     const auto yaml_file = write_yaml_file("security_fallback.yaml", R"yaml(
 mappings:
   - ocpp16_key: MyAuthKey
@@ -159,10 +159,10 @@ mappings:
       name: BasicAuthPassword
 )yaml");
 
-    EXPECT_THROW((void)load_ocpp16_custom_config_mappings_from_yaml(yaml_file), Ocpp16CustomConfigMappingsError);
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
 }
 
-TEST_F(Ocpp16CustomConfigMappingsTest, non_connection_security_ctrlr_target_is_allowed) {
+TEST_F(Ocpp16KeyMappingsTest, non_connection_security_ctrlr_target_is_allowed) {
     // the ban covers the connection fallback CVs, not the whole SecurityCtrlr component
     const auto yaml_file = write_yaml_file("security_other.yaml", R"yaml(
 mappings:
@@ -173,7 +173,7 @@ mappings:
       name: CertificateEntries
 )yaml");
 
-    const auto mappings = load_ocpp16_custom_config_mappings_from_yaml(yaml_file);
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
     ASSERT_EQ(mappings.size(), 1);
     ASSERT_TRUE(mappings.find("MyCertificateEntries") != mappings.end());
 }

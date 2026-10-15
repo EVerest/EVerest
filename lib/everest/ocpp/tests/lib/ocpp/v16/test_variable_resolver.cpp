@@ -42,8 +42,8 @@ bool same_cv(const std::pair<ocpp::v2::Component, ocpp::v2::Variable>& lhs,
     return (lhs.first == rhs.first) && (lhs.second == rhs.second);
 }
 
-ocpp::v2::Ocpp16CustomConfigMappings custom_mappings_fixture() {
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+ocpp::v2::Ocpp16KeyMappings custom_mappings_fixture() {
+    ocpp::v2::Ocpp16KeyMappings mappings;
     // unambiguous custom mapping
     mappings.emplace("VendorBar", std::make_pair(make_component("VendorCtrlr"), make_variable("BarSetting")));
     // two custom keys mapping to the same CV -> ambiguous reverse
@@ -162,7 +162,7 @@ TEST(VariableResolver, CustomMappingsDifferingByEvseAreDistinct) {
         component.evse = evse;
         return component;
     };
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    ocpp::v2::Ocpp16KeyMappings mappings;
     mappings.emplace("VendorEvse1", std::make_pair(evse_component(1), make_variable("PerEvseSetting")));
     mappings.emplace("VendorEvse2", std::make_pair(evse_component(2), make_variable("PerEvseSetting")));
     const VariableResolver resolver{mappings};

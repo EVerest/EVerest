@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <fstream>
 #include <sstream>
@@ -35,7 +35,7 @@ namespace {
     }
 
     error_message.write(msg.str, static_cast<std::streamsize>(msg.len));
-    throw Ocpp16CustomConfigMappingsError(error_message.str());
+    throw Ocpp16KeyMappingsError(error_message.str());
 }
 
 [[noreturn]] void yaml_error_basic(c4::csubstr msg, const ryml::ErrorDataBasic& err, void*) {
@@ -107,7 +107,7 @@ nlohmann::ordered_json load_yaml(const std::filesystem::path& path) {
     const static RymlCallbackInitializer ryml_callback_initializer;
 
     if (!std::filesystem::exists(path)) {
-        throw Ocpp16CustomConfigMappingsError("YAML mapping file not found: " + path.string());
+        throw Ocpp16KeyMappingsError("YAML mapping file not found: " + path.string());
     }
 
     std::ifstream ifs(path);
@@ -119,7 +119,7 @@ nlohmann::ordered_json load_yaml(const std::filesystem::path& path) {
 
 } // namespace
 
-nlohmann::json get_ocpp16_custom_mapping_schema() {
+nlohmann::json get_ocpp16_key_mapping_schema() {
     return nlohmann::json::parse(R"json(
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
@@ -189,22 +189,21 @@ nlohmann::json get_ocpp16_custom_mapping_schema() {
 )json");
 }
 
-Ocpp16CustomConfigMappings
-load_ocpp16_custom_config_mappings_from_yaml(const std::filesystem::path& mapping_file_path) {
+Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path& mapping_file_path) {
     const auto yaml_json = load_yaml(mapping_file_path);
 
     nlohmann::json_schema::json_validator validator;
-    validator.set_root_schema(get_ocpp16_custom_mapping_schema());
+    validator.set_root_schema(get_ocpp16_key_mapping_schema());
 
     try {
         validator.validate(yaml_json);
     } catch (const std::exception& e) {
-        throw Ocpp16CustomConfigMappingsError("Invalid OCPP16 custom mapping file '" + mapping_file_path.string() +
-                                              "': " + e.what());
+        throw Ocpp16KeyMappingsError("Invalid OCPP 1.6 key mapping file '" + mapping_file_path.string() +
+                                     "': " + e.what());
     }
 
     // The schema validation ensures that the following usage of .at(...) is safe
-    Ocpp16CustomConfigMappings mappings;
+    Ocpp16KeyMappings mappings;
     for (const auto& entry : yaml_json.at("mappings")) {
         const auto ocpp16_key = entry.at("ocpp16_key").get<std::string>();
 
@@ -232,7 +231,7 @@ load_ocpp16_custom_config_mappings_from_yaml(const std::filesystem::path& mappin
         // Connection config is managed by the standardized OCPP 1.6 keys (with their reboot/reconnect
         // semantics) or direct canonical CV access; a custom key would write it without either.
         if (v16::is_connection_config_cv(component, variable)) {
-            throw Ocpp16CustomConfigMappingsError(
+            throw Ocpp16KeyMappingsError(
                 "Invalid custom mapping in '" + mapping_file_path.string() + "': key '" + ocpp16_key +
                 "' targets connection configuration " + component.name.get() + "/" + variable.name.get() +
                 "; connection configuration is managed via the standardized OCPP 1.6 keys and must not be "
@@ -240,8 +239,8 @@ load_ocpp16_custom_config_mappings_from_yaml(const std::filesystem::path& mappin
         }
 
         if (!mappings.emplace(ocpp16_key, std::make_pair(component, variable)).second) {
-            throw Ocpp16CustomConfigMappingsError("Duplicate ocpp16_key in custom mapping file '" +
-                                                  mapping_file_path.string() + "': " + ocpp16_key);
+            throw Ocpp16KeyMappingsError("Duplicate ocpp16_key in key mapping file '" + mapping_file_path.string() +
+                                         "': " + ocpp16_key);
         }
     }
 
