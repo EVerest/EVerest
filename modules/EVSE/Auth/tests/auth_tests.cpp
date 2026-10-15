@@ -1911,6 +1911,34 @@ TEST_F(AuthTest, test_empty_intersection) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a token restricted to specific evses by the validation result is rejected on another referenced
+/// evse that has an EV plugged in
+TEST_F(AuthTest, test_validation_result_evse_ids_restrict_selected_evse) {
+    this->auth_handler->register_validate_token_callback([](const ProvidedIdToken& /*provided_token*/) {
+        ValidationResult result;
+        result.authorization_status = AuthorizationStatus::Accepted;
+        result.evse_ids.emplace(std::vector<int32_t>{2});
+        return std::vector<ValidationResult>{result};
+    });
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1, 2});
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Rejected));
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::REJECTED);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 TEST_F(AuthTest, test_master_pass_group_id) {
     // set master group id to parent id token
     this->auth_handler->set_master_pass_group_id(PARENT_ID_TOKEN);
