@@ -981,6 +981,62 @@ TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
     EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
 }
 
+// [V2G3-M07-27]: after a wake-up from an EV pause the PLC link has to be detected within T_conn_max_comm,
+// else the EVSE applies E/F for T_step_EF and lets a new matching process start. The link lost during the
+// sleep (reported by the matched-state link polling, dlink_established cleared) is the bench case:
+// ISO 15118-5 PLCLinkStatus_003 / AC_004 re-key the tester's node while the SUT sleeps.
+struct ChargerWakeupLinkTest : public ChargerDlinkErrorTest {
+    /// Settled in ChargingPausedEV after an EV pause (PWM off), the link state as given.
+    void setup_ev_pause(bool link_established) {
+        setup_hlc_session_in(Charger::EvseState::ChargingPausedEV);
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_ev_plugged_in = true;
+        ctx.pwm_running = false;
+        ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Pause;
+        ctx.dlink_established = link_established;
+    }
+
+    /// The EV wakes the EVSE (the reconnect path arms the same watchdog as the BCB toggle).
+    void wake_up() {
+        charger->get_internal_context().hlc_session_restarted_by_ev = true;
+        charger->run_state_machine();
+        ASSERT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    }
+
+    void expire_watchdog() {
+        charger->get_internal_context().wakeup_link_deadline =
+            std::chrono::steady_clock::now() - std::chrono::milliseconds(1);
+        charger->run_state_machine();
+    }
+};
+
+TEST_F(ChargerWakeupLinkTest, NoLinkAfterWakeupRunsErrorSequenceWhenTConnMaxCommExpires) {
+    setup_ev_pause(/*link_established=*/false);
+    wake_up();
+    ASSERT_TRUE(charger->get_internal_context().wakeup_link_deadline.has_value());
+
+    // Still inside T_conn_max_comm: waiting for the link in PrepareCharging.
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    expire_watchdog();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+    EXPECT_FALSE(charger->get_internal_context().wakeup_link_deadline.has_value());
+    EXPECT_EQ(charger->get_internal_context().t_step_EF_return_state, Charger::EvseState::PrepareCharging);
+    EXPECT_GT(charger->get_internal_context().t_step_EF_return_pwm, 0.f) << "5 percent again after the E/F step";
+}
+
+TEST_F(ChargerWakeupLinkTest, LinkAfterWakeupDisarmsTheWatchdog) {
+    setup_ev_pause(/*link_established=*/true);
+    wake_up();
+
+    // The link is there: PrepareCharging disarms the watchdog on its first pass and stays.
+    EXPECT_FALSE(charger->get_internal_context().wakeup_link_deadline.has_value());
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
 // [V2G3-M06-07]: with ac_limit_slac_init_retries (default), the 5% matching sequence (E/F, back to 5%) is
 // retried C_sequ_retry = 2 times; the next timeout ends in X1 and later error routines are ignored.
 TEST_F(ChargerDlinkErrorTest, SlacInitRetriesLimitedThenX1) {

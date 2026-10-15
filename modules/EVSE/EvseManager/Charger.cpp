@@ -268,6 +268,7 @@ void Charger::run_state_machine() {
                 internal_context.dc_statistics_printed = false;
                 internal_context.slac_retries = 0;
                 internal_context.slac_retries_exhausted = false;
+                internal_context.wakeup_link_deadline.reset();
                 hlc_failed = false;
             }
 
@@ -814,6 +815,21 @@ void Charger::run_state_machine() {
                 }
             }
 
+            // [V2G3-M07-27]: the wake-up link watchdog. The link lost during the sleep (the matched-state link
+            // polling reported it, which clears dlink_established) or a link that never came back after the
+            // wake-up both end here: state E/F for T_step_EF, then 5 percent again for a new matching process.
+            if (internal_context.wakeup_link_deadline.has_value()) {
+                if (shared_context.dlink_established) {
+                    internal_context.wakeup_link_deadline.reset();
+                } else if (std::chrono::steady_clock::now() >= internal_context.wakeup_link_deadline.value()) {
+                    internal_context.wakeup_link_deadline.reset();
+                    session_log.evse(false, "No PLC link within T_conn_max_comm after the wake-up: E/F for "
+                                            "T_step_EF, then a new matching process [V2G3-M07-27]");
+                    request_error_sequence_internal();
+                    break;
+                }
+            }
+
             // make sure we are enabling PWM
             if (config_context.charge_mode == ChargeMode::AC and (not hlc_use_5percent_current_session or hlc_failed)) {
                 const auto max_current = get_max_current_internal();
@@ -1060,6 +1076,14 @@ void Charger::run_state_machine() {
                     // issue it. After a dlink_pause the provider is still Matched and ignores enter_bcd,
                     // so the call is harmless there - same as the ChargingPausedEVSE resume path below.
                     signal_slac_start();
+                    // [V2G3-M07-27]: without a PLC link within T_conn_max_comm after the wake-up, E/F and a
+                    // new matching (checked in PrepareCharging). Anchored at the first toggle pulse: the
+                    // toggle only counts as complete up to TT_EVSE_VALD_TOGGLE after it, and that wait is
+                    // part of the wake-up, not extra link budget.
+                    internal_context.wakeup_link_deadline =
+                        (restarted_by_ev ? std::chrono::steady_clock::now()
+                                         : internal_context.hlc_ev_pause_start_of_bcb_sequence) +
+                        T_CONN_MAX_COMM;
                     shared_context.current_state = EvseState::PrepareCharging;
                 }
 
@@ -2403,6 +2427,10 @@ bool Charger::power_available() {
 
 void Charger::request_error_sequence() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_request_error_sequence);
+    request_error_sequence_internal();
+}
+
+void Charger::request_error_sequence_internal() {
     if (shared_context.current_state == EvseState::WaitingForAuthentication or
         shared_context.current_state == EvseState::PrepareCharging) {
         const bool limit_retries =
