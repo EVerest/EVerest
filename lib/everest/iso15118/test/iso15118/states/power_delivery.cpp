@@ -24,7 +24,7 @@ d20::Session scheduled_session_offering_tuple_1() {
 
 message_20::PowerDeliveryRequest scheduled_start_request(const d20::Session& session, dt::NumericId tuple_id,
                                                          dt::RationalNumber power,
-                                                         std::optional<dt::PowerToleranceAcceptance> tolerance = {}) {
+                                                         std::optional<dt::PowerToleranceAcceptance> tolerance) {
     message_20::PowerDeliveryRequest req;
     req.header.session_id = session.get_id();
     req.header.timestamp = 1691411798;
@@ -88,7 +88,7 @@ SCENARIO("Power delivery state handling") {
     }
     GIVEN("Bad case - ScheduleSelectionInvalid") {
         const auto session = scheduled_session_offering_tuple_1();
-        const auto req = scheduled_start_request(session, 2, {10, 3});
+        const auto req = scheduled_start_request(session, 2, {10, 3}, std::nullopt);
 
         const auto res = d20::state::handle_request(req, session, false, false);
 
