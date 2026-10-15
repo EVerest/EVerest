@@ -3,9 +3,11 @@
 #ifndef WEBSOCKETTESTCLIENT_HPP
 #define WEBSOCKETTESTCLIENT_HPP
 
+#include <algorithm>
 #include <atomic>
 #include <condition_variable>
 #include <cstring>
+#include <deque>
 #include <everest/logging.hpp>
 #include <iostream>
 #include <libwebsockets.h>
@@ -29,8 +31,10 @@ public:
         std::string data;
         {
             std::lock_guard<std::mutex> lock(m_cv_mutex);
-            data = m_received_data;
-            m_received_data.clear(); // Clear the received data after getting it
+            if (!m_received_messages.empty()) {
+                data = std::move(m_received_messages.front());
+                m_received_messages.pop_front();
+            }
         }
         return data;
     }
@@ -38,30 +42,28 @@ public:
     std::string wait_for_data(std::chrono::milliseconds timeout, bool is_result = true) {
         std::unique_lock<std::mutex> lock(m_cv_mutex);
 
-        bool received = m_cv.wait_for(lock, timeout, [this, is_result]() {
-            if (m_received_data.empty())
-                return false;
-            if (is_result) {
-                // Check string for "result" and "id" keys if is_result is true
-                bool has_result = m_received_data.find("\"result\"") != std::string::npos;
-                bool has_id = m_received_data.find("\"id\"") != std::string::npos;
-                return has_result && has_id;
-            }
-            return true; // For regular responses, we just check if we have data
-        });
+        const auto matches = [this, is_result]() {
+            return std::find_if(m_received_messages.begin(), m_received_messages.end(),
+                                [is_result](const auto& message) {
+                                    return !is_result || (message.find("\"result\"") != std::string::npos &&
+                                                          message.find("\"id\"") != std::string::npos);
+                                });
+        };
+        bool received = m_cv.wait_for(lock, timeout, [&] { return matches() != m_received_messages.end(); });
 
         if (!received) {
             return ""; // Timeout
         }
 
-        std::string data = m_received_data;
-        m_received_data.clear(); // Clear the received data after getting it
+        auto message_it = matches();
+        std::string data = std::move(*message_it);
+        m_received_messages.erase(message_it);
         return data;
     }
 
     bool wait_for_response(std::chrono::milliseconds timeout) {
         std::unique_lock<std::mutex> lock(m_cv_mutex);
-        return m_cv.wait_for(lock, timeout, [this] { return !m_received_data.empty(); });
+        return m_cv.wait_for(lock, timeout, [this] { return !m_received_messages.empty(); });
     }
 
     bool wait_until_connected(std::chrono::milliseconds timeout) {
@@ -84,6 +86,7 @@ private:
     std::atomic<bool> m_lws_service_running{false};
     std::thread m_lws_service_thread;
     std::string m_received_data;
+    std::deque<std::string> m_received_messages;
 
 public:
     // Condition variable to wait for response

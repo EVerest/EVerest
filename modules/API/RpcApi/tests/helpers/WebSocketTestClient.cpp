@@ -57,6 +57,7 @@ int WebSocketTestClient::callback(struct lws* wsi, enum lws_callback_reasons rea
         std::lock_guard<std::mutex> lock(client->m_cv_mutex);
         try {
             client->m_received_data.assign(static_cast<char*>(in), len);
+            client->m_received_messages.push_back(client->m_received_data);
             client->m_cv.notify_all();
         } catch (const std::exception& e) {
             EVLOG_error << "Exception occurred while handling data available: " << e.what();

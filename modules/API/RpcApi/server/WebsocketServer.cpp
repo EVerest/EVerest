@@ -4,10 +4,9 @@
 #include "WebsocketServer.hpp"
 
 #include <algorithm>
+#include <cstring>
 #include <everest/helpers/helpers.hpp>
 #include <everest/logging.hpp>
-#include <iostream>
-#include <unordered_map>
 
 namespace server {
 
@@ -30,6 +29,10 @@ static void log_callback(int level, const char* line) {
 
 int WebSocketServer::callback_ws(struct lws* wsi, enum lws_callback_reasons reason, [[maybe_unused]] void* user,
                                  void* in, size_t len) {
+    if (!wsi) {
+        return 0;
+    }
+
     struct lws_context* context = lws_get_context(wsi);
     WebSocketServer* server = static_cast<WebSocketServer*>(lws_context_user(context));
 
@@ -71,6 +74,50 @@ int WebSocketServer::callback_ws(struct lws* wsi, enum lws_callback_reasons reas
             server->on_client_disconnected(client_id); // Call the on_client_disconnected callback
             lock.lock();                               // Lock again after the callback
             server->m_clients.erase(it);
+            server->m_outgoing_messages.erase(client_id);
+            server->m_pending_close_reasons.erase(client_id);
+        }
+        break;
+    }
+    case LWS_CALLBACK_EVENT_WAIT_CANCELLED:
+        for (const auto& client : server->m_clients) {
+            if (server->m_pending_close_reasons.count(client.first) ||
+                server->m_outgoing_messages.count(client.first)) {
+                lws_callback_on_writable(client.second);
+            }
+        }
+        break;
+    case LWS_CALLBACK_SERVER_WRITEABLE: {
+        auto it = std::find_if(server->m_clients.begin(), server->m_clients.end(),
+                               [wsi](const auto& client) { return client.second == wsi; });
+        if (it == server->m_clients.end()) {
+            break;
+        }
+
+        const auto client_id = it->first;
+        auto close_it = server->m_pending_close_reasons.find(client_id);
+        if (close_it != server->m_pending_close_reasons.end()) {
+            const auto& reason = close_it->second;
+            lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR,
+                             reinterpret_cast<unsigned char*>(const_cast<char*>(reason.data())), reason.size());
+            return -1;
+        }
+
+        auto messages_it = server->m_outgoing_messages.find(client_id);
+        if (messages_it != server->m_outgoing_messages.end() && !messages_it->second.empty()) {
+            auto data = std::move(messages_it->second.front());
+            messages_it->second.pop_front();
+            std::vector<unsigned char> buffer(LWS_PRE + data.size());
+            std::memcpy(buffer.data() + LWS_PRE, data.data(), data.size());
+            if (lws_write(wsi, buffer.data() + LWS_PRE, data.size(), LWS_WRITE_BINARY) < 0) {
+                EVLOG_error << "Failed to send data to client " << client_id;
+                return -1;
+            }
+            if (!messages_it->second.empty()) {
+                lws_callback_on_writable(wsi);
+            } else {
+                server->m_outgoing_messages.erase(messages_it);
+            }
         }
         break;
     }
@@ -142,11 +189,13 @@ bool WebSocketServer::running() const {
 // send data to all connected clients
 void WebSocketServer::send_data(const std::vector<uint8_t>& data) {
     std::lock_guard<std::mutex> lock(m_clients_mutex);
-
-    for (const auto& client : m_clients) {
-        struct lws* wsi = client.second;
-        send_data(wsi, data);
+    if (!m_running || !m_context) {
+        return;
     }
+    for (const auto& client : m_clients) {
+        m_outgoing_messages[client.first].push_back(data);
+    }
+    lws_cancel_service(m_context);
 }
 
 // send data to client identified by ClientId
@@ -154,50 +203,27 @@ void WebSocketServer::send_data(const ClientId& client_id, const std::vector<uin
     try {
         std::lock_guard<std::mutex> lock(m_clients_mutex);
 
-        auto it = m_clients.find(client_id);
-        if (it == m_clients.end()) {
+        if (!m_running || !m_context || m_clients.find(client_id) == m_clients.end()) {
             EVLOG_error << "Client " << client_id << " not found";
             return;
         }
-
-        struct lws* wsi = it->second;
-        send_data(wsi, data);
+        m_outgoing_messages[client_id].push_back(data);
+        lws_cancel_service(m_context);
     } catch (const std::exception& e) {
         EVLOG_error << "Exception occurred while sending data to client " << client_id << ": " << e.what();
     }
 }
 
-// send data to client identified by libwebsockets wsi
-void WebSocketServer::send_data(struct lws* wsi, const std::vector<uint8_t>& data) {
-    try {
-        std::vector<unsigned char> buf(LWS_PRE + data.size());
-        memcpy(buf.data() + LWS_PRE, data.data(), data.size());
-
-        if (lws_write(wsi, buf.data() + LWS_PRE, data.size(), LWS_WRITE_BINARY) < 0) {
-            EVLOG_error << "Failed to send data to client";
-        }
-    } catch (const std::exception& e) {
-        // Note: the code in the try{} block probably cannot throw an exception
-        EVLOG_error << "Exception occurred while sending data to client: " << e.what();
-    }
-}
-
 void WebSocketServer::kill_client_connection(const ClientId& client_id, const std::string& kill_reason) {
     std::lock_guard<std::mutex> lock(m_clients_mutex);
-
-    auto it = m_clients.find(client_id);
-    if (it != m_clients.end()) {
-        struct lws* wsi = it->second;
-        std::string close_reason = kill_reason.empty() ? "Connection closed by server" : kill_reason;
-        lws_close_reason(wsi, LWS_CLOSE_STATUS_PROTOCOL_ERR,
-                         reinterpret_cast<unsigned char*>(const_cast<char*>(close_reason.data())), close_reason.size());
-        lws_set_timeout(wsi, PENDING_TIMEOUT_CLOSE_SEND, LWS_TO_KILL_ASYNC); // Set timeout to close the connection
-        lws_callback_on_writable(wsi); // Notify the event loop to close the connection
-        EVLOG_info << "Client " << client_id << " connection closed (reason: " << kill_reason << ")";
-        m_clients.erase(it); // Remove client from map
-    } else {
+    if (!m_running || !m_context || m_clients.find(client_id) == m_clients.end()) {
         EVLOG_error << "Client ID " << client_id << " not found!";
+        return;
     }
+    m_outgoing_messages.erase(client_id);
+    m_pending_close_reasons[client_id] = kill_reason.empty() ? "Connection closed by server" : kill_reason;
+    lws_cancel_service(m_context);
+    EVLOG_info << "Client " << client_id << " connection close requested (reason: " << kill_reason << ")";
 }
 
 uint WebSocketServer::connections_count() const {
@@ -221,27 +247,27 @@ bool WebSocketServer::start_server() {
                << (m_info.iface ? " (interface \"" + std::string(m_info.iface) + "\" only)" : "")
                << (m_ssl_enabled ? " with" : " without") << " TLS";
 
+    m_running = true;
     m_server_thread = std::thread([this]() {
-        m_running = true;
         while (m_running) {
             lws_service(m_context, 1000);
         }
     });
 
-    while (!m_running) {
-        std::this_thread::sleep_for(std::chrono::milliseconds(10)); // Wait for server to start
-    }
-
     return true; // Server started successfully
 }
 
 bool WebSocketServer::stop_server() {
-    if (!m_running) {
-        return true;
+    {
+        std::lock_guard<std::mutex> lock(m_clients_mutex);
+        if (!m_running) {
+            return true;
+        }
+        m_running = false;
+        if (m_context) {
+            lws_cancel_service(m_context);
+        }
     }
-    m_running = false;
-
-    lws_cancel_service(m_context); // To unblock the server thread loop immediately
 
     if (m_server_thread.joinable()) {
         m_server_thread.join(); // Wait for server thread to finish
@@ -250,6 +276,12 @@ bool WebSocketServer::stop_server() {
     if (m_context) {
         lws_context_destroy(m_context);
         m_context = nullptr;
+    }
+    {
+        std::lock_guard<std::mutex> lock(m_clients_mutex);
+        m_clients.clear();
+        m_outgoing_messages.clear();
+        m_pending_close_reasons.clear();
     }
     EVLOG_info << "WebSocket Server stopped";
 
