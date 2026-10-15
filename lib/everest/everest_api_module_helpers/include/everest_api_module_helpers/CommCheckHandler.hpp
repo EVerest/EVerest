@@ -5,14 +5,13 @@
 
 #include <atomic>
 #include <chrono>
-#include <condition_variable>
 #include <functional>
 #include <memory>
-#include <mutex>
 #include <optional>
 #include <string_view>
 #include <thread>
 
+#include <everest/util/async/monitor.hpp>
 #include <utils/error/error_factory.hpp>
 #include <utils/error/error_manager_impl.hpp>
 #include <utils/error/error_state_monitor.hpp>
@@ -38,15 +37,17 @@ public:
     bool heartbeat(int interval_ms, HeartBeatFtor const& ftor);
 
 private:
+    struct State {
+        std::optional<bool> comm_check_value;
+        bool shutting_down{false};
+        std::thread heartbeat_handler;
+    };
+
     void communication_check_handler();
 
     std::chrono::seconds timeout;
-    std::mutex state_mutex;
-    std::condition_variable state_cv;
-    std::optional<bool> comm_check_value;
-    bool shutting_down{false};
+    everest::lib::util::monitor<State> state;
     std::thread handler;
-    std::thread heartbeat_handler;
     std::atomic_bool check_active{true};
     const std::string error_type;
     const std::string init_sub_type{"Initial communication check"};

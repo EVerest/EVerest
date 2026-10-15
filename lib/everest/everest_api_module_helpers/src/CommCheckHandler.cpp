@@ -50,11 +50,13 @@ bool CommCheckHandlerBase::check_error() {
 }
 
 CommCheckHandlerBase::~CommCheckHandlerBase() {
+    std::thread heartbeat_handler;
     {
-        std::scoped_lock lock(state_mutex);
-        shutting_down = true;
+        auto state_handle = state.handle();
+        state_handle->shutting_down = true;
+        heartbeat_handler = std::move(state_handle->heartbeat_handler);
     }
-    state_cv.notify_all();
+    state.notify_all();
     if (handler.joinable()) {
         handler.join();
     }
@@ -64,11 +66,8 @@ CommCheckHandlerBase::~CommCheckHandlerBase() {
 }
 
 void CommCheckHandlerBase::set_value(bool value) {
-    {
-        std::scoped_lock lock(state_mutex);
-        comm_check_value = value;
-    }
-    state_cv.notify_all();
+    state.handle()->comm_check_value = value;
+    state.notify_all();
 }
 
 void CommCheckHandlerBase::set_error() {
@@ -92,21 +91,21 @@ bool CommCheckHandlerBase::heartbeat(int interval_ms, HeartBeatFtor const& ftor)
     if (interval_ms > 0) {
         auto interval = std::chrono::milliseconds(interval_ms);
         auto action = [this, interval, ftor]() {
-            std::unique_lock lock(state_mutex);
-            while (not shutting_down) {
+            auto state_handle = state.handle();
+            while (not state_handle->shutting_down) {
                 const auto next = std::chrono::steady_clock::now() + interval;
-                lock.unlock();
+                state_handle.unlock();
                 const auto result = ftor();
-                lock.lock();
+                state_handle.lock();
                 if (not result) {
                     break;
                 }
-                state_cv.wait_until(lock, next, [this] { return shutting_down; });
+                state_handle.wait_until(next, [&state_handle] { return state_handle->shutting_down; });
             }
         };
-        std::scoped_lock lock(state_mutex);
-        if (not shutting_down and not heartbeat_handler.joinable()) {
-            heartbeat_handler = std::thread(action);
+        auto state_handle = state.handle();
+        if (not state_handle->shutting_down and not state_handle->heartbeat_handler.joinable()) {
+            state_handle->heartbeat_handler = std::thread(action);
             started = true;
         }
     }
@@ -118,14 +117,16 @@ bool CommCheckHandlerBase::heartbeat(int interval_ms, HeartBeatFtor const& ftor)
 
 void CommCheckHandlerBase::communication_check_handler() {
     auto timeout_sub_type = init_sub_type;
-    std::unique_lock lock(state_mutex);
+    auto state_handle = state.handle();
     while (check_active.load()) {
-        state_cv.wait_for(lock, timeout, [this] { return shutting_down or comm_check_value.has_value(); });
-        if (shutting_down) {
+        state_handle.wait_for(
+            [&state_handle] { return state_handle->shutting_down or state_handle->comm_check_value.has_value(); },
+            timeout);
+        if (state_handle->shutting_down) {
             break;
         }
-        const auto check = std::exchange(comm_check_value, std::nullopt);
-        lock.unlock();
+        const auto check = std::exchange(state_handle->comm_check_value, std::nullopt);
+        state_handle.unlock();
         if (check.has_value()) {
             timeout_sub_type = default_sub_type;
             check_active.store(check.value());
@@ -139,7 +140,7 @@ void CommCheckHandlerBase::communication_check_handler() {
                 raise_error(timeout_sub_type);
             }
         }
-        lock.lock();
+        state_handle.lock();
     }
 }
 

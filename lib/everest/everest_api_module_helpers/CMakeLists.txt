@@ -24,6 +24,7 @@ target_link_libraries(everest_api_module_helpers
   PUBLIC
     everest::everest_api_types
     everest::framework
+    everest::util
   PRIVATE
     everest::log
 )
