@@ -851,6 +851,14 @@ Results echo the requested ``component_variable`` and carry a status:
 (re)connect or reboot), ``Rejected``, ``UnknownComponent`` / ``UnknownVariable``,
 or ``NotSupportedAttributeType``.
 
+A variable that exists but has no value reads as ``Accepted`` with an empty
+``value`` (OCPP 2.x B06.FR.13) and can be written, in both protocol modes. In
+OCPP 1.6 mode, a custom-mapped key without a value appears in
+``GetConfiguration.conf`` without a ``value``, and ``ChangeConfiguration`` can set it.
+``NotSupportedAttributeType`` is reserved for an attribute type the variable does
+not have. A write-only variable reads as ``Rejected`` (B06.FR.09), whether or not
+it has a value.
+
 The status is the whole answer: the reason codes the stack computes internally
 (``PriorityNetworkConf``, ``NoSecurityDowngrade``, ``InvalidNetworkConf``, ...)
 are **currently not** carried on this interface; its result has no ``statusInfo`` field,

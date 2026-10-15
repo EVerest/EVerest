@@ -169,7 +169,8 @@ template <typename T>
 std::optional<T> get_optional(DeviceModelInterface& storage, const v2::Component& component,
                               const v2::Variable& variable, v2::AttributeEnum attribute, bool writeOnly = false) {
     std::string value;
-    const auto get_result = storage.get_variable(component, variable, attribute, value, writeOnly);
+    const auto get_result =
+        storage.get_variable(component, variable, attribute, value, writeOnly, v2::UnsetValue::NotSupported);
     if (get_result == v2::GetVariableStatusEnum::Accepted) {
         try {
             if constexpr (std::is_same_v<bool, T>) {
@@ -1388,16 +1389,18 @@ std::optional<KeyValue> ChargePointConfigurationDeviceModel::getCustomKeyValue(c
     }
 
     const auto& [component, variable] = it->second;
-    const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual);
-    if (!value.has_value()) {
+    if (!key_exists(*storage, component, variable)) {
         return std::nullopt;
     }
 
+    // a known key without a value is reported without one (OCPP 1.6 KeyValue.value)
     KeyValue kv;
     kv.key = key;
     kv.readonly =
         isReadOnly(*storage, component.name.get(), variable.name.get(), v2::AttributeEnum::Actual).value_or(true);
-    kv.value = value.value();
+    if (const auto value = get_optional<std::string>(*storage, component, variable, v2::AttributeEnum::Actual)) {
+        kv.value = value.value();
+    }
     return kv;
 }
 

@@ -150,14 +150,13 @@ Provisioning::get_variables(const std::vector<GetVariableData>& get_variable_dat
         get_variable_result.component = get_variable_data.component;
         get_variable_result.variable = get_variable_data.variable;
         get_variable_result.attributeType = get_variable_data.attributeType.value_or(AttributeEnum::Actual);
-        const auto request_value_response = this->context.device_model.request_value<std::string>(
-            get_variable_data.component, get_variable_data.variable,
-            get_variable_data.attributeType.value_or(AttributeEnum::Actual));
-        if (request_value_response.status == GetVariableStatusEnum::Accepted and
-            request_value_response.value.has_value()) {
-            get_variable_result.attributeValue = request_value_response.value.value();
+        std::string value;
+        get_variable_result.attributeStatus = this->context.device_model.get_variable(
+            get_variable_data.component, get_variable_data.variable, get_variable_result.attributeType.value(), value,
+            false, UnsetValue::EmptyString);
+        if (get_variable_result.attributeStatus == GetVariableStatusEnum::Accepted) {
+            get_variable_result.attributeValue = value;
         }
-        get_variable_result.attributeStatus = request_value_response.status;
 
         this->try_apply_active_slot_identity_override(get_variable_data, get_variable_result);
 

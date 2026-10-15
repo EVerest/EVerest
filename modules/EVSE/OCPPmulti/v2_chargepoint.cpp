@@ -215,7 +215,8 @@ ocpp::v2::TriggerReasonEnum stop_reason_to_trigger_reason_enum(const ocpp::v2::R
     }
 }
 
-// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>)
+// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>);
+// GetVariables reports a variable without a value as an empty string, which reads as absent here
 template <typename T>
 std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_point,
                                         const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
@@ -227,7 +228,7 @@ std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_p
     const auto results = charge_point.get_variables({data});
     std::optional<T> res;
     if (!results.empty() && results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted &&
-        results.front().attributeValue.has_value()) {
+        results.front().attributeValue.has_value() && !results.front().attributeValue->get().empty()) {
         try {
             res = ocpp::v2::to_specific_type<T>(results.front().attributeValue.value().get());
         } catch (const std::exception&) {

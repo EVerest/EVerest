@@ -241,6 +241,25 @@ TEST_F(ProvisioningResetTest, RejectedResetDoesNotSuppressReconnect) {
     EXPECT_FALSE(reset_callback_evse_id.has_value()) << "rejected reset must not fire the reset callback";
 }
 
+using ProvisioningGetVariablesTest = ProvisioningResetTest;
+
+// B06.FR.13: a supported attribute without a value is reported as an empty string
+TEST_F(ProvisioningGetVariablesTest, AttributeWithoutValueIsAcceptedWithEmptyValue) {
+    ASSERT_TRUE(dm_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                                            "OrganizationName", std::nullopt, AttributeEnum::Actual));
+    GetVariableData data;
+    data.component = ControllerComponentVariables::OrganizationName.component;
+    data.variable = ControllerComponentVariables::OrganizationName.variable.value();
+
+    const auto results = provisioning->get_variables({data});
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].attributeStatus, GetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(results[0].attributeValue.has_value());
+    EXPECT_EQ(results[0].attributeValue.value().get(), "");
+    EXPECT_EQ(results[0].attributeType, AttributeEnum::Actual);
+}
+
 // Hot reconfiguration of the per-slot MessageTimeout: a write to the active NetworkConfiguration
 // slot must be applied to the live connection immediately (no reconnect), a write to any other
 // slot is only picked up on the next connect.

@@ -87,7 +87,8 @@ template <typename T>
 T get_value(const DeviceModelInterface& dm, const Component& component_id, const Variable& variable_id,
             const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     std::string value;
-    const auto status = dm.get_variable(component_id, variable_id, attribute_enum, value, true);
+    const auto status =
+        dm.get_variable(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
     if (status != GetVariableStatusEnum::Accepted) {
         throw std::runtime_error("Required value not available");
     }
@@ -122,7 +123,8 @@ std::optional<T> get_optional_value(const DeviceModelInterface& dm, const Compon
                                     const Variable& variable_id,
                                     const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     std::string value;
-    const auto status = dm.get_variable(component_id, variable_id, attribute_enum, value, true);
+    const auto status =
+        dm.get_variable(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
     if (status != GetVariableStatusEnum::Accepted) {
         return std::nullopt;
     }
