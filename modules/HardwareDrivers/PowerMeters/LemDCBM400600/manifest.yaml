@@ -139,7 +139,10 @@ config:
     maximum: 20000
     minimum: 1000
   poll_interval_ms:
-    description: The interval in milliseconds between polls of the live measurements (publish rate of the powermeter var).
+    description: >-
+      The interval in milliseconds between polls of the live measurements. Only a poll that returns a
+      new measurement publishes the powermeter var; the device refreshes about once per second, so a
+      shorter interval reduces the delay until a new measurement is published, not the measurement rate.
     type: integer
     default: 1000
     minimum: 100

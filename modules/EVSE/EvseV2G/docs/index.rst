@@ -56,6 +56,7 @@ EV switched its disconnection device (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 
 update after the request can carry a measurement taken just before it (a polled meter delivers a
 sample up to one poll interval after taking it); the second one was taken after the request. It
 waits at most 1.4 s (1.5 s performance time) and then sends the last values, with a warning if none
-arrived. The value is only as fresh as the source of ``update_dc_present_values``: with a car-side
-powermeter that updates its measurement once per second, the second update usually does not make it
-in time and the response carries the first one, up to about one second old.
+arrived. The value is only as fresh as the source of ``update_dc_present_values``, which has to
+deliver new measurements only: with a car-side powermeter that updates its measurement once per
+second, the second update usually does not make it in time and the response carries the first one,
+up to about one second old.

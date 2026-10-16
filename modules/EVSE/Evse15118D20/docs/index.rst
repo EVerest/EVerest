@@ -425,8 +425,9 @@ measured after the request (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106): 
 after the request can carry a measurement taken just before it, the second one was taken after the
 request. It waits at most 1.4 s (1.5 s performance time), then it is sent with the last values, with
 a warning if none arrived. On DIN SPEC 70121 and ISO 15118-2 the first one also waits for CP state B
-as before. An emergency shutdown reported while a DC PowerDeliveryRes(stop) is held answers it
-FAILED at once.
+as before. The value is only as fresh as the source of ``update_dc_present_values``, which has to
+deliver new measurements only. An emergency shutdown reported while a DC PowerDeliveryRes(stop) is
+held answers it FAILED at once.
 
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
