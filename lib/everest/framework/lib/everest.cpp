@@ -59,8 +59,8 @@ Everest::Everest(std::string module_id_, const Config& config_, bool validate_da
     forward_exceptions(forward_exceptions) {
     BOOST_LOG_FUNCTION();
 
-    this->config_service_client = std::make_shared<config::ConfigServiceClient>(mqtt_abstraction, this->module_id,
-                                                                                this->config.get_module_names());
+    this->config_service_client = std::make_shared<config::ConfigServiceClient>(
+        mqtt_abstraction, this->module_id, this->config.get_module_names(), this->config.get_module_config().access);
 
     EVLOG_debug << "Initializing EVerest framework...";
 
