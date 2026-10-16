@@ -21,3 +21,5 @@ _replace_license.py_ parses C++ files and replaces license headers with up2date 
 _set_module_capabilities.py_ parses the manifest.yaml of every installed module and grants the Linux capabilities listed under `capabilities` as file capabilities on the module binary using setcap
 
 _snapshot2bb.py_ parses a snapshot.yaml file and modifies the corresponding recipe .bb files
+
+_sync_bazel_dependencies.py_ parses dependencies.yaml and brings the Bazel dependencies in MODULE.bazel and third-party/bazel/extension.bzl to the same versions, preferring Bazel Central Registry modules over git archives
