@@ -11,6 +11,9 @@ FROM ghcr.io/everest/everest-ci/build-kit-base:${BASE_IMAGE_TAG}
 #     && git checkout ${EVEREST_CMAKE_VERSION} \
 #     && rm -r .git
 
+# The base image ships an edm older than this repository requires; without one, the build installs its own
+RUN python3 -m pip uninstall -y --break-system-packages edm_tool
+
 # FIXME(kai): Install libsystemd-dev as a dependency of sdbus-c++
 RUN apt-get update && apt-get -y install libsystemd-dev
 

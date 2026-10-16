@@ -72,7 +72,9 @@ or in short
 
   Alternatively, you can also install ``edm`` in a python virtual environment.
   Make sure edm is available in your PATH after the installation. You can verify
-  this by running ``edm --version``.
+  this by running ``edm --version``. If an edm is found, the build requires it to be
+  at least the version this EVerest needs and stops otherwise; without one, the build
+  installs its own edm into its python virtual environment.
 
 Next you could run
 
