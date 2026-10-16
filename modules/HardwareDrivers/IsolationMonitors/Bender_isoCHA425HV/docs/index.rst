@@ -32,7 +32,8 @@ During initialization, this driver overwrites the following settings:
 * disable overvoltage alarm  [register 3010 and following]
 * set mode to "dc"  [register 3023 and following]
 * disable automatic self-tests  [register 3021 and following]
-* disable line voltage test  [register 3024]
+* disable the system connection test "nEt" except during self tests started by EVerest  [register 3024]
+* disable the self test at device start  [register 3025]
 * disable device (only if the configuration option ``threshold_resistance_kohm`` is set to its maximum of 600 [k Ohms]) [register 3026]
 
 Startup and operation
@@ -43,6 +44,37 @@ To start the device and begin insulation (and voltage) measurements, send a "sta
 After the desired measurement has been retrieved, disable the device via an MQTT "stop" command on its interface.
 
 Devices with firmware version newer than 5.00 support a faster self test mode to reduce CableCheck time. This will automatically be used if supported by firmware.
+
+Self test and system connection test
+------------------------------------
+
+The system connection test "nEt" (register 3024) detects an interrupted measuring lead L1/+ or L2/- (device error
+E.02). It needs a monitored system with a low internal resistance and, in the "on U" setting, a system voltage above
+DC 100 V during the test, so it cannot pass at idle. As the device stores this parameter permanently and would also
+use it for its own self test at power-on, the driver handles both registers as follows:
+
+.. list-table::
+   :header-rows: 1
+
+   * - ``selftest_enable_gridconnection``
+     - Idle / between tests
+     - Self test at driver start
+     - Self test, test voltage <= 100 V
+     - Self test, test voltage > 100 V
+   * - false (default)
+     - off
+     - off
+     - off
+     - off
+   * - true
+     - off
+     - off
+     - on
+     - on U
+
+The device's self test at power-on (register 3025) is always disabled. With ``selftest_enable_at_start`` the driver
+runs one self test when it starts instead; a device error found by it is reported as DeviceFault. A self test
+requested while this test is running is started after it.
 
 Using the internal alarm functions and relays
 =============================================
