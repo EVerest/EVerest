@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <everest_api_types/generic/API.hpp>
+
 #include <optional>
 #include <string>
 
@@ -27,6 +29,7 @@ struct Error {
     std::optional<std::string> sub_type;
     std::optional<std::string> message;
     std::optional<ErrorSeverityEnum> severity;
+    std::optional<generic::CausedByValue> caused_by_value;
 };
 
 struct OverVoltageLimits {

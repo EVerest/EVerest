@@ -463,6 +463,17 @@ components:
               characters. When the message is empty, the error description is sent
               instead.
           type: string
+        caused_by_value:
+          description: |-
+            Optional value that caused this specific occurrence of the error, e.g. the
+            measurement that crossed a limit.
+          type: object
+          properties:
+            actual_value:
+              description: |-
+                Any value in string format.
+              type: string
+              maxLength: 2500
 
     CommunicationCheck:
       type: boolean

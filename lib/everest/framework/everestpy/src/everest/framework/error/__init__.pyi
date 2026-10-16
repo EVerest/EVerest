@@ -43,6 +43,12 @@ class State(Enum):
     ClearedByModule = "ClearedByModule",
     ClearedByReboot = "ClearedByReboot"
 
+class CausedByValue:
+    def __init__(self) -> None: ...
+
+    @property
+    def actual_value(self) -> str: ...
+
 class Error:
     def __init__(self) -> None: ...
 
@@ -72,6 +78,9 @@ class Error:
 
     @property
     def state(self) -> State: ...
+
+    @property
+    def caused_by_value(self) -> Optional[CausedByValue]: ...
 
 ErrorCallback = Callable[[Error], None]
 

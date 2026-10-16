@@ -22,6 +22,9 @@ template <> struct adl_serializer<Everest::error::Error> {
         if (e.origin.mapping.has_value()) {
             j["origin"]["mapping"] = e.origin.mapping.value();
         }
+        if (e.caused_by_value.has_value()) {
+            j["caused_by_value"] = {{"actual_value", e.caused_by_value.value().actual_value}};
+        }
     }
     static Everest::error::Error from_json(const json& j) {
         const Everest::error::ErrorType type = j.at("type");
@@ -40,7 +43,13 @@ template <> struct adl_serializer<Everest::error::Error> {
         const Everest::error::ErrorSubType sub_type(j.at("sub_type"));
         const std::string vendor_id = j.at("vendor_id");
 
-        return {type, sub_type, message, description, origin, vendor_id, severity, timestamp, uuid, state};
+        Everest::error::Error error(type, sub_type, message, description, origin, vendor_id, severity, timestamp, uuid,
+                                    state);
+        if (j.contains("caused_by_value")) {
+            error.caused_by_value =
+                Everest::error::CausedByValue{j.at("caused_by_value").at("actual_value").get<std::string>()};
+        }
+        return error;
     }
 };
 

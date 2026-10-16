@@ -4,6 +4,7 @@
 
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/generic/string.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
 #include <utils/error.hpp>
@@ -43,6 +44,7 @@ void generic_error_raiser_API::generate_api_var_raise_error() {
             auto error_str = make_error_string(error);
             auto ev_error = p_main->error_factory->create_error(error_str, sub_type_str, message_str,
                                                                 Everest::error::Severity::High);
+            ev_error.caused_by_value = ev_API::to_caused_by_value(error.caused_by_value);
 
             p_main->raise_error(ev_error);
             return true;

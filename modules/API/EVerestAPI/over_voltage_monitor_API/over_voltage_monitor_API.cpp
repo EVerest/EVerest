@@ -6,6 +6,7 @@
 #include <everest_api_types/generic/string.hpp>
 #include <everest_api_types/over_voltage_monitor/API.hpp>
 #include <everest_api_types/over_voltage_monitor/codec.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 
 namespace module {
@@ -79,6 +80,7 @@ void over_voltage_monitor_API::generate_api_var_raise_error() {
             auto severity = error.severity.value_or(API_ovm::ErrorSeverityEnum::High);
             auto ev_error =
                 p_main->error_factory->create_error(error_str, sub_type_str, message_str, toInternalSeverity(severity));
+            ev_error.caused_by_value = ev_API::to_caused_by_value(error.caused_by_value);
             p_main->raise_error(ev_error);
             return true;
         }

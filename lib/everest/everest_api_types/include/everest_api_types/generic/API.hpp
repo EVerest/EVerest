@@ -14,10 +14,17 @@ enum class ErrorEnum {
     VendorWarning
 };
 
+/// \brief The value that caused an error
+struct CausedByValue {
+    /// the value itself, at most 2500 characters
+    std::optional<std::string> actual_value;
+};
+
 struct Error {
     ErrorEnum type;
     std::optional<std::string> sub_type;
     std::optional<std::string> message;
+    std::optional<CausedByValue> caused_by_value;
 };
 
 struct RequestReply {

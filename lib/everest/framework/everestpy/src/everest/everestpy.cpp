@@ -65,6 +65,10 @@ PYBIND11_MODULE(everestpy, m) {
         .value("ClearedByReboot", Everest::error::State::ClearedByReboot)
         .export_values();
 
+    py::class_<Everest::error::CausedByValue>(error_submodule, "CausedByValue")
+        .def(py::init<>())
+        .def_readwrite("actual_value", &Everest::error::CausedByValue::actual_value);
+
     py::class_<Everest::error::Error>(error_submodule, "Error")
         .def(py::init<>())
         .def_readwrite("type", &Everest::error::Error::type)
@@ -75,7 +79,8 @@ PYBIND11_MODULE(everestpy, m) {
         .def_readwrite("origin", &Everest::error::Error::origin)
         .def_readwrite("timestamp", &Everest::error::Error::timestamp)
         .def_readwrite("uuid", &Everest::error::Error::uuid)
-        .def_readwrite("state", &Everest::error::Error::state);
+        .def_readwrite("state", &Everest::error::Error::state)
+        .def_readwrite("caused_by_value", &Everest::error::Error::caused_by_value);
 
     py::class_<Everest::error::ErrorStateMonitor::StateCondition>(error_submodule, "ErrorStateCondition")
         .def(py::init<std::string, std::string, bool>())

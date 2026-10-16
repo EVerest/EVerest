@@ -33,7 +33,7 @@ std::string connector_of(const Error& error) {
                                                                  : std::string{};
 }
 
-const std::array<std::pair<std::string_view, PlaceholderValue>, 14> PLACEHOLDERS{{
+const std::array<std::pair<std::string_view, PlaceholderValue>, 15> PLACEHOLDERS{{
     {"type", [](const Error& error) { return error.type; }},
     {"sub_type", [](const Error& error) { return error.sub_type; }},
     {"message", [](const Error& error) { return error.message; }},
@@ -48,6 +48,10 @@ const std::array<std::pair<std::string_view, PlaceholderValue>, 14> PLACEHOLDERS
     {"state", [](const Error& error) { return Everest::error::state_to_string(error.state); }},
     {"timestamp", [](const Error& error) { return Everest::Date::to_rfc3339(error.timestamp); }},
     {"uuid", [](const Error& error) { return error.uuid.to_string(); }},
+    {"actual_value",
+     [](const Error& error) {
+         return error.caused_by_value.has_value() ? error.caused_by_value.value().actual_value : std::string{};
+     }},
 }};
 
 std::optional<PlaceholderValue> find_placeholder(std::string_view name) {

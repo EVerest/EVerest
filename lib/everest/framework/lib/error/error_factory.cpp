@@ -109,6 +109,13 @@ Error ErrorFactory::create_error(const ErrorType& type, const ErrorSubType& sub_
 }
 
 Error ErrorFactory::create_error(const ErrorType& type, const ErrorSubType& sub_type, const std::string& message,
+                                 const Severity severity, const CausedByValue& caused_by_value) const {
+    Error error = create_error(type, sub_type, message, severity);
+    error.caused_by_value = caused_by_value;
+    return error;
+}
+
+Error ErrorFactory::create_error(const ErrorType& type, const ErrorSubType& sub_type, const std::string& message,
                                  const State state) const {
     Error error;
     error.type = type;

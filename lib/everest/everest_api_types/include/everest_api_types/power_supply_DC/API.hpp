@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <everest_api_types/generic/API.hpp>
+
 #include <optional>
 #include <string>
 
@@ -79,6 +81,7 @@ struct Error {
     ErrorEnum type;
     std::optional<std::string> sub_type;
     std::optional<std::string> message;
+    std::optional<generic::CausedByValue> caused_by_value;
 };
 
 } // namespace everest::lib::API::V1_0::types::power_supply_DC
