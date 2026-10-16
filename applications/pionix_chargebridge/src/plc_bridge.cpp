@@ -121,10 +121,29 @@ plc_bridge::plc_bridge(plc_bridge_config const& config, everest::lib::io::event:
         if (not last and current) {
             if (m_udp) {
                 m_udp->reset();
+                notify_endpoint_changed();
             }
         }
         handle_ready();
     });
+}
+
+std::uint16_t plc_bridge::local_port() {
+    if (not m_udp) {
+        return 0;
+    }
+    auto const& socket = m_udp->get_raw_handler();
+    return socket ? socket->local_port() : 0;
+}
+
+void plc_bridge::set_endpoint_changed_handler(std::function<void()> handler) {
+    m_endpoint_changed = std::move(handler);
+}
+
+void plc_bridge::notify_endpoint_changed() {
+    if (m_endpoint_changed) {
+        m_endpoint_changed();
+    }
 }
 
 void plc_bridge::create_udp_client(std::string const& remote, uint16_t remote_port, std::string const& identifier) {
@@ -138,12 +157,14 @@ void plc_bridge::create_udp_client(std::string const& remote, uint16_t remote_po
         m_udp_ready = id == 0;
         handle_ready();
     });
+    notify_endpoint_changed();
 }
 
 void plc_bridge::disconnect_cb_endpoint() {
     m_udp_ready = false;
     m_udp_on_error = false;
     m_udp.reset();
+    notify_endpoint_changed();
     handle_ready();
 }
 
@@ -158,6 +179,7 @@ void plc_bridge::handle_timer_event() {
     if (m_udp_on_error) {
         if (m_udp) {
             m_udp->reset();
+            notify_endpoint_changed();
         }
     }
     if (m_tap_on_error) {
@@ -168,7 +190,9 @@ void plc_bridge::handle_timer_event() {
 
 void plc_bridge::send_keepalive() {
     // Only an SPE board forgets the host between sessions in practice (a HomePlug host talks SLAC
-    // before any SDP), and only a live, heartbeat-verified board can be taught anything.
+    // before any SDP), and only a live, heartbeat-verified board can be taught anything. Firmware
+    // with cb-host-ports-v1 takes the port from the heartbeat and does not need this; it stays for
+    // boards running older firmware, where the frame is still the only teacher.
     if (m_technology not_eq CB_LINK_TECH_SPE or not m_cb_is_connected or not m_udp_ready or not m_udp) {
         return;
     }

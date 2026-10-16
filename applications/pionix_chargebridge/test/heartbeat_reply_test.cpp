@@ -120,10 +120,13 @@ TEST(heartbeat_reply, the_config_layout_is_frozen) {
     EXPECT_EQ(sizeof(CbConfig), 226u);
     EXPECT_EQ(offsetof(CbConfig, station_id), 224u);
     EXPECT_EQ(offsetof(CbConfig, cb_type), 225u);
-    // The heartbeat is the config plus session_id (4) and session_flags (1).
+    // The heartbeat is the config plus session_id (4), session_flags (1) and the host ports (2 + 2).
     EXPECT_EQ(offsetof(CbHeartbeatPacket, session_id), 226u);
     EXPECT_EQ(offsetof(CbHeartbeatPacket, session_flags), 230u);
-    EXPECT_EQ(sizeof(CbHeartbeatPacket), 231u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_can_port), 231u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_plc_port), 233u);
+    EXPECT_EQ(sizeof(CbHeartbeatPacket), 235u);
+    EXPECT_EQ(CB_HEARTBEAT_PACKET_LEGACY_SIZE, 231u);
 }
 
 TEST(heartbeat_reply, the_message_ids_are_frozen) {

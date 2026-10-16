@@ -42,6 +42,12 @@ public:
     void connect_cb_endpoint(std::string const& remote);
     bool available() const;
     void set_cb_connection_status(bool connected);
+    // cb-host-ports-v1: the UDP source port of the socket toward the CB's PLC service, 0 without
+    // one. Announced to the MCU in the heartbeat, which makes the firmware send modem frames to
+    // this port before the host has transmitted anything on the tap.
+    std::uint16_t local_port();
+    // Called after every (re)open or close of that socket, i.e. whenever local_port() changed.
+    void set_endpoint_changed_handler(std::function<void()> handler);
     // The link status embedded in the MCU's latest heartbeat reply (via heartbeat_service), so the
     // carrier follows the PHY within one heartbeat interval. In carrier: none mode this only
     // cross-checks the reported technology; the carrier is never touched and nothing is recorded.
@@ -58,6 +64,7 @@ public:
     std::optional<utilities::chargebridge_link_status> link_status() const;
 
 private:
+    void notify_endpoint_changed();
     void handle_timer_event();
     void handle_ready();
     void create_udp_client(std::string const& remote, uint16_t remote_port, std::string const& identifier);
@@ -69,6 +76,7 @@ private:
     void send_keepalive();
     everest::lib::io::tun_tap::tap_client m_tap;
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
+    std::function<void()> m_endpoint_changed;
     everest::lib::io::event::timer_fd m_timer;
     uint16_t m_udp_port{0};
     std::string m_udp_remote;

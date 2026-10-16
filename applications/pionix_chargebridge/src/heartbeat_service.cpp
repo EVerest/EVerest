@@ -54,6 +54,9 @@ heartbeat_service::heartbeat_service(heartbeat_config const& config,
     std::memcpy(&m_config_message.data.module_config, &config.cb_config, sizeof(CbConfig));
     m_config_message.data.session_id = generate_session_id();
     m_config_message.data.session_flags = config.force_takeover ? CB_SESSION_FLAG_FORCE_TAKEOVER : 0;
+    // cb-host-ports-v1: unknown until a provider is set; 0 keeps the MCU in its learning mode.
+    m_config_message.data.host_can_port = 0;
+    m_config_message.data.host_plc_port = 0;
     m_config_message.type = CbStructType::CST_HostToCb_Heartbeat;
     m_heartbeat_interval = std::chrono::milliseconds(config.interval_s * s_to_ms_factor);
     m_connection_to = std::chrono::milliseconds(config.connection_to_s * s_to_ms_factor);
@@ -97,9 +100,34 @@ void heartbeat_service::send_heartbeat() {
     if (m_udp_on_error or not m_udp) {
         return;
     }
+    refresh_host_ports();
     everest::lib::io::udp::udp_payload payload;
     utilities::struct_to_vector(m_config_message, payload.buffer);
     m_udp->tx(payload);
+}
+
+void heartbeat_service::set_host_ports_provider(std::function<host_ports()> provider) {
+    m_host_ports = std::move(provider);
+}
+
+bool heartbeat_service::refresh_host_ports() {
+    if (not m_host_ports) {
+        return false;
+    }
+    auto const [can_port, plc_port] = m_host_ports();
+    auto const changed =
+        can_port != m_config_message.data.host_can_port or plc_port != m_config_message.data.host_plc_port;
+    m_config_message.data.host_can_port = can_port;
+    m_config_message.data.host_plc_port = plc_port;
+    return changed;
+}
+
+void heartbeat_service::announce_host_ports() {
+    // Only a change is worth an extra heartbeat: several bridges reset on the same connection edge,
+    // and each one's reopen calls here. Unchanged ports ride with the next regular tick anyway.
+    if (refresh_host_ports()) {
+        send_heartbeat();
+    }
 }
 
 void heartbeat_service::set_cb_connected(bool connected) {

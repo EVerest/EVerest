@@ -112,6 +112,7 @@ public:
 private:
     std::future<bool> start_internal_runtime();
     void create_internal_runtime();
+    void wire_host_port_announcements();
     void create_internal_runtime_eagerly();
     bool has_configured_bridge() const;
     bool has_existing_bridge() const;
