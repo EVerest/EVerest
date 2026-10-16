@@ -752,68 +752,31 @@ class EDM:
         return (dependencies, project_dirs)
 
     @classmethod
-    def parse_workspace_files(cls, workspace_files: list) -> dict:
-        """Parse the given list of workspace_files and return a workspace dict when exactly one workspace file is in the list"""
-        workspace = {}
-        if len(workspace_files) == 1:
-            workspace_file = Path(workspace_files[0]).expanduser().resolve()
-            if workspace_file.is_file():
-                log.info(f"Using workspace file: {workspace_file}")
-                with open(workspace_file, encoding='utf-8') as wsp:
-                    try:
-                        workspace_yaml = yaml.safe_load(wsp)
-                        if workspace_yaml is not None:
-                            workspace = {**workspace, **workspace_yaml}
-                    except yaml.YAMLError as e:
-                        log.error(f"Error parsing yaml of {workspace_file}: {e}")
-        return workspace
+    def local_sources(cls, dependencies: dict) -> list:
+        """Collect the dependencies that are built from their source_dir instead of being fetched."""
+        local_sources = []
+        missing = False
+        for name, entry in dependencies.items():
+            if not isinstance(entry, dict) or not entry.get("source_dir"):
+                continue
+            if "git" not in entry:
+                log.warning(f'Dependency "{name}": ignoring source_dir, it is used as a package')
+                continue
+            source_dir = Path(entry["source_dir"])
+            if not source_dir.is_dir():
+                log.error(f'Dependency "{name}": source_dir "{source_dir}" is not a directory')
+                missing = True
+                continue
+            log.info(f'Dependency "{name}": using sources in "{source_dir}"')
+            local_sources.append({"name": name, "path": source_dir.as_posix()})
+
+        if missing:
+            sys.exit(1)
+
+        return local_sources
 
     @classmethod
-    def parse_workspace_directory(cls, workspace_dir: Path) -> dict:
-        """Parse the given workspace_dir for possible local dependencies"""
-        workspace = {}
-        workspace["local_dependencies"] = {}
-        workspace["workspace"] = workspace_dir.as_posix()
-        for entry in workspace_dir.iterdir():
-            if not entry.is_dir():
-                pass
-            workspace["local_dependencies"][entry.name] = {}
-            workspace["local_dependencies"][entry.name] = {"git_tag": GitInfo.get_branch(entry)}
-
-        return workspace
-
-    @classmethod
-    def checkout_local_dependencies(cls, workspace: dict, workspace_arg: str, dependencies: dict) -> list:
-        """Checkout local dependencies in the workspace."""
-        checkout = []
-        if "local_dependencies" in workspace:
-            workspace_dir = None
-            # workspace given by command line always takes precedence
-            if workspace_arg is not None:
-                workspace_dir = Path(workspace_arg).expanduser().resolve()
-                log.info(f"Using workspace directory \"{workspace_dir}\" from command line.")
-            elif "workspace" in workspace:
-                workspace_dir = Path(workspace["workspace"]).expanduser().resolve()
-            else:
-                print("Cannot checkout requested dependencies without a workspace directory, stopping.")
-                sys.exit(1)
-            for name, entry in workspace["local_dependencies"].items():
-                if name not in dependencies:
-                    log.debug(f"{name}: listed in workspace, but not in dependencies. Ignoring.")
-                    continue
-                checkout_dir = workspace_dir / name
-                git_tag = None
-                if "git_tag" in dependencies[name]:
-                    git_tag = dependencies[name]["git_tag"]
-                if entry is not None and "git_tag" in entry:
-                    git_tag = entry["git_tag"]
-                checkout.append(checkout_local_dependency(
-                    name, dependencies[name]["git"], git_tag, None, checkout_dir, True))
-
-        return checkout
-
-    @classmethod
-    def write_cmake(cls, workspace: dict, checkout: list, dependencies: dict, out_file: Path):
+    def write_cmake(cls, local_sources: list, dependencies: dict, out_file: Path):
         """Generate a CMake file containing the dependencies in the given out_file."""
         templates_path = Path(__file__).parent / "templates"
         env = Environment(
@@ -825,8 +788,7 @@ class EDM:
         cpm_template = env.get_template("cpm.jinja")
         render = cpm_template.render({
             "dependencies": dependencies,
-            "checkout": checkout,
-            "workspace": workspace})
+            "local_sources": local_sources})
 
         with open(out_file, 'w', encoding='utf-8') as out:
             log.info(f"Saving dependencies in: {out_file}")
@@ -1230,7 +1192,7 @@ def check_non_local_dependecy(dependency_item):
     return dependency_item
 
 
-def check_origin_of_dependencies(dependencies, checkout):
+def check_origin_of_dependencies(dependencies, local_sources):
     non_local_dependencies = {}
 
     # handle locally available dependencies and filter out non-local ones
@@ -1239,8 +1201,8 @@ def check_origin_of_dependencies(dependencies, checkout):
             log.info(f'Dependency "{name}": Using package instead of git url')
             continue
         shortcut = False
-        for checkout_dep in checkout:
-            if checkout_dep["name"] == name:
+        for local_source in local_sources:
+            if local_source["name"] == name:
                 shortcut = True
         if shortcut:
             log.info(f'Dependency "{name}": available locally')
@@ -1253,6 +1215,13 @@ def check_origin_of_dependencies(dependencies, checkout):
         modified_dependencies = pool.map(check_non_local_dependecy, non_local_dependencies.items())
         for name, dependency in modified_dependencies:
             dependencies[name] = dependency
+
+
+def resolve_source_dirs(dependencies: dict, base_dir: Path):
+    """Resolve source_dir entries relative to base_dir, the directory of the file that specifies them."""
+    for entry in dependencies.values():
+        if isinstance(entry, dict) and entry.get("source_dir"):
+            entry["source_dir"] = (base_dir / Path(entry["source_dir"]).expanduser()).resolve().as_posix()
 
 
 def modify_dependencies_yaml(dependencies, modified_dependencies_yaml):
@@ -1293,6 +1262,7 @@ def modify_dependencies(dependencies, modify_dependencies_file):
         try:
             modified_dependencies_yaml = yaml.safe_load(modified_dependencies_file)
             if modified_dependencies_yaml:
+                resolve_source_dirs(modified_dependencies_yaml, modify_dependencies_file.parent)
                 modify_dependencies_yaml(dependencies, modified_dependencies_yaml)
         except yaml.YAMLError as e:
             log.error(f"Error parsing yaml of {modify_dependencies_file}: {e}")
@@ -1499,17 +1469,7 @@ def main_handler(args):
         sys.exit(1)
 
     dependencies = EDM.parse_project_dependencies(working_dir)
-
-    env_workspace = os.environ.get('EVEREST_EDM_WORKSPACE')
-    workspace_dir = working_dir.parent
-    if env_workspace:
-        workspace_dir = Path(env_workspace).expanduser().resolve()
-        log.info(f'Using workspace path set in EVEREST_EDM_WORKSPACE environment variable: {workspace_dir}')
-    else:
-        log.info(f'Using parent directory as workspace path: {workspace_dir}')
-
-    workspace = EDM.parse_workspace_directory(workspace_dir)
-    checkout = EDM.checkout_local_dependencies(workspace, args.workspace, dependencies)
+    resolve_source_dirs(dependencies, working_dir)
 
     # Apply modifications from environment variables to the dependencies
 
@@ -1525,9 +1485,10 @@ def main_handler(args):
         if modify_dependencies_file.is_file():
             modify_dependencies(dependencies, modify_dependencies_file)
 
-    check_origin_of_dependencies(dependencies, checkout)
+    local_sources = EDM.local_sources(dependencies)
+    check_origin_of_dependencies(dependencies, local_sources)
 
-    EDM.write_cmake(workspace, checkout, dependencies, out_file)
+    EDM.write_cmake(local_sources, dependencies, out_file)
 
 
 def get_parser(version) -> argparse.ArgumentParser:

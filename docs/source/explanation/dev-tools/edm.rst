@@ -219,6 +219,22 @@ Here *cmake_condition* can be any string that CMake can use in an if() block.
 Please be aware that any variables you use here must be defined before a call to
 *evc_setup_edm()* is made in your ``CMakeLists.txt``
 
+To build a dependency from a local source tree instead of fetching it, set its
+``source_dir``:
+
+.. code-block:: yaml
+
+  libfoo:
+    git: https://github.com/example/libfoo.git
+    git_tag: v1.0.0
+    source_dir: ../libfoo
+
+A relative ``source_dir`` is resolved against the directory of the file that
+specifies it. If the directory does not exist, edm stops with an error. A
+``source_dir`` is ignored for a dependency without ``git``, which is looked up
+with ``find_package``. Local source trees are used only when requested this way;
+a directory next to the project that is named like a dependency is not picked up.
+
 Additionally you can set the ``EVEREST_MODIFY_DEPENDENCIES`` environment variable
 to a file containing modifications to the projects ``dependencies.yaml`` files when
 running cmake:
@@ -238,6 +254,8 @@ The ``dependencies_modified.yaml`` file can contain something along these lines:
 	  git: null
 	catch2:
 	  git_tag: v1.2.3 # select a different git tag for a build
+	libfoo:
+	  source_dir: ../libfoo # build from a local source tree, relative to this file
 
 Selective package builds
 ########################

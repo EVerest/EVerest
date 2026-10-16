@@ -122,6 +122,15 @@ catch2:
 ```
 Here *cmake_condition* can be any string that CMake can use in an if() block. Please be aware that any variables you use here must be defined before a call to *evc_setup_edm()* is made in your CMakeLists.txt
 
+To build a dependency from a local source tree instead of fetching it, set its *source_dir*:
+```yaml
+liblog:
+  git: git@github.com:EVerest/liblog.git
+  git_tag: main
+  source_dir: ../liblog
+```
+A relative *source_dir* is resolved against the directory of the file that specifies it. If the directory does not exist, **edm** stops with an error. A *source_dir* is ignored for a dependency without *git*, which is looked up with *find_package*. Local source trees are used only when requested this way; a directory next to the project that is named like a dependency is not picked up.
+
 ## Selective package builds
 
 EVerest is built in five packages: `base`, `iso15118`, `ocpp`, `core` and `runtime`
@@ -171,6 +180,8 @@ libfmt:
   git: null
 catch2:
   git_tag: v1.2.3 # if you want to select a different git tag for a build this is also possible
+liblog:
+  source_dir: ../liblog # build from a local source tree, relative to this file
 ```
 
 ## Create a workspace config from an existing directory tree
