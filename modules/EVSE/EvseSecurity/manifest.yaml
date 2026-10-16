@@ -70,6 +70,11 @@ config:
     type: integer
     minimum: 1
     default: 1200
+  cert_profiles_dir:
+    description: >-
+      Location of the certificate profiles that are used to set the certificate requirements
+    type: string
+    default: share/everest/Security_Profiles/iso15118-2
 provides:
   main:
     description: Implementation of the evse_security interface
