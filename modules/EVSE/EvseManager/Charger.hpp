@@ -85,6 +85,7 @@ public:
         int switch_3ph1ph_delay_s{0};
         std::string switch_3ph1ph_cp_state{};
         int soft_over_current_timeout_ms{0};
+        int soft_over_current_stale_data_warning_ms{0};
         int state_F_after_fault_ms{0};
         int reinit_duration_ms{0};
         std::string reinit_method{};
@@ -457,6 +458,8 @@ private:
         std::string switch_3ph1ph_cp_state{"X1"};
         // Tolerate soft over current for given time
         int soft_over_current_timeout_ms{7000};
+        // Warn if power meter data used for soft over current checking is older than given time (0 = disabled)
+        int soft_over_current_stale_data_warning_ms{5000};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
         // Duration in milliseconds of the reinit state before returning to normal operation

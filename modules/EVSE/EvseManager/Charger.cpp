@@ -1944,6 +1944,7 @@ void Charger::setup(const SetupConfig& config) {
     config_context.ac_enforce_hlc = config.ac_enforce_hlc;
     config_context.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     config_context.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    config_context.soft_over_current_stale_data_warning_ms = config.soft_over_current_stale_data_warning_ms;
     shared_context.ac_with_soc_timeout = config.ac_with_soc_timeout;
     shared_context.ac_with_soc_timer = 3600000;
     soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
@@ -2356,15 +2357,15 @@ void Charger::check_soft_over_current() {
     // Diagnose stale power meter data: values that have not been updated for a while indicate a
     // frozen meter or a broken communication link.
     // This is for debugging purposes only, the values are still used as-is.
-    constexpr int64_t stale_data_age_warning_ms = 5000;
     constexpr int64_t stale_data_warning_interval_ms = 5000;
 
     std::string stale_info;
-    if (shared_context.current_drawn_by_vehicle_last_update.time_since_epoch().count() != 0) {
+    if (config_context.soft_over_current_stale_data_warning_ms > 0 and
+        shared_context.current_drawn_by_vehicle_last_update.time_since_epoch().count() != 0) {
         const auto data_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
                                      now - shared_context.current_drawn_by_vehicle_last_update)
                                      .count();
-        if (data_age_ms > stale_data_age_warning_ms) {
+        if (data_age_ms > config_context.soft_over_current_stale_data_warning_ms) {
             stale_info = fmt::format(" [power meter data may be stale: last update {}ms ago]", data_age_ms);
             if (std::chrono::duration_cast<std::chrono::milliseconds>(now -
                                                                       internal_context.last_stale_powermeter_warning)

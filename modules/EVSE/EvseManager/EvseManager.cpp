@@ -1697,6 +1697,7 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.switch_3ph1ph_delay_s = config.switch_3ph1ph_delay_s;
     charger_setup.switch_3ph1ph_cp_state = config.switch_3ph1ph_cp_state;
     charger_setup.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    charger_setup.soft_over_current_stale_data_warning_ms = config.soft_over_current_stale_data_warning_ms;
     charger_setup.state_F_after_fault_ms = config.state_F_after_fault_ms;
     charger_setup.reinit_duration_ms = config.reinit_duration_ms;
     charger_setup.reinit_method = config.reinit_method;
