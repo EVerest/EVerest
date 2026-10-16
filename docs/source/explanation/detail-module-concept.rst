@@ -276,6 +276,26 @@ Graphically, this would look as follows:
 For a tutorial where you implement and experiment a similar example,
 refer to :doc:`Develop New EVerest Modules </tutorials/develop-new-module>`
 
+
+Note on string values
+---------------------
+
+String-valued module and implementation configuration parameters can refer to
+their owning module instance with the ``${module_id}`` placeholder. EVerest
+expands every occurrence before validating and passing the effective
+configuration to the module.
+
+For example, this gives each instance a separate logging directory::
+
+    active_modules:
+      connector_1:
+        module: SomeLoggingModule
+        config_module:
+          logging_path: /var/log/everest/${module_id}
+
+Only ``${module_id}`` has special meaning. Other expressions using the
+``${...}`` syntax remain unchanged.
+
 ********************************
 Explaining the generated sources
 ********************************
