@@ -728,8 +728,16 @@ class EDM:
         if files_to_ignore:
             dependencies_files.difference_update(files_to_ignore)
 
+        # the working_dir's own file is merged last so that it wins over nested ones
+        def merge_order(dependencies_file: Path):
+            return (dependencies_file.parent == working_dir, dependencies_file.as_posix())
+
         dependencies = {}
-        for dependencies_file in dependencies_files:
+        for dependencies_file in sorted(dependencies_files, key=merge_order):
+            relative_parts = dependencies_file.relative_to(working_dir).parent.parts
+            if any(part.startswith(".") for part in relative_parts):
+                log.info(f"Ignoring dependencies in \"{dependencies_file}\" because it is in a hidden directory.")
+                continue
             if dependencies_file.is_file():
                 # filter _deps folders
                 if not include_deps:
