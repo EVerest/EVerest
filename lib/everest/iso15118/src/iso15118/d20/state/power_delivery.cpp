@@ -15,6 +15,7 @@
 #include <iso15118/detail/d20/context_helper.hpp>
 #include <iso15118/detail/d20/state/dc_pre_charge.hpp>
 #include <iso15118/detail/d20/state/power_delivery.hpp>
+#include <iso15118/detail/d20/state/session_stop.hpp>
 #include <iso15118/detail/helper.hpp>
 
 namespace iso15118::d20::state {
@@ -194,6 +195,15 @@ Result PowerDelivery::feed(Event ev) {
 
     const auto variant = m_ctx.pull_request();
 
+    if (previous_req.has_value()) {
+        // The saved PowerDeliveryReq(Start) is unanswered until the contactor closes, so no request may follow it.
+        m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+        m_ctx.feedback.signal(session::feedback::Signal::AC_OPEN_CONTACTOR);
+        send_sequence_error(variant->get_type(), m_ctx);
+        m_ctx.session_stopped = true;
+        return {};
+    }
+
     if (const auto* const req = variant->get_if<message_20::PowerDeliveryRequest>()) {
         const auto shutdown_requested = m_ctx.shutdown_requested();
 
@@ -262,6 +272,14 @@ Result PowerDelivery::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
 
+    } else if (const auto* const req = variant->get_if<message_20::SessionStopRequest>()) {
+        // [V2G20-2645]: a SessionStopReq before PowerDeliveryReq(Start) is answered per [V2G20-1632].
+        const auto res = handle_request(*req, m_ctx.session);
+
+        m_ctx.respond(res);
+        apply_session_stop_response(m_ctx, *req, res);
+
+        return {};
     } else {
         logf_warning("Expected PowerDeliveryReq! But code type id: %d", variant->get_type());
 
