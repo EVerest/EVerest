@@ -27,16 +27,26 @@ during the module's "ready" thread loop), cf. also the notes on time synchroniza
 Variable Powermeter
 -------------------
 
-Publication of the ``powermeter`` var is done with an approx. frequency of 1/second by default; the interval is
-configurable via the ``poll_interval_ms`` config option. This fetches the current ``livemeasure``
-values from the device's ``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
+The live measurements are polled about once per second by default; the interval is configurable via the
+``poll_interval_ms`` config option. Each poll fetches the current ``livemeasure`` values from the device's
+``/v1/livemeasure`` endpoint and injects the meter id as determined at initialization.
+
+The device refreshes its live measurements about once per second, whatever the poll interval. A poll that returns
+the same dataset as the last publication (same device timestamp and values) is not published again, so every
+publication of the ``powermeter`` var is a new measurement. Consumers rely on that: EvseManager confirms the DC
+output disabled after two measurements below 5 A, and the HLC stacks answer a WeldingDetectionReq with the second
+measurement received after it (IEC 61851-23:2023 CC.6.3). With a poll interval well below the refresh rate, e.g.
+200 ms, a new measurement reaches the consumers within about one poll interval of the refresh; with the default
+1000 ms it can be almost one second late. The measurement itself is still up to about one second old when the device
+refreshes it, so the meter cannot meet the 200 ms measurement-to-communication time of IEC 61851-23 CC.6.3.
 
 The poll loop runs at a fixed rate: the time spent performing the requests is subtracted from the wait before the
-next poll, so the interval between two publications stays at ``poll_interval_ms`` instead of growing with the
-latency of the device. This matters because consumers watch this stream for gaps - EvseManager, for instance, aborts
+next poll, so the interval between two polls stays at ``poll_interval_ms`` instead of growing with the latency of
+the device. This matters because consumers watch the publication stream for gaps - EvseManager, for instance, aborts
 a DC cable check if it sees no power supply measurement for two seconds. If a gap of more than 1.5 times the
-configured interval does occur, a warning is logged with the measured gap and the duration of the live measurement
-request, so a slow device or network can be identified from the logs.
+configured interval does occur between two polls, a warning is logged with the measured gap and the duration of the
+live measurement request, so a slow device or network can be identified from the logs. A device that reports the
+same live measurement for more than two seconds is reported once as well.
 
 While a transaction is active, the current OCMF record is additionally fetched as a fallback so that a signed meter
 value is available even if the device becomes unreachable at transaction stop. This fetch is performed *after* the
