@@ -25,7 +25,7 @@ config:
     default: /tmp/ocpp201
   CustomErrorMappingPath:
     description: >-
-      Optional path to a JSON file describing how EVerest errors are reported over OCPP, following
+      Experimental: Optional path to a JSON file describing how EVerest errors are reported over OCPP, following
       lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json. The fields an entry sets
       override those of the built-in mapping; all other fields and errors keep it. Leave empty to use
       only the built-in mapping. A relative path is resolved against the module's share directory.
