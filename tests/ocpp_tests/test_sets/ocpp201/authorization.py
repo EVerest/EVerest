@@ -837,6 +837,10 @@ async def test_c15(
     # tx_stop_point = json.loads(get_variables_result.attribute_value)
     # log.debug(" TxStop Point: %s " %(tx_stop_point))
 
+    # C15 requires an IdToken that is not in the Authorization Cache
+    r: call_result201.ClearCache = await charge_point_v201.clear_cache_req()
+    assert r.status == ClearCacheStatusEnumType.accepted
+
     # Disconnect CS
     log.debug(" Disconnect the CS from the CSMS")
     test_controller.disconnect_websocket()
@@ -929,6 +933,10 @@ async def test_c15(
     )
     assert get_variables_result.attribute_status == GetVariableStatusEnumType.accepted
     stop_tx_on_invalid_id = json.loads(get_variables_result.attribute_value)
+
+    # The CSMS answered Unknown in C15.FR.04, which put the IdToken in the Authorization Cache
+    r: call_result201.ClearCache = await charge_point_v201.clear_cache_req()
+    assert r.status == ClearCacheStatusEnumType.accepted
 
     # Disconnect CS
     log.debug("Disconnect the CS from the CSMS")
