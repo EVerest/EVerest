@@ -10,8 +10,9 @@
 // action and zeroed whenever the PLC state machine restarts - chip reset after sustained errors,
 // terminate, reconfiguration). A SECC never transmits on the tap while idle, so after such a restart
 // the board silently drops the EV's SDP multicasts and a woken ISO 15118 session never starts
-// (bench 2026-09-16). Until the firmware learns the endpoint from the heartbeat, the host re-teaches
-// it by sending a small frame every few seconds. A zero-length datagram would not do: the firmware
+// (bench 2026-09-16). Firmware with cb-host-ports-v1 learns the endpoint from the heartbeat
+// (CbHeartbeatPacket::host_plc_port); for older firmware the host re-teaches it by sending a small
+// frame every few seconds. A zero-length datagram would not do: the firmware
 // ignores empty payloads when learning (`if (udp_res && len != 0)`), so the frame does go onto the
 // wire. It is a broadcast with the IEEE 802 "local experimental" EtherType 0x88B5 (the one the
 // bring-up link echo uses) and a fixed magic: every peer's kernel drops it at protocol dispatch.
