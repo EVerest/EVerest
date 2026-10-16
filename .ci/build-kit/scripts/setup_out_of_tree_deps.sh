@@ -8,7 +8,7 @@ SRC="$EXT_MOUNT/oot-deps-src"
 fetch() {
     curl -sSfL -o "$SRC/$2" "$1" \
         && echo "$3  $SRC/$2" | sha256sum -c - \
-        && tar -xf "$SRC/$2" -C "$SRC"
+        && python3 -m tarfile -e "$SRC/$2" "$SRC"
 }
 
 mkdir -p "$PREFIX" "$SRC" \
