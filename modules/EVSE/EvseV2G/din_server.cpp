@@ -356,7 +356,7 @@ enum v2g_event handle_din_session_setup(struct v2g_connection* conn) {
 
     dlog(DLOG_LEVEL_INFO, "Created new session with id 0x%016" PRIx64, be64toh(conn->ctx->evse_v2g_data.session_id));
 
-    res->EVSEID.bytesLen = std::min((int)conn->ctx->evse_v2g_data.evse_id.bytesLen, iso2_EVSEID_CHARACTER_SIZE);
+    res->EVSEID.bytesLen = std::min((int)conn->ctx->evse_v2g_data.evse_id.bytesLen, din_evseIDType_BYTES_SIZE);
     memcpy(res->EVSEID.bytes, conn->ctx->evse_v2g_data.evse_id.bytes, res->EVSEID.bytesLen);
 
     res->DateTimeNow_isUsed = conn->ctx->evse_v2g_data.date_time_now_is_used;
