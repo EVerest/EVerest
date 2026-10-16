@@ -3,6 +3,7 @@
 
 #include "isolation_monitorImpl.hpp"
 #include "everest/logging.hpp"
+#include <array>
 #include <chrono>
 #include <fmt/format.h>
 #include <thread>
@@ -348,7 +349,6 @@ void isolation_monitorImpl::read_imd_values() {
     EVLOG_debug << "Resistance: " << to_string(rf);
 
     last_test = rf.test;
-    last_alarm = rf.alarm;
 
     // Small delay between reads to avoid overwhelming the device
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -392,8 +392,21 @@ void isolation_monitorImpl::read_imd_values() {
         }
     }
 
+    // A device error is reported in the channel it belongs to (manual table 5.3.1): E.01 (earth connection) in R_F,
+    // E.02 (connection to system, i.e. an interrupted L1/+ or L2/- lead) in U_N. Check every channel that was read.
+    last_alarm = rf.alarm;
+    std::string device_error_channels;
+    const std::array<std::pair<const char*, const MeasurementValue*>, 4> channels{
+        {{"R_F", &rf}, {"U_N", &voltage}, {"U_L1e", &voltage_to_earth_l1e}, {"U_L2e", &voltage_to_earth_l2e}}};
+    for (const auto& [name, value] : channels) {
+        if (value->alarm == AlarmType::DeviceError) {
+            last_alarm = AlarmType::DeviceError;
+            device_error_channels += (device_error_channels.empty() ? "" : ", ") + std::string(name);
+        }
+    }
+
     if (last_alarm == AlarmType::DeviceError) {
-        set_deviceFault("Device Error");
+        set_deviceFault("Device Error (" + device_error_channels + ")");
     }
 
     bool valid_readings = true;

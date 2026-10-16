@@ -76,6 +76,10 @@ The device's self test at power-on (register 3025) is always disabled. With ``se
 runs one self test when it starts instead; a device error found by it is reported as DeviceFault. A self test
 requested while this test is running is started after it.
 
+A device error is raised as DeviceFault in whichever measurement channel the device reports it (E.01 in R_F, E.02 in
+U_N) and also while a self test is running, so an interrupted measuring lead fails the cable check as soon as the
+self test detects it.
+
 Using the internal alarm functions and relays
 =============================================
 
