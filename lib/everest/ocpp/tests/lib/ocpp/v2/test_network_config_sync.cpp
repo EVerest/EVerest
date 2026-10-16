@@ -19,6 +19,7 @@
 #include <ocpp/common/constants.hpp>
 #include <ocpp/common/message_queue.hpp>
 #include <ocpp/common/ocpp_logging.hpp>
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
@@ -1178,7 +1179,8 @@ protected:
     std::unique_ptr<TariffAndCost> tariff_and_cost;
     std::unique_ptr<Provisioning> provisioning;
 
-    ProvisioningActiveSlotTest() : dm_helper() {
+    explicit ProvisioningActiveSlotTest(const std::vector<std::string>& secondary_connections = {}) :
+        dm_helper(DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, secondary_connections) {
         dm = dm_helper.get_device_model();
         evse_manager = std::make_unique<EvseManagerFake>(1);
 
@@ -1570,6 +1572,94 @@ TEST_F(ProvisioningActiveSlotTest, AcceptPriorityWithConsistentSlots) {
     auto result = set_single_variable(make_priority_set_variable_data("1,2"));
     EXPECT_NE(result.attributeStatus, SetVariableStatusEnum::Rejected)
         << "Priority list with consistent slots should not be rejected";
+}
+
+// A secondary connection's OCPPCommCtrlr[<name>].NetworkConfigurationPriority is checked like the
+// primary's, against the slots it already lists and against its own confirmed security profile.
+class ProvisioningSecondaryPriorityTest : public ProvisioningActiveSlotTest {
+protected:
+    const ConnectionId secondary = ConnectionId::secondary("EMS");
+
+    ProvisioningSecondaryPriorityTest() : ProvisioningActiveSlotTest({"EMS"}) {
+    }
+
+    ComponentVariable secondary_variable(const Variable& variable) const {
+        return ConnectionComponentVariables::get_component_variable(this->secondary, variable);
+    }
+
+    SetVariableData make_secondary_priority_set_variable_data(const std::string& value) const {
+        const auto cv = this->secondary_variable(ConnectionComponentVariables::NetworkConfigurationPriority);
+        SetVariableData svd;
+        svd.attributeValue = value;
+        svd.component = cv.component;
+        svd.variable = cv.variable.value();
+        return svd;
+    }
+
+    std::optional<std::string> secondary_priority() {
+        return this->dm->get_optional_value<std::string>(
+            this->secondary_variable(ConnectionComponentVariables::NetworkConfigurationPriority));
+    }
+
+    void set_secondary_security_profile(int security_profile) {
+        const auto cv = this->secondary_variable(ConnectionComponentVariables::SecurityProfile);
+        ASSERT_EQ(this->dm->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                                std::to_string(security_profile), "internal"),
+                  SetVariableStatusEnum::Accepted);
+    }
+};
+
+TEST_F(ProvisioningSecondaryPriorityTest, RejectsUnreadableAddedSlot) {
+    ASSERT_FALSE(NetworkConfigurationComponentVariables::read_profile_from_device_model(*dm, 2).has_value());
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_secondary_priority_set_variable_data("2"))));
+}
+
+TEST_F(ProvisioningSecondaryPriorityTest, RejectsNonIntegerToken) {
+    EXPECT_TRUE(
+        is_rejected_invalid_network_conf(set_single_variable(make_secondary_priority_set_variable_data("invalid"))));
+}
+
+TEST_F(ProvisioningSecondaryPriorityTest, ValidatesAddedSlotContent) {
+    write_slot(*dm, 2, "wss://ems.example.com/ocpp", 1);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_secondary_priority_set_variable_data("2"))));
+
+    write_slot(*dm, 2, "ws://ems.example.com/ocpp", 1);
+    EXPECT_EQ(set_single_variable(make_secondary_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(secondary_priority(), std::optional<std::string>("2"));
+}
+
+TEST_F(ProvisioningSecondaryPriorityTest, ValidatesAnInstanceSpelledInAnotherCase) {
+    write_slot(*dm, 2, "wss://ems.example.com/ocpp", 1);
+    auto svd = make_secondary_priority_set_variable_data("2");
+    svd.component.instance = "ems";
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(svd)));
+}
+
+TEST_F(ProvisioningSecondaryPriorityTest, RetainedSlotIsComparedAgainstTheSecondarysOwnList) {
+    // Slot 2 is already the secondary's, so its content is not revalidated, as for the primary.
+    write_slot(*dm, 2, "wss://ems.example.com/ocpp", 1);
+    const auto cv = secondary_variable(ConnectionComponentVariables::NetworkConfigurationPriority);
+    ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "2", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    EXPECT_EQ(set_single_variable(make_secondary_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST_F(ProvisioningSecondaryPriorityTest, ChecksCertificatesAgainstTheSecondarysOwnSecurityProfile) {
+    ASSERT_LT(dm->get_value<int>(ControllerComponentVariables::SecurityProfile), 2);
+    ON_CALL(evse_security, is_ca_certificate_installed(testing::_)).WillByDefault(testing::Return(false));
+    write_slot(*dm, 2, "wss://ems.example.com/ocpp", 2);
+
+    // Never connected: no confirmed profile, so a profile 2 slot needs its root certificate.
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_secondary_priority_set_variable_data("2"))));
+
+    // Already running at profile 2: not an upgrade for this connection, even though it is for the primary.
+    set_secondary_security_profile(2);
+    EXPECT_EQ(set_single_variable(make_secondary_priority_set_variable_data("2")).attributeStatus,
+              SetVariableStatusEnum::Accepted);
+    EXPECT_TRUE(is_rejected_invalid_network_conf(set_single_variable(make_priority_set_variable_data("2"))));
 }
 
 // ---------------------------------------------------------------------------

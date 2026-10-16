@@ -4,6 +4,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <set>
 
 #include <everest/database/exceptions.hpp>
 #include <ocpp/common/constants.hpp>
@@ -35,10 +36,17 @@ bool allow_set_read_only_value(const Component& component, const Variable& varia
         return false;
     }
 
+    // A secondary OCPP connection is configured on an instance of OCPPCommCtrlr. Component equality
+    // includes the instance, so the instance-less constant below does not match it and internal
+    // writes such as ActiveNetworkProfile would be silently rejected. Accept only the
+    // connection-scoped shape: an instanced OCPPCommCtrlr is never EVSE or connector scoped.
+    const bool is_connection_ocpp_comm_ctrlr = component.name == ControllerComponents::OCPPCommCtrlr.name and
+                                               component.instance.has_value() and not component.evse.has_value();
+
     return component == ControllerComponents::AuthCacheCtrlr or component == ControllerComponents::LocalAuthListCtrlr or
-           component == ControllerComponents::OCPPCommCtrlr or component == ControllerComponents::SecurityCtrlr or
-           variable == EvseComponentVariables::AvailabilityState or variable == EvseComponentVariables::Power or
-           variable == ConnectorComponentVariables::AvailabilityState;
+           component == ControllerComponents::OCPPCommCtrlr or is_connection_ocpp_comm_ctrlr or
+           component == ControllerComponents::SecurityCtrlr or variable == EvseComponentVariables::AvailabilityState or
+           variable == EvseComponentVariables::Power or variable == ConnectorComponentVariables::AvailabilityState;
 }
 
 } // namespace
@@ -447,6 +455,26 @@ bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int
         throw;
     }
     return true;
+}
+
+std::vector<std::string> DeviceModel::get_component_instances(const std::string& component_name) const {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    // Served from the in-memory map rather than the storage backend: it is already the authoritative
+    // view of the device model and is refreshed whenever a component is created at runtime.
+    std::set<std::string> instances;
+    for (const auto& entry : this->device_model_map) {
+        // Compared with CiString::operator==, i.e. case insensitively, to match how Component
+        // equality and the device model map itself treat component names.
+        const auto& component = entry.first;
+        if (!(component.name == component_name.c_str()) or !component.instance.has_value()) {
+            continue;
+        }
+        const auto& instance = component.instance.value().get();
+        if (!instance.empty()) {
+            instances.insert(instance);
+        }
+    }
+    return {instances.begin(), instances.end()};
 }
 
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,
@@ -1181,6 +1209,48 @@ std::optional<std::string> DeviceModel::resolve_basic_auth_password(int32_t slot
     return get_optional_value<std::string>(ControllerComponentVariables::BasicAuthPassword);
 }
 
+std::optional<ocpp::CertificateHashDataType> DeviceModel::read_csms_root_certificate(const std::int32_t slot) {
+    // Application note section 3.4.3: OCPP 2.1 lets a network configuration slot name the root
+    // certificate its connection must use, so that the trust store holding every system's root
+    // does not let any of them stand in for another. All four fields are needed to identify a
+    // certificate; a partly filled set is a configuration mistake and is ignored rather than
+    // guessed at, because guessing here means accepting the wrong certificate.
+    const auto read = [&](const Variable& variable) {
+        return this->get_optional_value<std::string>(
+            NetworkConfigurationComponentVariables::get_component_variable(slot, variable));
+    };
+
+    const auto algorithm = read(NetworkConfigurationComponentVariables::CsmsRootCertificateHashAlgorithm);
+    const auto issuer_name_hash = read(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerNameHash);
+    const auto issuer_key_hash = read(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerKeyHash);
+    const auto serial_number = read(NetworkConfigurationComponentVariables::CsmsRootCertificateSerialNumber);
+
+    const auto given = [](const std::optional<std::string>& value) { return value.has_value() and !value->empty(); };
+    if (!given(algorithm) and !given(issuer_name_hash) and !given(issuer_key_hash) and !given(serial_number)) {
+        return std::nullopt;
+    }
+    if (!given(algorithm) or !given(issuer_name_hash) or !given(issuer_key_hash) or !given(serial_number)) {
+        EVLOG_warning << "Network configuration slot " << slot
+                      << " names a root certificate but not all of CsmsRootCertificateHashAlgorithm, "
+                         "CsmsRootCertificateIssuerNameHash, CsmsRootCertificateIssuerKeyHash and "
+                         "CsmsRootCertificateSerialNumber are set, so no certificate is pinned for it";
+        return std::nullopt;
+    }
+
+    try {
+        ocpp::CertificateHashDataType hash_data;
+        hash_data.hashAlgorithm = ocpp::conversions::string_to_hash_algorithm_enum_type(algorithm.value());
+        hash_data.issuerNameHash = issuer_name_hash.value();
+        hash_data.issuerKeyHash = issuer_key_hash.value();
+        hash_data.serialNumber = serial_number.value();
+        return hash_data;
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Network configuration slot " << slot
+                      << " names a root certificate that cannot be read, so none is pinned for it: " << e.what();
+        return std::nullopt;
+    }
+}
+
 std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_options(int32_t slot) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto charge_point_id = get_value<std::string>(ControllerComponentVariables::SecurityCtrlrIdentity);
@@ -1228,6 +1298,7 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
             get_optional_value<std::string>(ControllerComponentVariables::IFace),
             get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
             get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        opts.csms_root_certificate = this->read_csms_root_certificate(slot);
         return opts;
     } catch (const std::invalid_argument& e) {
         EVLOG_error << "Could not configure the connection options for slot " << slot << ": " << e.what();

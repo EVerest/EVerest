@@ -50,7 +50,7 @@ TEST(GenericOcppTester, init) {
     EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _));
     EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)));
     EXPECT_CALL(chargepoint, start(_, _, false));
-    EXPECT_CALL(chargepoint, connect_websocket());
+    EXPECT_CALL(chargepoint, connect_all());
 
     // GenericOcpp object
     stubs::GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),
@@ -100,7 +100,7 @@ TEST(GenericOcppTester, queuedInoperativeFaultKeepsEvseId) {
     EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
         .Times(1);
     EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
-    EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
+    EXPECT_CALL(chargepoint, connect_all()).Times(1);
 
     // both queued events reach the chargepoint with the EVSE of the subscription, never EVSE 0
     std::vector<std::int32_t> event_evse_ids;

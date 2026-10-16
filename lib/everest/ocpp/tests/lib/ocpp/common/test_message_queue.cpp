@@ -151,9 +151,13 @@ public:
     DatabaseHandlerBaseMock() : common::DatabaseHandlerCommon(nullptr, "", 1) {
     }
 
-    MOCK_METHOD(std::vector<common::DBTransactionMessage>, get_message_queue_messages, (const QueueType), (override));
-    MOCK_METHOD(void, insert_message_queue_message, (const common::DBTransactionMessage&, const QueueType), (override));
-    MOCK_METHOD(void, remove_message_queue_message, (const std::string&, const QueueType), (override));
+    MOCK_METHOD(std::vector<common::DBTransactionMessage>, get_message_queue_messages,
+                (const QueueType, const std::optional<std::string>&), (override));
+    MOCK_METHOD(void, insert_message_queue_message,
+                (const common::DBTransactionMessage&, const QueueType, const std::optional<std::string>&), (override));
+    MOCK_METHOD(void, remove_message_queue_message,
+                (const std::string&, const QueueType, const std::optional<std::string>&), (override));
+    MOCK_METHOD(void, clear_message_queue, (const QueueType, const std::optional<std::string>&), (override));
 };
 
 class MessageQueueTest : public ::testing::Test {
@@ -307,7 +311,7 @@ TEST_F(MessageQueueTest, test_transactional_message_is_sent) {
 
     EXPECT_CALL(send_callback_mock, Call(json{2, "0", "transactional", json{{"data", "test_data"}}}))
         .WillOnce(MarkAndReturn(true));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_));
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_));
 
     Call<TestRequest> call;
     call.msg.type = TestMessageType::TRANSACTIONAL;
@@ -348,8 +352,8 @@ TEST_F(MessageQueueTest, test_queuing_up_of_transactional_messages) {
         .Times(message_count)
         .InSequence(s)
         .WillRepeatedly(MarkAndReturn(true, true));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(message_count);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(message_count);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(message_count);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(message_count);
 
     // Act:
     // push first call and wait for callback; then push all other calls and resume queue
@@ -432,9 +436,9 @@ TEST_F(MessageQueueTest, test_clean_up_non_transactional_queue) {
     const int expected_skipped_transactional_messages = 6;
     restart_message_queue();
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_))
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_))
         .Times(sent_transactional_messages + sent_non_transactional_messages);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_))
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_))
         .Times(sent_transactional_messages + sent_non_transactional_messages)
         .WillRepeatedly(testing::Return());
 
@@ -504,8 +508,10 @@ TEST_F(MessageQueueTest, test_clean_up_transactional_queue) {
     config.queue_all_messages = true;
     restart_message_queue();
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(30);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(30).WillRepeatedly(testing::Return());
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_)).Times(30);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_))
+        .Times(30)
+        .WillRepeatedly(testing::Return());
 
     // go offline
     message_queue->pause();
@@ -654,8 +660,10 @@ TEST_F(MessageQueueTest, test_message_dropped_after_max_retries_then_next_messag
             return true;
         }));
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(2);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(2).WillRepeatedly(testing::Return());
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_)).Times(2);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_))
+        .Times(2)
+        .WillRepeatedly(testing::Return());
 
     // Push a transactional message (will be retried and dropped) and a second transactional
     push_message_call(TestMessageType::TRANSACTIONAL);
@@ -688,10 +696,10 @@ TEST_F(MessageQueueTest, test_timeout_triggers_retry_after_successful_send) {
     // send_callback returns true both times, but we never send a CALLRESULT,
     // so the timeout fires and triggers handle_timeout_or_callerror
     EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(2).WillRepeatedly(MarkAndReturn(true));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction))
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction, testing::_))
         .Times(1)
-        .WillOnce(testing::Invoke([&](const std::string&, const QueueType) {
+        .WillOnce(testing::Invoke([&](const std::string&, const QueueType, const std::optional<std::string>&) {
             std::lock_guard<std::mutex> lk(removal_mutex);
             message_removed = true;
             removal_cv.notify_one();
@@ -725,8 +733,8 @@ TEST_F(MessageQueueTest, test_send_failure_then_success) {
     EXPECT_CALL(send_callback_mock, Call(testing::_)).InSequence(s).WillOnce(MarkAndReturn(false));
     EXPECT_CALL(send_callback_mock, Call(testing::_)).InSequence(s).WillOnce(MarkAndReturn(true, true));
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
 
     push_message_call(TestMessageType::TRANSACTIONAL);
     wait_for_calls(3);
@@ -765,8 +773,8 @@ TEST_F(MessageQueueTest, test_non_transactional_retried_with_queue_all_messages)
 
     // All 3 attempts fail
     EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(3).WillRepeatedly(MarkAndReturn(false));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal)).Times(1);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Normal)).Times(1);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Normal, testing::_)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Normal, testing::_)).Times(1);
 
     push_message_call(TestMessageType::NON_TRANSACTIONAL);
     wait_for_calls(3);
@@ -784,8 +792,8 @@ TEST_F(MessageQueueTest, test_boot_notification_not_dropped_on_queue_overflow) {
     config.queue_all_messages = true;
     restart_message_queue();
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_))
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_)).Times(testing::AnyNumber());
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_))
         .Times(testing::AnyNumber())
         .WillRepeatedly(testing::Return());
 
@@ -843,8 +851,8 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
     config.queue_all_messages = true;
     restart_message_queue();
 
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_)).Times(testing::AnyNumber());
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_))
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, testing::_, testing::_)).Times(testing::AnyNumber());
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_))
         .Times(testing::AnyNumber())
         .WillRepeatedly(testing::Return());
 
@@ -907,8 +915,8 @@ TEST_F(MessageQueueTest, test_transactional_in_flight_at_pause_is_retried_after_
             this->mark_call_sent();
             return true;
         }));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_)).Times(0);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, testing::_, testing::_)).Times(0);
 
     push_message_call(TestMessageType::TRANSACTIONAL);
     wait_for_calls(1);
@@ -1013,8 +1021,8 @@ TEST_F(MessageQueueTest, test_settled_in_flight_timer_does_nothing_later) {
     restart_message_queue();
 
     EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(1).WillOnce(MarkAndReturn(true));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(1);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(1);
 
     Call<TestRequest> call;
     call.msg.type = TestMessageType::TRANSACTIONAL;
@@ -1039,8 +1047,8 @@ TEST_F(MessageQueueTest, test_old_timeout_cannot_settle_new_in_flight_after_paus
     restart_message_queue();
 
     EXPECT_CALL(send_callback_mock, Call(testing::_)).Times(2 * iterations).WillRepeatedly(MarkAndReturn(true));
-    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction)).Times(iterations);
-    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction)).Times(iterations);
+    EXPECT_CALL(*db, insert_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(iterations);
+    EXPECT_CALL(*db, remove_message_queue_message(testing::_, QueueType::Transaction, testing::_)).Times(iterations);
 
     for (int i = 0; i < iterations; ++i) {
         message_queue->update_message_timeout(0);

@@ -6,9 +6,11 @@
 
 #include <future>
 
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
+#include <ocpp/v2/utils.hpp>
 
 #define private public // Make everything in security.hpp public so we can trigger the timer.
 #include <ocpp/v2/functional_blocks/security.hpp>
@@ -2247,4 +2249,111 @@ TEST_F(SecurityWithoutCertSigningRepeatTimesTest, sign_certificate_response_does
     EXPECT_EQ(timer_stub_get_timeout_called_count(), 0);
 
     security.sign_certificate_req(ocpp::CertificateSigningUseEnum::ChargingStationCertificate, false);
+}
+
+/// Application note section 5.6: a security event about one connection's own security is sent only
+/// to that connection; everything else goes to every connection allowed SecurityEventNotification.
+class SecurityEventRoutingTest : public SecurityTest {
+protected:
+    std::vector<std::optional<ConnectionId>> targets;
+
+    SecurityEventRoutingTest() {
+        ON_CALL(mock_dispatcher, dispatch_call(_, _)).WillByDefault(Invoke([this](const json& call, bool) {
+            if (call.at(CALL_ACTION) == "SecurityEventNotification") {
+                this->targets.push_back(ConnectionTargetScope::current());
+            }
+        }));
+        EXPECT_CALL(mock_dispatcher, dispatch_call(_, _)).Times(::testing::AnyNumber());
+    }
+
+    void raise(const std::string& event_type) {
+        security.security_event_notification_req(CiString<50>(event_type), std::nullopt, false, true);
+    }
+};
+
+TEST_F(SecurityEventRoutingTest, AnOrdinarySecurityEventIsNotPinnedToAnyConnection) {
+    raise(ocpp::security_events::RECONFIGURATIONOFSECURITYPARAMETERS);
+
+    ASSERT_EQ(targets.size(), 1);
+    EXPECT_FALSE(targets.at(0).has_value());
+}
+
+TEST_F(SecurityEventRoutingTest, AConnectionSpecificEventWithNoTargetIsThePrimarysBusiness) {
+    // Where every security event went before there were secondary connections.
+    raise(ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS);
+
+    ASSERT_EQ(targets.size(), 1);
+    ASSERT_TRUE(targets.at(0).has_value());
+    EXPECT_TRUE(targets.at(0)->is_primary());
+}
+
+TEST_F(SecurityEventRoutingTest, AConnectionSpecificEventStaysWithTheConnectionItIsRaisedFor) {
+    {
+        const ConnectionTargetScope target(ConnectionId::secondary("EMS"));
+        raise(ocpp::security_events::INVALIDCSMSCERTIFICATE);
+    }
+
+    ASSERT_EQ(targets.size(), 1);
+    EXPECT_EQ(targets.at(0), ConnectionId::secondary("EMS"));
+}
+
+TEST_F(SecurityEventRoutingTest, EverySectionFiveSixEventIsTreatedAsConnectionSpecific) {
+    for (const auto& event_type :
+         {ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS, ocpp::security_events::CSMSFAILEDTOAUTHENTICATE,
+          ocpp::security_events::INVALIDCSMSCERTIFICATE, ocpp::security_events::INVALIDCHARGINGSTATIONCERTIFICATE,
+          ocpp::security_events::DISCARDEDRENEWEDCLIENTCERTIFICATE, ocpp::security_events::INVALIDTLSVERSION,
+          ocpp::security_events::INVALIDTLSCIPHERSUITE}) {
+        EXPECT_TRUE(utils::is_connection_specific(event_type)) << event_type;
+    }
+
+    // A sample of the ones that are about the charging station rather than a link.
+    for (const auto& event_type :
+         {ocpp::security_events::RECONFIGURATIONOFSECURITYPARAMETERS, ocpp::security_events::FIRMWARE_UPDATED,
+          ocpp::security_events::TAMPERDETECTIONACTIVATED, ocpp::security_events::MEMORYEXHAUSTION,
+          ocpp::security_events::SETTINGSYSTEMTIME}) {
+        EXPECT_FALSE(utils::is_connection_specific(event_type)) << event_type;
+    }
+}
+
+/// Application note section 3.4.3: a root certificate installed by a secondary system would end up
+/// in the trust store every connection verifies against, the CSMS's included, so only the CSMS may
+/// install one.
+class RootCertificateInstallationTest : public SecurityTest {
+protected:
+    InstallCertificateStatusEnum install(const ConnectionId& connection, const InstallCertificateUseEnum type) {
+        auto status = InstallCertificateStatusEnum::Accepted;
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([&status](const json& call_result) {
+            status = call_result[ocpp::CALLRESULT_PAYLOAD].get<InstallCertificateResponse>().status;
+        }));
+
+        const ConnectionScope scope(connection);
+        security.handle_message(create_example_install_certificate_request(type));
+        return status;
+    }
+};
+
+TEST_F(RootCertificateInstallationTest, ASecondaryConnectionMayNotInstallARootCertificate) {
+    EXPECT_CALL(evse_security, install_ca_certificate(_, _)).Times(0);
+
+    EXPECT_EQ(install(ConnectionId::secondary("EMS"), InstallCertificateUseEnum::CSMSRootCertificate),
+              InstallCertificateStatusEnum::Rejected);
+}
+
+TEST_F(RootCertificateInstallationTest, TheCsmsMayInstallARootCertificate) {
+    EXPECT_CALL(evse_security, install_ca_certificate(_, ocpp::CaCertificateType::CSMS))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+
+    EXPECT_EQ(install(ConnectionId::primary(), InstallCertificateUseEnum::CSMSRootCertificate),
+              InstallCertificateStatusEnum::Accepted);
+}
+
+TEST_F(RootCertificateInstallationTest, TheRuleIsAboutRootCertificatesRatherThanAboutSecondaryConnections) {
+    // A V2G root is not what section 3.4.3 protects: it is not what an OCPP connection is verified
+    // against. Whether a connection may send InstallCertificate at all remains the allow list's
+    // decision.
+    EXPECT_CALL(evse_security, install_ca_certificate(_, ocpp::CaCertificateType::V2G))
+        .WillOnce(Return(ocpp::InstallCertificateResult::Accepted));
+
+    EXPECT_EQ(install(ConnectionId::secondary("EMS"), InstallCertificateUseEnum::V2GRootCertificate),
+              InstallCertificateStatusEnum::Accepted);
 }

@@ -37,15 +37,32 @@ void DatabaseHandlerCommon::close_connection() {
     this->database->close_connection();
 }
 
-std::vector<DBTransactionMessage> DatabaseHandlerCommon::get_message_queue_messages(const QueueType queue_type) {
+namespace {
+/// SQL fragment selecting the rows of one connection. The primary connection is stored as NULL, and
+/// NULL never compares equal with '=', so IS is required here.
+constexpr const char* CONNECTION_PREDICATE = "CONNECTION IS @connection";
+
+void bind_connection(everest::db::sqlite::StatementInterface& stmt, const std::optional<std::string>& connection) {
+    if (connection.has_value()) {
+        stmt.bind_text("@connection", connection.value(), everest::db::sqlite::SQLiteString::Transient);
+    } else {
+        stmt.bind_null("@connection");
+    }
+}
+} // namespace
+
+std::vector<DBTransactionMessage>
+DatabaseHandlerCommon::get_message_queue_messages(const QueueType queue_type,
+                                                  const std::optional<std::string>& connection) {
     std::vector<DBTransactionMessage> messages;
 
     const std::string table_name = queue_type == QueueType::Normal ? "NORMAL_QUEUE" : "TRANSACTION_QUEUE";
 
-    const std::string sql =
-        "SELECT UNIQUE_ID, MESSAGE, MESSAGE_TYPE, MESSAGE_ATTEMPTS, MESSAGE_TIMESTAMP FROM " + table_name;
+    const std::string sql = "SELECT UNIQUE_ID, MESSAGE, MESSAGE_TYPE, MESSAGE_ATTEMPTS, MESSAGE_TIMESTAMP FROM " +
+                            table_name + " WHERE " + CONNECTION_PREDICATE;
 
     auto stmt = this->database->new_statement(sql);
+    bind_connection(*stmt, connection);
 
     int status = SQLITE_ERROR;
     while ((status = stmt->step()) == SQLITE_ROW) {
@@ -83,12 +100,14 @@ std::vector<DBTransactionMessage> DatabaseHandlerCommon::get_message_queue_messa
 }
 
 void DatabaseHandlerCommon::insert_message_queue_message(const DBTransactionMessage& db_message,
-                                                         const QueueType queue_type) {
+                                                         const QueueType queue_type,
+                                                         const std::optional<std::string>& connection) {
     const std::string table_name = queue_type == QueueType::Normal ? "NORMAL_QUEUE" : "TRANSACTION_QUEUE";
 
-    const std::string sql = "INSERT INTO " + table_name +
-                            " (UNIQUE_ID, MESSAGE, MESSAGE_TYPE, MESSAGE_ATTEMPTS, MESSAGE_TIMESTAMP) VALUES "
-                            "(@unique_id, @message, @message_type, @message_attempts, @message_timestamp)";
+    const std::string sql =
+        "INSERT INTO " + table_name +
+        " (UNIQUE_ID, MESSAGE, MESSAGE_TYPE, MESSAGE_ATTEMPTS, MESSAGE_TIMESTAMP, CONNECTION) VALUES "
+        "(@unique_id, @message, @message_type, @message_attempts, @message_timestamp, @connection)";
 
     auto stmt = this->database->new_statement(sql);
 
@@ -98,29 +117,38 @@ void DatabaseHandlerCommon::insert_message_queue_message(const DBTransactionMess
     stmt->bind_text("@message_type", db_message.message_type);
     stmt->bind_int("@message_attempts", db_message.message_attempts);
     stmt->bind_text("@message_timestamp", db_message.timestamp.to_rfc3339(), SQLiteString::Transient);
+    bind_connection(*stmt, connection);
 
     if (stmt->step() != SQLITE_DONE) {
         throw QueryExecutionException(this->database->get_error_message());
     }
 }
 
-void DatabaseHandlerCommon::remove_message_queue_message(const std::string& unique_id, const QueueType queue_type) {
+void DatabaseHandlerCommon::remove_message_queue_message(const std::string& unique_id, const QueueType queue_type,
+                                                         const std::optional<std::string>& connection) {
     const std::string table_name = queue_type == QueueType::Normal ? "NORMAL_QUEUE" : "TRANSACTION_QUEUE";
-    const std::string sql = "DELETE FROM " + table_name + " WHERE UNIQUE_ID = @unique_id";
+    const std::string sql = "DELETE FROM " + table_name + " WHERE UNIQUE_ID = @unique_id AND " + CONNECTION_PREDICATE;
 
     auto stmt = this->database->new_statement(sql);
 
     stmt->bind_text("@unique_id", unique_id);
+    bind_connection(*stmt, connection);
 
     if (stmt->step() != SQLITE_DONE) {
         throw QueryExecutionException(this->database->get_error_message());
     }
 }
 
-void DatabaseHandlerCommon::clear_message_queue(const QueueType queue_type) {
+void DatabaseHandlerCommon::clear_message_queue(const QueueType queue_type,
+                                                const std::optional<std::string>& connection) {
     const std::string table_name = queue_type == QueueType::Normal ? "NORMAL_QUEUE" : "TRANSACTION_QUEUE";
-    const auto retval = this->database->clear_table(table_name);
-    if (retval == false) {
+    // Scoped to one connection rather than clear_table(), which would drop every connection's rows.
+    const std::string sql = "DELETE FROM " + table_name + " WHERE " + CONNECTION_PREDICATE;
+
+    auto stmt = this->database->new_statement(sql);
+    bind_connection(*stmt, connection);
+
+    if (stmt->step() != SQLITE_DONE) {
         throw QueryExecutionException(this->database->get_error_message());
     }
 }

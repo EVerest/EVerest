@@ -25,6 +25,9 @@ set(TEST_SECURITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helpe
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/security.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/message_queue.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/SecurityEventNotification.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/CertificateSigned.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/DeleteCertificate.cpp
@@ -55,6 +58,12 @@ target_include_directories(libocpp_test_security PUBLIC
 set(TEST_AUTHORIZATION_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/authorization.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/Authorize.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearCache.cpp
@@ -79,6 +88,12 @@ target_include_directories(libocpp_test_authorization PUBLIC
 set(TEST_AVAILABILITY_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/availability.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ChangeAvailability.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp
@@ -102,6 +117,12 @@ target_include_directories(libocpp_test_availability PUBLIC
 set(TEST_REMOTE_TRANSACTION_CONTROL_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_test_helper.cpp
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/remote_transaction_control.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             # smart_charging.cpp defines the stream operator for ProfileValidationResultEnum, which the smart
             # charging mock needs; profile.cpp and the charging profile related messages are its dependencies.
@@ -146,6 +167,12 @@ set(TEST_TARIFF_AND_COST_SOURCES ${CMAKE_CURRENT_SOURCE_DIR}/../device_model_tes
             ${TEST_FUNCTIONAL_BLOCK_CONTEXT_SOURCES}
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/tariff_and_cost.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/functional_blocks/display_message.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+            ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/ClearDisplayMessage.cpp
             ${LIBOCPP_LIB_PATH}/ocpp/v2/messages/GetCompositeSchedule.cpp

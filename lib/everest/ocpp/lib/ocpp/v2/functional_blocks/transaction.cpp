@@ -6,6 +6,7 @@
 #include <ocpp/v2/functional_blocks/transaction.hpp>
 
 #include <ocpp/common/connectivity_manager.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
@@ -319,6 +320,15 @@ void TransactionBlock::schedule_reset(const std::optional<std::int32_t> reset_sc
 }
 
 void TransactionBlock::handle_transaction_event_response(const EnhancedMessage<MessageType>& message) {
+    if (const auto connection = ConnectionScope::current(); connection.has_value() and !connection->is_primary()) {
+        // Application note sections 4.2 and 6.2: a secondary system receives a copy of the
+        // TransactionEvent for information, and its answer does not affect the primary system. It
+        // never carries idTokenInfo, totalCost or updatePersonalMessage, and acting on one would let
+        // a secondary system change an authorization the CSMS granted.
+        EVLOG_debug << "Ignoring TransactionEventResponse from " << connection->to_string();
+        return;
+    }
+
     const CallResult<TransactionEventResponse> call_result = message.message;
     const Call<TransactionEventRequest>& original_call = message.call_message;
     const auto& original_msg = original_call.msg;

@@ -594,5 +594,148 @@ TEST_F(DeviceModelTest, test_check_integrity_missing_required_evse_power) {
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }
 
+/// \brief Device model holding an instance of OCPPCommCtrlr, i.e. a secondary OCPP connection as
+///        described in the OCA application note "Secondary OCPP Connection on a Charging Station".
+class DeviceModelSecondaryConnectionTest : public ::testing::Test {
+protected:
+    static constexpr const char* INSTANCE = "EMS";
+
+    DeviceModelTestHelper device_model_test_helper{
+        DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, {INSTANCE}};
+    DeviceModel* dm{device_model_test_helper.get_device_model()};
+
+    static Component ocpp_comm_ctrlr_instance() {
+        Component component;
+        component.name = "OCPPCommCtrlr";
+        component.instance = INSTANCE;
+        return component;
+    }
+};
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_reports_the_instance) {
+    EXPECT_EQ(dm->get_component_instances("OCPPCommCtrlr"), std::vector<std::string>{INSTANCE});
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_ignores_unknown_components) {
+    EXPECT_TRUE(dm->get_component_instances("NoSuchCtrlr").empty());
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_matches_the_name_case_insensitively) {
+    // Component names are compared case insensitively everywhere else in the device model.
+    EXPECT_EQ(dm->get_component_instances("ocppcommctrlr"), std::vector<std::string>{INSTANCE});
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_skips_the_instance_less_component) {
+    // AlignedDataCtrlr ships without an instance, so it must not be reported as one.
+    EXPECT_TRUE(dm->get_component_instances("AlignedDataCtrlr").empty());
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, get_component_instances_returns_sorted_unique_names) {
+    // NetworkConfiguration ships with slots 1 and 2, which are component instances too.
+    EXPECT_EQ(dm->get_component_instances("NetworkConfiguration"), (std::vector<std::string>{"1", "2"}));
+}
+
+/// Component equality includes the instance, so the internal write path has to recognise an
+/// instanced OCPPCommCtrlr explicitly; otherwise a secondary connection could never record its
+/// active network profile.
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_values_can_be_set_on_an_instanced_ocpp_comm_ctrlr) {
+    const auto component = ocpp_comm_ctrlr_instance();
+    const Variable variable{"ActiveNetworkProfile"};
+
+    EXPECT_EQ(dm->set_read_only_value(component, variable, AttributeEnum::Actual, "3", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_optional_value<int>(component, variable, AttributeEnum::Actual), 3);
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_values_can_still_be_set_on_the_instance_less_ocpp_comm_ctrlr) {
+    const auto& cv = ControllerComponentVariables::ActiveNetworkProfile;
+
+    EXPECT_EQ(dm->set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "2", "internal"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_optional_value<int>(cv), 2);
+}
+
+TEST_F(DeviceModelSecondaryConnectionTest, read_only_writes_are_still_refused_for_other_components) {
+    Component component;
+    component.name = "AlignedDataCtrlr";
+    component.instance = INSTANCE;
+    const Variable variable{"Interval"};
+
+    EXPECT_THROW(dm->set_read_only_value(component, variable, AttributeEnum::Actual, "5", "internal"),
+                 std::invalid_argument);
+}
+
+/// Application note section 3.4.3: a network configuration slot can name the root certificate its
+/// connection must be verified against, so that a trust store holding several systems' roots does
+/// not let any of them stand in for another.
+class CsmsRootCertificateTest : public DeviceModelTest {
+protected:
+    static constexpr std::int32_t SLOT = 1;
+
+    void set(const Variable& variable, const std::string& value) {
+        const auto cv = NetworkConfigurationComponentVariables::get_component_variable(SLOT, variable);
+        ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, value, "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    void set_complete_hash_data() {
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateHashAlgorithm, "SHA256");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerNameHash, "aabb");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateIssuerKeyHash, "ccdd");
+        set(NetworkConfigurationComponentVariables::CsmsRootCertificateSerialNumber, "01");
+    }
+};
+
+TEST_F(CsmsRootCertificateTest, ASlotThatNamesNoCertificatePinsNothing) {
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, ASlotThatNamesACertificatePinsIt) {
+    set_complete_hash_data();
+
+    const auto pinned = dm->read_csms_root_certificate(SLOT);
+    ASSERT_TRUE(pinned.has_value());
+    EXPECT_EQ(pinned->hashAlgorithm, HashAlgorithmEnumType::SHA256);
+    EXPECT_EQ(pinned->issuerNameHash, "aabb");
+    EXPECT_EQ(pinned->issuerKeyHash, "ccdd");
+    EXPECT_EQ(pinned->serialNumber, "01");
+}
+
+TEST_F(CsmsRootCertificateTest, AHalfWrittenSetPinsNothing) {
+    // All four values identify a certificate together. Filling in the gaps by guessing would mean
+    // guessing which certificate to trust, so an incomplete set is ignored and logged instead.
+    set_complete_hash_data();
+    set(NetworkConfigurationComponentVariables::CsmsRootCertificateSerialNumber, "");
+
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, AnAlgorithmThatIsNotAHashAlgorithmPinsNothing) {
+    set_complete_hash_data();
+    set(NetworkConfigurationComponentVariables::CsmsRootCertificateHashAlgorithm, "ROT13");
+
+    EXPECT_FALSE(dm->read_csms_root_certificate(SLOT).has_value());
+}
+
+TEST_F(CsmsRootCertificateTest, TheConnectionOptionsOfASlotCarryItsPin) {
+    // The slot needs enough of a profile for connection options to be built at all.
+    set(NetworkConfigurationComponentVariables::OcppCsmsUrl, "wss://example.invalid/");
+    set(NetworkConfigurationComponentVariables::SecurityProfile, "2");
+    set(NetworkConfigurationComponentVariables::OcppInterface, "Wired0");
+    set(NetworkConfigurationComponentVariables::OcppTransport, "JSON");
+    set(NetworkConfigurationComponentVariables::MessageTimeout, "30");
+
+    const auto without_pin = dm->get_websocket_connection_options(SLOT);
+    ASSERT_TRUE(without_pin.has_value());
+    EXPECT_FALSE(without_pin->csms_root_certificate.has_value());
+
+    set_complete_hash_data();
+
+    const auto with_pin = dm->get_websocket_connection_options(SLOT);
+    ASSERT_TRUE(with_pin.has_value());
+    ASSERT_TRUE(with_pin->csms_root_certificate.has_value());
+    EXPECT_EQ(with_pin->csms_root_certificate->issuerNameHash, "aabb");
+}
+
 } // namespace v2
 } // namespace ocpp

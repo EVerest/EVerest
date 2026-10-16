@@ -1145,6 +1145,483 @@ at startup to register monitors and obtain the initial values in a single
 call, without losing an update between the first read and the monitor
 registration.
 
+.. _handwritten_ocppmulti_secondary-connections:
+
+Secondary OCPP connections
+==========================
+
+.. warning::
+
+   Under construction. Message and device-model restrictions are enforced, the
+   messages answering a request go back to the connection that asked, and
+   NotifyEvents, security events, clock-aligned meter values and TLS trust
+   anchors are per connection. Not implemented: the per-connection sampled
+   measurands inside TransactionEvent copies of application note section 4.5.2.
+
+A **secondary OCPP connection** is an additional, deliberately limited OCPP
+connection kept alongside the primary CSMS connection, as described in the OCA
+application note *Secondary OCPP Connection on a Charging Station* (OCPP 2.0.1
+and 2.1 only). Typical users are a home energy management system, a delegated
+maintenance party, or a data collector. The primary CSMS connection stays
+authoritative: a secondary connection may do only what it has explicitly been
+granted, and its failures never affect the primary connection.
+
+Declaring a connection
+""""""""""""""""""""""
+
+A secondary connection exists because an **instance of the** ``OCPPCommCtrlr``
+**component** exists for it. The instance name is the connection name. Names are
+free to choose; ``EMS``, ``MAINT``, ``MONITOR`` and ``DATACOLLECTION`` are
+conventions that hint to the CSMS what a connection is for and carry no meaning
+in the implementation.
+
+Instances are added through the component config directory, the same way as any
+other component (see `Device model configuration via component configs`_).
+A worked example ships in ``config/examples/secondary_connection/`` of libocpp,
+with a README. It is deliberately **not installed**: a stock charging station
+reports no ``OCPPCommCtrlr`` instance, because reporting one tells a CSMS that
+the station really does offer a secondary connection.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Connection switched on
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``Enabled`` (ReadWrite, default false)
+   * - Slots this connection may dial
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``NetworkConfigurationPriority`` (ReadWrite)
+   * - Currently active slot (report only)
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``ActiveNetworkProfile`` (ReadOnly)
+   * - Security profile last connected with
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``SecurityProfile`` (ReadOnly, EVerest extension)
+   * - Messages the connection may send to the station
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``DownstreamMsgs``
+   * - Messages the station may send to the connection
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``UpstreamMsgs``
+   * - Device model entries the connection may write
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``AllowSetVariables``
+   * - Also see firmware status of another connection's update
+     - ``OCPPCommCtrlr`` / instance ``<name>``
+     - ``EnableFirmwareStatusNotificationOtherConnection`` (ReadWrite, default
+       false)
+
+Network configuration slots are **station wide** and each slot belongs to at
+most one connection. The shipped configuration gives slots 1 and 2 to the
+primary connection, so a secondary connection needs a slot of its own, with a
+matching ``NetworkConfiguration`` instance.
+
+``SecurityProfile`` on the instanced ``OCPPCommCtrlr`` is an EVerest extension.
+The specification keeps a single ``SecurityCtrlr``/``SecurityProfile``, but the
+rule against downgrading a security profile has to be evaluated per connection,
+since a secondary connection may legitimately run at a lower security profile
+than the primary. The instance-less ``SecurityCtrlr``/``SecurityProfile``
+continues to describe the primary connection and is never written on behalf of a
+secondary one.
+
+Only adding a connection needs a config file and a restart. Everything else -
+the URL, the credentials, the three permission variables and ``Enabled`` - is
+writable at runtime, either by the CSMS with **SetVariables** or locally through
+the ``ocpp`` interface's **set_variables** command.
+
+Discovery and validation
+""""""""""""""""""""""""
+
+At startup the charging station reads the device model and reports the
+connections it found. A secondary connection is reported when it is switched on
+and has at least one usable slot.
+
+Misconfiguration is logged and skipped, never fatal: a broken secondary
+connection must not be able to stop the charging station reaching its CSMS. A
+connection is skipped when its instance name is unusable, when it is switched
+off, or when it has no usable slot left. An individual slot is skipped when no
+``NetworkConfiguration`` instance exists for it, or when another connection
+already claims it. The primary connection claims its slots first and can never
+lose one to a secondary.
+
+What a secondary connection is sent
+"""""""""""""""""""""""""""""""""""
+
+Nothing it has not been granted. ``UpstreamMsgs`` is a comma separated list of
+OCPP message names without the ``Request`` suffix, the same spelling as the
+``Action`` field of a CALL, and an absent or empty list means the connection is
+sent nothing at all. A name that is not a known OCPP message is logged and
+skipped rather than voiding the rest of the list, so one typo in a list written
+by a CSMS cannot silently revoke everything else in it. Changes take effect
+immediately; no restart is needed.
+
+``BootNotification`` and ``Heartbeat`` are always sent, whatever the list says.
+They are about the connection's own link rather than the charging station's
+business, and a connection that could not announce itself or stay alive would be
+useless.
+
+Copies bound for a secondary connection differ from what the CSMS receives in
+two ways. Each gets its own ``messageId``, because the two endpoints number
+their messages independently and an endpoint that counts rather than using
+UUIDs could otherwise collide with one already in flight. And a
+``TransactionEvent`` copy carries no ``idToken``: a secondary system has no
+business knowing who is charging, and could not return ``idTokenInfo`` for it
+anyway. The primary connection always receives the message exactly as the
+charging station built it.
+
+A response from a secondary connection never affects the charging station. Its
+``BootNotificationResponse`` and ``TransactionEventResponse`` are read and
+discarded, so a secondary system cannot change the station's registration
+status, clock, heartbeat interval, or an authorization the CSMS granted.
+
+For the Data Collection and HEMS use cases of the application note this is the
+whole upstream story: grant ``TransactionEvent`` and ``MeterValues`` and the
+secondary system receives a copy of each.
+
+What a secondary connection may send
+""""""""""""""""""""""""""""""""""""
+
+Nothing it has not been granted, again. ``DownstreamMsgs`` lists the requests a
+connection may make of the charging station, in the same spelling as
+``UpstreamMsgs``, and an absent or empty list means it may make none. A request
+outside the list is refused with ``CALLERROR(SecurityError)`` naming the message,
+and never reaches the charging station's logic. Responses are never refused: a
+response answers something the charging station itself chose to send.
+
+Nothing is special-cased about what a granted message does. Once the allow list
+lets a request through it takes exactly the same path as the same request from
+the CSMS, handled by the ordinary functional block, and its answer goes back to
+the connection that asked rather than to the CSMS. That includes the messages
+that control the charging station: grant ``ChangeAvailability``, ``Reset``,
+``UnlockConnector`` or ``RequestStartTransaction`` and the connection can do
+those things for real.
+
+Availability in particular is *station* state, not per-connection state. Every
+OCPP connection shares one enable/disable source towards the EVSE, so if the
+CSMS makes an EVSE inoperative and a secondary connection that has been granted
+``ChangeAvailability`` then makes it operative, operative is what it becomes.
+Whether a connection may do that at all is the allow list's decision; once it
+may, its command is as authoritative as any other.
+
+Meter values at a connection's own rate
+"""""""""""""""""""""""""""""""""""""""
+
+A connection granted ``MeterValues`` in ``UpstreamMsgs`` receives copies of the
+charging station's own meter values, at the charging station's rate. An energy
+management system usually needs them far more often than is practical towards
+the CSMS over a mobile network, so a connection can also be given a rate and a
+set of measurands of its own (application note section 4.5.1):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Seconds between this connection's own meter values, 0 for none
+     - ``AlignedDataCtrlr`` / instance ``<name>``
+     - ``Interval`` (ReadWrite, default 0)
+   * - Which measurands they carry
+     - ``AlignedDataCtrlr`` / instance ``<name>``
+     - ``Measurands`` (ReadWrite)
+
+These ``MeterValues`` go to that connection and to nobody else, and each
+connection averages over its own window, so a fast connection neither disturbs
+a slow one nor disturbs the charging station's own clock-aligned data. Unlike
+the charging station's, they are sent whether or not a transaction is running,
+which is the point: an energy management system needs to see what is happening
+while a car is charging. They are additional to any ``TransactionEvent`` copies
+the connection receives.
+
+The variables are set by the operator or locally, not by the secondary system,
+which usually has no ``SetVariables`` grant. Changes take effect immediately.
+
+Section 4.5.2, a different set of sampled measurands inside the
+``TransactionEvent`` copies sent to a connection
+(``SampledDataCtrlr[<name>].TxUpdatedMeasurands`` and ``TxUpdatedInterval``), is
+**not implemented**: a connection's ``TransactionEvent`` copies currently carry
+the same meter values as the CSMS's. Configuring
+``AlignedDataCtrlr[<name>].Interval`` covers the same need for a connection that
+wants live readings.
+
+Answers that arrive later
+"""""""""""""""""""""""""
+
+Some requests are confirmed straight away and then answered over time by a
+series of further messages, tied to the original request only by a
+``requestId``. Those messages go back to the connection that asked:
+
+.. list-table::
+   :header-rows: 1
+   :widths: 45 55
+
+   * - Request
+     - Answered by
+   * - ``GetBaseReport``, ``GetReport``
+     - ``NotifyReport``
+   * - ``GetMonitoringReport``
+     - ``NotifyMonitoringReport``
+   * - ``CustomerInformation``
+     - ``NotifyCustomerInformation``
+   * - ``GetLog``
+     - ``LogStatusNotification``
+   * - ``UpdateFirmware``
+     - ``FirmwareStatusNotification``
+
+Being allowed to ask a question does not by itself allow the answer to be sent.
+A connection granted ``GetBaseReport`` in ``DownstreamMsgs`` also needs
+``NotifyReport`` in ``UpstreamMsgs``, and so on for each row above; otherwise
+the request is accepted and its answers are dropped.
+
+``requestId`` values are chosen per connection, so two connections readily pick
+the same one. The charging station therefore remembers the requesting connection
+per request *kind* as well, and forgets it as soon as the last answer has been
+sent, which narrows a collision to two connections having the same kind of
+request outstanding at the same moment. In that case the connection that asked
+most recently owns the id. A ``requestId`` nobody is recorded for — because the
+charging station started the firmware update itself, for instance — is answered
+to the CSMS.
+
+A ``FirmwareStatusNotification`` is the one answer another connection can also
+ask to see: setting ``OCPPCommCtrlr[<name>].EnableFirmwareStatusNotificationOtherConnection``
+to ``true`` sends that connection the firmware status of updates it did not
+request. It defaults to ``false``, because firmware status for an update a CSMS
+knows nothing about is more likely to confuse it than to inform it. The
+connection that asked for the update always hears about it regardless of the
+setting, and is never sent the notification twice.
+
+Monitors and NotifyEvent
+""""""""""""""""""""""""
+
+A ``NotifyEvent`` names the monitor that produced it by ``monitorId``, and a
+system that did not install that monitor has no idea what the id refers to.
+Events are therefore routed by subscription rather than copied to everyone
+(application note section 5.5).
+
+Each connection has a list of the monitor ids it wants events for, in
+``MonitoringCtrlr[<name>].SubscribedMonitors`` for a secondary connection and in
+the instance-less ``MonitoringCtrlr.SubscribedMonitors`` for the CSMS. The
+charging station maintains the list itself: installing a monitor subscribes the
+connection that installed it, and clearing a monitor drops it from every list.
+The list can also be written by hand, so one connection can subscribe to
+another's monitor - within what ``AllowSetVariables`` permits.
+
+.. list-table::
+   :header-rows: 1
+   :widths: 40 60
+
+   * - Kind of event
+     - Goes to
+   * - Hardwired notification or hardwired monitor
+     - Every connection allowed ``NotifyEvent``
+   * - Monitor listed in one or more subscriptions
+     - Exactly those connections
+   * - Monitor listed in no subscription
+     - The CSMS
+
+The last row is what makes preconfigured monitors behave as the note requires
+without anything having to write them into the CSMS's list at startup: an
+unsubscribed monitor is the CSMS's business, which is also where every event
+went before secondary connections existed.
+
+A batch of events is split rather than duplicated: each connection is sent one
+``NotifyEvent`` carrying only the events it is subscribed to.
+
+The instance-less ``MonitoringCtrlr.SubscribedMonitors`` is never writable by a
+secondary connection, even when the whole ``MonitoringCtrlr`` component has been
+granted to it, so a secondary system can never unsubscribe the CSMS from its own
+monitors. Note also that granting ``MonitoringCtrlr`` covers the instance-less
+component only; a connection's own list is granted as
+``MonitoringCtrlr#<name>``.
+
+A secondary connection that has no ``MonitoringCtrlr`` instance configured
+cannot be subscribed to anything, so its monitors report to the CSMS instead.
+An example instance ships alongside the ``OCPPCommCtrlr`` one in
+``config/examples/secondary_connection/`` of libocpp.
+
+Security events
+"""""""""""""""
+
+A security event is like a hardwired notification: it goes to every connection
+allowed ``SecurityEventNotification``. The exception is an event about one
+connection's own security, which goes only to the connection it concerns
+(application note section 5.6):
+
+* ``FailedToAuthenticateAtCsms``
+* ``CsmsFailedToAuthenticate``
+* ``InvalidCsmsCertificate``
+* ``InvalidChargingStationCertificate``
+* ``DiscardedRenewedClientCertificate``
+* ``InvalidTLSVersion``
+* ``InvalidTLSCipherSuite``
+
+So a secondary connection that cannot authenticate reports that to itself,
+where it is queued until it does connect, rather than telling the CSMS that the
+charging station has an authentication problem. One of these events raised
+without a connection to attribute it to is the primary connection's, which is
+where every security event went before there were secondary connections.
+
+What a secondary connection may change
+""""""""""""""""""""""""""""""""""""""
+
+By default, nothing. ``AllowSetVariables`` is a comma separated list of device
+model entries in the hierarchy notation of *OCPP Referenced Components and
+Variables* section 2.20, extended with an ``&Variable`` part::
+
+    [EvseId[#ConnectorId]/]Component[#Instance][&Variable[#Instance]]
+
+An entry naming only a component grants every variable of that component;
+naming a variable grants just that one. An omitted instance, EVSE or connector
+names the component or variable that has none, rather than matching any, so
+being unspecific never widens a grant. Examples:
+``SmartChargingCtrlr``, ``NetworkConfiguration#3``,
+``NetworkConfiguration#3&OcppCsmsUrl``, ``1#2/Connector&AvailabilityState``.
+
+Three variables stay read only for a secondary connection whatever the grant
+says: ``AllowSetVariables``, ``UpstreamMsgs`` and ``DownstreamMsgs`` on any
+``OCPPCommCtrlr`` instance. Granting a secondary connection its own whole
+``OCPPCommCtrlr`` instance is therefore safe: it can change its heartbeat
+interval, but not widen its own privileges (application note section 3.6.2).
+
+A report a secondary connection asks for shows every variable it may not
+actually write as ``ReadOnly``, so it does not attempt writes the charging
+station would refuse. The device model itself is untouched by this; only what
+is reported to that connection changes.
+
+The gate applies to what arrives on a connection, not to writes from inside the
+charging station. A write from EVerest or from a local configuration tool,
+through the ``ocpp`` interface's **set_variables** command, is not subject to it
+— that is the local configuration path of application note section 3.1, and it
+is how a secondary connection is set up in the first place.
+
+When a secondary connection does change something, the charging station records
+the time in ``OCPPCommCtrlr.ExternalConfigChangeDate`` on the instance-less
+component. A CSMS can read it, or put a delta monitor on it, to notice that
+something changed since the report it last asked for (section 3.6.1). It is
+never written for a change the CSMS made itself.
+
+Network configuration slots, per connection
+"""""""""""""""""""""""""""""""""""""""""""
+
+Two rules that used to be evaluated against the primary connection alone are now
+evaluated per connection:
+
+* A ``NetworkConfiguration`` slot in use by **any** connection is protected from
+  being reconfigured underneath it (B09.FR.22), not just one the CSMS is using.
+* A slot's security profile may not be downgraded below the profile the
+  connection that owns the slot last connected with (B09.FR.35). A secondary
+  connection may therefore legitimately be configured at a lower security
+  profile than the primary, which section 3.4.1 requires; what it may not do is
+  downgrade its own.
+
+TLS and certificates
+""""""""""""""""""""
+
+A secondary connection running at security profile 2 or 3 needs the root
+certificate of its own server in the charging station's trust store, installed
+as ``CSMSRootCertificate`` even though the server is not the CSMS: that is the
+certificate type an OCPP client uses to validate the TLS server certificate,
+whoever the server is (application note section 3.4.3). If the secondary system
+shares the CSMS's root, nothing has to be installed.
+
+**Only the CSMS installs root certificates.** An ``InstallCertificate`` for a
+``CSMSRootCertificate`` from a secondary connection is refused even when that
+connection has been granted ``InstallCertificate``, because the root would land
+in the trust store that every connection, the CSMS's included, is verified
+against. Other certificate types follow the ordinary allow list.
+
+Once two roots are in the trust store, either of them satisfies an ordinary TLS
+verification, so a primary connection rerouted to the secondary system would
+accept its certificate. Naming the root per network configuration slot stops
+that (sections 3.4.3 and 3.4.5):
+
+.. list-table::
+   :header-rows: 1
+   :widths: 34 33 33
+
+   * - Setting
+     - Component / instance
+     - Variable
+   * - Hash algorithm, always ``SHA256``
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateHashAlgorithm``
+   * - Hash of the root's name
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateIssuerNameHash``
+   * - Hash of the root's public key
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateIssuerKeyHash``
+   * - The root's serial number
+     - ``NetworkConfiguration`` / instance ``<slot>``
+     - ``CsmsRootCertificateSerialNumber``
+
+The four values are exactly what a ``GetInstalledCertificateIdsResponse``
+reports for that root, so they can be copied from there. With them set, a
+connection on that slot accepts a server only if the chain that verified it
+ends at that root; without them, as before, any root in the trust store will
+do. All four are needed: a partly filled set is logged and ignored rather than
+guessed at. Setting them for the primary slots too is what protects the primary
+connection, and is strongly recommended once a secondary connection exists.
+
+``SecurityCtrlr.AdditionalRootCertificateCheck`` (section 3.4.6) requires a new
+root to be signed by the existing one, which a secondary system's root will not
+be unless both connections share a PKI. It has to be ``false`` for a secondary
+connection on a separate PKI.
+
+For mTLS at security profile 3 (section 3.4.4) the charging station can present
+the same client certificate to both systems when they share a PKI. Otherwise
+the secondary system has to sign one itself, which means granting the
+connection ``SignCertificate`` upstream and ``CertificateSigned`` downstream.
+
+Charging limits from a secondary connection
+"""""""""""""""""""""""""""""""""""""""""""
+
+An energy management system on a secondary connection sets its limits as
+``ChargingStationExternalConstraints`` or ``LocalGeneration`` charging profiles.
+That keeps them separate from the CSMS's own schedules: the charging station
+combines the two by taking the tightest constraint, so neither side can
+overwrite the other and no new precedence rule is needed (application note
+section 4.3).
+
+Which purposes each side may use are mirror images of each other:
+
+* The CSMS may not set a ``ChargingStationExternalConstraints`` profile
+  (K01.FR.22), nor clear one (K10.FR.06). Those are not its profiles.
+* A secondary connection may set and clear **only**
+  ``ChargingStationExternalConstraints`` and ``LocalGeneration`` profiles.
+  Anything else is rejected, and a request to clear a profile it does not own is
+  answered ``Unknown``, because from its point of view a profile it may not
+  touch is not there.
+
+A profile records the connection that set it in its ``chargingLimitSource``, so
+it can be traced back to the system responsible. A connection name longer than
+the twenty characters that field allows is recorded as ``EMS`` instead of being
+truncated into something misleading.
+
+``LocalGeneration`` profiles are accepted by the connection gate but still
+rejected by the profile validator, which does not implement that purpose yet.
+The usable purpose today is ``ChargingStationExternalConstraints``.
+
+Observing the connections
+"""""""""""""""""""""""""
+
+The ``ocpp`` interface publishes the roster on the **connections** variable,
+once during startup before **ready**, so a consumer that waits for **ready**
+always sees it. Each entry carries ``connection_role``, and ``connection_id``
+for secondary connections; the primary connection has no ``connection_id``
+because it has no component instance.
+
+The existing **connection_status** variable is unchanged and keeps describing
+the **primary connection only**. Consumers such as the API module collapse it
+into a single station-wide "connected" indication, so reporting a secondary
+connection's state there would wrongly show the station as offline while the
+CSMS link is healthy.
+
 .. _handwritten_ocppmulti_migration-from-ocpp16-key-addressing:
 
 Migration from OCPP 1.6 key addressing

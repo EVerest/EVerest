@@ -40,6 +40,15 @@ struct WebsocketConnectionOptions {
     bool enable_tls_keylog = false;   ///< If set to true enables logging of TLS secrets to the keylog_file
     std::optional<std::filesystem::path> keylog_file; ///< Optional path to a keylog file
     std::optional<std::string> everest_version;
+    /// \brief The one root certificate the server's certificate chain must end at, when the
+    ///        network configuration slot names it.
+    ///
+    /// The trust store holds the root certificates of every system the charging station talks to,
+    /// so without this any of them would do, and a primary connection pointed at a secondary
+    /// system would happily accept its certificate. Naming the root per slot stops that; see the
+    /// application note "Secondary OCPP Connection on a Charging Station" section 3.4.5. Unset
+    /// means the whole trust store is acceptable, as before.
+    std::optional<CertificateHashDataType> csms_root_certificate;
 };
 
 /// \brief Decide whether another connection attempt should be made after a failure.

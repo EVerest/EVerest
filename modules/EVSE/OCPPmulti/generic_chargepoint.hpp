@@ -52,6 +52,9 @@ public:
 
     void connect_websocket() override;
     void disconnect_websocket() override;
+    void connect_all() override;
+    void connect_websocket(const ocpp::v2::ConnectionId& connection) override;
+    void disconnect_websocket(const ocpp::v2::ConnectionId& connection) override;
     void set_message_queue_resume_delay(std::chrono::seconds delay) override;
     bool restart() override;
     void start(ocpp::v2::BootReasonEnum bootreason, const std::set<std::string>& resuming_session_ids,
@@ -72,6 +75,7 @@ public:
     std::optional<std::string> get_tx_start_point() override;
     std::optional<std::string> get_tx_stop_point() override;
 
+    std::vector<ocpp::v2::ConnectionInfo> get_connections() override;
     std::vector<ocpp::v2::EnhancedCompositeSchedule>
     get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) override;
     std::vector<ocpp::v2::GetVariableResult>

@@ -5,6 +5,7 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/message_handler.hpp>
 #include <ocpp/v2/messages/UpdateFirmware.hpp>
 
@@ -54,6 +55,11 @@ public:
                    SecurityInterface& security, UpdateFirmwareRequestCallback update_firmware_request_callback,
                    std::optional<AllConnectorsUnavailableCallback> all_connectors_unavailable_callback);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
+    /// \brief The connections a FirmwareStatusNotification for \p request_id should go to: the one
+    ///        that asked for the update, plus any that opted in to hearing about updates they did
+    ///        not request.
+    std::vector<ConnectionId> firmware_status_targets(std::int32_t request_id, FirmwareStatusEnum status);
+
     void on_firmware_update_status_notification(std::int32_t request_id,
                                                 const FirmwareStatusEnum& firmware_update_status,
                                                 bool disable_connectors_during_install = true) override;

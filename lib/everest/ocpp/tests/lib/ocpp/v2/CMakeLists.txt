@@ -7,6 +7,14 @@ target_sources(libocpp_unit_tests PRIVATE
         device_model_test_helper.cpp
         smart_charging_test_utils.cpp
         test_charge_point.cpp
+        test_connection_connectivity_configuration.cpp
+        test_connection_discovery.cpp
+        test_connection_id.cpp
+        test_message_permission.cpp
+        test_monitor_subscription.cpp
+        test_request_origin_registry.cpp
+        test_variable_permission.cpp
+        test_connection_routing_dispatcher.cpp
         test_database_handler.cpp
         test_database_migration_files.cpp
         test_device_model_storage_sqlite.cpp

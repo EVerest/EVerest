@@ -46,7 +46,7 @@ TEST(GenericOcppTester, callGetChargerInformation) {
     EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _));
     EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)));
     EXPECT_CALL(chargepoint, start(_, _, false));
-    EXPECT_CALL(chargepoint, connect_websocket());
+    EXPECT_CALL(chargepoint, connect_all());
 
     // GenericOcpp object
     stubs::GenericOcppTester ocpp(chargepoint, interfaces.get_module_info(), config, interfaces.get_provides(),

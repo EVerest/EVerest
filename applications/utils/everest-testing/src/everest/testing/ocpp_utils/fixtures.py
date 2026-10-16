@@ -7,6 +7,7 @@ import socket
 import ssl
 import sys
 import tempfile
+from contextlib import AsyncExitStack
 from dataclasses import dataclass
 from pathlib import Path
 from threading import Thread
@@ -18,13 +19,19 @@ from pyftpdlib.authorizers import DummyAuthorizer
 from pyftpdlib.handlers import FTPHandler
 
 from everest.testing.core_utils.common import OCPPVersion
-from everest.testing.core_utils._configuration.everest_environment_setup import EverestEnvironmentOCPPConfiguration
+from everest.testing.core_utils._configuration.everest_environment_setup import \
+    EverestEnvironmentOCPPConfiguration, EverestEnvironmentOCPPSecondaryConnection
 from everest.testing.core_utils.controller.everest_test_controller import EverestTestController
 from everest.testing.ocpp_utils.central_system import CentralSystem, LocalCentralSystem, inject_csms_v201_mock, inject_csms_v16_mock, \
     determine_ssl_context, inject_csms_v21_mock
 from everest.testing.ocpp_utils.charge_point_utils import TestUtility, OcppTestConfiguration
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), ".")))
+
+
+# A TCP port nothing is expected to be listening on, for tests that want an unreachable
+# secondary connection.
+_UNREACHABLE_PORT = 1
 
 
 @pytest.fixture
@@ -37,7 +44,8 @@ def ocpp_version(request) -> OCPPVersion:
 
 
 @pytest.fixture
-def ocpp_config(request, central_system: CentralSystem, test_config: OcppTestConfiguration, ocpp_version: OCPPVersion):
+def ocpp_config(request, central_system: CentralSystem, test_config: OcppTestConfiguration, ocpp_version: OCPPVersion,
+                secondary_connections):
     ocpp_config_marker = request.node.get_closest_marker("ocpp_config")
 
     ocpp_configuration_strategies_marker = request.node.get_closest_marker(
@@ -66,7 +74,8 @@ def ocpp_config(request, central_system: CentralSystem, test_config: OcppTestCon
             ocpp_config_marker.args[0]) if ocpp_config_marker else None,
         device_model_component_config_path=Path(f"{request.config.getoption('--everest-prefix')}/share/everest/modules/OCPP201/component_config"),
         configuration_strategies=ocpp_configuration_strategies,
-        ocpp16_component_config_strategies=ocpp16_component_config_strategies
+        ocpp16_component_config_strategies=ocpp16_component_config_strategies,
+        secondary_connections=secondary_connections
     )
 
 
@@ -99,6 +108,97 @@ async def central_system(request, ocpp_version: OCPPVersion, test_config):
 
     async with cs.start(ssl_context):
         yield cs
+
+
+@pytest.fixture
+def secondary_csms_specs(request):
+    """ The `secondary_csms` markers of a test, if any.
+
+    Each marker declares one secondary OCPP connection. Every fixture below yields None or an empty
+    list when no marker is present, so a test that knows nothing about secondary connections is
+    completely unaffected.
+
+    Usage::
+
+        @pytest.mark.secondary_csms("EMS")
+        @pytest.mark.secondary_csms("MAINT", network_configuration_slot=4)
+    """
+    return [
+        {"connection_id": marker.args[0], **marker.kwargs}
+        for marker in request.node.iter_markers("secondary_csms")
+    ]
+
+
+@pytest_asyncio.fixture
+async def secondary_central_systems(request, secondary_csms_specs, ocpp_version: OCPPVersion, test_config):
+    """ A CentralSystem per `secondary_csms` marker, keyed by connection id.
+
+    Each listens on its own ephemeral port, so a test can run as many as it declares.
+    """
+    if not secondary_csms_specs:
+        yield {}
+        return
+
+    ssl_context = determine_ssl_context(request, test_config)
+
+    systems = {}
+    async with AsyncExitStack() as stack:
+        for spec in secondary_csms_specs:
+            connection_id = spec["connection_id"]
+            # A secondary connection presents its own identity, so the mock has to expect that path
+            # rather than the primary charge point id.
+            identity = spec.get("identity") or f"{test_config.charge_point_info.charge_point_id}_{connection_id}"
+            cs = LocalCentralSystem(identity, ocpp_version=ocpp_version)
+            if request.node.get_closest_marker('inject_csms_mock'):
+                if ocpp_version == OCPPVersion.ocpp201:
+                    cs.mock = inject_csms_v201_mock(cs)
+                elif ocpp_version == OCPPVersion.ocpp16:
+                    cs.mock = inject_csms_v16_mock(cs)
+                else:
+                    cs.mock = inject_csms_v21_mock(cs)
+            await stack.enter_async_context(cs.start(ssl_context))
+            systems[connection_id] = cs
+        yield systems
+
+
+@pytest.fixture
+def secondary_connections(secondary_csms_specs, secondary_central_systems, test_config):
+    """ The secondary OCPP connections to declare in the device model, one per marker. """
+    connections = []
+    for spec in secondary_csms_specs:
+        connection_id = spec["connection_id"]
+        central_system = secondary_central_systems.get(connection_id)
+        connections.append(EverestEnvironmentOCPPSecondaryConnection(
+            connection_id=connection_id,
+            # No CentralSystem means the test deliberately points the connection at a port nothing
+            # is listening on, to prove that an unreachable secondary leaves the primary alone.
+            central_system_port=central_system.port if central_system is not None
+            else spec.get("central_system_port", _UNREACHABLE_PORT),
+            identity=central_system.chargepoint_id if central_system is not None else spec.get("identity"),
+            network_configuration_slot=spec.get("network_configuration_slot", 3),
+            security_profile=spec.get("security_profile", 1),
+            enabled=spec.get("enabled", True),
+            upstream_msgs=spec.get("upstream_msgs", ""),
+            downstream_msgs=spec.get("downstream_msgs", ""),
+            allow_set_variables=spec.get("allow_set_variables", ""),
+            aligned_data_interval=spec.get("aligned_data_interval", 0)))
+    return connections
+
+
+@pytest_asyncio.fixture
+async def secondary_charge_points(secondary_central_systems, test_controller: EverestTestController):
+    """ The ChargePoint of each secondary CentralSystem, keyed by connection id.
+
+    Does not wait for a BootNotification by default: whether a secondary connection sends one is up
+    to its configuration, so waiting would hang for a connection that is not allowed to.
+    """
+    charge_points = {}
+    for connection_id, central_system in secondary_central_systems.items():
+        charge_points[connection_id] = await central_system.wait_for_chargepoint(
+            wait_for_bootnotification=False)
+    yield charge_points
+    for charge_point in charge_points.values():
+        await charge_point.stop()
 
 
 @pytest_asyncio.fixture

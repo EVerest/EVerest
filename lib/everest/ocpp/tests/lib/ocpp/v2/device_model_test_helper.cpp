@@ -11,12 +11,63 @@ using namespace everest::db;
 using namespace everest::db::sqlite;
 
 namespace ocpp::v2 {
+
+namespace {
+
+DeviceModelVariable make_variable(const std::string& name, const DataEnum data_type, const MutabilityEnum mutability,
+                                  const std::optional<std::string>& value) {
+    DeviceModelVariable variable;
+    variable.name = name;
+
+    VariableCharacteristics characteristics;
+    characteristics.dataType = data_type;
+    characteristics.supportsMonitoring = true;
+    variable.characteristics = characteristics;
+
+    DbVariableAttribute attribute;
+    attribute.variable_attribute.type = AttributeEnum::Actual;
+    attribute.variable_attribute.mutability = mutability;
+    attribute.variable_attribute.value = value;
+    variable.attributes = std::vector<DbVariableAttribute>{attribute};
+
+    return variable;
+}
+
+/// The variables an OCPPCommCtrlr instance needs to describe a secondary OCPP connection. Mirrors
+/// the shape of the shipped OCPPCommCtrlr component config, restricted to what a secondary uses.
+std::vector<DeviceModelVariable> make_secondary_connection_variables() {
+    return {
+        make_variable("Enabled", DataEnum::boolean, MutabilityEnum::ReadWrite, "false"),
+        make_variable("NetworkConfigurationPriority", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("ActiveNetworkProfile", DataEnum::integer, MutabilityEnum::ReadOnly, std::nullopt),
+        make_variable("SecurityProfile", DataEnum::integer, MutabilityEnum::ReadOnly, std::nullopt),
+        make_variable("HeartbeatInterval", DataEnum::integer, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("DownstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("UpstreamMsgs", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("AllowSetVariables", DataEnum::string, MutabilityEnum::ReadWrite, std::nullopt),
+        make_variable("EnableFirmwareStatusNotificationOtherConnection", DataEnum::boolean, MutabilityEnum::ReadWrite,
+                      "false"),
+    };
+}
+
+/// The MonitoringCtrlr instance a secondary OCPP connection needs to hold its own list of the
+/// monitors it wants NotifyEvents for.
+std::vector<DeviceModelVariable> make_secondary_monitoring_variables() {
+    return {
+        make_variable("SubscribedMonitors", DataEnum::MemberList, MutabilityEnum::ReadWrite, ""),
+    };
+}
+
+} // namespace
+
 DeviceModelTestHelper::DeviceModelTestHelper(const std::string& database_path, const std::string& migration_files_path,
-                                             const std::string& config_path, bool seed_der_ctrlr_enabled) :
+                                             const std::string& config_path, bool seed_der_ctrlr_enabled,
+                                             const std::vector<std::string>& seed_secondary_connections) :
     database_path(database_path),
     migration_files_path(migration_files_path),
     config_path(config_path),
     seed_der_ctrlr_enabled(seed_der_ctrlr_enabled),
+    seed_secondary_connections(seed_secondary_connections),
     database_connection(std::make_unique<everest::db::sqlite::Connection>(database_path)) {
     this->database_connection->open_connection();
     this->device_model = create_device_model();
@@ -254,6 +305,18 @@ void DeviceModelTestHelper::create_device_model_db() {
                 variables.push_back(der_enabled);
             }
         }
+    }
+
+    for (const auto& instance : this->seed_secondary_connections) {
+        ComponentKey ocpp_comm_ctrlr;
+        ocpp_comm_ctrlr.name = "OCPPCommCtrlr";
+        ocpp_comm_ctrlr.instance = instance;
+        component_configs.insert(std::make_pair(ocpp_comm_ctrlr, make_secondary_connection_variables()));
+
+        ComponentKey monitoring_ctrlr;
+        monitoring_ctrlr.name = "MonitoringCtrlr";
+        monitoring_ctrlr.instance = instance;
+        component_configs.insert(std::make_pair(monitoring_ctrlr, make_secondary_monitoring_variables()));
     }
 
     db.initialize_database(component_configs, true);

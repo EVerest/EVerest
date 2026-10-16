@@ -26,7 +26,30 @@ from .everest_configuration_strategies.probe_module_configuration_strategy impor
     ProbeModuleConfigurationStrategy
 from .libocpp_configuration_helper import \
     LibOCPP2XConfigurationHelper, LibOCPP16ConfigurationHelper, \
-    OCPPConfigAdjustmentStrategy, _OCPP16ComponentConfigCsmsUrlAdjustment
+    OCPPConfigAdjustmentStrategy, _OCPP16ComponentConfigCsmsUrlAdjustment, \
+    _OCPP2XSecondaryConnectionAdjustment
+
+
+@dataclass
+class EverestEnvironmentOCPPSecondaryConnection:
+    """ A secondary OCPP connection to declare in the charging station's device model.
+
+    Described in the OCA application note "Secondary OCPP Connection on a Charging Station"; OCPP2.x
+    only. The connection lives in the same charging station, device model and database as the
+    primary one, so there is no second set of temporary paths: only the pipe is separate.
+    """
+    connection_id: str  # OCPPCommCtrlr component instance name; free to choose
+    central_system_port: int | str
+    central_system_host: str = "127.0.0.1"
+    network_configuration_slot: int = 3
+    security_profile: int = 1
+    identity: str | None = None
+    enabled: bool = True
+    upstream_msgs: str = ""
+    downstream_msgs: str = ""
+    allow_set_variables: str = ""
+    aligned_data_interval: int = 0
+    aligned_data_measurands: str = "Energy.Active.Import.Register,Power.Active.Import"
 
 
 @dataclass
@@ -43,6 +66,8 @@ class EverestEnvironmentOCPPConfiguration:
     # OCPP1.6 device-model (component config) adjustment strategies; applied to the copied
     # NetworkConfiguration/OCPPCommCtrlr component config JSONs before the DB is migrated.
     ocpp16_component_config_strategies: list[OCPPConfigAdjustmentStrategy] | None = None
+    # Secondary OCPP connections to declare in the device model (OCPP2.x only).
+    secondary_connections: list[EverestEnvironmentOCPPSecondaryConnection] | None = None
 
 
 @dataclass
@@ -246,8 +271,31 @@ class EverestTestEnvironmentSetup:
             if self._ocpp_config.ocpp_version == OCPPVersion.ocpp16
             else temporary_paths.ocpp_config_path,
             target_ocpp_user_config_file=temporary_paths.ocpp_user_config_file,
-            configuration_strategies=self._ocpp_config.configuration_strategies
+            configuration_strategies=self._configuration_strategies_with_secondary_connections()
         )
+
+    def _configuration_strategies_with_secondary_connections(self):
+        """ The configured strategies, plus one per secondary OCPP connection.
+
+        Appended last so they run after the default strategy, which rewrites every network
+        connection profile to the primary CSMS; each secondary then claims its own slot back.
+        """
+        strategies = list(self._ocpp_config.configuration_strategies or [])
+        for secondary in self._ocpp_config.secondary_connections or []:
+            strategies.append(_OCPP2XSecondaryConnectionAdjustment(
+                connection_id=secondary.connection_id,
+                central_system_port=secondary.central_system_port,
+                central_system_host=secondary.central_system_host,
+                network_configuration_slot=secondary.network_configuration_slot,
+                security_profile=secondary.security_profile,
+                identity=secondary.identity,
+                enabled=secondary.enabled,
+                upstream_msgs=secondary.upstream_msgs,
+                downstream_msgs=secondary.downstream_msgs,
+                allow_set_variables=secondary.allow_set_variables,
+                aligned_data_interval=secondary.aligned_data_interval,
+                aligned_data_measurands=secondary.aligned_data_measurands))
+        return strategies
 
     def _create_everest_configuration_strategies(self, temporary_paths: _EverestEnvironmentTemporaryPaths):
         configuration_strategies = []

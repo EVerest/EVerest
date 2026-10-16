@@ -153,5 +153,32 @@ std::optional<T> get_optional_value(const DeviceModelInterface& dm, const Compon
     return get_optional_value<T>(dm, component_variable.component, component_variable.variable.value(), attribute_enum);
 }
 
+/// \brief Parses the device model hierarchy notation used to name a component and variable in a
+///        single string.
+///
+/// The scheme comes from *OCPP Referenced Components and Variables* section 2.20, extended by the
+/// OCA application note "Secondary OCPP Connection on a Charging Station" section 3.6 with an
+/// ``&Variable`` part:
+///
+///     [EvseId[#ConnectorId]/]Component[#Instance][&Variable[#Instance]]
+///
+/// It is unambiguous because '/', '#' and '&' cannot appear in a component or variable name. An
+/// omitted ``#Instance`` names the component or variable that has no instance, rather than any
+/// instance. An omitted ``&Variable`` names the whole component, which is represented by a
+/// ComponentVariable whose variable is std::nullopt.
+///
+/// Examples: ``SmartChargingCtrlr``, ``NetworkConfiguration#3``,
+/// ``NetworkConfiguration#3&OcppCsmsUrl``, ``1/EVSE&AvailabilityState``,
+/// ``1#2/Connector&AvailabilityState``.
+///
+/// \return The component and variable named, or std::nullopt if \p entry is not well formed.
+std::optional<ComponentVariable> parse_component_variable_hierarchy(const std::string& entry);
+
+/// \brief Writes \p component and \p variable in the hierarchy notation.
+///
+/// The inverse of parse_component_variable_hierarchy() for anything that parser accepts.
+std::string to_component_variable_hierarchy(const Component& component,
+                                            const std::optional<Variable>& variable = std::nullopt);
+
 } // namespace v2
 } // namespace ocpp

@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
+
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/functional_blocks/firmware_update.hpp>
 
 #include <array>
@@ -42,6 +45,51 @@ void FirmwareUpdate::handle_message(const ocpp::EnhancedMessage<MessageType>& me
     }
 }
 
+namespace {
+/// Whether a firmware update has reached a state it will not leave, so the record of who asked for
+/// it can be dropped.
+bool is_terminal_firmware_status(const FirmwareStatusEnum status) {
+    return status == FirmwareStatusEnum::Installed or status == FirmwareStatusEnum::InstallationFailed or
+           status == FirmwareStatusEnum::DownloadFailed or status == FirmwareStatusEnum::InvalidSignature or
+           status == FirmwareStatusEnum::InstallVerificationFailed;
+}
+} // namespace
+
+std::vector<ConnectionId> FirmwareUpdate::firmware_status_targets(const std::int32_t request_id,
+                                                                  const FirmwareStatusEnum status) {
+    std::vector<ConnectionId> targets;
+
+    // Application note section 5.3: whoever asked for the update hears how it went.
+    if (request_id != -1) {
+        if (const auto origin = this->context.request_origins.lookup(RequestOriginRegistry::RequestKind::FirmwareUpdate,
+                                                                     request_id, is_terminal_firmware_status(status));
+            origin.has_value()) {
+            targets.push_back(origin.value());
+        }
+    }
+    if (targets.empty()) {
+        // Nobody recorded: either the CSMS asked, or the charging station started the update itself.
+        targets.push_back(ConnectionId::primary());
+    }
+
+    // Section 5.3.2: a connection that did not ask for the update can still be interested in how it
+    // is going, but only if it has said so. Sending firmware status to a CSMS that did not request
+    // the update can otherwise confuse it.
+    for (const auto& connection : this->context.connections.connection_ids()) {
+        if (std::find(targets.begin(), targets.end(), connection) != targets.end()) {
+            continue;
+        }
+        const auto enabled =
+            this->context.device_model.get_optional_value<bool>(ConnectionComponentVariables::get_component_variable(
+                connection, ConnectionComponentVariables::EnableFirmwareStatusNotificationOtherConnection));
+        if (enabled.value_or(false)) {
+            targets.push_back(connection);
+        }
+    }
+
+    return targets;
+}
+
 void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request_id,
                                                             const FirmwareStatusEnum& firmware_update_status,
                                                             bool disable_connectors_during_install) {
@@ -63,7 +111,10 @@ void FirmwareUpdate::on_firmware_update_status_notification(std::int32_t request
     }
 
     const ocpp::Call<FirmwareStatusNotificationRequest> call(req);
-    this->context.message_dispatcher.dispatch_call_async(call);
+    for (const auto& target : this->firmware_status_targets(request_id, req.status)) {
+        const ConnectionTargetScope scope(target);
+        this->context.message_dispatcher.dispatch_call(call);
+    }
 
     if (req.status == FirmwareStatusEnum::Installed) {
         std::string firmwareVersionMessage = "New firmware succesfully installed! Version: ";
@@ -149,6 +200,12 @@ bool FirmwareUpdate::is_download_deferral_required() const {
 
 void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call) {
     EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+
+    // So the status notifications reporting how the update goes come back to whoever asked for it.
+    if (const auto connection = ConnectionScope::current(); connection.has_value()) {
+        this->context.request_origins.remember(RequestOriginRegistry::RequestKind::FirmwareUpdate, call.msg.requestId,
+                                               connection.value());
+    }
     if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
         this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
     } else {

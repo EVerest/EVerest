@@ -26,6 +26,7 @@ target_sources(ocpp
         ocpp/common/schemas.cpp
         ocpp/common/types.cpp
         ocpp/common/utils.cpp
+        ocpp/common/certificate_pin.cpp
         ocpp/common/evse_security_impl.cpp
         ocpp/common/evse_security.cpp
         ocpp/common/database/database_handler_common.cpp
@@ -75,10 +76,21 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/average_meter_values.cpp
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
+            ocpp/v2/connection_connectivity_configuration.cpp
+            ocpp/v2/connection_directory.cpp
+            ocpp/v2/connection_discovery.cpp
+            ocpp/v2/connection_id.cpp
+            ocpp/v2/connection_registry.cpp
+            ocpp/v2/connection_routing_dispatcher.cpp
+            ocpp/v2/connection_scope.cpp
+            ocpp/v2/message_permission.cpp
+            ocpp/v2/monitor_subscription.cpp
+            ocpp/v2/ocpp_connection.cpp
             ocpp/v2/connector.cpp
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp
             ocpp/v2/device_model.cpp
+            ocpp/v2/device_model_helpers.cpp
             ocpp/v2/device_model_storage_sqlite.cpp
             ocpp/v2/enums.cpp
             ocpp/v2/evse.cpp
@@ -90,12 +102,14 @@ if(LIBOCPP_ENABLE_V2)
             ocpp/v2/message_queue.cpp
             ocpp/v2/ocpp_enums.cpp
             ocpp/v2/profile.cpp
+            ocpp/v2/request_origin_registry.cpp
             ocpp/v2/ocpp_types.cpp
             ocpp/v2/ocsp_updater.cpp
             ocpp/v2/monitoring_updater.cpp
             ocpp/v2/transaction.cpp
             ocpp/v2/types.cpp
             ocpp/v2/utils.cpp
+            ocpp/v2/variable_permission.cpp
             ocpp/v2/component_state_manager.cpp
             ocpp/v2/message_dispatcher.cpp
             ocpp/v2/functional_blocks/authorization.cpp
