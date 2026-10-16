@@ -363,7 +363,10 @@ private:
             return AlarmType::NoAlarm;
         } else if (t == 0x01) {
             return AlarmType::PreWarning;
-        } else if (t == 0x02 and (raw & 0xC0) == 0x00) {
+        } else if (t == 0x02) {
+            // The manual (table 5.3.1.3) lists the device error only with the test bits cleared, but the device
+            // reports a device error found by a self test with the test bit set (e.g. 0x82 for E.02 during an
+            // external test). The alarm type is in bits 0..2 regardless of the test bits.
             return AlarmType::DeviceError;
         } else if (t == 0x04) {
             return AlarmType::Warning;
