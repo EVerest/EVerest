@@ -16,6 +16,23 @@ The monitors are evaluated from time to time in the case of periodic monitors an
 
 Note: There is a small overhead for the monitoring process interval. The periodic monitors that are triggered will require a database value query. However, based on the count and config of monitors it is unlikely that many of them will trigger at the same time, therefore, the database queries will be limited.
 
+## Threading
+
+Two kinds of threads work on monitors:
+
+- Processing runs: the monitoring timer and `process_triggered_monitors`, which is called after a SetVariables request. They generate events for triggered and periodic monitors, update Delta reference values and send the events to the CSMS.
+- Variable changes: any thread calling `DeviceModel::set_value` evaluates the triggered monitors of that variable in the variable listener.
+
+`MonitoringUpdater` uses two locks, always taken in this order, followed by the device model mutex:
+
+| Lock | Held by | Protects |
+| --- | --- | --- |
+| `processing_mutex` | a processing run, until its events are handed to the CSMS callback | the order in which events are sent |
+| `state` | a processing run while collecting events, and the variable listener | monitor metadata, the event id counter |
+| `DeviceModel::mutex` | each device model call | the in-memory device model and its database |
+
+`DeviceModel::set_value` releases its mutex before it calls the listeners, and the listener reads the monitors of the variable, including their reference values, straight from the device model. Writes to a Delta reference value therefore happen while holding `state`, so the listener never evaluates against a half-written or outdated reference. Events are handed to the CSMS callback after `state` is released, so variable changes do not wait for the message dispatch.
+
 ## Hardwired/Preconfigured Monitors
 
 In order to set up pre-existing monitors that are not set up by the CSMS, for the variables that allow monitoring the configuration json file can be extended in the following way:

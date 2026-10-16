@@ -772,7 +772,8 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_kept_when_event_dro
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
-/// Variable changes evaluate monitors while the monitoring timer processes them on another thread
+/// Variable changes evaluate monitors while concurrent processing runs deliver the events in the order they were
+/// generated
 TEST_F(DeviceModelTest, test_monitoring_updater_concurrent_changes_and_processing) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;
     const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
@@ -780,9 +781,15 @@ TEST_F(DeviceModelTest, test_monitoring_updater_concurrent_changes_and_processin
     ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
               SetVariableStatusEnum::Accepted);
 
-    std::atomic<std::size_t> sent_events{0};
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
     MonitoringUpdater updater(
-        *dm, [&sent_events](const std::vector<EventData>& events) { sent_events += events.size(); },
+        *dm,
+        [&sent_events](const std::vector<EventData>& events) {
+            // Widens the window between collecting and delivering events
+            std::this_thread::sleep_for(std::chrono::microseconds(200));
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
         []() { return false; });
     updater.start_monitoring();
 
@@ -794,21 +801,28 @@ TEST_F(DeviceModelTest, test_monitoring_updater_concurrent_changes_and_processin
     ASSERT_EQ(results[1].status, SetMonitoringStatusEnum::Accepted);
 
     std::atomic<bool> done{false};
-    std::thread processor([&]() {
+    const auto process = [&]() {
         while (!done) {
             updater.process_triggered_monitors();
         }
-    });
+    };
+    std::thread processor(process);
+    std::thread other_processor(process);
     for (int i = 0; i < 500; i++) {
         dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual,
                       std::to_string(i % 2 == 0 ? 100 + i : 900 + i), "test");
     }
     done = true;
     processor.join();
+    other_processor.join();
     updater.process_triggered_monitors();
     updater.stop_monitoring();
 
-    EXPECT_GT(sent_events.load(), 0);
+    const auto events = *sent_events.handle();
+    ASSERT_FALSE(events.empty());
+    for (std::size_t i = 1; i < events.size(); i++) {
+        EXPECT_LT(events.at(i - 1).eventId, events.at(i).eventId);
+    }
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 

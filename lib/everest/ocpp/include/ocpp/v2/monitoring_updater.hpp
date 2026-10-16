@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <mutex>
 #include <unordered_map>
 
 #include <everest/timer.hpp>
@@ -179,12 +180,18 @@ private:
     bool is_monitoring_enabled();
 
     DeviceModelAbstract& device_model;
-    Everest::SteadyTimer monitors_timer;
 
     notify_events notify_csms_events;
     is_offline is_chargepoint_offline;
 
     everest::lib::util::monitor<State> state;
+
+    // Held from collecting events until they are handed to 'notify_csms_events', so that concurrent processing runs
+    // deliver their events in the order they were generated
+    std::mutex processing_mutex;
+
+    // Declared last so it is destroyed first, joining a running callback while the members it uses still exist
+    Everest::SteadyTimer monitors_timer;
 };
 
 } // namespace ocpp::v2

@@ -137,9 +137,9 @@ EventData create_notify_event(std::int32_t unique_id, const std::string& reporte
 MonitoringUpdater::MonitoringUpdater(DeviceModelAbstract& device_model, notify_events notify_csms_events,
                                      is_offline is_chargepoint_offline) :
     device_model(device_model),
-    monitors_timer([this]() { this->process_monitors_internal(true, true); }),
     notify_csms_events(std::move(notify_csms_events)),
-    is_chargepoint_offline(std::move(is_chargepoint_offline)) {
+    is_chargepoint_offline(std::move(is_chargepoint_offline)),
+    monitors_timer([this]() { this->process_monitors_internal(true, true); }) {
 }
 
 MonitoringUpdater::~MonitoringUpdater() {
@@ -577,6 +577,8 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
     if (!is_monitoring_enabled()) {
         return;
     }
+
+    const std::lock_guard<std::mutex> processing_lock(this->processing_mutex);
 
     bool is_offline = true;
     int offline_severity = MonitoringLevelSeverity::Danger;
