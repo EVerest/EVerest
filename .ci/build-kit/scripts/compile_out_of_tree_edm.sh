@@ -20,6 +20,17 @@ if [ $retVal -ne 0 ]; then
     exit $retVal
 fi
 
+# The image's edm predates everest-core's: the dependencies.cmake it generates calls the release
+# command with an option that the edm installed during the build no longer knows.
+python3 -m venv "$EXT_MOUNT/edm-venv" \
+    && "$EXT_MOUNT/edm-venv/bin/pip" install --quiet "$WS/everest-core/applications/dependency_manager"
+retVal=$?
+if [ $retVal -ne 0 ]; then
+    echo "Installing edm failed with return code $retVal"
+    exit $retVal
+fi
+export PATH="$EXT_MOUNT/edm-venv/bin:$PATH"
+
 # everest-chargebyte links libgpiodcxx and libsocketcan by name, so they must be on the default paths.
 export CPATH="$DEPS/include" LIBRARY_PATH="$DEPS/lib" PKG_CONFIG_PATH="$DEPS/lib/pkgconfig"
 
