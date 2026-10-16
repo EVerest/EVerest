@@ -732,7 +732,7 @@ async def test_iso15118_dc_session_error_before_session(
 @pytest.mark.probe_module(
     connections={"evse_manager": [Requirement("evse_manager", "evse")]}
 )
-@pytest.mark.everest_core_config("config-sil-dc-evsev2g.yaml")
+@pytest.mark.everest_core_config("config-sil-dc.yaml")
 @pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy())
 async def test_iso15118_dc_session_survives_second_tcp_connection(
     test_controller: TestController, everest_core: EverestCore
