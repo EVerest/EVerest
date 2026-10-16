@@ -2158,12 +2158,17 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     struct iso2_WeldingDetectionReqType* req = &conn->exi_in.iso2EXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct iso2_WeldingDetectionResType* res = &conn->exi_out.iso2EXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    const unsigned int present_values_at_request = conn->ctx->present_values_count;
 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_iso_welding_detection_req(conn->ctx, req);
 
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx
     // ([V2G2-920], [V2G2-921]).
+
+    // [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106] Report a voltage measured after the request, not one from
+    // before the PowerDeliveryRes or the EV's last switching of its disconnection device.
+    v2g_ctx_wait_present_values(conn->ctx, present_values_at_request);
 
     res->DC_EVSEStatus.EVSEIsolationStatus = (iso2_isolationLevelType)conn->ctx->evse_v2g_data.evse_isolation_status;
     res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->evse_v2g_data.evse_isolation_status_is_used;

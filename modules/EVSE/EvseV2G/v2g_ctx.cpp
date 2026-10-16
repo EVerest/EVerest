@@ -298,6 +298,8 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
 
     ctx->network_read_timeout = 1000;
     ctx->dc_output_disabled_timeout_ms = V2G_DC_OUTPUT_DISABLED_TIMEOUT;
+    ctx->present_values_count = 0;
+    ctx->present_values_timeout_ms = V2G_PRESENT_VALUES_TIMEOUT;
     ctx->response_wait_ms = 0;
     ctx->network_read_timeout_tls = 5000;
 
@@ -415,6 +417,41 @@ bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms) {
              timeout_ms);
     }
     return disabled;
+}
+
+void v2g_ctx_signal_present_values(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->present_values_count++;
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+bool v2g_ctx_wait_present_values(struct v2g_context* ctx, unsigned int count_at_request) {
+    const int timeout_ms = ctx->present_values_timeout_ms;
+    if (timeout_ms <= 0) {
+        return ctx->present_values_count != count_at_request;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) && (ctx->present_values_count == count_at_request) &&
+           (ctx->intl_emergency_shutdown == false) && (ctx->stop_hlc == false) &&
+           (ctx->is_connection_terminated == false)) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool received = ctx->present_values_count != count_at_request;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not received and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "No present values within %d ms after the request, sending the last ones", timeout_ms);
+    }
+    return received;
 }
 
 void v2g_ctx_wake_waiters(struct v2g_context* ctx) {

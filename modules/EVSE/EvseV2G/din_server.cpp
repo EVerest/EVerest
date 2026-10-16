@@ -933,11 +933,16 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
     struct din_WeldingDetectionReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct din_WeldingDetectionResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+    const unsigned int present_values_at_request = conn->ctx->present_values_count;
 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_DIN_DcEvStatus(conn->ctx, req->DC_EVStatus);
 
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
+
+    // [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106] Report a voltage measured after the request, not one from
+    // before the PowerDeliveryRes or the EV's last switching of its disconnection device.
+    v2g_ctx_wait_present_values(conn->ctx, present_values_at_request);
 
     /* Now fill the evse response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]

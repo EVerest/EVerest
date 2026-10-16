@@ -75,8 +75,14 @@ then, so that side B is disabled before the response and the EVSEPresentVoltage 
 WeldingDetectionRes is measured after the switch off (IEC 61851-23:2023 Table CC.9, t103 and
 t104). The stop response is therefore delayed by up to two measurement intervals of the power
 supply's ``voltage_current`` source; with a car-side powermeter, a poll interval of 200 ms or
-less keeps the delay short and meets the measurement-to-communication time of IEC 61851-23
-CC.6.3.
+less keeps the delay short. With EvseV2G (DIN 70121 and ISO 15118-2), each WeldingDetectionRes
+then waits for two ``voltage_current`` measurements after its request (the first can have been taken
+just before it, the second was taken after it), at most 1.4 s; Evse15118D20 reports the last value
+received. A short poll interval only helps if the meter itself updates its
+measurement as often: a meter that updates once per second cannot meet the 200 ms
+measurement-to-communication time of IEC 61851-23 CC.6.3, whatever the poll interval. The voltage
+measurement has to be at the vehicle side of the EVSE disconnection device, otherwise it does not see
+the voltage at the vehicle connector once the contactor is open.
 
 Published variables
 ===================

@@ -61,6 +61,16 @@ bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms) {
     return true;
 }
 
+// Records the waits for present values, see v2g_ctx.cpp for the real implementation
+namespace present_values_calls {
+int waits{0};
+} // namespace present_values_calls
+
+bool v2g_ctx_wait_present_values(struct v2g_context* ctx, unsigned int count_at_request) {
+    present_values_calls::waits++;
+    return true;
+}
+
 namespace {
 class DinServerTest : public testing::Test {
 protected:
@@ -687,11 +697,14 @@ TEST_F(DinServerPowerDeliveryTest, welding_detection_after_stop_reports_shutdown
     ctx->last_v2g_msg = V2G_POWER_DELIVERY_MSG;
     ctx->current_v2g_msg = V2G_WELDING_DETECTION_MSG;
 
+    present_values_calls::waits = 0;
     EXPECT_EQ(states::handle_din_welding_detection(conn.get()), V2G_EVENT_NO_EVENT);
 
     auto& res = exi_out->V2G_Message.Body.WeldingDetectionRes;
     EXPECT_EQ(res.ResponseCode, din_responseCodeType_OK);
     EXPECT_EQ(res.DC_EVSEStatus.EVSEStatusCode, din_DC_EVSEStatusCodeType_EVSE_Shutdown);
+    // [IEC 61851-23:2023 CC.6.3] The EVSEPresentVoltage waits for present values received after the request
+    EXPECT_EQ(present_values_calls::waits, 1);
     EXPECT_EQ(ctx->state, WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_ERROR).size(), 0);
 }
