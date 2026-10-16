@@ -112,6 +112,34 @@ cc_test(
 )
 
 cc_test(
+    name = "iso_server_test",
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    srcs = [
+        "crypto/crypto_openssl.cpp",
+        "iso_server.cpp",
+        "tests/iso_server_test.cpp",
+        "tools.cpp",
+        "v2g_ctx.cpp",
+    ],
+    copts = _TEST_COPTS + ["-DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL"],
+    includes = _TEST_INCLUDES,
+    deps = [
+        ":test_helpers",
+        "//lib/everest/cbv2g:din",
+        "//lib/everest/cbv2g:iso2",
+        "//lib/everest/cbv2g:tp",
+        "//lib/everest/evse_security:libevse-security",
+        "//lib/everest/framework",
+        "//lib/everest/tls",
+        "//third-party/bazel/openssl:crypto",
+        "//third-party/bazel/openssl:ssl",
+        "@googletest//:gtest_main",
+        "@libevent//:event",
+        "@libevent//:event_pthreads",
+    ],
+)
+
+cc_test(
     name = "v2g_ctx_test",
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,
     srcs = [
