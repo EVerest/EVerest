@@ -82,6 +82,7 @@ if(BUILD_TESTING)
       test/bsp_status_test.cpp
       test/carrier_policy_test.cpp
       test/cb_role_test.cpp
+      test/config_path_test.cpp
       test/mcs_bsp_test.cpp
       test/heartbeat_reply_test.cpp
       test/mcu_uptime_test.cpp
