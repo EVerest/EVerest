@@ -2303,38 +2303,6 @@ void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStart
     }
 }
 
-bool ChargePointImpl::validate_against_cache_entries(CiString<20> id_tag) {
-    try {
-        const auto cache_entry_opt = this->database_handler->get_authorization_cache_entry(id_tag);
-        if (!cache_entry_opt.has_value()) {
-            return false;
-        }
-        auto cache_entry = cache_entry_opt.value();
-        const auto expiry_date_opt = cache_entry.expiryDate;
-
-        if (cache_entry.status != AuthorizationStatus::Accepted) {
-            return false;
-        }
-        if (!expiry_date_opt.has_value()) {
-            return true;
-        }
-        const auto expiry_date = expiry_date_opt.value();
-        if (expiry_date < ocpp::DateTime()) {
-            cache_entry.status = AuthorizationStatus::Expired;
-            try {
-                this->database_handler->insert_or_update_authorization_cache_entry(id_tag, cache_entry);
-            } catch (const QueryExecutionException& e) {
-                EVLOG_warning << "Could not insert or update authorization cache entry: " << e.what();
-            }
-            return false;
-        }
-        return true;
-    } catch (const QueryExecutionException& e) {
-        EVLOG_warning << "Could not fetch authorization cache entry: " << e.what();
-    }
-    return false;
-}
-
 void ChargePointImpl::handleRemoteStopTransactionRequest(ocpp::Call<RemoteStopTransactionRequest> call) {
     EVLOG_debug << "Received RemoteStopTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
 
@@ -3605,32 +3573,27 @@ EnhancedIdTagInfo ChargePointImpl::authorize_id_token(CiString<20> id_token, con
         }
 
         if (this->configuration.getAuthorizationCacheEnabled().value_or(false)) {
-            if (this->validate_against_cache_entries(id_token)) {
-                try {
-                    const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
-                    if (auth_cache_entry.has_value()) {
+            try {
+                // marks entries past their expiry date as Expired
+                const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
+                if (auth_cache_entry.has_value()) {
+                    if (auth_cache_entry->status == AuthorizationStatus::Accepted) {
                         EVLOG_info << "Found valid id_tag " << id_token.get() << " in AuthorizationCache";
                         enhanced_id_tag_info.id_tag_info = auth_cache_entry.value();
                         update_tariff_message_if_eligible(enhanced_id_tag_info);
                         return enhanced_id_tag_info;
                     }
-                } catch (const QueryExecutionException& e) {
-                    EVLOG_warning << "Could not request authorization cache entry: " << e.what();
-                }
-            } else if (!this->connectivity_manager->is_websocket_connected()) {
-                try {
-                    const auto auth_cache_entry = this->database_handler->get_authorization_cache_entry(id_token);
                     // Invalid means the identifier is unknown (7.2), so AllowOfflineTxForUnknownId still applies
-                    if (auth_cache_entry.has_value() and auth_cache_entry->status != AuthorizationStatus::Accepted and
+                    if (!this->connectivity_manager->is_websocket_connected() and
                         auth_cache_entry->status != AuthorizationStatus::Invalid) {
                         EVLOG_info << "Found rejected id_tag " << id_token.get()
                                    << " in AuthorizationCache whilst offline: Not authorized";
                         enhanced_id_tag_info.id_tag_info = auth_cache_entry.value();
                         return enhanced_id_tag_info;
                     }
-                } catch (const QueryExecutionException& e) {
-                    EVLOG_warning << "Could not request authorization cache entry: " << e.what();
                 }
+            } catch (const QueryExecutionException& e) {
+                EVLOG_warning << "Could not request authorization cache entry: " << e.what();
             }
         }
     }
