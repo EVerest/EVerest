@@ -631,6 +631,7 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
                                       static_cast<float>(present_voltage_current.evse_present_current.value()), 1,
                                       iso2_unitSymbolType_A);
     }
+    v2g_ctx_signal_present_values(v2g_ctx);
 }
 
 void ISO15118_chargerImpl::handle_update_meter_info(types::powermeter::Powermeter& powermeter) {

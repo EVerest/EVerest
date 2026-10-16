@@ -310,6 +310,89 @@ TEST_F(V2gCtxTest, dc_output_disabled_wait_wakes_up_on_hlc_stop) {
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
 }
 
+TEST_F(V2gCtxTest, present_values_defaults) {
+    EXPECT_EQ(ctx->present_values_timeout_ms, V2G_PRESENT_VALUES_TIMEOUT);
+    EXPECT_EQ(ctx->present_values_count, 0);
+}
+
+TEST_F(V2gCtxTest, two_present_values_updates_after_the_request_end_the_wait_at_once) {
+    ctx->is_connection_terminated = false;
+    const unsigned int at_request = ctx->present_values_count;
+    v2g_ctx_signal_present_values(ctx.get());
+    v2g_ctx_signal_present_values(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+// The first update after the request can carry a sample taken just before it (a polled meter delivers a
+// sample up to one poll interval later); only the second one was taken after the request.
+TEST_F(V2gCtxTest, one_present_values_update_is_not_enough) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 100;
+    const unsigned int at_request = ctx->present_values_count;
+    v2g_ctx_signal_present_values(ctx.get());
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    // Answered with the one update: not a stalled source, so no warning
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_wakes_up_on_new_values) {
+    ctx->is_connection_terminated = false;
+    ctx->response_wait_ms = 0;
+    v2g_ctx_signal_present_values(ctx.get()); // from before the request
+    const unsigned int at_request = ctx->present_values_count;
+
+    std::thread meter([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_present_values(ctx.get());
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_present_values(ctx.get());
+    });
+
+    EXPECT_TRUE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    meter.join();
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    EXPECT_LT(ctx->response_wait_ms, V2G_PRESENT_VALUES_TIMEOUT);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_is_bounded) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 50;
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, present_values_no_wait_with_zero_timeout) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 0;
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_wakes_up_on_terminated_connection) {
+    ctx->is_connection_terminated = false;
+
+    std::thread unplug([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->is_connection_terminated = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    unplug.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
 TEST(valgrind, memcheck) {
     // v2g_ctx_free() now sets shutdown and joins the event thread,
     // so there is no use-after-free during cleanup.

@@ -21,11 +21,16 @@ struct WeldingDetection : public StateBase {
 
 private:
     void process_request(const message_din::WeldingDetectionRequest& req);
+    // Answers pending_req once both gates are passed: CP State B and present values from after the request.
+    void answer_when_ready();
 
     // Arm the V2G_SECC_WeldingDetection supervision timer once, on the first WeldingDetectionReq.
     bool welding_started{false};
     // Answered when B arrives, or with FAILED when the detection timeout expires ([V2G-DC-556]).
     std::optional<message_din::WeldingDetectionRequest> pending_req{};
+    // Set on each WeldingDetectionReq, counted down by present values and cleared by the PRESENT_VALUES
+    // timeout, so that the EVSEPresentVoltage was measured after the request [IEC 61851-23:2023 CC.6.3].
+    uint8_t present_values_outstanding{0};
     // A SessionStopReq takes the same gate, so it is parked in its own slot: whichever arrived is the
     // one answered when CP State B shows up.
     std::optional<message_din::SessionStopRequest> pending_stop{};

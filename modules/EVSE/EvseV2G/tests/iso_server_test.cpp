@@ -214,4 +214,90 @@ TEST_F(IsoServerDcStopTest, stop_response_sent_after_timeout_without_confirmatio
     EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
 }
 
+class IsoServerWeldingDetectionTest : public IsoServerDcStopTest {
+protected:
+    void SetUp() override {
+        IsoServerDcStopTest::SetUp();
+
+        ctx->last_v2g_msg = V2G_POWER_DELIVERY_MSG;
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_WELDINGDETECTION_SESSIONSTOP);
+        set_present_voltage(400);
+
+        exi_in->V2G_Message.Body.PowerDeliveryReq_isUsed = 0u;
+        exi_in->V2G_Message.Body.WeldingDetectionReq_isUsed = 1u;
+        init_iso2_WeldingDetectionReqType(&exi_in->V2G_Message.Body.WeldingDetectionReq);
+    }
+
+    void set_present_voltage(int16_t voltage) {
+        auto& present_voltage = ctx->evse_v2g_data.evse_present_voltage;
+        present_voltage.Value = voltage;
+        present_voltage.Multiplier = 0;
+        present_voltage.Unit = iso2_unitSymbolType_V;
+    }
+
+    const iso2_WeldingDetectionResType& welding_response() const {
+        return exi_out->V2G_Message.Body.WeldingDetectionRes;
+    }
+};
+
+TEST_F(IsoServerWeldingDetectionTest, response_waits_for_present_values_after_the_request) {
+    // [IEC 61851-23:2023 CC.6.3, CC.7.6.17] EVSEPresentVoltage measured after the WeldingDetectionReq. The
+    // first update after the request can carry a sample taken just before it (a polled meter delivers a
+    // sample up to one poll interval later): a 32 V sample taken 50 ms before the request arrives 50 ms
+    // after it, the 0 V sample taken after the request follows. The response carries the second one.
+    ctx->present_values_timeout_ms = 2000;
+    constexpr auto measurement_delay = std::chrono::milliseconds(100);
+
+    std::thread meter([this, measurement_delay]() {
+        std::this_thread::sleep_for(measurement_delay / 2);
+        set_present_voltage(32);
+        v2g_ctx_signal_present_values(ctx.get());
+        std::this_thread::sleep_for(measurement_delay / 2);
+        set_present_voltage(12);
+        v2g_ctx_signal_present_values(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+    const auto elapsed = std::chrono::steady_clock::now() - start;
+    meter.join();
+
+    EXPECT_GE(elapsed, measurement_delay);
+    EXPECT_LT(elapsed, std::chrono::milliseconds(ctx->present_values_timeout_ms));
+    EXPECT_EQ(exi_out->V2G_Message.Body.WeldingDetectionRes_isUsed, 1u);
+    EXPECT_EQ(welding_response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(welding_response().EVSEPresentVoltage.Value, 12);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(IsoServerWeldingDetectionTest, response_sent_with_the_one_update_after_timeout) {
+    ctx->present_values_timeout_ms = 100;
+
+    std::thread meter([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        set_present_voltage(32);
+        v2g_ctx_signal_present_values(ctx.get());
+    });
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+    meter.join();
+
+    EXPECT_EQ(welding_response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(welding_response().EVSEPresentVoltage.Value, 32);
+    // One update is not a stalled source: no warning
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(IsoServerWeldingDetectionTest, response_sent_with_last_values_after_timeout) {
+    // Present values from before the request do not count
+    v2g_ctx_signal_present_values(ctx.get());
+    ctx->present_values_timeout_ms = 50;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(welding_response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(welding_response().EVSEPresentVoltage.Value, 400);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
 } // namespace

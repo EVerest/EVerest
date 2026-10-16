@@ -250,14 +250,41 @@ SCENARIO("DIN SPEC 70121 SECC engine holds PowerDeliveryRes(stop) until the DC o
                 secc.control(d20::CpStateChanged{d20::CpState::B});
                 secc.drive(message_din::WeldingDetectionRequest{});
 
-                THEN("WeldingDetectionRes reports the voltage measured after the switch off") {
+                THEN("WeldingDetectionRes waits for two present values updates received after the request") {
+                    REQUIRE_FALSE(secc.has_response());
+                    secc.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+                    REQUIRE_FALSE(secc.has_response());
+                    secc.control(d20::PresentVoltageCurrent{6.0f, 0.0f});
                     const auto res = secc.take_response();
                     REQUIRE(res.has_value());
                     REQUIRE(res->V2G_Message.Body.WeldingDetectionRes_isUsed);
                     const auto& welding = res->V2G_Message.Body.WeldingDetectionRes;
                     REQUIRE(welding.ResponseCode == din_responseCodeType_OK);
+                    REQUIRE(physical_value(welding.EVSEPresentVoltage) == 6.0);
+                }
+
+                THEN("Without new present values it reports the ones measured after the switch off") {
+                    secc.timeout(d20::TimeoutType::PRESENT_VALUES);
+                    const auto res = secc.take_response();
+                    REQUIRE(res.has_value());
+                    const auto& welding = res->V2G_Message.Body.WeldingDetectionRes;
+                    REQUIRE(welding.ResponseCode == din_responseCodeType_OK);
                     REQUIRE(physical_value(welding.EVSEPresentVoltage) == 0.0);
                 }
+            }
+        }
+
+        WHEN("An emergency shutdown is reported while the response is held") {
+            secc.control(d20::EvseError{d20::EvseErrorCode::EmergencyShutdown});
+
+            THEN("PowerDeliveryRes goes out FAILED at once and the session ends with it [V2G-DC-866]") {
+                REQUIRE(secc.has_response());
+                REQUIRE_FALSE(secc.engine.is_finished());
+                const auto res = secc.take_response();
+                REQUIRE(res.has_value());
+                REQUIRE(res->V2G_Message.Body.PowerDeliveryRes_isUsed);
+                REQUIRE(res->V2G_Message.Body.PowerDeliveryRes.ResponseCode == din_responseCodeType_FAILED);
+                REQUIRE(secc.engine.is_finished());
             }
         }
 

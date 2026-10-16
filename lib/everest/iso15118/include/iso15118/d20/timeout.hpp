@@ -26,11 +26,13 @@ enum class TimeoutType : uint8_t {
     STOP_CHARGING,
     // Bounds the wait for the request that carries the emergency-shutdown FAILED response.
     EMERGENCY_SHUTDOWN,
+    // Bounds the wait of a WeldingDetectionRes for present values received after its request.
+    PRESENT_VALUES,
 };
 
-constexpr uint8_t TIMEOUT_TYPE_SIZE = 7;
+constexpr uint8_t TIMEOUT_TYPE_SIZE = 8;
 
-static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::EMERGENCY_SHUTDOWN) + 1,
+static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::PRESENT_VALUES) + 1,
               "TIMEOUT_TYPE_SIZE should be in sync with the TimeoutType enum definition");
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
@@ -47,6 +49,17 @@ constexpr auto TIMEOUT_EMERGENCY_SHUTDOWN_GUARD = 1000 * 2;
 // EvseV2G waits as long (V2G_DC_OUTPUT_DISABLED_TIMEOUT, V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN).
 constexpr auto TIMEOUT_DC_OUTPUT_DISABLED_ISO2 = 1000 * 3;
 constexpr auto TIMEOUT_DC_OUTPUT_DISABLED_DIN = 1400;
+// How long a WeldingDetectionRes waits for present values received after its request, so that the
+// EVSEPresentVoltage is measured after the request and not before the PowerDeliveryRes [IEC 61851-23:2023
+// CC.6.3, CC.7.6.17]. V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) is 1.5 s in ISO 15118-2 (Table 109),
+// DIN SPEC 70121 and ISO 15118-20 (DC_WeldingDetectionRes), 100 ms kept for polling and sending.
+// EvseV2G waits as long (V2G_PRESENT_VALUES_TIMEOUT).
+constexpr auto TIMEOUT_PRESENT_VALUES = 1400;
+// How many present values updates a WeldingDetectionRes waits for. The first update received after the
+// request can carry a measurement taken just before it (a polled meter delivers a sample up to one poll
+// interval after taking it); the second one was taken after the first, so after the request. At the
+// timeout the last values are sent whatever arrived. EvseV2G counts the same (V2G_PRESENT_VALUES_NEEDED).
+constexpr uint8_t PRESENT_VALUES_NEEDED = 2;
 
 class Timeouts {
 public:

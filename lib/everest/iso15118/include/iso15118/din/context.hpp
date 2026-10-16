@@ -160,6 +160,16 @@ public:
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
     }
 
+    // Same as the CP state pair, for a WeldingDetectionReq parked until present values arrive.
+    void arm_present_values_timeout(uint32_t time_ms) {
+        timeouts.reset_timeout(d20::TimeoutType::PRESENT_VALUES);
+        timeouts.start_timeout(d20::TimeoutType::PRESENT_VALUES, time_ms);
+    }
+
+    void clear_present_values_timeout() {
+        timeouts.reset_timeout(d20::TimeoutType::PRESENT_VALUES);
+    }
+
     d20::TimeoutType const* get_active_timeout() {
         if (not current_timeout.has_value()) {
             return nullptr;

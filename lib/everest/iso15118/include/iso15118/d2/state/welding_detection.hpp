@@ -30,9 +30,15 @@ private:
     Result accept_welding_detection(const message_2::WeldingDetectionRequest& req);
     Result accept_session_stop(const message_2::SessionStopRequest& req);
 
+    // Answers pending_weld once CP State B is in and the present values gate is open.
+    Result answer_weld_when_ready();
+
     // At most one is ever set. Answered when B arrives, or FAILED when the performance time expires.
     std::optional<message_2::WeldingDetectionRequest> pending_weld{};
     std::optional<message_2::SessionStopRequest> pending_stop{};
+    // Set with pending_weld, counted down by present values and cleared by the PRESENT_VALUES timeout, so
+    // that the EVSEPresentVoltage was measured after the request [IEC 61851-23:2023 CC.6.3].
+    uint8_t present_values_outstanding{0};
 };
 
 // [V2G2-597] narrows the node: restarting the parameter exchange is no longer in sequence once
@@ -44,6 +50,12 @@ struct WeldingDetection : public StateBase {
     void enter() final;
     Result on_event(Event) final;
     Result on_request(const message_2::Variant& received) final;
+    void leave() final;
+
+private:
+    // Each WeldingDetectionReq waits for present values received after it, as in PostCharge.
+    std::optional<message_2::WeldingDetectionRequest> pending_weld{};
+    uint8_t present_values_outstanding{0};
 };
 
 } // namespace iso15118::d2::state

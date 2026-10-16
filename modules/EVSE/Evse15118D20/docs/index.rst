@@ -419,6 +419,15 @@ DIN SPEC 70121 ``PowerDeliveryReq`` with ``ReadyToChargeState`` false and ISO 15
 ``dc_output_disabled``, for at most 1.4 s on DIN SPEC 70121 (the EV gives up after
 2 s) and 3 s on ISO 15118-2 (4.5 s performance time), as EvseV2G does.
 
+Each WeldingDetectionRes (DIN SPEC 70121, ISO 15118-2) and DC_WeldingDetectionRes (ISO 15118-20)
+waits for two ``update_dc_present_values`` after its request, so that the EVSEPresentVoltage is
+measured after the request (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106): the first update
+after the request can carry a measurement taken just before it, the second one was taken after the
+request. It waits at most 1.4 s (1.5 s performance time), then it is sent with the last values, with
+a warning if none arrived. On DIN SPEC 70121 and ISO 15118-2 the first one also waits for CP state B
+as before. An emergency shutdown reported while a DC PowerDeliveryRes(stop) is held answers it
+FAILED at once.
+
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
 only be sent while the applied entry of the EV's power profile, from its latest

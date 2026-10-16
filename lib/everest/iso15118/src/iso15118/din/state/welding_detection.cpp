@@ -44,19 +44,33 @@ void WeldingDetection::process_request([[maybe_unused]] const message_din::Weldi
     }
 }
 
+void WeldingDetection::answer_when_ready() {
+    if (m_ctx.power_delivery_stopped and m_ctx.evse().current_cp_state != d20::CpState::B) {
+        return;
+    }
+    // CP State B is in: the [V2G-DC-988] gate is passed, whatever the present values gate still waits for.
+    m_ctx.clear_cp_state_timeout();
+    if (present_values_outstanding > 0) {
+        return;
+    }
+    const auto req = pending_req.value();
+    pending_req.reset();
+    process_request(req);
+}
+
 Result WeldingDetection::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control_data = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
             m_ctx.set_present_voltage(control_data->voltage);
+            if (present_values_outstanding > 0 and --present_values_outstanding == 0) {
+                m_ctx.clear_present_values_timeout();
+            }
         }
-        // Parked while waiting for CP State B ([V2G-DC-988]): resume as soon as it is reported.
-        if (m_ctx.evse().current_cp_state == d20::CpState::B) {
-            if (pending_req.has_value()) {
-                m_ctx.stop_timeout(d20::TimeoutType::CPSTATE);
-                const auto req = pending_req.value();
-                pending_req.reset();
-                process_request(req);
-            } else if (pending_stop.has_value()) {
+        // Parked while waiting for CP State B ([V2G-DC-988]) or present values: resume once both are in.
+        if (pending_req.has_value()) {
+            answer_when_ready();
+        } else if (m_ctx.evse().current_cp_state == d20::CpState::B) {
+            if (pending_stop.has_value()) {
                 const auto req = pending_stop.value();
                 pending_stop.reset();
                 return process_session_stop(m_ctx, req);
@@ -67,7 +81,23 @@ Result WeldingDetection::on_event(Event ev) {
 
     if (ev == Event::TIMEOUT) {
         const auto* timeout = m_ctx.get_active_timeout();
-        if (timeout and *timeout == d20::TimeoutType::ONGOING) {
+        if (timeout and *timeout == d20::TimeoutType::PRESENT_VALUES and present_values_outstanding > 0) {
+            // With every update outstanding the source stalled; with the first one in, the value is at worst
+            // one poll interval older than the request.
+            if (present_values_outstanding >= d20::PRESENT_VALUES_NEEDED) {
+                logf_warning(
+                    "No present values within %d ms after the WeldingDetectionReq, answering with the last ones",
+                    d20::TIMEOUT_PRESENT_VALUES);
+            } else {
+                logf_info("Only one present values update within %d ms after the WeldingDetectionReq, answering "
+                          "with it",
+                          d20::TIMEOUT_PRESENT_VALUES);
+            }
+            present_values_outstanding = 0;
+            if (pending_req.has_value()) {
+                answer_when_ready();
+            }
+        } else if (timeout and *timeout == d20::TimeoutType::ONGOING) {
             logf_warning("WeldingDetection timeout reached, terminating session");
             m_ctx.session_stopped = true;
         } else if (timeout and *timeout == d20::TimeoutType::CPSTATE and pending_stop.has_value()) {
@@ -78,11 +108,14 @@ Result WeldingDetection::on_event(Event ev) {
             setup_header(stop_res.header, m_ctx.get_session_id());
             m_ctx.respond(response_with_code(stop_res, dt::ResponseCode::FAILED));
             m_ctx.session_stopped = true;
-        } else if (timeout and *timeout == d20::TimeoutType::CPSTATE and pending_req.has_value()) {
+        } else if (timeout and *timeout == d20::TimeoutType::CPSTATE and pending_req.has_value() and
+                   m_ctx.evse().current_cp_state != d20::CpState::B) {
             // [V2G-DC-556]: no CP State B in time. The FAILED response arms the FailedTermination path
             // (oscillator off without delay + SECC-side TCP close).
             logf_warning("no CP State B within V2G_SECC_CPState_Detection_Timeout, WeldingDetection -> FAILED");
             pending_req.reset();
+            present_values_outstanding = 0;
+            m_ctx.clear_present_values_timeout();
             message_din::WeldingDetectionResponse res;
             setup_header(res.header, m_ctx.get_session_id());
             res.dc_evse_status.evse_status_code = m_ctx.error_status_code().value_or(
@@ -112,12 +145,13 @@ Result WeldingDetection::on_request(const message_din::Variant& received) {
 
         // [V2G-DC-988]: give the EV V2G_SECC_CPState_Detection_Timeout from the request before failing.
         if (m_ctx.power_delivery_stopped and m_ctx.evse().current_cp_state != d20::CpState::B) {
-            pending_req = *req;
             m_ctx.arm_cp_state_timeout(TIMEOUT_CPSTATE_DETECTION_MS);
-            return {};
         }
-
-        process_request(*req);
+        // The EVSEPresentVoltage has to be measured after the request, not before the PowerDeliveryRes or the
+        // EV's last switching of its disconnection device [IEC 61851-23:2023 Table CC.9 t105 to t106].
+        pending_req = *req;
+        present_values_outstanding = d20::PRESENT_VALUES_NEEDED;
+        m_ctx.arm_present_values_timeout(d20::TIMEOUT_PRESENT_VALUES);
         return {};
     }
 
