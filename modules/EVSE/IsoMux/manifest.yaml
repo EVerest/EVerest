@@ -24,6 +24,11 @@ config:
       purpose only
     type: boolean
     default: false
+  tls_key_logging_path:
+    description:  >-
+      Output directory for the TLS key log file
+    type: string
+    default: /tmp
   tls_timeout:
     description: >-
       Set the TLS timeout in ms when establishing a tls connection 
