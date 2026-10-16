@@ -101,7 +101,7 @@ Since its default is ``Only2``, an OCPP 1.6 deployment must set
 Unchanged keys: ``ChargePointConfigPath``, ``UserConfigPath``,
 ``DatabasePath``, ``DeviceModelDatabasePath``,
 ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``,
-``DeviceModelConfigMappings``, ``Ocpp16NetworkConfigSlot``,
+``Ocpp16KeyMappingsPath``, ``Ocpp16NetworkConfigSlot``,
 ``EnableExternalWebsocketControl``, ``MessageLogPath``,
 ``MessageQueueResumeDelay``, ``RequestCompositeScheduleUnit``,
 ``DelayOcppStart``, and ``ResetStopDelay``.
@@ -215,7 +215,7 @@ Example:
        variable:
          name: ExampleConfigurationKey
 
-Point ``DeviceModelConfigMappings`` to this file. The mappings are applied
+Point ``Ocpp16KeyMappingsPath`` to this file. The mappings are applied
 both during the one-time migration and when serving the device-model-backed
 configuration at runtime.
 
@@ -298,7 +298,7 @@ What to keep in mind
 
 * Relative paths for ``DeviceModelDatabasePath``,
   ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``, and
-  ``DeviceModelConfigMappings`` are resolved against the module share path.
+  ``Ocpp16KeyMappingsPath`` are resolved against the module share path.
 * Only keys with a built-in mapping or an explicit custom mapping entry are
   migrated. Unknown keys produce a warning log at startup and are otherwise
   ignored. The complete built-in mapping table is in

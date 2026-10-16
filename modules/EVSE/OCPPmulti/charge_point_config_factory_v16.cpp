@@ -20,7 +20,7 @@
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/ocpp16_component_config_patcher.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 namespace module::config_factory_v16 {
 
@@ -90,12 +90,12 @@ DeviceModelInitializationContext resolve_device_model_initialization_context(con
     }
     context.component_config_path = component_config_path.value();
 
-    if (!config.DeviceModelConfigMappings.empty()) {
+    if (!config.Ocpp16KeyMappingsPath.empty()) {
         const auto custom_mappings_path =
-            resolve_device_model_resource_path(ocpp_share_path, fs::path(config.DeviceModelConfigMappings));
+            resolve_device_model_resource_path(ocpp_share_path, fs::path(config.Ocpp16KeyMappingsPath));
         if (!custom_mappings_path.has_value()) {
-            EVLOG_AND_THROW(std::runtime_error(fmt::format(
-                "Could not locate OCPP1.6 custom config mapping file at '{}'.", config.DeviceModelConfigMappings)));
+            EVLOG_AND_THROW(std::runtime_error(
+                fmt::format("Could not locate OCPP 1.6 key mapping file at '{}'.", config.Ocpp16KeyMappingsPath)));
         }
         context.custom_mappings_path = custom_mappings_path.value();
     }
@@ -159,11 +159,10 @@ void initialize_device_model_with_migration(const fs::path& ocpp_share_path, con
     auto component_configs = ocpp::v2::get_all_component_configs(context.component_config_path);
     ocpp::v2::ensure_ocpp16_legacy_ctrlr(component_configs);
 
-    ocpp::v2::Ocpp16CustomConfigMappings custom_mappings;
+    ocpp::v2::Ocpp16KeyMappings custom_mappings;
     if (context.custom_mappings_path.has_value()) {
-        EVLOG_info << "Custom OCPP1.6 to device model config mappings provided, loading from "
-                   << context.custom_mappings_path.value();
-        custom_mappings = ocpp::v2::load_ocpp16_custom_config_mappings_from_yaml(context.custom_mappings_path.value());
+        EVLOG_info << "Custom OCPP 1.6 key mappings provided, loading from " << context.custom_mappings_path.value();
+        custom_mappings = ocpp::v2::load_ocpp16_key_mappings_from_yaml(context.custom_mappings_path.value());
     }
 
     ocpp::v2::patch_component_config_with_ocpp16(component_configs, *legacy_charge_point_config, custom_mappings,
@@ -188,9 +187,9 @@ config_factory_result_t create_device_model_charge_point_configuration(
     // One-time migration, mirroring the v2 path (ocpp::v2::ChargePoint::initialize)
     ocpp::v2::NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*device_model);
 
-    ocpp::v2::Ocpp16CustomConfigMappings custom_mappings;
+    ocpp::v2::Ocpp16KeyMappings custom_mappings;
     if (context.custom_mappings_path.has_value()) {
-        custom_mappings = ocpp::v2::load_ocpp16_custom_config_mappings_from_yaml(context.custom_mappings_path.value());
+        custom_mappings = ocpp::v2::load_ocpp16_key_mappings_from_yaml(context.custom_mappings_path.value());
     }
 
     // Pass a copy so the returned mappings match the ones the configuration runs with.

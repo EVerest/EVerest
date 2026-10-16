@@ -224,7 +224,7 @@ protected:
         this->device_model = std::make_unique<stubs::MemoryStorage>();
         this->device_model->set("SomeOtherCtrlr", "ACustomKeyVar", "initial");
         this->device_model->set_readonly("ACustomKeyVar");
-        ocpp::v2::Ocpp16CustomConfigMappings mappings;
+        ocpp::v2::Ocpp16KeyMappings mappings;
         mappings.emplace(CUSTOM_KEY,
                          std::make_pair(ocpp::v2::Component{"SomeOtherCtrlr"}, ocpp::v2::Variable{"ACustomKeyVar"}));
         return std::make_unique<ChargePointConfigurationDeviceModel>(

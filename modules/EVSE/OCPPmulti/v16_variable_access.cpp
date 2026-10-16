@@ -16,7 +16,7 @@
 namespace {
 
 constexpr auto READ_ONLY_DERIVED_INFO = "Managed by the OCPP1.6 stack; read-only via this API";
-constexpr auto AMBIGUOUS_MAPPING_INFO = "Ambiguous custom config mapping; fix DeviceModelConfigMappings";
+constexpr auto AMBIGUOUS_MAPPING_INFO = "Ambiguous custom key mapping; fix Ocpp16KeyMappingsPath";
 
 std::string cv_to_string(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
     const auto instance = [](const auto& opt) { return opt.has_value() ? fmt::format("({})", opt->get()) : ""; };
@@ -45,8 +45,8 @@ ocpp::v2::StatusInfo reason_code_status_info(const std::string& reason_code) {
 }
 
 void log_ambiguous(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
-    EVLOG_error << "Ambiguous custom config mapping for " << cv_to_string(component, variable)
-                << "; fix DeviceModelConfigMappings";
+    EVLOG_error << "Ambiguous custom key mapping for " << cv_to_string(component, variable)
+                << "; fix Ocpp16KeyMappingsPath";
 }
 
 // mirrors ChargePointV16::set_variables' ConfigurationStatus mapping

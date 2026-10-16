@@ -48,7 +48,7 @@ list(APPEND CONFIGS
      config-docker.json
      config-full.json
      config-docker-tls.json
-     ocpp16-custom-config-mappings.yaml
+     ocpp16-custom-key-mappings.yaml
      ../logging.ini
 )
 

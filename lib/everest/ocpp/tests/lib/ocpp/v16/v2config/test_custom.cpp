@@ -9,9 +9,9 @@
 namespace {
 using namespace ocpp::v16::stubs;
 
-ocpp::v2::Ocpp16CustomConfigMappings create_custom_mappings(
+ocpp::v2::Ocpp16KeyMappings create_custom_mappings(
     std::initializer_list<std::pair<const std::string, std::pair<std::string, std::string>>> entries) {
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    ocpp::v2::Ocpp16KeyMappings mappings;
     for (const auto& [key, target] : entries) {
         const auto& [component, variable] = target;
         mappings.emplace(key, std::make_pair(ocpp::v2::Component{component}, ocpp::v2::Variable{variable}));
