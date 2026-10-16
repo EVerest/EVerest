@@ -719,36 +719,37 @@ class EDM:
             log.info(f"{pull_error_count}/{repo_count} repositories could not be pulled.")
 
     @classmethod
-    def scan_dependencies(cls, working_dir: Path, include_deps: list, files_to_ignore: set = None) -> Tuple[dict, set]:
-        """Scan working_dir for dependencies."""
-        log.info(f"Scanning \"{working_dir}\" for dependencies.")
-        dependencies_files = set(list(working_dir.glob("**/dependencies.yaml")) +
-                                 list(working_dir.glob("**/dependencies.yml")))
+    def parse_project_dependencies(cls, project_dir: Path) -> dict:
+        """Parse the dependencies file in the top-level directory of project_dir, nested ones are not considered."""
+        dependencies_file = project_dir / "dependencies.yaml"
+        if not dependencies_file.is_file():
+            dependencies_file = project_dir / "dependencies.yml"
+        if not dependencies_file.is_file():
+            return {}
 
-        if files_to_ignore:
-            dependencies_files.difference_update(files_to_ignore)
+        log.info(f"Parsing dependencies file: {dependencies_file}")
+        with open(dependencies_file, encoding='utf-8') as dep:
+            try:
+                dependencies = yaml.safe_load(dep)
+            except yaml.YAMLError as e:
+                log.error(f"Error parsing yaml of \"{dependencies_file}\": {e}")
+                return {}
+
+        return dependencies or {}
+
+    @classmethod
+    def scan_workspace_dependencies(cls, workspace_dir: Path, projects_to_ignore: set = None) -> Tuple[dict, set]:
+        """Collect the dependencies of workspace_dir and of the projects in its first-level subdirectories."""
+        log.info(f"Scanning \"{workspace_dir}\" for dependencies.")
+        project_dirs = {workspace_dir} | {path for path in workspace_dir.iterdir() if path.is_dir()}
+        if projects_to_ignore:
+            project_dirs.difference_update(projects_to_ignore)
 
         dependencies = {}
-        for dependencies_file in dependencies_files:
-            if dependencies_file.is_file():
-                # filter _deps folders
-                if not include_deps:
-                    relative_path = dependencies_file.relative_to(working_dir).parent.as_posix()
-                    if "_deps/" in relative_path:
-                        log.info(
-                            f"Ignoring dependencies in \"{dependencies_file}\" "
-                            f"because this file is located in a \"_deps\" subdirectory.")
-                        continue
-                log.info(f"Parsing dependencies file: {dependencies_file}")
-                with open(dependencies_file, encoding='utf-8') as dep:
-                    try:
-                        dependencies_yaml = yaml.safe_load(dep)
-                        if dependencies_yaml is not None:
-                            dependencies = {**dependencies, **dependencies_yaml}
-                    except yaml.YAMLError as e:
-                        log.error(f"Error parsing yaml of \"{dependencies_file}\": {e}")
+        for project_dir in sorted(project_dirs):
+            dependencies = {**dependencies, **cls.parse_project_dependencies(project_dir)}
 
-        return (dependencies, dependencies_files)
+        return (dependencies, project_dirs)
 
     @classmethod
     def parse_workspace_files(cls, workspace_files: list) -> dict:
@@ -845,10 +846,10 @@ class EDM:
         return valid
 
     @classmethod
-    def write_config_from_scanned_dependencies(cls, working_dir: Path, include_deps: list,
+    def write_config_from_scanned_dependencies(cls, working_dir: Path,
                                                external_in_config: bool, include_remotes: list, config_path: Path):
         """Writes a config file from the scanned dependencies in working_dir"""
-        (dependencies, _) = EDM.scan_dependencies(working_dir, include_deps)
+        (dependencies, _) = EDM.scan_workspace_dependencies(working_dir)
         new_config = EDM.config_from_dependencies(dependencies, external_in_config, include_remotes)
         new_config = EDM.create_config(working_dir, new_config, external_in_config, include_remotes)
         EDM.write_config(new_config, config_path)
@@ -1059,13 +1060,12 @@ def init_handler(args):
     iterations = 10
     old_snapshot = {}
     config = {}
-    scanned_dependencies_files = set()
+    scanned_projects = set()
     for i in range(iterations):
+        # the first pass only takes the snapshot the following passes are compared to
         if i > 0:
-            # only do recursive parsing if explicitly requested
-            (dependencies, dependencies_files) = EDM.scan_dependencies(
-                working_dir, args.include_deps, scanned_dependencies_files)
-            scanned_dependencies_files.update(dependencies_files)
+            (dependencies, projects) = EDM.scan_workspace_dependencies(working_dir, scanned_projects)
+            scanned_projects.update(projects)
             new_config = EDM.config_from_dependencies(dependencies, args.external_in_config, args.include_remotes)
             new_config = EDM.create_config(working_dir, new_config, args.external_in_config, args.include_remotes)
             # merge config with new_config, overwrite github https prefix with git prefix
@@ -1184,7 +1184,7 @@ def snapshot_handler(args):
     if not config_path.exists():
         log.info(f'Workspace config does not exist, creating a new one at: {config_path}')
         EDM.write_config_from_scanned_dependencies(
-            working_dir, args.include_deps, args.external_in_config, args.include_remotes, config_path)
+            working_dir, args.external_in_config, args.include_remotes, config_path)
 
     log.info(f"Creating snapshot: {args.snapshot_name}")
 
@@ -1196,7 +1196,7 @@ def snapshot_handler(args):
         if i > 0:
             # only do recursive parsing if explicitly requested
             EDM.write_config_from_scanned_dependencies(
-                working_dir, args.include_deps, args.external_in_config, args.include_remotes, config_path)
+                working_dir, args.external_in_config, args.include_remotes, config_path)
             EDM.setup_workspace_from_config(working_dir, config_path, False, False)
         snapshot = EDM.create_snapshot(working_dir, config_path)
         EDM.write_config(snapshot, args.snapshot_name)
@@ -1485,10 +1485,9 @@ def main_handler(args):
 
     out_file = Path(args.out).expanduser().resolve()
 
-    (dependencies, _) = EDM.scan_dependencies(working_dir, args.include_deps)
-
     if args.create_config:
         log.info("Creating config")
+        (dependencies, _) = EDM.scan_workspace_dependencies(working_dir)
         new_config = EDM.config_from_dependencies(dependencies, args.external_in_config, args.include_remotes)
         new_config = EDM.create_config(working_dir, new_config, args.external_in_config, args.include_remotes)
         EDM.write_config(new_config, args.create_config)
@@ -1498,6 +1497,8 @@ def main_handler(args):
         log.error("Calling the dependency manager without the --config parameter indicates usage from a CMake script. "
                   "If this is intendend , please use the --cmake flag to explicitly request this functionality.")
         sys.exit(1)
+
+    dependencies = EDM.parse_project_dependencies(working_dir)
 
     env_workspace = os.environ.get('EVEREST_EDM_WORKSPACE')
     workspace_dir = working_dir.parent
@@ -1544,9 +1545,7 @@ def get_parser(version) -> argparse.ArgumentParser:
                         help="Path of the file that will contain the generated CPM cmake information")
     parser.add_argument(
         "--include_deps", action='store_true',
-        help="Include dependency files that are stored in \"_deps\" directories. "
-             "Given that files in these directories are part of the in-tree source cache of CPM "
-             "you probably almost never want to do this.")
+        help="Deprecated, has no effect: only the top-level dependencies file of a project is parsed.")
     parser.add_argument(
         "--config", metavar='CONFIG',
         help="Path to a config file that contains the repositories that should be checked out into the workspace.",

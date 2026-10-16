@@ -98,7 +98,7 @@ find_package(EDM REQUIRED)
 ```
 The **EDM** CMake module will be discovered automatically if you [registered the CMake module in the way it described in the *Setting up CMake integration* section of this readme](#setting-up-cmake-integration).
 
-To define dependencies you can now add a **dependencies.yaml** file to your source repository. It should look like this:
+To define dependencies you can now add a **dependencies.yaml** file to the top-level directory of your source repository. It should look like this:
 ```yaml
 ---
 liblog:

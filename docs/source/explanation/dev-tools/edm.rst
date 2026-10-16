@@ -187,8 +187,8 @@ CMakeLists.txt file in the respective source repository:
 
    find_package(EDM REQUIRED)
 
-To define dependencies you can now add a dependencies.yaml file to your source
-repository. It should look like this:
+To define dependencies you can now add a dependencies.yaml file to the top-level
+directory of your source repository. It should look like this:
 
 .. code-block:: bash
 
