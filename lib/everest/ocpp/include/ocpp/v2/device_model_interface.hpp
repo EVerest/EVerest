@@ -28,11 +28,13 @@ struct VariableMonitoringPeriodic {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
-/// \brief Helper struct that combines VariableCharacteristics and VariableMonitoring
+/// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
     std::optional<std::string> source;
+    /// \brief The attributes of the variable with their current values
+    std::vector<VariableAttribute> attributes;
 };
 
 using VariableMap = std::map<Variable, VariableMetaData>;
@@ -52,10 +54,10 @@ private:
     std::string reason;
 };
 
-/// \brief Pure abstract interface for device model access.
-class DeviceModelInterface {
+/// \brief Access to the variables of the device model: values, metadata, reports and variable listeners
+class DeviceModelVariablesInterface {
 public:
-    virtual ~DeviceModelInterface() = default;
+    virtual ~DeviceModelVariablesInterface() = default;
 
     // ============================================================================
     // Value getters
@@ -112,7 +114,7 @@ public:
                                               const AttributeEnum& attribute_enum, const std::string& source) = 0;
 
     // ============================================================================
-    // Metadata and monitoring
+    // Metadata and reports
     // ============================================================================
 
     /// \brief Get the mutability for the given component, variable and attribute
@@ -143,6 +145,26 @@ public:
         const std::optional<std::vector<ComponentVariable>>& component_variables = std::nullopt,
         const std::optional<std::vector<ComponentCriterionEnum>>& component_criteria = std::nullopt) = 0;
 
+    /// \brief Registers a listener for variable changes
+    /// \param listener The listener function to register
+    virtual void register_variable_listener(
+        std::function<void(const std::unordered_map<std::int64_t, VariableMonitoringMeta>& monitors,
+                           const Component& component, const Variable& variable,
+                           const VariableCharacteristics& characteristics, const VariableAttribute& attribute,
+                           const std::string& value_previous, const std::string& value_current)>&& listener) = 0;
+
+    /// \brief Create a fresh NetworkConfiguration_<new_slot> from the embedded default schema.
+    /// \param new_slot  New NetworkConfiguration instance to create.
+    /// \return true on success; false on failure.
+    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t /*new_slot*/) {
+        return false;
+    }
+};
+
+/// \brief Access to the monitors of the device model. Monitors are evaluated when a value changes, so monitoring
+/// builds on variable access.
+class DeviceModelMonitoringInterface : public DeviceModelVariablesInterface {
+public:
     // ============================================================================
     // Monitoring operations
     // ============================================================================
@@ -183,21 +205,17 @@ public:
     /// \return Count of monitors deleted
     virtual std::int32_t clear_custom_monitors() = 0;
 
-    /// \brief Registers a listener for variable changes
-    /// \param listener The listener function to register
-    virtual void register_variable_listener(
-        std::function<void(const std::unordered_map<std::int64_t, VariableMonitoringMeta>& monitors,
-                           const Component& component, const Variable& variable,
-                           const VariableCharacteristics& characteristics, const VariableAttribute& attribute,
-                           const std::string& value_previous, const std::string& value_current)>&& listener) = 0;
-
     /// \brief Registers a listener for monitor updates
     /// \param listener The listener function to register
     virtual void register_monitor_listener(
         std::function<void(const VariableMonitoringMeta& updated_monitor, const Component& component,
                            const Variable& variable, const VariableCharacteristics& characteristics,
                            const VariableAttribute& attribute, const std::string& current_value)>&& listener) = 0;
+};
 
+/// \brief Pure abstract interface for device model access.
+class DeviceModelInterface : public DeviceModelMonitoringInterface {
+public:
     // ============================================================================
     // Integrity check
     // ============================================================================
@@ -205,13 +223,6 @@ public:
     /// \brief Check data integrity of the device model
     /// \param evse_connector_structure The EVSE connector structure
     virtual void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) = 0;
-
-    /// \brief Create a fresh NetworkConfiguration_<new_slot> from the embedded default schema.
-    /// \param new_slot  New NetworkConfiguration instance to create.
-    /// \return true on success; false on failure.
-    virtual bool create_network_configuration_slot_from_default_schema(std::int32_t /*new_slot*/) {
-        return false;
-    }
 };
 
 } // namespace v2

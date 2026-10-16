@@ -11,7 +11,7 @@
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
-#include <ocpp/v2/device_model_abstract.hpp>
+#include <ocpp/v2/device_model_interface.hpp>
 
 namespace ocpp::v2 {
 
@@ -58,7 +58,7 @@ struct UpdaterMonitorMeta {
     Component component;
     Variable variable;
 
-    /// \brief database ID for quick instant retrieval if required
+    /// \brief Id of the monitor in the device model
     std::int32_t monitor_id;
 
     std::string value_previous;
@@ -104,7 +104,7 @@ public:
     /// \param notify_csms_events Function that can be invoked with a number of alert events
     /// \param is_chargepoint_offline Function that can be invoked in order to retrieve the
     /// status of the charging station connection to the CSMS
-    MonitoringUpdater(DeviceModelAbstract& device_model, notify_events notify_csms_events,
+    MonitoringUpdater(DeviceModelMonitoringInterface& device_model, notify_events notify_csms_events,
                       is_offline is_chargepoint_offline);
     ~MonitoringUpdater();
 
@@ -157,8 +157,7 @@ private:
     /// of the offline state
     void process_monitor_meta_internal(UpdaterMonitorMeta& updater_meta_data);
 
-    /// \brief Query the database (from in-memory data for fast retrieval)
-    /// and updates our internal monitors with the new database data
+    /// \brief Updates our internal monitors with the periodic monitors of the device model
     void update_periodic_monitors_internal();
 
     void get_monitoring_info(bool& out_is_offline, int& out_offline_severity, int& out_active_monitoring_level,
@@ -166,7 +165,7 @@ private:
 
     bool is_monitoring_enabled();
 
-    DeviceModelAbstract& device_model;
+    DeviceModelMonitoringInterface& device_model;
     Everest::SteadyTimer monitors_timer;
 
     // Charger to CSMS message unique ID for EventData
