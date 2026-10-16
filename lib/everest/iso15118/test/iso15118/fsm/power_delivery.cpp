@@ -125,7 +125,7 @@ SCENARIO("ISO15118-20 power delivery answers before the contactor closes") {
 
     GIVEN("A PowerDeliveryReq(Start) selecting a schedule tuple that was never offered") {
         auto& profile = req.power_profile.emplace();
-        profile.time_anchor = 1691411798'000'000;
+        profile.time_anchor = 1691411798 * d20::MICROSECONDS_PER_SECOND;
         profile.control_mode.emplace<dt::Scheduled_EVPPTControlMode>().selected_schedule = 7;
         state_helper.handle_request(req);
         REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());

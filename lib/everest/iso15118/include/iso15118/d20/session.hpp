@@ -7,13 +7,12 @@
 #include <cstdint>
 #include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include <iso15118/d20/der_functions.hpp>
-#include <iso15118/d20/ev_power_profile.hpp>
+#include <iso15118/d20/power_timeline.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
@@ -212,11 +211,16 @@ public:
 
     bool service_renegotiation_supported{false};
 
-    // The ScheduleTupleIDs offered in the last finished ScheduleExchangeRes. Empty in dynamic control mode.
-    std::set<dt::NumericId> offered_schedules{};
+    // The EVSEMaximumChargePower sent in the ChargeParameterDiscoveryRes. The schedule offer and the EV's
+    // EVPowerProfile are both sized from it, so limits updated since must not reach the offer.
+    std::optional<dt::RationalNumber> cpd_max_charge_power{};
 
-    // From the EV's latest PowerDeliveryReq that carried one.
-    std::optional<EvPowerProfile> ev_power_profile{};
+    // The charge schedule of each tuple offered in the last finished ScheduleExchangeRes, by ScheduleTupleID.
+    // Empty in dynamic control mode.
+    std::map<dt::NumericId, PowerTimeline> offered_schedules{};
+
+    // The EVPowerProfile of the EV's latest PowerDeliveryReq that carried one.
+    std::optional<PowerTimeline> ev_power_profile{};
 
 private:
     // NOTE (aw): could be const
