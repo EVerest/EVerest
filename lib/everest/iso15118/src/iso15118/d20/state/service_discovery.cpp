@@ -58,7 +58,7 @@ static bool find_service_id(const everest::lib::util::fixed_vector<uint16_t, 16>
 message_20::ServiceDiscoveryResponse
 handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& session,
                const std::vector<dt::ServiceCategory>& energy_services, const std::vector<uint16_t>& vas_services,
-               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services) {
+               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services, bool free_service) {
 
     message_20::ServiceDiscoveryResponse res;
 
@@ -82,7 +82,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
 
     const auto offer_all_energy_services = [&]() {
         for (auto& energy_service : energy_services) {
-            energy_services_list.push_back({energy_service, false});
+            energy_services_list.push_back({energy_service, free_service});
         }
     };
 
@@ -90,7 +90,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     if (req.supported_service_ids.has_value() == true) {
         for (auto& energy_service : energy_services) {
             if (find_service_id(req.supported_service_ids.value(), message_20::to_underlying_value(energy_service))) {
-                energy_services_list.push_back({energy_service, false});
+                energy_services_list.push_back({energy_service, free_service});
             }
         }
         for (auto& vas_service : vas_services) {
@@ -168,9 +168,9 @@ Result ServiceDiscovery::feed(Event ev) {
             }
         }
 
-        const auto res =
-            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
-                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                                        m_ctx.session_config.supported_vas_services,
+                                        m_ctx.session_ev_info.ev_energy_services, m_ctx.session_config.free_service);
 
         m_ctx.respond(res);
 

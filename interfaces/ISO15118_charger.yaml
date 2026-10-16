@@ -53,6 +53,18 @@ cmds:
           If true, the charger will abort an active DC session after receiving the EV SOC value to allow
           switching to AC basic charging.
         type: boolean
+  set_free_service:
+    description: >-
+      Set whether the EVCharging service is offered free of charge (the FreeService flag in
+      ServiceDiscoveryRes). The module defaults to false, so only a call with true marks the service
+      as free. Drive this from the source that knows the tariff or free vend state, e.g. the CSMS.
+      The value applies from the next session on. ServiceDiscoveryRes is sent before authorization
+      takes place, so call this whenever that state changes rather than at session start. The value is
+      kept across sessions but not persisted, so it falls back to false when the module restarts.
+    arguments:
+      free_service:
+        description: Set to true when the EVCharging service is offered free of charge
+        type: boolean
   bpt_setup:
     description: >-
       At startup, set the bpt setup for ISO15118-20 at least once. May be updated later on.

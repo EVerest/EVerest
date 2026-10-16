@@ -103,6 +103,16 @@ cmds:
         It does not reflect the success/failure of the actual unlocking.
         If unlocking fails, the connector_lock interface shall raise an error asynchronously.
       type: boolean
+  set_free_service:
+    description: >-
+      Set whether the EVCharging service is offered free of charge (the FreeService flag in the
+      ISO 15118 / DIN 70121 ServiceDiscoveryRes). Forwarded to the HLC stack; without HLC this is
+      accepted but does nothing. The default is false. The value is not persisted, so it falls back
+      to false when EVerest restarts.
+    arguments:
+      free_service:
+        description: Set to true when the EVCharging service is offered free of charge
+        type: boolean
   external_ready_to_start_charging:
     description: >-
       There are situations where another module needs to do some initialization after evse manager is in principle ready to start charging.

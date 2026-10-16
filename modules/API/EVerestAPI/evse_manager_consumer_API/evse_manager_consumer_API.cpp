@@ -98,6 +98,7 @@ void evse_manager_consumer_API::ready() {
     generate_api_cmd_resume_charging();
     generate_api_cmd_stop_transaction();
     generate_api_cmd_force_unlock();
+    generate_api_cmd_set_free_service();
     generate_api_cmd_random_delay_enable();
     generate_api_cmd_random_delay_disable();
     generate_api_cmd_random_delay_cancel();
@@ -197,6 +198,17 @@ void evse_manager_consumer_API::generate_api_cmd_force_unlock() {
         if (deserialize_request(data, reply_to, payload)) {
             auto result = r_evse_manager->call_force_unlock(payload);
             mqtt_v.publish(reply_to, result);
+            return true;
+        }
+        return false;
+    });
+}
+
+void evse_manager_consumer_API::generate_api_cmd_set_free_service() {
+    helper.subscribe_api_topic("set_free_service", [this](std::string const& data) {
+        bool free_service{};
+        if (deserialize(data, free_service)) {
+            r_evse_manager->call_set_free_service(free_service);
             return true;
         }
         return false;

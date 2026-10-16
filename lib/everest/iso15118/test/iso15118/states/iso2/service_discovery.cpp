@@ -155,4 +155,21 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
             REQUIRE(res.payment_option_list[0] == dt::PaymentOption::Contract);
         }
     }
+
+    WHEN("The charge service is offered free of charge") {
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
+                                                   std::nullopt, {}, /*free_service=*/true);
+
+        THEN("The ChargeService carries FreeService=true") {
+            REQUIRE(res.charge_service.free_service == true);
+        }
+    }
+
+    WHEN("FreeService is not set") {
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false);
+
+        THEN("The ChargeService is not advertised as free") {
+            REQUIRE(res.charge_service.free_service == false);
+        }
+    }
 }

@@ -39,6 +39,9 @@ struct ISO15118_chargerImplStub : public ISO15118_chargerImplBase {
                                       bool& fake_dc_enabled) {
         std::cout << "ISO15118_chargerImplBase::handle_session_setup called" << std::endl;
     }
+    virtual void handle_set_free_service(bool& free_service) {
+        std::cout << "ISO15118_chargerImplBase::handle_set_free_service called" << std::endl;
+    }
     virtual void handle_authorization_response(types::authorization::AuthorizationStatus& authorization_status,
                                                types::authorization::CertificateStatus& certificate_status) {
         std::cout << "ISO15118_chargerImplBase::handle_authorization_response called" << std::endl;
