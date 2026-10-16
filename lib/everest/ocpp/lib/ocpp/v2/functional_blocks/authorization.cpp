@@ -387,13 +387,9 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
                     response.idTokenInfo = id_token_info;
                     return response;
                 } else if (!is_online) {
-                    // A token the CSMS reported as Unknown is still subject to OfflineTxForUnknownIdEnabled
-                    if (id_token_info.status != AuthorizationStatusEnum::Unknown) {
-                        EVLOG_info << "Found invalid entry in AuthCache whilst offline: Not authorized";
-                        response.idTokenInfo = id_token_info;
-                        return response;
-                    }
-                    EVLOG_info << "Found Unknown entry in AuthCache whilst offline: Handling as unknown token";
+                    EVLOG_info << "Found invalid entry in AuthCache whilst offline: Not authorized";
+                    response.idTokenInfo = id_token_info;
+                    return response;
                 } else {
                     EVLOG_info << "Found invalid entry in AuthCache: Sending new request";
                 }
