@@ -1,7 +1,8 @@
 #!/bin/sh
 
 # EDM uses the project's parent directory as workspace, so the sibling everest-core is built in
-# place, and both projects find the everest-cmake that everest-core pins in ../everest-cmake.
+# place. Both projects must load the everest-cmake that everest-core pins: two copies define the
+# same targets, and the image's older everest-cmake would otherwise satisfy everest-chargebyte.
 WS="$EXT_MOUNT/ws"
 BUILD="$EXT_MOUNT/build-oot-edm"
 DEPS="$EXT_MOUNT/oot-deps"
@@ -39,6 +40,7 @@ cmake \
     -B "$BUILD" \
     -S "$WS/everest-chargebyte" \
     -G Ninja \
+    -Deverest-cmake_DIR="$WS/everest-cmake" \
     -DCMAKE_INSTALL_PREFIX="$EXT_MOUNT/dist-oot-edm" \
     -DWHEEL_INSTALL_PREFIX="$EXT_MOUNT/wheels-oot-edm" \
     -DISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES=OFF \
