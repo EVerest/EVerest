@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "everest/io/udp/udp_payload.hpp"
+#include <arpa/inet.h>
 #include <cerrno>
 #include <everest/io/event/fd_event_handler.hpp>
 #include <everest/io/event/unique_fd.hpp>
@@ -85,6 +86,24 @@ void udp_socket_base::close() {
 
 int udp_socket_base::get_fd() const {
     return m_owned_udp_fd;
+}
+
+std::uint16_t udp_socket_base::local_port() const {
+    if (not m_owned_udp_fd.is_fd()) {
+        return 0;
+    }
+    sockaddr_storage bound{};
+    socklen_t bound_len = sizeof(bound);
+    if (::getsockname(m_owned_udp_fd, reinterpret_cast<sockaddr*>(&bound), &bound_len) != 0) {
+        return 0;
+    }
+    if (bound.ss_family == AF_INET) {
+        return ntohs(reinterpret_cast<sockaddr_in const*>(&bound)->sin_port);
+    }
+    if (bound.ss_family == AF_INET6) {
+        return ntohs(reinterpret_cast<sockaddr_in6 const*>(&bound)->sin6_port);
+    }
+    return 0;
 }
 
 int udp_socket_base::get_error() const {

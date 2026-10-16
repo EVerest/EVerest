@@ -238,10 +238,26 @@ struct CB_COMPILER_ATTR_PACK CbLinkStatusPacket {
 	uint32_t transition_count; // phy_operational/plca_engaged edges since firmware boot
 };
 
+// --- Host endpoints (cb-host-ports-v1) --------------------------------------
+// The MCU addresses the host's CAN and PLC services by UDP source port. Before
+// this it learned each port from the first datagram the host sent on that
+// service (CAN: the UdpConnection slot latched it for up to 20 s; PLC: the
+// backends remembered the last sender). A host that recreates a socket gets a
+// new ephemeral port, and until the MCU re-learned it the service was dark
+// while the heartbeat still said connected (bench 2026-10-16: CAN 17 s). The
+// heartbeat now carries the ports: the CAN slot is pinned to the announced
+// endpoint and the PLC backends send to it, both from the heartbeat that
+// carries a change. 0 = unknown: the MCU learns as before. A host built before
+// this field sends CB_HEARTBEAT_PACKET_LEGACY_SIZE bytes; the MCU accepts that
+// with both ports 0, so firmware and tool can be updated in either order.
+#define CB_HEARTBEAT_PACKET_LEGACY_SIZE (sizeof(CbConfig) + 4 + 1)
+
 struct CB_COMPILER_ATTR_PACK CbHeartbeatPacket {
     CbConfig module_config;
     uint32_t session_id;   // random per tool instance, != 0 (0 = legacy, always accepted like v4)
     uint8_t session_flags; // CB_SESSION_FLAG_*
+    uint16_t host_can_port; // host UDP source port of its CAN client, 0 = unknown (cb-host-ports-v1)
+    uint16_t host_plc_port; // host UDP source port of its PLC client, 0 = unknown (cb-host-ports-v1)
 };
 
 struct CB_COMPILER_ATTR_PACK CbHeartbeatReplyPacket {

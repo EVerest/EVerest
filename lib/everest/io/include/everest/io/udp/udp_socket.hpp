@@ -82,6 +82,14 @@ public:
      */
     int get_fd() const;
     /**
+     * @brief The local UDP port of the socket, host byte order.
+     * @details 0 when no socket is owned. A client socket gets its ephemeral port when it is
+     * connected, so for a client this is the source port the peer sees on every datagram, and
+     * it changes with every reopen.
+     * @return The local port, or 0 without a socket.
+     */
+    std::uint16_t local_port() const;
+    /**
      * @brief Get pending errors on the socket.
      * @details Implementation for \p ClientPolicy. With no socket owned, the errno
      * of the last failed open or \ref udp_client_socket::connect is reported:
