@@ -65,14 +65,21 @@ profile for every build type but Debug. Cross builds set `EVEREST_RS_TARGET_TRIP
 `EVEREST_RS_LINKER`; the defaults are `<CMAKE_SYSTEM_PROCESSOR>-unknown-linux-gnu` and
 `CMAKE_CXX_COMPILER`. `modules/Cargo.lock` pins the crates for Bazel and Yocto alike:
 after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
-regenerate `yocto/scarthgap/meta-everest/recipes-core/everest/everest-core-crates.inc`
+regenerate `yocto/meta-everest-common/recipes-core/everest/everest-core-crates.inc`
 with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in the
 `SRCREV` of `everest-core-rust.inc` next to it. `bazel test //yocto:rust_pins_test` checks
 that manifests, lock file and recipe name the same revision.
 
-The Yocto layer `yocto/scarthgap/meta-everest` builds everest-core from this tree. Its
-`rust` PACKAGECONFIG needs Rust 1.86 or newer, on scarthgap the meta-lts-mixins
-`scarthgap/rust` layer, see `docs/source/explanation/linux-yocto/building-yocto.rst`.
+The Yocto layers `yocto/<release>/meta-everest` build everest-core from this tree. Recipes
+and classes they share live in the layer `yocto/meta-everest-common`, which a
+meta-everest layer adds itself unless `bblayers.conf` lists it (an extensible SDK's does);
+a meta-everest layer keeps only its backports and release-specific recipes. Shared recipes
+refer to `${UNPACKDIR}`, never `${WORKDIR}`, and fetch git sources with
+`;destsuffix=${BP}` and no `S` of their own (wrynose rejects `S = "${UNPACKDIR}/git"`);
+kirkstone and scarthgap default `UNPACKDIR` to `${WORKDIR}` in their `layer.conf`.
+The `rust` PACKAGECONFIG needs Rust 1.86 or newer, on kirkstone
+and scarthgap the meta-lts-mixins `<release>/rust` layer, see
+`docs/source/explanation/linux-yocto/building-yocto.rst`.
 
 ## Running
 
