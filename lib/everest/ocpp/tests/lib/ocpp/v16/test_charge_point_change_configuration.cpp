@@ -4,6 +4,7 @@
 /// \file test_charge_point_change_configuration.cpp
 /// \brief ReadOnly configuration keys: rejected for a ChangeConfiguration.req, writable by local callers.
 
+#include <algorithm>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
@@ -14,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <gmock/gmock.h>
@@ -264,6 +266,100 @@ TEST_F(ChargePointChangeConfigurationDeviceModelTest, LocalCallerCanChangeReadOn
 
     EXPECT_EQ(this->charge_point->set_configuration_key("ChargePointModel", "Other"), ConfigurationStatus::Accepted);
     EXPECT_EQ(this->configuration->getChargePointModel().get(), "Other");
+}
+
+namespace {
+// a device-model variable that exists (metadata, mutability) but has no value until it is first set
+class ValuelessCustomCvStorage : public stubs::MemoryStorageProxy {
+public:
+    ValuelessCustomCvStorage(stubs::MemoryStorage& storage, ocpp::v2::Component component,
+                             ocpp::v2::Variable variable) :
+        stubs::MemoryStorageProxy(storage),
+        storage(storage),
+        component(std::move(component)),
+        variable(std::move(variable)) {
+    }
+
+    SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
+                                    const AttributeEnum& attribute_enum, const std::string& value,
+                                    const std::string& source, bool allow_read_only) override {
+        if (is_valueless_cv(component_id, variable_id)) {
+            storage.set(component_id.name.get(), variable_id.name.get(), value);
+            return SetVariableStatusEnum::Accepted;
+        }
+        return stubs::MemoryStorageProxy::set_value(component_id, variable_id, attribute_enum, value, source,
+                                                    allow_read_only);
+    }
+
+    std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,
+                                                 const AttributeEnum& attribute_enum) override {
+        if (is_valueless_cv(component_id, variable_id)) {
+            return MutabilityEnum::ReadWrite;
+        }
+        return stubs::MemoryStorageProxy::get_mutability(component_id, variable_id, attribute_enum);
+    }
+
+    std::optional<VariableMetaData> get_variable_meta_data(const Component& component_id,
+                                                           const Variable& variable_id) override {
+        if (is_valueless_cv(component_id, variable_id)) {
+            return VariableMetaData{};
+        }
+        return stubs::MemoryStorageProxy::get_variable_meta_data(component_id, variable_id);
+    }
+
+private:
+    bool is_valueless_cv(const Component& component_id, const Variable& variable_id) const {
+        return component_id.name == component.name && variable_id.name == variable.name;
+    }
+
+    stubs::MemoryStorage& storage;
+    ocpp::v2::Component component;
+    ocpp::v2::Variable variable;
+};
+} // namespace
+
+class ChargePointChangeConfigurationValuelessCustomKeyTest : public ChargePointChangeConfigurationTest {
+protected:
+    std::unique_ptr<ChargePointConfigurationInterface> create_configuration() override {
+        this->device_model = std::make_unique<stubs::MemoryStorage>();
+        const ocpp::v2::Component component{"SomeOtherCtrlr"};
+        const ocpp::v2::Variable variable{"AValuelessVar"};
+        ocpp::v2::Ocpp16CustomConfigMappings mappings;
+        mappings.emplace(VALUELESS_KEY, std::make_pair(component, variable));
+        return std::make_unique<ChargePointConfigurationDeviceModel>(
+            CONFIG_DIR_V16, std::make_unique<ValuelessCustomCvStorage>(*this->device_model, component, variable),
+            std::move(mappings));
+    }
+
+    static constexpr auto VALUELESS_KEY = "AValuelessKey";
+    std::unique_ptr<stubs::MemoryStorage> device_model;
+};
+
+TEST_F(ChargePointChangeConfigurationValuelessCustomKeyTest, KnownKeyIsReportedWithoutValue) {
+    const auto kv = this->configuration->get(VALUELESS_KEY);
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_FALSE(kv->readonly);
+    EXPECT_FALSE(kv->value.has_value());
+
+    const auto all = this->configuration->get_all_key_value();
+    const auto it =
+        std::find_if(all.begin(), all.end(), [](const KeyValue& entry) { return entry.key.get() == VALUELESS_KEY; });
+    ASSERT_NE(it, all.end());
+    EXPECT_FALSE(it->value.has_value());
+}
+
+TEST_F(ChargePointChangeConfigurationValuelessCustomKeyTest, CsmsCanSetKeyWithoutValue) {
+    make_booted_charge_point();
+
+    EXPECT_EQ(change_configuration(VALUELESS_KEY, "first"), "Accepted");
+    EXPECT_EQ(this->configuration->get(VALUELESS_KEY)->value.value().get(), "first");
+}
+
+TEST_F(ChargePointChangeConfigurationValuelessCustomKeyTest, LocalCallerCanSetKeyWithoutValue) {
+    make_charge_point();
+
+    EXPECT_EQ(this->charge_point->set_configuration_key(VALUELESS_KEY, "first"), ConfigurationStatus::Accepted);
+    EXPECT_EQ(this->configuration->get(VALUELESS_KEY)->value.value().get(), "first");
 }
 
 } // namespace v16

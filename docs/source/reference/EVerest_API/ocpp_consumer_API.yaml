@@ -1941,8 +1941,8 @@ components:
           $ref: '#/components/schemas/AttributeEnum'
         value:
           description: >-
-            Value of the requested variable and AttributeEnum. This field can only be empty when the given
-            status is NOT accepted
+            Value of the requested variable and AttributeEnum. Present if and only if the status is Accepted.
+            An empty string when the AttributeEnum is supported but has no value
           type: string
           minLength: 0
           maxLength: 2500

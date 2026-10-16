@@ -165,7 +165,8 @@ V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
         ocpp::v2::GetVariableResult result;
         result.component = request.component;
         result.variable = request.variable;
-        result.attributeStatus = m_device_model.get_variable(request.component, request.variable, attribute, value);
+        result.attributeStatus = m_device_model.get_variable(request.component, request.variable, attribute, value,
+                                                             false, ocpp::v2::UnsetValue::EmptyString);
         if (result.attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted) {
             result.attributeValue = ocpp::CiString<2500>(value);
             result.attributeType = attribute;
@@ -197,9 +198,8 @@ V16VariableAccess::get(const std::vector<ocpp::v2::GetVariableData>& requests) {
                         legacy_filled = true;
                     }
                     auto& result = results[entry.index];
-                    if (item.value) {
-                        result.attributeValue = item.value.value().get();
-                    }
+                    // a known key without a value reads as an empty string (B06.FR.13)
+                    result.attributeValue = item.value.has_value() ? item.value.value().get() : std::string{};
                     result.attributeStatus = ocpp::v2::GetVariableStatusEnum::Accepted;
                     result.attributeType = ocpp::v2::AttributeEnum::Actual;
                 }
@@ -296,8 +296,9 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
             } else {
                 // absent from the device model: probe a read to tell unknown component from unknown variable
                 std::string ignored;
-                const auto probe = m_device_model.get_variable(request.component, request.variable,
-                                                               ocpp::v2::AttributeEnum::Actual, ignored, true);
+                const auto probe =
+                    m_device_model.get_variable(request.component, request.variable, ocpp::v2::AttributeEnum::Actual,
+                                                ignored, true, ocpp::v2::UnsetValue::NotSupported);
                 if (probe == ocpp::v2::GetVariableStatusEnum::UnknownComponent) {
                     outcome.result.attributeStatus = ocpp::v2::SetVariableStatusEnum::UnknownComponent;
                 } else if (probe == ocpp::v2::GetVariableStatusEnum::UnknownVariable) {

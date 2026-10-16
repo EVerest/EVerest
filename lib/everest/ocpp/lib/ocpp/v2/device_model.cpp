@@ -113,7 +113,8 @@ void DeviceModel::check_variable_has_value(const ComponentVariable& component_va
                                " has a value but did not provide the variable");
     }
     const auto& variable = component_variable.variable.value();
-    const auto response = this->request_value_internal(component_variable.component, variable, attribute, value, true);
+    const auto response = this->request_value_internal(component_variable.component, variable, attribute, value, true,
+                                                       UnsetValue::NotSupported);
 
     if (response != GetVariableStatusEnum::Accepted) {
         throw DeviceModelError("Required variable " + variable.name.get() + " of component " +
@@ -307,13 +308,14 @@ bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAtt
 
 GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, const Variable& variable_id,
                                                 const AttributeEnum& attribute_enum, std::string& value,
-                                                bool allow_write_only) const {
-    return this->request_value_internal(component_id, variable_id, attribute_enum, value, allow_write_only);
+                                                bool allow_write_only, UnsetValue unset_value) const {
+    return this->request_value_internal(component_id, variable_id, attribute_enum, value, allow_write_only,
+                                        unset_value);
 }
 
 GetVariableStatusEnum DeviceModel::request_value_internal(const Component& component_id, const Variable& variable_id,
                                                           const AttributeEnum& attribute_enum, std::string& value,
-                                                          bool allow_write_only) const {
+                                                          bool allow_write_only, UnsetValue unset_value) const {
     // Choke point for all value reads (get_variable and the get_*_value/request_value templates).
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto component_it = this->device_model_map.find(component_id);
@@ -332,7 +334,7 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
 
     const auto attribute_opt = this->device_model->get_variable_attribute(component_id, variable_id, attribute_enum);
 
-    if ((not attribute_opt) or (not attribute_opt->value)) {
+    if (not attribute_opt) {
         return GetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -340,6 +342,14 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
     if (!allow_write_only and attribute_opt.value().mutability.has_value() and
         attribute_opt.value().mutability.value() == MutabilityEnum::WriteOnly) {
         return GetVariableStatusEnum::Rejected;
+    }
+
+    if (not attribute_opt->value) {
+        if (unset_value == UnsetValue::NotSupported) {
+            return GetVariableStatusEnum::NotSupportedAttributeType;
+        }
+        value.clear();
+        return GetVariableStatusEnum::Accepted;
     }
 
     value = attribute_opt->value->get();

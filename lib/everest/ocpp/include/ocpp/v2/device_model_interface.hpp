@@ -52,6 +52,12 @@ private:
     std::string reason;
 };
 
+/// \brief How a read answers for an attribute that exists but has no value
+enum class UnsetValue {
+    NotSupported, ///< NotSupportedAttributeType, the value is absent
+    EmptyString,  ///< Accepted with an empty string, as GetVariables reports it (B06.FR.13)
+};
+
 /// \brief Pure abstract interface for device model access.
 class DeviceModelInterface {
 public:
@@ -66,11 +72,13 @@ public:
     /// \param variable_id The variable
     /// \param attribute_enum The attribute
     /// \param value The value to get (as string)
-    /// \param allow_write_only If true, write-only variables can be accessed
+    /// \param allow_write_only If true, write-only variables can be accessed; otherwise a write-only variable
+    /// answers Rejected (B06.FR.09), whether or not it has a value
+    /// \param unset_value How an attribute that exists but has no value is answered
     /// \return Result of the requested operation
     virtual GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
                                                const AttributeEnum& attribute_enum, std::string& value,
-                                               bool allow_write_only = false) const = 0;
+                                               bool allow_write_only, UnsetValue unset_value) const = 0;
 
     // ============================================================================
     // Value setters

@@ -2215,7 +2215,7 @@ std::optional<bool> GenericOcpp::read_persisted_der_enabled(std::int32_t evse_id
         data.attributeType = ocpp::v2::AttributeEnum::Actual;
         const auto results = mv_charge_point.get_variables({data});
         if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
-            results.front().attributeValue.has_value()) {
+            results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
             return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
         }
     }

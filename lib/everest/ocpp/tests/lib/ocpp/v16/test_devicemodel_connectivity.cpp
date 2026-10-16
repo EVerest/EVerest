@@ -75,6 +75,7 @@ public:
     using ComponentCriterionEnum = ocpp::v2::ComponentCriterionEnum;
     using Variable = ocpp::v2::Variable;
     using GetVariableStatusEnum = ocpp::v2::GetVariableStatusEnum;
+    using UnsetValue = ocpp::v2::UnsetValue;
     using VariableMonitoringMeta = ocpp::v2::VariableMonitoringMeta;
     using SetMonitoringData = ocpp::v2::SetMonitoringData;
     using SetMonitoringResult = ocpp::v2::SetMonitoringResult;
@@ -93,9 +94,9 @@ public:
     }
 
     GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
-                                       const AttributeEnum& attribute_enum, std::string& value,
-                                       bool allow_write_only) const override {
-        return storage.get_variable(component_id, variable_id, attribute_enum, value, allow_write_only);
+                                       const AttributeEnum& attribute_enum, std::string& value, bool allow_write_only,
+                                       UnsetValue unset_value) const override {
+        return storage.get_variable(component_id, variable_id, attribute_enum, value, allow_write_only, unset_value);
     }
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
