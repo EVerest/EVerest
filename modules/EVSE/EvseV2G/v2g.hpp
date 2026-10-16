@@ -37,6 +37,7 @@
 #define V2G_DC_OUTPUT_DISABLED_TIMEOUT        3000 /* Stop: wait for dc_output_disabled, 4.5 s for PowerDeliveryRes */
 #define V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN    1400 /* DIN SPEC 70121 Table 75: 1.5 s for PowerDeliveryRes */
 #define V2G_PRESENT_VALUES_TIMEOUT            1400 /* WeldingDetectionRes: wait for present values, 1.5 s for it */
+#define V2G_PRESENT_VALUES_NEEDED             2    /* Updates after the request: the first may predate it */
 #define V2G_COMMUNICATION_SETUP_TIMEOUT                                                                                \
     18000 /* [V2G2-723] [V2G2-029] [V2G2-032] [V2G2-714] [V2G2-716] V2G_SECC_CommunicationSetup_Performance_Time */
 #define V2G_CPSTATE_DETECTION_TIMEOUT                                                                                  \

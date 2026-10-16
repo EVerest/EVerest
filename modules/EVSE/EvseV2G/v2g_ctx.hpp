@@ -108,12 +108,13 @@ bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms = 
 void v2g_ctx_signal_present_values(struct v2g_context* ctx);
 
 /*!
- * \brief v2g_ctx_wait_present_values Waits until present values arrive after count_at_request was read from
- * ctx->present_values_count, at most ctx->present_values_timeout_ms. Returns early on emergency shutdown, HLC stop or
- * terminated connection.
+ * \brief v2g_ctx_wait_present_values Waits until V2G_PRESENT_VALUES_NEEDED present values updates arrived after
+ * count_at_request was read from ctx->present_values_count, at most ctx->present_values_timeout_ms. The first update
+ * after the request can carry a measurement taken just before it, the second one was taken after the request.
+ * Returns early on emergency shutdown, HLC stop or terminated connection.
  * \param ctx is the V2G context.
  * \param count_at_request is ctx->present_values_count read when the request was received.
- * \return true if present values arrived after the request, false otherwise.
+ * \return true if V2G_PRESENT_VALUES_NEEDED updates arrived after the request, false otherwise.
  */
 bool v2g_ctx_wait_present_values(struct v2g_context* ctx, unsigned int count_at_request);
 
