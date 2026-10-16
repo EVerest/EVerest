@@ -92,6 +92,12 @@ function(trailbook_ev_create_snapshot)
         DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
     )
     set(CREATE_SNAPSHOT_TEMP_DIR "${TRAILBOOK_CURRENT_BINARY_DIR}/create_snapshot_temp")
+    # create_snapshot.py runs edm from PATH, which has to find the edm of this build, e.g. in its python venv
+    set(CREATE_SNAPSHOT_ENV)
+    if(EVEREST_DEPENDENCY_MANAGER)
+        get_filename_component(CREATE_SNAPSHOT_EDM_DIR "${EVEREST_DEPENDENCY_MANAGER}" DIRECTORY)
+        set(CREATE_SNAPSHOT_ENV "PATH=${CREATE_SNAPSHOT_EDM_DIR}:$ENV{PATH}")
+    endif()
     add_custom_command(
         OUTPUT
             ${args_OUTPUT_FILE}
@@ -100,10 +106,12 @@ function(trailbook_ev_create_snapshot)
             trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
             ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
         USES_TERMINAL
+        VERBATIM
         COMMAND
             ${CMAKE_COMMAND} -E rm -rf
             ${CREATE_SNAPSHOT_TEMP_DIR}
         COMMAND
+            ${CMAKE_COMMAND} -E env ${CREATE_SNAPSHOT_ENV}
             ${Python3_EXECUTABLE}
             ${_TRAILBOOK_EXT_EVEREST_CREATE_SNAPSHOT_SCRIPT}
             --working-dir ${args_EVEREST_WORKSPACE_DIRECTORY}
