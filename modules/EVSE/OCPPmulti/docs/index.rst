@@ -60,7 +60,7 @@ Compared to the deprecated :ref:`OCPP <everest_modules_OCPP>` (1.6) module, two 
 * ``PublishChargingScheduleDurationS`` is now ``RequestCompositeScheduleDurationS``
 
 Compared to the :ref:`OCPP201 <everest_modules_OCPP201>` module, ``CustomMrecErrorMapPath`` is replaced by
-``CustomErrorMappingPath``, which takes a file in a different format (see
+the experimental ``CustomErrorMappingPath``, which takes a file in a different format (see
 :ref:`error reporting <handwritten_ocppmulti_error-reporting>`). An override ``"<error type>": "<techCode>"`` of the
 old file becomes ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
 
@@ -550,6 +550,13 @@ errors reported by other modules in the same EVerest configuration.
 
 Error reporting follows the Minimum Required Error Codes (MRECs, https://inl.gov/chargex/mrec/). The module maps
 EVerest error types to MREC codes using a built-in mapping table shared by OCPP 1.6 and 2.x.
+
+.. warning::
+
+   ``CustomErrorMappingPath`` and the custom error mapping file format are currently **experimental**: the keys,
+   fields, placeholders and overlay behavior may change without further notice. They are exempt from the stability
+   guarantees and the deprecation period of the EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
 
 ``CustomErrorMappingPath`` can point to a custom error mapping file, following
 ``lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json``. Its keys are EVerest error types,

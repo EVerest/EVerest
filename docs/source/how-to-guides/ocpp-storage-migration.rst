@@ -36,8 +36,9 @@ These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``DelayOcppStart``, and ``ResetStopDelay``.
 
 ``CustomMrecErrorMapPath`` has no counterpart. OCPPmulti reads a custom error
-mapping file from ``CustomErrorMappingPath`` instead, in a different format
-that covers OCPP 1.6 and 2.x (see the error reporting section of
+mapping file from the :ref:`experimental <project-experimental-components>`
+``CustomErrorMappingPath`` instead, in a different format that covers OCPP 1.6
+and 2.x (see the error reporting section of
 :ref:`OCPPmulti <everest_modules_OCPPmulti>`). An ``OCPP201`` techCode
 override ``"<error type>": "<techCode>"`` becomes the entry
 ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.

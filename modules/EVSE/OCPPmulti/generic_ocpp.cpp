@@ -461,6 +461,9 @@ void GenericOcpp::init_custom_error_mapping() {
         return;
     }
 
+    EVLOG_warning << "CustomErrorMappingPath is currently experimental! The custom error mapping file format and its "
+                     "behavior may change without further notice";
+
     // relative paths resolve against the module share directory, like the other configured paths
     const auto resolved = update_path_multi(remove_dir(mv_info.paths.share), configured);
     if (!fs::exists(resolved)) {
