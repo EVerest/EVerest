@@ -22,6 +22,8 @@ struct CertRule {
     int data;
 };
 
+void set_certificate_profiles_dir(const std::string& dir);
+
 int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper,
                               const std::string& manualCertType = ""); // enforces standards rules
 #endif

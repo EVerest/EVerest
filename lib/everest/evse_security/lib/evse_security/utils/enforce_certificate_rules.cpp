@@ -380,7 +380,13 @@ FieldResolve resolve_field(const evse_security::X509Wrapper& w, const std::strin
     return FieldResolve::Unknown;
 }
 
+std::string g_cert_profiles_dir = "share/everest/Security_Profiles/iso15118-2";
+
 } // namespace
+
+void set_certificate_profiles_dir(const std::string& dir) {
+    g_cert_profiles_dir = dir;
+}
 
 int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const std::string& manualCertProfile) {
     const std::string dc = wrapper.get_domain_component();
@@ -405,7 +411,7 @@ int enforce_certificate_rules(const evse_security::X509Wrapper& wrapper, const s
     }
 
     std::string profile;
-    const std::string profiles_dir = CERT_PROFILES_DIR;
+    const std::string profiles_dir = g_cert_profiles_dir;
     if (!std::filesystem::exists(profiles_dir) || !std::filesystem::is_directory(profiles_dir)) {
         EVLOG_warning << "Profiles directory does not exist: " << profiles_dir;
         return 0;

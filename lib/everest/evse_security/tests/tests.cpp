@@ -116,6 +116,11 @@ protected:
 
 class EvseSecurityTestsWithRules : public EvseSecurityTests {
 protected:
+    void SetUp() override {
+        EvseSecurityTests::SetUp();
+        set_certificate_profiles_dir(EVSE_SECURITY_TEST_PROFILES_DIR);
+    }
+
     bool enforce_cert_profiles() const override {
         return true;
     }
