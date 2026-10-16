@@ -15,6 +15,8 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <fmt/format.h>
+#include <mutex>
+#include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -404,8 +406,23 @@ private:
     void configure_device();
     void start_measurements();
     void stop_measurements();
-    void start_self_test();
+    bool start_self_test();
+    // Values of register 3024 "nEt", system connection test during the self test
+    static constexpr uint16_t SYSTEM_CONNECTION_TEST_OFF{0};
+    static constexpr uint16_t SYSTEM_CONNECTION_TEST_ON{1};
+    static constexpr uint16_t SYSTEM_CONNECTION_TEST_ON_U{2};
+    static constexpr double SYSTEM_CONNECTION_TEST_ON_U_MIN_VOLTAGE_V{100.0};
+    uint16_t system_connection_test_for(double test_voltage_V) const;
+    bool begin_self_test(uint16_t system_connection_test);
+    void start_requested_self_test(double test_voltage_V);
+    void start_self_test_at_start();
+    void finish_self_test(bool result);
+    void reset_system_connection_test();
+    std::mutex self_test_mutex;
+    bool self_test_at_start_running{false};
+    std::optional<double> pending_self_test_voltage_V;
     bool send_to_imd(const uint16_t& command, const uint16_t& value);
+    bool send_to_imd_if_changed(const uint16_t& command, const uint16_t& value);
     void read_imd_values();
     std::string read_device_name();
     std::string read_firmware_version();
