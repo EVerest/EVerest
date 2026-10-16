@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <cerrno>
 #include <chrono>
 #include <everest/io/socket/socket.hpp>
 #include <everest/io/tcp/tcp_socket.hpp>
@@ -11,6 +12,7 @@ namespace everest::lib::io::tcp {
 void tcp_socket::adopt(event::unique_fd&& fd) {
     m_fd = std::move(fd);
     m_connect_error = 0;
+    m_error.clear();
 }
 
 void tcp_socket::record_connect_failure(int error) {
@@ -21,9 +23,11 @@ void tcp_socket::record_connect_failure(int error) {
 void tcp_socket::discard() {
     m_fd.close();
     m_connect_error = 0;
+    m_error.clear();
 }
 
 bool tcp_socket::open(std::string const& remote, uint16_t port, std::string const& device) {
+    m_error.clear();
     m_remote = remote;
     m_port = port;
     m_timeout_ms = 1000;
@@ -79,7 +83,10 @@ bool tcp_socket::tx(PayloadT& payload) {
         return false;
     }
 
-    auto status = ::send(m_fd, payload.data(), payload.size(), 0);
+    // A peer that reset is reported as EPIPE; without the flag the kernel raises SIGPIPE first,
+    // which ends a process that does not ignore it.
+    auto status = ::send(m_fd, payload.data(), payload.size(), MSG_NOSIGNAL);
+    m_error.note(status == -1 ? errno : 0);
     if (status == -1) {
         return false;
     }
@@ -97,6 +104,7 @@ bool tcp_socket::rx(PayloadT& buffer) {
     }
     buffer.resize(default_buffer_size);
     auto status = ::recv(m_fd, buffer.data(), buffer.size(), 0);
+    m_error.note(status == -1 ? errno : 0);
     if (status <= 0) { // -1 is an error, 0 is a connection closed by the peer
         return false;
     }
@@ -109,18 +117,30 @@ int tcp_socket::get_fd() const {
 }
 
 int tcp_socket::get_error() const {
-    // Zero means "nothing recorded", not "healthy": falling through to the probe of
-    // an unassigned descriptor yields EBADF, and that nonzero value is what makes
-    // the client reset and reconnect. Reporting zero here would read as healthy.
-    if (not is_open() and m_connect_error != 0) {
-        return m_connect_error;
+    if (not is_open()) {
+        // Zero means "nothing recorded", not "healthy": falling through to the probe of
+        // an unassigned descriptor yields EBADF, and that nonzero value is what makes
+        // the client reset and reconnect. Reporting zero here would read as healthy.
+        return m_connect_error != 0 ? m_connect_error : socket::get_pending_error(m_fd);
     }
-    if (socket::is_tcp_socket_alive(m_fd)) {
-        return socket::get_pending_error(m_fd);
-    } else if (is_open()) {
-        return ECONNRESET;
+    // The pending and the recorded error come before the liveness peek: a peek on a socket the
+    // kernel has aborted returns and clears that error (ETIMEDOUT for TCP_USER_TIMEOUT), and
+    // the connection would then be reported as reset by a peer that reset nothing.
+    auto const recorded = m_error.report(m_fd);
+    if (recorded != 0) {
+        return recorded;
     }
-    return socket::get_pending_error(m_fd);
+    char byte = 0;
+    auto const peeked = ::recv(m_fd, &byte, sizeof(byte), MSG_PEEK | MSG_DONTWAIT);
+    if (peeked > 0) {
+        return 0;
+    }
+    if (peeked == -1) {
+        auto const error = errno;
+        return (error == EAGAIN or error == EWOULDBLOCK or error == EINTR) ? 0 : error;
+    }
+    // The peer shut its side without an error: the library's code for a stream peer closing.
+    return ECONNRESET;
 }
 
 bool tcp_socket::is_open() const {

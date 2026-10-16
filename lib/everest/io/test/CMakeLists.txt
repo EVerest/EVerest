@@ -10,6 +10,7 @@ add_executable(everest_io_tests
   client_connect_error_test.cpp
   fd_event_handler_test.cpp
   fd_event_client_backpressure_test.cpp
+  fd_event_client_failed_connection_test.cpp
   pty_handler_test.cpp
   vcan_netlink_manager_test.cpp
   tap_carrier_test.cpp

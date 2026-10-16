@@ -304,6 +304,21 @@ void set_socket_send_buffer_to_min(int fd);
 int get_pending_error(int fd);
 
 /**
+ * @brief Whether a failed send should be retried once the fd is writable again.
+ * @details A full socket buffer (EAGAIN, EWOULDBLOCK), an interrupted call and a full device
+ *          transmit queue (ENOBUFS, which AF_PACKET and SocketCAN report instead of EAGAIN) are
+ *          back-pressure, not failures of the connection.
+ */
+bool is_send_backpressure(int error);
+
+/**
+ * @brief The error a failed send leaves on its connection.
+ * @param[in] error The errno of the failed send
+ * @return 0 for back-pressure (see \ref is_send_backpressure), otherwise \p error
+ */
+int send_failure_code(int error);
+
+/**
  * @brief Resolve the error behind an error or hangup notification on a descriptor
  * @details Reads <a href="https://man7.org/linux/man-pages/man7/socket.7.html">SO_ERROR</a>, which
  * clears it, so only the first call for a given failure can answer with the real code. Descriptors
