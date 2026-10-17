@@ -633,8 +633,9 @@ InstallCertificateResult EvseSecurity::update_leaf_certificate(const std::string
             return InstallCertificateResult::InvalidFormat;
         }
 
-        // Internal since we already acquired the lock
-        const auto result = this->verify_certificate_internal(certificate_chain, {certificate_type});
+        // Internal since we already acquired the lock. A leaf that only becomes valid later is installed
+        // and used once valid
+        const auto result = this->verify_certificate_internal(certificate_chain, {certificate_type}, true);
         if (result != CertificateValidationResult::Valid) {
             return to_install_certificate_result(result);
         }
@@ -1961,19 +1962,20 @@ CertificateValidationResult EvseSecurity::verify_certificate(const std::string& 
                                                              LeafCertificateType certificate_type) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
 
-    return verify_certificate_internal(certificate_chain, {certificate_type});
+    return verify_certificate_internal(certificate_chain, {certificate_type}, false);
 }
 
 CertificateValidationResult
 EvseSecurity::verify_certificate(const std::string& certificate_chain,
                                  const std::vector<LeafCertificateType>& certificate_types) {
     const std::lock_guard<std::mutex> guard(EvseSecurity::security_mutex);
-    return verify_certificate_internal(certificate_chain, certificate_types);
+    return verify_certificate_internal(certificate_chain, certificate_types, false);
 }
 
 CertificateValidationResult
 EvseSecurity::verify_certificate_internal(const std::string& certificate_chain,
-                                          const std::vector<LeafCertificateType>& certificate_types) {
+                                          const std::vector<LeafCertificateType>& certificate_types,
+                                          bool allow_future_leaf) {
 
     EVLOG_info << "Verifying leaf certificate";
 
@@ -2077,7 +2079,8 @@ EvseSecurity::verify_certificate_internal(const std::string& certificate_chain,
         }
 
         return CryptoSupplier::x509_verify_certificate_chain(leaf_certificate.get(), trusted_parent_certificates,
-                                                             untrusted_subcas, true, std::nullopt, std::nullopt);
+                                                             untrusted_subcas, allow_future_leaf, std::nullopt,
+                                                             std::nullopt);
 
     } catch (const CertificateLoadException& e) {
         EVLOG_warning << "Could not validate certificate chain because of invalid format";

@@ -7,6 +7,7 @@
 #include <algorithm>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <iterator>
 #include <numeric>
 #include <string>
@@ -61,6 +62,32 @@ CertificateValidationResult to_certificate_error(const int ec) {
         EVLOG_warning << X509_verify_cert_error_string(ec);
         return CertificateValidationResult::Unknown;
     }
+}
+
+// A leaf that is not yet valid is verified at its notBefore, so every other certificate in the chain still has to be
+// valid at that time
+bool set_future_leaf_verification_time(X509_STORE_CTX* ctx, const X509* leaf) {
+    const ASN1_TIME* not_before = X509_get0_notBefore(leaf);
+    const int not_before_vs_now = X509_cmp_current_time(not_before);
+    if (not_before_vs_now == 0) {
+        return false;
+    }
+    if (not_before_vs_now < 0) {
+        return true;
+    }
+
+    std::tm not_before_tm{};
+    if (ASN1_TIME_to_tm(not_before, &not_before_tm) != 1) {
+        return false;
+    }
+    // -1 if not representable, e.g. dates after 2038 with a 32-bit time_t
+    const std::time_t verification_time = timegm(&not_before_tm);
+    if (verification_time == -1) {
+        return false;
+    }
+
+    X509_STORE_CTX_set_time(ctx, 0, verification_time);
+    return true;
 }
 } // namespace
 
@@ -548,21 +575,12 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
         return CertificateValidationResult::Unknown;
     }
 
-    if (allow_future_certificates) {
-        // Manually check if cert is expired
-        int day = 0;
-        int sec = 0;
-        ASN1_TIME_diff(&day, &sec, nullptr, X509_get_notAfter(get(target)));
-        if (day < 0 || sec < 0) {
-            // certificate is expired
-            return CertificateValidationResult::Expired;
-        }
-        // certificate is not expired, but may not be valid yet. Since we allow future certs, disable time checks.
-        X509_STORE_CTX_set_flags(store_ctx_ptr.get(), X509_V_FLAG_NO_CHECK_TIME);
+    if (allow_future_certificates && !set_future_leaf_verification_time(store_ctx_ptr.get(), get(target))) {
+        EVLOG_warning << "X509 could not determine the verification time from the leaf's notBefore!";
+        return CertificateValidationResult::Unknown;
     }
 
-    // verifies the certificate chain based on ctx
-    // verifies the certificate has not expired and is already valid
+    // verifies the certificate chain based on ctx, including the validity period of every certificate in it
     if (X509_verify_cert(store_ctx_ptr.get()) != 1) {
         const int ec = X509_STORE_CTX_get_error(store_ctx_ptr.get());
         return to_certificate_error(ec);
