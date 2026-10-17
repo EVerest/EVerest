@@ -47,6 +47,8 @@ class V2gTelemetryPublisher;
 
 #define SA_SCHEDULE_DURATION 86400
 
+#define DEFAULT_SOCKET_BACKLOG 3
+
 #define ISO_15118_2013_MSG_DEF "urn:iso:15118:2:2013:MsgDef"
 #define ISO_15118_2013_MAJOR   2
 #define ISO_15118_2013_MINOR   0
@@ -385,6 +387,9 @@ struct v2g_context {
     std::vector<std::vector<uint16_t>> supported_vas_services_per_provider;
 
     bool connection_initiated;
+
+    /* [V2G2-723] set while the TCP listener refuses connections after an expired communication setup */
+    std::atomic<bool> tcp_listener_paused{false};
 
     bool sdp_dlink_ready{false};
     std::atomic<long long int> sdp_dlink_ready_time{0};
