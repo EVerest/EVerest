@@ -1064,6 +1064,80 @@ TEST_F(ChargerDlinkErrorTest, NoSlacRetryWithNominalPwm) {
     EXPECT_EQ(slac_resets, 0);
 }
 
+// A PnC authorization in a 5% session whose EV never starts the charging loop: the end of the data link switches
+// to nominal PWM for basic charging with the authorization kept, instead of a matching restart on 5%.
+struct ChargerPncWithoutChargingLoopTest : public ChargerDlinkErrorTest {
+    void setup_pnc_authorized_waiting_for_charging_loop() {
+        auto& ctx = charger->get_shared_context();
+        auto& cfg = charger->get_config_context();
+        cfg.charge_mode = Charger::ChargeMode::AC;
+        cfg.ac_hlc_enabled = true;
+        cfg.ac_hlc_use_5percent = true;
+        setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+        ctx.authorized_pnc = true;
+        ctx.hlc_charging_active = false;
+        ctx.flag_ev_plugged_in = true;
+    }
+};
+
+TEST_F(ChargerPncWithoutChargingLoopTest, DlinkErrorFallsBackToNominalThroughX1AndEF) {
+    setup_pnc_authorized_waiting_for_charging_loop();
+    auto& ctx = charger->get_shared_context();
+    auto& ictx = charger->get_internal_context();
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_TRUE(ictx.t_step_X1_until_unmatched) << "[V2G3-M07-05]: X1 first, E/F once unmatched";
+    EXPECT_EQ(ictx.t_step_EF_return_state, Charger::EvseState::PrepareCharging);
+    EXPECT_EQ(ictx.t_step_EF_return_pwm, 0.) << "nominal PWM is enabled by PrepareCharging";
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+    EXPECT_TRUE(ctx.flag_authorized) << "the PnC authorization is kept";
+    EXPECT_TRUE(ctx.flag_transaction_active);
+    EXPECT_FALSE(ctx.reinit_requested) << "no matching restart";
+}
+
+TEST_F(ChargerPncWithoutChargingLoopTest, TerminateFallsBackToNominalThroughEF) {
+    setup_pnc_authorized_waiting_for_charging_loop();
+    auto& ctx = charger->get_shared_context();
+    auto& ictx = charger->get_internal_context();
+    ctx.hlc_charging_terminate_pause = Charger::HlcTerminatePause::Terminate;
+
+    EXPECT_FALSE(charger->dlink_terminate()) << "a clean terminate, not a link loss";
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+    EXPECT_EQ(ictx.t_step_EF_return_state, Charger::EvseState::PrepareCharging);
+    EXPECT_EQ(ictx.t_step_EF_return_pwm, 0.) << "nominal PWM is enabled by PrepareCharging";
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+    EXPECT_TRUE(ctx.flag_authorized) << "the PnC authorization is kept";
+    EXPECT_FALSE(ctx.reinit_requested);
+}
+
+TEST_F(ChargerPncWithoutChargingLoopTest, DlinkErrorAfterChargingLoopRestartsMatching) {
+    setup_pnc_authorized_waiting_for_charging_loop();
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    ctx.hlc_charging_active = true;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(ctx.reinit_requested) << "a lost link after the charging loop started restarts matching";
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerPncWithoutChargingLoopTest, EimDlinkErrorRestartsMatching) {
+    setup_pnc_authorized_waiting_for_charging_loop();
+    auto& ctx = charger->get_shared_context();
+    ctx.authorized_pnc = false;
+
+    charger->dlink_error();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_TRUE(ctx.reinit_requested);
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
 // ac_enforce_hlc keeps 5% on after an EIM, unless the matching retries are exhausted before any HLC session was
 // set up: then the session ends in nominal PWM like without the option
 struct ChargerEnforceHlcTest : public ChargerDlinkErrorTest {

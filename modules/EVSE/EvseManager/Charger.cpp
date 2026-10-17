@@ -578,9 +578,8 @@ void Charger::run_state_machine() {
                     // t_step_X1. Some EVs implement a non-standard way for PnC with AC: They perform ISO until Auth
                     // loop, and once authorization is provided, they close TCP (or send SessionStop). The intention is
                     // to use only the PnC part of ISO (which is the same as DC to that point) and then do normal BC
-                    // instead of ISO charging loop. To support this we wait a short timeout to see if the chargeloop is
-                    // entered, and if not, we switch back to nominal. To get a similar behaviour for PnC and EIM we
-                    // still perform a T_step_EF here even if the standard says differently.
+                    // instead of ISO charging loop. To support this we stay on 5 percent until the data link ends and
+                    // switch to nominal then, see pnc_without_charging_loop() in dlink_error() / dlink_terminate().
                     if (shared_context.hlc_charging_active) {
                         // AC HLC charging loop started
                         session_log.evse(false, "AC mode, HLC, PnC auth received. We will continue with 5percent as "
@@ -589,26 +588,9 @@ void Charger::run_state_machine() {
                         shared_context.current_state = target_state;
 
                     } else {
-                        // AC HLC charging loop not yet started
-                        if (internal_context.ac_x1_fallback_nominal_timeout_running) {
-                            if (std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() -
-                                    internal_context.ac_x1_fallback_nominal_timeout_started)
-                                    .count() > AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS) {
-                                session_log.evse(
-                                    false,
-                                    "AC mode, HLC enabled, PnC authorized, but charging loop did not start. Go through "
-                                    "t_step_EF and disable 5 percent.");
-                                internal_context.t_step_EF_return_state = target_state;
-                                internal_context.t_step_EF_return_pwm = 0.;
-                                internal_context.t_step_EF_return_ampere = 0.;
-                                hlc_use_5percent_current_session = false;
-                                shared_context.current_state = EvseState::T_step_EF;
-                            }
-                        } else {
-                            internal_context.ac_x1_fallback_nominal_timeout_running = true;
-                            internal_context.ac_x1_fallback_nominal_timeout_started = std::chrono::steady_clock::now();
-                        }
+                        // AC HLC charging loop not yet started: keep 5 percent and the session alive. The HLC stack
+                        // bounds the wait with V2G_SECC_Sequence_Timeout; the end of the data link (dlink_error(),
+                        // dlink_terminate()) switches to nominal PWM for basic charging with the PnC authorization.
                     }
 
                 } else if (config_context.charge_mode == ChargeMode::DC) {
@@ -2545,6 +2527,21 @@ bool Charger::dlink_terminate() {
             shared_context.current_state == EvseState::PrepareCharging and shared_context.flag_ev_plugged_in and
             shared_context.hlc_charging_terminate_pause == HlcTerminatePause::Unknown and
             not internal_context.session_stop_pwm_off_deadline.has_value();
+        if (pnc_without_charging_loop()) {
+            // The EV used PnC for the authorization only and ended the session with a SessionStop(Terminate): basic
+            // charging with the authorization kept. Before the charging loop the EV may charge in basic charging mode
+            // on a nominal duty cycle (ISO 15118-3 6.4).
+            session_log.evse(false, "AC mode, HLC enabled, PnC authorized, SessionStop(Terminate) before the charging "
+                                    "loop. Go through t_step_EF and disable 5 percent.");
+            internal_context.session_stop_pwm_off_deadline.reset();
+            shared_context.hlc_allow_close_contactor = false;
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_state = EvseState::PrepareCharging;
+            internal_context.t_step_EF_return_pwm = 0.;
+            internal_context.t_step_EF_return_ampere = 0.;
+            shared_context.current_state = EvseState::T_step_EF;
+            return false;
+        }
         if (not link_lost_during_setup) {
             shared_context.hlc_allow_close_contactor = false;
             if (not internal_context.session_stop_pwm_off_deadline.has_value()) {
@@ -2598,6 +2595,12 @@ void Charger::notify_hlc_session_started_by_ev() {
     }
 }
 
+bool Charger::pnc_without_charging_loop() const {
+    return config_context.charge_mode == ChargeMode::AC and hlc_use_5percent_current_session and
+           shared_context.current_state == EvseState::WaitingForAuthentication and shared_context.flag_authorized and
+           shared_context.authorized_pnc and not shared_context.hlc_charging_active;
+}
+
 void Charger::dlink_error() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_error);
@@ -2641,6 +2644,21 @@ void Charger::dlink_error() {
             }
 
             bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+            return;
+        }
+
+        if (pnc_without_charging_loop()) {
+            // The EV used PnC for the authorization only and the data link ended without a charging loop (TCP
+            // closed, V2G_SECC_Sequence_Timeout): basic charging with the authorization kept. [V2G3-M07-05]:
+            // X2 -> X1 -> E/F -> X2, with nominal PWM afterwards.
+            session_log.evse(false, "AC mode, HLC enabled, PnC authorized, but the data link ended before the "
+                                    "charging loop. Go through t_step_X1 and t_step_EF and disable 5 percent.");
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_state = EvseState::PrepareCharging;
+            internal_context.t_step_EF_return_pwm = 0.;
+            internal_context.t_step_EF_return_ampere = 0.;
+            internal_context.t_step_X1_until_unmatched = true;
+            shared_context.current_state = EvseState::T_step_X1;
             return;
         }
 
