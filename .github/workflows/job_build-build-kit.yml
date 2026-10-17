@@ -29,6 +29,8 @@ jobs:
   build-build-kit:
     name: build
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     env:
       BUILD_KIT_ARTIFACT_NAME: build-kit
       BUILD_KIT_IMAGE_NAME: local/build-kit-${{ github.event.repository.name }}
@@ -41,6 +43,7 @@ jobs:
       - name: Checkout Dockerfile
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository }}
           path: source
           ref: ${{ github.ref }}
@@ -77,9 +80,11 @@ jobs:
       - name: Set output tag
         id: set-outputs
         shell: python3 {0}
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
           import os
-          tags = "${{ steps.meta.outputs.tags }}".split(",")
+          tags = [t for t in os.environ["TAGS"].split(",") if t]
           if len(tags) == 0:
             print("No tags found!❌")
             exit(1)

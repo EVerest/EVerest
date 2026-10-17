@@ -237,6 +237,9 @@ Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
   better name or a smaller function over a comment.
 - Return values and `std::optional` over exceptions for expected conditions.
 - JavaScript and YAML: prettier, 2-space indent, single quotes (`.prettierrc.yaml`).
+- GitHub workflows and actions: CI audits them with zizmor
+  (`.github/workflows/job_zizmor.yaml`, config `.github/zizmor.yml`). Pass values to
+  `run:` through `env:`, never as `${{ }}`; credential rules are in `.github/SECRETS.md`.
 
 ## Paths that surprise people
 

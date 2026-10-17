@@ -1,0 +1,13 @@
+# Configuration for zizmor, run by .github/workflows/job_zizmor.yaml.
+# https://docs.zizmor.sh/configuration/
+rules:
+  # Accept version tags such as @v7; only refs like @main are reported.
+  unpinned-uses:
+    config:
+      policies:
+        "*": ref-pin
+  # Wants `uses: ./x` rewritten to GitHub's `uses: $/x` syntax. `$/` resolves
+  # to this repository at the workflow's commit, so it cannot load the everest-ci
+  # actions that are cloned into ./everest-ci at run time.
+  self-repository:
+    disable: true
