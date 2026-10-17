@@ -136,11 +136,6 @@ private:
                                                                        const ComponentVariable& cv);
     std::optional<std::string> validate_network_configuration_priority(const SetVariableData& set_variable_data);
 
-    /// \brief Check that a network profile's URL scheme matches its security profile
-    /// \return std::nullopt if valid, or a reason code string if rejected
-    std::optional<std::string> validate_network_profile_content(int32_t configuration_slot,
-                                                                const NetworkConnectionProfile& profile);
-
     /// \brief Validate certificate preconditions for a priority slot above the active security profile
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_security_preconditions(int32_t configuration_slot,

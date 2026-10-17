@@ -770,6 +770,109 @@ TEST_F(NetworkConfigSyncTest, ClearNonExistentSlotDoesNotCrash) {
 }
 
 // ---------------------------------------------------------------------------
+// NetworkConfigurationPriority helpers shared by the OCPP 1.6 and 2.x validation
+// ---------------------------------------------------------------------------
+
+namespace NC = NetworkConfigurationComponentVariables;
+
+class NetworkConfigurationPriorityTest : public NetworkConfigSyncTest {
+protected:
+    void write_slot(int slot, const std::string& url, int security_profile) {
+        ASSERT_TRUE(NC::write_profile_to_device_model(*dm, slot, make_basic_profile(security_profile, url), "test"));
+    }
+
+    void set_priority(const std::string& value) {
+        ASSERT_EQ(dm->set_value(ControllerComponentVariables::NetworkConfigurationPriority.component,
+                                ControllerComponentVariables::NetworkConfigurationPriority.variable.value(),
+                                AttributeEnum::Actual, value, "test"),
+                  SetVariableStatusEnum::Accepted);
+    }
+};
+
+TEST(NetworkConfigurationPriority, ParseKeepsOrderAndDuplicates) {
+    EXPECT_EQ(NC::parse_priority("2,1,2", false), (std::vector<int>{2, 1, 2}));
+    EXPECT_EQ(NC::parse_priority("", false), std::vector<int>{});
+}
+
+TEST(NetworkConfigurationPriority, ParseFailsOnInvalidTokenUnlessSkipped) {
+    EXPECT_FALSE(NC::parse_priority("1,x", false).has_value());
+    EXPECT_EQ(NC::parse_priority("1,x,2", true), (std::vector<int>{1, 2}));
+}
+
+TEST(NetworkConfigurationPriority, OnlyRemovesSlotsKeepsOrderOfTheRest) {
+    EXPECT_TRUE(NC::priority_only_removes_slots({1, 3}, {1, 2, 3}));
+    EXPECT_TRUE(NC::priority_only_removes_slots({}, {1}));
+    EXPECT_FALSE(NC::priority_only_removes_slots({3, 1}, {1, 2, 3})); // reordered
+    EXPECT_FALSE(NC::priority_only_removes_slots({1, 4}, {1, 2, 3})); // adds a slot
+    EXPECT_FALSE(NC::priority_only_removes_slots({1, 2}, {1, 2}));    // removes nothing
+}
+
+TEST(NetworkConfigurationPriority, ProfileContentMatchesUrlSchemeAndSecurityProfile) {
+    EXPECT_FALSE(NC::validate_profile_content(1, make_basic_profile(1, "ws://csms.example.com")).has_value());
+    EXPECT_FALSE(NC::validate_profile_content(1, make_basic_profile(2, "wss://csms.example.com")).has_value());
+    EXPECT_EQ(NC::validate_profile_content(1, make_basic_profile(2, "ws://csms.example.com")), "InvalidNetworkConf");
+    EXPECT_EQ(NC::validate_profile_content(1, make_basic_profile(1, "wss://csms.example.com")), "InvalidNetworkConf");
+}
+
+TEST_F(NetworkConfigurationPriorityTest, RejectsInvalidToken) {
+    write_slot(1, "wss://one.example.com", 2);
+    set_priority("1");
+    EXPECT_EQ(NC::validate_priority_write(*dm, "1,x", false), "InvalidNetworkConf");
+}
+
+TEST_F(NetworkConfigurationPriorityTest, ChecksContentOnlyOfAddedSlots) {
+    write_slot(1, "ws://retained.example.com", 2); // inconsistent but already listed
+    write_slot(2, "wss://added.example.com", 2);
+    set_priority("1");
+    EXPECT_FALSE(NC::validate_priority_write(*dm, "2,1", false).has_value());
+
+    write_slot(2, "ws://added.example.com", 2);
+    EXPECT_EQ(NC::validate_priority_write(*dm, "2,1", false), "InvalidNetworkConf");
+}
+
+TEST_F(NetworkConfigurationPriorityTest, RejectsUnreadableAddedSlotAndSkipsUnreadableRetainedSlot) {
+    write_slot(1, "wss://one.example.com", 2);
+    NC::clear_slot_in_device_model(*dm, 2);
+    set_priority("1");
+    EXPECT_EQ(NC::validate_priority_write(*dm, "1,2", false), "InvalidNetworkConf");
+
+    set_priority("2,1");
+    EXPECT_FALSE(NC::validate_priority_write(*dm, "1,2", false).has_value());
+}
+
+TEST_F(NetworkConfigurationPriorityTest, AcceptsRemovalOnlyWithoutRunningSlotChecks) {
+    write_slot(1, "wss://one.example.com", 2);
+    write_slot(2, "wss://two.example.com", 2);
+    set_priority("1,2");
+    int checked_slots = 0;
+    const NC::PrioritySlotCheck reject_all = [&checked_slots](int32_t, const NetworkConnectionProfile&) {
+        ++checked_slots;
+        return std::optional<std::string>("InvalidNetworkConf");
+    };
+
+    EXPECT_FALSE(NC::validate_priority_write(*dm, "2", true, reject_all).has_value());
+    EXPECT_EQ(checked_slots, 0);
+
+    // without accept_removal_only, the slot check runs for every readable slot
+    EXPECT_EQ(NC::validate_priority_write(*dm, "2", false, reject_all), "InvalidNetworkConf");
+    EXPECT_EQ(checked_slots, 1);
+}
+
+TEST_F(NetworkConfigurationPriorityTest, RunsSlotCheckForRetainedAndAddedReadableSlots) {
+    write_slot(1, "wss://one.example.com", 2);
+    write_slot(2, "wss://two.example.com", 2);
+    set_priority("1");
+    std::vector<int32_t> checked_slots;
+    const NC::PrioritySlotCheck record = [&checked_slots](int32_t slot, const NetworkConnectionProfile&) {
+        checked_slots.push_back(slot);
+        return std::optional<std::string>();
+    };
+
+    EXPECT_FALSE(NC::validate_priority_write(*dm, "2,1", true, record).has_value());
+    EXPECT_EQ(checked_slots, (std::vector<int32_t>{2, 1}));
+}
+
+// ---------------------------------------------------------------------------
 // ConnectivityManager cache rebuild callback tests
 // Verifies that reload_network_profiles() / set_network_profile() keep the
 // ConnectivityManager's in-memory cache in sync with the device model.

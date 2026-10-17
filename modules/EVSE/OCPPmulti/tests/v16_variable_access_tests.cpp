@@ -687,13 +687,97 @@ TEST_F(V16VariableAccess, slotSecurityProfileDowngradeBelowConfirmedIsRejected) 
         "2");
 }
 
-TEST_F(V16VariableAccess, slotUrlSchemeSecurityProfileMismatchIsRejected) {
+TEST_F(V16VariableAccess, slotOutsidePriorityIsStoredUntilItIsAdded) {
+    add_complete_network_slot(1, "wss://one", "2");
     add_complete_network_slot(2, "ws://plain", "1");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
     auto access = make_access();
 
-    // raising the slot to security profile 2 while its URL is still ws:// yields an inconsistent profile
-    const auto results =
+    // B09.FR.23: raising the slot to security profile 2 while its URL is still ws:// leaves an inconsistent
+    // profile, which is stored because the slot is not in the priority list
+    const auto stored =
         access.set({make_set("NetworkConfiguration", "SecurityProfile", "2", std::string("2"))}, "test");
+    ASSERT_EQ(stored.size(), 1);
+    EXPECT_EQ(stored[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+
+    // the slot is checked when it is added to the priority
+    const auto rejected = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "1,2")}, "test");
+    ASSERT_EQ(rejected.size(), 1);
+    EXPECT_EQ(rejected[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    ASSERT_TRUE(rejected[0].result.attributeStatusInfo.has_value());
+    EXPECT_EQ(rejected[0].result.attributeStatusInfo.value().reasonCode.get(), "InvalidNetworkConf");
+    EXPECT_EQ(
+        m_device_model.entry(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority")).value,
+        "1");
+}
+
+TEST_F(V16VariableAccess, slotOutsidePrioritySwitchesUrlSchemeInEitherOrder) {
+    add_complete_network_slot(2, "ws://plain", "1");
+    add_complete_network_slot(3, "ws://plain", "1");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
+    auto access = make_access();
+
+    // security profile first, then the URL
+    const auto profile_first =
+        access.set({make_set("NetworkConfiguration", "SecurityProfile", "2", std::string("2")),
+                    make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://secure", std::string("2"))},
+                   "test");
+    // URL first, then the security profile
+    const auto url_first =
+        access.set({make_set("NetworkConfiguration", "OcppCsmsUrl", "wss://secure", std::string("3")),
+                    make_set("NetworkConfiguration", "SecurityProfile", "2", std::string("3"))},
+                   "test");
+
+    for (const auto& results : {profile_first, url_first}) {
+        ASSERT_EQ(results.size(), 2);
+        EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+        EXPECT_EQ(results[1].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    }
+
+    // both slots are consistent again and can be added to the priority
+    const auto priority = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "1,2,3")}, "test");
+    ASSERT_EQ(priority.size(), 1);
+    EXPECT_EQ(priority[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+}
+
+TEST_F(V16VariableAccess, priorityWriteDoesNotRecheckRetainedSlots) {
+    // slot 1 is already listed although it is inconsistent; slot 3 is listed but cannot be read
+    add_complete_network_slot(1, "ws://plain", "2");
+    add_complete_network_slot(2, "wss://two", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1,3");
+    auto access = make_access();
+
+    // reordering and adding a consistent slot checks only the added slot
+    const auto results = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "3,1,2")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(
+        m_device_model.entry(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority")).value,
+        "3,1,2");
+}
+
+TEST_F(V16VariableAccess, priorityWriteThatOnlyRemovesSlotsIsAccepted) {
+    // B09.FR.20: slot 3 cannot be read, removing slot 1 keeps it without a check
+    add_complete_network_slot(1, "wss://one", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1,3");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "3")}, "test");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(
+        m_device_model.entry(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority")).value,
+        "3");
+}
+
+TEST_F(V16VariableAccess, priorityWriteWithNonIntegerTokenIsRejected) {
+    add_complete_network_slot(1, "wss://one", "2");
+    m_device_model.add(make_component("OCPPCommCtrlr"), make_variable("NetworkConfigurationPriority"), "1");
+    auto access = make_access();
+
+    const auto results = access.set({make_set("OCPPCommCtrlr", "NetworkConfigurationPriority", "1,x")}, "test");
 
     ASSERT_EQ(results.size(), 1);
     EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);

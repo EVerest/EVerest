@@ -37,11 +37,6 @@ const auto DEFAULT_BOOT_NOTIFICATION_RETRY_INTERVAL = std::chrono::seconds(30);
 namespace ocpp::v2 {
 
 namespace {
-std::optional<std::vector<int>> parse_network_configuration_priority(const std::string& value,
-                                                                     bool skip_invalid_tokens);
-
-bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots);
-
 bool component_variable_change_requires_websocket_option_update_without_reconnect(
     const ComponentVariable& component_variable);
 } // namespace
@@ -424,7 +419,8 @@ void Provisioning::handle_set_network_profile_req(Call<SetNetworkProfileRequest>
         return;
     }
 
-    const auto profile_validation = this->validate_network_profile_content(msg.configurationSlot, msg.connectionData);
+    const auto profile_validation =
+        NetworkConfigurationComponentVariables::validate_profile_content(msg.configurationSlot, msg.connectionData);
     if (profile_validation.has_value()) {
         const auto warning = "CSMS attempted to set a network profile with invalid URL/security configuration";
         EVLOG_warning << warning;
@@ -740,7 +736,8 @@ Provisioning::validate_set_network_configuration_slot(const SetVariableData& set
         const auto priority_slot_opt = this->context.device_model.get_optional_value<std::string>(
             ControllerComponentVariables::NetworkConfigurationPriority);
         if (priority_slot_opt.has_value()) {
-            const auto priority_slots = parse_network_configuration_priority(priority_slot_opt.value(), true).value();
+            const auto priority_slots =
+                NetworkConfigurationComponentVariables::parse_priority(priority_slot_opt.value(), true).value();
             for (const auto priority_slot : priority_slots) {
                 if (priority_slot == slot) {
                     EVLOG_warning << "Cannot set NetworkConfiguration variable for slot " << slot
@@ -773,26 +770,6 @@ Provisioning::validate_set_network_configuration_slot(const SetVariableData& set
     return std::nullopt;
 }
 
-std::optional<std::string> Provisioning::validate_network_profile_content(const int32_t configuration_slot,
-                                                                          const NetworkConnectionProfile& profile) {
-    // Validate URL scheme matches security profile
-    const std::string url = profile.ocppCsmsUrl.get();
-    const bool is_wss = url.find("wss://") == 0;
-    const bool is_ws = url.find("ws://") == 0;
-    if (is_wss && profile.securityProfile < 2) {
-        EVLOG_warning << "configurationSlot " << configuration_slot
-                      << ": wss:// URL requires securityProfile >= 2, got " << profile.securityProfile;
-        return "InvalidNetworkConf";
-    }
-    if (is_ws && profile.securityProfile >= 2) {
-        EVLOG_warning << "configurationSlot " << configuration_slot
-                      << ": ws:// URL is not allowed with securityProfile >= 2, got " << profile.securityProfile;
-        return "InvalidNetworkConf";
-    }
-
-    return std::nullopt;
-}
-
 std::optional<std::string>
 Provisioning::validate_network_profile_security_preconditions(const int32_t configuration_slot,
                                                               const NetworkConnectionProfile& profile) {
@@ -822,49 +799,14 @@ Provisioning::validate_network_profile_security_preconditions(const int32_t conf
 
 std::optional<std::string>
 Provisioning::validate_network_configuration_priority(const SetVariableData& set_variable_data) {
-    const auto slots = parse_network_configuration_priority(set_variable_data.attributeValue.get(), false);
-    if (!slots.has_value()) {
-        return "InvalidNetworkConf";
-    }
-
-    std::vector<int> stored_slots;
-    const auto current_priority = this->context.device_model.get_optional_value<std::string>(
-        ControllerComponentVariables::NetworkConfigurationPriority);
-    if (current_priority.has_value()) {
-        stored_slots = parse_network_configuration_priority(current_priority.value(), true).value();
-    }
     // B09.FR.20 exists only in OCPP 2.1; OCPP 2.0.1 validates every listed slot (A05.FR.02/03, B10.FR.02)
-    if (this->context.ocpp_version == OcppProtocolVersion::v21 && only_removes_slots(slots.value(), stored_slots)) {
-        return std::nullopt;
-    }
-    const std::set<int> current_slots(stored_slots.begin(), stored_slots.end());
-
-    for (const auto slot : slots.value()) {
-        const bool added = current_slots.count(slot) == 0;
-        const auto profile_opt =
-            NetworkConfigurationComponentVariables::read_profile_from_device_model(this->context.device_model, slot);
-
-        if (!profile_opt.has_value()) {
-            if (added) {
-                EVLOG_warning << "Could not find network profile for configurationSlot: " << slot;
-                return "InvalidNetworkConf";
-            }
-            continue;
-        }
-        // B09.FR.34 and errata 2.10: validate content only for slots being activated.
-        if (added) {
-            if (const auto result = this->validate_network_profile_content(slot, profile_opt.value());
-                result.has_value()) {
-                return result;
-            }
-        }
-        // A05.FR.02/03: certificate preconditions apply to every slot in the requested priority list.
-        if (const auto result = this->validate_network_profile_security_preconditions(slot, profile_opt.value());
-            result.has_value()) {
-            return result;
-        }
-    }
-    return std::nullopt;
+    const bool accept_removal_only = this->context.ocpp_version == OcppProtocolVersion::v21;
+    // A05.FR.02/03: certificate preconditions apply to every slot in the requested priority list.
+    return NetworkConfigurationComponentVariables::validate_priority_write(
+        this->context.device_model, set_variable_data.attributeValue.get(), accept_removal_only,
+        [this](const int32_t slot, const NetworkConnectionProfile& profile) {
+            return this->validate_network_profile_security_preconditions(slot, profile);
+        });
 }
 
 std::optional<std::string> Provisioning::validate_set_variable(const SetVariableData& set_variable_data) {
@@ -1013,38 +955,6 @@ bool Provisioning::is_slot_allowed_by_priority_values_list(int32_t slot) {
 }
 
 namespace {
-std::optional<std::vector<int>> parse_network_configuration_priority(const std::string& value,
-                                                                     const bool skip_invalid_tokens) {
-    std::vector<int> slots;
-    for (const auto& token : ocpp::split_string(value, ',')) {
-        try {
-            slots.push_back(std::stoi(token));
-        } catch (const std::exception& e) {
-            EVLOG_warning << (skip_invalid_tokens ? "Stored" : "New")
-                          << " NetworkConfigurationPriority contains non-integer token '" << token << "': " << e.what();
-            if (!skip_invalid_tokens) {
-                return std::nullopt;
-            }
-        }
-    }
-    return slots;
-}
-
-bool only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots) {
-    if (new_slots.size() >= current_slots.size()) {
-        return false;
-    }
-    auto current = current_slots.begin();
-    for (const auto slot : new_slots) {
-        current = std::find(current, current_slots.end(), slot);
-        if (current == current_slots.end()) {
-            return false;
-        }
-        ++current;
-    }
-    return true;
-}
-
 /**
  * Determine for a component variable whether it affects the Websocket Connection Options (cf.
  * get_ws_connection_options); return true if it is furthermore writable and does not require a reconnect
