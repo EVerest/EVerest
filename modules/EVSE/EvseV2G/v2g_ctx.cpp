@@ -2,6 +2,7 @@
 // Copyright (C) 2022-2023 chargebyte GmbH
 // Copyright (C) 2022-2023 Contributors to EVerest
 
+#include <algorithm>
 #include <cstdlib>
 #include <cstring>
 #include <dirent.h>
@@ -87,20 +88,7 @@ static void* v2g_ctx_eventloop(void* data) {
 }
 
 static int v2g_ctx_start_events(struct v2g_context* ctx) {
-    pthread_attr_t attr;
-    int rv;
-
-    /* create the thread in detached state so we don't need to join it later */
-    if (pthread_attr_init(&attr) != 0) {
-        dlog(DLOG_LEVEL_ERROR, "pthread_attr_init failed: %s", strerror(errno));
-        return -1;
-    }
-    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
-        dlog(DLOG_LEVEL_ERROR, "pthread_attr_setdetachstate failed: %s", strerror(errno));
-        return -1;
-    }
-
-    rv = pthread_create(&ctx->event_thread, NULL, v2g_ctx_eventloop, ctx);
+    int rv = pthread_create(&ctx->event_thread, NULL, v2g_ctx_eventloop, ctx);
     return rv ? -1 : 0;
 }
 
@@ -245,6 +233,7 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
     // AC paramter
     ctx->evse_v2g_data.rcd = (int)0; // 0 if RCD has not detected an error
     ctx->contactor_is_closed = false;
+    ctx->dc_output_disabled = false;
     ctx->evse_v2g_data.receipt_required = (int)0;
 
     // Specific SAE J2847 bidi values
@@ -308,6 +297,10 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     ctx->if_name = "eth1";
 
     ctx->network_read_timeout = 1000;
+    ctx->dc_output_disabled_timeout_ms = V2G_DC_OUTPUT_DISABLED_TIMEOUT;
+    ctx->present_values_count = 0;
+    ctx->present_values_timeout_ms = V2G_PRESENT_VALUES_TIMEOUT;
+    ctx->response_wait_ms = 0;
     ctx->network_read_timeout_tls = 5000;
 
     ctx->sdp_socket = -1;
@@ -329,6 +322,7 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
         goto free_out;
     }
 
+    ctx->event_thread = 0;
     if (v2g_ctx_start_events(ctx) != 0)
         goto free_out;
 
@@ -339,8 +333,14 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     return ctx;
 
 free_out:
+    ctx->shutdown = true;
     if (ctx->event_base) {
         event_base_loopbreak(ctx->event_base);
+    }
+    if (ctx->event_thread) {
+        pthread_join(ctx->event_thread, NULL);
+    }
+    if (ctx->event_base) {
         event_base_free(ctx->event_base);
     }
     free(ctx->local_tls_addr);
@@ -354,8 +354,17 @@ void v2g_ctx_free(struct v2g_context* ctx) {
         return;
     }
 
+    ctx->shutdown = true;
+
     if (ctx->event_base) {
         event_base_loopbreak(ctx->event_base);
+    }
+
+    if (ctx->event_thread) {
+        pthread_join(ctx->event_thread, NULL);
+    }
+
+    if (ctx->event_base) {
         event_base_free(ctx->event_base);
     }
 
@@ -367,6 +376,98 @@ void v2g_ctx_free(struct v2g_context* ctx) {
     free(ctx->local_tcp_addr);
     ctx->local_tcp_addr = NULL;
     free(ctx);
+}
+
+void v2g_ctx_request_dc_output_disabled(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->dc_output_disabled = false;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+void v2g_ctx_signal_dc_output_disabled(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->dc_output_disabled = true;
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms) {
+    const int timeout_ms = std::min(ctx->dc_output_disabled_timeout_ms, max_wait_ms);
+    if (timeout_ms <= 0) {
+        return ctx->dc_output_disabled;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) && (ctx->dc_output_disabled == false) && (ctx->intl_emergency_shutdown == false) &&
+           (ctx->stop_hlc == false) && (ctx->is_connection_terminated == false)) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool disabled = ctx->dc_output_disabled;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not disabled and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "DC output not confirmed as disabled within %d ms, sending the response anyway",
+             timeout_ms);
+    }
+    return disabled;
+}
+
+void v2g_ctx_signal_present_values(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->present_values_count++;
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+}
+
+bool v2g_ctx_wait_present_values(struct v2g_context* ctx, unsigned int count_at_request) {
+    // The first update received after the request can carry a measurement taken just before it (a polled
+    // meter delivers a sample up to one poll interval after taking it); the second one was taken after the
+    // first, so after the request.
+    const auto received = [&]() { return ctx->present_values_count - count_at_request; };
+    const int timeout_ms = ctx->present_values_timeout_ms;
+    if (timeout_ms <= 0) {
+        return received() >= V2G_PRESENT_VALUES_NEEDED;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) && (received() < V2G_PRESENT_VALUES_NEEDED) && (ctx->intl_emergency_shutdown == false) &&
+           (ctx->stop_hlc == false) && (ctx->is_connection_terminated == false)) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const unsigned int updates = received();
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (updates < V2G_PRESENT_VALUES_NEEDED and rv == ETIMEDOUT) {
+        if (updates == 0) {
+            dlog(DLOG_LEVEL_WARNING, "No present values within %d ms after the request, sending the last ones",
+                 timeout_ms);
+        } else {
+            // The value is at worst one poll interval of the source older than the request.
+            dlog(DLOG_LEVEL_INFO, "Only one present values update within %d ms after the request, sending it",
+                 timeout_ms);
+        }
+    }
+    return updates >= V2G_PRESENT_VALUES_NEEDED;
+}
+
+void v2g_ctx_wake_waiters(struct v2g_context* ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    pthread_cond_broadcast(&ctx->mqtt_cond);
+    pthread_mutex_unlock(&ctx->mqtt_lock);
 }
 
 void publish_dc_ev_maximum_limits(struct v2g_context* ctx, const float& v2g_dc_ev_max_current_limit,

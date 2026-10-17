@@ -47,6 +47,7 @@
 #include "PersistentStore.hpp"
 #include "SessionLog.hpp"
 #include "VarContainer.hpp"
+#include "dc_output_disabled_confirmation.hpp"
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
@@ -372,6 +373,7 @@ private:
 
     void powersupply_DC_on();
     std::atomic_bool powersupply_dc_is_on{false};
+    DcOutputDisabledConfirmation dc_output_disabled_confirmation;
     bool powersupply_DC_set(double voltage, double current);
     void powersupply_DC_off();
     bool wait_powersupply_DC_voltage_reached(double target_voltage);

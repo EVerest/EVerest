@@ -45,6 +45,10 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     // your code for cmd ac_contactor_closed goes here
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    // your code for cmd dc_output_disabled goes here
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     // your code for cmd dlink_ready goes here
 }

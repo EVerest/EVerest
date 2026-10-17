@@ -78,6 +78,54 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx);
 void v2g_ctx_free(struct v2g_context* ctx);
 
 /*!
+ * \brief v2g_ctx_request_dc_output_disabled Clears the DC output disabled confirmation. Call before
+ * publishing dc_open_contactor, so that only a confirmation for this request ends the wait.
+ * \param ctx is the V2G context.
+ */
+void v2g_ctx_request_dc_output_disabled(struct v2g_context* ctx);
+
+/*!
+ * \brief v2g_ctx_signal_dc_output_disabled Marks the DC output as disabled and wakes up the waiter.
+ * \param ctx is the V2G context.
+ */
+void v2g_ctx_signal_dc_output_disabled(struct v2g_context* ctx);
+
+/*!
+ * \brief v2g_ctx_wait_dc_output_disabled Waits until the DC output is confirmed as disabled, at most
+ * ctx->dc_output_disabled_timeout_ms and at most max_wait_ms. Returns early on emergency shutdown, HLC stop or
+ * terminated connection.
+ * \param ctx is the V2G context.
+ * \param max_wait_ms is the protocol's bound for the wait.
+ * \return true if the confirmation was received, false otherwise.
+ */
+bool v2g_ctx_wait_dc_output_disabled(struct v2g_context* ctx, int max_wait_ms = V2G_DC_OUTPUT_DISABLED_TIMEOUT);
+
+/*!
+ * \brief v2g_ctx_signal_present_values Counts a present values update and wakes up the waiter. Call after the
+ * values are stored in the context.
+ * \param ctx is the V2G context.
+ */
+void v2g_ctx_signal_present_values(struct v2g_context* ctx);
+
+/*!
+ * \brief v2g_ctx_wait_present_values Waits until V2G_PRESENT_VALUES_NEEDED present values updates arrived after
+ * count_at_request was read from ctx->present_values_count, at most ctx->present_values_timeout_ms. The first update
+ * after the request can carry a measurement taken just before it, the second one was taken after the request.
+ * Returns early on emergency shutdown, HLC stop or terminated connection.
+ * \param ctx is the V2G context.
+ * \param count_at_request is ctx->present_values_count read when the request was received.
+ * \return true if V2G_PRESENT_VALUES_NEEDED updates arrived after the request, false otherwise.
+ */
+bool v2g_ctx_wait_present_values(struct v2g_context* ctx, unsigned int count_at_request);
+
+/*!
+ * \brief v2g_ctx_wake_waiters Wakes up threads waiting on mqtt_cond, so that they re-check the context flags.
+ * Call after setting stop_hlc or is_connection_terminated.
+ * \param ctx is the V2G context.
+ */
+void v2g_ctx_wake_waiters(struct v2g_context* ctx);
+
+/*!
  * \brief publish_dc_ev_maximum_limits This function publishes the dc_ev_maximum_limits
  * \param ctx  is a pointer of type \c v2g_context
  * \param v2g_dc_ev_max_current_limit is the EV max current limit

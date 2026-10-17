@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <chrono>
 #include <memory>
+#include <thread>
 #include <v2g_ctx.hpp>
 
 #include "ISO15118_chargerImplStub.hpp"
@@ -144,19 +146,225 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionFalse) {
 }
 #endif
 
+TEST_F(V2gCtxTest, dc_output_disabled_defaults) {
+    EXPECT_EQ(ctx->dc_output_disabled_timeout_ms, V2G_DC_OUTPUT_DISABLED_TIMEOUT);
+    EXPECT_FALSE(ctx->dc_output_disabled);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_confirmation_before_wait_returns_immediately) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    v2g_ctx_signal_dc_output_disabled(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_is_bounded_by_the_protocol) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get(), 50));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_DC_OUTPUT_DISABLED_TIMEOUT));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_request_clears_earlier_confirmation) {
+    // A confirmation left over from an earlier request must not end the wait for a new one
+    ctx->is_connection_terminated = false;
+    v2g_ctx_signal_dc_output_disabled(ctx.get());
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->dc_output_disabled_timeout_ms = 50;
+
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_confirmation_wakes_up_waiter) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread confirmer([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_dc_output_disabled(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_DC_OUTPUT_DISABLED_TIMEOUT));
+    confirmer.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_ends_on_hlc_stop) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->stop_hlc = true;
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_no_wait_with_zero_timeout) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->dc_output_disabled_timeout_ms = 0;
+
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_ends_on_terminated_connection) {
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+    ctx->is_connection_terminated = true;
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_is_accounted_as_response_wait) {
+    ctx->is_connection_terminated = false;
+    ctx->response_wait_ms = 0;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread confirmer([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+        v2g_ctx_signal_dc_output_disabled(ctx.get());
+    });
+
+    EXPECT_TRUE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    confirmer.join();
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    EXPECT_LT(ctx->response_wait_ms, V2G_DC_OUTPUT_DISABLED_TIMEOUT);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_wakes_up_on_terminated_connection) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread unplug([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->is_connection_terminated = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    unplug.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, dc_output_disabled_wait_wakes_up_on_hlc_stop) {
+    ctx->is_connection_terminated = false;
+    v2g_ctx_request_dc_output_disabled(ctx.get());
+
+    std::thread stopper([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->stop_hlc = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_dc_output_disabled(ctx.get()));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    stopper.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_defaults) {
+    EXPECT_EQ(ctx->present_values_timeout_ms, V2G_PRESENT_VALUES_TIMEOUT);
+    EXPECT_EQ(ctx->present_values_count, 0);
+}
+
+TEST_F(V2gCtxTest, two_present_values_updates_after_the_request_end_the_wait_at_once) {
+    ctx->is_connection_terminated = false;
+    const unsigned int at_request = ctx->present_values_count;
+    v2g_ctx_signal_present_values(ctx.get());
+    v2g_ctx_signal_present_values(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(500));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+// The first update after the request can carry a sample taken just before it (a polled meter delivers a
+// sample up to one poll interval later); only the second one was taken after the request.
+TEST_F(V2gCtxTest, one_present_values_update_is_not_enough) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 100;
+    const unsigned int at_request = ctx->present_values_count;
+    v2g_ctx_signal_present_values(ctx.get());
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    // Answered with the one update: not a stalled source, so no warning
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_wakes_up_on_new_values) {
+    ctx->is_connection_terminated = false;
+    ctx->response_wait_ms = 0;
+    v2g_ctx_signal_present_values(ctx.get()); // from before the request
+    const unsigned int at_request = ctx->present_values_count;
+
+    std::thread meter([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_present_values(ctx.get());
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        v2g_ctx_signal_present_values(ctx.get());
+    });
+
+    EXPECT_TRUE(v2g_ctx_wait_present_values(ctx.get(), at_request));
+    meter.join();
+    EXPECT_GE(ctx->response_wait_ms, 90);
+    EXPECT_LT(ctx->response_wait_ms, V2G_PRESENT_VALUES_TIMEOUT);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_is_bounded) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 50;
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxTest, present_values_no_wait_with_zero_timeout) {
+    ctx->is_connection_terminated = false;
+    ctx->present_values_timeout_ms = 0;
+
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
+TEST_F(V2gCtxTest, present_values_wait_wakes_up_on_terminated_connection) {
+    ctx->is_connection_terminated = false;
+
+    std::thread unplug([this]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        ctx->is_connection_terminated = true;
+        v2g_ctx_wake_waiters(ctx.get());
+    });
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_present_values(ctx.get(), ctx->present_values_count));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(1000));
+    unplug.join();
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+}
+
 TEST(valgrind, memcheck) {
-    GTEST_SKIP() << "pthreads result in valgrind reporting errors";
-    /*
-     * v2g_ctx_free() doesn't stop or wait for threads to finish (no join)
-     * hence there is access to free'd memory reported.
-     *
-     * ==2136== LEAK SUMMARY:
-     * ==2136==    definitely lost: 0 bytes in 0 blocks
-     * ==2136==    indirectly lost: 0 bytes in 0 blocks
-     * ==2136==      possibly lost: 304 bytes in 1 blocks
-     * ==2136==    still reachable: 80 bytes in 2 blocks
-     * ==2136==         suppressed: 0 bytes in 0 blocks
-     */
+    // v2g_ctx_free() now sets shutdown and joins the event thread,
+    // so there is no use-after-free during cleanup.
 
     // run via valgrind to ensure that malloc/free are working
     module::stub::QuietModuleAdapterStub adapter;

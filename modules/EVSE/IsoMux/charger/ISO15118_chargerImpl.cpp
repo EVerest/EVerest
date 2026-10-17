@@ -561,6 +561,14 @@ void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
     }
 }
 
+void ISO15118_chargerImpl::handle_dc_output_disabled() {
+    if (mod->selected_iso20()) {
+        mod->r_iso20->call_dc_output_disabled();
+    } else {
+        mod->r_iso2->call_dc_output_disabled();
+    }
+}
+
 void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
     if (mod->selected_iso20()) {
         mod->r_iso20->call_dlink_ready(value);
