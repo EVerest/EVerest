@@ -195,10 +195,17 @@ template <typename Messages> struct Pre20Session : SessionFixture {
     iso15118::message_2::datatypes::SessionId session_id{};
     std::vector<iso15118::session::feedback::Signal> signals;
     std::vector<iso15118::session::feedback::SessionStopAction> stop_actions;
+    bool transport_closed_on_dlink{false};
     const bool same_type_only;
 
     explicit Pre20Session(bool enabled) : same_type_only(enabled) {
-        callbacks.signal = [this](auto signal) { signals.push_back(signal); };
+        callbacks.signal = [this](auto signal) {
+            signals.push_back(signal);
+            using Signal = iso15118::session::feedback::Signal;
+            if (signal == Signal::DLINK_TERMINATE or signal == Signal::DLINK_PAUSE or signal == Signal::DLINK_ERROR) {
+                transport_closed_on_dlink = conn->closed;
+            }
+        };
         callbacks.session_stop_res_sent = [this](auto action) { stop_actions.push_back(action); };
         auto config = make_eim_session_config();
         config.evse_id = "DE*EVR*E00000*1";
@@ -642,7 +649,12 @@ TEST_CASE("ISO 15118-2 pause and terminate responses after power delivery stops"
                                                        : iso15118::session::feedback::SessionStopAction::Terminate});
     REQUIRE_FALSE(fixture.conn->closed);
     REQUIRE_FALSE(fixture.session->is_finished());
-    now += 4000ms;
+    now += 2000ms;
+    fixture.session->poll();
+    REQUIRE(fixture.conn->half_closed);
+    REQUIRE_FALSE(fixture.conn->closed);
+    REQUIRE_FALSE(fixture.session->is_finished());
+    now += 500ms;
     fixture.session->poll();
     REQUIRE(fixture.conn->closed);
     REQUIRE(fixture.session->is_finished());
@@ -667,11 +679,33 @@ TEST_CASE("DIN terminates with an authorization response held") {
     REQUIRE(response.response_code == decltype(response.response_code)::OK);
     REQUIRE(fixture.stop_actions == std::vector{iso15118::session::feedback::SessionStopAction::Terminate});
     REQUIRE_FALSE(fixture.conn->closed);
-    now += 4000ms;
+    const bool pending_shutdown = GENERATE(false, true);
+    fixture.conn->half_close_ready = not pending_shutdown;
+    now += 1999ms;
     fixture.session->poll();
+    REQUIRE(fixture.conn->half_close_calls == 0);
+    now += 1ms;
+    fixture.session->poll();
+    REQUIRE(fixture.conn->half_closed == (not pending_shutdown));
+    REQUIRE(fixture.conn->half_close_calls == 1);
+    REQUIRE_FALSE(fixture.conn->closed);
+    REQUIRE_FALSE(fixture.session->is_finished());
+    for (int tick = 1; tick <= 9; ++tick) {
+        now += 50ms;
+        fixture.session->poll();
+        REQUIRE(fixture.conn->half_close_calls == tick + 1);
+        REQUIRE_FALSE(fixture.conn->closed);
+        REQUIRE_FALSE(fixture.session->is_finished());
+    }
+    now += 50ms;
+    fixture.session->poll();
+    REQUIRE(fixture.conn->half_close_calls == 10);
     REQUIRE(fixture.session->is_finished());
     REQUIRE(fixture.conn->closed);
     REQUIRE(fixture.signals.back() == iso15118::session::feedback::Signal::DLINK_TERMINATE);
+    REQUIRE(fixture.transport_closed_on_dlink);
+    fixture.session->poll();
+    REQUIRE(fixture.conn->half_close_calls == 10);
 }
 
 TEST_CASE_METHOD(SessionFixture, "SAP handover waits for its paced wire response") {
