@@ -47,7 +47,21 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
 
     fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::DC_ChargeLoop>()};
 
+    const auto control = [&](const d20::ControlEvent& event) {
+        state_helper.set_active_control_event(event);
+        return fsm.feed(d20::Event::CONTROL_MESSAGE);
+    };
+
+    const auto require_stop_res_sent = [&](const auto& result) {
+        REQUIRE(result.transitioned());
+        REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
+        const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+        REQUIRE(res.has_value());
+        REQUIRE(res->response_code == dt::ResponseCode::OK);
+    };
+
     GIVEN("The EV sends PowerDeliveryReq(Stop) while the power path is on") {
+        control(d20::ClosedContactor{true});
         state_helper.handle_request(make_power_delivery(ctx.session, dt::Progress::Stop));
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -59,22 +73,29 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
         }
 
-        WHEN("The board support reports the power path off") {
-            state_helper.set_active_control_event(d20::ClosedContactor{false});
-            const auto off_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
+        WHEN("The board support reports the contactor open and then the DC output is disabled") {
+            REQUIRE_FALSE(control(d20::ClosedContactor{false}).transitioned());
+            REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
+            const auto off_result = control(d20::DcOutputDisabled{});
 
             THEN("The response is sent and welding detection follows") {
-                REQUIRE(off_result.transitioned());
-                REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
-                const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                require_stop_res_sent(off_result);
             }
         }
 
-        WHEN("A contactor-closed report arrives") {
-            state_helper.set_active_control_event(d20::ClosedContactor{true});
-            const auto closed_result = fsm.feed(d20::Event::CONTROL_MESSAGE);
+        WHEN("The DC output is disabled and then the board support reports the contactor open") {
+            REQUIRE_FALSE(control(d20::DcOutputDisabled{}).transitioned());
+            REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
+            const auto off_result = control(d20::ClosedContactor{false});
+
+            THEN("The response is sent and welding detection follows") {
+                require_stop_res_sent(off_result);
+            }
+        }
+
+        WHEN("A contactor-closed report arrives after the DC output is disabled") {
+            control(d20::DcOutputDisabled{});
+            const auto closed_result = control(d20::ClosedContactor{true});
 
             THEN("The response stays held") {
                 REQUIRE_FALSE(closed_result.transitioned());
@@ -87,27 +108,36 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             const auto timeout_result = fsm.feed(d20::Event::TIMEOUT);
 
             THEN("The response is sent anyway") {
-                REQUIRE(timeout_result.transitioned());
-                REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
-                const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                require_stop_res_sent(timeout_result);
             }
         }
     }
 
-    GIVEN("The power path was already reported off") {
-        state_helper.set_active_control_event(d20::ClosedContactor{false});
-        fsm.feed(d20::Event::CONTROL_MESSAGE);
+    GIVEN("The contactor was already reported open") {
+        control(d20::ClosedContactor{false});
 
         state_helper.handle_request(make_power_delivery(ctx.session, dt::Progress::Stop));
         const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
 
-        THEN("PowerDeliveryRes(Stop) is sent right away") {
-            REQUIRE(result.transitioned());
-            REQUIRE(fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);
+        THEN("PowerDeliveryRes(Stop) still waits for the DC output to be disabled") {
+            REQUIRE_FALSE(result.transitioned());
             REQUIRE(contains(signals, Signal::DC_OPEN_CONTACTOR));
-            REQUIRE(ctx.get_response<message_20::PowerDeliveryResponse>().has_value());
+            REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
+
+            require_stop_res_sent(control(d20::DcOutputDisabled{}));
+        }
+    }
+
+    GIVEN("A DcOutputDisabled from before the stop request") {
+        control(d20::ClosedContactor{false});
+        control(d20::DcOutputDisabled{});
+
+        state_helper.handle_request(make_power_delivery(ctx.session, dt::Progress::Stop));
+        const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("It does not release the response") {
+            REQUIRE_FALSE(result.transitioned());
+            REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
         }
     }
 
@@ -124,6 +154,8 @@ SCENARIO("ISO15118-20 DC charge loop holds PowerDeliveryRes(Stop) until the powe
             REQUIRE(contains(signals, Signal::DC_OPEN_CONTACTOR));
             REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
 
+            state_helper.set_active_control_event(d20::DcOutputDisabled{});
+            REQUIRE_FALSE(mcs_fsm.feed(d20::Event::CONTROL_MESSAGE).transitioned());
             state_helper.set_active_control_event(d20::ClosedContactor{false});
             REQUIRE(mcs_fsm.feed(d20::Event::CONTROL_MESSAGE).transitioned());
             REQUIRE(mcs_fsm.get_current_state_id() == d20::StateID::DC_WeldingDetection);

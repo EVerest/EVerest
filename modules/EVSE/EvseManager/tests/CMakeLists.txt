@@ -17,6 +17,7 @@ target_include_directories(${TEST_TARGET_NAME} PRIVATE
 target_sources(${TEST_TARGET_NAME} PRIVATE
     BspCapabilitiesStoreTest.cpp
     CpStateFrameEmitterTest.cpp
+    DcOutputDisabledConfirmationTest.cpp
     EnergyTransferModesTest.cpp
     EventQueueTest.cpp
     ErrorHandlingTest.cpp

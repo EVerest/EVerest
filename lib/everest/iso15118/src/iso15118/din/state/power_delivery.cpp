@@ -68,9 +68,9 @@ Result process_power_delivery(Context& m_ctx, const message_din::PowerDeliveryRe
     if (res.dc_evse_status.has_value()) {
         apply_isolation_status(m_ctx, res.dc_evse_status.value());
     }
-    m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
+        m_ctx.respond(res);
         m_ctx.session_stopped = true;
         return {};
     }
@@ -87,20 +87,73 @@ Result process_power_delivery(Context& m_ctx, const message_din::PowerDeliveryRe
     }
 
     if (req.ready_to_charge_state) {
+        m_ctx.respond(res);
         // The charge loop can start [V2G-DC-462], so the [V2G-DC-969] supervision timer has done its job.
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
         m_ctx.feedback.signal(session::feedback::Signal::SETUP_FINISHED);
         return m_ctx.create_state<CurrentDemandStart>();
     }
 
-    // End of charging [V2G-DC-459]: open the contactor and move on to welding detection. The verified
-    // isolation no longer holds, so a post-stop restart must re-run the cable check, and the next
-    // request now requires CP State B within the detection timeout ([V2G-DC-988]/[V2G-DC-556]).
+    // End of charging [V2G-DC-459]: open the contactor, answer once the DC output is disabled and move on
+    // to welding detection. The verified isolation no longer holds, so a post-stop restart must re-run the
+    // cable check, and the next request now requires CP State B within the detection timeout
+    // ([V2G-DC-988]/[V2G-DC-556]).
     m_ctx.power_delivery_stopped = true;
     m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
     m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+    if (m_ctx.evse().emergency_shutdown) {
+        // Already latched: respond() fails the response and ends the session [V2G-DC-866]; no wait.
+        m_ctx.respond(res);
+        return {};
+    }
+    return m_ctx.create_state<PowerDeliveryStop>(res);
+}
+
+void PowerDeliveryStop::enter() {
+    logf_debug("Enter state: PowerDeliveryStop");
+    m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, d20::TIMEOUT_DC_OUTPUT_DISABLED_DIN);
+}
+
+Result PowerDeliveryStop::on_event(Event ev) {
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (m_ctx.evse().emergency_shutdown) {
+            // respond() fails the response and ends the session [V2G-DC-866]; nothing to wait for any more.
+            m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            m_ctx.respond(pending_res);
+            return {};
+        }
+        if (const auto* control_data = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+            m_ctx.set_present_values(control_data->voltage, control_data->current);
+        } else if (m_ctx.get_control_event<d20::DcOutputDisabled>() != nullptr) {
+            m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            return send_pending_res();
+        }
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("DC output not reported disabled within %d ms, sending PowerDeliveryRes anyway",
+                         d20::TIMEOUT_DC_OUTPUT_DISABLED_DIN);
+            return send_pending_res();
+        }
+    }
+
+    return {};
+}
+
+Result PowerDeliveryStop::on_request(const message_din::Variant& received) {
+    // The EV has to wait for the PowerDeliveryRes before it sends anything else.
+    logf_warning("Expected no request before PowerDeliveryRes! But code type id: %d", received.get_type());
+    respond_sequence_error(m_ctx, received);
+    return {};
+}
+
+Result PowerDeliveryStop::send_pending_res() {
+    m_ctx.respond(pending_res);
     return m_ctx.create_state<WeldingDetection>();
 }
 

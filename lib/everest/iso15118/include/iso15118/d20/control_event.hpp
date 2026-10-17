@@ -127,6 +127,11 @@ private:
     bool closed;
 };
 
+// The module confirms that the DC output was switched off after a DC_OPEN_CONTACTOR signal and that the
+// present values it reports were measured after that. PowerDeliveryRes to a stop waits for it
+// [IEC 61851-23:2023 Table CC.9 t103 before t104].
+struct DcOutputDisabled {};
+
 // TODO(SL): Define this globally for message and states
 using SupportedVASs = std::vector<uint16_t>;
 
@@ -225,6 +230,6 @@ using ControlEvent =
                  PauseCharging, DcTransferLimits, AcTransferLimits, UpdateDynamicModeParameters, ClosedContactor,
                  AcTargetPower, AcPresentPower, EnergyServices, SupportedVASs, CertificateResponse, EvseError,
                  CpStateChanged, UpdateAcMaxCurrent, PhysicalValues, NoEnergyPause, UpdateIsolationStatus,
-                 UpdatePowersupplyLimits, DerSaeSetupConfig>;
+                 UpdatePowersupplyLimits, DerSaeSetupConfig, DcOutputDisabled>;
 
 } // namespace iso15118::d20

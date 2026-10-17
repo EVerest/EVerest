@@ -111,6 +111,28 @@ Software over-voltage supervision is always active during DC charging. The confi
 must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
 Set it to ``0`` to trigger immediately once the threshold is crossed.
 
+When the EV stops the charging session with PowerDelivery, the HLC stack publishes
+``dc_open_contactor``. EvseManager switches the DC power supply off, withdraws the power
+permissive and confirms with the ``dc_output_disabled`` command once the board support reported the
+contactor open (``PowerOff`` event) and two consecutive ``voltage_current`` measurements below 5 A
+arrived after both the switch off and the contactor opening. A measurement of 5 A or more restarts the
+count, which covers EVs built to IEC 61851-23:2014 that ask to stop without ramping their current down
+first (Table CC.9, t102 to t103). The HLC stack holds back the PowerDeliveryRes until then, so
+that side B is disabled and the EVSE disconnection device is open before the response, and the
+EVSEPresentVoltage reported in WeldingDetectionRes is measured after the switch off
+(IEC 61851-23:2023 Table CC.9, t103 and t104). The stop response is therefore delayed by the
+contactor opening plus up to two measurement intervals of the power supply's ``voltage_current``
+source. The HLC stacks wait at most 1.4 s on DIN SPEC 70121 and ISO 15118-20 and 3 s on ISO 15118-2,
+then send the response anyway. Each WeldingDetectionRes then waits for two ``voltage_current``
+measurements after its request (the first can have been taken just before it, the second was taken
+after it), at most 1.4 s. Both only work as intended if every ``voltage_current`` is a new
+measurement: a power supply that forwards a polled car-side powermeter must not publish a sample the
+meter reported before (LemDCBM400600 publishes only new measurements, so a poll interval of 200 ms
+there keeps the delay short). A meter that updates its measurement once per second still cannot meet
+the 200 ms measurement-to-communication time of IEC 61851-23 CC.6.3, whatever the poll interval. The
+voltage measurement has to be at the vehicle side of the EVSE disconnection device, otherwise it does
+not see the voltage at the vehicle connector once the contactor is open.
+
 Published variables
 ===================
 

@@ -252,7 +252,8 @@ void DinSeccEngine::on_control_event(const d20::ControlEvent& event) {
             ctx.set_emergency_shutdown();
             ctx.start_timeout(d20::TimeoutType::EMERGENCY_SHUTDOWN, d20::TIMEOUT_EMERGENCY_SHUTDOWN_GUARD);
         }
-        return;
+        // Still fed to the FSM below: a state holding a response back (the DC stop waiting for
+        // dc_output_disabled) answers at once with it, before the guard closes the connection.
     }
 
     // Still feed the event to the FSM below, so a state parked waiting for CP State B resumes on it.

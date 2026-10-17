@@ -32,10 +32,13 @@ private:
 
     bool first_entry_in_charge_loop{true};
 
-    // PowerDelivery(Stop) response held back until the power permissive is withdrawn
+    // PowerDelivery(Stop) response held back until the power permissive is withdrawn and the DC output
+    // is disabled
     std::optional<message_20::PowerDeliveryResponse> pending_stop_res;
     std::optional<bool> contactor_closed;
+    bool dc_output_disabled{false};
 
+    bool power_path_off() const;
     Result send_pending_stop_res();
 };
 

@@ -881,9 +881,13 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
                 status_code = din_DC_EVSEStatusCodeType_EVSE_Shutdown;
             }
         }
+        v2g_ctx_request_dc_output_disabled(conn->ctx);
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
+        // [IEC 61851-23:2023 Table CC.9 t103, t104] Disable side B before the PowerDeliveryRes, so that the
+        // EVSEPresentVoltage in the following WeldingDetectionRes is measured after the switch off.
+        v2g_ctx_wait_dc_output_disabled(conn->ctx, V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN);
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }
@@ -1134,6 +1138,7 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
     struct din_WeldingDetectionReqType* req = &conn->exi_in.dinEXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct din_WeldingDetectionResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event nextEvent = V2G_EVENT_NO_EVENT;
+    const unsigned int present_values_at_request = conn->ctx->present_values_count;
 
     if (conn->ctx->telemetry_publisher) {
         conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
@@ -1145,6 +1150,10 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
     publish_DIN_DcEvStatus(conn->ctx, req->DC_EVStatus);
 
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
+
+    // [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106] Report a voltage measured after the request, not one from
+    // before the PowerDeliveryRes or the EV's last switching of its disconnection device.
+    v2g_ctx_wait_present_values(conn->ctx, present_values_at_request);
 
     /* Now fill the evse response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]

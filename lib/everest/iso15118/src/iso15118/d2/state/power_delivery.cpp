@@ -308,16 +308,73 @@ Result process_dc_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
     // Tells EvseManager to switch the DC supply off and stop the over-voltage monitor.
     m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
 
-    if (not respond(m_ctx, req, true)) {
+    const auto res = handle_request(req, m_ctx.get_session_id(), true, m_ctx.session().sa_schedule_tuple_id,
+                                    m_ctx.isolation_level(), m_ctx.evse().charger_stop_requested,
+                                    m_ctx.session().sa_schedule_list, m_ctx.error_status_code(), m_ctx.rcd_error());
+    if (res.response_code >= dt::ResponseCode::FAILED) {
+        m_ctx.respond(res);
+        m_ctx.session_stopped = true;
         return {};
     }
-
-    m_ctx.arm_cp_state_b_gate();
 
     // With the contactor open the verified isolation no longer holds, so a post-stop restart must re-run
     // the physical test.
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+    if (m_ctx.evse().emergency_shutdown) {
+        // Already latched: respond() fails the response and ends the session [V2G2-539]; no wait for the
+        // output to be reported disabled, which the 2 s emergency guard would cut short without a response.
+        m_ctx.respond(res);
+        return {};
+    }
+    return m_ctx.create_state<DcPowerDeliveryStop>(res);
+}
+
+void DcPowerDeliveryStop::enter() {
+    logf_debug("Enter state: DcPowerDeliveryStop");
+    m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, d20::TIMEOUT_DC_OUTPUT_DISABLED_ISO2);
+}
+
+Result DcPowerDeliveryStop::on_event(Event ev) {
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (m_ctx.evse().emergency_shutdown) {
+            // respond() fails the response and ends the session [V2G2-539]; nothing to wait for any more,
+            // and the emergency guard (2 s) would otherwise close the connection before the 3 s cap.
+            m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            m_ctx.respond(pending_res);
+            return {};
+        }
+        if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+            m_ctx.set_present_values(control->voltage, control->current);
+        } else if (m_ctx.get_control_event<d20::DcOutputDisabled>() != nullptr) {
+            m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            return send_pending_res();
+        }
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("DC output not reported disabled within %d ms, sending PowerDeliveryRes anyway",
+                         d20::TIMEOUT_DC_OUTPUT_DISABLED_ISO2);
+            return send_pending_res();
+        }
+    }
+
+    return {};
+}
+
+Result DcPowerDeliveryStop::on_request(const message_2::Variant& received) {
+    // The EV has to wait for the PowerDeliveryRes before it sends anything else.
+    logf_warning("Expected no request before PowerDeliveryRes! But got type id: %d", received.get_type());
+    respond_sequence_error(m_ctx, received.get_type());
+    return {};
+}
+
+Result DcPowerDeliveryStop::send_pending_res() {
+    m_ctx.respond(pending_res);
+    m_ctx.arm_cp_state_b_gate();
     return m_ctx.create_state<PostCharge>();
 }
 

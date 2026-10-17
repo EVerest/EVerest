@@ -268,6 +268,7 @@ void to_welding_detection(Secc& secc) {
     to_current_demand(secc);
     secc.drive(current_demand_req());
     secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+    secc.fsm.control(d20::DcOutputDisabled{});
     // [V2G2-920]..[V2G2-922]: without CP State B the WeldingDetectionReq is parked until the timeout.
     secc.fsm.context().set_cp_state(d20::CpState::B);
 }
@@ -569,13 +570,49 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
             secc.drive(current_demand_req());
             secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
 
-            THEN("The charge loop defers to PowerDelivery and the machine moves to PostCharge") {
-                REQUIRE(secc.fsm.state() == StateID::PostCharge);
-                const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+            THEN("The contactor is opened and the response waits for the DC output to be disabled") {
+                REQUIRE(secc.fsm.state() == StateID::DcPowerDeliveryStop);
+                REQUIRE_FALSE(secc.fsm.has_response());
                 REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_STARTED));
                 REQUIRE(secc.saw_signal(session::feedback::Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(session::feedback::Signal::DC_OPEN_CONTACTOR));
+                REQUIRE_FALSE(secc.fsm.context().evse().cable_check_done);
+            }
+
+            AND_WHEN("Present values arrive and the module reports the DC output disabled") {
+                secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.control(d20::DcOutputDisabled{});
+
+                THEN("PowerDeliveryRes goes out OK and the machine moves to PostCharge") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.context().evse().present_voltage == 0.0f);
+                }
+            }
+
+            AND_WHEN("The DC output is not reported disabled in time") {
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("PowerDeliveryRes goes out OK anyway and the machine moves to PostCharge") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
+            }
+
+            AND_WHEN("The EV sends another request before the response") {
+                secc.drive(current_demand_req());
+
+                THEN("It is out of sequence") {
+                    const auto res = secc.fsm.response<message_2::CurrentDemandResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
             }
         }
     }
@@ -587,16 +624,99 @@ SCENARIO("ISO 15118-2 SECC DC charging state transitions") {
         WHEN("The EV runs welding detection") {
             secc.drive(message_2::WeldingDetectionRequest{});
 
-            THEN("The machine moves to WeldingDetection, where a restart is no longer in sequence") {
-                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
-                const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
+            THEN("The response waits for present values received after the request [IEC 61851-23 CC.6.3]") {
+                REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            // The first update after the request can carry a sample taken just before it (a polled meter
+            // delivers a sample up to one poll interval later); the second one was taken after the request.
+            AND_WHEN("One present values update arrives") {
+                secc.fsm.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+
+                THEN("The response still waits for a second one") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    REQUIRE_FALSE(secc.fsm.has_response());
+                }
+
+                AND_WHEN("No second one arrives in time") {
+                    secc.fsm.timeout(d20::TimeoutType::PRESENT_VALUES);
+
+                    THEN("It is answered with the one that arrived") {
+                        REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                        const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                        REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 32.0);
+                    }
+                }
+            }
+
+            AND_WHEN("Present values arrive twice") {
+                secc.fsm.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+                secc.fsm.control(d20::PresentVoltageCurrent{12.0f, 0.0f});
+
+                THEN("The machine moves to WeldingDetection, where a restart is no longer in sequence") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 12.0);
+                }
+
+                AND_WHEN("The EV sends the next WeldingDetectionReq") {
+                    secc.drive(message_2::WeldingDetectionRequest{});
+
+                    THEN("It waits for two present values updates again") {
+                        REQUIRE_FALSE(secc.fsm.has_response());
+                        secc.fsm.control(d20::PresentVoltageCurrent{9.0f, 0.0f});
+                        REQUIRE_FALSE(secc.fsm.has_response());
+                        secc.fsm.control(d20::PresentVoltageCurrent{3.0f, 0.0f});
+                        const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 3.0);
+                    }
+
+                    THEN("It is answered with the last values when none arrive in time") {
+                        secc.fsm.timeout(d20::TimeoutType::PRESENT_VALUES);
+                        const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                        REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 12.0);
+                    }
+
+                    AND_WHEN("The session ends while it waits (CP State A)") {
+                        // The engine sets the flag on CP State A; the harness does likewise.
+                        secc.fsm.context().session_stopped = true;
+                        secc.fsm.context().set_cp_state(d20::CpState::A);
+                        secc.fsm.control(d20::CpStateChanged{d20::CpState::A});
+
+                        THEN("Neither present values nor the timeout produce a response") {
+                            secc.fsm.control(d20::PresentVoltageCurrent{3.0f, 0.0f});
+                            REQUIRE_FALSE(secc.fsm.has_response());
+                            secc.fsm.timeout(d20::TimeoutType::PRESENT_VALUES);
+                            REQUIRE_FALSE(secc.fsm.has_response());
+                        }
+                    }
+                }
+            }
+
+            AND_WHEN("No present values arrive in time") {
+                secc.fsm.timeout(d20::TimeoutType::PRESENT_VALUES);
+
+                THEN("It is answered OK with the last values") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                }
             }
         }
 
         WHEN("The EV ends the session") {
             secc.drive(message_2::WeldingDetectionRequest{});
+            secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
+            secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
             secc.drive(message_2::SessionStopRequest{});
 
             // The terminal is reached from the welding-detection node, so the SECC answers where it stands.
@@ -1744,6 +1864,8 @@ SCENARIO("ISO 15118-2 SECC out-of-sequence requests are answered by the state th
 
         AND_WHEN("The EV weld-detects first and only then tries to restart") {
             secc.drive(message_2::WeldingDetectionRequest{});
+            secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
+            secc.fsm.control(d20::PresentVoltageCurrent{0.0f, 0.0f});
             REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
             secc.drive(charge_parameter_req(dt::EnergyTransferMode::DC_extended));
 
@@ -1842,6 +1964,7 @@ SCENARIO("ISO 15118-2 SECC gates a post-charge SessionStopReq on CP State B") {
         to_current_demand(secc);
         secc.drive(current_demand_req());
         secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+        secc.fsm.control(d20::DcOutputDisabled{});
         REQUIRE(secc.fsm.state() == StateID::PostCharge);
 
         WHEN("The EV ends the session straight away") {
@@ -1934,6 +2057,85 @@ SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
             REQUIRE(res.has_value());
             REQUIRE(res->payment_option_list.size() == 1);
             REQUIRE(res->payment_option_list[0] == dt::PaymentOption::ExternalPayment);
+        }
+    }
+}
+
+SCENARIO("ISO 15118-2 SECC WeldingDetectionRes waits for CP State B and fresh present values") {
+
+    Secc secc;
+    to_current_demand(secc);
+    secc.drive(current_demand_req());
+    secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+    secc.fsm.control(d20::DcOutputDisabled{});
+    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+
+    GIVEN("A WeldingDetectionReq while the EV is still in CP State C") {
+        secc.drive(message_2::WeldingDetectionRequest{});
+
+        WHEN("Present values arrive first") {
+            secc.fsm.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+            secc.fsm.control(d20::PresentVoltageCurrent{7.0f, 0.0f});
+
+            THEN("The response still waits for CP State B [V2G2-920]") {
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("The EV signals CP State B") {
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.control(d20::CpStateChanged{d20::CpState::B});
+
+                THEN("WeldingDetectionRes goes out with the values received after the request") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 7.0);
+                }
+            }
+        }
+
+        WHEN("CP State B arrives first") {
+            secc.fsm.context().set_cp_state(d20::CpState::B);
+            secc.fsm.control(d20::CpStateChanged{d20::CpState::B});
+
+            THEN("The response waits for two present values updates") {
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.control(d20::PresentVoltageCurrent{5.0f, 0.0f});
+                const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(dt::from_physical_value(res->evse_present_voltage) == 5.0);
+            }
+
+            AND_WHEN("A CP state timeout fires while only the present values are outstanding") {
+                secc.fsm.timeout(d20::TimeoutType::CPSTATE);
+
+                THEN("It is not a missing CP State B: no FAILED, the present values still answer OK") {
+                    REQUIRE_FALSE(secc.fsm.has_response());
+                    REQUIRE_FALSE(secc.fsm.context().session_stopped);
+                    secc.fsm.control(d20::PresentVoltageCurrent{32.0f, 0.0f});
+                    secc.fsm.control(d20::PresentVoltageCurrent{5.0f, 0.0f});
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                }
+            }
+        }
+
+        WHEN("The present values wait expires but CP State B is still missing") {
+            secc.fsm.timeout(d20::TimeoutType::PRESENT_VALUES);
+
+            THEN("The response still waits for CP State B and fails without it [V2G2-922]") {
+                REQUIRE_FALSE(secc.fsm.has_response());
+                secc.fsm.timeout(d20::TimeoutType::CPSTATE);
+                const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
         }
     }
 }

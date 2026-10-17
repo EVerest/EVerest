@@ -40,3 +40,23 @@ Schedule Renegotation
 Smart Charging           
 Internet Service         
 =======================  ==================
+
+DC charging stop
+================
+
+On a DC stop request (DIN 70121 PowerDeliveryReq with ReadyToChargeState false, ISO 15118-2
+PowerDeliveryReq with ChargeProgress Stop), EvseV2G publishes ``dc_open_contactor`` and waits for
+the ``dc_output_disabled`` command before it sends the PowerDeliveryRes, at most 1.4 s on DIN 70121
+(the EV gives up after 2 s) and 3 s on ISO 15118-2 (4.5 s performance time). Without the
+confirmation it sends the response after the timeout and logs a warning.
+
+Each WeldingDetectionRes waits for two ``update_dc_present_values`` after its request, so that the
+EVSEPresentVoltage is measured after the request and not before the PowerDeliveryRes or before the
+EV switched its disconnection device (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106). The first
+update after the request can carry a measurement taken just before it (a polled meter delivers a
+sample up to one poll interval after taking it); the second one was taken after the request. It
+waits at most 1.4 s (1.5 s performance time) and then sends the last values, with a warning if none
+arrived. The value is only as fresh as the source of ``update_dc_present_values``, which has to
+deliver new measurements only: with a car-side powermeter that updates its measurement once per
+second, the second update usually does not make it in time and the response carries the first one,
+up to about one second old.

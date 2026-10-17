@@ -15,8 +15,9 @@ namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
 
-// Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the power path off.
-constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 500;
+// Bounds how long PowerDeliveryRes(Stop) waits for the power path to be reported off: within the 1.5 s
+// V2G_SECC_Msg_Performance_Time for PowerDelivery (Table 215), 100 ms reserved for polling and sending.
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 1400;
 
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;
@@ -225,9 +226,17 @@ Result DC_ChargeLoop::feed(Event ev) {
             dynamic_parameters = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
             contactor_closed = static_cast<bool>(*control_data);
-            if (pending_stop_res.has_value() and not *contactor_closed) {
+            if (pending_stop_res.has_value() and power_path_off()) {
                 m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
                 return send_pending_stop_res();
+            }
+        } else if (m_ctx.get_control_event<DcOutputDisabled>() != nullptr) {
+            if (pending_stop_res.has_value()) {
+                dc_output_disabled = true;
+                if (power_path_off()) {
+                    m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                    return send_pending_stop_res();
+                }
             }
         }
 
@@ -237,8 +246,11 @@ Result DC_ChargeLoop::feed(Event ev) {
     if (ev == Event::TIMEOUT) {
         const auto* const timeout = m_ctx.get_active_timeout();
         if (pending_stop_res.has_value() and timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
-            logf_warning("Power path not reported off within %ums, sending PowerDeliveryRes anyway",
-                         DC_OPEN_CONTACTOR_TIMEOUT);
+            logf_warning("Power path not reported off within %ums (contactor open: %s, DC output disabled: %s), "
+                         "sending PowerDeliveryRes anyway",
+                         DC_OPEN_CONTACTOR_TIMEOUT,
+                         contactor_closed.has_value() and not *contactor_closed ? "yes" : "no",
+                         dc_output_disabled ? "yes" : "no");
             return send_pending_stop_res();
         }
         return {};
@@ -266,12 +278,12 @@ Result DC_ChargeLoop::feed(Event ev) {
             // The EV leaves power-transfer readiness (CP/CE C -> B) as soon as it gets the response, so
             // the power permissive has to be withdrawn first (IEC 61851-23-3 Table CC.111, t103 before
             // t105); on MCS a C-exit under a standing permissive is an emergency shutdown (CC.4.3).
+            // The DC output is disabled only after DC_OPEN_CONTACTOR, so DcOutputDisabled is always awaited
+            // [IEC 61851-23:2023 Table CC.9 t103 before t104].
+            pending_stop_res = res;
+            dc_output_disabled = false;
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
-            pending_stop_res = res;
-            if (contactor_closed.has_value() and not *contactor_closed) {
-                return send_pending_stop_res();
-            }
             m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, DC_OPEN_CONTACTOR_TIMEOUT);
             return {};
         }
@@ -318,6 +330,10 @@ Result DC_ChargeLoop::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
     }
+}
+
+bool DC_ChargeLoop::power_path_off() const {
+    return dc_output_disabled and contactor_closed.has_value() and not *contactor_closed;
 }
 
 Result DC_ChargeLoop::send_pending_stop_res() {

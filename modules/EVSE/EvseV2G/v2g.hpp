@@ -38,6 +38,10 @@ class V2gTelemetryPublisher;
 #define V2G_CP_STATE_B_TO_C_D_TIMEOUT_RELAXED 500  /* [V2G2-847] */
 #define V2G_CP_STATE_C_D_TO_B_TIMEOUT         250  /* [V2G2-848] */
 #define V2G_CONTACTOR_CLOSE_TIMEOUT           3000 /* [V2G2-862] [V2G2-865] 4.5 s for PowerDeliveryRes */
+#define V2G_DC_OUTPUT_DISABLED_TIMEOUT        3000 /* Stop: wait for dc_output_disabled, 4.5 s for PowerDeliveryRes */
+#define V2G_DC_OUTPUT_DISABLED_TIMEOUT_DIN    1400 /* DIN SPEC 70121 Table 75: 1.5 s for PowerDeliveryRes */
+#define V2G_PRESENT_VALUES_TIMEOUT            1400 /* WeldingDetectionRes: wait for present values, 1.5 s for it */
+#define V2G_PRESENT_VALUES_NEEDED             2    /* Updates after the request: the first may predate it */
 #define V2G_COMMUNICATION_SETUP_TIMEOUT                                                                                \
     18000 /* [V2G2-723] [V2G2-029] [V2G2-032] [V2G2-714] [V2G2-716] V2G_SECC_CommunicationSetup_Performance_Time */
 #define V2G_CPSTATE_DETECTION_TIMEOUT                                                                                  \
@@ -273,6 +277,12 @@ struct v2g_context {
                                       immediately without response message) */
     std::atomic<bool> terminate_connection_on_failed_response;
     std::atomic<bool> contactor_is_closed; /* Actual contactor state */
+    std::atomic<bool> dc_output_disabled;  /* Set by the dc_output_disabled command, written under mqtt_lock */
+    int dc_output_disabled_timeout_ms;     /* Max. wait for dc_output_disabled on a stop request, 0 = no wait */
+    std::atomic_uint present_values_count; /* Counts update_dc_present_values, written under mqtt_lock */
+    int present_values_timeout_ms;         /* Max. wait of a WeldingDetectionRes for present values, 0 = no wait */
+    long long int response_wait_ms;        /* Time the current request handler waited for another module, not counted as
+                                              response processing time */
 
     struct {
         bool meter_info_is_used;

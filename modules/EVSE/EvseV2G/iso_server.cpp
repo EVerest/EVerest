@@ -1821,8 +1821,12 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             conn->ctx->p_charger->publish_ac_open_contactor(nullptr);
         } else {
             set_dc_shutdown_status_code(conn->ctx);
+            v2g_ctx_request_dc_output_disabled(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
+            // [IEC 61851-23:2023 Table CC.9 t103, t104] Disable side B before the PowerDeliveryRes, so that the
+            // EVSEPresentVoltage in the following WeldingDetectionRes is measured after the switch off.
+            v2g_ctx_wait_dc_output_disabled(conn->ctx);
         }
         break;
 
@@ -2403,6 +2407,7 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     struct iso2_WeldingDetectionReqType* req = &conn->exi_in.iso2EXIDocument->V2G_Message.Body.WeldingDetectionReq;
     struct iso2_WeldingDetectionResType* res = &conn->exi_out.iso2EXIDocument->V2G_Message.Body.WeldingDetectionRes;
     enum v2g_event next_event = V2G_EVENT_NO_EVENT;
+    const unsigned int present_values_at_request = conn->ctx->present_values_count;
 
     if (conn->ctx->telemetry_publisher) {
         conn->ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {
@@ -2415,6 +2420,10 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
 
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx
     // ([V2G2-920], [V2G2-921]).
+
+    // [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106] Report a voltage measured after the request, not one from
+    // before the PowerDeliveryRes or the EV's last switching of its disconnection device.
+    v2g_ctx_wait_present_values(conn->ctx, present_values_at_request);
 
     res->DC_EVSEStatus.EVSEIsolationStatus = (iso2_isolationLevelType)conn->ctx->evse_v2g_data.evse_isolation_status;
     res->DC_EVSEStatus.EVSEIsolationStatus_isUsed = conn->ctx->evse_v2g_data.evse_isolation_status_is_used;

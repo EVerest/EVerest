@@ -402,14 +402,32 @@ grid code restarts service selection.
 Terminations that any state performs on a ``SessionStopReq`` or a sequence error
 are omitted, since they end the session rather than move it to another state.
 
-On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
-shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
-published before the response, and the response is held
-until ``ac_contactor_closed(false)`` reports the power path off, for at most 500 ms.
-The EV leaves state C as soon as it has the response, so this withdraws the power
-permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
-support treats a C exit under a standing permissive as an emergency shutdown
-(CC.4.3).
+On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` in the charge
+loop while a shutdown is requested, ``current_demand_finished`` and
+``dc_open_contactor`` are published before the response, and the response is held
+until ``ac_contactor_closed(false)`` reports the power path off and the
+``dc_output_disabled`` command confirms the DC output disabled, for at most 1.4 s
+(the SECC performance time for PowerDelivery is 1.5 s). The EV leaves state C as
+soon as it has the response, so this withdraws the power permissive first
+(IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board support treats a C
+exit under a standing permissive as an emergency shutdown (CC.4.3). The
+confirmation also makes the EVSEPresentVoltage in the WeldingDetectionRes a value
+measured after the switch off (IEC 61851-23:2023 Table CC.9, t103 before t104).
+
+DIN SPEC 70121 ``PowerDeliveryReq`` with ``ReadyToChargeState`` false and ISO 15118-2
+``PowerDeliveryReq`` with ``Stop`` on DC hold the response until
+``dc_output_disabled``, for at most 1.4 s on DIN SPEC 70121 (the EV gives up after
+2 s) and 3 s on ISO 15118-2 (4.5 s performance time), as EvseV2G does.
+
+Each WeldingDetectionRes (DIN SPEC 70121, ISO 15118-2) and DC_WeldingDetectionRes (ISO 15118-20)
+waits for two ``update_dc_present_values`` after its request, so that the EVSEPresentVoltage is
+measured after the request (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106): the first update
+after the request can carry a measurement taken just before it, the second one was taken after the
+request. It waits at most 1.4 s (1.5 s performance time), then it is sent with the last values, with
+a warning if none arrived. On DIN SPEC 70121 and ISO 15118-2 the first one also waits for CP state B
+as before. The value is only as fresh as the source of ``update_dc_present_values``, which has to
+deliver new measurements only. An emergency shutdown reported while a DC PowerDeliveryRes(stop) is
+held answers it FAILED at once.
 
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
