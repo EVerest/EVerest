@@ -5,8 +5,30 @@
 #include <everest/conversions/evse_security/conversions.hpp>
 #include <everest_api_types/telemetry/json_codec.hpp>
 
+#include <map>
+#include <optional>
+#include <string>
+
 namespace module {
 namespace main {
+
+namespace {
+// Maps the csms_leaf_key_type config value to the key type; the manifest restricts the accepted values
+std::optional<evse_security::CryptoKeyType> csms_leaf_key_type_from_config(const std::string& value) {
+    using evse_security::CryptoKeyType;
+    static const std::map<std::string, CryptoKeyType> key_types = {
+        {"EC_prime256v1", CryptoKeyType::EC_prime256v1},
+        {"RSA_2048", CryptoKeyType::RSA_2048},
+        {"RSA_3072", CryptoKeyType::RSA_3072},
+    };
+    const auto it = key_types.find(value);
+    if (it == key_types.end()) {
+        EVLOG_error << "Unknown csms_leaf_key_type '" << value << "', using the default key type";
+        return std::nullopt;
+    }
+    return it->second;
+}
+} // namespace
 
 void evse_securityImpl::init() {
 
@@ -30,10 +52,11 @@ void evse_securityImpl::init() {
         static_cast<std::uintmax_t>(this->mod->config.max_fs_certificate_store_entries);
     const std::chrono::seconds csr_expiry(this->mod->config.csr_expiry_s);
     const std::chrono::seconds garbage_collect_time(this->mod->config.garbage_collect_time_s);
+    const auto csms_leaf_key_type = csms_leaf_key_type_from_config(this->mod->config.csms_leaf_key_type);
 
     this->evse_security = std::make_unique<evse_security::EvseSecurity>(
         file_paths, private_key_password, max_fs_usage_bytes, max_fs_certificate_store_entries, csr_expiry,
-        garbage_collect_time);
+        garbage_collect_time, csms_leaf_key_type);
 }
 
 void evse_securityImpl::ready() {

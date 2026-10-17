@@ -14,6 +14,7 @@
 #include <sstream>
 #include <string>
 #include <thread>
+#include <tuple>
 
 #include <evse_security/certificate/x509_bundle.hpp>
 #include <evse_security/certificate/x509_wrapper.hpp>
@@ -519,6 +520,102 @@ TEST_F(EvseSecurityTests, verify_secc_csr_profiles) {
     ASSERT_EQ(csr_key_usage(req), "critical:digitalSignature");
     X509_REQ_free(req);
 }
+
+// Reads the public key of a PEM formatted CSR, returns {key type name, key size in bits, curve name or ""}
+static std::tuple<std::string, int, std::string> csr_public_key(const std::string& csr_pem) {
+    BIO* bio = BIO_new_mem_buf(csr_pem.data(), static_cast<int>(csr_pem.size()));
+    X509_REQ* req = PEM_read_bio_X509_REQ(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    if (req == nullptr) {
+        return {};
+    }
+    EVP_PKEY* pkey = X509_REQ_get0_pubkey(req);
+    std::string type_name = (pkey != nullptr) ? EVP_PKEY_get0_type_name(pkey) : "";
+    const int bits = (pkey != nullptr) ? EVP_PKEY_get_bits(pkey) : 0;
+    std::array<char, 64> group{};
+    std::size_t group_len = 0;
+    std::string curve;
+    if (pkey != nullptr && EVP_PKEY_get_group_name(pkey, group.data(), group.size(), &group_len) == 1) {
+        curve = std::string(group.data(), group_len);
+    }
+    X509_REQ_free(req);
+    return {type_name, bits, curve};
+}
+
+TEST_F(EvseSecurityTests, verify_csms_csr_default_key_type) {
+    const auto csr =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::CSMS, "DE", "Pionix", "CS");
+    ASSERT_EQ(csr.status, GetCertificateSignRequestStatus::Accepted);
+    ASSERT_TRUE(csr.csr.has_value());
+
+    const auto [type_name, bits, curve] = csr_public_key(csr.csr.value());
+    ASSERT_EQ(type_name, "EC");
+    ASSERT_EQ(curve, "prime256v1");
+}
+
+class EvseSecurityTestsCsmsKeyType : public EvseSecurityTests, public ::testing::WithParamInterface<CryptoKeyType> {
+protected:
+    void SetUp() override {
+        EvseSecurityTests::SetUp();
+
+        FilePaths file_paths;
+        file_paths.csms_ca_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE.pem");
+        file_paths.mf_ca_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE.pem");
+        file_paths.mo_ca_bundle = fs::path("certs/ca/mo/MO_CA_BUNDLE.pem");
+        file_paths.v2g_ca_bundle = fs::path("certs/ca/v2g/V2G_CA_BUNDLE.pem");
+        file_paths.directories.csms_leaf_cert_directory = fs::path("certs/client/csms/");
+        file_paths.directories.csms_leaf_key_directory = fs::path("certs/client/csms/");
+        file_paths.directories.secc_leaf_cert_directory = fs::path("certs/client/cso/");
+        file_paths.directories.secc_leaf_key_directory = fs::path("certs/client/cso/");
+
+        this->evse_security.reset();
+        this->evse_security = std::make_unique<EvseSecurity>(file_paths, "123456", std::nullopt, std::nullopt,
+                                                             std::nullopt, std::nullopt, GetParam());
+    }
+};
+
+TEST_P(EvseSecurityTestsCsmsKeyType, csms_csr_uses_configured_rsa_key_type) {
+    const auto csr =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::CSMS, "DE", "Pionix", "CS");
+    ASSERT_EQ(csr.status, GetCertificateSignRequestStatus::Accepted);
+    ASSERT_TRUE(csr.csr.has_value());
+
+    const auto [type_name, bits, curve] = csr_public_key(csr.csr.value());
+    ASSERT_EQ(type_name, "RSA");
+    ASSERT_EQ(bits, (GetParam() == CryptoKeyType::RSA_2048) ? 2048 : 3072);
+
+    BIO* bio = BIO_new_mem_buf(csr.csr.value().data(), static_cast<int>(csr.csr.value().size()));
+    X509_REQ* req = PEM_read_bio_X509_REQ(bio, nullptr, nullptr, nullptr);
+    BIO_free(bio);
+    ASSERT_NE(req, nullptr);
+    ASSERT_EQ(X509_REQ_get_signature_nid(req), NID_sha256WithRSAEncryption);
+    X509_REQ_free(req);
+
+    // The generated key sits in the CSMS key directory
+    ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
+    const auto key_path = this->evse_security->managed_csr.begin()->first;
+    ASSERT_TRUE(fs::exists(key_path));
+    ASSERT_EQ(key_path.parent_path(), fs::path("certs/client/csms"));
+}
+
+TEST_P(EvseSecurityTestsCsmsKeyType, secc_csr_key_types_are_not_affected) {
+    const auto csr2 =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G, "DE", "Pionix", "SECC");
+    ASSERT_EQ(csr2.status, GetCertificateSignRequestStatus::Accepted);
+    const auto [type2, bits2, curve2] = csr_public_key(csr2.csr.value());
+    ASSERT_EQ(type2, "EC");
+    ASSERT_EQ(curve2, "prime256v1");
+
+    const auto csr20 =
+        this->evse_security->generate_certificate_signing_request(LeafCertificateType::V2G20, "DE", "Pionix", "SECC20");
+    ASSERT_EQ(csr20.status, GetCertificateSignRequestStatus::Accepted);
+    const auto [type20, bits20, curve20] = csr_public_key(csr20.csr.value());
+    ASSERT_EQ(type20, "EC");
+    ASSERT_EQ(curve20, "secp521r1");
+}
+
+INSTANTIATE_TEST_SUITE_P(RsaKeyTypes, EvseSecurityTestsCsmsKeyType,
+                         ::testing::Values(CryptoKeyType::RSA_2048, CryptoKeyType::RSA_3072));
 
 TEST_F(EvseSecurityTestsMultiLeaf, verify_multi_leaf_retrieval) {
     std::vector<CertificateType> certificate_types;
