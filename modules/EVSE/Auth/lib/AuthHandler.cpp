@@ -98,8 +98,9 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     // check if token is already currently processed
     EVLOG_info << "Received new token: " << everest::helpers::redact(provided_token);
     const auto referenced_evses = this->get_referenced_evses(provided_token);
+    const bool already_in_process = this->is_token_already_in_process(provided_token, referenced_evses);
 
-    if (!this->is_token_already_in_process(provided_token, referenced_evses)) {
+    if (!already_in_process) {
         // process token if not already in process
         this->tokens_in_process.insert(provided_token);
         this->publish_token_validation_status(provided_token, TokenValidationStatus::Processing);
@@ -132,7 +133,7 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
         break;
     }
 
-    if (result != TokenHandlingResult::ALREADY_IN_PROCESS) {
+    if (!already_in_process) {
         this->tokens_in_process.erase(provided_token);
     }
 
