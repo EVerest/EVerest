@@ -5,8 +5,11 @@
 #define OCPP_V2_CTRLR_COMPONENT_VARIABLES
 
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <set>
+#include <string>
+#include <vector>
 
 #include <ocpp/v2/ocpp_types.hpp>
 
@@ -449,6 +452,40 @@ bool write_profile_to_device_model(DeviceModelVariablesInterface& dm, int32_t sl
                                    const NetworkConnectionProfile& profile, const std::string& source);
 void migrate_from_blob_if_needed(DeviceModelVariablesInterface& dm);
 void clear_slot_in_device_model(DeviceModelVariablesInterface& dm, int32_t slot);
+
+/// \brief Parses a NetworkConfigurationPriority value (comma separated slot numbers).
+/// \param skip_invalid_tokens true to skip tokens that are not integers (stored values), false to fail on them
+///        (incoming writes)
+/// \returns the slots in the given order, or std::nullopt if a token is not an integer and
+///          \p skip_invalid_tokens is false
+std::optional<std::vector<int>> parse_priority(const std::string& value, bool skip_invalid_tokens);
+
+/// \brief Checks whether \p new_slots only removes slots from \p current_slots and keeps the order of the rest
+/// (B09.FR.20).
+bool priority_only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots);
+
+/// \brief Checks that the URL scheme of \p profile matches its security profile: ws:// needs a security profile
+/// below 2, wss:// needs 2 or higher.
+/// \returns the reasonCode when the profile is inconsistent
+std::optional<std::string> validate_profile_content(int32_t slot, const NetworkConnectionProfile& profile);
+
+/// \brief Additional check for a readable slot listed in a NetworkConfigurationPriority write.
+/// \returns the reasonCode when the write must be rejected
+using PrioritySlotCheck =
+    std::function<std::optional<std::string>(int32_t slot, const NetworkConnectionProfile& profile)>;
+
+/// \brief Validates a write of \p new_value to NetworkConfigurationPriority, independent of the OCPP version.
+///
+/// Rejects a value with a non-integer token and a slot that is added to the priority without a readable profile.
+/// Checks the profile content only for slots that are added (B09.FR.34, errata 2.10); retained slots that cannot be
+/// read are skipped. \p check_readable_slot, if set, runs for every readable slot in the new value, e.g. for the
+/// OCPP 2.x certificate preconditions (A05.FR.02/03).
+///
+/// \param accept_removal_only true to accept a value that only removes slots without further checks (B09.FR.20)
+/// \returns the reasonCode when the write must be rejected
+std::optional<std::string> validate_priority_write(DeviceModelVariablesInterface& dm, const std::string& new_value,
+                                                   bool accept_removal_only,
+                                                   const PrioritySlotCheck& check_readable_slot = {});
 } // namespace NetworkConfigurationComponentVariables
 
 namespace DERComponentVariables {
