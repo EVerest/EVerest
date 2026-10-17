@@ -360,6 +360,37 @@
       "instance": "Get15118EVCertificateResponse.exiResponse",
       "description": "This variable is used to report the length of <field> in <message> when it is larger than the length that is defined in the standard OCPP message schema.",
       "type": "integer"
+    },
+    "EnableFirmwareStatusNotificationOtherConnection": {
+      "variable_name": "EnableFirmwareStatusNotificationOtherConnection",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "boolean"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": false
+        }
+      ],
+      "description": "When true, this connection is also sent the FirmwareStatusNotifications of a firmware update another OCPP connection asked for. The notifications answering this connection's own UpdateFirmware always come back to it regardless of this setting.",
+      "type": "boolean"
+    },
+    "ExternalConfigChangeDate": {
+      "variable_name": "ExternalConfigChangeDate",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "dateTime"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadOnly"
+        }
+      ],
+      "description": "Date and time of the most recent device model change made by a secondary OCPP connection. Lets a CSMS tell whether anything has changed since the report it last asked for, either by reading this or by putting a delta monitor on it. Never written for a change the CSMS made itself.",
+      "type": "string"
     }
   },
   "required": [

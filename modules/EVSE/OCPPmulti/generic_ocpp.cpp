@@ -645,6 +645,9 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // observed empty, so queued events always stay ahead of live-path events
     ready_event_queue();
     EVLOG_info << "OCPP started";
+    // Before the ready var: a consumer that waits for ready must be able to read the roster.
+    init_connections();
+    publish_connections();
     mv_provides.ocpp_generic.publish_ready(true);
 
     // Signal to EVSEs to start their internal state machines
@@ -656,7 +659,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     // be plugged in at startup)
     std::this_thread::sleep_for(std::chrono::milliseconds(mv_config.getDelayOcppStart()));
     // start OCPP connection
-    mv_charge_point.connect_websocket();
+    mv_charge_point.connect_all();
 }
 
 void GenericOcpp::init_check_energy_sink() {
@@ -1170,6 +1173,100 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
     return result;
 }
 
+namespace {
+/// Resolves an externally supplied connection name to a ConnectionId. Returns nullopt when the name
+/// cannot name a connection at all, so the caller can log and ignore rather than throw: these names
+/// arrive over an MQTT debug topic and must never be able to take the module down.
+std::optional<ocpp::v2::ConnectionId> to_connection_id(const std::string& connection_name) {
+    if (connection_name.empty()) {
+        return ocpp::v2::ConnectionId::primary();
+    }
+    if (!ocpp::v2::ConnectionId::is_valid_instance_name(connection_name)) {
+        return std::nullopt;
+    }
+    return ocpp::v2::ConnectionId::secondary(connection_name);
+}
+} // namespace
+
+void GenericOcpp::connect_websocket(const std::string& connection_name) {
+    if (connection_name == "*") {
+        mv_charge_point.connect_all();
+        return;
+    }
+    const auto connection = to_connection_id(connection_name);
+    if (!connection.has_value()) {
+        EVLOG_warning << "Ignoring connect request for unusable OCPP connection name '" << connection_name << "'";
+        return;
+    }
+    mv_charge_point.connect_websocket(connection.value());
+}
+
+void GenericOcpp::disconnect_websocket(const std::string& connection_name) {
+    if (connection_name == "*") {
+        for (const auto& info : mv_charge_point.get_connections()) {
+            mv_charge_point.disconnect_websocket(info.id);
+        }
+        return;
+    }
+    const auto connection = to_connection_id(connection_name);
+    if (!connection.has_value()) {
+        EVLOG_warning << "Ignoring disconnect request for unusable OCPP connection name '" << connection_name << "'";
+        return;
+    }
+    mv_charge_point.disconnect_websocket(connection.value());
+}
+
+void GenericOcpp::init_connections() {
+    auto handle = mv_connections.handle();
+    handle->clear();
+
+    for (const auto& info : mv_charge_point.get_connections()) {
+        types::ocpp::ConnectionStatus status;
+        // Seeded as down: this describes how the charging station is configured, and nothing has
+        // connected yet at this point. Each connection updates its own entry as it comes and goes.
+        status.connected = false;
+        status.connection_role =
+            info.id.is_primary() ? types::ocpp::ConnectionRole::Primary : types::ocpp::ConnectionRole::Secondary;
+        if (!info.id.is_primary()) {
+            status.connection_id = info.id.instance().value();
+        }
+        if (info.active_network_profile_slot.has_value()) {
+            // The slot it last connected on, which is the one it will try first.
+            status.configuration_slot = info.active_network_profile_slot.value();
+        }
+        handle->emplace(info.id.instance().value_or(""), std::move(status));
+    }
+
+    EVLOG_info << "OCPP connections configured: " << handle->size();
+}
+
+void GenericOcpp::update_connection(const types::ocpp::ConnectionStatus& status) {
+    {
+        auto handle = mv_connections.handle();
+        // A connection the charge point never reported is recorded anyway rather than dropped, so
+        // the published set stays truthful.
+        (*handle)[status.connection_id.value_or("")] = status;
+    }
+    publish_connections();
+}
+
+void GenericOcpp::publish_connections() {
+    types::ocpp::Connections connections;
+    {
+        // Snapshot under the lock, publish outside it: publishing reaches into the framework and
+        // must not happen while holding a lock a callback thread may want.
+        auto handle = mv_connections.handle();
+        connections.connections.reserve(handle->size());
+        for (const auto& entry : *handle) {
+            connections.connections.push_back(entry.second);
+        }
+    }
+
+    // The map is keyed by connection name, the primary's being empty, so the primary sorts first,
+    // which is the order the connections var promises.
+    mv_provides.ocpp_generic.publish_connections(connections);
+}
+
 void GenericOcpp::cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
                                               ocpp::OcppProtocolVersion protocol_version) {
     if (connection_status.connected) {
@@ -1178,6 +1275,15 @@ void GenericOcpp::cb_connection_state_changed(const types::ocpp::ConnectionStatu
         mv_ocpp_protocol_version = ocpp::OcppProtocolVersion::Unknown;
     }
     mv_provides.ocpp_generic.publish_connection_status(connection_status);
+    update_connection(connection_status);
+}
+
+void GenericOcpp::cb_secondary_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status) {
+    // Deliberately not published on connection_status: consumers collapse that var into a single
+    // station-wide "connected" indication, so a secondary going down would look like the charging
+    // station losing its CSMS.
+    mv_provides.ocpp_generic.publish_secondary_connection_status(connection_status);
+    update_connection(connection_status);
 }
 
 ocpp::v2::DataTransferResponse GenericOcpp::cb_data_transfer(const ocpp::v2::DataTransferRequest& request) {

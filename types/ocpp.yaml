@@ -809,6 +809,18 @@ types:
       version:
         description: OCPP version of the serialized message
         type: string
+  ConnectionRole:
+    description: >-
+      Role of an OCPP connection of the charging station. Primary is the single
+      authoritative CSMS connection that owns all core charging operations.
+      Secondary is a limited additional connection as described in the OCA
+      application note "Secondary OCPP Connection on a Charging Station".
+      OCPP2.x only; implementations that support a single connection report
+      Primary or omit the value.
+    type: string
+    enum:
+      - Primary
+      - Secondary
   ConnectionStatus:
     description: >-
       Status of the connection of the chargepoint to the CSMS, including the details
@@ -824,6 +836,22 @@ types:
       connected:
         description: Indicates if the chargepoint is connected to the CSMS
         type: boolean
+      connection_id:
+        description: >-
+          Identifier of the OCPP connection this status refers to: the device model
+          component instance name used on OCPPCommCtrlr for it, for example "EMS" for
+          OCPPCommCtrlr["EMS"]. Instance names are free to choose. Omitted for the
+          primary connection, which has no OCPPCommCtrlr component instance, and by
+          implementations that support only a single connection.
+        type: string
+        minLength: 1
+        maxLength: 50
+      connection_role:
+        description: >-
+          Role of the connection this status refers to. Omitted by implementations
+          that support only a single connection.
+        type: string
+        $ref: /ocpp#/ConnectionRole
       csms_url:
         description: >-
           CSMS endpoint URL of the connection. OCPP2.x reports ocppCsmsUrl of the
@@ -856,3 +884,22 @@ types:
           OCPP protocol version in use on the connection (e.g. ocpp1.6, ocpp2.0.1 or
           ocpp2.1)
         type: string
+  Connections:
+    description: >-
+      Every OCPP connection the charging station is configured for: the primary CSMS
+      connection plus each configured secondary connection. Entries exist for
+      connections that are configured but not currently connected, so this also
+      answers which connections the charging station has at all.
+    type: object
+    additionalProperties: false
+    required:
+      - connections
+    properties:
+      connections:
+        description: >-
+          One entry per configured connection. The primary connection is always the
+          first entry and the only one whose connection_id is omitted.
+        type: array
+        items:
+          type: object
+          $ref: /ocpp#/ConnectionStatus

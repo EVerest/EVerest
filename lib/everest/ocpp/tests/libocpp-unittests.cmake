@@ -37,6 +37,8 @@ set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/call_types.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/evse_security.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/certificate_pin.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/evse_security_impl.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/database/database_handler_common.cpp
 )
 
@@ -49,6 +51,14 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/utils.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v16/messages/StopTransaction.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/common/websocket/websocket_uri.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_id.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_directory.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/connection_scope.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_helpers.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/message_permission.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/monitor_subscription.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/request_origin_registry.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/variable_permission.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ctrlr_component_variables.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/types.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ocpp_types.cpp

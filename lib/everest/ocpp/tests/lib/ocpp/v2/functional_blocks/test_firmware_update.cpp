@@ -17,6 +17,8 @@
 #include <message_dispatcher_mock.hpp>
 #include <mocks/database_handler_mock.hpp>
 
+#include <ocpp/v2/connection_directory.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/functional_blocks/availability.hpp>
@@ -360,6 +362,165 @@ TEST_F(FirmwareUpdateDeferredDownloadTest, InvalidCertSupersedingRequestLeavesDe
 
     ASSERT_EQ(callback_invocations.size(), 1);
     EXPECT_EQ(callback_invocations.at(0).requestId, 150);
+}
+
+/// Application note section 5.3: the FirmwareStatusNotifications of an update go back to the
+/// connection that asked for it, and to any other connection that has explicitly asked to see them.
+class FirmwareStatusRoutingTest : public ::testing::Test {
+protected:
+    /// A connection view of a station with a primary connection and two secondaries.
+    class TwoSecondariesDirectory : public ConnectionDirectory {
+    public:
+        [[nodiscard]] std::vector<ConnectionId> connection_ids() const override {
+            return {ConnectionId::primary(), ConnectionId::secondary("EMS"), ConnectionId::secondary("MAINT")};
+        }
+        [[nodiscard]] bool may_set_variable(const ConnectionId&, const Component&, const Variable&) const override {
+            return true;
+        }
+    };
+
+    DeviceModelTestHelper dm_helper;
+    DeviceModel* dm{nullptr};
+
+    NiceMock<MockMessageDispatcher> mock_dispatcher;
+    NiceMock<ocpp::ConnectivityManagerMock> connectivity_manager;
+    std::unique_ptr<EvseManagerFake> evse_manager;
+    NiceMock<DatabaseHandlerMock> db_handler;
+    ocpp::EvseSecurityMock evse_security;
+    NiceMock<ComponentStateManagerMock> component_state_manager;
+    std::atomic<OcppProtocolVersion> ocpp_version{OcppProtocolVersion::v201};
+
+    NiceMock<AvailabilityMock> availability;
+    NiceMock<SecurityMock> security;
+
+    TwoSecondariesDirectory connections;
+    RequestOriginRegistry request_origins;
+
+    std::unique_ptr<FunctionalBlockContext> fb_context;
+    std::unique_ptr<FirmwareUpdate> firmware_update;
+
+    /// The connection each dispatched FirmwareStatusNotification was pinned to.
+    std::vector<std::optional<ConnectionId>> notification_targets;
+
+    FirmwareStatusRoutingTest() :
+        dm_helper(DEVICE_MODEL_DB_IN_MEMORY_PATH, MIGRATION_FILES_PATH, CONFIG_PATH, false, {"EMS", "MAINT"}) {
+        dm = dm_helper.get_device_model();
+        evse_manager = std::make_unique<EvseManagerFake>(1);
+
+        fb_context = std::make_unique<FunctionalBlockContext>(mock_dispatcher, *dm, connectivity_manager, *evse_manager,
+                                                              db_handler, evse_security, component_state_manager,
+                                                              ocpp_version, connections, request_origins);
+
+        ON_CALL(mock_dispatcher, dispatch_call(_, _)).WillByDefault(Invoke([this](const json& call, bool) {
+            if (call.at(CALL_ACTION) == "FirmwareStatusNotification") {
+                this->notification_targets.push_back(ConnectionTargetScope::current());
+            }
+        }));
+
+        firmware_update = std::make_unique<FirmwareUpdate>(
+            *fb_context, availability, security,
+            [](const UpdateFirmwareRequest&) {
+                UpdateFirmwareResponse response;
+                response.status = UpdateFirmwareStatusEnum::Accepted;
+                return response;
+            },
+            std::nullopt);
+    }
+
+    /// Delivers an UpdateFirmware as if it had arrived on \p connection.
+    void update_firmware_from(const ConnectionId& connection, const std::int32_t request_id) {
+        UpdateFirmwareRequest request;
+        request.requestId = request_id;
+        request.firmware.location = "https://firmware.example.com/firmware.bin";
+        request.firmware.retrieveDateTime = ocpp::DateTime("2024-01-01T00:00:00Z");
+        ocpp::EnhancedMessage<MessageType> enhanced_message;
+        enhanced_message.messageType = MessageType::UpdateFirmware;
+        enhanced_message.message = ocpp::Call<UpdateFirmwareRequest>(request);
+
+        const ConnectionScope scope(connection);
+        firmware_update->handle_message(enhanced_message);
+    }
+
+    void enable_other_connection_notifications(const std::string& instance) {
+        const auto cv = ConnectionComponentVariables::get_component_variable(
+            ConnectionId::secondary(instance),
+            ConnectionComponentVariables::EnableFirmwareStatusNotificationOtherConnection);
+        ASSERT_EQ(dm->set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "true", "test", true),
+                  SetVariableStatusEnum::Accepted);
+    }
+};
+
+TEST_F(FirmwareStatusRoutingTest, StatusOfAnUpdateNobodyRequestedGoesToThePrimary) {
+    firmware_update->on_firmware_update_status_notification(-1, FirmwareStatusEnum::Downloading);
+
+    ASSERT_EQ(notification_targets.size(), 1);
+    ASSERT_TRUE(notification_targets.at(0).has_value());
+    EXPECT_TRUE(notification_targets.at(0)->is_primary());
+}
+
+TEST_F(FirmwareStatusRoutingTest, StatusGoesBackToTheSecondaryThatAskedForTheUpdate) {
+    update_firmware_from(ConnectionId::secondary("EMS"), 77);
+    notification_targets.clear();
+
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Downloading);
+
+    ASSERT_EQ(notification_targets.size(), 1);
+    EXPECT_EQ(notification_targets.at(0), ConnectionId::secondary("EMS"));
+}
+
+TEST_F(FirmwareStatusRoutingTest, AnotherConnectionSeesTheStatusOnlyWhenItAsksTo) {
+    update_firmware_from(ConnectionId::secondary("EMS"), 77);
+    notification_targets.clear();
+
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Downloading);
+    EXPECT_EQ(notification_targets.size(), 1);
+
+    enable_other_connection_notifications("MAINT");
+    notification_targets.clear();
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Downloaded);
+
+    ASSERT_EQ(notification_targets.size(), 2);
+    EXPECT_EQ(notification_targets.at(0), ConnectionId::secondary("EMS"));
+    EXPECT_EQ(notification_targets.at(1), ConnectionId::secondary("MAINT"));
+}
+
+TEST_F(FirmwareStatusRoutingTest, TheRequestingConnectionIsNotSentTheStatusTwice) {
+    enable_other_connection_notifications("EMS");
+    update_firmware_from(ConnectionId::secondary("EMS"), 77);
+    notification_targets.clear();
+
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Downloading);
+
+    ASSERT_EQ(notification_targets.size(), 1);
+    EXPECT_EQ(notification_targets.at(0), ConnectionId::secondary("EMS"));
+}
+
+TEST_F(FirmwareStatusRoutingTest, TheOriginIsForgottenOnceTheUpdateHasFinished) {
+    update_firmware_from(ConnectionId::secondary("EMS"), 77);
+    notification_targets.clear();
+
+    // Installed ends the update, so a later status with the same requestId is no longer anybody's.
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Installed);
+    ASSERT_EQ(notification_targets.size(), 1);
+    EXPECT_EQ(notification_targets.at(0), ConnectionId::secondary("EMS"));
+
+    notification_targets.clear();
+    firmware_update->on_firmware_update_status_notification(77, FirmwareStatusEnum::Idle);
+
+    ASSERT_EQ(notification_targets.size(), 1);
+    EXPECT_TRUE(notification_targets.at(0)->is_primary());
+}
+
+TEST_F(FirmwareStatusRoutingTest, TheLaterOfTwoConnectionsUsingTheSameRequestIdOwnsIt) {
+    // Section 5.3.1: requestIds are picked per connection, so they can collide.
+    update_firmware_from(ConnectionId::secondary("EMS"), 5);
+    update_firmware_from(ConnectionId::secondary("MAINT"), 5);
+    notification_targets.clear();
+
+    firmware_update->on_firmware_update_status_notification(5, FirmwareStatusEnum::Downloading);
+
+    ASSERT_EQ(notification_targets.size(), 1);
+    EXPECT_EQ(notification_targets.at(0), ConnectionId::secondary("MAINT"));
 }
 
 } // namespace

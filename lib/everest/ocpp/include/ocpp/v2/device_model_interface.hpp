@@ -220,6 +220,22 @@ public:
     virtual bool create_network_configuration_slot_from_default_schema(std::int32_t /*new_slot*/) {
         return false;
     }
+
+    // ============================================================================
+    // Component instances
+    // ============================================================================
+
+    /// \brief Instance names of every instanced component called \p component_name.
+    ///
+    /// Components without an instance are not reported, so a device model holding only the
+    /// instance-less OCPPCommCtrlr returns an empty vector. Used to discover which secondary OCPP
+    /// connections are configured (OCA application note "Secondary OCPP Connection on a Charging
+    /// Station", section 3.3), where the instance name is the connection name and may be any value.
+    ///
+    /// \return The instance names, sorted and without duplicates.
+    virtual std::vector<std::string> get_component_instances(const std::string& /*component_name*/) const {
+        return {};
+    }
 };
 
 } // namespace v2

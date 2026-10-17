@@ -134,6 +134,22 @@
       "description": "Maximum number of IDs in a ClearVariableMonitoringRequest.",
       "type": "integer"
     },
+    "SubscribedMonitors": {
+      "variable_name": "SubscribedMonitors",
+      "characteristics": {
+        "supportsMonitoring": true,
+        "dataType": "MemberList"
+      },
+      "attributes": [
+        {
+          "type": "Actual",
+          "mutability": "ReadWrite",
+          "value": ""
+        }
+      ],
+      "description": "Comma separated list of the monitor ids whose NotifyEvents the CSMS wants to be sent. The charging station adds a monitor here when the CSMS installs it and removes it when it is cleared. A monitor listed by nobody is reported to the CSMS anyway, so preconfigured monitors need no entry. Never writable by a secondary OCPP connection, so that it cannot unsubscribe the CSMS from its own monitors.",
+      "type": "string"
+    },
     "ItemsPerMessageSetVariableMonitoring": {
       "variable_name": "ItemsPerMessage",
       "characteristics": {

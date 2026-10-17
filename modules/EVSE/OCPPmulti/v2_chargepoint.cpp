@@ -443,6 +443,16 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
                                                               network_connection_profile, protocol_version),
             protocol_version);
     };
+    callbacks.secondary_connection_state_changed_callback = [this](const std::string& connection_id, auto is_connected,
+                                                                   auto configuration_slot,
+                                                                   const auto& network_connection_profile,
+                                                                   auto protocol_version) {
+        auto status = module::conversions::to_everest_connection_status(is_connected, configuration_slot,
+                                                                        network_connection_profile, protocol_version);
+        status.connection_id = connection_id;
+        status.connection_role = types::ocpp::ConnectionRole::Secondary;
+        m_callbacks_ptr->cb_secondary_connection_state_changed(status);
+    };
     callbacks.security_event_callback = [this](const auto& event_type, const auto& tech_info) {
         m_callbacks_ptr->cb_security_event(event_type, tech_info);
     };
@@ -502,6 +512,19 @@ void ChargePointV2::disconnect_websocket() {
     check_configured("disconnect_websocket");
     m_charge_point->disconnect_websocket();
 }
+
+void ChargePointV2::connect_all() {
+    check_configured("connect_all");
+    m_charge_point->connect_all();
+}
+void ChargePointV2::connect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("connect_websocket");
+    m_charge_point->connect_websocket(connection);
+}
+void ChargePointV2::disconnect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("disconnect_websocket");
+    m_charge_point->disconnect_websocket(connection);
+}
 void ChargePointV2::set_message_queue_resume_delay(std::chrono::seconds delay) {
     check_configured("set_message_queue_resume_delay");
     m_charge_point->set_message_queue_resume_delay(delay);
@@ -560,6 +583,11 @@ std::optional<std::string> ChargePointV2::get_tx_start_point() {
 std::optional<std::string> ChargePointV2::get_tx_stop_point() {
     return get_string(ocpp::v2::ControllerComponents::TxCtrlr, {TX_STOP_POINT_VAR_NAME},
                       ocpp::v2::AttributeEnum::Actual);
+}
+
+std::vector<ocpp::v2::ConnectionInfo> ChargePointV2::get_connections() {
+    check_configured("get_connections");
+    return m_charge_point->get_connections();
 }
 
 std::vector<ocpp::v2::EnhancedCompositeSchedule>

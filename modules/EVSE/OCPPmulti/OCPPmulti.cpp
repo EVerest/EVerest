@@ -5,6 +5,17 @@
 
 namespace module {
 
+namespace {
+/// Last segment of an everest_api/ocpp/cmd/<action>/<connection name> topic.
+std::string connection_name_from_topic(const std::string& topic) {
+    const auto last_separator = topic.rfind('/');
+    if (last_separator == std::string::npos) {
+        return {};
+    }
+    return topic.substr(last_separator + 1);
+}
+} // namespace
+
 // Note should any of these configuration items be read-write then
 // add a mutex to protect access
 
@@ -91,8 +102,19 @@ void OCPPmulti::init() {
 
     // support the everest_api inteface
     if (config.EnableExternalWebsocketControl) {
+        // The bare topics keep meaning the primary connection, so existing tooling is unaffected.
         mqtt.subscribe("everest_api/ocpp/cmd/connect", [this](const auto&) { m_ocpp.connect_websocket(); });
         mqtt.subscribe("everest_api/ocpp/cmd/disconnect", [this](const auto&) { m_ocpp.disconnect_websocket(); });
+
+        // .../connect/<connection name> addresses one OCPP connection, .../connect/* all of them.
+        // A single-level wildcard rather than '#', so that the bare topics above are not matched
+        // twice.
+        mqtt.subscribe("everest_api/ocpp/cmd/connect/+", [this](const std::string& topic, const std::string&) {
+            m_ocpp.connect_websocket(connection_name_from_topic(topic));
+        });
+        mqtt.subscribe("everest_api/ocpp/cmd/disconnect/+", [this](const std::string& topic, const std::string&) {
+            m_ocpp.disconnect_websocket(connection_name_from_topic(topic));
+        });
     }
 
     subscribe_global_all_errors([this](const auto& arg) { m_ocpp.cb_error_handler(arg); },

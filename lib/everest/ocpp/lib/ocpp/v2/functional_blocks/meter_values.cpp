@@ -4,12 +4,14 @@
 #include <ocpp/v2/functional_blocks/meter_values.hpp>
 
 #include <ocpp/common/constants.hpp>
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/evse_manager.hpp>
 #include <ocpp/v2/functional_blocks/functional_block_context.hpp>
 #include <ocpp/v2/message_dispatcher.hpp>
 #include <ocpp/v2/messages/MeterValues.hpp>
+#include <ocpp/v2/utils.hpp>
 
 ocpp::v2::MeterValues::MeterValues(const FunctionalBlockContext& functional_block_context) :
     context(functional_block_context) {
@@ -21,6 +23,10 @@ void ocpp::v2::MeterValues::handle_message(const ocpp::EnhancedMessage<MessageTy
 
 void ocpp::v2::MeterValues::update_aligned_data_interval() {
     using namespace std::chrono_literals;
+
+    // Every connection's interval is its own: the charging station having none does not mean a
+    // secondary connection has none.
+    this->update_secondary_aligned_data_intervals();
 
     auto interval = std::chrono::seconds(
         this->context.device_model.get_value<int>(ControllerComponentVariables::AlignedDataInterval));
@@ -87,12 +93,114 @@ void ocpp::v2::MeterValues::update_aligned_data_interval() {
         interval, std::chrono::floor<date::days>(date::utc_clock::to_sys(date::utc_clock::now())));
 }
 
+void ocpp::v2::MeterValues::update_secondary_aligned_data_intervals() {
+    using namespace std::chrono_literals;
+
+    const std::lock_guard<std::mutex> lock(this->secondary_aligned_data_mutex);
+
+    for (const auto& connection : this->context.connections.connection_ids()) {
+        if (connection.is_primary()) {
+            continue;
+        }
+
+        const auto interval = std::chrono::seconds(
+            this->context.device_model
+                .get_optional_value<std::int32_t>({ConnectionComponentVariables::aligned_data_ctrlr(connection),
+                                                   ConnectionComponentVariables::Interval})
+                .value_or(0));
+
+        auto entry = this->secondary_aligned_data.find(connection);
+        if (interval <= 0s) {
+            if (entry != this->secondary_aligned_data.end()) {
+                entry->second->timer.stop();
+            }
+            continue;
+        }
+
+        if (entry == this->secondary_aligned_data.end()) {
+            auto data = std::make_unique<ConnectionAlignedData>();
+            // Every EVSE up front, so that neither on_meter_value nor the timer callback ever
+            // changes the shape of the map while the other is reading it. The averages themselves
+            // are individually locked.
+            for (const auto& evse : this->context.evse_manager) {
+                data->per_evse[evse.get_id()];
+            }
+            entry = this->secondary_aligned_data.emplace(connection, std::move(data)).first;
+        }
+
+        auto* data = entry->second.get();
+        data->timer.interval_starting_from(
+            [this, connection, data, interval]() {
+                this->send_secondary_aligned_meter_values(connection, *data, interval);
+            },
+            interval, std::chrono::floor<date::days>(date::utc_clock::to_sys(date::utc_clock::now())));
+    }
+}
+
+void ocpp::v2::MeterValues::send_secondary_aligned_meter_values(const ConnectionId& connection,
+                                                                ConnectionAlignedData& data,
+                                                                const std::chrono::seconds interval) {
+    // These are this connection's own values, sent whether or not a transaction is running: the
+    // point of section 4.5.1 is that an energy management system needs to see what is happening
+    // now, which is exactly while a car is charging. They are additional to the TransactionEvent
+    // copies the connection may also be receiving.
+    const auto measurands = this->context.device_model.get_optional_value<std::string>(
+        {ConnectionComponentVariables::aligned_data_ctrlr(connection), ConnectionComponentVariables::Measurands});
+    if (!measurands.has_value()) {
+        EVLOG_warning << "OCPP connection " << connection.to_string()
+                      << " has a clock-aligned meter value interval but no measurands, so nothing is sent";
+        return;
+    }
+    const auto measurands_vec = utils::get_measurands_vec(measurands.value());
+
+    const bool align_timestamps =
+        this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::RoundClockAlignedTimestamps)
+            .value_or(false);
+
+    const auto prepare = [&](AverageMeterValues& average) {
+        auto meter_value =
+            utils::get_meter_value_with_measurands_applied(average.retrieve_processed_values(), measurands_vec);
+        average.clear_values();
+        for (auto& sampled_value : meter_value.sampledValue) {
+            sampled_value.context = ReadingContextEnum::Sample_Clock;
+        }
+        if (align_timestamps) {
+            meter_value.timestamp = utils::align_timestamp(DateTime{}, interval);
+        }
+        return meter_value;
+    };
+
+    const ConnectionTargetScope target(connection);
+
+    if (auto meter_value = prepare(data.evse0); !meter_value.sampledValue.empty()) {
+        this->meter_values_req(0, std::vector<ocpp::v2::MeterValue>(1, meter_value));
+    }
+
+    for (auto& [evse_id, average] : data.per_evse) {
+        if (auto meter_value = prepare(average); !meter_value.sampledValue.empty()) {
+            this->meter_values_req(evse_id, std::vector<ocpp::v2::MeterValue>(1, meter_value));
+        }
+    }
+}
+
 void ocpp::v2::MeterValues::on_meter_value(const std::int32_t evse_id, const MeterValue& meter_value) {
     if (evse_id == 0) {
         // if evseId = 0 then store in the chargepoint metervalues
         this->aligned_data_evse0.set_values(meter_value);
     } else {
         this->context.evse_manager.get_evse(evse_id).on_meter_value(meter_value);
+    }
+
+    // A secondary connection with clock-aligned meter values of its own averages over its own
+    // window, so it gets its own copy of the reading rather than sharing the charging station's
+    // accumulators, which are cleared on the charging station's schedule.
+    const std::lock_guard<std::mutex> lock(this->secondary_aligned_data_mutex);
+    for (auto& [connection, data] : this->secondary_aligned_data) {
+        if (evse_id == 0) {
+            data->evse0.set_values(meter_value);
+        } else if (const auto average = data->per_evse.find(evse_id); average != data->per_evse.end()) {
+            average->second.set_values(meter_value);
+        }
     }
 }
 

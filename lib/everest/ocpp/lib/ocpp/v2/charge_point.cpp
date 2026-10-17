@@ -105,14 +105,18 @@ ChargePoint::ChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connec
 }
 
 ChargePoint::~ChargePoint() {
-    // Suppress deferred websocket callbacks before any member is destroyed.
-    this->connectivity_manager->disarm_connection_callbacks();
+    // Suppress deferred websocket callbacks before any member is destroyed. Every connection's callbacks
+    // capture this charge point, not only the primary's.
+    this->connection_registry.disarm_connection_callbacks();
 }
 
 void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
-    this->connectivity_manager->set_message_callback(
-        std::bind(&ChargePoint::message_callback, this, std::placeholders::_1));
-    this->message_queue->start();
+    for (auto* connection : this->connection_registry.all()) {
+        const auto connection_id = connection->id();
+        connection->connectivity_manager().set_message_callback(
+            [this, connection_id](const std::string& message) { this->message_callback(connection_id, message); });
+        connection->message_queue().start();
+    }
 
     // Publish the initial default price before connecting (offline state at startup).
     if (this->tariff_and_cost != nullptr) {
@@ -124,7 +128,9 @@ void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     // Should be done before sending the BootNotification.req so that the correct states can be reported
     this->component_state_manager->trigger_all_effective_availability_changed_callbacks();
     // get transaction messages from db (if there are any) so they can be sent again.
-    this->message_queue->get_persisted_messages_from_db();
+    for (auto* connection : this->connection_registry.all()) {
+        connection->message_queue().get_persisted_messages_from_db();
+    }
     this->provisioning->boot_notification_req(bootreason);
     // call clear_invalid_charging_profiles when system boots
     this->clear_invalid_charging_profiles();
@@ -167,10 +173,14 @@ void ChargePoint::stop() {
     this->security->stop_certificate_expiration_check_timers();
     this->diagnostics->stop_monitoring();
     this->security->stop_certificate_signed_timer();
-    this->message_queue->stop();
+    for (auto* connection : this->connection_registry.all()) {
+        connection->message_queue().stop();
+    }
     // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
     // ~ChargePoint() disarms.
-    this->connectivity_manager->disconnect();
+    for (auto* connection : this->connection_registry.all()) {
+        connection->connectivity_manager().disconnect();
+    }
 }
 
 void ChargePoint::disconnect_websocket() {
@@ -214,6 +224,41 @@ void ChargePoint::connect_websocket(std::optional<std::int32_t> network_profile_
     this->message_queue->run_when_idle([this, network_profile_slot]() {
         this->connectivity_manager->connect(network_profile_slot);
         return this->connectivity_manager->is_websocket_connected();
+    });
+}
+
+void ChargePoint::connect_all() {
+    // Each connection dials on its own. A secondary whose endpoint is unreachable retries in its own
+    // connectivity manager and never holds up the primary connection.
+    for (auto* connection : this->connection_registry.all()) {
+        connection->message_queue().run_when_idle([connection]() {
+            connection->connectivity_manager().connect();
+            return connection->connectivity_manager().is_websocket_connected();
+        });
+    }
+}
+
+void ChargePoint::connect_websocket(const ConnectionId& connection_id) {
+    auto* connection = this->connection_registry.find(connection_id);
+    if (connection == nullptr) {
+        EVLOG_warning << "Cannot connect unknown OCPP connection " << connection_id.to_string();
+        return;
+    }
+    connection->message_queue().run_when_idle([connection]() {
+        connection->connectivity_manager().connect();
+        return connection->connectivity_manager().is_websocket_connected();
+    });
+}
+
+void ChargePoint::disconnect_websocket(const ConnectionId& connection_id) {
+    auto* connection = this->connection_registry.find(connection_id);
+    if (connection == nullptr) {
+        EVLOG_warning << "Cannot disconnect unknown OCPP connection " << connection_id.to_string();
+        return;
+    }
+    connection->message_queue().run_when_idle([connection]() {
+        connection->connectivity_manager().disconnect();
+        return false;
     });
 }
 void ChargePoint::on_session_started(const std::int32_t evse_id, const std::int32_t connector_id) {
@@ -439,8 +484,18 @@ void ChargePoint::on_log_status_notification(UploadLogStatusEnum status, std::in
     this->upload_log_status = status;
     this->upload_log_status_id = requestId;
 
+    // Application note section 5.3: back to whoever asked for the log, and once the upload has
+    // stopped there is nothing more to report for this requestId.
+    const bool last = status != UploadLogStatusEnum::Uploading;
+    const auto origin = this->request_origins.lookup(RequestOriginRegistry::RequestKind::Log, requestId, last);
+
     const ocpp::Call<LogStatusNotificationRequest> call(request);
-    this->message_dispatcher->dispatch_call(call);
+    if (origin.has_value() and !origin->is_primary()) {
+        const ConnectionTargetScope target(origin.value());
+        this->message_dispatcher->dispatch_call(call);
+    } else {
+        this->message_dispatcher->dispatch_call(call);
+    }
 }
 
 void ChargePoint::on_security_event(const CiString<50>& event_type, const std::optional<CiString<255>>& tech_info,
@@ -551,21 +606,20 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->configure_message_logging_format(message_log_path);
 
+    // Owned by the primary OcppConnection once that is built. Stays empty when the connectivity
+    // manager was supplied from outside, since it then brings its own configuration.
+    std::unique_ptr<ocpp::ConnectivityManagerConfiguration> primary_connectivity_configuration;
+
     if (this->connectivity_manager == nullptr) {
-        // connectivity manager was not provided in constructor. Create a new one and set the message callbacks
-        this->connectivity_manager =
-            std::make_shared<ConnectivityManager>(*this->device_model, this->evse_security, this->share_path);
-        this->connectivity_manager->set_websocket_connected_callback(
-            [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
-                   const OcppProtocolVersion ocpp_version) {
-                this->on_websocket_connected(configuration_slot, network_connection_profile, ocpp_version);
-            });
-        this->connectivity_manager->set_websocket_disconnected_callback(
-            [this](int configuration_slot, const NetworkConnectionProfile& network_connection_profile, auto) {
-                this->on_websocket_disconnected(configuration_slot, network_connection_profile);
-            });
-        this->connectivity_manager->set_websocket_connection_failed_callback(
-            std::bind(&ChargePoint::on_websocket_connection_failed, this, std::placeholders::_1));
+        // connectivity manager was not provided in constructor. Create a new one and set the message callbacks.
+        // The device model is reached through a per-connection configuration adapter rather than directly, so
+        // that every connection is configured the same way. For the primary connection the adapter delegates
+        // everything unchanged.
+        primary_connectivity_configuration =
+            std::make_unique<ConnectionConnectivityConfiguration>(*this->device_model, ConnectionId::primary());
+        this->connectivity_manager = std::make_shared<ConnectivityManager>(*primary_connectivity_configuration,
+                                                                           this->evse_security, this->share_path);
+        this->wire_connectivity_callbacks(*this->connectivity_manager, ConnectionId::primary());
     }
     this->connectivity_manager->set_logging(this->logging);
 
@@ -602,13 +656,37 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             this->database_handler);
     }
 
-    this->message_dispatcher =
-        std::make_unique<MessageDispatcher>(*this->message_queue, *this->device_model, registration_status);
+    // Register the primary connection. Its leaf dispatcher is the plain per-queue dispatcher; the
+    // router in front of it is what the functional blocks see.
+    this->connection_registry.add(std::make_unique<OcppConnection>(
+        ConnectionId::primary(), std::move(primary_connectivity_configuration), this->connectivity_manager,
+        this->message_queue,
+        std::make_unique<MessageDispatcher>(*this->message_queue, *this->device_model, registration_status),
+        *this->device_model));
+
+    // Secondary connections come from the device model. Registered after the primary so that the
+    // primary is fully usable even if building a secondary one goes wrong.
+    for (const auto& info : discover_connections(*this->device_model)) {
+        if (info.id.is_primary()) {
+            continue;
+        }
+        try {
+            this->add_secondary_connection(info);
+        } catch (const std::exception& e) {
+            EVLOG_error << "Could not set up secondary OCPP connection " << info.id.to_string() << ": " << e.what()
+                        << "; continuing without it";
+        }
+    }
+
+    auto routing_dispatcher = std::make_unique<ConnectionRoutingDispatcher>(this->connection_registry);
+    routing_dispatcher->add_outbound_transform(make_transaction_event_id_token_transform());
+    this->message_dispatcher = std::move(routing_dispatcher);
 
     // Construct functional blocks.
     functional_block_context = std::make_unique<FunctionalBlockContext>(
         *this->message_dispatcher, *this->device_model, *this->connectivity_manager, *this->evse_manager,
-        *this->database_handler, *this->evse_security, *this->component_state_manager, this->ocpp_version);
+        *this->database_handler, *this->evse_security, *this->component_state_manager, this->ocpp_version,
+        this->connection_registry, this->request_origins);
 
     this->device_model->register_variable_listener(
         [this](const std::unordered_map<std::int64_t, VariableMonitoringMeta>& /*monitors*/, const Component& component,
@@ -618,6 +696,18 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
             if ((component.name == "DCDERCtrlr" || component.name == "ACDERCtrlr") &&
                 (variable.name == "Enabled" || variable.name == "Available") && value_current == "true") {
                 this->build_der_control_if_enabled();
+            }
+
+            // A connection's allow list is meant to be changed at runtime by the CSMS, so granting
+            // or revoking a message must take effect without a restart.
+            if (component.name == ControllerComponents::OCPPCommCtrlr.name and component.instance.has_value() and
+                (variable.name == ConnectionComponentVariables::UpstreamMsgs.name or
+                 variable.name == ConnectionComponentVariables::DownstreamMsgs.name)) {
+                if (auto* connection =
+                        this->connection_registry.find(ConnectionId::secondary(component.instance.value().get()));
+                    connection != nullptr) {
+                    connection->reload_permissions();
+                }
             }
         });
 
@@ -1043,11 +1133,22 @@ void ChargePoint::handle_message(const EnhancedMessage<v2::MessageType>& message
     }
 }
 
-void ChargePoint::message_callback(const std::string& message) {
+void ChargePoint::message_callback(const ConnectionId& connection_id, const std::string& message) {
+    // Published for the whole of this call: every response produced below, however deep in a
+    // functional block, is routed back to the connection the message arrived on.
+    const ConnectionScope connection_scope(connection_id);
+
+    auto* connection = this->connection_registry.find(connection_id);
+    if (connection == nullptr) {
+        EVLOG_error << "Received a message on unregistered OCPP connection " << connection_id.to_string()
+                    << "; dropping it";
+        return;
+    }
+
     this->logging->raw(message, LogType::CentralSystem);
     EnhancedMessage<v2::MessageType> enhanced_message;
     try {
-        enhanced_message = this->message_queue->receive(message);
+        enhanced_message = connection->message_queue().receive(message);
     } catch (const json::exception& e) {
         this->logging->central_system("Unknown", message);
         EVLOG_error << "JSON exception during reception of message: " << e.what();
@@ -1109,6 +1210,32 @@ void ChargePoint::message_callback(const std::string& message) {
     enhanced_message.message_size = message.size();
     auto json_message = enhanced_message.message;
     this->logging->central_system(conversions::messagetype_to_string(enhanced_message.messageType), message);
+
+    // Application note section 3.5: a request a connection has not been granted is refused with a
+    // CALLERROR(SecurityError). Only requests are gated. A response is never refused, because it
+    // answers something the charging station itself chose to send.
+    if (enhanced_message.messageTypeId == MessageTypeId::CALL and
+        !connection->may_receive(enhanced_message.messageType)) {
+        const auto action = conversions::messagetype_to_string(enhanced_message.messageType);
+        EVLOG_warning << "Refusing " << action << " from " << connection_id.to_string()
+                      << ": not in its allowed downstream messages";
+        this->message_dispatcher->dispatch_call_error(CallError(
+            enhanced_message.uniqueId, "SecurityError", action + " is not allowed on this OCPP connection", json({})));
+        return;
+    }
+
+    // Every connection delivers on its own websocket receive thread, but the functional blocks,
+    // the device model, the EVSEs and the database behind them are shared and were written for a
+    // single one. Serialising the handling makes the several-connection case behave exactly like
+    // the single-connection case, at the cost of one lock per inbound message, which is nothing at
+    // OCPP message rates.
+    //
+    // This holds only because no code path under handle_message blocks on a response future:
+    // every dispatch_call_async caller (Authorize, Get15118EVCertificate, DataTransfer) is reached
+    // from EVerest or from a timer, never from an inbound message. Keep it that way, or a
+    // connection waiting for its own answer would deadlock every other connection.
+    const std::lock_guard<std::recursive_mutex> inbound_lock(this->inbound_mutex);
+
     try {
         if (this->registration_status == RegistrationStatusEnum::Accepted) {
             this->handle_message(enhanced_message);
@@ -1237,13 +1364,76 @@ std::optional<DataTransferResponse> ChargePoint::data_transfer_req(const DataTra
     return this->data_transfer->data_transfer_req(request);
 }
 
+// Kept for an externally supplied ConnectivityManager, which drives the charging station's primary
+// connection and knows nothing about connection ids.
 void ChargePoint::on_websocket_connected(const int configuration_slot,
                                          const NetworkConnectionProfile& network_connection_profile,
                                          const OcppProtocolVersion ocpp_version) {
-    this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
-    this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
-                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
-    this->message_queue->resume(this->message_queue_resume_delay);
+    this->on_websocket_connected(ConnectionId::primary(), configuration_slot, network_connection_profile, ocpp_version);
+}
+
+void ChargePoint::on_websocket_disconnected(const int configuration_slot,
+                                            const NetworkConnectionProfile& network_connection_profile) {
+    this->on_websocket_disconnected(ConnectionId::primary(), configuration_slot, network_connection_profile);
+}
+
+void ChargePoint::wire_connectivity_callbacks(ConnectivityManagerInterface& connectivity_manager,
+                                              const ConnectionId& connection_id) {
+    connectivity_manager.set_websocket_connected_callback(
+        [this, connection_id](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
+                              const OcppProtocolVersion ocpp_version) {
+            this->on_websocket_connected(connection_id, configuration_slot, network_connection_profile, ocpp_version);
+        });
+    connectivity_manager.set_websocket_disconnected_callback(
+        [this, connection_id](int configuration_slot, const NetworkConnectionProfile& network_connection_profile,
+                              auto) {
+            this->on_websocket_disconnected(connection_id, configuration_slot, network_connection_profile);
+        });
+    connectivity_manager.set_websocket_connection_failed_callback([this, connection_id](ConnectionFailedReason reason) {
+        this->on_websocket_connection_failed(connection_id, reason);
+    });
+}
+
+void ChargePoint::on_websocket_connected(const ConnectionId& connection_id, const std::int32_t configuration_slot,
+                                         const NetworkConnectionProfile& network_connection_profile,
+                                         const OcppProtocolVersion ocpp_version) {
+    auto* connection = this->connection_registry.find(connection_id);
+    if (connection == nullptr) {
+        EVLOG_error << "Websocket of unregistered OCPP connection " << connection_id.to_string() << " connected";
+        return;
+    }
+
+    connection->message_queue().update_message_timeout(network_connection_profile.messageTimeout);
+    if (connection_id.is_primary()) {
+        // The instance-less OCPPCommCtrlr.MessageTimeout reports the primary connection's active slot.
+        this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
+                                                       VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
+    }
+    connection->message_queue().resume(this->message_queue_resume_delay);
+
+    // This connection is up again, so the next time it fails the notification is worth sending
+    // again.
+    this->invalid_csms_certificate_reported.erase(connection_id);
+
+    if (!connection_id.is_primary()) {
+        // A secondary connection reports itself so the far end knows who it is talking to, but its
+        // BootNotificationResponse is ignored (application note section 4.2) and its registration
+        // status is Accepted from the start, so nothing here waits on an answer.
+        {
+            const ConnectionTargetScope target(connection_id);
+            this->provisioning->boot_notification_req(this->bootreason);
+        }
+        this->start_heartbeat_for(*connection);
+
+        if (this->callbacks.secondary_connection_state_changed_callback.has_value()) {
+            this->callbacks.secondary_connection_state_changed_callback.value()(
+                connection_id.instance().value(), true, configuration_slot, network_connection_profile, ocpp_version);
+        }
+        return;
+    }
+
+    // The negotiated protocol version of the primary connection is the one the charging station
+    // presents to EVerest; a secondary connection may well have negotiated a different one.
     this->ocpp_version = ocpp_version;
     const auto time_disconnected = this->connectivity_manager->get_time_disconnected();
     if (this->smart_charging != nullptr && time_disconnected.time_since_epoch() != 0s) {
@@ -1276,9 +1466,6 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
         }
     }
 
-    // We have a connection again so next time it fails we should send the notification again
-    this->skip_invalid_csms_certificate_notifications = false;
-
     if (this->callbacks.connection_state_changed_callback.has_value()) {
         this->callbacks.connection_state_changed_callback.value()(true, configuration_slot, network_connection_profile,
                                                                   ocpp_version);
@@ -1288,9 +1475,27 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
     }
 }
 
-void ChargePoint::on_websocket_disconnected(const int configuration_slot,
+void ChargePoint::on_websocket_disconnected(const ConnectionId& connection_id, const std::int32_t configuration_slot,
                                             const NetworkConnectionProfile& network_connection_profile) {
-    this->message_queue->pause();
+    auto* connection = this->connection_registry.find(connection_id);
+    if (connection == nullptr) {
+        EVLOG_error << "Websocket of unregistered OCPP connection " << connection_id.to_string() << " disconnected";
+        return;
+    }
+
+    connection->message_queue().pause();
+
+    if (!connection_id.is_primary()) {
+        // Only this connection is affected. Certificate expiry checks and the offline price belong
+        // to the charging station as a whole and must not be disturbed by a secondary going away.
+        connection->stop_heartbeat();
+        if (this->callbacks.secondary_connection_state_changed_callback.has_value()) {
+            this->callbacks.secondary_connection_state_changed_callback.value()(
+                connection_id.instance().value(), false, configuration_slot, network_connection_profile,
+                this->ocpp_version);
+        }
+        return;
+    }
 
     this->security->stop_certificate_expiration_check_timers();
     if (this->smart_charging != nullptr) {
@@ -1305,13 +1510,25 @@ void ChargePoint::on_websocket_disconnected(const int configuration_slot,
     }
 }
 
-void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) {
+void ChargePoint::on_websocket_connection_failed(const ConnectionId& connection_id,
+                                                 const ConnectionFailedReason reason) {
+    if (!connection_id.is_primary()) {
+        EVLOG_warning << "Connection attempt of " << connection_id.to_string() << " failed";
+    }
+
+    // Section 5.6: a security event about one connection's own security concerns only that
+    // connection, so it is reported to that connection and to nobody else. Telling the CSMS that a
+    // secondary connection failed to authenticate would present somebody else's link problem as
+    // the charging station's own.
+    const ConnectionTargetScope target(connection_id);
+
     switch (reason) {
     case ConnectionFailedReason::InvalidCSMSCertificate:
-        if (!this->skip_invalid_csms_certificate_notifications) {
+        // Once per connection per successful connect, so a connection retrying in a loop does not
+        // fill its own queue with the same event.
+        if (this->invalid_csms_certificate_reported.insert(connection_id).second) {
             this->security->security_event_notification_req(CiString<50>(ocpp::security_events::INVALIDCSMSCERTIFICATE),
                                                             std::nullopt, true, true);
-            this->skip_invalid_csms_certificate_notifications = true;
         } else {
             EVLOG_debug << "Skipping InvalidCsmsCertificate SecurityEvent since it has been sent already";
         }
@@ -1329,6 +1546,10 @@ void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) 
         break;
     }
     }
+}
+
+void ChargePoint::on_websocket_connection_failed(ConnectionFailedReason reason) {
+    this->on_websocket_connection_failed(ConnectionId::primary(), reason);
 }
 
 void ChargePoint::update_dm_availability_state(const std::int32_t evse_id, const std::int32_t connector_id,
@@ -1421,6 +1642,67 @@ std::vector<EnhancedCompositeSchedule> ChargePoint::get_all_composite_schedules(
         return {};
     }
     return this->smart_charging->get_all_composite_schedules(duration_s, unit);
+}
+
+void ChargePoint::add_secondary_connection(const ConnectionInfo& info) {
+    auto configuration = std::make_unique<ConnectionConnectivityConfiguration>(*this->device_model, info.id);
+    auto connectivity_manager =
+        std::make_shared<ConnectivityManager>(*configuration, this->evse_security, this->share_path);
+    connectivity_manager->set_logging(this->logging);
+    this->wire_connectivity_callbacks(*connectivity_manager, info.id);
+
+    // Accepted from the start, and never changed: the application note says a secondary connection's
+    // BootNotificationResponse is ignored, so a queue that waited for one would never drain.
+    this->secondary_registration_statuses.push_back(
+        std::make_unique<std::atomic<RegistrationStatusEnum>>(RegistrationStatusEnum::Accepted));
+    auto& registration_status = *this->secondary_registration_statuses.back();
+
+    MessageQueueConfig<v2::MessageType> queue_config{
+        this->device_model->get_value<int>(ControllerComponentVariables::MessageAttempts),
+        this->device_model->get_value<int>(ControllerComponentVariables::MessageAttemptInterval),
+        this->device_model->get_optional_value<int>(ControllerComponentVariables::MessageQueueSizeThreshold)
+            .value_or(DEFAULT_MESSAGE_QUEUE_SIZE_THRESHOLD),
+        this->device_model->get_optional_value<bool>(ControllerComponentVariables::QueueAllMessages).value_or(false),
+        {},
+        this->device_model->get_value<int>(ControllerComponentVariables::MessageTimeout)};
+    // Tags this connection's persisted messages so a reboot does not replay them on another
+    // connection, and so removing one never touches another connection's row.
+    queue_config.connection = info.id.instance();
+
+    auto message_queue = std::make_shared<ocpp::MessageQueue<v2::MessageType>>(
+        [connectivity_manager](const json& message) -> bool {
+            return connectivity_manager->send_to_websocket(message.dump());
+        },
+        queue_config, this->database_handler);
+
+    auto dispatcher = std::make_unique<MessageDispatcher>(*message_queue, *this->device_model, registration_status);
+
+    this->connection_registry.add(
+        std::make_unique<OcppConnection>(info.id, std::move(configuration), std::move(connectivity_manager),
+                                         std::move(message_queue), std::move(dispatcher), *this->device_model));
+    EVLOG_info << "Registered secondary OCPP connection " << info.id.to_string();
+}
+
+void ChargePoint::start_heartbeat_for(OcppConnection& connection) {
+    const auto interval =
+        this->device_model
+            ->get_optional_value<int>(ConnectionComponentVariables::get_component_variable(
+                connection.id(), ConnectionComponentVariables::HeartbeatInterval))
+            .value_or(this->device_model->get_value<int>(ControllerComponentVariables::HeartbeatInterval));
+
+    const auto connection_id = connection.id();
+    connection.start_heartbeat(
+        [this, connection_id]() {
+            const ConnectionTargetScope target(connection_id);
+            this->availability->heartbeat_req();
+        },
+        std::chrono::seconds(interval));
+}
+
+std::vector<ConnectionInfo> ChargePoint::get_connections() {
+    // Read from the device model rather than from the registry: this reports how the charging
+    // station is configured, which includes connections that are not currently dialled.
+    return discover_connections(*this->device_model);
 }
 
 std::optional<NetworkConnectionProfile>

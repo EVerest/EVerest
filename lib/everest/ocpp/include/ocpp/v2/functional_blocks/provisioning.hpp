@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <ocpp/v2/connection_id.hpp>
 #include <ocpp/v2/message_handler.hpp>
 
 namespace ocpp::v2 {
@@ -127,6 +128,25 @@ private:
     /// \brief Helper function to determine if the requested change results in a state that the Connector(s) is/are
     /// already in \param request \return
     void handle_variable_changed(const SetVariableData& set_variable_data);
+    /// \brief The connection whose NetworkConfigurationPriority lists \p slot, or the primary
+    ///        connection when none does.
+    ConnectionId connection_owning_slot(std::int32_t slot);
+
+    /// \brief The security profile \p connection last connected with, or 0 if it never has.
+    std::int32_t confirmed_security_profile(const ConnectionId& connection);
+
+    /// \brief Records which connection asked for the report with this requestId, so its
+    ///        NotifyReports go back to that connection.
+    void remember_report_origin(std::int32_t request_id);
+
+    /// \brief Reports as ReadOnly, to the connection currently being served, every variable that
+    ///        connection may not actually write.
+    void apply_connection_mutability(std::vector<ReportData>& report_data);
+
+    /// \brief Records that a secondary connection changed the device model, so that a CSMS can tell
+    ///        something changed since the report it last asked for.
+    void record_external_config_change(const std::map<SetVariableData, SetVariableResult>& set_variable_results);
+
     void handle_variables_changed(const std::map<SetVariableData, SetVariableResult>& set_variable_results);
     /// \brief Validate a SetVariable request
     /// \param set_variable_data The variable data to validate
@@ -134,17 +154,21 @@ private:
     std::optional<std::string> validate_set_variable(const SetVariableData& set_variable_data);
     std::optional<std::string> validate_set_network_configuration_slot(const SetVariableData& set_variable_data,
                                                                        const ComponentVariable& cv);
-    std::optional<std::string> validate_network_configuration_priority(const SetVariableData& set_variable_data);
+    /// \brief Validate a new NetworkConfigurationPriority of \p connection
+    std::optional<std::string> validate_network_configuration_priority(const SetVariableData& set_variable_data,
+                                                                       const ConnectionId& connection);
 
     /// \brief Check that a network profile's URL scheme matches its security profile
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_content(int32_t configuration_slot,
                                                                 const NetworkConnectionProfile& profile);
 
-    /// \brief Validate certificate preconditions for a priority slot above the active security profile
+    /// \brief Validate certificate preconditions for a priority slot above the active security profile of
+    /// \p connection
     /// \return std::nullopt if valid, or a reason code string if rejected
     std::optional<std::string> validate_network_profile_security_preconditions(int32_t configuration_slot,
-                                                                               const NetworkConnectionProfile& profile);
+                                                                               const NetworkConnectionProfile& profile,
+                                                                               const ConnectionId& connection);
 
     /// \brief B09.FR.26/27: Clear the given NetworkConfiguration variable on the currently active slot
     /// so subsequent reads fall back to the SecurityCtrlr global per B09.FR.16. Does nothing if no slot

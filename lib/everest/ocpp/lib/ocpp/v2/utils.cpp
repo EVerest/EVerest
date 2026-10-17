@@ -219,6 +219,19 @@ bool is_critical(const std::string& security_event) {
     return false;
 }
 
+bool is_connection_specific(const std::string& security_event) {
+    // Application note section 5.6. Every one of these is about the credentials, the certificates
+    // or the TLS parameters of one OCPP connection, so it means nothing to any other connection
+    // and would tell it something about a link it has no business knowing about.
+    return security_event == ocpp::security_events::FAILEDTOAUTHENTICATEATCSMS or
+           security_event == ocpp::security_events::CSMSFAILEDTOAUTHENTICATE or
+           security_event == ocpp::security_events::INVALIDCSMSCERTIFICATE or
+           security_event == ocpp::security_events::INVALIDCHARGINGSTATIONCERTIFICATE or
+           security_event == ocpp::security_events::DISCARDEDRENEWEDCLIENTCERTIFICATE or
+           security_event == ocpp::security_events::INVALIDTLSVERSION or
+           security_event == ocpp::security_events::INVALIDTLSCIPHERSUITE;
+}
+
 std::vector<ChargingProfilePurposeEnum> get_charging_profile_purposes(const std::string& csl) {
     std::vector<ChargingProfilePurposeEnum> purposes;
     const auto purposes_vec = split_string(csl, ',');

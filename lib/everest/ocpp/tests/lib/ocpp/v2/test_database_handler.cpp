@@ -1416,3 +1416,71 @@ TEST_F(DatabaseHandlerTest, GetAllChargingProfiles_ThrowsOnLockedDatabase) {
     blocking_conn.execute_statement("ROLLBACK");
     blocking_conn.close_connection();
 }
+
+/// \brief Persisted messages are kept apart per OCPP connection.
+///
+/// Without this, a charging station with a secondary connection would replay the other connection's
+/// messages on boot, and removing a message could delete a different connection's row.
+class DatabaseHandlerMessageQueueConnectionTest : public DatabaseHandlerTest {
+protected:
+    static common::DBTransactionMessage message(const std::string& unique_id) {
+        common::DBTransactionMessage db_message;
+        db_message.unique_id = unique_id;
+        db_message.message_type = "TransactionEvent";
+        db_message.message_attempts = 0;
+        db_message.timestamp = DateTime{"2026-01-01T00:00:00Z"};
+        db_message.json_message = json::array({2, unique_id, "TransactionEvent", json::object()});
+        return db_message;
+    }
+
+    static std::vector<std::string> unique_ids(const std::vector<common::DBTransactionMessage>& messages) {
+        std::vector<std::string> ids;
+        ids.reserve(messages.size());
+        for (const auto& message : messages) {
+            ids.push_back(message.unique_id);
+        }
+        return ids;
+    }
+};
+
+TEST_F(DatabaseHandlerMessageQueueConnectionTest, each_connection_reads_only_its_own_messages) {
+    this->database_handler.insert_message_queue_message(message("primary-1"), QueueType::Transaction, std::nullopt);
+    this->database_handler.insert_message_queue_message(message("ems-1"), QueueType::Transaction, "EMS");
+
+    EXPECT_EQ(unique_ids(this->database_handler.get_message_queue_messages(QueueType::Transaction, std::nullopt)),
+              std::vector<std::string>{"primary-1"});
+    EXPECT_EQ(unique_ids(this->database_handler.get_message_queue_messages(QueueType::Transaction, "EMS")),
+              std::vector<std::string>{"ems-1"});
+}
+
+TEST_F(DatabaseHandlerMessageQueueConnectionTest, an_untagged_message_belongs_to_the_primary_connection) {
+    // Rows written before messages were tagged carry no connection, and must still be replayed by
+    // the primary connection after an upgrade.
+    this->database_handler.insert_message_queue_message(message("legacy"), QueueType::Transaction);
+
+    EXPECT_EQ(unique_ids(this->database_handler.get_message_queue_messages(QueueType::Transaction)),
+              std::vector<std::string>{"legacy"});
+    EXPECT_TRUE(this->database_handler.get_message_queue_messages(QueueType::Transaction, "EMS").empty());
+}
+
+TEST_F(DatabaseHandlerMessageQueueConnectionTest, removing_a_message_never_touches_another_connection) {
+    this->database_handler.insert_message_queue_message(message("primary-1"), QueueType::Transaction, std::nullopt);
+    this->database_handler.insert_message_queue_message(message("ems-1"), QueueType::Transaction, "EMS");
+
+    this->database_handler.remove_message_queue_message("ems-1", QueueType::Transaction, "EMS");
+
+    EXPECT_EQ(unique_ids(this->database_handler.get_message_queue_messages(QueueType::Transaction, std::nullopt)),
+              std::vector<std::string>{"primary-1"});
+    EXPECT_TRUE(this->database_handler.get_message_queue_messages(QueueType::Transaction, "EMS").empty());
+}
+
+TEST_F(DatabaseHandlerMessageQueueConnectionTest, clearing_a_queue_only_clears_that_connection) {
+    this->database_handler.insert_message_queue_message(message("primary-1"), QueueType::Normal, std::nullopt);
+    this->database_handler.insert_message_queue_message(message("ems-1"), QueueType::Normal, "EMS");
+
+    this->database_handler.clear_message_queue(QueueType::Normal, "EMS");
+
+    EXPECT_EQ(unique_ids(this->database_handler.get_message_queue_messages(QueueType::Normal, std::nullopt)),
+              std::vector<std::string>{"primary-1"});
+    EXPECT_TRUE(this->database_handler.get_message_queue_messages(QueueType::Normal, "EMS").empty());
+}

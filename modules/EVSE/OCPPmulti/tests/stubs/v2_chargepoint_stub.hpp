@@ -18,6 +18,9 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
     MOCK_METHOD(void, stop, (), (override));
     MOCK_METHOD(void, connect_websocket, (std::optional<std::int32_t> network_profile_slot), (override));
     MOCK_METHOD(void, disconnect_websocket, (), (override));
+    MOCK_METHOD(void, connect_all, (), (override));
+    MOCK_METHOD(void, connect_websocket, (const ocpp::v2::ConnectionId& connection), (override));
+    MOCK_METHOD(void, disconnect_websocket, (const ocpp::v2::ConnectionId& connection), (override));
     MOCK_METHOD(void, on_websocket_connected,
                 (const int configuration_slot, const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
                  const ocpp::OcppProtocolVersion ocpp_version),
@@ -110,6 +113,7 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
                 (const ocpp::v2::GetCompositeScheduleRequest& request), (override));
     MOCK_METHOD(std::optional<ocpp::v2::EnhancedCompositeSchedule>, get_composite_schedule,
                 (std::int32_t evse_id, std::chrono::seconds duration, ocpp::v2::ChargingRateUnitEnum unit), (override));
+    MOCK_METHOD(std::vector<ocpp::v2::ConnectionInfo>, get_connections, (), (override));
     MOCK_METHOD(std::vector<ocpp::v2::EnhancedCompositeSchedule>, get_all_composite_schedules,
                 (const std::int32_t duration, const ocpp::v2::ChargingRateUnitEnum& unit), (override));
     MOCK_METHOD(std::optional<ocpp::v2::NetworkConnectionProfile>, get_network_connection_profile,
@@ -121,6 +125,8 @@ struct Ocpp2ChargePointMock : public ocpp::v2::ChargePointInterface {
 
 // gmock of the module-side callback sink used by the version wrappers
 struct GenericChargePointCallbacksMock : public ocpp_multi::GenericChargePointCallbacks {
+    MOCK_METHOD(void, cb_secondary_connection_state_changed, (const types::ocpp::ConnectionStatus& connection_status),
+                (override));
     MOCK_METHOD(void, cb_all_connectors_unavailable, (), (override));
     MOCK_METHOD(void, cb_boot_notification, (const ocpp::v2::BootNotificationResponse& boot_notification_response),
                 (override));

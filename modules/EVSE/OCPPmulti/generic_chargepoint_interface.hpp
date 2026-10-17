@@ -22,6 +22,7 @@
 #include <ocpp/v16/messages/GetConfiguration.hpp>
 #include <ocpp/v2/charge_point.hpp>
 #include <ocpp/v2/charge_point_callbacks.hpp>
+#include <ocpp/v2/connection_discovery.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
 #include <ocpp/v2/messages/Authorize.hpp>
 #include <ocpp/v2/messages/ChangeAvailability.hpp>
@@ -90,6 +91,12 @@ struct GenericChargePointCallbacks {
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
                                              ocpp::OcppProtocolVersion protocol_version) = 0;
+    /// \brief A secondary OCPP connection connected or disconnected.
+    ///
+    /// Separate from cb_connection_state_changed on purpose: that one keeps reporting the primary
+    /// connection only, because consumers collapse it into a single station-wide "connected"
+    /// indication.
+    virtual void cb_secondary_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status) = 0;
     virtual ocpp::v2::DataTransferResponse cb_data_transfer(const ocpp::v2::DataTransferRequest& request) = 0;
     virtual void cb_default_price(const types::session_cost::DefaultPrice& messages) = 0;
     /// \brief Carries the full set of currently-active DER controls, emitted after every accepted transition.
@@ -246,6 +253,12 @@ struct GenericChargePointInterface {
 
     virtual void connect_websocket() = 0;
     virtual void disconnect_websocket() = 0;
+    /// \brief Connects every configured OCPP connection, each independently of the others.
+    virtual void connect_all() = 0;
+    /// \brief Connects one OCPP connection by its name; the empty name is the primary connection.
+    virtual void connect_websocket(const ocpp::v2::ConnectionId& connection) = 0;
+    /// \brief Disconnects one OCPP connection by its name; the empty name is the primary connection.
+    virtual void disconnect_websocket(const ocpp::v2::ConnectionId& connection) = 0;
     virtual void set_message_queue_resume_delay(std::chrono::seconds delay) = 0;
     virtual bool restart() = 0;
     /// \param resuming_session_ids session ids of sessions that have been resumed (e.g. after power loss) and whose
@@ -256,6 +269,11 @@ struct GenericChargePointInterface {
 
     virtual std::optional<ocpp::v2::DataTransferResponse>
     data_transfer_req(const ocpp::v2::DataTransferRequest& request) = 0;
+
+    /// \brief The OCPP connections this charging station is configured for: the primary CSMS
+    ///        connection, always first, plus any secondary connection declared in the device model.
+    ///        OCPP 1.6 always reports just the primary. Requires init() to have run.
+    virtual std::vector<ocpp::v2::ConnectionInfo> get_connections() = 0;
 
     virtual std::vector<ocpp::v2::EnhancedCompositeSchedule>
     get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) = 0;

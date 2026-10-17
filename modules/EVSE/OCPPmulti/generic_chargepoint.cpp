@@ -69,6 +69,19 @@ void GenericChargePoint::disconnect_websocket() {
     m_active_ptr->disconnect_websocket();
 }
 
+void GenericChargePoint::connect_all() {
+    check_configured("connect_all");
+    m_active_ptr->connect_all();
+}
+void GenericChargePoint::connect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("connect_websocket");
+    m_active_ptr->connect_websocket(connection);
+}
+void GenericChargePoint::disconnect_websocket(const ocpp::v2::ConnectionId& connection) {
+    check_configured("disconnect_websocket");
+    m_active_ptr->disconnect_websocket(connection);
+}
+
 void GenericChargePoint::set_message_queue_resume_delay(std::chrono::seconds delay) {
     check_configured("set_message_queue_resume_delay");
     m_active_ptr->set_message_queue_resume_delay(delay);
@@ -140,6 +153,11 @@ std::vector<ocpp::v2::EnhancedCompositeSchedule>
 GenericChargePoint::get_all_composite_schedules(std::int32_t duration_s, ocpp::v2::ChargingRateUnitEnum unit) {
     check_configured("get_all_composite_schedules");
     return m_active_ptr->get_all_composite_schedules(duration_s, unit);
+}
+
+std::vector<ocpp::v2::ConnectionInfo> GenericChargePoint::get_connections() {
+    check_configured("get_connections");
+    return m_active_ptr->get_connections();
 }
 
 std::vector<ocpp::v2::GetVariableResult>

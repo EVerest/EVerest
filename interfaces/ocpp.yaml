@@ -176,8 +176,33 @@ vars:
       of the connection the status refers to. Published on every connect and disconnect.
       Replaces the removed is_connected var: the connected property carries the same information,
       the details are best effort and are omitted where the active OCPP version does not provide them.
+      Where an implementation supports secondary OCPP connections, this var describes the
+      primary (CSMS) connection only; see the connections var for the others.
     type: object
     $ref: /ocpp#/ConnectionStatus
+  secondary_connection_status:
+    description: >-
+      Indicates a connect or disconnect of a secondary OCPP connection, as described in
+      the OCA application note "Secondary OCPP Connection on a Charging Station"
+      (OCPP2.x only). The connection_id property says which connection it is and
+      connection_role is always Secondary. Published on connect and disconnect of a
+      secondary connection only: the primary connection is reported on connection_status
+      as before, so a consumer of connection_status never observes a secondary
+      connection's state. Not published by implementations that support a single
+      connection.
+    type: object
+    $ref: /ocpp#/ConnectionStatus
+  connections:
+    description: >-
+      Every OCPP connection the charging station is configured for: the primary CSMS
+      connection plus each configured secondary connection, as described in the OCA
+      application note "Secondary OCPP Connection on a Charging Station" (OCPP2.x only).
+      Published once when the module becomes ready, before the ready var, so a consumer
+      that waits for ready always sees the set of connections. Implementations that
+      support only a single connection publish a one element list. The connection_status
+      var is unaffected and keeps describing the primary connection.
+    type: object
+    $ref: /ocpp#/Connections
   ready:
     description: >-
       Indicates whether the OCPP service has finished its startup and accepts

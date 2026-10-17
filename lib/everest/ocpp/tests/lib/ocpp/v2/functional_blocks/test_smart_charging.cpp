@@ -8,6 +8,7 @@
 #include "lib/ocpp/test_temp_paths.hpp"
 #include "message_dispatcher_mock.hpp"
 #include "ocpp/common/types.hpp"
+#include "ocpp/v2/connection_scope.hpp"
 #include "ocpp/v2/ctrlr_component_variables.hpp"
 #include "ocpp/v2/device_model.hpp"
 #include "ocpp/v2/functional_blocks/functional_block_context.hpp"
@@ -1685,6 +1686,86 @@ TEST_F(SmartChargingTest, K01_ValidateTxProfile_AllowsExistingMatchingProfile) {
     auto sut = smart_charging.validate_tx_profile(profile, DEFAULT_EVSE_ID);
 
     EXPECT_THAT(sut, testing::Eq(ProfileValidationResultEnum::Valid));
+}
+
+/// \brief Which charging profile purposes each kind of OCPP connection may set.
+///
+/// Application note section 4.3 and K01.FR.22 are mirror images: the CSMS owns everything except
+/// the purposes an external system uses, and an external system owns nothing else. Between them the
+/// two sets of schedules can never overwrite one another.
+class SmartChargingConnectionPurposeTest : public SmartChargingTest {
+protected:
+    static constexpr const char* SECONDARY_INSTANCE = "EMS";
+
+    /// Sends a SetChargingProfile of \p purpose as if it had arrived on \p connection, and returns
+    /// the status the charging station answered with.
+    ChargingProfileStatusEnum set_profile_from(const ConnectionId& connection, const ChargingProfilePurposeEnum purpose,
+                                               const std::int32_t profile_id = DEFAULT_PROFILE_ID) {
+        auto periods = create_charging_schedule_periods({0});
+        auto profile = create_charging_profile(
+            profile_id, purpose,
+            create_charge_schedule(ChargingRateUnitEnum::A, periods, ocpp::DateTime("2024-01-17T17:00:00")));
+
+        SetChargingProfileRequest req;
+        req.evseId = 0;
+        req.chargingProfile = profile;
+
+        auto message = request_to_enhanced_message<SetChargingProfileRequest, MessageType::SetChargingProfile>(req);
+
+        ChargingProfileStatusEnum status{};
+        EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([&status](const json& call_result) {
+            status = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetChargingProfileResponse>().status;
+        }));
+
+        const ConnectionScope scope(connection);
+        smart_charging.handle_message(message);
+        return status;
+    }
+};
+
+TEST_F(SmartChargingConnectionPurposeTest, the_csms_may_not_set_an_external_constraints_profile) {
+    // K01.FR.22, unchanged: those profiles are not the CSMS's to set.
+    EXPECT_EQ(set_profile_from(ConnectionId::primary(), ChargingProfilePurposeEnum::ChargingStationExternalConstraints),
+              ChargingProfileStatusEnum::Rejected);
+}
+
+TEST_F(SmartChargingConnectionPurposeTest, a_secondary_may_set_an_external_constraints_profile) {
+    EXPECT_EQ(set_profile_from(ConnectionId::secondary(SECONDARY_INSTANCE),
+                               ChargingProfilePurposeEnum::ChargingStationExternalConstraints),
+              ChargingProfileStatusEnum::Accepted);
+}
+
+TEST_F(SmartChargingConnectionPurposeTest, a_secondary_may_not_set_a_csms_profile) {
+    // The mirror image of K01.FR.22: an external system owns only its own purposes.
+    for (const auto purpose :
+         {ChargingProfilePurposeEnum::TxDefaultProfile, ChargingProfilePurposeEnum::ChargingStationMaxProfile,
+          ChargingProfilePurposeEnum::PriorityCharging}) {
+        EXPECT_EQ(set_profile_from(ConnectionId::secondary(SECONDARY_INSTANCE), purpose),
+                  ChargingProfileStatusEnum::Rejected);
+    }
+}
+
+TEST_F(SmartChargingConnectionPurposeTest, a_secondary_may_update_a_profile_it_already_set) {
+    // K01.FR.05 stops the CSMS replacing an external constraints profile; it does not stop the
+    // system that owns it from updating it, which section 4.3 has it do.
+    ASSERT_EQ(set_profile_from(ConnectionId::secondary(SECONDARY_INSTANCE),
+                               ChargingProfilePurposeEnum::ChargingStationExternalConstraints),
+              ChargingProfileStatusEnum::Accepted);
+    EXPECT_EQ(set_profile_from(ConnectionId::secondary(SECONDARY_INSTANCE),
+                               ChargingProfilePurposeEnum::ChargingStationExternalConstraints),
+              ChargingProfileStatusEnum::Accepted);
+}
+
+TEST_F(SmartChargingConnectionPurposeTest, a_profile_records_the_connection_that_set_it) {
+    ASSERT_EQ(set_profile_from(ConnectionId::secondary(SECONDARY_INSTANCE),
+                               ChargingProfilePurposeEnum::ChargingStationExternalConstraints),
+              ChargingProfileStatusEnum::Accepted);
+
+    // Attribution, so a profile can be traced back to the system that set it and so the connection
+    // can later clear its own.
+    const auto reported = smart_charging.get_reported_profiles(GetChargingProfilesRequest{});
+    ASSERT_FALSE(reported.empty());
+    EXPECT_EQ(reported.front().source, CiString<20>(SECONDARY_INSTANCE));
 }
 
 TEST_F(SmartChargingTest, K01_SetChargingProfileRequest_ValidatesAndAddsProfile) {

@@ -3,7 +3,11 @@
 
 #pragma once
 
+#include <set>
+
+#include <ocpp/v2/connection_scope.hpp>
 #include <ocpp/v2/message_handler.hpp>
+#include <ocpp/v2/request_origin_registry.hpp>
 
 #include <ocpp/v2/monitoring_updater.hpp>
 
@@ -47,6 +51,30 @@ public:
                 std::optional<GetCustomerInformationCallback> get_customer_information_callback,
                 std::optional<ClearCustomerInformationCallback> clear_customer_information_callback);
     void handle_message(const ocpp::EnhancedMessage<MessageType>& message) override;
+    /// \brief The monitor ids \p connection wants NotifyEvents for.
+    std::set<std::int32_t> subscribed_monitors(const ConnectionId& connection);
+
+    /// \brief Stores \p ids as the monitors \p connection wants NotifyEvents for.
+    void set_subscribed_monitors(const ConnectionId& connection, const std::set<std::int32_t>& ids);
+
+    /// \brief Subscribes the connection currently being served to the monitors it just created.
+    void subscribe_monitors(const std::vector<std::int32_t>& monitor_ids);
+
+    /// \brief Drops \p monitor_ids from every connection's subscription, because they no longer
+    ///        exist.
+    void unsubscribe_monitors(const std::vector<std::int32_t>& monitor_ids);
+
+    /// \brief The connections a NotifyEvent reporting \p event should be sent to.
+    std::vector<ConnectionId> subscribers_for(const EventData& event);
+
+    /// \brief Records which connection asked for \p request_id of \p kind.
+    void remember_origin(RequestOriginRegistry::RequestKind kind, std::int32_t request_id);
+
+    /// \brief A scope pinning the messages that answer \p request_id to the connection that asked,
+    ///        or nullptr when that is the primary connection and ordinary routing applies.
+    std::shared_ptr<ConnectionTargetScope> target_for(RequestOriginRegistry::RequestKind kind, std::int32_t request_id,
+                                                      bool last);
+
     void notify_event_req(const std::vector<EventData>& events) override;
     void stop_monitoring() override;
     void start_monitoring() override;

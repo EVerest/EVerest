@@ -2171,5 +2171,66 @@ void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot) {
 }
 } // namespace NetworkConfigurationComponentVariables
 
+namespace ConnectionComponentVariables {
+
+const Variable ActiveNetworkProfile = {"ActiveNetworkProfile"};
+const Variable Enabled = {"Enabled"};
+const Variable HeartbeatInterval = {"HeartbeatInterval"};
+const Variable NetworkConfigurationPriority = {"NetworkConfigurationPriority"};
+
+const Variable AllowSetVariables = {"AllowSetVariables"};
+const Variable DownstreamMsgs = {"DownstreamMsgs"};
+const Variable UpstreamMsgs = {"UpstreamMsgs"};
+const Variable EnableFirmwareStatusNotificationOtherConnection = {"EnableFirmwareStatusNotificationOtherConnection"};
+const Variable ExternalConfigChangeDate = {"ExternalConfigChangeDate"};
+const Variable SubscribedMonitors = {"SubscribedMonitors"};
+
+const Variable Interval = {"Interval"};
+const Variable Measurands = {"Measurands"};
+
+const Variable SecurityProfile = {"SecurityProfile"};
+
+namespace {
+/// Builds \p component_name for \p connection. The primary connection keeps the instance-less
+/// component, so existing addressing is untouched.
+Component component_for(const ConnectionId& connection, const std::string& component_name) {
+    Component component;
+    component.name = component_name;
+    if (!connection.is_primary()) {
+        component.instance = connection.instance().value();
+    }
+    return component;
+}
+} // namespace
+
+Component ocpp_comm_ctrlr(const ConnectionId& connection) {
+    return component_for(connection, "OCPPCommCtrlr");
+}
+
+Component aligned_data_ctrlr(const ConnectionId& connection) {
+    return component_for(connection, "AlignedDataCtrlr");
+}
+
+Component sampled_data_ctrlr(const ConnectionId& connection) {
+    return component_for(connection, "SampledDataCtrlr");
+}
+
+Component monitoring_ctrlr(const ConnectionId& connection) {
+    return component_for(connection, "MonitoringCtrlr");
+}
+
+Component security_ctrlr(const ConnectionId& connection) {
+    return component_for(connection, "SecurityCtrlr");
+}
+
+ComponentVariable get_component_variable(const ConnectionId& connection, const Variable& variable) {
+    ComponentVariable component_variable;
+    component_variable.component = ocpp_comm_ctrlr(connection);
+    component_variable.variable = variable;
+    return component_variable;
+}
+
+} // namespace ConnectionComponentVariables
+
 } // namespace v2
 } // namespace ocpp
