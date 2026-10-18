@@ -348,6 +348,16 @@ EvseSecurity::EvseSecurity(const FilePaths& file_paths, const std::optional<std:
         }
     }
 
+    for (const auto& path :
+         {file_paths.directories.csms_leaf_key_directory, file_paths.directories.secc_leaf_key_directory}) {
+        std::error_code ec;
+        fs::permissions(path, fs::perms::owner_all, fs::perm_options::replace, ec);
+        if (ec) {
+            EVLOG_warning << "Could not restrict permissions of private key directory " << path.string() << ": "
+                          << ec.message();
+        }
+    }
+
     this->ca_bundle_path_map[CaCertificateType::CSMS] = file_paths.csms_ca_bundle;
     this->ca_bundle_path_map[CaCertificateType::MF] = file_paths.mf_ca_bundle;
     this->ca_bundle_path_map[CaCertificateType::MO] = file_paths.mo_ca_bundle;
