@@ -259,6 +259,7 @@ config:
       "Start up value for the maximum duration of a random delay."
       "Can be modified during runtime on the random_delay implementation."
     type: integer
+    minimum: 0
     default: 600
   uk_smartcharging_random_delay_at_any_change:
     description: >-
