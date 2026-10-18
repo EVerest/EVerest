@@ -16,6 +16,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <memory>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -289,8 +290,8 @@ public:
     void raise_fault(std::string const& type, std::string const& sub_type, std::string const& message) override {
         record([&] { faults.push_back({type, sub_type, message}); });
     }
-    void clear_fault(std::string const& type) override {
-        record([&] { cleared.push_back(type); });
+    void clear_fault(std::string const& type, std::string const& sub_type) override {
+        record([&] { cleared.push_back(sub_type.empty() ? type : type + "/" + sub_type); });
     }
     void publish_telemetry(std::string const&, std::string const&, std::string const&) override {
         if (on_telemetry) {
@@ -374,6 +375,7 @@ private:
 constexpr auto WAIT = 2000ms;
 constexpr char const* COMMUNICATION_FAULT = "generic/CommunicationFault";
 constexpr char const* VENDOR_ERROR = "generic/VendorError";
+constexpr char const* VENDOR_WARNING = "generic/VendorWarning";
 
 // The framework's three threads: init() and shutdown() on the test thread, ready() on its own.
 struct Harness {
@@ -813,6 +815,51 @@ TEST(SlacRuntime, ARejectedAmplitudeMapRaisesVendorErrorAndDisablesInitiation) {
     EXPECT_TRUE(h.sink.has_fault(VENDOR_ERROR, "amp_map_file"));
     EXPECT_FALSE(h.runtime->amp_map_initiation_enabled());
     EXPECT_TRUE(h.sink.has_log(LogLevel::Error, "rejected"));
+}
+
+TEST(SlacRuntime, NoRandomDataAtStartupRaisesFaultWithoutProgrammingAKey) {
+    Harness h;
+    h.config.slac.random_source = [](std::uint8_t*, std::size_t) { return false; };
+    h.create();
+    h.runtime->init();
+    EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "NMK"));
+    h.start_ready_thread();
+    EXPECT_FALSE(h.wait_for_set_key_requests(1, 100ms)) << "a key was programmed without random data";
+}
+
+TEST(SlacRuntime, NoRandomDataOnResetRaisesVendorWarningUntilAKeyIsGeneratedAgain) {
+    auto const fail = std::make_shared<std::atomic<bool>>(false);
+    Harness h;
+    h.config.slac.random_source = [fail](std::uint8_t* data, std::size_t len) {
+        if (fail->load()) {
+            return false;
+        }
+        std::fill(data, data + len, 0x5A);
+        return true;
+    };
+    h.create();
+    h.runtime->init();
+    fail->store(true);
+    h.start_ready_thread();
+
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] {
+        for (auto const& f : h.sink.faults) {
+            if (f.type == VENDOR_WARNING and f.sub_type == "nmk_generation") {
+                return true;
+            }
+        }
+        return false;
+    })) << "no VendorWarning/nmk_generation raised";
+    EXPECT_FALSE(h.wait_for_set_key_requests(1, 100ms)) << "a key was programmed without random data";
+    EXPECT_TRUE(h.sink.dlink.empty() or not h.sink.dlink.back());
+
+    fail->store(false);
+    // An unplug: EvseManager sends leave_bcd, which takes the machine from Failed back to Reset.
+    ASSERT_TRUE(h.runtime->leave_bcd());
+    EXPECT_TRUE(h.wait_for_set_key_requests(1)) << "no key programmed once random data was available again";
+    EXPECT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_cleared("generic/VendorWarning/nmk_generation"); }));
+    EXPECT_FALSE(h.sink.has_fault(COMMUNICATION_FAULT)) << "a failed key generation took the module down";
+    EXPECT_FALSE(h.sink.has_fault(VENDOR_ERROR)) << "a failed key generation raised an error, not a warning";
 }
 
 TEST(SlacRuntime, TheBuiltInAmplitudeMapIsUsedWhenNoFileIsConfigured) {

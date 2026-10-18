@@ -40,6 +40,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
     using Reset = state_machine<reset_sm::Reset_def>;
     using Reset_ResetChip = Reset::exit_pt<reset_sm::Reset_def::ResetChip>;
     using Reset_Idle = Reset::exit_pt<reset_sm::Reset_def::Idle>;
+    using Reset_KeyFailed = Reset::exit_pt<reset_sm::Reset_def::KeyFailed>;
 
     using ResetChip = state_machine<reset_chip_sm::ResetChip_def>;
     using ResetChip_Done = ResetChip::exit_pt<reset_chip_sm::ResetChip_def::Done>;
@@ -88,6 +89,7 @@ struct SlacFSM_def : state_machine_def<SlacFSM_def> {
         Row < Reset             , update    , Failed      , none            , reset_timeout     >,
         Row < Reset_ResetChip   , update    , ResetChip   , none            , none              >,
         Row < Reset_Idle        , update    , Idle        , none            , none              >,
+        Row < Reset_KeyFailed   , update    , Failed      , none            , none              >,
         //  +-------------------+-----------+-------------+-----------------+-------------------+
         Row < ResetChip         , reset     , Reset       , none            , none              >,
         Row < ResetChip_Done    , update    , Idle        , none            , none              >,

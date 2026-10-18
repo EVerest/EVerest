@@ -105,7 +105,7 @@ private:
         void publish_ev_mac_address(std::string const& mac) override;
         void request_error_routine() override;
         void raise_fault(std::string const& type, std::string const& sub_type, std::string const& message) override;
-        void clear_fault(std::string const& type) override;
+        void clear_fault(std::string const& type, std::string const& sub_type) override;
         void publish_telemetry(std::string const& block, std::string const& key, std::string const& value) override;
         void log(LogLevel level, std::string const& text) override;
 

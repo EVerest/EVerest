@@ -9,6 +9,7 @@
 
 #include <everest/slac/EvseSlacConfig.hpp>
 #include <everest/slac/MatchingSessionData.hpp>
+#include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_defs.hpp>
 #include <everest/slac/slac_messages.hpp>
 #include <everest/slac/slac_types.hpp>
@@ -22,14 +23,18 @@ namespace everest::lib::slac::msm::reset_sm {
 // generated: into pending_nmk in retry_confirmed mode (it becomes the session key only once the
 // modem confirmed it, see apply_set_key_cnf) or straight into the session key otherwise. Without
 // regeneration the current session key is re-sent. legacy_single_attempt always sends the session
-// key. Also arms the first attempt.
+// key. Also arms the first attempt. A failed generation leaves both keys as they were and sets
+// nmk_generation_failed, which keeps any key from being sent (see Reset_def).
 template <class ResetSm> void select_nmk_for_reset(ResetSm& sm) {
     auto& config = sm.ctx->slac_config;
+    sm.nmk_generation_failed = false;
     if (config.regenerate_key_on_reset) {
-        if (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed) {
-            config.generate_nmk(sm.pending_nmk);
-        } else {
-            config.generate_nmk(config.session_nmk);
+        auto& target = (config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)
+                           ? sm.pending_nmk
+                           : config.session_nmk;
+        sm.nmk_generation_failed = not config.generate_nmk(target);
+        if (not sm.nmk_generation_failed) {
+            sm.ctx->clear_error(fsm::evse::ERROR_NMK_GENERATION);
         }
     } else {
         sm.pending_nmk = config.session_nmk;
@@ -41,6 +46,11 @@ template <class ResetSm> void select_nmk_for_reset(ResetSm& sm) {
 }
 
 // Guards
+struct is_nmk_generation_failed {
+    template <class Evt, class Fsm, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+        return fsm.nmk_generation_failed;
+    }
+};
 struct msg_expected : public is_message_of_type<defs::MMTYPE_CM_SET_KEY | defs::MMTYPE_MODE_CNF> {};
 struct is_retry_confirmed_set_key {
     template <class Fsm, class Evt, class SrcT, class TarT> bool operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
@@ -97,6 +107,14 @@ struct is_reset_chip_on {
 };
 
 // Actions
+struct raise_nmk_error {
+    template <class Evt, class Fsm, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
+        auto const message = std::string("No random data available to generate the SLAC session NMK; no key "
+                                         "programmed, retrying on the next reset");
+        fsm.ctx->log_error(message);
+        fsm.ctx->raise_error(fsm::evse::ERROR_NMK_GENERATION, message);
+    }
+};
 struct send_set_key_req {
     template <class Fsm> static void send(Fsm& fsm) {
         Nmk const& nmk = (fsm.ctx->slac_config.set_key_handling_mode == fsm::evse::SetKeyHandlingMode::retry_confirmed)

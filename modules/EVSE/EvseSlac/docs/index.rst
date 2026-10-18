@@ -120,7 +120,13 @@ where real-world modems differ the most. Two behaviors are configurable:
   accepts both.
 
 Fresh network keys are generated for every session. If key generation
-fails, the module stops instead of programming a weaker key.
+fails, no key is programmed: SLAC goes to its failed state, so no EV can
+match, and ``generic/VendorWarning`` with sub-type ``nmk_generation`` is
+raised. The connector stays available, so AC charging without high-level
+communication still works. The next reset, for example after unplugging,
+tries again and clears the warning once a key could be generated. A
+failure while the module starts up raises ``generic/CommunicationFault``
+instead.
 
 ``nmk_generation_mode`` trades key strength for compatibility:
 

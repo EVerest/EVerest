@@ -8,6 +8,7 @@
 #include <exception>
 #include <functional>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -149,6 +150,8 @@ template <> struct MMV<messages::lumissil::nscm_get_d_link_status_cnf> {
 
 } // namespace _context_detail
 
+inline constexpr char const* ERROR_NMK_GENERATION = "nmk_generation";
+
 struct ContextCallbacks {
     std::function<bool(messages::HomeplugMessage&)> send_raw_slac{nullptr};
     std::function<void(D3State)> signal_state{nullptr};
@@ -161,6 +164,8 @@ struct ContextCallbacks {
     std::function<void(const std::string&)> log_warn{nullptr};
     std::function<void(const std::string&)> log_error{nullptr};
     std::function<void(const std::string&, const std::string&, const std::string&)> pub_telemetry{nullptr};
+    std::function<void(const std::string& sub_type, const std::string& message)> raise_error{nullptr};
+    std::function<void(const std::string& sub_type)> clear_error{nullptr};
     // Time source for every timer in the state machine; steady_clock when unset. Tests inject a
     // controllable clock here so timeouts are driven, not waited for.
     std::function<timer::tp()> now{nullptr};
@@ -213,6 +218,8 @@ struct Context {
     void signal_cm_slac_match_cnf(const uint8_t* ev_mac);
     void signal_dlink_ready(bool value);
     void signal_error_routine_request();
+    void raise_error(const std::string& sub_type, const std::string& message);
+    void clear_error(const std::string& sub_type);
     // Publishes the coarse public SLAC state (D3State) to the consumer, deriving it from status.d3_state.
     // Deduplicates consecutive identical states so a single logical transition emits at most one signal.
     void publish_slac_state();
@@ -299,6 +306,8 @@ private:
     }
     // Last D3State handed to signal_state, used to suppress duplicate publications.
     std::optional<D3State> last_published_d3_state{};
+    // Sub-types handed to raise_error and not cleared since, used to call each callback once per change.
+    std::set<std::string> active_errors;
 };
 
 } // namespace everest::lib::slac::fsm::evse

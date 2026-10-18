@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <net/ethernet.h>
+#include <string>
 #include <utility>
 #include <vector>
 
@@ -372,6 +373,54 @@ bool test_legacy_single_attempt_reaches_failed() {
 
     return assert_true(count_set_key_messages(sent_messages) == 1, test_name,
                        "legacy_single_attempt attempted more than one CM_SET_KEY.REQ");
+}
+
+bool run_nmk_generation_failure(SetKeyHandlingMode mode, const char* test_name) {
+    ContextCallbacks callbacks{};
+    std::vector<SetKeySentMessage> sent_messages;
+    callbacks.send_raw_slac = [&sent_messages](messages::HomeplugMessage& hp_message) {
+        sent_messages.push_back({sent_messages.size(), hp_message});
+        return true;
+    };
+    std::vector<std::string> raised;
+    std::vector<std::string> cleared;
+    callbacks.raise_error = [&raised](const std::string& sub_type, const std::string&) { raised.push_back(sub_type); };
+    callbacks.clear_error = [&cleared](const std::string& sub_type) { cleared.push_back(sub_type); };
+    callbacks.now = test_clock.source();
+
+    Context ctx(callbacks);
+    configure_common(ctx);
+    ctx.slac_config.set_key_handling_mode = mode;
+    ctx.slac_config.random_source = [](std::uint8_t*, std::size_t) { return false; };
+    fill_session_nmk(ctx, 0x22);
+    auto const session_nmk_before = current_session_nmk(ctx);
+
+    slac_fsm machine(ctx);
+    machine.restart_fsm();
+    machine.reset();
+
+    if (!wait_for_match_state(ctx, SlacState::Failed, machine, 200)) {
+        return assert_true(false, test_name, "did not reach Failed without a key");
+    }
+    // Further ticks in Failed must neither send a key nor raise the error again.
+    (void)wait_for(20ms, machine, [] { return false; });
+    if (!assert_true(count_set_key_messages(sent_messages) == 0, test_name, "sent CM_SET_KEY.REQ without a key") ||
+        !assert_true(raised == std::vector<std::string>{ERROR_NMK_GENERATION}, test_name,
+                     "nmk_generation error not raised exactly once") ||
+        !assert_true(cleared.empty(), test_name, "error cleared while generation still fails") ||
+        !assert_true(expect_nmk_equal(current_session_nmk(ctx), session_nmk_before), test_name,
+                     "session NMK changed although generation failed")) {
+        return false;
+    }
+
+    ctx.slac_config.random_source = nullptr;
+    machine.reset();
+    if (!wait_for_set_key_count(sent_messages, 1, machine, 100)) {
+        return assert_true(false, test_name, "did not send CM_SET_KEY.REQ once generation works again");
+    }
+    return assert_true(cleared == std::vector<std::string>{ERROR_NMK_GENERATION}, test_name,
+                       "nmk_generation error not cleared after a successful generation") &&
+           assert_true(raised.size() == 1, test_name, "error raised again after recovery");
 }
 
 bool test_retry_confirmed_accepts_wrong_source() {
@@ -785,7 +834,7 @@ bool test_short_cm_set_key_cnf_keeps_reset() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 13>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 15>{
         std::make_pair("legacy_single_attempt_accepts_valid_success_result",
                        test_legacy_single_attempt_accepts_valid_success_result),
         std::make_pair("legacy_single_attempt_rejects_reserved_result",
@@ -811,6 +860,17 @@ int main() {
                                                               "retry_confirmed_hpgp_standard_accepts_0x00_success");
                        }),
         std::make_pair("test_short_cm_set_key_cnf_keeps_reset", test_short_cm_set_key_cnf_keeps_reset),
+        std::make_pair("retry_confirmed_nmk_generation_failure_reaches_failed",
+                       [] {
+                           return run_nmk_generation_failure(SetKeyHandlingMode::retry_confirmed,
+                                                             "retry_confirmed_nmk_generation_failure_reaches_failed");
+                       }),
+        std::make_pair("legacy_single_attempt_nmk_generation_failure_reaches_failed",
+                       [] {
+                           return run_nmk_generation_failure(
+                               SetKeyHandlingMode::legacy_single_attempt,
+                               "legacy_single_attempt_nmk_generation_failure_reaches_failed");
+                       }),
     };
 
     int failed_count = 0;

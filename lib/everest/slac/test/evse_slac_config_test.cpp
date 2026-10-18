@@ -41,7 +41,9 @@ bool test_generate_nmk_updates_session_nmk() {
     EvseSlacConfig config{};
     std::fill(std::begin(config.session_nmk), std::end(config.session_nmk), 0xA5);
 
-    config.generate_nmk();
+    if (not config.generate_nmk()) {
+        return assert_true(false, test_name, "generate_nmk() failed");
+    }
 
     return assert_true(not std::all_of(std::begin(config.session_nmk), std::end(config.session_nmk),
                                        [](auto value) { return value == 0xA5; }),
@@ -57,7 +59,9 @@ bool test_generate_nmk_writes_target_only() {
     buffer.back() = 0x5A;
     std::fill(buffer.begin() + 1, buffer.end() - 1, 0x11);
 
-    config.generate_nmk(buffer.data() + 1);
+    if (not config.generate_nmk(buffer.data() + 1)) {
+        return assert_true(false, test_name, "generate_nmk(target) failed");
+    }
 
     const auto target_changed =
         not std::all_of(buffer.begin() + 1, buffer.end() - 1, [](auto value) { return value == 0x11; });
@@ -76,7 +80,9 @@ bool test_generate_nmk_uses_full_byte_range() {
 
     for (int attempt = 0; attempt < 16; ++attempt) {
         Nmk nmk{};
-        config.generate_nmk(nmk.data());
+        if (not config.generate_nmk(nmk.data())) {
+            return assert_true(false, test_name, "generate_nmk(target) failed");
+        }
         if (contains_non_legacy_base36_byte(nmk)) {
             return true;
         }
@@ -91,7 +97,9 @@ bool test_generate_nmk_default_mode_is_legacy_printable() {
 
     for (int attempt = 0; attempt < 16; ++attempt) {
         Nmk nmk{};
-        config.generate_nmk(nmk.data());
+        if (not config.generate_nmk(nmk.data())) {
+            return assert_true(false, test_name, "generate_nmk(target) failed");
+        }
         if (not contains_only_legacy_base36_bytes(nmk)) {
             return assert_true(false, test_name, "default generated NMK contains non-legacy byte");
         }
@@ -107,7 +115,9 @@ bool test_generate_nmk_legacy_printable_mode() {
 
     for (int attempt = 0; attempt < 16; ++attempt) {
         Nmk nmk{};
-        config.generate_nmk(nmk.data());
+        if (not config.generate_nmk(nmk.data())) {
+            return assert_true(false, test_name, "generate_nmk(target) failed");
+        }
         if (not contains_only_legacy_base36_bytes(nmk)) {
             return assert_true(false, test_name,
                                "generated NMK contains non-legacy byte while in legacy_printable mode");
@@ -126,7 +136,9 @@ bool test_generate_nmk_legacy_printable_covers_alphabet() {
     std::array<bool, 256> seen{};
     for (int attempt = 0; attempt < 64; ++attempt) {
         Nmk nmk{};
-        config.generate_nmk(nmk.data());
+        if (not config.generate_nmk(nmk.data())) {
+            return assert_true(false, test_name, "generate_nmk(target) failed");
+        }
         for (auto const value : nmk) {
             seen.at(value) = true;
         }
@@ -140,10 +152,52 @@ bool test_generate_nmk_legacy_printable_covers_alphabet() {
     return true;
 }
 
+bool test_generate_nmk_failure_leaves_target_untouched() {
+    const char* test_name = "test_generate_nmk_failure_leaves_target_untouched";
+    for (auto const mode : {NmkGenerationMode::full_byte_range, NmkGenerationMode::legacy_printable}) {
+        EvseSlacConfig config{};
+        config.nmk_generation_mode = mode;
+        config.random_source = [](std::uint8_t*, std::size_t) { return false; };
+        Nmk nmk{};
+        nmk.fill(0x11);
+
+        if (config.generate_nmk(nmk.data())) {
+            return assert_true(false, test_name, "generate_nmk succeeded with a failing random source");
+        }
+        if (not std::all_of(nmk.begin(), nmk.end(), [](auto value) { return value == 0x11; })) {
+            return assert_true(false, test_name, "failed generate_nmk modified the target");
+        }
+    }
+    return true;
+}
+
+bool test_generate_nmk_legacy_printable_failure_after_partial_key() {
+    const char* test_name = "test_generate_nmk_legacy_printable_failure_after_partial_key";
+    EvseSlacConfig config{};
+    config.nmk_generation_mode = NmkGenerationMode::legacy_printable;
+    // First draw: half the bytes are accepted, half rejected; second draw fails.
+    int calls = 0;
+    config.random_source = [&calls](std::uint8_t* data, std::size_t len) {
+        if (calls++ > 0) {
+            return false;
+        }
+        std::fill(data, data + len / 2, 0x00);
+        std::fill(data + len / 2, data + len, 0xFF);
+        return true;
+    };
+    Nmk nmk{};
+    nmk.fill(0x11);
+
+    return assert_true(not config.generate_nmk(nmk.data()), test_name,
+                       "generate_nmk succeeded although the second draw failed") &&
+           assert_true(std::all_of(nmk.begin(), nmk.end(), [](auto value) { return value == 0x11; }), test_name,
+                       "a partially generated key reached the target");
+}
+
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 6>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 8>{
         std::make_pair("test_generate_nmk_updates_session_nmk", test_generate_nmk_updates_session_nmk),
         std::make_pair("test_generate_nmk_writes_target_only", test_generate_nmk_writes_target_only),
         std::make_pair("test_generate_nmk_uses_full_byte_range", test_generate_nmk_uses_full_byte_range),
@@ -152,6 +206,10 @@ int main() {
         std::make_pair("test_generate_nmk_legacy_printable_mode", test_generate_nmk_legacy_printable_mode),
         std::make_pair("test_generate_nmk_legacy_printable_covers_alphabet",
                        test_generate_nmk_legacy_printable_covers_alphabet),
+        std::make_pair("test_generate_nmk_failure_leaves_target_untouched",
+                       test_generate_nmk_failure_leaves_target_untouched),
+        std::make_pair("test_generate_nmk_legacy_printable_failure_after_partial_key",
+                       test_generate_nmk_legacy_printable_failure_after_partial_key),
     };
 
     int failed_count = 0;
