@@ -117,16 +117,41 @@ bool test_generate_nmk_legacy_printable_mode() {
     return true;
 }
 
+bool test_generate_nmk_legacy_printable_covers_alphabet() {
+    const char* test_name = "test_generate_nmk_legacy_printable_covers_alphabet";
+    EvseSlacConfig config{};
+    config.nmk_generation_mode = NmkGenerationMode::legacy_printable;
+
+    // 1024 characters: the chance that one of the 36 is missing by accident is below 1e-10.
+    std::array<bool, 256> seen{};
+    for (int attempt = 0; attempt < 64; ++attempt) {
+        Nmk nmk{};
+        config.generate_nmk(nmk.data());
+        for (auto const value : nmk) {
+            seen.at(value) = true;
+        }
+    }
+
+    for (int value = 0; value < 256; ++value) {
+        if (seen.at(value) != is_legacy_base36_byte(static_cast<std::uint8_t>(value))) {
+            return assert_true(false, test_name, "generated NMKs do not cover exactly the legacy base36 alphabet");
+        }
+    }
+    return true;
+}
+
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 5>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 6>{
         std::make_pair("test_generate_nmk_updates_session_nmk", test_generate_nmk_updates_session_nmk),
         std::make_pair("test_generate_nmk_writes_target_only", test_generate_nmk_writes_target_only),
         std::make_pair("test_generate_nmk_uses_full_byte_range", test_generate_nmk_uses_full_byte_range),
         std::make_pair("test_generate_nmk_default_mode_is_legacy_printable",
                        test_generate_nmk_default_mode_is_legacy_printable),
         std::make_pair("test_generate_nmk_legacy_printable_mode", test_generate_nmk_legacy_printable_mode),
+        std::make_pair("test_generate_nmk_legacy_printable_covers_alphabet",
+                       test_generate_nmk_legacy_printable_covers_alphabet),
     };
 
     int failed_count = 0;

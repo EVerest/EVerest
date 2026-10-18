@@ -119,10 +119,16 @@ where real-world modems differ the most. Two behaviors are configurable:
   HomePlug Green PHY standard says ``0x00``, and a compatibility mode
   accepts both.
 
-Fresh network keys are generated for every session. By default only
-printable characters are used (compatible with some picky EVs in the
-field); ``nmk_generation_mode: full_byte_range`` opts into the full byte
-range for a lower collision probability.
+Fresh network keys are generated for every session. If key generation
+fails, the module stops instead of programming a weaker key.
+
+``nmk_generation_mode`` trades key strength for compatibility:
+
+* ``legacy_printable`` (default): every key byte is one of ``0-9A-Z``,
+  which some EVs in the field require. The 16-byte key then carries about
+  82 bits of entropy instead of 128.
+* ``full_byte_range``: every key byte is random over ``0x00-0xFF``, the
+  full 128 bits. Use it when the EVs you serve accept it.
 
 Link supervision
 ----------------

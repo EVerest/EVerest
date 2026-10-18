@@ -88,7 +88,7 @@ private:
     bool wait_for_startup_delay_or_shutdown();
     bool initialize_slac_io();
     void configure_callbacks();
-    void configure_fsm_context();
+    bool configure_fsm_context();
     bool create_fsm_controller();
     void configure_slac_io_callbacks();
     bool register_event_handlers();

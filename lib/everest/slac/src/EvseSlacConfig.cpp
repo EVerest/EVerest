@@ -1,13 +1,32 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <chrono>
+#include <cerrno>
+#include <cstddef>
 #include <everest/slac/EvseSlacConfig.hpp>
-#include <limits>
-#include <random>
 #include <stdexcept>
 #include <string_view>
+#include <sys/random.h>
+#include <system_error>
 
 namespace everest::lib::slac::fsm::evse {
+
+namespace {
+
+void fill_random(std::uint8_t* data, std::size_t len) {
+    std::size_t filled = 0;
+    while (filled < len) {
+        auto const result = getrandom(data + filled, len - filled, 0);
+        if (result < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            throw std::system_error(errno, std::generic_category(), "getrandom failed to generate the NMK");
+        }
+        filled += static_cast<std::size_t>(result);
+    }
+}
+
+} // namespace
 
 void EvseSlacConfig::generate_nmk() {
     generate_nmk(session_nmk);
@@ -22,30 +41,30 @@ void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
         throw std::invalid_argument("NMK target must not be null");
     }
 
+    // No fallback to a predictable key: a failing fill_random throws. Inside the state machine the
+    // throw leaves process_event (see msm_helpers.hpp) without a CM_SET_KEY.REQ being sent.
+    if (nmk_generation_mode == NmkGenerationMode::full_byte_range) {
+        fill_random(target_nmk, slac::defs::NMK_LEN);
+        return;
+    }
+
     static constexpr std::string_view kLegacyPrintableCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    // Called from Reset's on_entry on every key regeneration, inside a transition: nothing here
-    // may throw (see msm_helpers.hpp). std::random_device can, when no entropy source opens; the
-    // clock then seeds the key, which keeps the keys apart between runs.
-    auto const seed = []() -> std::mt19937::result_type {
-        try {
-            return std::random_device{}();
-        } catch (...) {
-            return static_cast<std::mt19937::result_type>(std::chrono::steady_clock::now().time_since_epoch().count());
-        }
-    }();
-    std::mt19937 generator(seed);
+    // Rejection sampling keeps every character equally likely: 252 is the largest multiple of 36 below 256.
+    static constexpr std::uint8_t kRejectFrom = 256 - (256 % kLegacyPrintableCharacters.size());
 
     std::size_t generated = 0;
-    if (nmk_generation_mode == NmkGenerationMode::legacy_printable) {
-        std::uniform_int_distribution<std::size_t> byte_distribution{0, kLegacyPrintableCharacters.size() - 1};
-        while (generated < slac::defs::NMK_LEN) {
+    Nmk random_bytes{};
+    while (generated < slac::defs::NMK_LEN) {
+        fill_random(random_bytes.data(), random_bytes.size());
+        for (auto const value : random_bytes) {
+            if (value >= kRejectFrom) {
+                continue;
+            }
             target_nmk[generated++] =
-                static_cast<std::uint8_t>(kLegacyPrintableCharacters[byte_distribution(generator)]);
-        }
-    } else {
-        std::uniform_int_distribution<int> byte_distribution(0, std::numeric_limits<std::uint8_t>::max());
-        while (generated < slac::defs::NMK_LEN) {
-            target_nmk[generated++] = static_cast<std::uint8_t>(byte_distribution(generator));
+                static_cast<std::uint8_t>(kLegacyPrintableCharacters[value % kLegacyPrintableCharacters.size()]);
+            if (generated == slac::defs::NMK_LEN) {
+                break;
+            }
         }
     }
 }

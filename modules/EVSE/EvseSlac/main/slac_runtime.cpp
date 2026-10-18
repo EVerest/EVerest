@@ -49,7 +49,9 @@ void SlacRuntime::init() {
         return;
     }
     configure_callbacks();
-    configure_fsm_context();
+    if (!configure_fsm_context()) {
+        return;
+    }
     if (!create_fsm_controller()) {
         return;
     }
@@ -249,7 +251,7 @@ void SlacRuntime::configure_callbacks() {
     }
 }
 
-void SlacRuntime::configure_fsm_context() {
+bool SlacRuntime::configure_fsm_context() {
     fsm_ctx = std::make_unique<everest::lib::slac::fsm::evse::Context>(callbacks);
     fsm_ctx->slac_config = config.slac;
     if (config.slac.max_matching_sessions > 16) {
@@ -291,8 +293,14 @@ void SlacRuntime::configure_fsm_context() {
     }
 
     fsm_ctx->slac_config.provide_telemetry = config.telemetry_enabled;
-    fsm_ctx->slac_config.generate_nmk();
+    try {
+        fsm_ctx->slac_config.generate_nmk();
+    } catch (const std::exception& e) {
+        abort_event_loop(fmt::format("Failed to generate the SLAC session NMK: {}", e.what()));
+        return false;
+    }
     std::copy_n(slac_io->mac_address(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
+    return true;
 }
 
 bool SlacRuntime::create_fsm_controller() {
