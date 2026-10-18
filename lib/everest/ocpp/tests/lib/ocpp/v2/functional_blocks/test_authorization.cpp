@@ -532,6 +532,76 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_accepted) {
               AuthorizationStatusEnum::Accepted);
 }
 
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_offline) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_local_authorize_offline(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() - std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_online) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Return(std::async(std::launch::deferred, [this]() {
+        return create_example_authorize_response(AuthorizeCertificateStatusEnum::Accepted,
+                                                 AuthorizationStatusEnum::Invalid);
+    })));
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() - std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Invalid);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_not_expired) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() + std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
 TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_unknown_no_remote_authorization) {
     // Validate token with the local auth list: unknown because remote authorization is not enabled and token info
     // status is not accepted. Set AuthCtrlr::Enabled to true

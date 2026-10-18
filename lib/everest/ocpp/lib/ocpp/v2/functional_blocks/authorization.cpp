@@ -305,6 +305,13 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
         }
 
         if (id_token_info.has_value()) {
+            if (id_token_info.value().status == AuthorizationStatusEnum::Accepted and
+                id_token_info.value().cacheExpiryDateTime.has_value() and
+                id_token_info.value().cacheExpiryDateTime.value() < DateTime()) {
+                EVLOG_info << "Found entry in local authorization list but expiry date passed";
+                id_token_info.value().status = AuthorizationStatusEnum::Expired;
+            }
+
             if (id_token_info.value().status == AuthorizationStatusEnum::Accepted) {
                 // C14.FR.02: If found in local list we shall start charging without an AuthorizeRequest
                 EVLOG_info << "Found valid entry in local authorization list";
