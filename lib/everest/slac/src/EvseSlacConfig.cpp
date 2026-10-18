@@ -48,20 +48,21 @@ void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
         return;
     }
 
-    static constexpr std::string_view kLegacyPrintableCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    // Rejection sampling keeps every character equally likely: 252 is the largest multiple of 36 below 256.
-    static constexpr std::uint8_t kRejectFrom = 256 - (256 % kLegacyPrintableCharacters.size());
+    static constexpr std::string_view LEGACY_PRINTABLE_CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    // 256 = 7 * 36 + 4, so mapping every byte with % 36 would make '0'-'3' more likely than the rest.
+    // Bytes from 252 up are dropped instead; each character then has exactly 7 byte values mapping to it.
+    static constexpr std::uint8_t UNBIASED_BYTE_LIMIT = 256 - (256 % LEGACY_PRINTABLE_CHARACTERS.size());
 
     std::size_t generated = 0;
     Nmk random_bytes{};
     while (generated < slac::defs::NMK_LEN) {
         fill_random(random_bytes.data(), random_bytes.size());
         for (auto const value : random_bytes) {
-            if (value >= kRejectFrom) {
+            if (value >= UNBIASED_BYTE_LIMIT) {
                 continue;
             }
             target_nmk[generated++] =
-                static_cast<std::uint8_t>(kLegacyPrintableCharacters[value % kLegacyPrintableCharacters.size()]);
+                static_cast<std::uint8_t>(LEGACY_PRINTABLE_CHARACTERS[value % LEGACY_PRINTABLE_CHARACTERS.size()]);
             if (generated == slac::defs::NMK_LEN) {
                 break;
             }
