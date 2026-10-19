@@ -44,6 +44,18 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
     return false;
 }
 
+bool is_write_only(const VariableAttribute& attribute) {
+    return attribute.mutability.value_or(MutabilityEnum::ReadWrite) == MutabilityEnum::WriteOnly;
+}
+
+/// \returns the \p value to log, WriteOnly values (e.g. passwords) are never logged
+std::string_view loggable_value(const VariableAttribute& attribute, const std::string& value) {
+    if (is_write_only(attribute)) {
+        return "[WriteOnly]";
+    }
+    return value;
+}
+
 bool is_monitor_active(MonitoringBaseEnum active_monitoring_base, const VariableMonitoringMeta& monitor_meta) {
     // Skip monitors that are not active
     if (active_monitoring_base != MonitoringBaseEnum::All) {
@@ -247,7 +259,8 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
     }
 
     EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
-                << "] with previous value: [" << value_previous << "] and current: [" << value_current << "]";
+                << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
+                << loggable_value(attribute, value_current) << "]";
 
     auto monitor_id = monitor_meta.monitor.id;
     auto& updater_monitors_meta = state.updater_monitors_meta;
@@ -270,8 +283,7 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
             triggered_meta.component = component;
             triggered_meta.variable = variable;
             triggered_meta.monitor_meta = monitor_meta;
-            triggered_meta.is_writeonly =
-                (attribute.mutability.value_or(MutabilityEnum::ReadWrite) == MutabilityEnum::WriteOnly);
+            triggered_meta.is_writeonly = is_write_only(attribute);
 
             // Update new current values
             triggered_meta.value_previous = value_previous;
@@ -337,8 +349,9 @@ void MonitoringUpdater::on_variable_changed(const std::unordered_map<std::int64_
                                             const VariableCharacteristics& characteristics,
                                             const VariableAttribute& attribute, const std::string& value_previous,
                                             const std::string& value_current) {
-    EVLOG_debug << "Variable: " << variable.name.get() << " changed value from: [" << value_previous << "] to: ["
-                << value_current << "]";
+    EVLOG_debug << "Variable: " << variable.name.get() << " changed value from: ["
+                << loggable_value(attribute, value_previous) << "] to: [" << loggable_value(attribute, value_current)
+                << "]";
 
     // Ignore non-actual values
     if (attribute.type.has_value() && attribute.type.value() != AttributeEnum::Actual) {
