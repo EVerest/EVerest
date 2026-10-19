@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-// Copyright 2020 - 2025 Pionix GmbH and Contributors to EVerest
+// Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
 
@@ -20,7 +20,7 @@ void power_supply_DCImpl::init() {
     caps.conversion_efficiency_export = 0.95;
 
     caps.max_import_current_A = 73.3;
-    caps.min_import_current_A = 0;
+    caps.min_import_current_A = 1;
     caps.max_import_power_W = 22000;
     caps.min_import_voltage_V = 200;
     caps.max_import_voltage_V = 1000;
@@ -70,16 +70,20 @@ void power_supply_DCImpl::handle_setMode(types::power_supply_DC::Mode& mode,
                                          types::power_supply_DC::ChargingPhase& phase) {
     std::scoped_lock lock(settings_mutex);
 
+    commanded_mode = mode;
+
     if (mode == types::power_supply_DC::Mode::Off) {
+        below_minimum = false;
         mod->acdc.switch_on_off(false);
         mod->acdc.set_inverter_mode(false);
     } else if (mode == types::power_supply_DC::Mode::Export) {
         mod->acdc.set_inverter_mode(false);
-        mod->acdc.switch_on_off(true);
+        mod->acdc.switch_on_off(output_enabled());
     } else if (mode == types::power_supply_DC::Mode::Import) {
         mod->acdc.set_inverter_mode(true);
-        mod->acdc.switch_on_off(true);
+        mod->acdc.switch_on_off(output_enabled());
     } else if (mode == types::power_supply_DC::Mode::Fault) {
+        below_minimum = false;
         mod->acdc.switch_on_off(false);
         mod->acdc.set_inverter_mode(false);
     }
@@ -92,18 +96,25 @@ void power_supply_DCImpl::handle_setExportVoltageCurrent(double& voltage, double
     else if (voltage < caps.min_export_voltage_V)
         voltage = caps.min_export_voltage_V;
 
+    const bool below_minimum_requested = current < caps.min_export_current_A;
     if (current > caps.max_export_current_A)
         current = caps.max_export_current_A;
-    else if (current < caps.min_export_current_A)
-        current = caps.min_export_current_A;
+    else if (below_minimum_requested)
+        current = 0.;
 
     std::scoped_lock lock(settings_mutex);
 
     exportVoltage = voltage;
     exportCurrentLimit = current;
 
+    if (below_minimum_requested) {
+        set_below_minimum(true);
+        return;
+    }
+
     EVLOG_info << "Updating voltage/current via CAN: " << exportVoltage << "V / " << exportCurrentLimit << "A";
     mod->acdc.set_voltage_current(exportVoltage, exportCurrentLimit);
+    set_below_minimum(false);
 };
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
@@ -115,18 +126,41 @@ void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double
         else if (voltage < caps.min_import_voltage_V.value())
             voltage = caps.min_import_voltage_V.value();
 
+        const bool below_minimum_requested = current < caps.min_import_current_A.value();
         if (current > caps.max_import_current_A.value())
             current = caps.max_import_current_A.value();
-        else if (current < caps.min_import_current_A.value())
-            current = caps.min_import_current_A.value();
+        else if (below_minimum_requested)
+            current = 0.;
 
         std::scoped_lock lock(settings_mutex);
         minImportVoltage = voltage;
         importCurrentLimit = current;
 
+        if (below_minimum_requested) {
+            set_below_minimum(true);
+            return;
+        }
+
         EVLOG_info << "Updating voltage/current via CAN: " << minImportVoltage << "V / " << importCurrentLimit << "A";
         mod->acdc.set_voltage_current(minImportVoltage, importCurrentLimit);
+        set_below_minimum(false);
     }
+}
+
+bool power_supply_DCImpl::output_enabled() const {
+    return (commanded_mode == types::power_supply_DC::Mode::Export or
+            commanded_mode == types::power_supply_DC::Mode::Import) and
+           not below_minimum;
+}
+
+void power_supply_DCImpl::set_below_minimum(bool below) {
+    if (below_minimum == below) {
+        return;
+    }
+    below_minimum = below;
+    EVLOG_info << "Current " << (below ? "below" : "at or above") << " minimum, output "
+               << (output_enabled() ? "on" : "off");
+    mod->acdc.switch_on_off(output_enabled());
 }
 
 } // namespace main

@@ -31,7 +31,7 @@ uint64_t v2g_session_id_from_exi(bool is_iso, void* exi_in) {
 }
 
 void publish_dc_ev_target_voltage_current(struct v2g_context* ctx, const float& v2g_dc_ev_target_voltage,
-                                          const float& v2g_dc_ev_target_current) {
+                                          const float& v2g_dc_ev_target_current, bool current_demand) {
 }
 
 void publish_dc_ev_remaining_time(struct v2g_context* ctx, const float& v2g_dc_ev_remaining_time_to_full_soc,
