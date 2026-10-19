@@ -6,6 +6,9 @@ macro(_trailbook_ev_generate_rst_from_interface_generate_command)
     get_filename_component(INTERFACE_NAME ${args_INTERFACE_FILE} NAME_WE)
     set(GENERATED_FILE "${TRAILBOOK_EV_REFERENCE_INTERFACES_DIRECTORY}/${INTERFACE_NAME}.rst")
     set(TEMPLATES_DIRECTORY "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/templates")
+    # The error descriptions referenced by the interface are rendered into
+    # the page (--errors-yaml-path below).
+    file(GLOB ERROR_FILES CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/errors/*.yaml")
     add_custom_command(
         OUTPUT
             ${GENERATED_FILE}
@@ -14,6 +17,7 @@ macro(_trailbook_ev_generate_rst_from_interface_generate_command)
             ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/process_template.py
             ${args_INTERFACE_FILE}
+            ${ERROR_FILES}
             ${TEMPLATES_DIRECTORY}/interface.rst.jinja
             ${TEMPLATES_DIRECTORY}/macros.jinja
         COMMENT
