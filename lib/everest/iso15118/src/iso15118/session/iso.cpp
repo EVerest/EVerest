@@ -175,6 +175,12 @@ void PowerPath::observe(session::feedback::Signal signal) {
     case Signal::AC_OPEN_CONTACTOR:
         ac_contactor_closed = false;
         break;
+    case Signal::WELDING_DETECTION_STARTED:
+        welding_detection_running = true;
+        break;
+    case Signal::WELDING_DETECTION_FINISHED:
+        welding_detection_running = false;
+        break;
     default:
         break;
     }
@@ -194,9 +200,13 @@ std::vector<session::feedback::Signal> PowerPath::take_teardown_signals() {
         // PowerDelivery(Start) and has no close signal of its own, only DC_OPEN_CONTACTOR.
         signals.push_back(Signal::DC_OPEN_CONTACTOR);
     }
+    if (welding_detection_running) {
+        signals.push_back(Signal::WELDING_DETECTION_FINISHED);
+    }
 
     charge_loop_running = false;
     ac_contactor_closed = false;
+    welding_detection_running = false;
     return signals;
 }
 
@@ -308,6 +318,12 @@ void Session::finish_session() {
 void Session::open_power_path() {
     for (const auto signal : power_path.take_teardown_signals()) {
         feedback.signal(signal);
+    }
+}
+
+void Session::end_welding_detection() {
+    if (power_path.welding_detection_running) {
+        feedback.signal(session::feedback::Signal::WELDING_DETECTION_FINISHED);
     }
 }
 
@@ -487,6 +503,8 @@ TimePoint const& Session::poll() {
     advance_sap_handover();
 
     if (session_over() and not finished_reported) {
+        // The welding detection phase ends with the session, not with the transport teardown below.
+        end_welding_detection();
         if (error_termination or visit_engine([](const auto& e) { return e.is_finished_with_error(); })) {
             // FIN out now ([V2G-DC-940]) but hold the D-LINK signal for DLINK_SIGNAL_GRACE_MS.
             connection->close(); // idempotent

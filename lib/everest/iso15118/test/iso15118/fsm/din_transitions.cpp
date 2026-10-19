@@ -73,6 +73,10 @@ public:
         return std::find(signals.begin(), signals.end(), signal) != signals.end();
     }
 
+    long count_signal(session::feedback::Signal signal) const {
+        return std::count(signals.begin(), signals.end(), signal);
+    }
+
     std::vector<session::feedback::Signal> signals;
     // Reported as StateBase::feed() consumes the request, so this proves each frame is consumed once.
     std::vector<iso15118::V2gMessageType> v2g_messages;
@@ -183,12 +187,18 @@ void to_current_demand(Secc& secc) {
     secc.drive(power_delivery_req(true));
 }
 
-void to_welding_detection(Secc& secc) {
+void to_power_delivery_off(Secc& secc) {
     to_current_demand(secc);
     secc.drive(current_demand_req());
     secc.drive(power_delivery_req(false));
     // [V2G-DC-988]: after PowerDelivery(off) the EV signals CP State B again.
     secc.fsm.context().set_cp_state(d20::CpState::B);
+}
+
+// Without a value from the welding detection voltage source, the first WeldingDetectionReq is parked.
+void to_welding_detection(Secc& secc) {
+    to_power_delivery_off(secc);
+    secc.fsm.control(d20::PresentVoltageCurrent{400.0f, 0.0f, true});
 }
 
 } // namespace
@@ -711,6 +721,130 @@ SCENARIO("DIN SPEC 70121 SECC charging state transitions") {
                 REQUIRE(res.has_value());
                 REQUIRE(res->response_code == dt::ResponseCode::OK);
                 REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+}
+
+SCENARIO("DIN SPEC 70121 SECC welding detection phase") {
+    using Signal = session::feedback::Signal;
+
+    GIVEN("A DC session after PowerDelivery(off), with the EV back in CP State B") {
+        Secc secc;
+        to_power_delivery_off(secc);
+        REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+
+        THEN("The phase starts once, after the power path was opened") {
+            REQUIRE(secc.count_signal(Signal::WELDING_DETECTION_STARTED) == 1);
+            const auto open = std::find(secc.signals.begin(), secc.signals.end(), Signal::DC_OPEN_CONTACTOR);
+            const auto started = std::find(secc.signals.begin(), secc.signals.end(), Signal::WELDING_DETECTION_STARTED);
+            REQUIRE(open < started);
+        }
+
+        WHEN("The first WeldingDetectionReq arrives before a welding detection voltage") {
+            secc.fsm.control(d20::PresentVoltageCurrent{20.0f, 0.0f});
+            secc.drive(message_din::WeldingDetectionRequest{});
+
+            THEN("It is held back") {
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("Another power supply value arrives") {
+                secc.fsm.control(d20::PresentVoltageCurrent{21.0f, 0.0f});
+
+                THEN("It is still held back") {
+                    REQUIRE_FALSE(secc.fsm.has_response());
+                }
+            }
+
+            AND_WHEN("The welding detection voltage arrives") {
+                secc.fsm.control(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+
+                THEN("It is answered with that voltage") {
+                    const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->evse_present_voltage == 398.0);
+                }
+
+                AND_WHEN("The next WeldingDetectionReq arrives") {
+                    secc.drive(message_din::WeldingDetectionRequest{});
+
+                    THEN("It is answered at once") {
+                        const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    }
+                }
+            }
+
+            AND_WHEN("No welding detection voltage arrives in time") {
+                secc.fsm.timeout(d20::TimeoutType::WELDING_VOLTAGE);
+
+                THEN("It is answered with the last present voltage") {
+                    const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->evse_present_voltage == 20.0);
+                }
+            }
+        }
+
+        WHEN("The welding detection voltage arrives before the first WeldingDetectionReq") {
+            secc.fsm.control(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+            secc.drive(message_din::WeldingDetectionRequest{});
+
+            THEN("It is answered at once") {
+                const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->evse_present_voltage == 398.0);
+            }
+        }
+
+        WHEN("The EV weld-detects and ends the session") {
+            secc.fsm.control(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+            secc.drive(message_din::WeldingDetectionRequest{});
+            secc.drive(message_din::SessionStopRequest{});
+
+            THEN("The phase finishes once") {
+                REQUIRE(secc.fsm.context().session_stopped);
+                REQUIRE(secc.count_signal(Signal::WELDING_DETECTION_FINISHED) == 1);
+            }
+        }
+
+        WHEN("The EV ends the session without welding detection") {
+            secc.drive(message_din::SessionStopRequest{});
+
+            THEN("The phase finishes as well") {
+                REQUIRE(secc.count_signal(Signal::WELDING_DETECTION_FINISHED) == 1);
+            }
+        }
+    }
+
+    GIVEN("A DC session after PowerDelivery(off), with the EV still in CP State C") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.drive(power_delivery_req(false));
+
+        WHEN("The welding detection voltage is there but CP State B is not") {
+            secc.fsm.control(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+            secc.drive(message_din::WeldingDetectionRequest{});
+
+            THEN("It is held back for CP State B [V2G-DC-988]") {
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("CP State B arrives") {
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.control(d20::CpStateChanged{d20::CpState::B});
+
+                THEN("It is answered with the welding detection voltage") {
+                    const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->evse_present_voltage == 398.0);
+                }
             }
         }
     }

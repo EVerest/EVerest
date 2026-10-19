@@ -318,6 +318,7 @@ Result process_dc_power_delivery(Context& m_ctx, const message_2::PowerDeliveryR
     // the physical test.
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+    m_ctx.welding_detection.start(m_ctx.feedback);
     return m_ctx.create_state<PostCharge>();
 }
 
