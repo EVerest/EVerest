@@ -70,7 +70,8 @@ std::optional<DataTransferResponse> DataTransfer::data_transfer_req(const DataTr
             this->context.message_dispatcher.dispatch_call_error(call_error);
             return std::nullopt;
         } catch (const json::exception& e) {
-            EVLOG_error << "Unable to parse DataTransfer.conf from CSMS: " << enhanced_message.message;
+            EVLOG_error << "Unable to parse DataTransfer.conf from CSMS with id: " << enhanced_message.uniqueId
+                        << " and length: " << enhanced_message.message_size;
             auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
             this->context.message_dispatcher.dispatch_call_error(call_error);
             return std::nullopt;
