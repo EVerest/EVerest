@@ -61,7 +61,7 @@ void powermeterImpl::init() {
             mod->config.resilience_transaction_request_retries, mod->config.resilience_transaction_request_retry_delay,
             mod->config.cable_id, mod->config.tariff_id, mod->config.meter_timezone, mod->config.meter_dst,
             mod->config.SC, mod->config.UV, mod->config.UD, mod->config.IT, mod->config.command_timeout_ms,
-            mod->config.transaction_ocmf_fetch_interval_s});
+            mod->config.transaction_ocmf_fetch_interval_s, mod->config.transaction_body_format == "AST"});
 
     // Validate and normalize temperature thresholds for the monitor.
     // If the error level is configured below the warning level, clamp it and log a warning.

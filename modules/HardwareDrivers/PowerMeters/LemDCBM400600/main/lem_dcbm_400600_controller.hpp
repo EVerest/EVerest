@@ -50,6 +50,8 @@ public:
         // minimum time in seconds between fetches of the fallback OCMF record during an active
         // transaction (0 = fetch on every poll)
         const int transaction_ocmf_fetch_interval_s = 0;
+        // v1 transaction start body for the AST DC650 display unit: tariffId as a string, no cableId
+        const bool ast_transaction_body = false;
     };
 
     class DCBMUnexpectedResponseException : public std::exception {
@@ -124,7 +126,10 @@ private:
     void set_identification_type(int identification_type);
     std::string get_current_transaction();
     void request_device_to_start_transaction(const types::powermeter::TransactionReq& value);
-    void request_device_to_stop_transaction(const std::string& transaction_id);
+    // Returns true if the response could not confirm the stop (AST format: no transactionStatus); the caller
+    // then checks the device status with confirm_transaction_stopped().
+    bool request_device_to_stop_transaction(const std::string& transaction_id);
+    void confirm_transaction_stopped(const std::string& transaction_id);
     std::string fetch_ocmf_result(const std::string& transaction_id);
     types::powermeter::Powermeter convert_livemeasure_to_powermeter(const std::string& livemeasure);
     std::string transaction_start_request_to_dcbm_payload(const types::powermeter::TransactionReq& request);
