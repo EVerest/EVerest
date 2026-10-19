@@ -497,7 +497,7 @@
         "attributes": [
             {
                 "type": "Actual",
-                "mutability": "ReadWrite"
+                "mutability": "ReadOnly"
             }
         ],
         "default": false,
