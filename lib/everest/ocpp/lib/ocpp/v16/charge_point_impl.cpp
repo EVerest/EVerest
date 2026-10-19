@@ -1358,7 +1358,7 @@ void ChargePointImpl::connected_callback() {
 }
 
 void ChargePointImpl::message_callback(const std::string& message) {
-    EVLOG_debug << "Received Message: " << message;
+    EVLOG_debug << "Received message with length: " << message.size();
 
     EnhancedMessage<v16::MessageType> enhanced_message;
     try {
