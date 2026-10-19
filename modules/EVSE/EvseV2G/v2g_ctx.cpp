@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <time.h>
 #include <unistd.h> // sleep
 
 #include "log.hpp"
@@ -108,6 +109,7 @@ void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx) {
 }
 
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
+    v2g_ctx_finish_welding_detection(ctx);
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
     ctx->error_shutdown = false;
@@ -119,10 +121,57 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;
     ctx->session.renegotiation_required = false;
     ctx->session.is_charging = false;
+    ctx->session.welding_detection_active = false;
+    ctx->session.welding_detection_answered = false;
+    ctx->session.welding_voltage_received = false;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
     /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.5.19]. It must not outlive
      * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
     v2g_ctx_init_dc_evse_status_codes(ctx);
+}
+
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->session.welding_detection_active = true;
+    ctx->session.welding_detection_answered = false;
+    ctx->session.welding_voltage_received = false;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Started);
+}
+
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active) {
+        return;
+    }
+    ctx->session.welding_detection_active = false;
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Finished);
+}
+
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active or ctx->session.welding_detection_answered) {
+        return;
+    }
+    ctx->session.welding_detection_answered = true;
+
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, V2G_WELDING_VOLTAGE_TIMEOUT);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and not ctx->session.welding_voltage_received and not ctx->intl_emergency_shutdown and
+           not ctx->stop_hlc and not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool received = ctx->session.welding_voltage_received;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+
+    if (not received) {
+        dlog(DLOG_LEVEL_WARNING,
+             "No value from the welding detection voltage source within %d ms, answering WeldingDetection with the "
+             "last present voltage",
+             V2G_WELDING_VOLTAGE_TIMEOUT);
+    }
 }
 
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
