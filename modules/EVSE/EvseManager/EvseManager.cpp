@@ -370,6 +370,10 @@ void EvseManager::ready() {
 
     if (hlc_enabled) {
 
+        if (config.charge_mode == "DC") {
+            setup_welding_detection_voltage();
+        }
+
         // Set up EVSE ID
         types::iso15118::EVSEID evseid = {config.evse_id, config.evse_id_din};
 
@@ -394,6 +398,7 @@ void EvseManager::ready() {
                                      _central_contract_validation_allowed);
 
         r_hlc[0]->subscribe_hlc_session_failed([this](types::evse_manager::HlcSessionFailedReasonEnum reason) {
+            end_welding_detection_phase();
             types::evse_manager::HlcSessionFailedEvent ev;
             ev.uuid = charger->get_session_id();
             ev.reason = reason;
@@ -401,6 +406,7 @@ void EvseManager::ready() {
         });
 
         r_hlc[0]->subscribe_dlink_error([this] {
+            end_welding_detection_phase();
             session_log.evse(true, "D-LINK_ERROR.req");
             // Inform charger
             charger->dlink_error();
@@ -410,12 +416,14 @@ void EvseManager::ready() {
 
         r_hlc[0]->subscribe_dlink_pause([this] {
             // tell charger (it will disable PWM)
+            end_welding_detection_phase();
             session_log.evse(true, "D-LINK_PAUSE.req");
             charger->dlink_pause();
             r_slac[0]->call_dlink_pause();
         });
 
         r_hlc[0]->subscribe_dlink_terminate([this] {
+            end_welding_detection_phase();
             selected_d20_energy_service.reset();
             session_log.evse(true, "D-LINK_TERMINATE.req");
             charger->dlink_terminate();
@@ -594,6 +602,7 @@ void EvseManager::ready() {
 
             // Cable check for DC charging
             r_hlc[0]->subscribe_start_cable_check([this] {
+                end_welding_detection_phase();
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::CableCheck;
                 cable_check();
             });
@@ -604,6 +613,7 @@ void EvseManager::ready() {
 
             // Notification that current demand has started
             r_hlc[0]->subscribe_current_demand_started([this] {
+                end_welding_detection_phase();
                 power_supply_DC_charging_phase = types::power_supply_DC::ChargingPhase::Charging;
                 current_demand_active = true;
                 apply_new_target_voltage_current();
@@ -624,14 +634,22 @@ void EvseManager::ready() {
             r_hlc[0]->subscribe_current_demand_finished([this] {
                 current_demand_active = false;
                 sae_bidi_active = false;
-                if (not r_over_voltage_monitor.empty()) {
-                    r_over_voltage_monitor[0]->call_stop();
-                }
+                ovm_stop_after_welding_detection();
                 if (voltage_plausibility_monitor) {
                     voltage_plausibility_monitor->stop_monitor();
                 }
                 if (internal_over_voltage_monitor) {
                     internal_over_voltage_monitor->stop_monitor();
+                }
+            });
+
+            r_hlc[0]->subscribe_welding_detection([this](types::iso15118::WeldingDetectionPhase phase) {
+                session_log.evse(true, fmt::format("Welding detection {}",
+                                                   types::iso15118::welding_detection_phase_to_string(phase)));
+                if (phase == types::iso15118::WeldingDetectionPhase::Started) {
+                    welding_detection_voltage->start();
+                } else {
+                    welding_detection_voltage->finish();
                 }
             });
 
@@ -645,6 +663,7 @@ void EvseManager::ready() {
                     if (voltage_plausibility_monitor) {
                         voltage_plausibility_monitor->update_over_voltage_monitor_voltage(voltage_V);
                     }
+                    welding_detection_voltage->update(WeldingDetectionVoltageSource::OverVoltageMonitor, voltage_V);
                 });
             }
 
@@ -658,16 +677,23 @@ void EvseManager::ready() {
                     if (voltage_plausibility_monitor && m.voltage_V.has_value()) {
                         voltage_plausibility_monitor->update_isolation_monitor_voltage(m.voltage_V.value());
                     }
+                    if (m.voltage_V.has_value()) {
+                        welding_detection_voltage->update(WeldingDetectionVoltageSource::IsolationMonitor,
+                                                          m.voltage_V.value());
+                    }
+                    // The EVSE contactors are open while the IMD runs on for welding detection.
+                    const bool evaluate_faults =
+                        charger->get_current_state() == Charger::EvseState::Charging and
+                        not welding_detection_holds(WeldingDetectionVoltageSource::IsolationMonitor);
 
                     // Check for isolation errors
-                    if (charger->get_current_state() == Charger::EvseState::Charging and
-                        not check_isolation_resistance_in_range(m.resistance_F_Ohm)) {
+                    if (evaluate_faults and not check_isolation_resistance_in_range(m.resistance_F_Ohm)) {
                         error_handling->raise_isolation_resistance_fault(
                             fmt::format("Isolation resistance too low during charging: {} Ohm", m.resistance_F_Ohm),
                             "Resistance");
                     }
                     // Check L1e and L2e to PE as defined by IEC 61851-23:2023, $6.3.1.112.2
-                    if (charger->get_current_state() == Charger::EvseState::Charging) {
+                    if (evaluate_faults) {
                         bool is_in_range = check_voltage_to_protective_earth_in_range(m);
                         auto now = std::chrono::steady_clock::now();
 
@@ -717,9 +743,7 @@ void EvseManager::ready() {
             }
 
             // On start up, stop ovm in case it is still enabled from a previous run
-            if (not r_over_voltage_monitor.empty()) {
-                r_over_voltage_monitor[0]->call_stop();
-            }
+            ovm_stop();
 
             // Get voltage/current from DC power supply
             if (not r_powersupply_DC.empty()) {
@@ -744,7 +768,13 @@ void EvseManager::ready() {
                         EVLOG_info << "Hack: Restarting Isolation Measurement at " << m.voltage_V << " " << m.current_A;
                     }
 
-                    r_hlc[0]->call_update_dc_present_values(present_values);
+                    present_current_A = present_values.evse_present_current.value();
+                    welding_detection_voltage->update(WeldingDetectionVoltageSource::PowerSupply,
+                                                      present_values.evse_present_voltage);
+                    // During welding detection the selected source reports, marked as such.
+                    if (not welding_detection_voltage->is_active()) {
+                        r_hlc[0]->call_update_dc_present_values(present_values);
+                    }
 
                     {
                         // dont publish ev_info here, it will be published when other values change.
@@ -857,7 +887,7 @@ void EvseManager::ready() {
             // opening will be done by Charger on C->B CP event.
             r_hlc[0]->subscribe_dc_open_contactor([this] {
                 powersupply_DC_off();
-                imd_stop();
+                imd_stop_after_welding_detection();
             });
 
             // Back up switch off - charger signalled that it needs to switch off now.
@@ -1129,8 +1159,11 @@ void EvseManager::ready() {
         if (not r_over_voltage_monitor.empty() and event == CPEvent::CarUnplugged) {
             r_over_voltage_monitor[0]->call_reset_over_voltage_error();
         }
-        if (not r_over_voltage_monitor.empty() and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
-            r_over_voltage_monitor[0]->call_stop();
+        if (event == CPEvent::CarUnplugged) {
+            end_welding_detection_phase();
+        }
+        if (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff) {
+            ovm_stop();
         }
         if (internal_over_voltage_monitor and (event == CPEvent::CarUnplugged or event == CPEvent::PowerOff)) {
             internal_over_voltage_monitor->stop_monitor();
@@ -1178,6 +1211,11 @@ void EvseManager::ready() {
             // Update voltage plausibility monitor with powermeter voltage
             if (voltage_plausibility_monitor && p.voltage_V.has_value() && p.voltage_V.value().DC.has_value()) {
                 voltage_plausibility_monitor->update_powermeter_voltage(p.voltage_V.value().DC.value());
+            }
+            if (welding_detection_voltage and not r_powermeter_car_side.empty() and p.voltage_V.has_value() and
+                p.voltage_V.value().DC.has_value()) {
+                welding_detection_voltage->update(WeldingDetectionVoltageSource::PowermeterCarSide,
+                                                  p.voltage_V.value().DC.value());
             }
             // Inform charger about current charging current. This is used for slow OC detection.
             if (p.current_A and p.current_A.value().L1 and p.current_A.value().L2 and p.current_A.value().L3) {
@@ -2489,10 +2527,82 @@ const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_bi
     }
 }
 
-void EvseManager::imd_stop() {
-    if (not r_imd.empty()) {
-        r_imd[0]->call_stop();
+void EvseManager::setup_welding_detection_voltage() {
+    const auto configured = welding_detection_voltage_source_from_string(config.welding_detection_voltage_source)
+                                .value_or(WeldingDetectionVoltageSource::PowermeterCarSide);
+    WeldingDetectionVoltageSources connected;
+    connected.powermeter_car_side = not r_powermeter_car_side.empty();
+    connected.over_voltage_monitor = not r_over_voltage_monitor.empty();
+    connected.isolation_monitor = not r_imd.empty();
+    const auto source = resolve_welding_detection_voltage_source(configured, connected);
+    if (source != configured) {
+        EVLOG_warning << "welding_detection_voltage_source " << to_string(configured) << " is not connected, using "
+                      << to_string(source);
     }
+
+    welding_detection_voltage = std::make_unique<WeldingDetectionVoltage>(
+        source,
+        [this](float voltage_V) {
+            types::iso15118::DcEvsePresentVoltageCurrent present_values;
+            present_values.evse_present_voltage = std::max(voltage_V, 0.0f);
+            present_values.evse_present_current = present_current_A.load();
+            present_values.welding_detection = true;
+            r_hlc[0]->call_update_dc_present_values(present_values);
+        },
+        [this, source] {
+            if (source == WeldingDetectionVoltageSource::OverVoltageMonitor and not r_over_voltage_monitor.empty()) {
+                r_over_voltage_monitor[0]->call_stop();
+            } else if (source == WeldingDetectionVoltageSource::IsolationMonitor) {
+                imd_stop();
+            }
+        },
+        [](const std::string& message) { EVLOG_warning << message; });
+}
+
+void EvseManager::end_welding_detection_phase() {
+    if (welding_detection_voltage) {
+        welding_detection_voltage->finish();
+    }
+}
+
+bool EvseManager::is_welding_detection_source(WeldingDetectionVoltageSource source) const {
+    return welding_detection_voltage and welding_detection_voltage->source() == source;
+}
+
+bool EvseManager::welding_detection_holds(WeldingDetectionVoltageSource source) const {
+    return is_welding_detection_source(source) and welding_detection_voltage->holds_source();
+}
+
+// The stops skip a monitor that welding detection holds as its voltage source; that stop runs when the phase ends.
+void EvseManager::imd_stop() {
+    if (r_imd.empty() or welding_detection_holds(WeldingDetectionVoltageSource::IsolationMonitor)) {
+        return;
+    }
+    r_imd[0]->call_stop();
+}
+
+void EvseManager::ovm_stop() {
+    if (r_over_voltage_monitor.empty() or welding_detection_holds(WeldingDetectionVoltageSource::OverVoltageMonitor)) {
+        return;
+    }
+    r_over_voltage_monitor[0]->call_stop();
+}
+
+// The power path opened: the welding detection voltage source keeps measuring until the phase ends.
+void EvseManager::imd_stop_after_welding_detection() {
+    if (is_welding_detection_source(WeldingDetectionVoltageSource::IsolationMonitor)) {
+        welding_detection_voltage->defer_source_stop();
+        return;
+    }
+    imd_stop();
+}
+
+void EvseManager::ovm_stop_after_welding_detection() {
+    if (is_welding_detection_source(WeldingDetectionVoltageSource::OverVoltageMonitor)) {
+        welding_detection_voltage->defer_source_stop();
+        return;
+    }
+    ovm_stop();
 }
 
 void EvseManager::imd_start() {

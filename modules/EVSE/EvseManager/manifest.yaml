@@ -169,6 +169,27 @@ config:
       Set to 0 unless you really know what you are doing.
     type: integer
     default: 0
+  welding_detection_voltage_source:
+    description: >-
+      Voltage measurement reported to the EV as EVSE present voltage during DC welding detection, from
+      PowerDelivery(Stop) until SessionStop. It has to be the side B voltage at the vehicle connector with the
+      EVSE contactors open (IEC 61851-23:2023 CC.7.6.17), so the selected source must measure on the EV side of
+      the EVSE output contactors; a meter or monitor between the power supply and the contactors, like the power
+      supply itself, sees only the power supply output once the contactors are open. If the selected source is
+      not connected, the next connected one in the order powermeter_car_side, over_voltage_monitor, power_supply
+      is used and a warning is printed; isolation_monitor is only used when configured. Outside welding
+      detection the power supply measurement is always reported. The over voltage monitor and the isolation
+      monitor keep running until welding detection ends. For the isolation monitor this deviates from
+      IEC 61851-23:2023 Table CC.9 t103, which requires the EVSE IMD to be disabled when side B is disabled, and
+      the EV may enable its own IMD (t104): only use it with an IMD that measures the voltage without its
+      insulation test.
+    type: string
+    enum:
+      - powermeter_car_side
+      - over_voltage_monitor
+      - isolation_monitor
+      - power_supply
+    default: powermeter_car_side
   hack_pause_imd_during_precharge:
     description: >-
       Disable IMD at the end of CableCheck and re-enable when current is flowing in CurrentDemand.
