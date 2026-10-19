@@ -268,6 +268,7 @@ Result DC_ChargeLoop::feed(Event ev) {
             // t105); on MCS a C-exit under a standing permissive is an emergency shutdown (CC.4.3).
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+            m_ctx.welding_detection.start(m_ctx.feedback);
             pending_stop_res = res;
             if (contactor_closed.has_value() and not *contactor_closed) {
                 return send_pending_stop_res();

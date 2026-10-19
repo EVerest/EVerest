@@ -26,11 +26,14 @@ enum class TimeoutType : uint8_t {
     STOP_CHARGING,
     // Bounds the wait for the request that carries the emergency-shutdown FAILED response.
     EMERGENCY_SHUTDOWN,
+    // Bounds how long the first WeldingDetectionRes waits for a value from the welding detection
+    // voltage source.
+    WELDING_VOLTAGE,
 };
 
-constexpr uint8_t TIMEOUT_TYPE_SIZE = 7;
+constexpr uint8_t TIMEOUT_TYPE_SIZE = 8;
 
-static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::EMERGENCY_SHUTDOWN) + 1,
+static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::WELDING_VOLTAGE) + 1,
               "TIMEOUT_TYPE_SIZE should be in sync with the TimeoutType enum definition");
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
@@ -41,6 +44,9 @@ constexpr auto TIMEOUT_STOP_CHARGING_GUARD = 1000 * 10;
 // over V2G ([V2G2-880] NOTE 1, [V2G-DC-638] NOTE 2), so this only bounds how long the reason stays
 // deliverable.
 constexpr auto TIMEOUT_EMERGENCY_SHUTDOWN_GUARD = 1000 * 2;
+// Leaves 500 ms of the 1,5 s V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) (ISO 15118-2 Table 109,
+// DIN 70121) to build and send the response; runs concurrently with the CP State B wait.
+constexpr auto TIMEOUT_WELDING_VOLTAGE = 1000;
 
 class Timeouts {
 public:

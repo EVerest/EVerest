@@ -69,6 +69,9 @@ void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {
         ctx.cache_ac_target_power.emplace(*control_data);
     } else if (const auto control_data = ctx.get_control_event<d20::AcPresentPower>()) {
         ctx.cache_ac_present_power.emplace(*control_data);
+    } else if (const auto control_data = ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+        ctx.cache_present_values.emplace(*control_data);
+        ctx.welding_detection.observe(*control_data);
     } else if (const auto control_data = ctx.get_control_event<d20::EvseError>()) {
         // The DC status-code stamp is a -20-specific follow-up, but an emergency shutdown must still abort.
         if (control_data->code == d20::EvseErrorCode::EmergencyShutdown) {
