@@ -55,8 +55,8 @@ ConnectivityManager::ConnectivityManager(ocpp::ConnectivityManagerConfiguration&
     evse_security{std::move(evse_security)},
     share_path{share_path},
     websocket{nullptr},
-    message_callback([](const std::string& message) {
-        EVLOG_warning << "No message callback set in ConnectivityManager. Dropping message: " << message;
+    message_callback([](const std::string& /*message*/) {
+        EVLOG_warning << "No message callback set in ConnectivityManager. Dropping message.";
     }),
     wants_to_be_connected{false},
     connected_ocpp_version{OcppProtocolVersion::Unknown} {
