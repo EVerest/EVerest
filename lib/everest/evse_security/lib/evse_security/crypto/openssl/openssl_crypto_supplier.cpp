@@ -650,7 +650,7 @@ KeyValidationResult OpenSSLSupplier::x509_check_private_key(X509Handle* handle, 
 
     const bool bResult = true;
     if (!evp_pkey) {
-        EVLOG_warning << "Invalid evp_pkey: " << private_key << " error: " << ERR_error_string(ERR_get_error(), nullptr)
+        EVLOG_warning << "Invalid evp_pkey error: " << ERR_error_string(ERR_get_error(), nullptr)
                       << " Password configured correctly?";
         ERR_print_errors_fp(stderr);
 
