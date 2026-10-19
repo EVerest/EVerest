@@ -98,7 +98,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
         return response;
     }
 
-    EVLOG_debug << "Received Get15118EVCertificateRequest " << request;
+    EVLOG_debug << "Received Get15118EVCertificateRequest";
     auto future_res =
         this->context.message_dispatcher.dispatch_call_async(ocpp::Call<Get15118EVCertificateRequest>(request));
 
@@ -109,7 +109,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
     }
 
     const auto response_message = future_res.get();
-    EVLOG_debug << "Received Get15118EVCertificateResponse " << response_message.message;
+    EVLOG_debug << "Received Get15118EVCertificateResponse";
     if (response_message.messageType != MessageType::Get15118EVCertificateResponse) {
         response.status = Iso15118EVCertificateStatusEnum::Failed;
         return response;
