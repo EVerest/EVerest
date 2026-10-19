@@ -7,7 +7,7 @@ project(cb_v2g
 
 add_subdirectory(lib)
 
-message(STATUS "library code based on cbexigen generator version: bed5253a2")
+message(STATUS "library code based on cbexigen generator version: 6b91be009")
 
 # tests
 if (BUILD_TESTING)

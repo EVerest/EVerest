@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright chargebyte GmbH and Contributors to EVerest
  */
 
 /*****************************************************
@@ -28,6 +27,28 @@
 /*****************************************************************************
  * local functions
  *****************************************************************************/
+static void exi_basetypes_encoder_raw_unsigned(exi_unsigned_t* raw, uint64_t value)
+{
+    raw->octets_count = 0;
+    uint8_t* current_octet = raw->octets;
+    uint64_t dummy = value;
+
+    for (size_t n = 0; n < EXI_BASETYPES_UINT64_MAX_OCTETS; n++)
+    {
+        raw->octets_count++;
+        *current_octet = (uint8_t)(dummy & EXI_BASETYPES_OCTET_SEQ_VALUE_MASK);
+
+        dummy >>= 7u;
+        if (dummy == 0)
+        {
+            break;
+        }
+
+        *current_octet |= EXI_BASETYPES_OCTET_SEQ_FLAG_MASK;
+        current_octet++;
+    }
+}
+
 static int exi_basetypes_encoder_write_unsigned(exi_bitstream_t* stream, const exi_unsigned_t* exi_unsigned)
 {
     const uint8_t* current_octet = exi_unsigned->octets;
@@ -98,58 +119,36 @@ int exi_basetypes_encoder_nbit_uint(exi_bitstream_t* stream, size_t bit_count, u
 
 int exi_basetypes_encoder_uint_8(exi_bitstream_t* stream, uint8_t value)
 {
-    int error;
     exi_unsigned_t exi_unsigned;
-    uint32_t result = (uint32_t)value;
 
-    error = exi_basetypes_convert_to_unsigned(&exi_unsigned, result, EXI_BASETYPES_UINT8_MAX_OCTETS);
-    if (error != EXI_ERROR__NO_ERROR)
-    {
-        return error;
-    }
+    exi_basetypes_encoder_raw_unsigned(&exi_unsigned, value);
 
     return exi_basetypes_encoder_write_unsigned(stream, &exi_unsigned);
 }
 
 int exi_basetypes_encoder_uint_16(exi_bitstream_t* stream, uint16_t value)
 {
-    int error;
     exi_unsigned_t exi_unsigned;
-    uint32_t result = (uint32_t)value;
 
-    error = exi_basetypes_convert_to_unsigned(&exi_unsigned, result, EXI_BASETYPES_UINT16_MAX_OCTETS);
-    if (error != EXI_ERROR__NO_ERROR)
-    {
-        return error;
-    }
+    exi_basetypes_encoder_raw_unsigned(&exi_unsigned, value);
 
     return exi_basetypes_encoder_write_unsigned(stream, &exi_unsigned);
 }
 
 int exi_basetypes_encoder_uint_32(exi_bitstream_t* stream, uint32_t value)
 {
-    int error;
     exi_unsigned_t exi_unsigned;
 
-    error = exi_basetypes_convert_to_unsigned(&exi_unsigned, value, EXI_BASETYPES_UINT32_MAX_OCTETS);
-    if (error != EXI_ERROR__NO_ERROR)
-    {
-        return error;
-    }
+    exi_basetypes_encoder_raw_unsigned(&exi_unsigned, value);
 
     return exi_basetypes_encoder_write_unsigned(stream, &exi_unsigned);
 }
 
 int exi_basetypes_encoder_uint_64(exi_bitstream_t* stream, uint64_t value)
 {
-    int error;
     exi_unsigned_t exi_unsigned;
 
-    error = exi_basetypes_convert_64_to_unsigned(&exi_unsigned, value);
-    if (error != EXI_ERROR__NO_ERROR)
-    {
-        return error;
-    }
+    exi_basetypes_encoder_raw_unsigned(&exi_unsigned, value);
 
     return exi_basetypes_encoder_write_unsigned(stream, &exi_unsigned);
 }
