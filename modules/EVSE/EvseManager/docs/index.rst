@@ -111,6 +111,47 @@ Software over-voltage supervision is always active during DC charging. The confi
 must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
 Set it to ``0`` to trigger immediately once the threshold is crossed.
 
+Welding detection voltage
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+During welding detection the EV checks its contactors against the voltage the EVSE reports in
+``WeldingDetectionRes``. That has to be the side B voltage at the vehicle connector, measured with the
+EVSE contactors open, within 10 V (IEC 61851-23:2023 CC.6.3, test CC.7.6.17). A power supply measuring
+at its own output, behind the contactors, does not see it. The same holds for any meter or monitor
+wired between the power supply and the contactors: choose the source that is physically connected on
+the EV side of the EVSE output contactors, otherwise the EV is told the power supply output instead of
+the voltage at its connector.
+
+The ISO module reports the phase with ``welding_detection``: ``Started`` at PowerDelivery(Stop),
+``Finished`` at SessionStop or session teardown. In between, EvseManager reports the voltage of the
+source selected by ``welding_detection_voltage_source`` instead of the power supply measurement:
+
+* ``powermeter_car_side`` (default): ``voltage_V.DC`` of the car side power meter.
+* ``over_voltage_monitor``: ``voltage_measurement_V`` of the over voltage monitor.
+* ``isolation_monitor``: ``voltage_V`` of the isolation monitor.
+* ``power_supply``: the power supply measurement, as outside welding detection.
+
+If the selected source is not connected, the next connected one in the order ``powermeter_car_side``,
+``over_voltage_monitor``, ``power_supply`` is used and a warning is printed at start up. The isolation
+monitor is only used when configured. The power supply is always available.
+
+The over voltage monitor and the isolation monitor are normally stopped when the power path opens.
+If one of them is the source, that stop is deferred until the welding detection phase ends, and
+isolation faults are not evaluated meanwhile. ``Started`` arrives on its own topic and may follow the
+power path events; if no phase has started 2 s after they deferred the stop, the source is stopped. Note that IEC 61851-23:2023 Table CC.9 t103 asks for the
+EVSE IMD to be disabled when side B is disabled, and the EV may enable its own IMD (t104): use
+``isolation_monitor`` only with an IMD that can measure the voltage without its insulation test.
+
+The ISO module holds the first ``WeldingDetectionRes`` until a value of the selected source arrived,
+for at most 1 s. EvseManager sends the first sample of the source, or after 500 ms its last value of
+this session, which is valid because side B stays at the battery voltage until the EV opens its
+contactors. The
+source should publish at 5 Hz or more (CC.6.3: at most 200 ms from measurement to communication);
+EvseManager warns once per session if it updates less often than every second. Over voltage
+monitors often publish only at about 1 Hz. If ``Finished`` never arrives, the phase also ends on
+D-LINK events, a failed HLC session, the next cable check or charge loop, unplug, or 20 s after it
+started (CC.9 t104 to t107).
+
 Published variables
 ===================
 
