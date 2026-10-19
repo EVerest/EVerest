@@ -19,16 +19,22 @@ enum class TimeoutType : uint8_t {
     PERFORMANCE,
     ONGOING,
     CONTACTOR,
+    // Bounds how long the first DC_WeldingDetectionRes waits for a value from the welding detection
+    // voltage source.
+    WELDING_VOLTAGE,
 };
 
-constexpr uint8_t TIMEOUT_TYPE_SIZE = 4;
+constexpr uint8_t TIMEOUT_TYPE_SIZE = 5;
 
-static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::CONTACTOR) + 1,
+static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::WELDING_VOLTAGE) + 1,
               "TIMEOUT_TYPE_SIZE should be in sync with the TimeoutType enum definition");
 
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
 constexpr auto TIMEOUT_SEQUENCE = 1000 * 60;
 constexpr auto TIMEOUT_EIM_ONGOING = 1000 * 60 * 3;
+// Leaves 500 ms of the 1,5 s V2G_SECC_Msg_Performance_Time(DC_WeldingDetectionReq) (ISO 15118-20 Table 217)
+// to build and send the response.
+constexpr auto TIMEOUT_WELDING_VOLTAGE = 1000;
 
 class Timeouts {
 public:
