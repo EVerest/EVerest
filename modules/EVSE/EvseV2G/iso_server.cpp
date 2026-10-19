@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright (C) 2023 chargebyte GmbH
-// Copyright (C) 2023 Contributors to EVerest
+// Copyright (C) 2023 - 2026 Contributors to EVerest
 #include <cbv2g/common/exi_bitstream.h>
 #include <cbv2g/exi_v2gtp.h> //for V2GTP_HEADER_LENGTHs
 #include <cbv2g/iso_2/iso2_msgDefDatatypes.h>
@@ -11,6 +11,7 @@
 #include <algorithm>
 #include <cstdint>
 #include <everest/util/misc/change_tracker.hpp>
+#include <fmt/format.h>
 #include <inttypes.h>
 #include <math.h>
 #include <stdio.h>
@@ -83,6 +84,24 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         *v2g_response_code = iso2_responseCodeType_FAILED;
     }
 
+    /* Error shutdown (IEC 61851-23 Table CC.10): the first response after the error is sent with an
+     * OK response code so it still carries the shutdown cause (EVSEStatusCode, EVSEIsolationStatus),
+     * which a FAILED response must omit (ISO 15118-4). Once that has been reported, requests that
+     * would continue the energy transfer are answered with FAILED; the stop sequence
+     * (PowerDelivery(Stop), WeldingDetection, SessionStop) is still allowed to complete normally. */
+    if ((conn->ctx->error_shutdown == true) && (conn->ctx->error_shutdown_reported == true)) {
+        switch (conn->ctx->current_v2g_msg) {
+        case V2G_CABLE_CHECK_MSG:
+        case V2G_PRE_CHARGE_MSG:
+        case V2G_CURRENT_DEMAND_MSG:
+        case V2G_CHARGING_STATUS_MSG: // AC: without failing ChargingStatus the session would never terminate
+            *v2g_response_code = iso2_responseCodeType_FAILED;
+            break;
+        default:
+            break;
+        }
+    }
+
     /* [V2G2-460]: check whether the session id matches the expected one of the active session */
     *v2g_response_code =
         ((conn->ctx->current_v2g_msg != V2G_SESSION_SETUP_MSG) && (conn->ctx->ev_v2g_data.received_session_id != 0) &&
@@ -113,6 +132,13 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
         (*v2g_response_code <= iso2_responseCodeType_FAILED_CertificateRevoked)) {
         dlog(DLOG_LEVEL_ERROR, "Failed response code detected for message \"%s\", error: %s",
              v2g_msg_type[conn->ctx->current_v2g_msg], isoResponse[*v2g_response_code]);
+    }
+
+    /* The error shutdown counts as reported only when the response actually leaves with an OK
+     * response code, i.e. carrying the shutdown status; a response that fails for another reason
+     * (unknown session, sequence error) must not consume the one-shot report. */
+    if ((conn->ctx->error_shutdown == true) && (*v2g_response_code < iso2_responseCodeType_FAILED)) {
+        conn->ctx->error_shutdown_reported = true;
     }
 
     return next_event;
@@ -2148,7 +2174,8 @@ static enum v2g_event handle_iso_cable_check(struct v2g_connection* conn) {
     res->EVSEProcessing =
         static_cast<iso2_EVSEProcessingType>(conn->ctx->evse_v2g_data.evse_processing[PHASE_ISOLATION]);
 
-    if (conn->ctx->intl_emergency_shutdown == false && res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
+    if (conn->ctx->intl_emergency_shutdown == false && conn->ctx->error_shutdown == false &&
+        res->EVSEProcessing == iso2_EVSEProcessingType_Finished) {
         res->DC_EVSEStatus.EVSEStatusCode = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
     } else {
         res->DC_EVSEStatus.EVSEStatusCode = get_emergency_status_code(conn->ctx, PHASE_ISOLATION);

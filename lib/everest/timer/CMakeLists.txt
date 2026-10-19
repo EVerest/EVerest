@@ -1,31 +1,15 @@
-cmake_minimum_required(VERSION 3.16)
-
 project(everest-timer
     VERSION 0.1.4
     DESCRIPTION "EVerest timer library"
     LANGUAGES CXX C
 )
 
-find_package(everest-cmake 0.1 REQUIRED
-    PATHS ../everest-cmake
-)
-
 # options
-option(${PROJECT_NAME}_BUILD_TESTING "Build unit tests, used if included as dependency" OFF)
-option(BUILD_TESTING "Build unit tests, used if standalone project" OFF)
 option(BUILD_EXAMPLES "Build examples" OFF)
-option(TIMER_INSTALL "Install the library (shared data might be installed anyway)" ${EVC_MAIN_PROJECT})
 option(CMAKE_RUN_CLANG_TIDY "Run clang-tidy" OFF)
 
-if((${CMAKE_PROJECT_NAME} STREQUAL ${PROJECT_NAME} OR ${PROJECT_NAME}_BUILD_TESTING) AND BUILD_TESTING)
-    set(LIBTIMER_BUILD_TESTING ON)
-    include(CTest)
+if(BUILD_TESTING)
     add_subdirectory(tests)
-endif()
-
-# this policy allows us to continue using the removed FindBoost module for now
-if(POLICY CMP0167)
-    cmake_policy(SET CMP0167 OLD)
 endif()
 
 # dependencies
@@ -38,12 +22,7 @@ if(Boost_VERSION_STRING VERSION_LESS "1.69.0")
     )
 endif()
 
-if (NOT DISABLE_EDM)
-    evc_setup_edm()
-
-    # In EDM mode, we can't install exports (because the dependencies usually do not install their exports)
-    set(TIMER_INSTALL OFF)
-else()
+if (DISABLE_EDM)
     find_package(date REQUIRED)
 endif()
 
@@ -56,22 +35,12 @@ if(BUILD_EXAMPLES)
 endif()
 
 # packaging
-if (TIMER_INSTALL)
-    install(
-        TARGETS timer
-        EXPORT timer-targets
-    )
+install(
+    TARGETS timer
+    EXPORT everest-base-targets
+)
 
-    install(
-        DIRECTORY include/
-        TYPE INCLUDE
-    )
-
-    evc_setup_package(
-        NAME everest-timer
-        EXPORT timer-targets
-        NAMESPACE everest
-        ADDITIONAL_CONTENT
-            "find_dependency(Boost COMPONENTS system)"
-    )
-endif()
+install(
+    DIRECTORY include/
+    TYPE INCLUDE
+)

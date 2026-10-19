@@ -22,8 +22,10 @@ using namespace types::evse_manager;
 // class that provides access to internal state from the Charger class
 struct ChargerDerived : public Charger {
     using Charger::Charger;
+    using Charger::get_config_context;
     using Charger::get_enable_disable_source_table;
     using Charger::get_hlc_use_5percent_current_session;
+    using Charger::get_internal_context;
     using Charger::get_shared_context;
     using Charger::process_event;
     using Charger::run_state_machine;
@@ -979,6 +981,194 @@ TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
     EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
 }
 
+// [V2G3-M06-07]: with ac_limit_slac_init_retries (default), the 5% matching sequence (E/F, back to 5%) is
+// retried C_sequ_retry = 2 times; the next timeout ends in X1 and later error routines are ignored.
+TEST_F(ChargerDlinkErrorTest, SlacInitRetriesLimitedThenX1) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = true;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+
+    for (int retry = 0; retry < 2; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session()) << "retry " << retry << " returns to 5%";
+        EXPECT_EQ(slac_resets, retry + 1) << "every E/F resets SLAC";
+    }
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session()) << "last timeout returns to X1";
+    EXPECT_EQ(slac_resets, 3);
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_EQ(slac_resets, 3) << "no SLAC reset once the retries are exhausted";
+}
+
+TEST_F(ChargerDlinkErrorTest, NoFivePercentAfterLastSlacRetry) {
+    // The final T_step_EF returns to WaitingForAuthentication, whose initialization must keep 5% off
+    auto& ctx = charger->get_shared_context();
+    auto& cfg = charger->get_config_context();
+    cfg.ac_hlc_enabled = true;
+    cfg.ac_hlc_use_5percent = true;
+    cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    ctx.flag_ev_plugged_in = true;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int timeout = 0; timeout < 3; timeout++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+    }
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, FivePercentAfterEarlierSlacRetry) {
+    auto& ctx = charger->get_shared_context();
+    auto& cfg = charger->get_config_context();
+    cfg.ac_hlc_enabled = true;
+    cfg.ac_hlc_use_5percent = true;
+    cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+    ctx.flag_ev_plugged_in = true;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->request_error_sequence();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->run_state_machine();
+
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, NoSlacRetryWithNominalPwm) {
+    // [V2G3-A09-13]: with nominal PWM the EVSE considers that no SLAC will be performed. SLAC is not reset
+    // either: it is not relaunched before the next plug-in.
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = false;
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    ctx.pwm_running = true;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(ctx.pwm_running) << "the PWM stays as it is";
+    EXPECT_EQ(slac_resets, 0);
+}
+
+// ac_enforce_hlc keeps 5% on after an EIM, unless the matching retries are exhausted before any HLC session was
+// set up: then the session ends in nominal PWM like without the option
+struct ChargerEnforceHlcTest : public ChargerDlinkErrorTest {
+    void setup_eim_in_waiting_for_authentication() {
+        auto& ctx = charger->get_shared_context();
+        auto& cfg = charger->get_config_context();
+        cfg.ac_hlc_enabled = true;
+        cfg.ac_hlc_use_5percent = true;
+        cfg.ac_enforce_hlc = true;
+        cfg.sleep_before_enabling_pwm_hlc_mode_ms = 0;
+        ctx.flag_ev_plugged_in = true;
+        ctx.max_current_cable = 32.0f;
+        // The initialization starts a session, which clears the authorization, unless one is active
+        ctx.session_active = true;
+        ctx.flag_authorized = true;
+        ctx.authorized_pnc = false;
+        ctx.flag_transaction_active = true;
+        charger->get_hlc_use_5percent_current_session() = true;
+    }
+
+    void slac_init_timeouts(int count) {
+        auto& ctx = charger->get_shared_context();
+        for (int timeout = 0; timeout < count; timeout++) {
+            ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+            charger->request_error_sequence();
+        }
+    }
+
+    void authorize() {
+        charger->get_shared_context().current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->run_state_machine();
+    }
+};
+
+TEST_F(ChargerEnforceHlcTest, FivePercentKeptAfterEim) {
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(1);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerEnforceHlcTest, NominalPwmAfterLastSlacRetry) {
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(3);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerEnforceHlcTest, FivePercentKeptAfterEimWhenMatched) {
+    // A match resets the count, so a later EIM in a session that matched keeps 5%
+    setup_eim_in_waiting_for_authentication();
+    slac_init_timeouts(2);
+    charger->set_slac_matched(true);
+    charger->set_slac_matched(false);
+    slac_init_timeouts(1);
+
+    authorize();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacRetryWithNominalPwmWhenNotLimited) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().ac_limit_slac_init_retries = false;
+    charger->get_hlc_use_5percent_current_session() = false;
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacInitRetriesUnlimitedWhenNotLimited) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_config_context().ac_limit_slac_init_retries = false;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int retry = 0; retry < 5; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    }
+}
+
+TEST_F(ChargerDlinkErrorTest, SlacMatchResetsRetryCount) {
+    auto& ctx = charger->get_shared_context();
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    for (int retry = 0; retry < 4; retry++) {
+        ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+        charger->request_error_sequence();
+        charger->set_slac_matched(true);
+        charger->set_slac_matched(false);
+        EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    }
+}
+
 TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
     // [V2G3-M07-12]: in nominal PWM mode (AC with HLC on nominal duty cycle), basic
     // charging continues and matching is not restarted on a D-LINK_ERROR
@@ -988,6 +1178,79 @@ TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWithNominalPwm) {
     charger->dlink_error();
 
     EXPECT_EQ(charger->current_state(), Charger::EvseState::Charging);
+}
+
+// request_error_sequence() is the SLAC module's error routine. Without an established data link, e.g. after
+// TT_EVSE_SLAC_init expired, the EVSE goes to E/F directly ([V2G3-M06-07]). After a lost data link it goes through X1
+// first and leaves the network there ([V2G3-M07-05..07]).
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineWithoutDataLinkGoesToStepEF) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->get_hlc_use_5percent_current_session() = true;
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterLostDataLinkGoesThroughX1) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::WaitingForAuthentication;
+    charger->get_hlc_use_5percent_current_session() = true;
+    charger->set_dlink_ready(true);
+    charger->set_dlink_ready(false);
+
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_FALSE(ctx.dlink_established);
+}
+
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterHlcDlinkErrorGoesToStepEF) {
+    setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+    charger->set_dlink_ready(true);
+
+    charger->dlink_error();
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+// A link lost during an EV pause: the error routine meets a state it does not act in and no HLC session is left to
+// report the loss. The matching failure on the resume is a new one and goes to E/F directly.
+TEST_F(ChargerDlinkErrorTest, ErrorRoutineIgnoredDuringPauseStillClearsDataLink) {
+    auto& ctx = charger->get_shared_context();
+    ctx.current_state = Charger::EvseState::ChargingPausedEV;
+    charger->get_hlc_use_5percent_current_session() = true;
+    charger->set_dlink_ready(true);
+
+    charger->request_error_sequence();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+
+    ctx.current_state = Charger::EvseState::PrepareCharging;
+    charger->request_error_sequence();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
+}
+
+// The HLC reports the lost link while the EVSE is still in the X1 of the error sequence; the reinit it requests
+// replaces T_step_X1 without running its exit. The next ordinary T_step_X1 must not inherit the link-loss handling.
+TEST_F(ChargerDlinkErrorTest, LinkLossX1DoesNotOutliveReinit) {
+    setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+    charger->set_dlink_ready(true);
+    charger->request_error_sequence();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+
+    charger->dlink_error();
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+
+    int slac_resets = 0;
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
+    charger->current_state(Charger::EvseState::T_step_X1);
+    charger->run_state_machine();
+
+    EXPECT_EQ(slac_resets, 0);
 }
 
 } // namespace
@@ -1008,6 +1271,253 @@ void request_backtrace(pthread_t id) {
 } // namespace Everest
 
 namespace module {
+
+// ----------------------------------------------------------------------------
+// Minimum time in X1 before PWM is enabled again (basic AC charging)
+// IEC 61851-1:2017 Table A.6 sequence 9.2: the EVSE may stop the PWM at any
+// time, but if it enables it again (sequence 3.1) it shall have waited at
+// least 3 s in X1. Energy management toggling around the 6 A minimum must not
+// make the PWM flicker faster than that.
+
+struct ChargerMinX1Test : public ChargerTest {
+    // never dereferenced: the IECStateMachine used here is the no-op stub below
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
+        ChargerTest::SetUp();
+        // basic AC session, EV plugged in and authorized, 32 A cable
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_transaction_active = true;
+        ctx.flag_authorized = true;
+        ctx.flag_ev_plugged_in = true;
+        ctx.max_current_cable = 32.;
+        ctx.hlc_charging_active = false;
+        set_power(16.);
+    }
+
+    void set_power(float ampere) {
+        charger->set_max_current(ampere, std::chrono::steady_clock::now() + std::chrono::hours(1));
+    }
+
+    // pretend the PWM has been off for the given time
+    void pwm_off_since(std::chrono::milliseconds ago) {
+        charger->get_internal_context().pwm_switched_off_at = std::chrono::steady_clock::now() - ago;
+    }
+
+    bool pwm_on() {
+        auto& ctx = charger->get_shared_context();
+        return ctx.pwm_running and charger->get_internal_context().update_pwm_last_duty_cycle < 1.;
+    }
+};
+
+TEST_F(ChargerMinX1Test, ResumeFromPausedEvseWaitsInX1) {
+    // Charging with PWM on; the energy manager drops below 6 A: pause by EVSE
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.1;
+    set_power(0.);
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+
+    // Energy is back right away: still no PWM, we have to stay in X1 for 3 s
+    set_power(16.);
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+
+    // Just before the 3 s are over: still waiting
+    pwm_off_since(std::chrono::milliseconds(2900));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEVSE);
+    EXPECT_FALSE(pwm_on());
+
+    // 3 s in X1: resume, PrepareCharging enables the PWM
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, ResumeFromPausedEvseIsImmediateWhenPwmWasOffLongEnough) {
+    // PWM already off for a long time (e.g. pause started minutes ago)
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = false;
+    pwm_off_since(std::chrono::minutes(5));
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_TRUE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, RepeatedX1DoesNotRestartTheTimer) {
+    // The pause switches to X1 once; a later X1 while PWM is already off (as StoppingCharging does on entry)
+    // must not restart the 3 s
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.1;
+    set_power(0.);
+    charger->current_state(Charger::EvseState::ChargingPausedEVSE);
+    charger->run_state_machine();
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+    EXPECT_FALSE(pwm_on());
+
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->current_state(Charger::EvseState::StoppingCharging);
+    charger->run_state_machine();
+    EXPECT_GE(observed_cp_state_commands.size(), 2u);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+}
+
+TEST_F(ChargerMinX1Test, PrepareChargingPowerToggleWaitsInX1) {
+    // EV in state B waiting in PrepareCharging, PWM on with 16 A
+    auto& ctx = charger->get_shared_context();
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    ASSERT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // Energy drops below 6 A: duty cycle goes to 100 % (X1) immediately, that is allowed
+    set_power(0.);
+    charger->run_state_machine();
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // Energy is back 1 s later: PWM must stay off
+    pwm_off_since(std::chrono::milliseconds(1000));
+    set_power(16.);
+    charger->run_state_machine();
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+
+    // After 3 s in X1 the PWM comes back
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
+TEST_F(ChargerMinX1Test, ReplugAfterUnplugEnablesPwmImmediately) {
+    // Charging with PWM on; the EV is unplugged: Idle switches to X1
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.flag_ev_plugged_in = false;
+    charger->get_internal_context().last_state_detect_state_change = Charger::EvseState::Finished;
+    charger->current_state(Charger::EvseState::Idle);
+    charger->run_state_machine();
+    ASSERT_FALSE(pwm_on());
+    EXPECT_FALSE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Replug within 3 s: the new session enables PWM at once, seq. 9.2 does not apply after state A
+    ctx.flag_ev_plugged_in = true;
+    ctx.max_current_cable = 32.;
+    ctx.flag_authorized = true;
+    ctx.flag_transaction_active = true;
+    charger->current_state(Charger::EvseState::PrepareCharging);
+    charger->run_state_machine();
+    EXPECT_TRUE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+}
+
+TEST_F(ChargerMinX1Test, EvPauseKeepsPwmOffForThreeSeconds) {
+    // Charging with PWM on and the relays closed
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.contactor_open = false;
+    ctx.iec_allow_close_contactor = true;
+    charger->current_state(Charger::EvseState::Charging);
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::Charging);
+    ASSERT_TRUE(pwm_on());
+    // charging has been running for a while, the last duty cycle update is long ago
+    charger->get_internal_context().last_pwm_update = std::chrono::steady_clock::now() - std::chrono::seconds(10);
+
+    // EV goes C->B (CPEvent::CarRequestedStopPower): stop via StoppingCharging, which switches to X1
+    ctx.iec_allow_close_contactor = false;
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::StoppingCharging);
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(pwm_on());
+
+    // Relays are open (CPEvent::PowerOff): the pause was initiated by the EV
+    ctx.contactor_open = true;
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // The next tick must not enable the PWM again: the 5 s update throttle only knows the last duty cycle update
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // Just before the 3 s are over: still waiting
+    pwm_off_since(std::chrono::milliseconds(2900));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_FALSE(pwm_on());
+
+    // 3 s in X1: nominal PWM comes back so the EV can resume
+    pwm_off_since(std::chrono::milliseconds(3000));
+    charger->run_state_machine();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::ChargingPausedEV);
+    EXPECT_TRUE(pwm_on());
+}
+
+// CP states E and F switch the PWM off as well. cp_state_E()/cp_state_F() are private, so they are reached through
+// the Reinit state, whose configured method is in shared_context. Reinit ends with cp_state_X1(), which must not
+// restart the timer: the time in E/F counts towards the 3 s.
+TEST_F(ChargerMinX1Test, CpStateFArmsTheTimer) {
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    ctx.reinit_config = Charger::ReinitConfiguration{"CPStateF", 3000};
+    charger->current_state(Charger::EvseState::Reinit);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"F"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Reinit ends 2 s later with X1: the original switch-off time is kept
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->get_internal_context().reinit_deadline = std::chrono::steady_clock::now();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, (std::vector<std::string>{"F", "X1"}));
+    EXPECT_NE(charger->current_state(), Charger::EvseState::Reinit);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+    EXPECT_FALSE(pwm_on());
+}
+
+TEST_F(ChargerMinX1Test, CpStateEArmsTheTimer) {
+    auto& ctx = charger->get_shared_context();
+    ctx.pwm_running = true;
+    charger->get_internal_context().update_pwm_last_duty_cycle = 0.27;
+    charger->set_supports_cp_state_E(true);
+    ctx.reinit_config = Charger::ReinitConfiguration{"CPStateE", 3000};
+    charger->current_state(Charger::EvseState::Reinit);
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"E"});
+    EXPECT_FALSE(pwm_on());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+    ASSERT_TRUE(charger->get_internal_context().pwm_switched_off_at.has_value());
+
+    // Reinit ends 2 s later with X1: the original switch-off time is kept
+    pwm_off_since(std::chrono::milliseconds(2000));
+    const auto backdated = charger->get_internal_context().pwm_switched_off_at.value();
+    charger->get_internal_context().reinit_deadline = std::chrono::steady_clock::now();
+    charger->run_state_machine();
+    EXPECT_EQ(observed_cp_state_commands, (std::vector<std::string>{"E", "X1"}));
+    EXPECT_NE(charger->current_state(), Charger::EvseState::Reinit);
+    EXPECT_EQ(charger->get_internal_context().pwm_switched_off_at.value(), backdated);
+    EXPECT_FALSE(pwm_on());
+}
 
 // ----------------------------------------------------------------------------
 // IECStateMachine stub

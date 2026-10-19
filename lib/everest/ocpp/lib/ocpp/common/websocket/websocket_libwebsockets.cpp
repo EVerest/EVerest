@@ -5,7 +5,10 @@
 
 #include <everest/logging.hpp>
 
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wpedantic"
 #include <libwebsockets.h>
+#pragma GCC diagnostic pop
 
 #include <atomic>
 #include <chrono>
@@ -1561,6 +1564,13 @@ int WebsocketLibwebsockets::process_callback(void* wsi_ptr, int callback_reason,
     case LWS_CALLBACK_MQTT_UNSUBSCRIBE_TIMEOUT:
     case LWS_CALLBACK_MQTT_SHADOW_TIMEOUT:
     case LWS_CALLBACK_USER:
+    case LWS_CALLBACK_MQTT_QOS2_RX_COMPLETE:
+    case LWS_CALLBACK_HTTP_INTERCEPTOR_CHECK:
+    case LWS_CALLBACK_GET_PSS_SIZE:
+    case LWS_CALLBACK_DHT_VERB_DISPATCH:
+    case LWS_CALLBACK_QT_SERVER_RECEIVE:
+    case LWS_CALLBACK_QT_CLIENT_RECEIVE:
+    case LWS_CALLBACK_CLIENT_ESTABLISHED_EARLY:
         break;
     }
 

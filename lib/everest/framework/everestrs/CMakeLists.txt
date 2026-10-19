@@ -1,5 +1,5 @@
 # Must be kept in sync with `everestrs/Cargo.toml` and with the cxxbridge-cmd-native recipe in
-# `yocto/scarthgap/meta-everest/recipes-devtools/cxxbridge-cmd/`
+# `yocto/meta-everest-common/recipes-devtools/cxxbridge-cmd/`
 set(CXXBRIDGE_VERSION 1.0.194)
 set(CXXBRIDGE_INSTALL_PATH ${CMAKE_CURRENT_BINARY_DIR}/cargo/bin/cxxbridge)
 

@@ -835,3 +835,69 @@ class TestConfigService:
             value="some_value",
         )
         assert result["status"] != "Ok", f"Expected error status for unknown param, got: {result}"
+
+
+@pytest.mark.probe_module(
+    connections={
+        "observer_allowed": [Requirement("observer_allowed", "main")],
+        "observer_denied": [Requirement("observer_denied", "main")],
+    },
+    access=PROBE_CONFIG_SERVICE_ACCESS,
+)
+@pytest.mark.everest_core_config('config-test-cpp-config-notifications.yaml')
+class TestConfigUpdateNotifications:
+    """
+    Tests that a module is notified about accepted configuration changes of another module, if its
+    access block allows reading that module's configuration.
+    """
+
+    @pytest.fixture
+    def probe_module(self, started_test_controller, everest_core):
+        return ProbeModule(everest_core.get_runtime_session())
+
+    @staticmethod
+    async def wait_for_received(probe_module: ProbeModule, connection_id: str, count: int) -> list:
+        received = []
+        for _ in range(50):
+            received = await probe_module.call_command(connection_id, "get_received", {})
+            if len(received) >= count:
+                break
+            await asyncio.sleep(0.1)
+        return received
+
+    @pytest.mark.asyncio
+    async def test_notifications_follow_read_access(self, probe_module: ProbeModule):
+        probe_module.start()
+        await probe_module.wait_to_be_ready()
+
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="rw_param",
+            value="updated_value",
+        )
+        assert result["set_status"] == "Accepted", f"Expected Accepted set_status, got: {result}"
+
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="rw_reboot_param",
+            value="new_reboot_value",
+        )
+        assert result["set_status"] == "RebootRequired", f"Expected RebootRequired set_status, got: {result}"
+
+        result = await probe_module.set_config_value(
+            module_id="test_config_target",
+            param_name="nonexistent_param",
+            value="some_value",
+        )
+        assert result["status"] != "Ok", f"Expected error status for unknown param, got: {result}"
+
+        received = await self.wait_for_received(probe_module, "observer_allowed", 2)
+        assert received == [
+            {"module_id": "test_config_target", "parameter": "rw_param", "value": "updated_value",
+             "status": "Accepted", "origin": "probe"},
+            {"module_id": "test_config_target", "parameter": "rw_reboot_param", "value": "new_reboot_value",
+             "status": "RebootRequired", "origin": "probe"},
+        ], f"Unexpected notifications: {received}"
+
+        denied = await probe_module.call_command("observer_denied", "get_received", {})
+        assert denied == [], f"Module without read access was notified: {denied}"

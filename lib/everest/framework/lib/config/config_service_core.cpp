@@ -208,8 +208,11 @@ void ConfigServiceCore::publish_active_slot_update(ActiveSlotUpdateCause cause) 
 void ConfigServiceCore::publish_config_update(const ConfigurationUpdate& update) {
     auto handlers_copy = m_config_update_handlers;
 
-    for (const auto& handler : handlers_copy) {
-        handler(update);
+    for (const auto& [id, handler] : handlers_copy) {
+        // A handler may unregister another one
+        if (m_config_update_handlers.count(id) != 0) {
+            handler(update);
+        }
     }
 }
 
@@ -708,9 +711,15 @@ void ConfigServiceCore::register_active_slot_update_handler(std::function<void(c
         [this, handler = std::move(handler)]() mutable { m_active_slot_handlers.push_back(std::move(handler)); });
 }
 
-void ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
-    post_to_actor(
-        [this, handler = std::move(handler)]() mutable { m_config_update_handlers.push_back(std::move(handler)); });
+std::function<void()>
+ConfigServiceCore::register_config_update_handler(std::function<void(const ConfigurationUpdate&)> handler) {
+    const auto id = post_to_actor([this, handler = std::move(handler)]() mutable {
+        const auto id = m_next_config_update_handler_id++;
+        m_config_update_handlers.emplace(id, std::move(handler));
+        return id;
+    });
+    // Handlers run on the actor thread, so none is running once the actor removed it
+    return [this, id]() { post_to_actor([this, id]() { m_config_update_handlers.erase(id); }); };
 }
 
 void ConfigServiceCore::register_set_runtime_parameter_handler(const SetParamCallback& callback) {

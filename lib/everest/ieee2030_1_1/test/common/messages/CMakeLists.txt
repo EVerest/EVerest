@@ -4,7 +4,7 @@ add_executable(test_charger_messages charger_messages.cpp)
 
 target_link_libraries(test_charger_messages
     PRIVATE
-        ieee2030::ieee2030
+        everest::ieee2030
         Catch2::Catch2WithMain
 )
 
@@ -14,7 +14,7 @@ add_executable(test_ev_messages ev_messages.cpp)
 
 target_link_libraries(test_ev_messages
     PRIVATE
-        ieee2030::ieee2030
+        everest::ieee2030
         Catch2::Catch2WithMain
 )
 

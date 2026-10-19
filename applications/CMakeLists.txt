@@ -1,3 +1,4 @@
+set(BUILD_TESTING ${EVEREST_TEST_RUNTIME})
 add_subdirectory(pionix_chargebridge)
 add_subdirectory(cbv2g_json_wrapper)
 add_subdirectory(mcs_evse_control)

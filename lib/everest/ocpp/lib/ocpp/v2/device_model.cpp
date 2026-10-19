@@ -19,14 +19,17 @@ namespace ocpp {
 namespace v2 {
 
 namespace {
-/// \brief For AlignedDataInterval, SampledDataTxUpdatedInterval and SampledDataTxEndedInterval, zero is allowed
+/// \brief For AlignedDataInterval, SampledDataTxUpdatedInterval, SampledDataTxEndedInterval and SecurityProfile, zero
+/// is allowed. SecurityProfile had a minLimit of 1 in earlier component schemas, which persists in existing databases
+/// and component configs.
 bool allow_zero(const Component& component, const Variable& variable) {
     ComponentVariable component_variable;
     component_variable.component = component;
     component_variable.variable = variable;
     return component_variable == ControllerComponentVariables::AlignedDataInterval or
            component_variable == ControllerComponentVariables::SampledDataTxUpdatedInterval or
-           component_variable == ControllerComponentVariables::SampledDataTxEndedInterval;
+           component_variable == ControllerComponentVariables::SampledDataTxEndedInterval or
+           component_variable == ControllerComponentVariables::SecurityProfile;
 }
 
 bool allow_set_read_only_value(const Component& component, const Variable& variable,
@@ -110,7 +113,8 @@ void DeviceModel::check_variable_has_value(const ComponentVariable& component_va
                                " has a value but did not provide the variable");
     }
     const auto& variable = component_variable.variable.value();
-    const auto response = this->request_value_internal(component_variable.component, variable, attribute, value, true);
+    const auto response = this->request_value_internal(component_variable.component, variable, attribute, value, true,
+                                                       UnsetValue::NotSupported);
 
     if (response != GetVariableStatusEnum::Accepted) {
         throw DeviceModelError("Required variable " + variable.name.get() + " of component " +
@@ -304,13 +308,14 @@ bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAtt
 
 GetVariableStatusEnum DeviceModel::get_variable(const Component& component_id, const Variable& variable_id,
                                                 const AttributeEnum& attribute_enum, std::string& value,
-                                                bool allow_write_only) const {
-    return this->request_value_internal(component_id, variable_id, attribute_enum, value, allow_write_only);
+                                                bool allow_write_only, UnsetValue unset_value) const {
+    return this->request_value_internal(component_id, variable_id, attribute_enum, value, allow_write_only,
+                                        unset_value);
 }
 
 GetVariableStatusEnum DeviceModel::request_value_internal(const Component& component_id, const Variable& variable_id,
                                                           const AttributeEnum& attribute_enum, std::string& value,
-                                                          bool allow_write_only) const {
+                                                          bool allow_write_only, UnsetValue unset_value) const {
     // Choke point for all value reads (get_variable and the get_*_value/request_value templates).
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
     const auto component_it = this->device_model_map.find(component_id);
@@ -329,7 +334,7 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
 
     const auto attribute_opt = this->device_model->get_variable_attribute(component_id, variable_id, attribute_enum);
 
-    if ((not attribute_opt) or (not attribute_opt->value)) {
+    if (not attribute_opt) {
         return GetVariableStatusEnum::NotSupportedAttributeType;
     }
 
@@ -337,6 +342,14 @@ GetVariableStatusEnum DeviceModel::request_value_internal(const Component& compo
     if (!allow_write_only and attribute_opt.value().mutability.has_value() and
         attribute_opt.value().mutability.value() == MutabilityEnum::WriteOnly) {
         return GetVariableStatusEnum::Rejected;
+    }
+
+    if (not attribute_opt->value) {
+        if (unset_value == UnsetValue::NotSupported) {
+            return GetVariableStatusEnum::NotSupportedAttributeType;
+        }
+        value.clear();
+        return GetVariableStatusEnum::Accepted;
     }
 
     value = attribute_opt->value->get();
@@ -695,57 +708,38 @@ void DeviceModel::check_integrity(const std::map<std::int32_t, std::int32_t>& ev
 
 bool DeviceModel::update_monitor_reference(std::int32_t monitor_id, const std::string& reference_value) {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
-    bool found_monitor = false;
     VariableMonitoringMeta* monitor_meta = nullptr;
 
-    // See if this is a trivial delta monitor and that it exists
     for (auto& [component, variable_map] : this->device_model_map) {
-        bool found_monitor_id = false;
-
         for (auto& [variable, variable_meta_data] : variable_map) {
             auto it = variable_meta_data.monitors.find(monitor_id);
-            if (it != std::end(variable_meta_data.monitors)) {
-                auto& characteristics = variable_meta_data.characteristics;
-
-                if ((characteristics.dataType == DataEnum::boolean) || (characteristics.dataType == DataEnum::string) ||
-                    (characteristics.dataType == DataEnum::dateTime) ||
-                    (characteristics.dataType == DataEnum::OptionList) ||
-                    (characteristics.dataType == DataEnum::MemberList) ||
-                    (characteristics.dataType == DataEnum::SequenceList) &&
-                        (it->second.monitor.type == MonitorEnum::Delta)) {
-                    monitor_meta = &it->second;
-                    found_monitor = true;
-                } else {
-                    found_monitor = false;
-                }
-
-                found_monitor_id = true;
-                break; // Break inner loop
+            if (it != std::end(variable_meta_data.monitors) and it->second.monitor.type == MonitorEnum::Delta) {
+                monitor_meta = &it->second;
+                break;
             }
         }
 
-        if (found_monitor_id) {
-            break; // Break outer loop
+        if (monitor_meta != nullptr) {
+            break;
         }
     }
 
-    if (found_monitor) {
+    if (monitor_meta != nullptr) {
         try {
             if (this->device_model->update_monitoring_reference(monitor_id, reference_value)) {
                 // Update value in-memory too
                 monitor_meta->reference_value = reference_value;
                 return true;
             }
-            EVLOG_warning << "Could not update in DB trivial delta monitor with ID: " << monitor_id
+            EVLOG_warning << "Could not update in DB delta monitor with ID: " << monitor_id
                           << ". Reference value not updated!";
 
         } catch (const everest::db::Exception& e) {
-            EVLOG_error << "Exception while updating trivial delta monitor reference with ID: " << monitor_id;
+            EVLOG_error << "Exception while updating delta monitor reference with ID: " << monitor_id;
             throw DeviceModelError(e.what());
         }
     } else {
-        EVLOG_warning << "Could not find trivial delta monitor with ID: " << monitor_id
-                      << ". Reference value not updated!";
+        EVLOG_warning << "Could not find delta monitor with ID: " << monitor_id << ". Reference value not updated!";
     }
 
     return false;
@@ -779,11 +773,12 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
         bool id_found = false;
 
         if (request_has_id) {
-            // Search through all the ID's
+            bool id_on_requested_variable = false;
             for (const auto& [component, variable_map] : this->device_model_map) {
                 for (const auto& [variable, variable_meta] : variable_map) {
                     if (variable_meta.monitors.find(request.id.value()) != std::end(variable_meta.monitors)) {
                         id_found = true;
+                        id_on_requested_variable = (component == request.component and variable == request.variable);
                         break;
                     }
                 }
@@ -793,7 +788,7 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
                 }
             }
 
-            if (!id_found) {
+            if (!id_found or !id_on_requested_variable) {
                 result.status = SetMonitoringStatusEnum::Rejected;
                 set_monitors_res.push_back(result);
                 continue;
@@ -803,13 +798,7 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
         auto component_it = this->device_model_map.find(request.component);
 
         if (component_it == this->device_model_map.end()) {
-            // N04.FR.16
-            if (request_has_id && id_found) {
-                result.status = SetMonitoringStatusEnum::Rejected;
-            } else {
-                result.status = SetMonitoringStatusEnum::UnknownComponent;
-            }
-
+            result.status = SetMonitoringStatusEnum::UnknownComponent;
             set_monitors_res.push_back(result);
             continue;
         }
@@ -818,13 +807,7 @@ std::vector<SetMonitoringResult> DeviceModel::set_monitors(const std::vector<Set
 
         auto variable_it = variable_map.find(request.variable);
         if (variable_it == variable_map.end()) {
-            // N04.FR.16
-            if (request_has_id && id_found) {
-                result.status = SetMonitoringStatusEnum::Rejected;
-            } else {
-                result.status = SetMonitoringStatusEnum::UnknownVariable;
-            }
-
+            result.status = SetMonitoringStatusEnum::UnknownVariable;
             set_monitors_res.push_back(result);
             continue;
         }
@@ -1237,9 +1220,13 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
 
 void DeviceModel::set_active_security_profile(int32_t security_profile, const std::string& source) {
     const auto& cv = ControllerComponentVariables::SecurityProfile;
-    if (cv.variable.has_value()) {
-        set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual, std::to_string(security_profile),
-                            source);
+    if (!cv.variable.has_value()) {
+        return;
+    }
+    const auto result = set_read_only_value(cv.component, cv.variable.value(), AttributeEnum::Actual,
+                                            std::to_string(security_profile), source);
+    if (result != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set SecurityCtrlr.SecurityProfile to " << security_profile << ": " << result;
     }
 }
 
@@ -1271,8 +1258,12 @@ void DeviceModel::set_per_slot_ocpp_version(int32_t slot, const std::string& ver
 }
 
 void DeviceModel::set_security_ctrl_security_profile(int32_t security_profile, const std::string& source) {
-    set_read_only_value(ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::SecurityProfile,
-                        AttributeEnum::Actual, std::to_string(security_profile), source);
+    const auto result = set_read_only_value(ControllerComponents::SecurityCtrlr,
+                                            NetworkConfigurationComponentVariables::SecurityProfile,
+                                            AttributeEnum::Actual, std::to_string(security_profile), source);
+    if (result != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set SecurityCtrlr.SecurityProfile to " << security_profile << ": " << result;
+    }
 }
 
 void DeviceModel::set_security_ctrl_identity(const std::string& identity, const std::string& source) {

@@ -32,7 +32,11 @@ https://docs.yoctoproject.org/dev/dev-manual/layers.html
 You can find *meta-everest* in a subdirectory of EVerest:
 *EVerest/yocto/<yocto-release>/meta-everest*
 
-Currently this includes support for the yocto *scarthgap* and *kirkstone* releases.
+Currently this includes support for the yocto *scarthgap* and *kirkstone* releases, and
+experimental support for *wrynose*.
+The recipes shared by all releases live in the layer
+*EVerest/yocto/meta-everest-common*, which *meta-everest* adds by itself, so
+*bblayers.conf* only needs *meta-everest*.
 
 Then - in case you have not done it yet - create a custom image file
 for your board that installs EVerest as well as all other tools you may
@@ -49,7 +53,6 @@ want to have on your base system. This image can be based e.g. on
 
    CORE_IMAGE_EXTRA_INSTALL += "\
            everest-core \
-           libocpp \
            openssh \
            mosquitto \
            tzdata \
@@ -64,8 +67,16 @@ want to have on your base system. This image can be based e.g. on
 
 .. note::
 
-   libocpp is part of everest-core as of today (2026), whereas older version
-   still rely on libocpp being hosted separately.
+   Since ``2026.10.0``, *meta-everest* has no individual recipes for the
+   EVerest libraries inside the EVerest monorepo.
+   ``everest-core`` includes all of these. If you have images or recipes
+   written for older EVerest releases, please ensure that they do not rely on
+   any of the following anymore: ``everest-framework``, ``everest-sqlite``,
+   ``libcbv2g``, ``libevse-security``, ``libfsm``, ``libiso15118``, ``liblog``,
+   ``libocpp``, ``libslac`` and ``libtimer``. You must remove these entries
+   from your ``IMAGE_INSTALL``, ``CORE_IMAGE_EXTRA_INSTALL``, ``DEPENDS`` or
+   ``RDEPENDS``, otherwise parsing will fail with ``Nothing PROVIDES`` or
+   ``Nothing RPROVIDES``.
 
 The minimal required packages are ``everest-core`` and ``mosquitto``. The
 package ``tmux`` is only needed for the BringUp & Qualification tools.
@@ -94,11 +105,13 @@ and the Rust examples) when its ``PACKAGECONFIG`` contains ``rust``:
 
    PACKAGECONFIG:append:pn-everest-core = " rust"
 
-The crates need Rust 1.82 or newer, while scarthgap ships 1.75. The Yocto
-Project's `meta-lts-mixins <https://git.yoctoproject.org/meta-lts-mixins/>`_
-repository has a ``scarthgap/rust`` branch that backports a current toolchain
-under the standard recipe names, so it replaces poky's Rust for the whole
-build. Clone that branch and add the layer to your ``bblayers.conf``:
+The crates need Rust 1.86 or newer, while kirkstone ships 1.59 and scarthgap
+1.75. The Yocto Project's
+`meta-lts-mixins <https://git.yoctoproject.org/meta-lts-mixins/>`_ repository
+has ``kirkstone/rust`` and ``scarthgap/rust`` branches that backport a current
+toolchain under the standard recipe names, so it replaces poky's Rust for the
+whole build. Clone the branch for your release and add the layer to your
+``bblayers.conf``:
 
 .. code-block:: bash
 

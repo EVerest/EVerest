@@ -293,7 +293,8 @@ public:
         m_error_manager_req = std::make_shared<ErrorManagerReq>(
             m_error_type_map, m_error_database_map, std::list<ErrorType>(),
             [](const ErrorType&, const ErrorCallback&, const ErrorCallback&) { std::printf("subscribe_error\n"); });
-        m_config_service_client = std::make_shared<ConfigServiceClient>(m_mqtt, m_module_id, m_module_names);
+        m_config_service_client =
+            std::make_shared<ConfigServiceClient>(m_mqtt, m_module_id, m_module_names, everest::config::Access{});
     }
 
     void clear() {

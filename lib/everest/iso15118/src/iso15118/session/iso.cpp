@@ -21,11 +21,16 @@
 namespace iso15118 {
 
 static constexpr auto SESSION_IDLE_TIMEOUT_MS = 5000;
-// After the session ended (SessionStopRes sent), wait this long for the EVCC to close the TCP
-// connection first (DIN [V2G-DC-937/938], ISO 15118-20 [V2G20-1633]). Must stay below the -4 ATS
+// After a clean end (SessionStopRes sent), wait this long for the EVCC to close the TCP connection
+// first, then close our side. ISO 15118-20 [V2G20-1776] wants D-LINK_TERMINATE 2 s after the
+// SessionStopRes and EVs close as soon as they receive it ([V2G20-717]), so this knowingly cuts the
+// 5 s of [V2G20-1633]; DIN [V2G-DC-937/938] and -2 share the value. Must stay below the -4 ATS
 // par_CMN_TCP_Connection_Termination_Timeout of 5 s. Poll-driven: blocking here would stall the
 // shared SDP server. Negotiation failures and plug-out bypass it entirely ([V2G-DC-940]).
-static constexpr auto CONNECTION_CLOSE_LINGER_MS = 4000;
+static constexpr auto CONNECTION_CLOSE_LINGER_MS = 2000;
+// Budget for TLS shutdown retries and the EV's close before the D-LINK signal, which makes SLAC
+// leave the logical network: our FIN has to cross the AVLN first.
+static constexpr auto PEER_CLOSE_WAIT_MS = 500;
 // The TCP connection is closed immediately on an error end, but DLINK_TERMINATE is held back this
 // long: it makes SLAC leave the logical network, and the FIN must traverse the AVLN first or the
 // peer never observes the close.
@@ -232,8 +237,10 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
 
 Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionConfig session_config,
                  const session::feedback::Callbacks& callbacks_, std::optional<d20::PauseContext>& pause_ctx_,
-                 std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation) :
+                 std::optional<d2::PauseContext>& d2_pause_ctx_, bool skip_app_protocol_negotiation,
+                 bool throttle_same_type_only_) :
     Session(std::move(connection_), std::move(session_config), callbacks_, pause_ctx_, d2_pause_ctx_) {
+    throttle_same_type_only = throttle_same_type_only_;
     if (skip_app_protocol_negotiation) {
         // External SAP on a handed-over socket: the handshake already ran, so start directly on the -20
         // engine, which expects a SessionSetupReq first. The vehicle certificate hash arrives with the
@@ -327,6 +334,15 @@ TimePoint const& Session::poll() {
             state.new_data = false;
             break;
         case V2GTPReadResult::invalid_header:
+            if (std::holds_alternative<DinSeccEngine>(engine)) {
+                // DIN SPEC 70121 closes the TCP connection on a version / inverse version error
+                // ([V2G-DC-169]) or a payload length it cannot process ([V2G-DC-173]); ISO 15118-2 and -20
+                // ignore the message instead ([V2G2-800]).
+                logf_error("Closing the TCP connection: invalid V2GTP header in a DIN SPEC 70121 session");
+                packet.reset();
+                connection->close();
+                break;
+            }
             // new_data stays set: bytes already buffered inside OpenSSL never raise poll() again.
             logf_warning("Dropping V2GTP packet with an invalid header");
             packet.reset();
@@ -383,21 +399,28 @@ TimePoint const& Session::poll() {
             // Timestamp the request so -2/DIN and the handshake can pace their response after it.
             last_request_rx_time = now;
 
-            // A sequence timer is armed on accept and on every response; stop it as soon as the next request
-            // arrives, the SupportedAppProtocolReq included.
-            timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
-
-            if (not in_sap_phase()) {
-                // The first request to a protocol engine is the SessionSetupReq: the session is established, so
-                // V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
-                v2g_session_established = true;
-            }
+            // Read before the call: an accepted SupportedAppProtocolReq hands over to the protocol engine.
+            const bool sap_phase = in_sap_phase();
 
             // Publish the frame the engine is about to decode; cleared right after, the buffer is reused.
             current_request_frame = {packet.get_buffer(),
                                      packet.get_payload_length() + io::SdpPacket::V2GTP_HEADER_SIZE};
-            visit_engine([payload_type, &view](auto& e) { e.on_packet(payload_type, view); });
+            const bool accepted =
+                visit_engine([payload_type, &view](auto& e) { return e.on_packet(payload_type, view); });
             current_request_frame = {};
+
+            // An ignored frame ([V2G20-800]) is no request: the timers run on as if it never arrived.
+            if (accepted) {
+                // A sequence timer is armed on accept and on every response; stop it as soon as the next
+                // request arrives, the SupportedAppProtocolReq included.
+                timeouts.stop_timeout(d20::TimeoutType::SEQUENCE);
+
+                if (not sap_phase) {
+                    // The first request to a protocol engine is the SessionSetupReq: the session is established,
+                    // so V2G_SECC_CommunicationSetup_Timeout stops and the per-message sequence timeout takes over.
+                    v2g_session_established = true;
+                }
+            }
 
             packet.reset();
             state.new_data = false; // reset new_data flag
@@ -407,8 +430,21 @@ TimePoint const& Session::poll() {
     // Send a pending response, but not before it is due: -2/DIN and the handshake pace it
     // RESPONSE_DELAY_AFTER_REQUEST_MS after the request, ISO 15118-20 only keeps responses
     // MIN_RESPONSE_INTERVAL_MS apart. Overrunning the window sends immediately and warns.
+    // The opt-in policy instead paces only a repeated protocol/message type, sends terminal
+    // responses at once and rechecks held responses on every poll.
     const bool has_outgoing = visit_engine([](const auto& e) { return e.has_outgoing(); });
     if (has_outgoing) {
+        if (throttle_same_type_only) {
+            if (visit_engine([](const auto& e) { return e.is_stopping(); })) {
+                response_send_after = now;
+            } else {
+                const auto response_type = visit_engine([](const auto& e) { return e.peek_response_type(); });
+                response_send_after =
+                    last_response_tx_time.has_value() and response_type == last_response_type
+                        ? offset_time_point_by_ms(last_response_tx_time.value(), MIN_RESPONSE_INTERVAL_MS)
+                        : now;
+            }
+        }
         if (not response_send_after.has_value()) {
             const bool pace_after_request =
                 visit_engine([](const auto& e) { return e.delay_response_after_request(); });
@@ -476,13 +512,22 @@ TimePoint const& Session::poll() {
             if (not connection_close_deadline.has_value()) {
                 connection_close_deadline = offset_time_point_by_ms(now, CONNECTION_CLOSE_LINGER_MS);
             }
-            if (now >= connection_close_deadline.value()) {
-                logf_info(
-                    "The EV did not close the TCP connection within %d ms after the session ended; closing it now",
-                    CONNECTION_CLOSE_LINGER_MS);
-                finish_session();
-            } else {
+            if (now < connection_close_deadline.value()) {
                 next_session_event = std::min(next_session_event, connection_close_deadline.value());
+            } else if (not peer_close_deadline.has_value()) {
+                // Half-close only: the EV's close then arrives as EOF and finishes via the not-connected path.
+                logf_info("The EV did not close the TCP connection within %d ms after the session ended; closing "
+                          "our side",
+                          CONNECTION_CLOSE_LINGER_MS);
+                peer_close_deadline = offset_time_point_by_ms(now, PEER_CLOSE_WAIT_MS);
+                connection->half_close();
+                next_session_event = std::min(next_session_event, peer_close_deadline.value());
+            } else if (now < peer_close_deadline.value()) {
+                connection->half_close();
+                next_session_event = std::min(next_session_event, peer_close_deadline.value());
+            } else {
+                logf_info("The %d ms transport shutdown window expired", PEER_CLOSE_WAIT_MS);
+                finish_session();
             }
         }
     }
@@ -562,6 +607,7 @@ void Session::send_response() {
     const auto response_size = setup_response_header(response_buffer, outgoing->payload_type, outgoing->payload_size);
     connection->write(response_buffer, response_size);
     last_response_tx_time = get_current_time_point();
+    last_response_type = response_type;
 
     timeouts.start_timeout(d20::TimeoutType::SEQUENCE, sequence_timeout_after_response(response_type));
 

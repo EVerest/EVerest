@@ -26,6 +26,11 @@ constexpr uint8_t sap_req[] = {0x80, 0x00, 0xf3, 0xab, 0x93, 0x71, 0xd3, 0x4b, 0
                                0x21, 0xd3, 0x4b, 0x9b, 0x79, 0xd1, 0x89, 0xa9, 0x89, 0x89, 0xc1, 0xd1, 0x69,
                                0x91, 0x81, 0xd2, 0x0a, 0x18, 0x01, 0x00, 0x00, 0x04, 0x00, 0x40};
 
+// SupportedAppProtocolReq offering only urn:din:70121:2012:MsgDef 2.0 (SchemaID 1, Priority 1).
+constexpr uint8_t din_sap_req[] = {0x80, 0x00, 0xdb, 0xab, 0x93, 0x71, 0xd3, 0x23, 0x4b, 0x71, 0xd1, 0xb9,
+                                   0x81, 0x89, 0x91, 0x89, 0xd1, 0x91, 0x81, 0x89, 0x91, 0xd2, 0x6b, 0x9b,
+                                   0x3a, 0x23, 0x2b, 0x30, 0x02, 0x00, 0x00, 0x04, 0x00, 0x40};
+
 // Captured SessionSetupReq with a zeroed session id (starts a new session).
 constexpr uint8_t session_setup_req[] = {0x80, 0x8c, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x0c, 0x9f,
                                          0x9c, 0x2b, 0xd0, 0x62, 0x0b, 0x2b, 0xa6, 0xa4, 0xab, 0x18, 0x99, 0x19, 0x9a,
@@ -70,15 +75,23 @@ std::vector<Defect> malformed_frames(uint16_t payload_type, const uint8_t* paylo
     };
 }
 
+iso15118::session::EvseSetupConfig make_setup_config(std::vector<iso15118::ProtocolId> supported_protocols) {
+    iso15118::session::EvseSetupConfig config;
+    config.supported_protocols = std::move(supported_protocols);
+    return config;
+}
+
 struct SessionFixture {
     iso15118::session::feedback::Callbacks callbacks;
-    iso15118::session::SessionConfig session_config{iso15118::session::EvseSetupConfig{}};
+    iso15118::session::SessionConfig session_config;
     std::optional<iso15118::d20::PauseContext> pause_ctx{std::nullopt};
     std::optional<iso15118::d2::PauseContext> d2_pause_ctx{std::nullopt};
     MockConnection* conn{nullptr};
     std::unique_ptr<iso15118::Session> session;
 
-    SessionFixture() {
+    explicit SessionFixture(
+        std::vector<iso15118::ProtocolId> supported_protocols = {iso15118::ProtocolId::ISO15118_20}) :
+        session_config(make_setup_config(std::move(supported_protocols))) {
         callbacks.signal = [](auto) {};
         auto connection = std::make_unique<MockConnection>();
         conn = connection.get();
@@ -87,9 +100,9 @@ struct SessionFixture {
         conn->fire(iso15118::io::ConnectionEvent::ACCEPTED);
     }
 
-    // Run the SupportedAppProtocol handshake so the ISO 15118-20 engine owns the session.
-    void complete_sap_handshake() {
-        conn->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, sap_req, sizeof(sap_req));
+    // Run the SupportedAppProtocol handshake so the negotiated protocol's engine owns the session.
+    void complete_sap_handshake(const uint8_t* request = sap_req, size_t request_len = sizeof(sap_req)) {
+        conn->queue_v2gtp_packet(iso15118::io::v2gtp::PayloadType::SAP, request, request_len);
         conn->fire(iso15118::io::ConnectionEvent::NEW_DATA);
         // The SupportedAppProtocolRes is paced, so the second poll is the one that writes it.
         session->poll();
@@ -155,6 +168,54 @@ SCENARIO("Malformed V2GTP frames after the SupportedAppProtocol handshake") {
                     REQUIRE(fixture.conn->written.size() == written_after_handshake);
                     REQUIRE_FALSE(fixture.session->is_v2g_session_established());
                 }
+            }
+        }
+    }
+}
+
+SCENARIO("Malformed V2GTP headers in a DIN SPEC 70121 session") {
+    GIVEN("a completed SupportedAppProtocol handshake that negotiated DIN SPEC 70121") {
+        // DIN messages share payload type 0x8001 with the SupportedAppProtocol messages.
+        const auto din_type = static_cast<uint16_t>(iso15118::io::v2gtp::PayloadType::SAP);
+        const auto len = static_cast<uint32_t>(sizeof(session_setup_req));
+
+        WHEN("the version, inverse version or payload length of the SessionSetupReq header is invalid") {
+            THEN("the SECC closes the TCP connection ([V2G-DC-169], [V2G-DC-173])") {
+                const std::vector<Defect> defects{
+                    {"invalid protocol version", make_frame(0xFF, VALID_INVERSE_VERSION, din_type, len,
+                                                            session_setup_req, sizeof(session_setup_req))},
+                    {"invalid inverse protocol version",
+                     make_frame(VALID_VERSION, 0xFF, din_type, len, session_setup_req, sizeof(session_setup_req))},
+                    {"zero payload length", make_frame(VALID_VERSION, VALID_INVERSE_VERSION, din_type, 0,
+                                                       session_setup_req, sizeof(session_setup_req))},
+                };
+                for (const auto& defect : defects) {
+                    INFO("defect: " << defect.name);
+                    SessionFixture fixture({iso15118::ProtocolId::DIN70121});
+                    fixture.complete_sap_handshake(din_sap_req, sizeof(din_sap_req));
+                    REQUIRE_FALSE(fixture.conn->written.empty());
+                    const auto written_after_handshake = fixture.conn->written.size();
+
+                    fixture.deliver(defect.frame);
+
+                    REQUIRE(fixture.conn->closed);
+                    REQUIRE(fixture.conn->written.size() == written_after_handshake);
+                    REQUIRE_FALSE(fixture.session->is_v2g_session_established());
+                }
+            }
+        }
+
+        WHEN("the SessionSetupReq carries an unknown payload type") {
+            SessionFixture fixture({iso15118::ProtocolId::DIN70121});
+            fixture.complete_sap_handshake(din_sap_req, sizeof(din_sap_req));
+            const auto written_after_handshake = fixture.conn->written.size();
+
+            fixture.deliver(make_frame(VALID_VERSION, VALID_INVERSE_VERSION, UNKNOWN_PAYLOAD_TYPE, len,
+                                       session_setup_req, sizeof(session_setup_req)));
+
+            THEN("the payload is skipped and the connection is kept ([V2G-DC-171])") {
+                REQUIRE_FALSE(fixture.conn->closed);
+                REQUIRE(fixture.conn->written.size() == written_after_handshake);
             }
         }
     }

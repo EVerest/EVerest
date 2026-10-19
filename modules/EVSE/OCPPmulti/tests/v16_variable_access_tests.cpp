@@ -5,6 +5,7 @@
 
 #include <map>
 #include <optional>
+#include <set>
 #include <string>
 #include <utility>
 #include <vector>
@@ -55,6 +56,7 @@ ocpp::v2::SetVariableData make_set(const std::string& component, const std::stri
 ocpp::v2::Ocpp16CustomConfigMappings custom_mappings_fixture() {
     ocpp::v2::Ocpp16CustomConfigMappings mappings;
     mappings.emplace("VendorBar", std::make_pair(make_component("VendorCtrlr"), make_variable("BarSetting")));
+    mappings.emplace("VendorEmpty", std::make_pair(make_component("VendorCtrlr"), make_variable("EmptySetting")));
     // two custom keys mapping to the same CV -> ambiguous reverse
     mappings.emplace("VendorFoo", std::make_pair(make_component("VendorCtrlr"), make_variable("FooSetting")));
     mappings.emplace("VendorFooAlias", std::make_pair(make_component("VendorCtrlr"), make_variable("FooSetting")));
@@ -70,6 +72,7 @@ protected:
         m_keys["LegacyOnlyKey"] = "legacy-value";
         m_keys["SupportedFeatureProfiles"] = "Core,Reservation";
         m_keys["AuthorizationKey"] = ""; // derived key, write-only in 1.6
+        m_valueless_keys.insert("VendorEmpty");
     }
 
     ocpp_multi::V16VariableAccess
@@ -83,6 +86,13 @@ protected:
                 std::vector<ocpp::v16::KeyValue> found;
                 std::vector<ocpp::CiString<50>> unknown;
                 for (const auto& key : keys) {
+                    if (m_valueless_keys.count(key.get()) != 0) {
+                        ocpp::v16::KeyValue kv;
+                        kv.key = key;
+                        kv.readonly = false;
+                        found.push_back(kv);
+                        continue;
+                    }
                     const auto it = m_keys.find(key.get());
                     if (it != m_keys.end()) {
                         ocpp::v16::KeyValue kv;
@@ -131,6 +141,8 @@ protected:
     ocpp::v16::VariableResolver m_resolver;
     stubs::DeviceModelStub m_device_model;
     std::map<std::string, std::string> m_keys;
+    // keys known to the 1.6 chargepoint but without a value
+    std::set<std::string> m_valueless_keys;
     std::map<std::string, ocpp::v16::ConfigurationStatus> m_set_results;
     std::vector<std::pair<std::string, std::string>> m_set_calls;
     int m_get_keys_calls{0};
@@ -221,6 +233,27 @@ TEST_F(V16VariableAccess, canonicalGetCustomMappingRoutesKey) {
     EXPECT_EQ(results[0].attributeValue.value().get(), "bar-value");
 }
 
+TEST_F(V16VariableAccess, canonicalGetValuelessCustomKeyIsAcceptedWithEmptyValue) {
+    auto access = make_access();
+    const auto results = access.get({make_get("VendorCtrlr", "EmptySetting")});
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].attributeStatus, ocpp::v2::GetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(results[0].attributeValue.has_value());
+    EXPECT_EQ(results[0].attributeValue.value().get(), "");
+    EXPECT_EQ(results[0].attributeType, ocpp::v2::AttributeEnum::Actual);
+}
+
+TEST_F(V16VariableAccess, legacyGetValuelessKeyIsAcceptedWithEmptyValue) {
+    auto access = make_access();
+    const auto results = access.get({make_get("", "VendorEmpty")});
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].attributeStatus, ocpp::v2::GetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(results[0].attributeValue.has_value());
+    EXPECT_EQ(results[0].attributeValue.value().get(), "");
+}
+
 TEST_F(V16VariableAccess, canonicalSetRoutesKeyAndEchoesCv) {
     auto access = make_access();
     const auto results = access.set({make_set("OCPPCommCtrlr", "HeartbeatInterval", "90")}, "csms");
@@ -291,6 +324,22 @@ TEST_F(V16VariableAccess, freeCvReadsAndWritesDeviceModel) {
     EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("FreeSetting")).last_source, "csms");
     EXPECT_EQ(m_device_model.set_read_only_calls(), 0);
     EXPECT_TRUE(m_set_calls.empty()); // never touched the 1.6 key path
+}
+
+TEST_F(V16VariableAccess, freeCvWithoutValueReadsEmptyAndIsWritable) {
+    m_device_model.add_without_value(make_component("VendorCtrlr"), make_variable("UnsetSetting"));
+    auto access = make_access();
+
+    const auto get_results = access.get({make_get("VendorCtrlr", "UnsetSetting")});
+    ASSERT_EQ(get_results.size(), 1);
+    EXPECT_EQ(get_results[0].attributeStatus, ocpp::v2::GetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(get_results[0].attributeValue.has_value());
+    EXPECT_EQ(get_results[0].attributeValue.value().get(), "");
+
+    const auto set_results = access.set({make_set("VendorCtrlr", "UnsetSetting", "first")}, "csms");
+    ASSERT_EQ(set_results.size(), 1);
+    EXPECT_EQ(set_results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(m_device_model.entry(make_component("VendorCtrlr"), make_variable("UnsetSetting")).value, "first");
 }
 
 // Mirrors the 2.x consumer path (Provisioning::set_variables, allow_read_only=true): this API is a

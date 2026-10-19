@@ -27,6 +27,7 @@ struct SeccOutgoing {
 
 // The engines are held by value in a std::variant and dispatched with std::visit -- there is no
 // virtual base class, so a missing or mistyped member is a compile error at the Session's visiting
-// call site rather than here.
+// call site rather than here. peek_response_type() requires has_outgoing() and never consumes it;
+// is_stopping() includes terminal/pause state before take_outgoing() flushes the response.
 
 } // namespace iso15118

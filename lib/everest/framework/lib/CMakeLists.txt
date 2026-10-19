@@ -79,16 +79,14 @@ target_link_libraries(framework
     PUBLIC
         date::date-tz
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         fmt::fmt
 
         everest::log
         everest::sqlite
         everest::yaml
-        $<BUILD_INTERFACE:everest_helpers>
-        $<INSTALL_INTERFACE:everest::helpers>
-        $<BUILD_INTERFACE:everest_util>
-        $<INSTALL_INTERFACE:everest::util>
+        everest::helpers
+        everest::util
         ${STD_FILESYSTEM_COMPAT_LIB}
     PRIVATE
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}

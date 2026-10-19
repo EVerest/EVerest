@@ -11,6 +11,7 @@ find_package(OpenSSL REQUIRED)
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     evse_security
     GTest::gtest_main
+    OpenSSL::Crypto
 )
 
 if(USING_TPM2)
@@ -32,7 +33,7 @@ add_compile_definitions(BUILD_TESTING_EVSE_SECURITY)
 add_compile_definitions(DEBUG_MODE_EVSE_SECURITY)
 
 set(LIBEVSE_SECURITY_TEST_DIR "${CMAKE_BINARY_DIR}")
-if (EVEREST_CORE_BUILD_TESTING)
+if (BUILD_TESTING)
     set(LIBEVSE_SECURITY_TEST_DIR "${CMAKE_BINARY_DIR}/lib/everest/evse_security")
 endif()
 

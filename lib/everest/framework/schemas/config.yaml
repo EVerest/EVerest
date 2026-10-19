@@ -67,6 +67,8 @@ properties:
       validate_schema:
         type: boolean
       run_as_user:
+        description: >-
+          Deprecated, a warning is logged if set. Start the manager as the unprivileged user instead.
         type: string
       forward_exceptions:
         type: boolean

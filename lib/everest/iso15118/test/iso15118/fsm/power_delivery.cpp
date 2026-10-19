@@ -85,3 +85,57 @@ SCENARIO("ISO15118-20 power delivery contactor handling") {
         }
     }
 }
+
+SCENARIO("ISO15118-20 power delivery answers before the contactor closes") {
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+
+    std::vector<session::feedback::Signal> signals;
+    session::feedback::Callbacks callbacks{};
+    callbacks.signal = [&signals](session::feedback::Signal signal) { signals.push_back(signal); };
+
+    auto state_helper = FsmStateHelper(session::SessionConfig(create_default_evse_setup()), pause_ctx, callbacks);
+    auto ctx = state_helper.get_context();
+    ctx.session = d20::Session(
+        d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+                                       dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+
+    fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::PowerDelivery>()};
+
+    message_20::PowerDeliveryRequest req;
+    req.header.session_id = ctx.session.get_id();
+    req.header.timestamp = 1691411798;
+    req.processing = dt::Processing::Finished;
+    req.charge_progress = dt::Progress::Start;
+
+    GIVEN("A PowerDeliveryReq(Start) of an unknown session") {
+        req.header.session_id = d20::Session().get_id();
+        state_helper.handle_request(req);
+        REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+
+        THEN("it is rejected without closing the contactor") {
+            const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::FAILED_UnknownSession);
+            REQUIRE(ctx.session_stopped);
+            REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::AC_CLOSE_CONTACTOR) == 0);
+            REQUIRE(state_helper.get_timeouts().check().empty());
+        }
+    }
+
+    GIVEN("A PowerDeliveryReq(Start) selecting a schedule tuple that was never offered") {
+        auto& profile = req.power_profile.emplace();
+        profile.time_anchor = 1691411798'000'000;
+        profile.control_mode.emplace<dt::Scheduled_EVPPTControlMode>().selected_schedule = 7;
+        state_helper.handle_request(req);
+        REQUIRE_FALSE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+
+        THEN("it is rejected without closing the contactor [V2G20-479]") {
+            const auto res = ctx.get_response<message_20::PowerDeliveryResponse>();
+            REQUIRE(res.has_value());
+            REQUIRE(res->response_code == dt::ResponseCode::FAILED_ScheduleSelectionInvalid);
+            REQUIRE(ctx.session_stopped);
+            REQUIRE(std::count(signals.begin(), signals.end(), session::feedback::Signal::AC_CLOSE_CONTACTOR) == 0);
+        }
+    }
+}

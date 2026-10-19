@@ -5,7 +5,7 @@
 #include <algorithm>
 #include <chrono>
 #include <fmt/color.h>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "IECStateMachine.hpp"
 #include "SessionLog.hpp"
@@ -1354,6 +1354,7 @@ void EvseManager::ready() {
 
         r_slac[0]->subscribe_dlink_ready([this](const bool value) {
             session_log.evse(true, fmt::format("D-LINK_READY ({})", value));
+            charger->set_dlink_ready(value);
             if (hlc_enabled) {
                 r_hlc[0]->call_dlink_ready(value);
                 charger->get_stopwatch().mark("D-LINK_READY");
@@ -1689,6 +1690,7 @@ Charger::SetupConfig EvseManager::get_charger_setup_config(Charger::ChargeMode c
     charger_setup.ac_hlc_enabled = ac_hlc_enabled;
     charger_setup.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
     charger_setup.ac_enforce_hlc = config.ac_enforce_hlc;
+    charger_setup.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     charger_setup.ac_with_soc_timeout = ac_with_soc_timeout;
     charger_setup.soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
     charger_setup.soft_over_current_measurement_noise_A = config.soft_over_current_measurement_noise_A;
@@ -2526,6 +2528,7 @@ void EvseManager::powersupply_DC_on() {
 // input voltage/current is what the evse/car would like to set.
 // if it is more then what the energymanager gave us, we can limit it here.
 bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
+    std::lock_guard<std::mutex> set_lock(powersupply_dc_set_mutex);
     if (last_power_supply_voltage == _voltage and last_power_supply_current == _current) {
         return true;
     }
@@ -2542,9 +2545,9 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // this option will deliver the offered ampere value in those cases
 
     if (config.hack_fix_hlc_integer_current_requests) {
-        auto hlc_limits = charger->get_evse_max_hlc_limits();
-        if (hlc_limits.evse_maximum_current_limit - (int)current < 1.)
-            current = hlc_limits.evse_maximum_current_limit;
+        const double evse_max_current = latest_evse_max_current;
+        if (evse_max_current > 0. and evse_max_current - (int)current < 1.)
+            current = evse_max_current;
     }
 
     if (config.sae_j2847_2_bpt_enabled) {
@@ -2798,6 +2801,7 @@ types::evse_manager::EVInfo EvseManager::get_ev_info() {
 }
 
 void EvseManager::process_dc_ev_target_voltage_current(const types::iso15118::DcEvseMaximumLimits& hlc_limits) {
+    latest_evse_max_current = hlc_limits.evse_maximum_current_limit;
     double clamped_voltage = raw_ev_target_voltage.load();
     double clamped_current = raw_ev_target_current.load();
 

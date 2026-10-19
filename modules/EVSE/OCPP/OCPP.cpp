@@ -15,7 +15,7 @@
 #include "ocpp/v16/types.hpp"
 #include "ocpp/v2/ocpp_types.hpp"
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
@@ -1159,6 +1159,17 @@ void OCPP::shutdown() {
 
 int32_t OCPP::get_ocpp_connector_id(int32_t evse_id, int32_t connector_id) {
     return this->evse_connector_map.at(evse_id).at(connector_id);
+}
+
+ocpp::v16::ConfigurationStatus OCPP::set_writable_configuration_key(const std::string& key, const std::string& value) {
+    ocpp::v16::GetConfigurationRequest request;
+    request.key = std::vector<ocpp::CiString<50>>{key};
+    const auto response = this->charge_point->get_configuration_key(request);
+    if (response.configurationKey.has_value() && !response.configurationKey->empty() &&
+        response.configurationKey->front().readonly) {
+        return ocpp::v16::ConfigurationStatus::Rejected;
+    }
+    return this->charge_point->set_configuration_key(key, value);
 }
 
 } // namespace module

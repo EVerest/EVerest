@@ -667,6 +667,23 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         /* unlock */
         pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
         break;
+    case types::iso15118::EvseError::Error_ErrorShutdown:
+        /* Error shutdown (IEC 61851-23 Table CC.10): energy transfer is already stopped by the
+         * EvseManager. Unlike an emergency shutdown, the session is kept alive so the next
+         * response still reports the shutdown cause (EVSEStatusCode = EVSE_EmergencyShutdown and,
+         * for an isolation fault, EVSEIsolationStatus = Fault) with an OK response code instead of
+         * a FAILED response, which must omit the optional status elements (ISO 15118-4). */
+        memset(v2g_ctx->evse_v2g_data.evse_status_code,
+               static_cast<int>(iso2_DC_EVSEStatusCodeType_EVSE_EmergencyShutdown),
+               sizeof(v2g_ctx->evse_v2g_data.evse_status_code));
+        v2g_ctx->evse_v2g_data.evse_notification = static_cast<uint8_t>(iso2_EVSENotificationType_StopCharging);
+        /* signal changes to possible waiters, according to man page, it never returns an error code */
+        pthread_mutex_lock(&v2g_ctx->mqtt_lock);
+        v2g_ctx->error_shutdown = true;
+        pthread_cond_signal(&v2g_ctx->mqtt_cond);
+        /* unlock */
+        pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
+        break;
     default:
         break;
     }
@@ -675,15 +692,7 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
 void ISO15118_chargerImpl::handle_reset_error() {
     v2g_ctx->evse_v2g_data.rcd = 0;
 
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_INIT] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_AUTH] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_PARAMETER] = iso2_DC_EVSEStatusCodeType_EVSE_Ready; // [V2G-DC-453]
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_ISOLATION] =
-        iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    v2g_ctx->evse_v2g_data.evse_status_code[PHASE_STOP] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    v2g_ctx_init_dc_evse_status_codes(v2g_ctx);
 
     // Todo(sl): check if emergency should be cleared here?
 }

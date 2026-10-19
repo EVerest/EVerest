@@ -120,6 +120,12 @@ Have a look at this categorized list of all guides:
 
       How to migrate an existing OCPP 1.6 JSON configuration into the unified device model storage.
 
+   .. grid-item-card:: Customize OCPP Error Reporting
+      :link: ocpp-custom-error-mapping
+      :link-type: doc
+
+      How to change the codes, texts and device model components OCPP reports for EVerest errors.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -142,3 +148,4 @@ Have a look at this categorized list of all guides:
     devcontainer-usage/index
     c++-coding-guidelines
     ocpp-storage-migration
+    ocpp-custom-error-mapping

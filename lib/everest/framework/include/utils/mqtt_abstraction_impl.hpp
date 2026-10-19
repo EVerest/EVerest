@@ -36,7 +36,8 @@ struct MessageWithQOS : Message {
 };
 
 ///
-/// \brief Contains a C++ abstraction of MQTT-C and some convenience functionality for using MQTT in EVerest modules
+/// \brief Contains a C++ abstraction of the everest::io MQTT client and some convenience functionality for using MQTT
+/// in EVerest modules
 ///
 class MQTTAbstractionImpl : public MQTTAbstraction {
 public:

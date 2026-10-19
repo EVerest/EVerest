@@ -12,6 +12,7 @@ CMakeLists.txt.user
 MODULE.bazel.lock
 __pycache__/
 *.patch
+!yocto/**/*.patch
 *.diff
 *.orig
 *.rej

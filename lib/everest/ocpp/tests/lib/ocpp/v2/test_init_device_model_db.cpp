@@ -451,6 +451,64 @@ TEST_F(InitDeviceModelDbTest, default_device_model_config) {
     EXPECT_NO_THROW(db.initialize_database(component_configs, true));
 }
 
+namespace {
+std::string flags_component_config(const bool volatile_persistent, const bool fixed_constant) {
+    nlohmann::json config = {
+        {"name", "FlagsCtrlr"},
+        {"type", "object"},
+        {"properties",
+         {{"Default",
+           {{"variable_name", "Default"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes", {{{"type", "Actual"}, {"mutability", "ReadWrite"}, {"value", 1}}}},
+            {"type", "integer"}}},
+          {"Volatile",
+           {{"variable_name", "Volatile"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes",
+             {{{"type", "Actual"}, {"mutability", "ReadWrite"}, {"value", 2}, {"persistent", volatile_persistent}}}},
+            {"type", "integer"}}},
+          {"Fixed",
+           {{"variable_name", "Fixed"},
+            {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+            {"attributes",
+             {{{"type", "Actual"}, {"mutability", "ReadOnly"}, {"value", 3}, {"constant", fixed_constant}}}},
+            {"type", "integer"}}}}}};
+    return config.dump();
+}
+} // namespace
+
+TEST_F(InitDeviceModelDbTest, attribute_flags_from_component_config) {
+    const auto read_flags = [this](const std::string& variable_name) {
+        auto statement = this->database->new_statement(
+            "SELECT va.PERSISTENT, va.CONSTANT FROM VARIABLE_ATTRIBUTE va JOIN VARIABLE v ON v.ID = va.VARIABLE_ID "
+            "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID WHERE c.NAME = 'FlagsCtrlr' AND v.NAME = @name");
+        statement->bind_text("@name", variable_name, SQLiteString::Transient);
+        EXPECT_EQ(statement->step(), SQLITE_ROW);
+        return std::pair{statement->column_int(0), statement->column_int(1)};
+    };
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    component_configs.insert(parse_component_config_from_string(flags_component_config(false, true)));
+    db.initialize_database(component_configs, true);
+
+    EXPECT_EQ(read_flags("Default"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Volatile"), std::pair(0, 0));
+    EXPECT_EQ(read_flags("Fixed"), std::pair(1, 1));
+
+    // A changed flag is applied when the database is initialized again
+    auto changed_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    changed_configs.insert(parse_component_config_from_string(flags_component_config(true, false)));
+    InitDeviceModelDb db_again(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db_again.database_exists = true;
+    db_again.initialize_database(changed_configs, false);
+
+    EXPECT_EQ(read_flags("Default"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Volatile"), std::pair(1, 0));
+    EXPECT_EQ(read_flags("Fixed"), std::pair(1, 0));
+}
+
 TEST_F(InitDeviceModelDbTest, wrong_type) {
     // Test if initializing fails when there is a missing required value.
     InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
@@ -1378,6 +1436,82 @@ TEST_F(InitDeviceModelDbTest, ocpp16_values_protected_from_default_overwrite) {
     EXPECT_EQ(get_attribute_source("OCPPCommCtrlr", std::nullopt, std::nullopt, std::nullopt, "HeartbeatInterval",
                                    std::nullopt, AttributeEnum::Actual),
               "OCPP16Config");
+}
+
+namespace {
+void set_aligned_data_interval_monitors(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                                        const std::vector<VariableMonitoringMeta>& monitors) {
+    for (auto& [component, variables] : component_configs) {
+        if (component.name != "AlignedDataCtrlr") {
+            continue;
+        }
+        for (auto& variable : variables) {
+            if (variable.name == "Interval") {
+                variable.monitors = monitors;
+            }
+        }
+    }
+}
+
+VariableMonitoringMeta make_preconfigured_delta_monitor(const float value, const std::string& reference_value) {
+    VariableMonitoringMeta meta;
+    meta.monitor.type = MonitorEnum::Delta;
+    meta.monitor.value = value;
+    meta.monitor.severity = 5;
+    meta.monitor.transaction = false;
+    meta.type = VariableMonitorType::PreconfiguredMonitor;
+    meta.reference_value = reference_value;
+    return meta;
+}
+} // namespace
+
+/// The reference of a Delta monitor is runtime state: re-initializing the database from the configuration keeps it
+TEST_F(InitDeviceModelDbTest, delta_monitor_reference_survives_reinitialization) {
+    const std::string monitor_query = "SELECT vm.ID, vm.VALUE, vm.REFERENCE_VALUE FROM VARIABLE_MONITORING vm "
+                                      "JOIN VARIABLE v ON v.ID = vm.VARIABLE_ID "
+                                      "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID "
+                                      "WHERE c.NAME = 'AlignedDataCtrlr' AND v.NAME = 'Interval'";
+    struct StoredMonitor {
+        int id;
+        double value;
+        std::optional<std::string> reference_value;
+    };
+    const auto stored_monitor = [&]() {
+        auto statement = this->database->new_statement(monitor_query);
+        EXPECT_EQ(statement->step(), SQLITE_ROW);
+        StoredMonitor monitor{statement->column_int(0), statement->column_double(1),
+                              statement->column_text_nullable(2)};
+        EXPECT_EQ(statement->step(), SQLITE_DONE);
+        return monitor;
+    };
+
+    InitDeviceModelDb db(DATABASE_PATH, MIGRATION_FILES_PATH);
+    db.database_exists = false;
+    auto component_configs = get_all_component_configs(STANDARD_CONFIGS_PATH);
+    set_aligned_data_interval_monitors(component_configs, {make_preconfigured_delta_monitor(10.0F, "100")});
+    db.initialize_database(component_configs, true);
+    const auto initial = stored_monitor();
+    EXPECT_EQ(initial.reference_value, "100");
+
+    // The monitoring updater moved the reference after sending an event
+    auto update = this->database->new_statement("UPDATE VARIABLE_MONITORING SET REFERENCE_VALUE = '150' WHERE ID = ?");
+    update->bind_int(1, initial.id);
+    ASSERT_EQ(update->step(), SQLITE_DONE);
+
+    // Restart: std::filesystem::exists does not see the in-memory database
+    db.database_exists = true;
+    db.initialize_database(component_configs, false);
+    const auto unchanged_config = stored_monitor();
+    EXPECT_EQ(unchanged_config.id, initial.id);
+    EXPECT_EQ(unchanged_config.reference_value, "150");
+
+    // A changed monitor value is applied, the reference is kept
+    set_aligned_data_interval_monitors(component_configs, {make_preconfigured_delta_monitor(20.0F, "100")});
+    db.initialize_database(component_configs, false);
+    const auto changed_config = stored_monitor();
+    EXPECT_EQ(changed_config.id, initial.id);
+    EXPECT_EQ(changed_config.value, 20.0);
+    EXPECT_EQ(changed_config.reference_value, "150");
 }
 
 } // namespace ocpp::v2

@@ -375,3 +375,29 @@ async def test_L01_update_firmware_cancels_retry_wait(
         and msg.payload.get("requestId") == 1
     ]
     assert cancelled_request_statuses == []
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+async def test_L01_update_firmware_rejects_option_like_location(
+    test_config: OcppTestConfiguration,
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+):
+    """A firmware location starting with '-' would be parsed as an option by the downloader, so it is rejected."""
+    logging.info(
+        "######### test_L01_update_firmware_rejects_option_like_location #########")
+
+    firmware = FirmwareType(
+        location="-K/dev/null",
+        retrieve_date_time=datetime.now(timezone.utc).isoformat(),
+        signing_certificate=open(test_config.certificate_info.mf_root_ca).read(),
+        signature=open(test_config.firmware_info.update_file_signature).read(),
+    )
+    r = await charge_point_v201.update_firmware(request_id=1, firmware=firmware)
+    assert UpdateFirmwareStatusEnumType(r.status) == UpdateFirmwareStatusEnumType.rejected
+
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "FirmwareStatusNotification", {"requestId": 1}, timeout=5
+    )

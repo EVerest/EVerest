@@ -4,7 +4,7 @@
 #include "powermeterImpl.hpp"
 
 #include "Timeout.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace {
 inline std::uint16_t get_u16(const std::vector<std::uint8_t>& vec, std::uint8_t start_index) {

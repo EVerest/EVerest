@@ -5,7 +5,7 @@
 
 #include <cstddef>
 #include <filesystem>
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <map>
 #include <optional>
 #include <string>
@@ -69,6 +69,7 @@ struct ModuleInfo {
         std::filesystem::path etc;
         std::filesystem::path libexec;
         std::filesystem::path share;
+        std::filesystem::path errors;
     };
 
     std::string name;

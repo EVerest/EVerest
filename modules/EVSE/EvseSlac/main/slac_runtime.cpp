@@ -7,7 +7,7 @@
 #include <optional>
 
 #include <everest/slac/slac_defs.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "amp_map_file.hpp"
 

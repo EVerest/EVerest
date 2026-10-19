@@ -32,6 +32,30 @@ The following table shows the current support for the listed EVSE ISO15118-20 fe
 | Internet Service                   |                    |
 | Parking Status Service             |                    |
 
+Response timing
+---------------
+
+`iso15118::TbdConfig::throttle_same_type_only` is a library opt-in, defaulting
+to `false`. By default, every ISO 15118-20 response keeps a minimum 100 ms gap
+after the previous wire response. SupportedAppProtocol (SAP), ISO 15118-2, and
+DIN SPEC 70121 delay every response until 100 ms after request receipt. Terminal,
+failed and pause responses are no exception: some EV controllers lock up when a
+response arrives too soon after their request.
+
+Set it to `true` to apply the 100 ms gap only to consecutive responses of the
+same type, across all protocols. The first response and changed response types
+are sent as soon as they are staged. The comparison includes the protocol, so
+SAP handover counts as a change. Repeated responses, such as ongoing authorization
+or charge-loop responses, wait until 100 ms after the last response actually sent.
+
+With the option enabled, terminal and pause responses bypass pacing, including
+failed SAP negotiation. The interval remains fixed at 100 ms.
+
+The controller applies the option to every session it creates. Direct `Session`
+callers can pass it as the final constructor argument, after
+`skip_app_protocol_negotiation`; omitting it keeps the default. This option does
+not add an EVerest module configuration key.
+
 ISO 15118 Support
 -----------------
 

@@ -387,6 +387,10 @@ components:
           type: string
           minLength: 2
         severity:
+          description: >-
+            Deprecated: will be removed in 2027.04.0. EVerest defines no clear
+            semantics for error severity.
+          deprecated: true
           $ref: '#/components/schemas/Severity'
         origin:
           $ref: '#/components/schemas/ImplementationIdentifier'
@@ -411,6 +415,10 @@ components:
         type_filter:
           type: string
         severity_filter:
+          description: >-
+            Deprecated: will be removed in 2027.04.0. EVerest defines no clear
+            semantics for error severity.
+          deprecated: true
           $ref: '#/components/schemas/SeverityFilter'
         timeperiod_filter:
           $ref: '#/components/schemas/TimeperiodFilter'
@@ -432,14 +440,20 @@ components:
           type: string
           minLength: 2
     Severity:
-      description: Severity of an error
+      description: >-
+        Severity of an error.
+        Deprecated: will be removed in 2027.04.0.
+      deprecated: true
       type: string
       enum:
         - High
         - Medium
         - Low
     SeverityFilter:
-      description: Severity filter for errors
+      description: >-
+        Severity filter for errors.
+        Deprecated: will be removed in 2027.04.0.
+      deprecated: true
       type: string
       enum:
         - HIGH_GE

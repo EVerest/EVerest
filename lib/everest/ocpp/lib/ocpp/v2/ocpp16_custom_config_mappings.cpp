@@ -16,7 +16,7 @@ namespace ocpp::v2 {
 
 namespace {
 
-void yaml_error_handler(const char* msg, std::size_t len, ryml::Location loc, void*) {
+[[noreturn]] void throw_yaml_error(c4::csubstr msg, const ryml::Location& loc) {
     std::stringstream error_message;
     error_message << "YAML parsing error: ";
 
@@ -26,21 +26,37 @@ void yaml_error_handler(const char* msg, std::size_t len, ryml::Location loc, vo
             error_message << ':';
         }
         error_message << loc.line << ':';
-        if (loc.col) {
+        if (loc.col && loc.col != ryml::npos) {
             error_message << loc.col << ':';
         }
-        if (loc.offset) {
+        if (loc.offset && loc.offset != ryml::npos) {
             error_message << " (" << loc.offset << "B):";
         }
     }
 
-    error_message.write(msg, static_cast<std::streamsize>(len));
+    error_message.write(msg.str, static_cast<std::streamsize>(msg.len));
     throw Ocpp16CustomConfigMappingsError(error_message.str());
+}
+
+[[noreturn]] void yaml_error_basic(c4::csubstr msg, const ryml::ErrorDataBasic& err, void*) {
+    throw_yaml_error(msg, err.location);
+}
+
+[[noreturn]] void yaml_error_parse(c4::csubstr msg, const ryml::ErrorDataParse& err, void*) {
+    // ymlloc refers to the parsed document, cpploc to ryml's own sources
+    throw_yaml_error(msg, err.ymlloc);
+}
+
+[[noreturn]] void yaml_error_visit(c4::csubstr msg, const ryml::ErrorDataVisit& err, void*) {
+    throw_yaml_error(msg, err.cpploc);
 }
 
 struct RymlCallbackInitializer {
     RymlCallbackInitializer() {
-        ryml::set_callbacks({nullptr, nullptr, nullptr, yaml_error_handler});
+        // ryml >= 0.11 replaced the single error callback with one per error kind
+        ryml::Callbacks callbacks;
+        callbacks.set_error_basic(yaml_error_basic).set_error_parse(yaml_error_parse).set_error_visit(yaml_error_visit);
+        ryml::set_callbacks(callbacks);
     }
 };
 

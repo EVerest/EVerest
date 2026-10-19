@@ -36,6 +36,7 @@
 #include <ocpp/v16/charge_point_configuration.hpp>
 #include <ocpp/v16/charge_point_impl.hpp>
 #include <ocpp/v16/charge_point_state_machine.hpp>
+#include <ocpp/v16/database_handler.hpp>
 
 #include "connectivity_manager_mock.hpp"
 #include "evse_security_mock.hpp"
@@ -310,6 +311,104 @@ TEST_F(ChargePointConnectivityTest, OutgoingMessageObservesWebsocketConnected) {
     charge_point->start({}, BootReasonEnum::PowerUp, {});
 
     charge_point->data_transfer("VendorId", CiString<50>("MessageId"), "data");
+
+    charge_point->stop();
+}
+
+// An id_tag the CSMS rejected is known from the authorization cache, so AllowOfflineTxForUnknownId must not accept
+// it while offline.
+TEST_F(ChargePointConnectivityTest, OfflineAuthorizationRejectsCachedNonAcceptedIdTag) {
+    const auto user_config = this->tmp_dir / "user_config.json";
+    std::ofstream(user_config) << "{}";
+    std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+    auto config = nlohmann::json::parse(ifs);
+    config["Core"]["LocalAuthorizeOffline"] = true;
+    config["Core"]["AuthorizationCacheEnabled"] = true;
+    config["Core"]["AllowOfflineTxForUnknownId"] = true;
+    this->configuration = std::make_unique<ChargePointConfiguration>(config.dump(), CONFIG_DIR_V16, user_config);
+
+    const CiString<20> id_tag("BLOCKED_TAG");
+    {
+        DatabaseHandler database_handler(std::make_unique<everest::db::sqlite::Connection>(
+                                             this->tmp_dir / (this->configuration->getChargePointId() + ".db")),
+                                         fs::path(MIGRATION_FILES_LOCATION_V16),
+                                         this->configuration->getNumberOfConnectors());
+        database_handler.open_connection();
+        IdTagInfo id_tag_info;
+        id_tag_info.status = AuthorizationStatus::Blocked;
+        database_handler.insert_or_update_authorization_cache_entry(id_tag, id_tag_info);
+    }
+
+    ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));
+    auto charge_point = make_charge_point();
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+
+    EXPECT_EQ(charge_point->authorize_id_token(id_tag).id_tag_info.status, AuthorizationStatus::Blocked);
+
+    charge_point->stop();
+}
+
+// Invalid means the identifier is unknown (7.2), so AllowOfflineTxForUnknownId applies while offline.
+TEST_F(ChargePointConnectivityTest, OfflineAuthorizationAcceptsCachedInvalidIdTagAsUnknown) {
+    const auto user_config = this->tmp_dir / "user_config.json";
+    std::ofstream(user_config) << "{}";
+    std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+    auto config = nlohmann::json::parse(ifs);
+    config["Core"]["LocalAuthorizeOffline"] = true;
+    config["Core"]["AuthorizationCacheEnabled"] = true;
+    config["Core"]["AllowOfflineTxForUnknownId"] = true;
+    this->configuration = std::make_unique<ChargePointConfiguration>(config.dump(), CONFIG_DIR_V16, user_config);
+
+    const CiString<20> id_tag("INVALID_TAG");
+    {
+        DatabaseHandler database_handler(std::make_unique<everest::db::sqlite::Connection>(
+                                             this->tmp_dir / (this->configuration->getChargePointId() + ".db")),
+                                         fs::path(MIGRATION_FILES_LOCATION_V16),
+                                         this->configuration->getNumberOfConnectors());
+        database_handler.open_connection();
+        IdTagInfo id_tag_info;
+        id_tag_info.status = AuthorizationStatus::Invalid;
+        database_handler.insert_or_update_authorization_cache_entry(id_tag, id_tag_info);
+    }
+
+    ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));
+    auto charge_point = make_charge_point();
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+
+    EXPECT_EQ(charge_point->authorize_id_token(id_tag).id_tag_info.status, AuthorizationStatus::Accepted);
+
+    charge_point->stop();
+}
+
+// 3.5.4: identifiers that were valid but are expired due to passage of time must be rejected while offline.
+TEST_F(ChargePointConnectivityTest, OfflineAuthorizationRejectsCachedIdTagExpiredOverTime) {
+    const auto user_config = this->tmp_dir / "user_config.json";
+    std::ofstream(user_config) << "{}";
+    std::ifstream ifs(CONFIG_FILE_LOCATION_V16);
+    auto config = nlohmann::json::parse(ifs);
+    config["Core"]["LocalAuthorizeOffline"] = true;
+    config["Core"]["AuthorizationCacheEnabled"] = true;
+    config["Core"]["AllowOfflineTxForUnknownId"] = true;
+    this->configuration = std::make_unique<ChargePointConfiguration>(config.dump(), CONFIG_DIR_V16, user_config);
+
+    const CiString<20> id_tag("EXPIRED_TAG");
+    {
+        DatabaseHandler database_handler(std::make_unique<everest::db::sqlite::Connection>(
+                                             this->tmp_dir / (this->configuration->getChargePointId() + ".db")),
+                                         fs::path(MIGRATION_FILES_LOCATION_V16),
+                                         this->configuration->getNumberOfConnectors());
+        database_handler.open_connection();
+        IdTagInfo id_tag_info;
+        id_tag_info.status = AuthorizationStatus::Accepted;
+        id_tag_info.expiryDate = DateTime(date::utc_clock::now() - std::chrono::hours(1));
+        database_handler.insert_or_update_authorization_cache_entry(id_tag, id_tag_info);
+    }
+
+    ON_CALL(*this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));
+    auto charge_point = make_charge_point();
+    charge_point->start({}, BootReasonEnum::PowerUp, {});
+
+    EXPECT_EQ(charge_point->authorize_id_token(id_tag).id_tag_info.status, AuthorizationStatus::Expired);
 
     charge_point->stop();
 }

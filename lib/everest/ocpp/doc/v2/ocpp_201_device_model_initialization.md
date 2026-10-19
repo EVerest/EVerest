@@ -20,6 +20,10 @@ Along with the 'initialize_device_model' flag, a few paths must be given to the 
 When the database is created for the first time, it will insert all components, variables, characteristics and 
 attributes from the component config. 
 
+An attribute may set `persistent` and `constant` next to `type`, `mutability` and `value`. An attribute without
+`persistent` is persistent, one without `constant` is not constant. A change of either flag in the component config is
+applied to the database at the next start, like a change of the mutability.
+
 
 ## Update config values
 

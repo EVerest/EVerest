@@ -9,6 +9,17 @@ teardown on a peer close during the handshake, the peer-certificate SHA-512
 accessor, acceptance of a TLS 1.3 client chained to the MO root, and
 SSLKEYLOGFILE keylog output.
 
+Half-close tests check close_notify followed by TCP FIN with TLS 1.2 and 1.3.
+A private ConnectionSSL accessor lets tests inject OpenSSL BIO retry results
+without changing libtls. Forced `want_write` and `want_read` verify that FIN
+waits for shutdown, retries require matching readiness, and pending shutdown
+leaves ciphertext untouched. Tests also cover cancellation by `close()`, peer
+closure during shutdown, terminal TLS errors, and single CLOSED delivery.
+The session tests verify that retries share the existing 500 ms window after
+the two-second EV-first wait, with transport close before D-LINK. A shutdown
+still pending at that deadline is cancelled; close_notify delivery cannot be
+guaranteed when the peer prevents progress for the entire window.
+
 - Run `pki.sh` to build the test certificates and keys
 - Run from the directory containing the test executable: `./connection_openssl_test`
 
