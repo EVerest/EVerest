@@ -49,3 +49,13 @@ Schedule Renegotation
 Smart Charging           
 Internet Service         
 =======================  ==================
+
+Welding detection
+=================
+
+A DC PowerDelivery(Stop) publishes ``welding_detection`` ``Started``; ``Finished`` follows on
+SessionStop or connection teardown, also when the EV sends no WeldingDetectionReq. The first
+WeldingDetectionRes waits for an ``update_dc_present_values`` with ``welding_detection`` set, for
+at most 1 s, so it reports the voltage source EvseManager selected for welding detection
+(IEC 61851-23:2023 CC.7.6.17). Without such a value it reports the last present voltage and logs a
+warning.

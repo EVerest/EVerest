@@ -57,7 +57,8 @@ void populate_physical_value_float(struct iso2_PhysicalValueType* pv, float valu
                                    iso2_unitSymbolType unit);
 
 /*!
- * \brief v2g_ctx_init_charging_state This function inits the charging state. This should be called afer a terminated
+ * \brief v2g_ctx_init_charging_state This function inits the charging state and ends a welding detection phase a
+ * previous connection left open (publishing Finished). This should be called afer a terminated
  * charging session.
  * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
  * \param is_connection_terminated is set to \c true if the connection is terminated
@@ -77,6 +78,28 @@ void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx);
  * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
  */
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_start_welding_detection This function starts the DC welding detection phase at PowerDelivery(Stop)
+ * and publishes welding_detection Started.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_finish_welding_detection This function ends a running welding detection phase and publishes
+ * welding_detection Finished. It does nothing if no phase is running.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_wait_for_welding_voltage This function blocks the first WeldingDetectionRes of a phase until a value
+ * of the welding detection voltage source arrived, for at most V2G_WELDING_VOLTAGE_TIMEOUT. Otherwise the response
+ * would carry a power supply measurement taken before EvseManager switched the source.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
 
 /*!
  * \brief v2g_ctx_free
