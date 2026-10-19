@@ -1,0 +1,63 @@
+name: Build an out-of-tree project with EDM
+
+on:
+  workflow_call:
+    inputs:
+      runner:
+        description: 'Which runner to use'
+        required: false
+        default: 'ubuntu-24.04'
+        type: string
+      build_kit_artifact_name:
+        description: 'The name of the build kit artifact to download'
+        required: true
+        type: string
+      build_kit_image_tag:
+        description: 'The tag of the build-kit image to build in'
+        required: true
+        type: string
+      build_kit_scripts_directory:
+        description: 'Directory in the repository where the build kit scripts are located'
+        required: false
+        default: '.ci/build-kit/scripts'
+        type: string
+
+jobs:
+  build-out-of-tree-edm:
+    name: everest-chargebyte
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Download build-kit image
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.build_kit_artifact_name }}
+      - name: Load build-kit image
+        run: |
+          docker load -i build-kit.tar
+          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
+      # EDM picks up everest-core from the workspace next to the out-of-tree project.
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          path: ws/everest-core
+      - name: Checkout everest-chargebyte
+        uses: actions/checkout@v7
+        with:
+          repository: chargebyte/everest-chargebyte
+          path: ws/everest-chargebyte
+      - name: Setup run scripts
+        run: |
+          mkdir scripts
+          rsync -a ws/everest-core/${{ inputs.build_kit_scripts_directory }}/ scripts
+      - name: Build the system libraries of everest-chargebyte
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name setup-out-of-tree-deps-container \
+          build-kit run-script setup_out_of_tree_deps
+      - name: Compile and install everest-chargebyte with EDM
+        run: |
+          docker run \
+          --volume "${{ github.workspace }}:/ext" \
+          --name compile-out-of-tree-edm-container \
+          build-kit run-script compile_out_of_tree_edm
