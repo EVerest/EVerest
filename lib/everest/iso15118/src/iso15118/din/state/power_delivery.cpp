@@ -101,6 +101,7 @@ Result process_power_delivery(Context& m_ctx, const message_din::PowerDeliveryRe
     m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+    m_ctx.welding_detection.start(m_ctx.feedback);
     return m_ctx.create_state<WeldingDetection>();
 }
 

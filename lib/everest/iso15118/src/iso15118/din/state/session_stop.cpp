@@ -26,9 +26,11 @@ Result process_session_stop(Context& m_ctx, [[maybe_unused]] const message_din::
     // The session ends here rather than by transitioning, so nothing downstream releases these timers.
     m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
     m_ctx.clear_cp_state_timeout();
+    m_ctx.clear_welding_voltage_timeout();
 
     const auto res = handle_request(req, m_ctx.get_session_id());
     m_ctx.respond(res);
+    m_ctx.welding_detection.finish(m_ctx.feedback);
 
     // [V2G-DC-451]: DIN signals a pause only by a later re-join, so this always terminates.
     m_ctx.session_stopped = true;

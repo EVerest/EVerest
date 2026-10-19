@@ -14,6 +14,7 @@
 #include <iso15118/message/variant.hpp>
 #include <iso15118/session/config.hpp>
 #include <iso15118/session/feedback.hpp>
+#include <iso15118/session/welding_detection.hpp>
 
 #include "control_event.hpp"
 #include "ev_information.hpp"
@@ -142,6 +143,11 @@ public:
         timeouts.start_timeout(type, time_ms);
     }
 
+    // Silent if the slot is not running.
+    void clear_timeout(d20::TimeoutType type) {
+        timeouts.reset_timeout(type);
+    }
+
     d20::TimeoutType const* get_active_timeout() {
         if (not current_timeout.has_value()) {
             return nullptr;
@@ -162,6 +168,7 @@ public:
     }
 
     const session::Feedback feedback;
+    session::WeldingDetectionPhase welding_detection;
 
     Session session;
 
@@ -182,6 +189,9 @@ public:
     std::optional<UpdateDynamicModeParameters> cache_dynamic_mode_parameters;
     std::optional<AcTargetPower> cache_ac_target_power;
     std::optional<AcPresentPower> cache_ac_present_power;
+    // Survives the state change from DC_ChargeLoop into DC_WeldingDetection, whose first response would
+    // otherwise report 0 V until the next update.
+    std::optional<PresentVoltageCurrent> cache_present_values;
 
 private:
     const std::optional<ControlEvent>& current_control_event;
