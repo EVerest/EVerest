@@ -185,7 +185,7 @@ std::set<fs::path> get_certificate_path_of_key(const fs::path& key, const fs::pa
     std::string private_key;
 
     if (false == filesystem_utils::read_from_file(key, private_key)) {
-        throw NoPrivateKeyException("Could not read private key from path: " + private_key);
+        throw NoPrivateKeyException("Could not read private key from path: " + key.string());
     }
 
     // Before iterating all bundles, check by certificates from key filename
