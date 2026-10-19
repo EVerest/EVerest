@@ -16,6 +16,7 @@
 #include <iso15118/message_din/type.hpp>
 #include <iso15118/message_din/variant.hpp>
 #include <iso15118/session/feedback.hpp>
+#include <iso15118/session/welding_detection.hpp>
 
 #include "config.hpp"
 #include "evse_status.hpp"
@@ -159,6 +160,13 @@ public:
     void clear_cp_state_timeout() {
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
     }
+    void arm_welding_voltage_timeout() {
+        timeouts.reset_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+        timeouts.start_timeout(d20::TimeoutType::WELDING_VOLTAGE, d20::TIMEOUT_WELDING_VOLTAGE);
+    }
+    void clear_welding_voltage_timeout() {
+        timeouts.reset_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+    }
 
     d20::TimeoutType const* get_active_timeout() {
         if (not current_timeout.has_value()) {
@@ -181,6 +189,7 @@ public:
     }
 
     const session::Feedback feedback;
+    session::WeldingDetectionPhase welding_detection;
 
     SessionConfig session_config;
 

@@ -42,6 +42,10 @@ enum class Signal {
     PRE_CHARGE_STARTED,
     CHARGE_LOOP_STARTED,
     CHARGE_LOOP_FINISHED,
+    // DC only: from PowerDelivery(Stop) until SessionStop, renegotiation or teardown, whether or not
+    // the EV sends a WeldingDetectionReq.
+    WELDING_DETECTION_STARTED,
+    WELDING_DETECTION_FINISHED,
     DC_OPEN_CONTACTOR,
     DC_RENEGOTIATION_STARTED,
     AC_CLOSE_CONTACTOR,
