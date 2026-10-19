@@ -50,6 +50,7 @@
 #include "over_voltage/OverVoltageMonitor.hpp"
 #include "scoped_lock_timeout.hpp"
 #include "voltage_plausibility/VoltagePlausibilityMonitor.hpp"
+#include "welding_detection/WeldingDetectionVoltage.hpp"
 #include <everest/util/async/monitor.hpp>
 // ev@4bf81b14-a215-475c-a1d3-0a484ae48918:v1
 
@@ -85,6 +86,7 @@ struct Conf {
     bool cable_check_wait_below_60V_before_finish;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
+    std::string welding_detection_voltage_source;
     bool hack_pause_imd_during_precharge;
     bool hack_allow_bpt_with_iso2;
     bool hack_simplified_mode_limit_10A;
@@ -360,6 +362,14 @@ private:
     // Voltage plausibility monitor
     std::unique_ptr<VoltagePlausibilityMonitor> voltage_plausibility_monitor;
 
+    // Side B voltage reported during DC welding detection, see welding_detection_voltage_source
+    std::unique_ptr<WeldingDetectionVoltage> welding_detection_voltage;
+    std::atomic<float> present_current_A{0};
+    void setup_welding_detection_voltage();
+    void end_welding_detection_phase();
+    bool welding_detection_holds(WeldingDetectionVoltageSource source) const;
+    bool is_welding_detection_source(WeldingDetectionVoltageSource source) const;
+
     void setup_AC_mode();
     void setup_fake_DC_mode();
 
@@ -389,6 +399,9 @@ private:
 
     void imd_stop();
     void imd_start();
+    void ovm_stop();
+    void imd_stop_after_welding_detection();
+    void ovm_stop_after_welding_detection();
     Everest::Thread telemetryThreadHandle;
 
     void fail_cable_check(const std::string& reason);

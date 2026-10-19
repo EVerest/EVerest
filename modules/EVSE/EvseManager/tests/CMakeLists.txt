@@ -22,12 +22,14 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     PowermeterLimitsTest.cpp
     RandomDelayDurationTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    WeldingDetectionVoltageTest.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
     ../backtrace.cpp
     ../powermeter_limits.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
+    ../welding_detection/WeldingDetectionVoltage.cpp
 )
 
 target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
@@ -40,6 +42,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::log
     everest::framework
     everest::helpers
+    everest::timer
     everest::util
     sigslot
 )

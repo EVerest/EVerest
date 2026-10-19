@@ -7,7 +7,8 @@ IMPLS = [
     "random_delay",
     "dc_external_derate",
     "over_voltage",
-    "voltage_plausibility"
+    "voltage_plausibility",
+    "welding_detection",
 ]
 
 cc_everest_module(
@@ -16,6 +17,7 @@ cc_everest_module(
         "@pugixml//:pugixml",
         "@sigslot//:sigslot",
         "//lib/everest/helpers",
+        "//lib/everest/timer:libtimer",
         "//lib/everest/util",
     ],
     impls = IMPLS,
