@@ -169,7 +169,7 @@ bool FirmwareUpdate::is_download_deferral_required() const {
 }
 
 void FirmwareUpdate::handle_firmware_update_req(Call<UpdateFirmwareRequest> call) {
-    EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received UpdateFirmwareRequest with messageId: " << call.uniqueId;
     if (call.msg.firmware.signingCertificate.has_value() or call.msg.firmware.signature.has_value()) {
         this->firmware_status_before_installing = FirmwareStatusEnum::SignatureVerified;
     } else {

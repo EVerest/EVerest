@@ -484,7 +484,7 @@ void Provisioning::handle_set_network_profile_req(Call<SetNetworkProfileRequest>
 }
 
 void Provisioning::handle_reset_req(Call<ResetRequest> call) {
-    EVLOG_debug << "Received ResetRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ResetRequest with messageId: " << call.uniqueId;
     const auto msg = call.msg;
 
     ResetResponse response;
