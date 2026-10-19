@@ -1,0 +1,1 @@
+add_codec_test(integer_codec)

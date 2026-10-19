@@ -59,6 +59,38 @@ static int exi_basetypes_decoder_read_unsigned(exi_bitstream_t* stream, exi_unsi
     return (found_sequence_end) ? EXI_ERROR__NO_ERROR : EXI_ERROR__SUPPORTED_MAX_OCTETS_OVERRUN;
 }
 
+static int exi_basetypes_decoder_read_magnitude(exi_bitstream_t* stream, size_t max_octets, uint64_t max_magnitude, uint64_t* magnitude)
+{
+    int error;
+    exi_unsigned_t exi_unsigned;
+
+    error = exi_basetypes_decoder_read_unsigned(stream, &exi_unsigned);
+    if (error != EXI_ERROR__NO_ERROR)
+    {
+        return error;
+    }
+
+    if (exi_unsigned.octets_count > max_octets)
+    {
+        return EXI_ERROR__OCTET_COUNT_LARGER_THAN_TYPE_SUPPORTS;
+    }
+
+    /* value bits in the last octet of a 64 bit sequence are bit 63 and up, which no signed destination can hold */
+    if (exi_unsigned.octets_count == EXI_BASETYPES_UINT64_MAX_OCTETS &&
+        (exi_unsigned.octets[EXI_BASETYPES_UINT64_MAX_OCTETS - 1] & EXI_BASETYPES_OCTET_SEQ_VALUE_MASK) != 0)
+    {
+        return EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION;
+    }
+
+    error = exi_basetypes_convert_64_from_unsigned(&exi_unsigned, magnitude);
+    if (error != EXI_ERROR__NO_ERROR)
+    {
+        return error;
+    }
+
+    return (*magnitude > max_magnitude) ? EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION : EXI_ERROR__NO_ERROR;
+}
+
 
 /*****************************************************************************
  * interface functions - bool
@@ -211,6 +243,7 @@ int exi_basetypes_decoder_integer_8(exi_bitstream_t* stream, int8_t* value)
 {
     int sign;
     int error;
+    uint64_t magnitude;
 
     error = exi_basetypes_decoder_bool(stream, &sign);
     if (error != EXI_ERROR__NO_ERROR)
@@ -218,16 +251,13 @@ int exi_basetypes_decoder_integer_8(exi_bitstream_t* stream, int8_t* value)
         return error;
     }
 
-    error = exi_basetypes_decoder_uint_8(stream, (uint8_t*)value);
+    error = exi_basetypes_decoder_read_magnitude(stream, EXI_BASETYPES_UINT8_MAX_OCTETS, INT8_MAX, &magnitude);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
     }
 
-    if (sign)
-    {
-        *value = -(*value + 1);
-    }
+    *value = sign ? (int8_t)(-(int8_t)magnitude - 1) : (int8_t)magnitude;
 
     return error;
 }
@@ -236,6 +266,7 @@ int exi_basetypes_decoder_integer_16(exi_bitstream_t* stream, int16_t* value)
 {
     int sign;
     int error;
+    uint64_t magnitude;
 
     error = exi_basetypes_decoder_bool(stream, &sign);
     if (error != EXI_ERROR__NO_ERROR)
@@ -243,16 +274,13 @@ int exi_basetypes_decoder_integer_16(exi_bitstream_t* stream, int16_t* value)
         return error;
     }
 
-    error = exi_basetypes_decoder_uint_16(stream, (uint16_t*)value);
+    error = exi_basetypes_decoder_read_magnitude(stream, EXI_BASETYPES_UINT16_MAX_OCTETS, INT16_MAX, &magnitude);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
     }
 
-    if (sign)
-    {
-        *value = -(*value + 1);
-    }
+    *value = sign ? (int16_t)(-(int16_t)magnitude - 1) : (int16_t)magnitude;
 
     return error;
 }
@@ -261,6 +289,7 @@ int exi_basetypes_decoder_integer_32(exi_bitstream_t* stream, int32_t* value)
 {
     int sign;
     int error;
+    uint64_t magnitude;
 
     error = exi_basetypes_decoder_bool(stream, &sign);
     if (error != EXI_ERROR__NO_ERROR)
@@ -268,16 +297,13 @@ int exi_basetypes_decoder_integer_32(exi_bitstream_t* stream, int32_t* value)
         return error;
     }
 
-    error = exi_basetypes_decoder_uint_32(stream, (uint32_t*)value);
+    error = exi_basetypes_decoder_read_magnitude(stream, EXI_BASETYPES_UINT32_MAX_OCTETS, INT32_MAX, &magnitude);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
     }
 
-    if (sign)
-    {
-        *value = -(*value + 1);
-    }
+    *value = sign ? (int32_t)(-(int32_t)magnitude - 1) : (int32_t)magnitude;
 
     return error;
 }
@@ -286,6 +312,7 @@ int exi_basetypes_decoder_integer_64(exi_bitstream_t* stream, int64_t* value)
 {
     int sign;
     int error;
+    uint64_t magnitude;
 
     error = exi_basetypes_decoder_bool(stream, &sign);
     if (error != EXI_ERROR__NO_ERROR)
@@ -293,16 +320,13 @@ int exi_basetypes_decoder_integer_64(exi_bitstream_t* stream, int64_t* value)
         return error;
     }
 
-    error = exi_basetypes_decoder_uint_64(stream, (uint64_t*)value);
+    error = exi_basetypes_decoder_read_magnitude(stream, EXI_BASETYPES_UINT64_MAX_OCTETS, INT64_MAX, &magnitude);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
     }
 
-    if (sign)
-    {
-        *value = -(*value + 1);
-    }
+    *value = sign ? (int64_t)(-(int64_t)magnitude - 1) : (int64_t)magnitude;
 
     return error;
 }

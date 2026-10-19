@@ -56,7 +56,6 @@ extern "C" {
 #define iso20_ac_der_iec_meterSignatureType_BYTES_SIZE (64)
 #define iso20_ac_der_iec_DetailedTaxType_10_ARRAY_SIZE (10)
 #define iso20_ac_der_iec_sessionIDType_BYTES_SIZE (8)
-#define iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment_CONTENT_CHARACTER_SIZE (EXI_STRING_MAX_LEN + ASCII_EXTRA_CHAR)
 
 
 // enum for function numbers
@@ -2398,22 +2397,6 @@ struct iso20_ac_der_iec_AC_ChargeLoopResType {
 
 
 
-#define ISO20_AC_DER_IEC_HAS_ELEMENT_FRAGMENT_GRAMMAR 1
-
-// Element fragment: name={urn:iso:std:iso:15118:-20:AC-DER-IEC}IntentionalDelayPowerControl
-//          EXI 1.0, 8.5.3 Schema-informed Element Fragment Grammar
-//          declared with more than one type: {http://www.w3.org/2001/XMLSchema}unsignedInt, {http://www.w3.org/2001/XMLSchema}unsignedShort
-struct iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment {
-    // CH [untyped value]
-    struct {
-        char characters[iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment_CONTENT_CHARACTER_SIZE];
-        uint16_t charactersLen;
-    } CONTENT;
-
-    unsigned int CONTENT_isUsed:1;
-};
-
-
 // root elements of EXI doc
 struct iso20_ac_der_iec_exiDocument {
     union {
@@ -2569,7 +2552,6 @@ struct iso20_ac_der_iec_xmldsigFragment {
 };
 
 // init for structs
-void init_iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment(struct iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment* IntentionalDelayPowerControlElementFragment);
 void init_iso20_ac_der_iec_exiDocument(struct iso20_ac_der_iec_exiDocument* exiDoc);
 void init_iso20_ac_der_iec_AC_CPDReqEnergyTransferModeType(struct iso20_ac_der_iec_AC_CPDReqEnergyTransferModeType* AC_CPDReqEnergyTransferMode);
 void init_iso20_ac_der_iec_DER_AC_CPDReqEnergyTransferModeType(struct iso20_ac_der_iec_DER_AC_CPDReqEnergyTransferModeType* DER_AC_CPDReqEnergyTransferMode);
