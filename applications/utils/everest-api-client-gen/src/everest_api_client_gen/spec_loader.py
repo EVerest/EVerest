@@ -7,6 +7,7 @@ self-contained. Anything unexpected raises so a malformed spec fails the build
 loudly rather than producing a silently wrong client.
 """
 
+import re
 from pathlib import Path
 
 import yaml
@@ -16,11 +17,27 @@ class SpecError(Exception):
     """Raised when a spec cannot be processed."""
 
 
+_BOOL_TAG = "tag:yaml.org,2002:bool"
+
+
+class _SpecLoader(yaml.SafeLoader):
+    """SafeLoader with YAML 1.2 booleans: only ``true`` and ``false`` are
+    booleans, so enum members such as ``Off`` or ``No`` stay strings."""
+    yaml_implicit_resolvers = {
+        first: [(tag, regexp) for tag, regexp in resolvers if tag != _BOOL_TAG]
+        for first, resolvers in yaml.SafeLoader.yaml_implicit_resolvers.items()
+    }
+
+
+_SpecLoader.add_implicit_resolver(_BOOL_TAG, re.compile(r"^(?:true|True|TRUE|false|False|FALSE)$"),
+                                  list("tTfF"))
+
+
 def load_spec(path):
     """Parse the YAML spec at *path*. Mapping order is preserved (PyYAML), which
     the generator relies on to emit operations in source order."""
     text = Path(path).read_text(encoding="utf-8")
-    doc = yaml.safe_load(text)
+    doc = yaml.load(text, Loader=_SpecLoader)
     if not isinstance(doc, dict):
         raise SpecError(f"{path}: top-level YAML is not a mapping")
     return doc
