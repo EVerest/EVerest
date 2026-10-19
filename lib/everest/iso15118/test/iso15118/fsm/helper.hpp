@@ -46,6 +46,14 @@ public:
         msg_exch.set_request(std::make_unique<message_20::Variant>(request));
     }
 
+    d20::MessageExchange& get_message_exchange() {
+        return msg_exch;
+    }
+
+    void set_active_control_event(const std::optional<d20::ControlEvent>& event) {
+        active_control_event = event;
+    }
+
 private:
     std::array<uint8_t, 1024> output_buffer{};
     io::StreamOutputView output_stream_view{output_buffer.data(), output_buffer.size()};

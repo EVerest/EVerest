@@ -236,6 +236,7 @@ Result DC_ChargeLoop::feed(Event ev) {
         if (req->charge_progress == dt::Progress::Stop) {
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+            m_ctx.welding_detection.start(m_ctx.feedback);
             return m_ctx.create_state<DC_WeldingDetection>();
         }
 

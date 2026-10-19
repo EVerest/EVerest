@@ -29,17 +29,59 @@ void DC_WeldingDetection::enter() {
     m_ctx.log.enter_state("DC_WeldingDetection");
 }
 
+Result DC_WeldingDetection::answer(const message_20::DC_WeldingDetectionRequest& req) {
+    const auto present_voltage = m_ctx.cache_present_values.has_value() ? m_ctx.cache_present_values->voltage : 0.0f;
+    const auto res = handle_request(req, m_ctx.session, present_voltage);
+
+    m_ctx.respond(res);
+
+    if (res.response_code >= dt::ResponseCode::FAILED) {
+        m_ctx.welding_detection.finish(m_ctx.feedback);
+        m_ctx.session_stopped = true;
+        return {};
+    }
+
+    if (req.processing == dt::Processing::Ongoing) {
+        return {};
+    }
+
+    m_ctx.welding_detection.finish(m_ctx.feedback);
+    return m_ctx.create_state<SessionStop>();
+}
+
+// The first response waits for a value of the welding detection voltage source, or until waiting for it
+// expired; otherwise it would carry a stale power supply measurement.
+Result DC_WeldingDetection::answer_pending_req() {
+    if (not pending_req.has_value()) {
+        return {};
+    }
+    if (not first_answered and not m_ctx.welding_detection.has_voltage() and not welding_voltage_wait_expired) {
+        return {};
+    }
+
+    m_ctx.clear_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+    const auto req = pending_req.value();
+    pending_req.reset();
+    first_answered = true;
+    return answer(req);
+}
+
 Result DC_WeldingDetection::feed(Event ev) {
 
     if (ev == Event::CONTROL_MESSAGE) {
-        const auto control_data = m_ctx.get_control_event<PresentVoltageCurrent>();
-        if (not control_data) {
-            // Ignore control message
-            return {};
+        // Present values are latched on the context before the state sees the event.
+        return answer_pending_req();
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout and *timeout == d20::TimeoutType::WELDING_VOLTAGE) {
+            logf_warning("No value from the welding detection voltage source within %d ms, answering "
+                         "DC_WeldingDetection with the last present voltage",
+                         d20::TIMEOUT_WELDING_VOLTAGE);
+            welding_voltage_wait_expired = true;
+            return answer_pending_req();
         }
-
-        present_voltage = control_data->voltage;
-
         return {};
     }
 
@@ -50,22 +92,17 @@ Result DC_WeldingDetection::feed(Event ev) {
     const auto variant = m_ctx.pull_request();
 
     if (const auto req = variant->get_if<message_20::DC_WeldingDetectionRequest>()) {
-        const auto res = handle_request(*req, m_ctx.session, present_voltage);
-
-        m_ctx.respond(res);
-
-        if (res.response_code >= dt::ResponseCode::FAILED) {
-            m_ctx.session_stopped = true;
-            return {};
+        if (first_answered) {
+            return answer(*req);
         }
-
-        if (req->processing == dt::Processing::Ongoing) {
-            return {};
+        pending_req = *req;
+        if (not m_ctx.welding_detection.has_voltage()) {
+            m_ctx.restart_timeout(d20::TimeoutType::WELDING_VOLTAGE, d20::TIMEOUT_WELDING_VOLTAGE);
         }
-
-        return m_ctx.create_state<SessionStop>();
+        return answer_pending_req();
 
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {
+        m_ctx.welding_detection.finish(m_ctx.feedback);
         const auto res = handle_request(*req, m_ctx.session);
 
         if (req->ev_termination_code.has_value()) {
@@ -98,6 +135,7 @@ Result DC_WeldingDetection::feed(Event ev) {
         const message_20::Type req_type = variant->get_type();
         send_sequence_error(req_type, m_ctx);
 
+        m_ctx.welding_detection.finish(m_ctx.feedback);
         m_ctx.session_stopped = true;
         return {};
     }
