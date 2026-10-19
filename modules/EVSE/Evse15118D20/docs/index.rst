@@ -411,6 +411,20 @@ permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
 (CC.4.3).
 
+Welding detection
+-----------------
+
+The same DC stop publishes ``welding_detection`` ``Started``. ``Finished`` follows on the
+``SessionStopReq``, on a renegotiation (ISO 15118-2 ``ChargeParameterDiscoveryReq``
+after the stop), on a failed response or on session teardown, also when the EV sends
+no ``WeldingDetectionReq`` at all. In ISO 15118-20, ISO 15118-2 and DIN 70121 alike,
+the first ``WeldingDetectionRes`` is held until ``update_dc_present_values`` delivers a
+value with ``welding_detection`` set, for at most 1 s, concurrently with the wait for
+CP state B. This makes sure the response reports the voltage source EvseManager selected
+for welding detection (IEC 61851-23:2023 CC.7.6.17) rather than a power supply reading
+taken before the source was switched. If no such value arrives, the last present
+voltage is sent and a warning is logged. Later responses are answered at once.
+
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
 only be sent while the applied entry of the EV's power profile, from its latest
