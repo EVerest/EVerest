@@ -27,6 +27,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     RandomDelayDurationTest.cpp
     SessionLogTest.cpp
     VoltagePlausibilityMonitorTest.cpp
+    WeldingDetectionVoltageTest.cpp
     ../CpStateFrameEmitter.cpp
     ../ErrorHandling.cpp
     ../IECStateMachine.cpp
@@ -36,6 +37,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     ../powermeter_limits.cpp
     ../over_voltage/OverVoltageMonitor.cpp
     ../voltage_plausibility/VoltagePlausibilityMonitor.cpp
+    ../welding_detection/WeldingDetectionVoltage.cpp
     ../v2gMessage.cpp
 )
 
@@ -50,6 +52,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::framework
     everest::helpers
     pugixml::pugixml
+    everest::timer
     everest::util
     sigslot
 )
