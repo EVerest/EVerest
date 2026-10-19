@@ -1,9 +1,8 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Turn a parsed AsyncAPI spec into the model the Jinja templates render.
+"""Turn a parsed AsyncAPI spec into the model the client templates render.
 
-This encodes every derivation rule the old npm/React template implemented,
-reading only the small spec subset the clients actually need:
+It reads only the small spec subset the clients need:
 
   - servers.<server>.pathname          -> the MQTT topic prefix
   - operations.<id>.action             -> send / receive
@@ -19,7 +18,7 @@ import json
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from everest_api_client_gen.spec_loader import SpecError, channel_ref_id, resolve_channel, resolve_ref
+from everest_api_client_gen.spec_loader import SpecError, channel_ref_id, find_request_operation, resolve_channel
 
 # Operations provided globally by the shell (api_client.py), so they are left
 # out of the per-client do_* command verbs. client.py still wires them up.
@@ -59,8 +58,8 @@ class Operation:
     action: str                       # "send" or "receive"
     address: Optional[str]            # channel address, or None for reply channels
     is_reply: bool                    # address is None
-    # For a reply channel (address None), the address of the request operation
-    # that references it (used as the reply's topic). None otherwise.
+    # For a reply channel (address None), the topic prefix replies arrive under:
+    # the request operation's address with m2e turned into e2m. None otherwise.
     referencing_address: Optional[str] = None
     # Single example payload as compact JSON, or "" when not exactly one example.
     payload_json: str = ""
@@ -108,25 +107,21 @@ class ClientModel:
 
 
 def _find_referencing_address(doc, operations, target_channel_id):
-    """Find the operation whose reply.channel points at *target_channel_id* and
-    return that operation's own channel address.
+    """Return the reply address prefix for the reply channel *target_channel_id*.
 
-    Mirrors the template's getReferencingChannelAddress, including the historic
-    'm2b' -> 'b2m' rewrite (a no-op on current specs, which use m2e/e2m).
+    The client sends replyTo as the request address with its m2e direction
+    segment turned into e2m (api_client.py generate_replyTo), so a reply to a
+    request on ``m2e/<name>`` arrives below ``e2m/<name>``.
     """
-    for other in operations.values():
-        reply = other.get("reply")
-        if not isinstance(reply, dict):
-            continue
-        reply_channel = reply.get("channel")
-        if not isinstance(reply_channel, dict) or "$ref" not in reply_channel:
-            continue
-        if channel_ref_id(reply_channel) == target_channel_id:
-            addr = resolve_channel(doc, other["channel"]).get("address")
-            if addr is None:
-                return None
-            return addr.replace("m2b", "b2m")
-    return None
+    _, request_op = find_request_operation(operations, target_channel_id)
+    if request_op is None:
+        return None
+    addr = resolve_channel(doc, request_op["channel"]).get("address")
+    if addr is None:
+        return None
+    if addr.startswith("m2e/"):
+        return "e2m/" + addr[len("m2e/"):]
+    return addr
 
 
 def _example_payload_json(doc, op_id) -> str:

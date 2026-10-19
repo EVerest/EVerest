@@ -8,6 +8,7 @@ class _MQTTHelper:
     self._client = client
     self._client.on_message = self._on_message
     self._topics = topics
+    self._subscriptions = []
     self._callbacks = {}
     self._buffer = {}
     self._events = {}
@@ -15,13 +16,14 @@ class _MQTTHelper:
     for topic in self._topics:
       key = topic[:-2] if topic.endswith("+") else topic
       self._client.subscribe(topic)
+      self._subscriptions.append((key, topic))
       self._callbacks[key] = None
       self._buffer[key] = []
       self._events[key] = threading.Event()
 
   def _on_message(self, client, userdata, message):
-    for key in self._buffer.keys():
-      if key in message.topic:
+    for key, subscription in self._subscriptions:
+      if mqtt.topic_matches_sub(subscription, message.topic):
         self._buffer[key].append(message.payload)
         self._events[key].set()
         if self._callbacks[key] is not None:

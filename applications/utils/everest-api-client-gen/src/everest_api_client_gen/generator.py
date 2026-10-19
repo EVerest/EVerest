@@ -61,6 +61,6 @@ def generate(spec_path, out_dir, name_camel, name_snake, interface_prefix,
         dest = out_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         content = env.get_template(template_name).render(**context)
-        dest.write_text(content)
+        dest.write_text(content, encoding="utf-8")
 
     return model

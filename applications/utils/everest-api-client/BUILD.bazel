@@ -8,7 +8,7 @@ exports_files(
 
 # Only the hand-written spy client is covered by Bazel. The per-API client
 # packages and the cmd2 shell depend on build-time code generation
-# (asyncapi-cli + python-mqtt-template), which is CMake-only.
+# (everest-api-client-gen), which is wired up in CMake only.
 py_library(
     name = "spyclient-api",
     srcs = glob(["spyclient_api/src/**/*.py"]),

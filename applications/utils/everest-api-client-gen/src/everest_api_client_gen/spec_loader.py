@@ -19,7 +19,7 @@ class SpecError(Exception):
 def load_spec(path):
     """Parse the YAML spec at *path*. Mapping order is preserved (PyYAML), which
     the generator relies on to emit operations in source order."""
-    text = Path(path).read_text()
+    text = Path(path).read_text(encoding="utf-8")
     doc = yaml.safe_load(text)
     if not isinstance(doc, dict):
         raise SpecError(f"{path}: top-level YAML is not a mapping")
@@ -53,3 +53,18 @@ def channel_ref_id(channel_obj):
     if not isinstance(channel_obj, dict) or "$ref" not in channel_obj:
         raise SpecError(f"channel is not a $ref: {channel_obj!r}")
     return channel_obj["$ref"].rsplit("/", 1)[-1]
+
+
+def find_request_operation(operations, reply_channel_id):
+    """Return ``(op_id, op)`` of the operation whose ``reply.channel`` points
+    at *reply_channel_id*, or ``(None, None)``."""
+    for op_id, op in operations.items():
+        reply = op.get("reply")
+        if not isinstance(reply, dict):
+            continue
+        reply_channel = reply.get("channel")
+        if not isinstance(reply_channel, dict) or "$ref" not in reply_channel:
+            continue
+        if channel_ref_id(reply_channel) == reply_channel_id:
+            return op_id, op
+    return None, None

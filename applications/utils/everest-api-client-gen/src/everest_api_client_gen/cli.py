@@ -14,8 +14,7 @@ def main(argv=None):
     parser = argparse.ArgumentParser(
         prog="everest-api-client-gen",
         description="Generate a Python MQTT client package from an EVerest "
-                    "AsyncAPI spec (npm-free replacement for asyncapi-cli + "
-                    "python-mqtt-template).")
+                    "AsyncAPI spec.")
     parser.add_argument("--version", action="version",
                         version=f"%(prog)s {__version__}")
     parser.add_argument("--get-templates", action="store_true",

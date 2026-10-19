@@ -5,7 +5,7 @@
 # AsyncAPI spec (docs/source/reference/EVerest_API) using the in-tree Python
 # generator everest-api-client-gen, builds the hand-written spyclient_api
 # wheel, and installs the interactive cmd2 shell (api_client.py) that ties them
-# together. No npm/asyncapi toolchain is involved.
+# together.
 #
 # Enable with -DEVEREST_BUILD_API_CLIENTS=ON.
 
@@ -20,7 +20,7 @@ setup_everest_api_client_gen()
 add_custom_target(everest_api_clients ALL)
 
 # Generate one client package from a spec and wire up its wheel + install
-# targets. Replaces the former npm asyncapi-cli invocation.
+# targets.
 function(add_api_client)
     set(oneValueArgs API_PATH NAME_CAMEL_CASE NAME_SNAKE_CASE INTERFACE_PREFIX)
     cmake_parse_arguments(ARG "" "${oneValueArgs}" "" ${ARGN})
