@@ -26,6 +26,7 @@ void SessionStop::enter() {
 Result process_session_stop(Context& m_ctx, const message_2::SessionStopRequest& req) {
     const auto res = handle_request(req, m_ctx.get_session_id());
     m_ctx.respond(res);
+    m_ctx.welding_detection.finish(m_ctx.feedback);
 
     if (req.charging_session == dt::ChargingSession::Pause) {
         // Retain the session id so the returning EV can re-join with OK_OldSessionJoined, and the payment

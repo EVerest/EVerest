@@ -57,12 +57,30 @@ void PostCharge::enter() {
 Result PostCharge::accept_welding_detection(const message_2::WeldingDetectionRequest& req) {
     m_ctx.report_ev_status(req.dc_ev_status);
 
+    pending_weld = req;
     if (cp_state_b_outstanding(m_ctx)) {
-        pending_weld = req;
         m_ctx.arm_cp_state_timeout(CP_STATE_PERFORMANCE_TIME_MS);
+    }
+    if (not m_ctx.welding_detection.has_voltage()) {
+        m_ctx.arm_welding_voltage_timeout();
+    }
+    return answer_pending_weld();
+}
+
+// Answered once CP State B is measured and a value of the welding detection voltage source arrived, or
+// waiting for it expired; otherwise the first response would carry a stale power supply measurement.
+Result PostCharge::answer_pending_weld() {
+    if (not pending_weld.has_value() or cp_state_b_outstanding(m_ctx)) {
+        return {};
+    }
+    if (not m_ctx.welding_detection.has_voltage() and not welding_voltage_wait_expired) {
         return {};
     }
 
+    m_ctx.clear_cp_state_timeout();
+    m_ctx.clear_welding_voltage_timeout();
+    const auto req = pending_weld.value();
+    pending_weld.reset();
     answer_welding_detection(m_ctx, req);
     return m_ctx.create_state<WeldingDetection>();
 }
@@ -82,17 +100,14 @@ Result PostCharge::accept_session_stop(const message_2::SessionStopRequest& req)
 Result PostCharge::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
-            m_ctx.set_present_values(control->voltage, control->current);
+            m_ctx.set_present_values(*control);
         }
-        // Parked while waiting for CP State B ([V2G2-920]..[V2G2-922]): resume as soon as it arrives.
+        // Parked while waiting for CP State B ([V2G2-920]..[V2G2-922]) or the welding detection voltage:
+        // resume as soon as both are there.
+        if (pending_weld.has_value()) {
+            return answer_pending_weld();
+        }
         if (m_ctx.evse().current_cp_state == d20::CpState::B) {
-            if (pending_weld.has_value()) {
-                m_ctx.stop_timeout(d20::TimeoutType::CPSTATE);
-                const auto req = pending_weld.value();
-                pending_weld.reset();
-                answer_welding_detection(m_ctx, req);
-                return m_ctx.create_state<WeldingDetection>();
-            }
             if (pending_stop.has_value()) {
                 m_ctx.stop_timeout(d20::TimeoutType::CPSTATE);
                 const auto req = pending_stop.value();
@@ -105,12 +120,20 @@ Result PostCharge::on_event(Event ev) {
 
     if (ev == Event::TIMEOUT) {
         const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout and *timeout == d20::TimeoutType::WELDING_VOLTAGE) {
+            logf_warning("No value from the welding detection voltage source within %d ms, answering "
+                         "WeldingDetection with the last present voltage",
+                         d20::TIMEOUT_WELDING_VOLTAGE);
+            welding_voltage_wait_expired = true;
+            return answer_pending_weld();
+        }
         if (timeout and *timeout == d20::TimeoutType::CPSTATE) {
             // [V2G2-922]: no CP State B in time, so respond FAILED in the received message's own type. The
             // FAILED response arms the FailedTermination path (oscillator off + SECC-side TCP close).
             if (pending_weld.has_value()) {
                 logf_warning("no CP State B within V2G_SECC_Msg_Performance_Time, WeldingDetection -> FAILED");
                 pending_weld.reset();
+                m_ctx.clear_welding_voltage_timeout();
                 auto res = handle_request(message_2::WeldingDetectionRequest{}, m_ctx.get_session_id(),
                                           m_ctx.evse().present_voltage, m_ctx.error_status_code(),
                                           m_ctx.evse().charger_stop_requested);
@@ -139,6 +162,7 @@ Result PostCharge::on_request(const message_2::Variant& received) {
         return accept_welding_detection(received.get<message_2::WeldingDetectionRequest>());
     } else if (type == message_2::Type::ChargeParameterDiscoveryReq) {
         // Same path as the PowerDelivery renegotiation [V2G2-813].
+        m_ctx.welding_detection.finish(m_ctx.feedback);
         return process_charge_parameter_discovery(m_ctx, received.get<message_2::ChargeParameterDiscoveryRequest>());
     } else if (type == message_2::Type::SessionStopReq) {
         return accept_session_stop(received.get<message_2::SessionStopRequest>());
@@ -152,8 +176,9 @@ Result PostCharge::on_request(const message_2::Variant& received) {
 }
 
 void PostCharge::leave() {
-    // Runs on every transition out, so no parked request's CP-state timeout survives into the next state.
+    // Runs on every transition out, so no parked request's timeout survives into the next state.
     m_ctx.clear_cp_state_timeout();
+    m_ctx.clear_welding_voltage_timeout();
 }
 
 void WeldingDetection::enter() {
@@ -163,11 +188,9 @@ void WeldingDetection::enter() {
 Result WeldingDetection::on_event(Event ev) {
     if (ev == Event::CONTROL_MESSAGE) {
         if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
-            m_ctx.set_present_values(control->voltage, control->current);
+            m_ctx.set_present_values(*control);
         }
-        return {};
     }
-
     return {};
 }
 

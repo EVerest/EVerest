@@ -2,6 +2,10 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
+#include <optional>
+
+#include <iso15118/message/dc_welding_detection.hpp>
+
 #include "../states.hpp"
 
 namespace iso15118::d20::state {
@@ -15,7 +19,13 @@ struct DC_WeldingDetection : public StateBase {
     Result feed(Event) final;
 
 private:
-    float present_voltage{0};
+    Result answer(const message_20::DC_WeldingDetectionRequest& req);
+    Result answer_pending_req();
+
+    // The first request waits for a value of the welding detection voltage source.
+    std::optional<message_20::DC_WeldingDetectionRequest> pending_req{};
+    bool first_answered{false};
+    bool welding_voltage_wait_expired{false};
 };
 
 } // namespace iso15118::d20::state

@@ -58,6 +58,7 @@ struct PowerPath {
 
     bool charge_loop_running{false};
     bool ac_contactor_closed{false};
+    bool welding_detection_running{false};
 };
 
 // Owns the transport, the shared buffers and the timing rules, and delegates the protocol to the
@@ -110,6 +111,7 @@ private:
     void finish_session();
     session::feedback::Signal teardown_signal() const;
     void open_power_path();
+    void end_welding_detection();
 
     std::unique_ptr<io::IConnection> connection;
 
