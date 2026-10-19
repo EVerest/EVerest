@@ -38,6 +38,13 @@ struct IConnection {
 
     virtual void close() = 0;
 
+    /// \brief Request our close and keep receiving: a TLS close_notify first when secured, then a TCP FIN.
+    /// Retry from the poll tick while awaiting the peer's close; pending TLS shutdown never blocks.
+    /// Later read() calls discard whatever arrives and report connection_closed once the peer closes
+    /// (EOF or a fatal socket error). Fires no event: close() still releases the socket and delivers
+    /// CLOSED. Idempotent after completion, and a no-op once closed.
+    virtual void half_close() = 0;
+
     /// \brief True if this connection is transport-secured (TLS). Used to gate features that ISO 15118-2
     /// permits only over TLS (e.g. Plug&Charge / Contract payment).
     virtual bool is_secure() const = 0;
