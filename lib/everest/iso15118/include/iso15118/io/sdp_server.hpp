@@ -7,6 +7,8 @@
 #include <string>
 
 #include <netinet/in.h>
+// Some socket implementations declare sockaddr_in6 in sys/socket.h only.
+#include <sys/socket.h>
 
 #include "ipv6_endpoint.hpp"
 #include "sdp.hpp"
