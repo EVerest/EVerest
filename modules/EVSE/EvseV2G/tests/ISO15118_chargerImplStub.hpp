@@ -48,8 +48,8 @@ struct ISO15118_chargerImplStub : public ISO15118_chargerImplBase {
     virtual void handle_set_powersupply_capabilities(types::power_supply_DC::Capabilities& capabilities) {
         std::cout << "ISO15118_chargerImplBase::handle_set_powersupply_capabilities called" << std::endl;
     }
-    virtual void handle_ac_contactor_closed(bool& status) {
-        std::cout << "ISO15118_chargerImplBase::handle_ac_contactor_closed called" << std::endl;
+    virtual void handle_contactor_closed(bool& status) {
+        std::cout << "ISO15118_chargerImplBase::handle_contactor_closed called" << std::endl;
     }
     virtual void handle_dlink_ready(bool& value) {
         std::cout << "ISO15118_chargerImplBase::handle_dlink_ready called" << std::endl;

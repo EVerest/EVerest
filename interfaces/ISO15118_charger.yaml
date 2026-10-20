@@ -79,10 +79,13 @@ cmds:
         description: Certificate status information
         type: string
         $ref: /authorization#/CertificateStatus
-  ac_contactor_closed:
+  contactor_closed:
     description: >-
-      This message is an async response to a previously published ac_close_contactor
-      or ac_open_contactor.
+      This message is an async response to a previously published ac_close_contactor,
+      ac_open_contactor or dc_open_contactor. It reports the contactor state the board
+      support measured. On a DC stop the HLC stack holds back the PowerDeliveryRes until
+      the contactor is reported open, so that side B is disabled before the response
+      [IEC 61851-23:2023 Table CC.9 t103, t104].
     arguments:
       status:
         description: Set to true when contactor is closed, false when contactor is open
