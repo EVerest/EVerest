@@ -77,6 +77,9 @@ static constexpr std::chrono::seconds DEFAULT_CSR_EXPIRY(3600);
 // Garbage collect default time, 20 minutes
 static constexpr std::chrono::seconds DEFAULT_GARBAGE_COLLECT_TIME(20 * 60);
 
+// Default key type for a CSMS leaf CSR. OCPP uses RSA and ECDSA certificates, the latter only on prime256v1.
+static constexpr CryptoKeyType DEFAULT_CSMS_LEAF_KEY_TYPE = CryptoKeyType::EC_prime256v1;
+
 /// @brief This class holds filesystem paths to CA bundle file locations and directories for leaf certificates
 class EvseSecurity {
 
@@ -94,11 +97,14 @@ public:
     /// 'DEFAULT_CSR_EXPIRY'
     /// @param garbage_collect_time optional garbage collect time. How often we will delete expired CSRs and
     /// certificates. Defaults to 'DEFAULT_GARBAGE_COLLECT_TIME'
+    /// @param csms_leaf_key_type optional key type of the private key generated for a CSMS leaf CSR. Defaults to
+    /// 'DEFAULT_CSMS_LEAF_KEY_TYPE'. The SECC leaf key types are fixed by ISO 15118 and not affected
     EvseSecurity(const FilePaths& file_paths, const std::optional<std::string>& private_key_password = std::nullopt,
                  const std::optional<std::uintmax_t>& max_fs_usage_bytes = std::nullopt,
                  const std::optional<std::uintmax_t>& max_fs_certificate_store_entries = std::nullopt,
                  const std::optional<std::chrono::seconds>& csr_expiry = std::nullopt,
-                 const std::optional<std::chrono::seconds>& garbage_collect_time = std::nullopt);
+                 const std::optional<std::chrono::seconds>& garbage_collect_time = std::nullopt,
+                 const std::optional<CryptoKeyType>& csms_leaf_key_type = std::nullopt);
 
     /// @brief Destructor
     ~EvseSecurity();
@@ -363,6 +369,8 @@ private:
     std::chrono::seconds csr_expiry;
     // Default time to garbage collect
     std::chrono::seconds garbage_collect_time;
+    // Key type of the private key generated for a CSMS leaf CSR
+    CryptoKeyType csms_leaf_key_type;
 
     // GC timer
     Everest::SteadyTimer garbage_collect_timer;
@@ -378,6 +386,7 @@ private:
     FRIEND_TEST(EvseSecurityTests, verify_full_filesystem);
     FRIEND_TEST(EvseSecurityTests, verify_expired_csr_deletion);
     FRIEND_TEST(EvseSecurityTests, verify_secc_csr_profiles);
+    FRIEND_TEST(EvseSecurityTestsCsmsKeyType, csms_csr_uses_configured_rsa_key_type);
     FRIEND_TEST(EvseSecurityTests, verify_ocsp_garbage_collect);
     FRIEND_TEST(EvseSecurityTestsExpired, verify_expired_leaf_deletion);
 #endif
