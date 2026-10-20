@@ -882,6 +882,78 @@ SCENARIO("DIN SPEC 70121 SECC welding detection phase") {
     }
 }
 
+// IEC 61851-23:2023 Table CC.9: side B is disabled (t103) before the PowerDeliveryRes (t104).
+SCENARIO("DIN SPEC 70121 SECC holds PowerDeliveryRes(off) until the contactor is reported open") {
+    using Signal = session::feedback::Signal;
+
+    GIVEN("A DC session in the charge loop whose contactor was reported closed") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.fsm.context().set_contactor_closed(true);
+
+        WHEN("The EV sends PowerDeliveryReq(ReadyToChargeState false)") {
+            secc.drive(power_delivery_req(false));
+
+            THEN("The contactor is opened and welding detection starts, but no response is sent yet") {
+                REQUIRE(secc.fsm.state() == StateID::PowerDeliveryStop);
+                REQUIRE(secc.saw_signal(Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(Signal::DC_OPEN_CONTACTOR));
+                REQUIRE(secc.count_signal(Signal::WELDING_DETECTION_STARTED) == 1);
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("The contactor is reported open") {
+                secc.fsm.control(d20::ClosedContactor{false});
+
+                THEN("The response is sent and WeldingDetection follows") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->dc_evse_status->evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
+                }
+            }
+
+            AND_WHEN("The contactor is not reported open in time") {
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("The response is sent anyway") {
+                    REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                    REQUIRE(secc.fsm.response<message_din::PowerDeliveryResponse>().has_value());
+                }
+            }
+
+            AND_WHEN("An emergency shutdown is reported meanwhile") {
+                secc.fsm.context().set_emergency_shutdown();
+                secc.fsm.control(d20::EvseError{d20::EvseErrorCode::EmergencyShutdown});
+
+                THEN("The response is sent FAILED at once and the session ends [V2G-DC-866]") {
+                    const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
+            }
+        }
+    }
+
+    GIVEN("A DC session whose contactor was already reported open") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+
+        WHEN("The EV sends PowerDeliveryReq(ReadyToChargeState false)") {
+            secc.drive(power_delivery_req(false));
+
+            THEN("The response is sent right away") {
+                REQUIRE(secc.fsm.state() == StateID::WeldingDetection);
+                REQUIRE(secc.fsm.response<message_din::PowerDeliveryResponse>().has_value());
+            }
+        }
+    }
+}
+
 // [V2G-DC-391]: answered with FAILED_UnknownSession and terminates the session -- before any side
 // effect (feedback signal, power-supply setpoint, CP gate) fires for the unknown session.
 SCENARIO("DIN SPEC 70121 SECC unknown-session rejection") {

@@ -47,6 +47,11 @@ constexpr auto TIMEOUT_EMERGENCY_SHUTDOWN_GUARD = 1000 * 2;
 // Leaves 500 ms of the 1,5 s V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) (ISO 15118-2 Table 109,
 // DIN 70121) to build and send the response; runs concurrently with the CP State B wait.
 constexpr auto TIMEOUT_WELDING_VOLTAGE = 1000;
+// How long PowerDeliveryRes(Stop) waits for the contactor to be reported open [IEC 61851-23:2023 Table CC.9
+// t103 before t104]: within V2G_SECC_Msg_Performance_Time(PowerDeliveryRes), 4,5 s in ISO 15118-2 (Table 109),
+// 1,5 s in DIN 70121 (Table 75) and ISO 15118-20 (Table 215), 100 ms kept for sending. EvseV2G waits as long.
+constexpr auto TIMEOUT_CONTACTOR_OPEN_ISO2 = 3000;
+constexpr auto TIMEOUT_CONTACTOR_OPEN = 1400;
 
 class Timeouts {
 public:
