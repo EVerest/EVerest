@@ -77,13 +77,15 @@ OCPP_EXTERNAL_LIMITS_SOURCE = "ocpp/OCPP_set_external_limits"
 OCPP_SETPOINT_SOURCE = "OCPP"
 SUPPORTED_OPERATION_MODES = "ChargingOnly,Idle,CentralSetpoint,ExternalSetpoint"
 OBSERVATION_TIMEOUT_S = 30.0
+# Ev15118 takes the energy service from start_charging, which EvManager's
+# iso_start_v2g_session names. The DCSupplySimulator is bidirectional by
+# default, so EvseManager offers DC_BPT.
+DC_BPT_ENERGY_MODE = "dc_bpt"
 
 
 class DcBptDischargeConfigurationAdjustment(EverestConfigAdjustmentStrategy):
-    """Makes the EV prefer DC_BPT and OCPPmulti share composite schedules in W.
+    """Makes OCPPmulti share composite schedules in W.
 
-    The DCSupplySimulator is bidirectional by default, so EvseManager already
-    offers DC_BPT; PyEvJosev lists DC first unless told otherwise.
     DelayOcppStart lets the V2X device model projection settle before boot.
     """
 
@@ -93,8 +95,6 @@ class DcBptDischargeConfigurationAdjustment(EverestConfigAdjustmentStrategy):
         ocpp_config = modules["ocpp"].setdefault("config_module", {})
         ocpp_config["DelayOcppStart"] = 3000
         ocpp_config["RequestCompositeScheduleUnit"] = "W"
-        modules["iso15118_car"].setdefault("config_module", {})[
-            "supported_d20_energy_services"] = "DC_BPT,DC"
         return adjusted_config
 
 
@@ -236,7 +236,7 @@ async def start_dc_bpt_session(
     setattr(charge_point_v21, "on_authorize", on_authorize)
     central_system_v21.chargepoint.route_map = create_route_map(central_system_v21.chargepoint)
 
-    test_controller.plug_in_dc_iso()
+    test_controller.plug_in_dc_iso(energy_mode=DC_BPT_ENERGY_MODE)
     test_controller.swipe("8BADF00D")
 
     started = call21.TransactionEvent(
