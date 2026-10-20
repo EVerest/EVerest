@@ -191,7 +191,7 @@ Result AcPowerDelivery::on_event(Event ev) {
             m_ctx.set_present_values(control->voltage, control->current);
         } else if (const auto* closed = m_ctx.get_control_event<d20::ClosedContactor>()) {
             m_ctx.set_contactor_closed(static_cast<bool>(*closed));
-            if (m_ctx.evse().ac_contactor_closed and saved_start_req.has_value()) {
+            if (m_ctx.evse().contactor_closed and saved_start_req.has_value()) {
                 m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
                 const auto req = saved_start_req.value();
                 saved_start_req.reset();
@@ -229,7 +229,7 @@ Result AcPowerDelivery::on_request(const message_2::Variant& received) {
 
         // The contactor gate ([V2G2-858]): hold the response here rather than in the shared action, so that
         // action stays a plain function.
-        if (req.charge_progress == dt::ChargeProgress::Start and not m_ctx.evse().ac_contactor_closed) {
+        if (req.charge_progress == dt::ChargeProgress::Start and not m_ctx.evse().contactor_closed) {
             report_power_delivery_parameter(m_ctx, req);
             mark_power_delivery_started(m_ctx);
             saved_start_req = req;
