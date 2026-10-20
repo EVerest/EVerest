@@ -880,6 +880,7 @@ int Manager::run() {
     const auto config_opt = parse_string_option(m_vm, "config");
     const auto conf_opt = parse_string_option(m_vm, "conf");
     const auto db_opt = parse_string_option(m_vm, "db");
+    const auto settings_opt = parse_string_option(m_vm, "settings");
     const bool reset_from_yaml = (m_vm.count("reset-from-yaml") != 0);
 
     warn_about_experimental_options(m_vm);
@@ -896,14 +897,14 @@ int Manager::run() {
     const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
     const bool have_config = not config_path.empty();
-    const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0);
+    const auto boot_source =
+        resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0, settings_opt);
 
-    // DatabaseOnly runs on built-in defaults and never looks for default.yaml; the other modes resolve
-    // the config file. Without --config the default config is looked up and, if it is absent, the
-    // manager also runs on built-in defaults with an empty config (ms.config_file is then empty).
-    ManagerSettings ms = boot_source.mode == BootMode::DatabaseOnly
-                             ? ManagerSettings(ManagerSettings::WithoutConfig{}, prefix_opt, boot_source.db_path)
-                             : ManagerSettings(prefix_opt, boot_source.config_path, boot_source.db_path);
+    // DatabaseOnly never looks for default.yaml; the other modes resolve the config file. Without --config
+    // the default config is looked up and, if it is absent, the manager runs with an empty config
+    // (ms.config_file is then empty). Settings come from --settings, else from the config's deprecated
+    // settings block, with built-in defaults for everything not set.
+    ManagerSettings ms(prefix_opt, boot_source);
 
     // CLI override for mqtt_everest_prefix (e.g. for parallel test execution).
     if (m_vm.count("mqtt_everest_prefix") != 0) {
@@ -957,6 +958,16 @@ int Manager::run() {
     }
     for (const auto& key : ms.deprecated_settings) {
         EVLOG_warning << "Setting '" << key << "' is deprecated and ignored; remove it from the config";
+    }
+    if (not ms.settings_file.empty()) {
+        EVLOG_info << "Loaded settings file at: " << ms.settings_file.string();
+    }
+    if (ms.settings_block_ignored) {
+        EVLOG_warning << "The 'settings' block of the config is ignored because --settings was given";
+    }
+    if (ms.deprecated_settings_block) {
+        EVLOG_warning << "The 'settings' block in the config is deprecated; move it into a settings file and pass "
+                         "it with --settings";
     }
 
     EVLOG_verbose << fmt::format("EVerest prefix was set to {}", ms.runtime_settings.prefix.string());
@@ -2034,8 +2045,14 @@ int main(int argc, char* argv[]) {
                        "<prefix>/etc/everest/default.yaml if it exists; otherwise the manager starts with an empty "
                        "configuration on built-in defaults (and exits with no modules unless --into-idle or "
                        "--idle-on-failure is given). Without --db, the config is loaded from YAML on every start "
-                       "and runtime configuration changes are persisted to user-config/<config-name>.yaml.");
+                       "and runtime configuration changes are persisted to user-config/<config-name>.yaml. Its "
+                       "'settings' block is deprecated, use --settings instead.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
+    desc.add_options()("settings", po::value<std::string>(),
+                       "Full path to a manager settings file (installation paths, MQTT broker and prefixes, "
+                       "telemetry, schema validation). Optional: without it, the deprecated 'settings' block of the "
+                       "config file or the built-in defaults are used. Works with and without --config and --db; "
+                       "when given, the 'settings' block of the config file is ignored.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
                        "Experimental: Start the configuration_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' "
                        "for read-write)");
@@ -2047,7 +2064,8 @@ int main(int argc, char* argv[]) {
                        "is used and the YAML config is authoritative on every start. With --db and --config, the "
                        "database wins when its boot slot holds at least one module; a missing or module-less boot "
                        "slot is seeded from the YAML config. An invalid YAML seeds an empty placeholder slot whose "
-                       "description records the error.");
+                       "description records the error. The database holds no manager settings, pass --settings "
+                       "for non-default ones.");
     desc.add_options()("db-init",
                        "Deprecated, no effect: seeding the database from YAML when its boot slot holds no modules "
                        "is now the default. Ignored unless both --config and --db are given. Use --reset-from-yaml "

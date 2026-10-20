@@ -57,6 +57,15 @@ to the corresponding migration guide.
      - Drop the flag. Seeding the database from the YAML config when it holds no
        valid configuration is the default with ``--config --db``. Use the
        experimental ``--reset-from-yaml`` to force re-seeding.
+   * - ``settings:`` block in the EVerest config file
+       (see :ref:`exp_config_service_settings`)
+     - 2026.10.0
+     - 2027.04.0
+     - Move the keys of the block into a settings file and pass it with
+       ``manager --settings <path>``. Drop ``www_dir``, ``controller_port``,
+       ``controller_rpc_timeout_ms`` and ``prefix``/``config_file``, which have
+       no effect; ``run_as_user`` has no settings file equivalent, see its own
+       entry. The manager logs a warning at startup while the block is used.
    * - ``ocpp_consumer_API``: ``is_connected`` variable and its
        ``get_is_connected`` request/reply (operations ``receive_is_connected``,
        ``send_request_get_is_connected``, ``receive_reply_get_is_connected``,

@@ -13,6 +13,7 @@ function (setup_test_directory)
     )
     set(multi_value_args
         TYPE_FILES
+        SETTINGS_FILES
         MODULES
         INTERFACE_FILES
     )
@@ -110,6 +111,10 @@ function (setup_test_directory)
     if (arg_USER_CONFIG)
         configure_file(test_configs/${arg_USER_CONFIG} ${DIR}/user-config/config.yaml COPYONLY)
     endif()
+
+    foreach(SETTINGS_FILE ${arg_SETTINGS_FILES})
+        configure_file(test_configs/${SETTINGS_FILE} ${DIR}/${SETTINGS_FILE} COPYONLY)
+    endforeach()
 
     # installs the given config as the default config file that the manager looks up when no
     # --config is given (etc/everest/default.yaml in the FHS layout)

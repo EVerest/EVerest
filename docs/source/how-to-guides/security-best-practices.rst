@@ -19,12 +19,11 @@ In Mosquitto, config file add the line:
 
    listener 0 /tmp/mosquitto.socket
 
-In the EVerest config file, add the following to the settings section:
+In the EVerest settings file passed to the manager with ``--settings``, add:
 
 .. code-block:: yaml
 
-   settings:
-    mqtt_broker_socket_path: /tmp/mosquitto.socket
+   mqtt_broker_socket_path: /tmp/mosquitto.socket
 
 - If a part of an MQTT API should be exposed, e.g. to a mobile app on
   the same wireless LAN, use mutually authenticated TLS for the MQTT
