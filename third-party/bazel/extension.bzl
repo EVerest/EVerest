@@ -73,9 +73,9 @@ def _deps_impl(module_ctx):
     maybe(
         http_archive,
         name = "openssl_source",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.3.1/openssl-3.3.1.tar.gz",
-        sha256 = "777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e",
-        strip_prefix = "openssl-3.3.1",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
+        sha256 = "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        strip_prefix = "openssl-3.5.8",
         build_file = "@everest-core//third-party/bazel:BUILD.openssl-foreign-cc.bazel",
     )
 
