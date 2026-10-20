@@ -24,6 +24,17 @@ cc_test(
 )
 
 cc_test(
+    name = "test_integer_codec",
+    srcs = ["common/integer_codec.cpp"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":test_utilities",
+        "//lib/everest/cbv2g:exi_codec",
+        "@catch2//:catch2_main",
+    ],
+)
+
+cc_test(
     name = "test_session_setup",
     srcs = ["din/session_setup.cpp"],
     target_compatible_with = CROSS_TEST_INCOMPATIBLE,

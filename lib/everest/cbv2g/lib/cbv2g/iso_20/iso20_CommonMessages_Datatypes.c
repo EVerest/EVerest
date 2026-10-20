@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
  * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2026 Contributors to EVerest
+ * Copyright (C) 2022 - 2023 Contributors to EVerest
  */
 
 /*****************************************************
