@@ -197,6 +197,8 @@ public:
     void run();
 
     void request_error_sequence();
+    // request_error_sequence() without taking the state machine mutex: for the main loop itself.
+    void request_error_sequence_internal();
 
     void set_matching_started(bool m);
     void set_slac_matched(bool matched);
@@ -490,6 +492,9 @@ private:
         int hlc_ev_pause_bcb_count{0};
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb;
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb_sequence;
+        // [V2G3-M07-27]: armed on a wake-up from an EV pause; the PLC link has to be (re-)detected
+        // before it expires, else the error sequence (E/F for T_step_EF, new matching) runs.
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> wakeup_link_deadline;
         float update_pwm_last_duty_cycle;
         std::chrono::time_point<std::chrono::steady_clock> last_pwm_update;
 
@@ -611,6 +616,9 @@ private:
     static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
+    // T_conn_max_comm, 8 s according to table 3 of ISO15118-3: after a wake-up the PLC link has to be detected
+    // within it, else [V2G3-M07-27] requires state E for at least T_step_EF and a new matching process.
+    static constexpr auto T_CONN_MAX_COMM = std::chrono::milliseconds(8000);
     // C_sequ_retry according to table 3 of ISO15118-3
     static constexpr int C_SEQU_RETRY = 2;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
