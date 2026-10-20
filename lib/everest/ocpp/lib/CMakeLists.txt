@@ -73,12 +73,16 @@ if(LIBOCPP_ENABLE_V2)
     target_sources(ocpp
         PRIVATE
             ocpp/v2/average_meter_values.cpp
+            ocpp/v2/availability_state_registration.cpp
             ocpp/v2/charge_point.cpp
             ocpp/v2/charge_point_callbacks.cpp
             ocpp/v2/connector.cpp
             ocpp/v2/ctrlr_component_variables.cpp
             ocpp/v2/database_handler.cpp
             ocpp/v2/device_model.cpp
+            ocpp/v2/device_model_composition.cpp
+            ocpp/v2/device_model_monitor_store.cpp
+            ocpp/v2/device_model_provider_calls.cpp
             ocpp/v2/device_model_storage_sqlite.cpp
             ocpp/v2/enums.cpp
             ocpp/v2/evse.cpp

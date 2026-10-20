@@ -18,7 +18,13 @@
 
 namespace stubs {
 
-struct GenericOcppTester : public ocpp_multi::GenericOcpp {
+// The device model sources are the first base, so that they outlive GenericOcpp as in the module
+struct GenericOcppTester : private ocpp_multi::DeviceModelSources, public ocpp_multi::GenericOcpp {
+    GenericOcppTester(ocpp_multi::GenericChargePointInterface& charge_point, const ModuleInfo& info,
+                      ocpp_multi::ConfigInterface& config, const provides_t& provides, const requires_t& requires) :
+        ocpp_multi::GenericOcpp(charge_point, info, config, provides, requires, *this) {
+    }
+
     using ocpp_multi::GenericOcpp::cb_all_connectors_unavailable;
     using ocpp_multi::GenericOcpp::cb_boot_notification;
     using ocpp_multi::GenericOcpp::cb_cancel_reservation;
@@ -76,7 +82,6 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::create_limits_entry;
     using ocpp_multi::GenericOcpp::create_setpoint_entry;
     using ocpp_multi::GenericOcpp::custom_error_mapping;
-    using ocpp_multi::GenericOcpp::GenericOcpp;
     using ocpp_multi::GenericOcpp::get_connector_structure;
     using ocpp_multi::GenericOcpp::init_check_energy_sink;
     using ocpp_multi::GenericOcpp::init_error_handlers;
@@ -117,6 +122,11 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::apply_der_capability;
     using ocpp_multi::GenericOcpp::flush_pending_grid_support;
     using ocpp_multi::GenericOcpp::on_grid_support_capability;
+
+    // the components EVerest provides, with the values reported so far
+    std::vector<ocpp::v2::RegisteredComponent> everest_device_model_components() {
+        return everest_device_model->get_components();
+    }
 };
 
 // creates the OCPP object and performs initialisation before every test

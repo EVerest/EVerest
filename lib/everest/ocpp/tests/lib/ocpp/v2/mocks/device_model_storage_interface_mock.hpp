@@ -19,12 +19,12 @@ public:
                 (const Component&, const Variable&, const AttributeEnum&, const std::string&, const std::string&));
     MOCK_METHOD(std::optional<VariableMonitoringMeta>, set_monitoring_data,
                 (const SetMonitoringData&, const VariableMonitorType));
-    MOCK_METHOD(std::vector<VariableMonitoringMeta>, get_monitoring_data,
-                (const std::vector<MonitoringCriterionEnum>&, const Component&, const Variable&));
     MOCK_METHOD(ClearMonitoringStatusEnum, clear_variable_monitor, (int, bool));
     MOCK_METHOD(std::int32_t, clear_custom_variable_monitors, ());
+    MOCK_METHOD(std::vector<StoredMonitor>, get_all_monitors, (), (override));
     MOCK_METHOD(void, check_integrity, ());
     MOCK_METHOD(bool, update_monitoring_reference, (std::int32_t monitor_id, const std::string& reference_value),
                 (override));
+    MOCK_METHOD(bool, create_network_configuration_slot_from_default_schema, (std::int32_t new_slot), (override));
 };
 } // namespace ocpp::v2

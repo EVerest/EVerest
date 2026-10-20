@@ -38,7 +38,7 @@ active_modules:
         - module_id: yeti_driver
           implementation_id: ev_board_support
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
       ChargePointConfigPath: libocpp-config-test.json
       UserConfigPath: user_config.json

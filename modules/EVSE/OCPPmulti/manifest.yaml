@@ -54,8 +54,8 @@ config:
       connection attempt and the websocket is bound to the interface address it returns. The provider must
       answer promptly (NotSupported is acceptable); with system_API the external client must reply to
       e2m/configure_network, otherwise every connection attempt blocks until the framework command timeout.
-      If false (default), no configure_network request is sent and the connection is established like
-      with the OCPP201 module (success, no interface address).
+      If false (default), no configure_network request is sent and the connection is established without
+      an interface address.
     type: boolean
     default: false
   DeviceModelConfigPath:
@@ -104,9 +104,8 @@ config:
     default: false
   EverestDeviceModelDatabasePath:
     description: >-
-      OCPP 2.0.1
-      Path to the SQLite databse for the EVerest device model. This database stores components and variables
-      like EVSE and Connector that are closely related to EVerest and therefore not owned and managed by libocpp.
+      Deprecated. Path to the EVerest device model database of earlier versions. At the first start, the module
+      takes it over into the database at DeviceModelDatabasePath and renames it to *.migrated.
     type: string
     default: everest_device_model_storage.db
   GridSupportHeartbeatS:

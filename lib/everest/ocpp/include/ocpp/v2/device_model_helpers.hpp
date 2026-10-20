@@ -84,7 +84,7 @@ template <DataEnum T> bool is_type_numeric() {
 /// \return The requested value
 /// \throws std::runtime_error if the value cannot be retrieved
 template <typename T>
-T get_value(const DeviceModelInterface& dm, const Component& component_id, const Variable& variable_id,
+T get_value(const DeviceModelVariablesInterface& dm, const Component& component_id, const Variable& variable_id,
             const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     std::string value;
     const auto status =
@@ -103,7 +103,7 @@ T get_value(const DeviceModelInterface& dm, const Component& component_id, const
 /// \return The requested value
 /// \throws std::runtime_error if the value cannot be retrieved
 template <typename T>
-T get_value(const DeviceModelInterface& dm, const ComponentVariable& component_variable,
+T get_value(const DeviceModelVariablesInterface& dm, const ComponentVariable& component_variable,
             const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     if (!component_variable.variable.has_value()) {
         throw std::runtime_error("ComponentVariable has no variable set");
@@ -119,7 +119,7 @@ T get_value(const DeviceModelInterface& dm, const ComponentVariable& component_v
 /// \param attribute_enum The attribute
 /// \return The requested value or std::nullopt
 template <typename T>
-std::optional<T> get_optional_value(const DeviceModelInterface& dm, const Component& component_id,
+std::optional<T> get_optional_value(const DeviceModelVariablesInterface& dm, const Component& component_id,
                                     const Variable& variable_id,
                                     const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     std::string value;
@@ -147,7 +147,8 @@ std::optional<T> get_optional_value(const DeviceModelInterface& dm, const Compon
 /// \param attribute_enum The attribute
 /// \return The requested value or std::nullopt
 template <typename T>
-std::optional<T> get_optional_value(const DeviceModelInterface& dm, const ComponentVariable& component_variable,
+std::optional<T> get_optional_value(const DeviceModelVariablesInterface& dm,
+                                    const ComponentVariable& component_variable,
                                     const AttributeEnum& attribute_enum = AttributeEnum::Actual) {
     if (!component_variable.variable.has_value()) {
         return std::nullopt;

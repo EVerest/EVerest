@@ -55,6 +55,9 @@ set(LIBOCPP_TEST_INCLUDE_V2_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/v16/ocpp_enums.cpp 
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/enums.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/ocpp_enums.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_composition.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_monitor_store.cpp
+                                      ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_provider_calls.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/init_device_model_db.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/device_model_storage_sqlite.cpp
                                       ${LIBOCPP_LIB_PATH}/ocpp/v2/utils.cpp

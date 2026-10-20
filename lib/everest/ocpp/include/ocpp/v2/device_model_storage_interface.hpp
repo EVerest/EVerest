@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <memory>
 #include <ocpp/common/support_older_cpp_versions.hpp>
@@ -15,6 +16,26 @@
 namespace ocpp {
 namespace v2 {
 
+/// \brief A monitor as stored, together with the identity of the variable it belongs to
+struct StoredMonitor {
+    Component component;
+    Variable variable;
+    /// \brief The owner of the variable when the monitor was attached, if known
+    std::optional<std::string> source;
+    VariableMonitoringMeta monitor;
+};
+
+/// \brief A stored attribute value of a variable that has no row in the component tables
+struct StoredVariableValue {
+    Component component;
+    Variable variable;
+    AttributeEnum attribute;
+    std::string value;
+    std::optional<std::string> value_source;
+    /// \brief The owner of the variable when the value was stored, if known
+    std::optional<std::string> source;
+};
+
 /// \brief Abstract base class for device model interface. This class provides an interface for accessing and modifying
 /// device model data. Implementations of this class should provide concrete implementations for the virtual methods
 /// declared here.
@@ -25,7 +46,8 @@ public:
 
     /// \brief Gets the device model from the device model interface
     /// \return std::map<Component, std::map<Variable, VariableMetaData>> that will contain a full representation of the
-    /// device model except for the VariableAttribute(s) of each Variable.
+    /// device model, including the VariableAttribute(s) of each Variable with their values. The monitors are returned
+    /// by get_all_monitors.
     virtual DeviceModelMap get_device_model() = 0;
 
     /// \brief Gets a VariableAttribute from the storage if present
@@ -73,15 +95,12 @@ public:
     /// \return true if the reference value could be updated, false otherwise
     virtual bool update_monitoring_reference(const std::int32_t monitor_id, const std::string& reference_value) = 0;
 
-    /// \brief Returns all the monitors currently in the database based
-    /// on the provided filtering criteria
-    /// \param criteria
-    /// \param component_id
-    /// \param variable_id
-    /// \return the monitoring data if it could be found or an empty vector
-    virtual std::vector<VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<MonitoringCriterionEnum>& criteria, const Component& component_id,
-                        const Variable& variable_id) = 0;
+    /// \brief Records \p source as the owner of the variable that monitor \p monitor_id belongs to
+    /// \return true if the monitor exists and was updated
+    virtual bool update_monitoring_source(const std::int32_t /*monitor_id*/,
+                                          const std::optional<std::string>& /*source*/) {
+        return false;
+    }
 
     /// \brief Clears a single monitor based on the ID from the database
     /// \param monitor_id Monitor ID
@@ -94,6 +113,29 @@ public:
     /// from the database
     /// \return count of monitors deleted, or 0 if none were deleted
     virtual std::int32_t clear_custom_variable_monitors() = 0;
+
+    /// \brief Returns every stored monitor, including monitors of variables that have no row in the component tables
+    virtual std::vector<StoredMonitor> get_all_monitors() = 0;
+
+    /// \brief Returns the attribute values that are stored by component and variable identity, because their
+    /// variables have no row in the component tables
+    virtual std::vector<StoredVariableValue> get_stored_values() {
+        return {};
+    }
+
+    /// \brief Stores \p value by component and variable identity, together with the owner of the variable. The
+    /// storage does not check that the variable has no row in the component tables; the caller stores values of
+    /// registered variables only.
+    virtual SetVariableStatusEnum set_stored_value(const StoredVariableValue& /*value*/) {
+        return SetVariableStatusEnum::Rejected;
+    }
+
+    /// \brief Removes a value returned by get_stored_values
+    /// \return true if a value was removed
+    virtual bool remove_stored_value(const Component& /*component_id*/, const Variable& /*variable_id*/,
+                                     const AttributeEnum& /*attribute_enum*/) {
+        return false;
+    }
 
     /// \brief Check data integrity of the stored data:
     /// For "required" variables, assert values exist. Checks might be extended in the future.

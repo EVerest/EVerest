@@ -75,7 +75,7 @@ bool is_actual(const std::optional<ocpp::v2::AttributeEnum>& attribute_type) {
 namespace ocpp_multi {
 
 V16VariableAccess::V16VariableAccess(const ocpp::v16::VariableResolver& resolver,
-                                     ocpp::v2::DeviceModelInterface& device_model, get_keys_fn get_keys,
+                                     ocpp::v2::DeviceModelVariablesInterface& device_model, get_keys_fn get_keys,
                                      set_key_fn set_key, on_connection_config_changed_fn on_connection_config_changed) :
     m_resolver(resolver),
     m_device_model(device_model),
@@ -326,9 +326,10 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
             }
         }
 
-        // Free / ConnectionConfig: allow writing ReadOnly variables, mirroring the 2.x consumer path
-        // (Provisioning::set_variables); this API is a trusted local channel, and mutability models the
-        // CSMS-facing contract. ReadOnlyDerived CVs stay rejected above.
+        // Free / ConnectionConfig: allow writing ReadOnly variables of the component config, mirroring the 2.x
+        // consumer path (Provisioning::set_variables); this API is a trusted local channel, and mutability models
+        // the CSMS-facing contract. The device model rejects a variable that a runtime source registered, and
+        // ReadOnlyDerived CVs stay rejected above.
         const auto attribute = request.attributeType.value_or(ocpp::v2::AttributeEnum::Actual);
         const auto status = m_device_model.set_value(request.component, request.variable, attribute,
                                                      request.attributeValue.get(), source, true);

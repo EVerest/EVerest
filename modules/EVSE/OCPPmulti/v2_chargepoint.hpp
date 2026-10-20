@@ -9,6 +9,7 @@
 #include <everest/conversions/ocpp/evse_security_ocpp.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 #include <everest/util/async/monitor.hpp>
+#include <ocpp/v2/device_model.hpp>
 
 namespace ocpp_multi {
 
@@ -19,11 +20,27 @@ private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     ocpp_multi::GenericChargePointCallbacks* m_callbacks_ptr{nullptr};
     // interface type so unit tests can inject a mock; init() creates the real ocpp::v2::ChargePoint
+    std::shared_ptr<ocpp::v2::DeviceModel> m_device_model;
+    // Holds a reference to m_device_model: stop_config_service_binding() unregisters it before that device model is
+    // replaced or destroyed
+    std::unique_ptr<ocpp_module_common::device_model::ConfigServiceBinding> m_config_service_binding;
+    ocpp_module_common::device_model::EverestDeviceModel* m_everest_device_model{nullptr};
     std::unique_ptr<ocpp::v2::ChargePointInterface> m_charge_point;
     // written from command threads (register_variable_listener), read from libocpp callback thread
     everest::lib::util::monitor<listener_t> m_variable_listener;
 
     void check_configured(const std::string_view& fn);
+    /// \brief Unregisters the module configuration views from the device model, before it is replaced or destroyed
+    void stop_config_service_binding() {
+        if (m_config_service_binding != nullptr) {
+            m_config_service_binding->stop();
+            m_config_service_binding.reset();
+        }
+        if (m_everest_device_model != nullptr) {
+            m_everest_device_model->detach();
+            m_everest_device_model = nullptr;
+        }
+    }
 
     void cb_default_price(const std::vector<ocpp::DisplayMessageContent>& messages);
     ocpp::v2::GetLogResponse cb_get_log_request(const ocpp::v2::GetLogRequest& request);
@@ -56,6 +73,13 @@ public:
     explicit ChargePointV2(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
         m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
     }
+    ~ChargePointV2() {
+        stop_config_service_binding();
+    }
+    ChargePointV2(const ChargePointV2&) = delete;
+    ChargePointV2& operator=(const ChargePointV2&) = delete;
+    ChargePointV2(ChargePointV2&&) = delete;
+    ChargePointV2& operator=(ChargePointV2&&) = delete;
 
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration

@@ -7,6 +7,7 @@
 #include <everest/logging.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_helpers.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace ocpp::v2 {
@@ -22,10 +23,18 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
 
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
             if (monitor_meta.reference_value.has_value()) {
-                auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-                auto delta = std::abs(raw_val_reference - raw_val_current);
-
-                return (delta > monitor_meta.monitor.value);
+                try {
+                    auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
+                    auto delta = std::abs(raw_val_reference - raw_val_current);
+                    return (delta > monitor_meta.monitor.value);
+                } catch (const std::exception&) {
+                    // An empty reference, or one of a former data type of the variable: the value that triggers
+                    // becomes the reference
+                    EVLOG_warning << "Reference value \"" << monitor_meta.reference_value.value() << "\" of monitor "
+                                  << monitor_meta.monitor.id
+                                  << " does not fit the variable: the monitor triggers to take a new reference";
+                    return true;
+                }
             }
             EVLOG_error << "Invalid reference value for monitor: " << monitor_meta.monitor;
             return false;
@@ -134,7 +143,7 @@ EventData create_notify_event(std::int32_t unique_id, const std::string& reporte
 }
 } // namespace
 
-MonitoringUpdater::MonitoringUpdater(DeviceModelAbstract& device_model, notify_events notify_csms_events,
+MonitoringUpdater::MonitoringUpdater(DeviceModelMonitoringInterface& device_model, notify_events notify_csms_events,
                                      is_offline is_chargepoint_offline) :
     device_model(device_model),
     notify_csms_events(std::move(notify_csms_events)),
@@ -170,10 +179,10 @@ void MonitoringUpdater::start_monitoring() {
     device_model.register_monitor_listener(std::move(fn_monitor));
 
     // No point in starting the monitor if this variable does not exist. It will never start to exist later on.
-    if (this->device_model.get_optional_value<bool>(ControllerComponentVariables::MonitoringCtrlrEnabled)
+    if (get_optional_value<bool>(this->device_model, ControllerComponentVariables::MonitoringCtrlrEnabled)
             .value_or(false)) {
         const int process_interval_seconds =
-            this->device_model.get_optional_value<int>(ControllerComponentVariables::MonitorsProcessingInterval)
+            get_optional_value<int>(this->device_model, ControllerComponentVariables::MonitorsProcessingInterval)
                 .value_or(1);
 
         EVLOG_info << "Started monitoring timer with interval: " << process_interval_seconds;
@@ -399,7 +408,7 @@ void MonitoringUpdater::update_periodic_monitors_internal(State& state) {
         }
     }
 
-    // Remove the monitors in our list that don't exist any more in the database
+    // Remove the monitors in our list that don't exist any more in the device model
     for (auto it = std::begin(updater_monitors_meta); it != std::end(updater_monitors_meta);) {
         std::int32_t updater_meta_id = it->first;
         auto updater_meta_data = it->second;
@@ -499,8 +508,7 @@ void MonitoringUpdater::process_monitor_meta_internal(State& state, UpdaterMonit
             comp_var.component = updater_meta_data.component;
             comp_var.variable = updater_meta_data.variable;
 
-            // This operation can cause a small stall, but only if this is triggered
-            const auto current_value = this->device_model.get_value<std::string>(comp_var);
+            const auto current_value = get_value<std::string>(this->device_model, comp_var);
 
             EventData notify_event =
                 std::move(create_notify_event(state.unique_id++, current_value, updater_meta_data.component,
@@ -690,7 +698,7 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
 }
 
 bool MonitoringUpdater::is_monitoring_enabled() {
-    return this->device_model.get_optional_value<bool>(ControllerComponentVariables::MonitoringCtrlrEnabled)
+    return get_optional_value<bool>(this->device_model, ControllerComponentVariables::MonitoringCtrlrEnabled)
         .value_or(false);
 }
 
@@ -702,15 +710,15 @@ void MonitoringUpdater::get_monitoring_info(bool& out_is_offline, int& out_offli
 
     // By default (if the comp is missing we are reporting up to 'Warning')
     out_offline_severity =
-        this->device_model.get_optional_value<int>(ControllerComponentVariables::OfflineQueuingSeverity)
+        get_optional_value<int>(this->device_model, ControllerComponentVariables::OfflineQueuingSeverity)
             .value_or(MonitoringLevelSeverity::Warning);
 
     out_active_monitoring_level =
-        this->device_model.get_optional_value<int>(ControllerComponentVariables::ActiveMonitoringLevel)
+        get_optional_value<int>(this->device_model, ControllerComponentVariables::ActiveMonitoringLevel)
             .value_or(MonitoringLevelSeverity::MAX);
 
     const std::string active_monitoring_base_string =
-        this->device_model.get_optional_value<std::string>(ControllerComponentVariables::ActiveMonitoringBase)
+        get_optional_value<std::string>(this->device_model, ControllerComponentVariables::ActiveMonitoringBase)
             .value_or(conversions::monitoring_base_enum_to_string(MonitoringBaseEnum::All));
 
     out_active_monitoring_base = conversions::string_to_monitoring_base_enum(active_monitoring_base_string);

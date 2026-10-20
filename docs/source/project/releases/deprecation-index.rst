@@ -20,18 +20,6 @@ to the corresponding migration guide.
      - Deprecated in
      - Earliest removal
      - Migration guide
-   * - :ref:`OCPP module <everest_modules_OCPP>` (OCPP 1.6), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0).
-     - 2026.10.0
-     - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
-       The module logs a deprecation warning at startup.
-   * - :ref:`OCPP201 module <everest_modules_OCPP201>` (OCPP 2.0.1 / 2.1), superseded by
-       :ref:`OCPPmulti <everest_modules_OCPPmulti>` (stable since 2026.10.0)
-     - 2026.10.0
-     - 2027.04.0
-     - :ref:`Migrate to the Combined OCPP Module <howto-ocpp-storage-migration>`.
-       The module logs a deprecation warning at startup.
    * - The `RsIskraMeter` deprecates its `meter` implementation_id in favor of `main`.
      - 2026.10.0
      - 2027.04.0
@@ -139,3 +127,11 @@ to the corresponding migration guide.
        ``applications/utils/scripts/set_module_capabilities.py`` elsewhere (see
        :doc:`/how-to-guides/security-best-practices`). The key is already
        ignored, and the manager logs a warning at startup.
+   * - :ref:`OCPPmulti <everest_modules_OCPPmulti>` configuration option
+       ``EverestDeviceModelDatabasePath``
+     - 2027.04.0
+     - 2027.10.0
+     - Nothing to migrate by hand. At the first start the module takes the
+       database over into ``DeviceModelDatabasePath`` and renames it to
+       ``*.migrated``, see :ref:`howto-ocpp-storage-migration`. Remove the
+       option from the configuration afterwards.

@@ -7,7 +7,9 @@ Migrate to the Combined OCPP Module
 This is a goal-oriented how-to guide on migrating an existing deployment from
 the separate ``OCPP`` (1.6) or ``OCPP201`` module to the combined OCPP module
 :ref:`OCPPmulti <everest_modules_OCPPmulti>`, which supports OCPP 1.6, 2.0.1,
-and 2.1 from a single module instance.
+and 2.1 from a single module instance. The ``OCPP`` and ``OCPP201`` modules were
+removed in 2027.04.0, so an installation that still uses one of them switches
+to OCPPmulti as part of that upgrade.
 
 The migration has up to three parts:
 
@@ -29,7 +31,7 @@ Coming from OCPP201
 
 These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
-``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
+``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
@@ -51,6 +53,19 @@ controlled by the device model variable ``SupportedOcppVersions`` of the
 ``InternalCtrlr`` component (a comma-separated preference list, e.g.
 ``ocpp2.1,ocpp2.0.1``). Apart from the custom error mapping, everything else
 in an existing ``OCPP201`` configuration carries over without changes.
+
+``EverestDeviceModelDatabasePath`` is deprecated. OCPPmulti keeps the whole
+device model in the database at ``DeviceModelDatabasePath``. At the first
+start, it takes over the database at ``EverestDeviceModelDatabasePath``: the
+``Enabled`` values of the DER controllers that the CSMS set are imported, and
+the file is renamed to ``*.migrated``. Its other values are not carried over.
+If a value cannot be stored, the file keeps its name and the import is
+repeated at the next start. The components EVerest provides (``EVSE``, ``Connector``, ``ConnectedEV`` and
+others) are registered at every start, and module configuration values are
+read from the configuration service. Monitors the CSMS set are kept, since the
+old module stored them in the database at ``DeviceModelDatabasePath``. Once
+the module has started, the ``*.migrated`` file can be deleted and the key
+removed from the configuration.
 
 Coming from OCPP (1.6)
 ----------------------

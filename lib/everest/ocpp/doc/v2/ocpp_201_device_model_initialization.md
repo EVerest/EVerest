@@ -32,6 +32,17 @@ accordingly. Only the initial values will be set to the values in the component 
 changed a value, it will not be updated to the value from the component config file.
 
 
+## Values in memory
+
+`DeviceModel` reads the whole device model, including the values of all attributes, from the database when it is
+created, and serves every read from memory. A write goes to the database first and to memory only after the database
+accepted it; if the database rejects the write, the request is rejected and memory keeps the old value. Attributes that
+are not persistent are held in memory only: a write to such an attribute is not stored, and the attribute starts with
+the value of the component config again at the next start.
+
+As a consequence, the database must only be edited while the charging station software is stopped. Changes made to the
+database while it runs are not seen until the next start.
+
 ## Update component config
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
@@ -47,6 +58,72 @@ addition of a new one.
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
 Note: There should be no duplicate components or variables in the component config files.
+
+## Database schema
+
+The device model database (schema version 4) has two kinds of tables.
+
+The component tables `COMPONENT`, `VARIABLE`, `VARIABLE_CHARACTERISTICS` and `VARIABLE_ATTRIBUTE` hold the structure
+from the component config and the values of its variables. They are linked by foreign keys, and removing a component
+or variable removes its characteristics and attributes with it.
+
+Two tables are keyed by the identity of a component and variable instead of a foreign key, so they can hold data of
+variables that have no row in the component tables:
+
+| Table | Holds |
+|---|---|
+| `VARIABLE_MONITORING` | every monitor. `ID` is `AUTOINCREMENT`, so monitor ids stay unique and are never reused. `SOURCE` records the owner of a variable registered at runtime. It is NULL for variables of the component config. |
+| `VARIABLE_ATTRIBUTE_VALUE` | attribute values of variables without a row in the component tables, written by `DeviceModelStorageSqlite::set_stored_value`. `set_variable_attribute_value` rejects a variable without a row. The primary key is the name key plus the attribute type. `SOURCE` records the owner of the variable when the value was stored. |
+
+The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
+`VARIABLE_NAME` and `VARIABLE_INSTANCE`. SQLite treats NULLs as distinct in keys, so an absent instance is stored as
+`''` and an absent EVSE or connector id as `0`.
+
+Because monitors are not linked to variable rows, removing a variable from the component config removes only the
+hardwired and preconfigured monitors that the component config defines for it. Custom monitors stay in the database.
+`DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
+returns all monitors.
+
+Migration 4 moves the monitors of schema 3 into the name-keyed table. Monitors keep their ids, and the id sequence is
+kept, so ids of monitors deleted before the migration are not handed out again. It also drops `VARIABLE.SOURCE`: the
+component tables hold only the component config, and the `source` key of a component config variable is not read. The
+down migration keeps only the monitors whose variable has a row in the component tables, drops the values in
+`VARIABLE_ATTRIBUTE_VALUE` and restores `VARIABLE.SOURCE` empty.
+
+## Components registered at runtime
+
+Besides the component config, the integrating firmware can register components and variables at runtime through
+`DeviceModelRegistryInterface::register_components`. They are not written to the component tables of the database:
+a registration is held in memory and repeated at every start. The rules:
+
+- Every variable has one owner. A variable that another runtime source registered already is rejected.
+- A registered variable overrides a variable of the same name from the component config, with a warning; the
+  component config variable returns when the source unregisters. Once a source other than `OCPP_RUNTIME` registers EVSE
+  or Connector components, the component config of other EVSEs and connectors is hidden.
+- A source may register a `VariableValueProvider`, which receives the validated writes to its variables and keeps
+  their values. Without a provider, the owner reports its values with `notify_value_changed`, and `DeviceModel`
+  stores the values of persistent attributes by name key.
+- Monitors belong to OCPP, whoever owns the variable, and are stored by name. A monitor whose variable is not part
+  of the model is dormant, invisible to the CSMS and active again when the variable is registered; a source that
+  registers without the variable removes its monitors, as does a registration whose characteristics no longer fit
+  the monitor.
+- A stored value of a persistent attribute follows the variable like a monitor: it is kept while its owner does not
+  register, removed when the owner registers without the variable, and applied at registration if it still fits
+  the registered characteristics.
+- A write from the local channel (`set_value` with `allow_read_only`, which `ChargePoint::set_variables` uses)
+  reaches the component config only. A registered variable is rejected there whatever its mutability: its owner or
+  the CSMS change it.
+
+The `AvailabilityState` of the charging station, the EVSEs and the connectors is registered under `OCPP_RUNTIME`,
+which does not hide anything, by the code that creates the `DeviceModel`, before it constructs the `ChargePoint`: the
+`ChargePoint` constructor that takes a storage does so through `create_device_model_with_availability_states`, a
+caller that builds the `DeviceModel` itself calls `register_availability_states`. The component config defines them
+as well, for a `DeviceModel` built without that call; the registration overrides it. The `ChargePoint` only checks
+that they are defined.
+
+How EVerest uses this is described in
+[How the device model is composed](../../../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the documentation
+of the OCPPmulti module.
 
 ## Required variables
 

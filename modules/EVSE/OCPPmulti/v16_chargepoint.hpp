@@ -22,6 +22,10 @@ private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> m_charge_point_configuration;
     ocpp::v2::Ocpp16CustomConfigMappings m_custom_mappings;
+    // Holds a reference to the device model of m_charge_point_configuration: stop_config_service_binding() unregisters
+    // it before that device model is replaced or destroyed
+    std::unique_ptr<ocpp_module_common::device_model::ConfigServiceBinding> m_config_service_binding;
+    ocpp_module_common::device_model::EverestDeviceModel* m_everest_device_model{nullptr};
     // resolver must outlive m_variable_access, which holds a reference to it
     std::optional<ocpp::v16::VariableResolver> m_variable_resolver;
     std::optional<V16VariableAccess> m_variable_access;
@@ -54,14 +58,26 @@ private:
         std::string device_model_config_mappings;
         std::int32_t ocpp16_network_config_slot;
         bool enable_legacy_config_migration;
-        // Registered as source "EVEREST" in the composed device model storage, next to the SQLite-backed
-        // "OCPP" source; same composition as the OCPP 2.x path.
-        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
+        // EVerest device model database of earlier versions, taken over at the first start
+        std::string everest_device_model_database_path;
     };
 
     void check_configured(const std::string_view& fn);
+    /// \brief Unregisters the module configuration views from the device model, before it is replaced or destroyed
+    void stop_config_service_binding() {
+        if (m_config_service_binding != nullptr) {
+            m_config_service_binding->stop();
+            m_config_service_binding.reset();
+        }
+        if (m_everest_device_model != nullptr) {
+            m_everest_device_model->detach();
+            m_everest_device_model = nullptr;
+        }
+    }
     void configure_callbacks();
-    void configure_data_model(const config_info_t& config);
+    void configure_data_model(const config_info_t& config,
+                              ocpp_module_common::device_model::EverestDeviceModel* everest_device_model,
+                              ocpp_module_common::device_model::ConfigServiceAccess* config_service);
     std::optional<evse_connector_t> evse_from_ocpp_connector(std::int32_t ocpp_connector_id) const;
 
     void cb_boot_notification_response(const ocpp::v16::BootNotificationResponse& boot_notification_response);
@@ -106,6 +122,13 @@ public:
     explicit ChargePointV16(ocpp_multi::GenericChargePointCallbacks& callbacks, evse_securityIntf& security) :
         m_evse_security(std::make_unique<EvseSecurity>(security)), m_callbacks_ptr(&callbacks) {
     }
+    ~ChargePointV16() {
+        stop_config_service_binding();
+    }
+    ChargePointV16(const ChargePointV16&) = delete;
+    ChargePointV16& operator=(const ChargePointV16&) = delete;
+    ChargePointV16(ChargePointV16&&) = delete;
+    ChargePointV16& operator=(ChargePointV16&&) = delete;
 
     // ------------------------------------------------------------------------
     // GenericChargePointConfiguration

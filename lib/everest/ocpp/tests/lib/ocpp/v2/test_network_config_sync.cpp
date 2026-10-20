@@ -1181,8 +1181,23 @@ protected:
     std::unique_ptr<Provisioning> provisioning;
 
     ProvisioningActiveSlotTest() : dm_helper() {
-        dm = dm_helper.get_device_model();
         evse_manager = std::make_unique<EvseManagerFake>(1);
+        create_provisioning();
+    }
+
+    // The device model reads its values when it is created: a test that writes the database behind it creates the
+    // device model and the functional blocks on it again
+    void reload_device_model() {
+        provisioning.reset();
+        tariff_and_cost.reset();
+        message_queue.reset();
+        fb_context.reset();
+        dm_helper.reload_device_model();
+        create_provisioning();
+    }
+
+    void create_provisioning() {
+        dm = dm_helper.get_device_model();
 
         fb_context =
             std::make_unique<FunctionalBlockContext>(mock_dispatcher, *dm, connectivity_manager, *evse_manager,
@@ -1493,6 +1508,7 @@ TEST_F(ProvisioningActiveSlotTest, SkipNonIntegerTokenInStoredPriority) {
                   ControllerComponentVariables::NetworkConfigurationPriority.variable.value(), AttributeEnum::Actual,
                   "invalid,1", "test"),
               SetVariableStatusEnum::Accepted);
+    reload_device_model();
     ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "invalid,1");
     EXPECT_TRUE(is_rejected_by_active_slot(
         set_single_variable(make_set_variable_data(1, "OcppCsmsUrl", "ws://priority.example.com/ocpp"))));

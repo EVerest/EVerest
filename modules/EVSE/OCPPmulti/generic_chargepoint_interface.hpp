@@ -4,7 +4,8 @@
 #pragma once
 
 #include <everest/ocpp_module_common/custom_error_mapping.hpp>
-#include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/config_service_binding.hpp>
+#include <everest/ocpp_module_common/device_model/everest_device_model.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
 
@@ -231,7 +232,13 @@ struct GenericChargePointInterface {
         fs::path v2_device_model_database_path;
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
-        std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
+        /// \brief The EVerest device model database of earlier versions, taken over at the first start
+        fs::path everest_device_model_database_path;
+        /// \brief The components EVerest provides. Must outlive the charge point.
+        ocpp_module_common::device_model::EverestDeviceModel* everest_device_model{nullptr};
+        /// \brief Access to the module configurations shown in the device model; nullptr shows none. Must outlive the
+        /// charge point.
+        ocpp_module_common::device_model::ConfigServiceAccess* config_service{nullptr};
         std::string v16_device_model_config_mappings;
         std::int32_t v16_ocpp16_network_config_slot;
         bool v16_enable_legacy_config_migration;

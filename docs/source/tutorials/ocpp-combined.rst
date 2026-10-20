@@ -130,14 +130,14 @@ composed. You should be familiar with the OCPP 2.x terms **Component**,
 
 .. note::
 
-  The device model configured here is the **OCPP device model**: components
-  and variables that you as an integrator define and configure via JSON
-  component config files. It is distinct from the **EVerest device model**,
-  which the module builds at runtime from the connected EVerest modules
-  (e.g. EVSE and Connector components). You do not configure the latter via
-  component configs. Please see the
-  :ref:`module documentation <everest_modules_OCPPmulti>` for a full
-  explanation of the two device models and how they interact.
+  The device model configured here is the component configuration:
+  components and variables that you as an integrator define and configure via
+  JSON component config files. The components that describe the station's
+  hardware and the connected EV (e.g. ``EVSE`` and ``Connector``) are
+  registered at runtime from the connected EVerest modules and are not
+  configured via component configs. Please see
+  :ref:`How the device model is composed <everest_modules_handwritten_OCPPmulti_device_model>`
+  for the full picture.
 
 Device model definition and configuration structure
 ----------------------------------------------------

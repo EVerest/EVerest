@@ -12,10 +12,10 @@ discharge is the tightest export bound, which must be the dischargeLimit. With
 a setpoint tighter than the dischargeLimit, the setpoint binds instead.
 
 A probe module observes the EVSE sink's ``energy_flow_request`` and the
-EvseManager's ``enforced_limits``. It also calls OCPPmulti's ``ocpp_generic``
-``set_variables`` to advertise the operation modes these profiles need:
-EverestDeviceModelStorage provisions ``V2XChargingCtrlr.SupportedOperationModes``
-read-only as ``ChargingOnly,Idle``, which a CSMS SetVariables cannot change.
+EvseManager's ``enforced_limits``. The setpoint operation modes these profiles
+need are advertised by OCPPmulti itself: EverestDeviceModel adds them to
+``V2XChargingCtrlr.SupportedOperationModes`` once the EVSE reports a
+bidirectional energy transfer mode.
 """
 
 import asyncio
@@ -102,7 +102,6 @@ def v2x_discharge_markers(func):
     func = pytest.mark.asyncio(func)
     func = pytest.mark.xdist_group(name="ISO15118")(func)
     func = pytest.mark.ocpp_version("ocpp2.1")(func)
-    func = pytest.mark.ocpp_multi_only(func)
     func = pytest.mark.everest_core_config(
         "everest-config-ocppmulti-sil-dc-d20-eim.yaml"
     )(func)
@@ -165,38 +164,31 @@ def enforced_power(enforced_limits: dict) -> Optional[dict]:
     return enforced_limits.get("limits_root_side", {}).get("total_power_W")
 
 
-async def advertise_operation_modes(probe: ProbeModule, charge_point) -> None:
-    request = {
-        "component_variable": {
-            "component": {"name": "V2XChargingCtrlr", "evse": {"id": EVSE_ID}},
-            "variable": {"name": "SupportedOperationModes"},
-        },
-        "value": SUPPORTED_OPERATION_MODES,
-    }
-    # OCPPmulti rejects set_variables until its startup event queue has drained
-    result = None
+async def wait_for_operation_modes(charge_point) -> None:
+    """The EVSE publishes its energy transfer modes after OCPPmulti registered
+    the V2X controller, so the setpoint modes may show up a moment later."""
+    advertised = None
     deadline = time.monotonic() + OBSERVATION_TIMEOUT_S
     while time.monotonic() < deadline:
-        result = await probe.call_command(
-            "ocpp", "set_variables", {"requests": [request], "source": "test"}
+        r: call_result21.GetVariables = await charge_point.get_variables_req(
+            get_variable_data=[
+                GetVariableDataType(
+                    component=ComponentType(name="V2XChargingCtrlr", evse=EVSEType(id=EVSE_ID)),
+                    variable=VariableType(name="SupportedOperationModes"),
+                    attribute_type=AttributeEnumType.actual,
+                )
+            ]
         )
-        if result and result[0]["status"] == "Accepted":
-            break
+        read_back = r.get_variable_result[0]
+        if read_back["attribute_status"] == GetVariableStatusEnumType.accepted:
+            advertised = read_back["attribute_value"]
+            if advertised == SUPPORTED_OPERATION_MODES:
+                return
         await asyncio.sleep(0.5)
-    assert result and result[0]["status"] == "Accepted", f"set_variables result: {result}"
-
-    r: call_result21.GetVariables = await charge_point.get_variables_req(
-        get_variable_data=[
-            GetVariableDataType(
-                component=ComponentType(name="V2XChargingCtrlr", evse=EVSEType(id=EVSE_ID)),
-                variable=VariableType(name="SupportedOperationModes"),
-                attribute_type=AttributeEnumType.actual,
-            )
-        ]
+    raise AssertionError(
+        f"SupportedOperationModes {SUPPORTED_OPERATION_MODES} not advertised within "
+        f"{OBSERVATION_TIMEOUT_S}s; last value: {advertised}"
     )
-    read_back = r.get_variable_result[0]
-    assert read_back["attribute_status"] == GetVariableStatusEnumType.accepted
-    assert read_back["attribute_value"] == SUPPORTED_OPERATION_MODES
 
 
 async def start_dc_bpt_session(
@@ -205,7 +197,7 @@ async def start_dc_bpt_session(
     test_utility: TestUtility,
     probe: ProbeModule,
 ):
-    """Boots OCPP 2.1, advertises the V2X operation modes and starts a DC_BPT
+    """Boots OCPP 2.1, waits for the V2X operation modes and starts a DC_BPT
     transaction. Returns the charge point, the transaction id and the queues of
     the sink's energy_flow_request and the EvseManager's enforced_limits."""
     flow_requests = probe.subscribe_variable_to_queue("evse_sink", "energy_flow_request")
@@ -224,7 +216,7 @@ async def start_dc_bpt_session(
         validate_status_notification_201,
     )
 
-    await advertise_operation_modes(probe, charge_point_v21)
+    await wait_for_operation_modes(charge_point_v21)
 
     @on(Action.authorize)
     def on_authorize(**kwargs):

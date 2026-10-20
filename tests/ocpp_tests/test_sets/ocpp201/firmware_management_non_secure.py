@@ -53,11 +53,11 @@ async def test_L02_non_secure_firmware_update(
     OCPP 2.0.1 path, NOT a limitation of the System module. The System module
     DOES support unsigned updates via handle_standard_firmware_update(), but its
     dispatcher routes on `request_id == -1` (the OCPP 1.6 unsigned sentinel).
-    OCPP201.cpp always forwards the mandatory OCPP 2.0.1 requestId (>= 0), so
+    OCPPmulti always forwards the mandatory OCPP 2.0.1 requestId (>= 0), so
     every v201 UpdateFirmware is routed to handle_signed_fimware_update(), which
     rejects it when no signing certificate is present.
 
-    TODO (PR 3): once the OCPP201 routing is fixed (see notes.md "PR 3"), rewrite
+    TODO (PR 3): once the OCPP 2.x routing is fixed (see notes.md "PR 3"), rewrite
     this to drive a real unsigned update and assert the standard
     Downloading/Downloaded/Installing/Installed sequence (mirror the OCPP 1.6
     `test_firwmare_update_retries` in

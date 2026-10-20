@@ -14,7 +14,7 @@ The monitors are evaluated from time to time in the case of periodic monitors an
 - To filter the verbosity level: set the `ActiveMonitoringLevel` variable to a value of 0-9 with 9 being the most verbose
 - To filter the verbosity level when the charging station is offline: set the `OfflineQueuingSeverity` value to 0-9, with 9 keeping all monitor generated event while being offline
 
-Note: There is a small overhead for the monitoring process interval. The periodic monitors that are triggered will require a database value query. However, based on the count and config of monitors it is unlikely that many of them will trigger at the same time, therefore, the database queries will be limited.
+Note: The periodic monitors read the current values from the device model in memory, so a triggered periodic monitor does not query the database.
 
 ## Threading
 
@@ -86,7 +86,7 @@ In order to set up pre-existing monitors that are not set up by the CSMS, for th
 }
 ```
 
-In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded and the event is sent to the CSMS (or queued while offline), the `reference_value` is updated internally, and a new delta will be calculated based on that. An event that is discarded, for example because its severity is above `OfflineQueuingSeverity`, does not update the `reference_value`.
+In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded and the event is sent to the CSMS (or queued while offline), the `reference_value` is updated internally, and a new delta will be calculated based on that. An event that is discarded, for example because its severity is above `OfflineQueuingSeverity`, does not update the `reference_value`. A `reference_value` that does not fit the variable, for example an empty one or one of a former data type of the variable, makes the next change trigger the monitor, so the changed value becomes the `reference_value`.
 
 For more information related to the monitor functionality, please refer to the OCPP201 specification.
 

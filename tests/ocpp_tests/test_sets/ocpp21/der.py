@@ -9,25 +9,25 @@ The grid_support interface is inverted: the DER device is the *provider* and the
 OCPP module (the combined OCPPmulti module) *optionally requires* it. A probe
 module stands in for the DER device. It:
 
-  * implements the ``set_active_directives`` command - OCPP201 calls it to push
+  * implements the ``set_active_directives`` command - OCPPmulti calls it to push
     the active directive set per EVSE (on a CSMS SetDERControl and on the
     heartbeat). The handler records every call so tests can assert on it.
   * publishes the ``capability`` variable - the device declaring its DER
     capability for an EVSE (replaces the old set_capability command).
   * publishes the ``alarm`` variable - the device raising a grid event fault that
-    OCPP201 forwards to the CSMS as NotifyDERAlarm (replaces the old notify_alarm
+    OCPPmulti forwards to the CSMS as NotifyDERAlarm (replaces the old notify_alarm
     command).
 
 How DER gets enabled
 --------------------
-EverestDeviceModelStorage provisions a DER controller component (DCDERCtrlr for
+OCPPmulti registers a DER controller component (DCDERCtrlr for
 the DER-capable DC EVSE) disabled (Available=false, empty ModesSupported). When
 the device publishes a ``capability`` with a non-empty ``supported_types``,
-OCPP201 writes Available=true and ModesSupported (the CSV of supported control
+OCPPmulti writes Available=true and ModesSupported (the CSV of supported control
 types) onto that component, which makes libocpp build the DERControl functional
 block and gate SetDERControl on the declared types.
 
-This write is asynchronous (it travels device -> probe MQTT -> OCPP201 ->
+This write is asynchronous (it travels device -> probe MQTT -> OCPPmulti ->
 device-model write), so tests must wait for it to commit before driving the CSMS.
 ``enable_der`` does that by polling the device model (via GetVariables) until
 DCDERCtrlr ModesSupported reflects the published capability. Directive pushes are
@@ -76,18 +76,16 @@ from ocpp.v21.enums import (
 log = logging.getLogger("gridSupportTest")
 
 # The id of the OCPP module in everest-config-ocppmulti-sil-dc-d20-eim.yaml.
-# The config names it OCPP201 on disk; OCPPMultiConfigurationStrategy swaps it to
-# the combined OCPPmulti module at runtime (the module id "ocpp" is unchanged).
 OCPP_MODULE_ID = "ocpp"
 # The probe module is always injected under this fixed module id.
 PROBE_MODULE_ID = "probe"
-# The implementation id the probe provides and the OCPP201 grid_support
+# The implementation id the probe provides and the OCPPmulti grid_support
 # requirement is wired to.
 GRID_SUPPORT_IMPL_ID = "grid_support"
 
 # The DER-capable EVSE in the d20 config: a DC EvseManager wired to a bidirectional
 # DCSupplySimulator publishes DC_BPT, which classifies it DER-capable so
-# EverestDeviceModelStorage provisions a DCDERCtrlr component (disabled).
+# OCPPmulti registers a DCDERCtrlr component (disabled).
 DER_EVSE_ID = 1
 
 # Default control types a declared capability advertises as supported.
@@ -138,10 +136,6 @@ class GridSupportProbeWiringAdjustment(EverestConfigAdjustmentStrategy):
     second for fast test feedback. Because the OCPP module now requires every
     grid_support connection to carry a framework mapping, it also maps the probe
     module to DER_EVSE_ID so the connection is not excluded from DER routing.
-
-    This adjustment keys on the module id (OCPP_MODULE_ID), so it runs before
-    OCPPMultiConfigurationStrategy renames the on-disk OCPP201 module to OCPPmulti
-    and is unaffected by that rename.
     """
 
     def __init__(self, heartbeat_s: int = 1):
@@ -155,7 +149,7 @@ class GridSupportProbeWiringAdjustment(EverestConfigAdjustmentStrategy):
             {"module_id": PROBE_MODULE_ID, "implementation_id": GRID_SUPPORT_IMPL_ID}
         ]
         # The probe_module marker already injected the probe's active_modules entry (probe strategies run
-        # before user everest_config_adaptions), so map it to the DER EVSE here or OCPP201 excludes it.
+        # before user everest_config_adaptions), so map it to the DER EVSE here or OCPPmulti excludes it.
         probe_module = adjusted_config["active_modules"][PROBE_MODULE_ID]
         probe_module.setdefault("mapping", {})["module"] = {"evse": DER_EVSE_ID}
         return adjusted_config
@@ -176,7 +170,7 @@ def provide_grid_support(probe: ProbeModule) -> "queue.Queue":
     """Register the probe as the grid_support provider.
 
     Implements the ``set_active_directives`` command and returns a queue that
-    receives every ActiveDirectiveSet OCPP201 pushes to the device. Must be
+    receives every ActiveDirectiveSet OCPPmulti pushes to the device. Must be
     called before ``probe.start()``.
     """
     pushed_directives: "queue.Queue" = queue.Queue()
@@ -225,7 +219,7 @@ async def enable_der(
 ) -> None:
     """Declare DER capability for ``evse_id`` and block until the enable commits.
 
-    The device publishing ``capability`` makes OCPP201 enable the DCDERCtrlr and
+    The device publishing ``capability`` makes OCPPmulti enable the DCDERCtrlr and
     advertise ModesSupported; this waits until that write is observable so the
     caller can drive SetDERControl deterministically.
     """
@@ -271,14 +265,11 @@ FREQ_DROOP = FreqDroopType(
 
 # Common marker stack: a real CSMS over the d20 DC SIL config, OCPP 2.1, with the
 # probe wired as the grid_support provider (the OCPP module the consumer) and the
-# heartbeat sped up to 1s. DER lives only in the combined OCPPmulti module, so
-# ocpp_multi_only pins every test to the multi variant (the config's on-disk
-# OCPP201 module is swapped to OCPPmulti at runtime).
+# heartbeat sped up to 1s.
 def grid_support_markers(func):
     func = pytest.mark.asyncio(func)
     func = pytest.mark.xdist_group(name="ISO15118")(func)
     func = pytest.mark.ocpp_version("ocpp2.1")(func)
-    func = pytest.mark.ocpp_multi_only(func)
     func = pytest.mark.everest_core_config(
         "everest-config-ocppmulti-sil-dc-d20-eim.yaml"
     )(func)
@@ -304,9 +295,9 @@ def grid_support_markers(func):
 # -----------------------------------------------------------------------------
 # Inverted-wiring smoke test - boots without enabling DER.
 #
-# Proves the inversion: the probe provides the grid_support interface, OCPP201
+# Proves the inversion: the probe provides the grid_support interface, OCPPmulti
 # binds it as its optional requirement, and the charge point boots. Publishing a
-# capability and an alarm exercises the OCPP201 consumer handlers.
+# capability and an alarm exercises the OCPPmulti consumer handlers.
 # -----------------------------------------------------------------------------
 
 @grid_support_markers
@@ -316,14 +307,14 @@ async def test_inverted_wiring_boots_and_handles_publishes(
     test_utility: TestUtility,
     probe_grid_support: ProbeModule,
 ):
-    """The probe provides grid_support, OCPP201 requires it, the charge point
+    """The probe provides grid_support, OCPPmulti requires it, the charge point
     boots, and publishing capability + alarm does not bring the session down.
     """
     provide_grid_support(probe_grid_support)
     probe_grid_support.start()
     await probe_grid_support.wait_to_be_ready()
 
-    # Boot proves OCPP201 started with the probe bound to its grid_support
+    # Boot proves OCPPmulti started with the probe bound to its grid_support
     # requirement (a misconfigured inversion would fail the manager start).
     charge_point_v21 = await central_system_v21.wait_for_chargepoint(
         wait_for_bootnotification=True
@@ -346,7 +337,7 @@ async def test_inverted_wiring_boots_and_handles_publishes(
 
 
 # -----------------------------------------------------------------------------
-# A published capability enables the EVSE and OCPP201 pushes its active set.
+# A published capability enables the EVSE and OCPPmulti pushes its active set.
 # -----------------------------------------------------------------------------
 
 @grid_support_markers
@@ -356,7 +347,7 @@ async def test_capability_enables_evse_and_pushes_active_set(
     test_utility: TestUtility,
     probe_grid_support: ProbeModule,
 ):
-    """A published capability enables the EVSE and OCPP201 pushes its active
+    """A published capability enables the EVSE and OCPPmulti pushes its active
     directive set back to the device via set_active_directives.
     """
     pushed = provide_grid_support(probe_grid_support)
@@ -513,7 +504,7 @@ async def test_heartbeat_re_pushes_active_directives(
     test_utility: TestUtility,
     probe_grid_support: ProbeModule,
 ):
-    """The OCPP201 heartbeat re-pushes the active directive set per EVSE on its
+    """The OCPPmulti heartbeat re-pushes the active directive set per EVSE on its
     interval (GridSupportHeartbeatS=1), even with no state change.
     """
     pushed = provide_grid_support(probe_grid_support)

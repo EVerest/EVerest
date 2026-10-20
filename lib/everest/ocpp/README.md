@@ -12,7 +12,7 @@ integrated with your charging station firmware.
 
 ## Integration with EVerest
 
-This library is integrated within the [OCPP](https://github.com/EVerest/EVerest/tree/main/modules/OCPP) and [OCPP201](https://github.com/EVerest/EVerest/tree/main/modules/OCPP201)
+This library is integrated within the [OCPPmulti](https://github.com/EVerest/EVerest/tree/main/modules/EVSE/OCPPmulti)
 module within [EVerest](https://github.com/EVerest/EVerest) - the complete software stack for your charging station. It is recommended to use EVerest together with this OCPP implementation.
 
 ## Getting Started
@@ -104,6 +104,10 @@ The following table shows the known CSMS with which this library was tested.
 | P. DataTransfer                      | ✅ yes  |
 
 Check the [detailed current implementation status.](doc/v2/ocpp_2x_status.md).
+
+How EVerest composes the device model from the component config and the components it registers at runtime is
+described in [How the device model is composed](../../../modules/EVSE/OCPPmulti/docs/device_model.rst), the
+documentation of the OCPPmulti module.
 
 | Whitepapers & Application Notes                                                                                                                              | Supported              |
 | ----------------------------------------------------------------------------------------------------------------------------------------- | ---------------------- |

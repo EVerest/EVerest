@@ -8,10 +8,14 @@
 #include <algorithm>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
+#include <everest/database/sqlite/connection.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
-#include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <ocpp/v2/availability_state_registration.hpp>
+#include <ocpp/v2/database_handler.hpp>
+#include <ocpp/v2/device_model.hpp>
 #include <ocpp/v2/device_model_helpers.hpp>
+#include <ocpp/v2/device_model_storage_sqlite.hpp>
 
 namespace {
 
@@ -468,28 +472,42 @@ ocpp::v2::Callbacks ChargePointV2::configure_callbacks() {
 
 void ChargePointV2::init(init_args_t& args) {
     // initialise libocpp device model
-    auto libocpp_device_model_storage = std::make_shared<ocpp::v2::DeviceModelStorageSqlite>(
+    auto device_model_storage = std::make_unique<ocpp::v2::DeviceModelStorageSqlite>(
         args.v2_device_model_database_path, args.v2_device_model_database_migration_path,
         args.v2_device_model_config_path);
+    module::device_model::migrate_everest_device_model_database(
+        args.everest_device_model_database_path, args.v2_device_model_database_path, *device_model_storage);
 
-    // initialise composed device model, this will be provided to the ChargePoint constructor
-    auto composed_device_model_storage = module::device_model::make_composed_device_model_storage(
-        std::move(libocpp_device_model_storage), args.everest_device_model);
+    stop_config_service_binding();
+    m_device_model = std::make_shared<ocpp::v2::DeviceModel>(std::move(device_model_storage));
+    // All registrations finish before the ChargePoint checks the device model and connects to the CSMS, so the first
+    // report is complete
+    if (args.everest_device_model != nullptr) {
+        m_everest_device_model = args.everest_device_model;
+        m_everest_device_model->register_with(*m_device_model);
+    }
+    if (args.config_service != nullptr) {
+        m_config_service_binding =
+            module::device_model::ConfigServiceBinding::create(*args.config_service, *m_device_model);
+    }
+    ocpp::v2::register_availability_states(*m_device_model, args.evse_connector_structure);
 
     const auto ocpp_share_path = args.share_path / "OCPP201";
     const auto sql_init_path = ocpp_share_path / SQL_CORE_MIGRATIONS;
+    auto database_handler = std::make_shared<ocpp::v2::DatabaseHandler>(
+        std::make_unique<everest::db::sqlite::Connection>(args.v2_core_database_path / "cp.db"), sql_init_path);
 
     // clang-format off
     m_charge_point =
         std::make_unique<ocpp::v2::ChargePoint>(
             args.evse_connector_structure,
-            std::move(composed_device_model_storage),
-            ocpp_share_path,
-            args.v2_core_database_path,
-            sql_init_path,
+            m_device_model,
+            std::move(database_handler),
+            nullptr, // the message queue is created by the charge point
             args.message_log_path,
             m_evse_security,
-            configure_callbacks()
+            configure_callbacks(),
+            ocpp_share_path
         );
     // clang-format on
 }

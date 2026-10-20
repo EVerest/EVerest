@@ -221,9 +221,9 @@ TEST_F(SmartChargingTest, K01FR20AndFR48_IfPhaseToUseSetAndACPhaseSwitchingSuppo
     // As a device model with ac switching supported default set to 'true', we want to have the
     // ac switching support not set.
     const auto& ac_phase_switching_cv = ControllerComponentVariables::ACPhaseSwitchingSupported;
-    device_model_test_helper.set_variable_attribute_value_null(
-        ac_phase_switching_cv.component.name, std::nullopt, std::nullopt, std::nullopt,
-        ac_phase_switching_cv.variable->name, std::nullopt, AttributeEnum::Actual);
+    ASSERT_EQ(device_model->clear_value(ac_phase_switching_cv.component, ac_phase_switching_cv.variable.value(),
+                                        AttributeEnum::Actual, "test"),
+              SetVariableStatusEnum::Accepted);
 
     auto periods = create_charging_schedule_periods_with_phases(0, 1, 1);
     auto profile = create_charging_profile(
@@ -238,12 +238,11 @@ TEST_F(SmartChargingTest, K01FR20AndFR48_IfPhaseToUseSetAndACPhaseSwitchingSuppo
 }
 
 TEST_F(SmartChargingTest, K01FR20AndFR48_IfPhaseToUseSetAndACPhaseSwitchingSupportedFalse_ThenProfileIsInvalid) {
-    // As a device model with ac switching supported default set to 'true', we want to have the ac switching support not
-    // set.
+    // As a device model with ac switching supported default set to 'true', we want to have the ac switching support
+    // set to false.
     const auto& ac_phase_switching_cv = ControllerComponentVariables::ACPhaseSwitchingSupported;
-    device_model_test_helper.set_variable_attribute_value_null(
-        ac_phase_switching_cv.component.name, std::nullopt, std::nullopt, std::nullopt,
-        ac_phase_switching_cv.variable->name, std::nullopt, AttributeEnum::Actual);
+    device_model->set_value(ac_phase_switching_cv.component, ac_phase_switching_cv.variable.value(),
+                            AttributeEnum::Actual, "false", "test", true);
 
     auto periods = create_charging_schedule_periods_with_phases(0, 1, 1);
     auto profile = create_charging_profile(

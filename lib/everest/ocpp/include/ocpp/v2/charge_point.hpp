@@ -529,7 +529,9 @@ public:
     /// \param evse_connector_structure Map that defines the structure of EVSE and connectors of the chargepoint. The
     /// key represents the id of the EVSE and the value represents the number of connectors for this EVSE. The ids of
     /// the EVSEs have to increment starting with 1.
-    /// \param device_model device model instance
+    /// \param device_model device model instance. It must define the AvailabilityState of the charging station and of
+    /// every EVSE and connector of \p evse_connector_structure, in its component config or registered before;
+    /// register_availability_states registers them on a DeviceModel. check_integrity reports a missing one.
     /// \param database_handler database handler instance
     /// \param evse_security Pointer to evse_security that manages security related operations
     /// \param connectivity_manager connectivity manager instance
@@ -546,7 +548,9 @@ public:
     /// \param evse_connector_structure Map that defines the structure of EVSE and connectors of the chargepoint. The
     /// key represents the id of the EVSE and the value represents the number of connectors for this EVSE. The ids of
     /// the EVSEs have to increment starting with 1.
-    /// \param device_model device model instance
+    /// \param device_model device model instance. It must define the AvailabilityState of the charging station and of
+    /// every EVSE and connector of \p evse_connector_structure, in its component config or registered before;
+    /// register_availability_states registers them on a DeviceModel. check_integrity reports a missing one.
     /// \param database_handler database handler instance
     /// \param message_queue message queue instance
     /// \param message_log_path Path to where logfiles are written to
