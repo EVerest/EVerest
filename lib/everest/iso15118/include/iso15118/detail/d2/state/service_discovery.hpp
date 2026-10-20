@@ -19,8 +19,8 @@ message_2::ServiceDiscoveryResponse
 handle_request(const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id,
                uint16_t charge_service_id,
                const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes, bool offer_eim,
-               bool offer_contract, bool cert_service_offered,
+               bool offer_contract, bool cert_service_offered, bool free_service,
                const std::optional<dt::PaymentOption>& resumed_payment_option = std::nullopt,
-               const dt::ServiceList& offered_vas_services = {}, bool free_service = false);
+               const dt::ServiceList& offered_vas_services = {});
 
 } // namespace iso15118::d2::state

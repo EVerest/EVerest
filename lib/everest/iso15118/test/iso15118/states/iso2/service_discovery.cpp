@@ -18,7 +18,8 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
     modes.push_back(dt::EnergyTransferMode::DC_core);
 
     WHEN("PnC is not enabled") {
-        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false);
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
+                                                   /*free_service=*/false);
 
         THEN("OK, EIM-only payment options, DC ChargeService, no Certificate service") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -34,7 +35,8 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
     }
 
     WHEN("PnC is enabled and certificate installation is supported") {
-        const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true);
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true,
+                                                   /*free_service=*/false);
 
         THEN("Contract is offered and the Certificate service (ID 2) is advertised [V2G2-410]") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -49,7 +51,8 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
     }
 
     WHEN("PnC is enabled but certificate installation is not supported") {
-        const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/false);
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/false,
+                                                   /*free_service=*/false);
 
         THEN("Contract is offered but no Certificate service is advertised") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -62,7 +65,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
 
     WHEN("a paused EIM session is resumed with PnC enabled") {
         const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true,
-                                                   dt::PaymentOption::ExternalPayment);
+                                                   /*free_service=*/false, dt::PaymentOption::ExternalPayment);
 
         THEN("only the previously selected ExternalPayment option is offered [V2G2-741]") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -73,7 +76,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
 
     WHEN("a paused PnC session is resumed") {
         const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true,
-                                                   dt::PaymentOption::Contract);
+                                                   /*free_service=*/false, dt::PaymentOption::Contract);
 
         THEN("only the previously selected Contract option is offered [V2G2-741]") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -99,7 +102,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
 
         THEN("they are listed after the Certificate service on a PnC session") {
             const auto res = d2::state::handle_request(req, id, 1, modes, true, true, /*cert_service_offered=*/true,
-                                                       std::nullopt, vas);
+                                                       /*free_service=*/false, std::nullopt, vas);
             REQUIRE(res.response_code == dt::ResponseCode::OK);
             REQUIRE(res.service_list.has_value());
             REQUIRE(res.service_list->size() == 3);
@@ -113,7 +116,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
 
         THEN("they are the whole ServiceList on an EIM-only session") {
             const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
-                                                       std::nullopt, vas);
+                                                       /*free_service=*/false, std::nullopt, vas);
             REQUIRE(res.service_list.has_value());
             REQUIRE(res.service_list->size() == 2);
             REQUIRE(res.service_list->front().service_id == 3);
@@ -122,8 +125,9 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
         THEN("a requested ServiceCategory narrows the ServiceList (Table 28) but never the ChargeService") {
             message_2::ServiceDiscoveryRequest filtered;
             filtered.service_category = dt::ServiceCategory::OtherCustom;
-            const auto res = d2::state::handle_request(filtered, id, 1, modes, true, true,
-                                                       /*cert_service_offered=*/true, std::nullopt, vas);
+            const auto res =
+                d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                          /*cert_service_offered=*/true, /*free_service=*/false, std::nullopt, vas);
             REQUIRE(res.service_list.has_value());
             REQUIRE(res.service_list->size() == 1);
             REQUIRE(res.service_list->front().service_id == 42);
@@ -133,13 +137,15 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
         THEN("a requested ServiceScope matches only services carrying that scope") {
             message_2::ServiceDiscoveryRequest filtered;
             filtered.service_scope = "urn:example:parking";
-            const auto res = d2::state::handle_request(filtered, id, 1, modes, true, true,
-                                                       /*cert_service_offered=*/true, std::nullopt, vas);
+            const auto res =
+                d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                          /*cert_service_offered=*/true, /*free_service=*/false, std::nullopt, vas);
             REQUIRE_FALSE(res.service_list.has_value());
 
             vas.back().service_scope = "urn:example:parking";
-            const auto scoped = d2::state::handle_request(filtered, id, 1, modes, true, true,
-                                                          /*cert_service_offered=*/true, std::nullopt, vas);
+            const auto scoped =
+                d2::state::handle_request(filtered, id, 1, modes, true, true,
+                                          /*cert_service_offered=*/true, /*free_service=*/false, std::nullopt, vas);
             REQUIRE(scoped.service_list.has_value());
             REQUIRE(scoped.service_list->size() == 1);
             REQUIRE(scoped.service_list->front().service_id == 42);
@@ -147,7 +153,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
     }
     WHEN("Only Contract is configured (PnC-only SECC over TLS)") {
         const auto res = d2::state::handle_request(req, id, 1, modes, /*offer_eim=*/false, /*offer_contract=*/true,
-                                                   /*cert_service_offered=*/false);
+                                                   /*cert_service_offered=*/false, /*free_service=*/false);
 
         THEN("Contract is the only payment option offered (EvseV2G parity; EIM is not implied)") {
             REQUIRE(res.response_code == dt::ResponseCode::OK);
@@ -158,7 +164,7 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
 
     WHEN("The charge service is offered free of charge") {
         const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
-                                                   std::nullopt, {}, /*free_service=*/true);
+                                                   /*free_service=*/true);
 
         THEN("The ChargeService carries FreeService=true") {
             REQUIRE(res.charge_service.free_service == true);
@@ -166,7 +172,8 @@ SCENARIO("ISO 15118-2 SECC ServiceDiscovery handling") {
     }
 
     WHEN("FreeService is not set") {
-        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false);
+        const auto res = d2::state::handle_request(req, id, 1, modes, true, false, /*cert_service_offered=*/false,
+                                                   /*free_service=*/false);
 
         THEN("The ChargeService is not advertised as free") {
             REQUIRE(res.charge_service.free_service == false);

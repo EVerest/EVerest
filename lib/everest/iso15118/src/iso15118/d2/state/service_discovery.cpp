@@ -28,8 +28,8 @@ bool matches_request(const dt::Service& service, const message_2::ServiceDiscove
 message_2::ServiceDiscoveryResponse handle_request(
     const message_2::ServiceDiscoveryRequest& req, const dt::SessionId& session_id, uint16_t charge_service_id,
     const everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6>& supported_modes, bool offer_eim,
-    bool offer_contract, bool cert_service_offered, const std::optional<dt::PaymentOption>& resumed_payment_option,
-    const dt::ServiceList& offered_vas_services, bool free_service) {
+    bool offer_contract, bool cert_service_offered, bool free_service,
+    const std::optional<dt::PaymentOption>& resumed_payment_option, const dt::ServiceList& offered_vas_services) {
     message_2::ServiceDiscoveryResponse res;
     res.header.session_id = session_id;
     res.response_code = dt::ResponseCode::OK;
@@ -123,8 +123,8 @@ Result ServiceDiscovery::on_request(const message_2::Variant& received) {
 
     const auto res = handle_request(*req, m_ctx.get_session_id(), m_ctx.session_config.charge_service_id,
                                     m_ctx.session_config.supported_energy_transfer_modes, offer_eim, offer_contract,
-                                    cert_service_offered, resumed_payment_option,
-                                    m_ctx.session_config.offered_vas_services, m_ctx.session_config.free_service);
+                                    cert_service_offered, m_ctx.session_config.free_service, resumed_payment_option,
+                                    m_ctx.session_config.offered_vas_services);
     m_ctx.respond(res);
 
     return m_ctx.create_state<ServiceSelection>();
