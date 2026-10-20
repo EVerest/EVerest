@@ -843,7 +843,7 @@ void keylog_callback(const SSL* ssl, const char* line) {
         // ex_data is only set for a server that came up, so there is nothing to re-check here.
         const auto port = std::to_string(keylog_server->get_port());
         if (keylog_server->send(line)) {
-            log_info("TLS handshake keys sent to port " + port + ": " + std::string(line));
+            log_info("TLS handshake keys sent to port " + port);
         } else {
             log_error("key-log send to port " + port + " failed");
         }

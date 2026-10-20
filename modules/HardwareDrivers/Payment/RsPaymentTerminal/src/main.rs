@@ -687,7 +687,6 @@ impl PaymentTerminalServiceSubscriber for PaymentTerminalModule {
 #[everestrs::main]
 fn main(module: &Module) -> Result<()> {
     let config = module.get_config();
-    log::info!("Received the config {config:?}");
 
     let pt_config = Config {
         terminal_id: config.terminal_id,

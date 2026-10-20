@@ -1324,7 +1324,7 @@ void OCPP201::init_evse_subscriptions() {
                 }
                 auto ocpp_response = this->charge_point->on_get_15118_ev_certificate_request(
                     conversions::to_ocpp_get_15118_certificate_request(certificate_request));
-                EVLOG_debug << "Received response from get_15118_ev_certificate_request: " << ocpp_response;
+                EVLOG_debug << "Received response from get_15118_ev_certificate_request";
                 // transform response, inject action, send to associated EvseManager
                 types::iso15118::ResponseExiStreamStatus everest_response;
                 everest_response.status = conversions::to_everest_iso15118_status(ocpp_response.status);

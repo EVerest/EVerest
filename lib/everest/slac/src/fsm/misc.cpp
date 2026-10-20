@@ -146,15 +146,6 @@ bool accepts_set_key_cnf_success_result(fsm::evse::SetKeyCnfSuccessMode mode, ui
     return false;
 }
 
-std::string format_session_nmk_for_log(Nmk const& nmk) {
-    std::string out;
-    out.reserve(nmk.size() * 2U);
-    for (auto const octet : nmk) {
-        append_hex_byte(out, octet);
-    }
-    return out;
-}
-
 std::string session_log_prefix(fsm::evse::MatchingSessionData const& session_data) {
     return "Session (run_id=" + format_run_id(session_data.run_id) +
            ", ev_mac=" + format_mac_addr(session_data.ev_mac) + "): ";

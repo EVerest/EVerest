@@ -1290,7 +1290,7 @@ void GenericOcpp::cb_get_15118_ev_certificate_response(std::int32_t connector_id
                                                        ocpp::v2::CertificateActionEnum certificate_action) {
     using namespace module::conversions;
 
-    EVLOG_debug << "Received response from get_15118_ev_certificate_request: " << response;
+    EVLOG_debug << "Received response from get_15118_ev_certificate_request";
     // transform response, inject action, send to associated EvseManager
     types::iso15118::ResponseExiStreamStatus everest_response;
     everest_response.status = to_everest_iso15118_status(response.status);
