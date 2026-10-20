@@ -97,3 +97,60 @@ function(_trailbook_ev_remove_stale_generated_files)
         )
     endforeach()
 endfunction()
+
+# Checks shared by the extension functions. CALLER names the calling
+# function in the error messages.
+function(_trailbook_ev_require_trailbook CALLER NAME)
+    if("${NAME}" STREQUAL "")
+        message(FATAL_ERROR "${CALLER}: TRAILBOOK_NAME argument is required")
+    endif()
+    if(NOT TARGET trailbook_${NAME})
+        message(
+            FATAL_ERROR
+            "${CALLER}: No target named trailbook_${NAME} found."
+            " Did you forget to call add_trailbook() first?"
+        )
+    endif()
+endfunction()
+
+# ARG is the argument's name, PATH its value: required, absolute, existing.
+function(_trailbook_ev_require_path CALLER ARG PATH)
+    if("${PATH}" STREQUAL "")
+        message(FATAL_ERROR "${CALLER}: ${ARG} argument is required")
+    endif()
+    if(NOT IS_ABSOLUTE "${PATH}")
+        message(FATAL_ERROR "${CALLER}: ${ARG} must be an absolute path: ${PATH}")
+    endif()
+    if(NOT EXISTS "${PATH}")
+        message(FATAL_ERROR "${CALLER}: ${ARG} must exist: ${PATH}")
+    endif()
+endfunction()
+
+# Records FILES as generated, wraps them in the custom target TARGET and makes
+# the Sphinx stage depend on both. The target is what keeps the generating
+# command alive: CMake drops a custom command whose output no target in the
+# same directory depends on, and the module commands live below modules/.
+#
+# Usage:
+# _trailbook_ev_add_generated(
+#     TRAILBOOK_NAME <trailbook_name>
+#     TARGET <target_name>
+#     FILES <file>...
+# )
+function(_trailbook_ev_add_generated)
+    cmake_parse_arguments("args" "" "TRAILBOOK_NAME;TARGET" "FILES" ${ARGN})
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${args_FILES}
+    )
+    add_custom_target(${args_TARGET} DEPENDS ${args_FILES})
+    set_property(
+        TARGET
+            trailbook_${args_TRAILBOOK_NAME}
+        APPEND
+        PROPERTY
+            ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE
+                ${args_FILES}
+                ${args_TARGET}
+    )
+endfunction()

@@ -20,7 +20,7 @@ located in this package directory.
 ## Generated files
 
 Every generator registers the files it writes into the trailbook instance
-source directory (`generated-files.cmake`). At the end of each configure run,
+source directory (`extension-helpers.cmake`). At the end of each configure run,
 the files recorded by the previous run that no generator registered again are
 deleted, so a removed interface, type, module or handwritten page does not
 linger in the glob toctrees. The API reference generator cleans its own page
