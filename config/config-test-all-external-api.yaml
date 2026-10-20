@@ -72,6 +72,11 @@ active_modules:
     config_module:
       cfg_communication_check_to_s: 0
       cfg_heartbeat_interval_ms: 5000
+  charger_info_api:
+    module: charger_information_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 5000
   session_cost_api:
     module: session_cost_API
     config_module:

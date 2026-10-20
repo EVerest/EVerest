@@ -58,6 +58,7 @@ client_add DisplayMessageAPIClient display_message_api
 client_add GenericErrorRaiserAPIClient error_raiser_api
 client_add SystemAPIClient system_api
 client_add SessionCostAPIClient session_cost_api
+client_add ChargerInformationAPIClient charger_info_api
 client_add AuthConsumerAPIClient auth_api
 client_add DcExternalDerateConsumerAPIClient ded_api
 client_add ErrorHistoryConsumerAPIClient error_history_api
@@ -88,6 +89,7 @@ send_communication_check display_message_api true
 send_communication_check error_raiser_api true
 send_communication_check system_api true
 send_communication_check session_cost_api true
+send_communication_check charger_info_api true
 send_communication_check evse_manager_api true
 send_communication_check auth_api true
 send_communication_check ded_api true

@@ -42,6 +42,7 @@ GENERATED_API_CLIENTS = [
     ("session_cost_api", "SessionCostAPI"),
     ("session_cost_consumer_api", "SessionCostConsumerAPI"),
     ("session_storage_consumer_api", "SessionStorageConsumerAPI"),
+    ("charger_information_api", "ChargerInformationAPI"),
     ("slac_api", "SlacAPI"),
     ("system_api", "SystemAPI"),
 ]

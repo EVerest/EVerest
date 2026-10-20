@@ -29,6 +29,7 @@ client_add DisplayMessageAPIClient display_message_api
 client_add GenericErrorRaiserAPIClient error_raiser_api
 client_add SystemAPIClient system_api
 client_add SessionCostAPIClient session_cost_api
+client_add ChargerInformationAPIClient charger_info_api
 client_add EvseManagerConsumerAPIClient evse_manager_api
 client_add AuthConsumerAPIClient auth_api
 client_add DcExternalDerateConsumerAPIClient ded_api
@@ -66,6 +67,8 @@ err_send_raise_error error_raiser_api {"type":"CommunicationFault","sub_type":"s
 err_send_clear_error error_raiser_api {"type":"CommunicationFault","sub_type":"smoke","message":"smoke test"}
 echo [system_API]              sys_send_firmware_update_status
 sys_send_firmware_update_status system_api {"request_id":1,"firmware_update_status":"Idle"}
+echo [charger_information_API] ci_send_reply_get_charger_information
+ci_send_reply_get_charger_information charger_info_api reply/smoke {"vendor":"Pionix","model":"BelayBox","chargepoint_serial":"SH4CAWN00123","chargebox_serial":"CB123456","friendly_name":"Pionix BelayBox [SH4CAWN00123]","manufacturer":"Pionix GmbH","manufacturer_url":"https://pionix.com","model_revision":"B","board_revision":"1.2","firmware_version":"2026.10.0"}
 echo [session_cost_API]        sc_send_session_cost
 sc_send_session_cost session_cost_api {"session_id":"smoke","status":"Running","cost_chunks":[]}
 

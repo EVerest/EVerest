@@ -15,7 +15,7 @@ The client is modular:
   and contributes its own set of send/receive commands.
 - `spyclient_api/` — a hand-written package that subscribes to the whole
   EVerest API topic tree (default prefix `everest_api`) and logs all traffic.
-- One **generated** Python package per EVerest API module (22 packages, e.g.
+- One **generated** Python package per EVerest API module (23 packages, e.g.
   `powermeter_api`, `evse_bsp_api`, …). These are generated at build time from
   the AsyncAPI specs in `docs/source/reference/EVerest_API/` by the in-tree
   Python generator `everest-api-client-gen` in `applications/utils/everest-api-client-gen`,
@@ -136,7 +136,7 @@ token provider + validator, external energy limit) and uses the blocking
 `*_receive_request_*` commands so it stays in step with the manager.
 
 `examples/all_apis_smoke.script` is a different kind of demo: it fires one
-representative operation from **every** API module (all 22), including OCPP, to
+representative operation from **every** API module (all 23), including OCPP, to
 confirm each generated client and module round-trips. It is fire-and-forget
 (no reply waits), so it never blocks and can be re-run any time.
 
