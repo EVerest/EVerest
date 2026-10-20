@@ -1907,10 +1907,10 @@ TEST_F(AuthorizationTest, handle_get_local_authorization_list_version_exception)
 
 TEST_F(AuthorizationTest, cache_cleanup_handler) {
     // Test cache cleanup handler happy flow.
-    this->authorization->start_auth_cache_cleanup_thread();
     this->delete_expired_entries_count = 0;
     EXPECT_CALL(this->database_handler_mock, authorization_cache_delete_expired_entries(_))
         .WillRepeatedly(update_count_and_notify(this->delete_expired_entries_count));
+    this->authorization->start_auth_cache_cleanup_thread();
     this->authorization->trigger_authorization_cache_cleanup();
     this->wait_for_calls(1, 0, 0);
 }
@@ -1968,11 +1968,11 @@ TEST_F(AuthorizationTest, cache_cleanup_handler_exceeds_max_storage) {
     EXPECT_CALL(this->database_handler_mock, authorization_cache_delete_nr_of_oldest_entries(1))
         .WillRepeatedly(update_count_and_notify(this->delete_nr_of_oldest_entries_count));
 
-    this->authorization->start_auth_cache_cleanup_thread();
-
     this->delete_expired_entries_count = 0;
     this->delete_nr_of_oldest_entries_count = 0;
     this->get_binary_size_count = 0;
+
+    this->authorization->start_auth_cache_cleanup_thread();
 
     this->authorization->trigger_authorization_cache_cleanup();
     this->wait_for_calls(1, 6, 3);

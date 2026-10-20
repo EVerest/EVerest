@@ -46,7 +46,7 @@ private: // Members
     const FunctionalBlockContext& context;
 
     // threads and synchronization
-    bool auth_cache_cleanup_required;
+    bool auth_cache_cleanup_required{false};
     std::condition_variable auth_cache_cleanup_cv;
     std::mutex auth_cache_cleanup_mutex;
     std::thread auth_cache_cleanup_thread;
