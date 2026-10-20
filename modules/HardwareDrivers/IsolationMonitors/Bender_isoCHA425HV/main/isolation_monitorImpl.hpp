@@ -386,6 +386,8 @@ private:
         UnitType unit{UnitType::Invalid};
         ValidType valid{ValidType::Invalid};
         ChannelDescription description{ChannelDescription::Undefined};
+        // False when the Modbus reply was missing or short, the other fields are defaults then
+        bool received{false};
     };
 
     MeasurementValue read_register(const ImdRegisters start_register);

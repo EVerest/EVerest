@@ -78,7 +78,9 @@ requested while this test is running is started after it.
 
 A device error is raised as DeviceFault in whichever measurement channel the device reports it (E.01 in R_F, E.02 in
 U_N) and also while a self test is running, so an interrupted measuring lead fails the cable check as soon as the
-self test detects it.
+self test detects it. A missing or short Modbus reply raises DeviceFault as well but is not a device error: the
+driver keeps the alarm and test state of the last complete read, so a lost reply neither ends a running self test
+nor starts the recovery.
 
 The device keeps a device error and the alarm relays until a device test passes; clearing the error memory (register
 8006) does not help. The driver therefore starts a device test without system connection test 5 s after it sees a
