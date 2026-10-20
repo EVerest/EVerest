@@ -243,6 +243,17 @@ def test_experimental_apis_show_a_warning(site):
         assert ('class="callout warning"' in text) == (spec.stem in experimental), spec.stem
 
 
+def test_apis_in_the_experimental_index_are_marked():
+    """Every AsyncAPI spec the experimental feature index names carries the
+    x-experimental marker, so its page shows the warning."""
+    index = (SPECS_DIR.parents[1] / "project" / "releases" / "experimental-index.rst").read_text(encoding="utf-8")
+    listed = sorted(set(re.findall(r"``([a-z_]+_API)``", index)))
+    assert listed
+    unmarked = [name for name in listed
+                if not (load_spec(SPECS_DIR / f"{name}.yaml").get("info") or {}).get("x-experimental")]
+    assert unmarked == [], f"in the experimental index but not marked x-experimental: {unmarked}"
+
+
 def test_experimental_apis_are_in_the_experimental_index():
     """The deprecation policy requires every experimental component to be
     listed in the experimental feature index."""
