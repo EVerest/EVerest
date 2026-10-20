@@ -273,3 +273,43 @@ SCENARIO("A stopped DC charge loop does not authorize its first request") {
         }
     }
 }
+
+SCENARIO("A valid first DC charge-loop request authorizes once") {
+    GIVEN("a DC session with an accepted first charge-loop request") {
+        DcSession session;
+        REQUIRE(session.count(Signal::CHARGE_LOOP_STARTED) == 1);
+
+        WHEN("another valid request arrives") {
+            session.send_charge_loop();
+
+            THEN("the start signal is not repeated") {
+                const auto response = response_from_wire<iso15118::message_20::DC_ChargeLoopResponse>(*session.conn);
+                CHECK(response.response_code == dt::ResponseCode::OK);
+                CHECK(session.count(Signal::CHARGE_LOOP_STARTED) == 1);
+            }
+        }
+    }
+}
+
+SCENARIO("A rejected first DC charge-loop request does not authorize") {
+    GIVEN("a DC session without a first charge-loop request") {
+        DcSession session{/*send_first_charge_loop=*/false};
+        REQUIRE(session.count(Signal::CHARGE_LOOP_STARTED) == 0);
+
+        WHEN("the first request uses a mismatched control mode") {
+            iso15118::message_20::DC_ChargeLoopRequest bad{};
+            bad.header = {session.id, 0};
+            auto& bad_mode = bad.control_mode.emplace<dt::BPT_Scheduled_DC_CLReqControlMode>();
+            bad_mode.target_current = {20, 0};
+            bad_mode.target_voltage = {400, 0};
+            bad.present_voltage = {400, 0};
+            session.round(bad, iso15118::io::v2gtp::PayloadType::Part20DC);
+
+            THEN("the request fails without publishing CHARGE_LOOP_STARTED") {
+                const auto response = response_from_wire<iso15118::message_20::DC_ChargeLoopResponse>(*session.conn);
+                CHECK(response.response_code == dt::ResponseCode::FAILED);
+                CHECK(session.count(Signal::CHARGE_LOOP_STARTED) == 0);
+            }
+        }
+    }
+}
