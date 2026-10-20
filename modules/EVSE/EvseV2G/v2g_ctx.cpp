@@ -125,7 +125,7 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->session.welding_detection_answered = false;
     ctx->session.welding_voltage_received = false;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
-    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.5.19]. It must not outlive
+    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.6.19]. It must not outlive
      * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
     v2g_ctx_init_dc_evse_status_codes(ctx);
 }

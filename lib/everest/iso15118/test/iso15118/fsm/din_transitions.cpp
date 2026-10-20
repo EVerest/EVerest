@@ -726,6 +726,38 @@ SCENARIO("DIN SPEC 70121 SECC charging state transitions") {
     }
 }
 
+// IEC 61851-23:2023 Table CC.9 t104 and test CC.7.6.19 (normal shutdown by EV).
+SCENARIO("DIN SPEC 70121 SECC confirms an EV-initiated stop with EVSE_Shutdown") {
+    GIVEN("A DC session in the charge loop, with no stop requested by the charger") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+
+        WHEN("The EV sends PowerDeliveryReq(ReadyToChargeState false)") {
+            secc.drive(power_delivery_req(false));
+
+            THEN("PowerDeliveryRes carries EVSE_Shutdown") {
+                const auto res = secc.fsm.response<message_din::PowerDeliveryResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(res->dc_evse_status->evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
+            }
+
+            AND_WHEN("Welding detection follows") {
+                secc.fsm.context().set_cp_state(d20::CpState::B);
+                secc.fsm.control(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+                secc.drive(message_din::WeldingDetectionRequest{});
+
+                THEN("WeldingDetectionRes carries EVSE_Shutdown as well") {
+                    const auto res = secc.fsm.response<message_din::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->dc_evse_status.evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
+                }
+            }
+        }
+    }
+}
+
 SCENARIO("DIN SPEC 70121 SECC welding detection phase") {
     using Signal = session::feedback::Signal;
 
