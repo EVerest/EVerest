@@ -127,6 +127,15 @@ active_modules:
       error_history:
         - module_id: error_history
           implementation_id: error_history
+  session_storage_api:
+    module: session_storage_consumer_API
+    config_module:
+      cfg_communication_check_to_s: 0
+      cfg_heartbeat_interval_ms: 5000
+    connections:
+      session_storage:
+        - module_id: session_storage
+          implementation_id: main
   evse_security_api:
     module: evse_security_consumer_API
     config_module:
@@ -222,6 +231,14 @@ active_modules:
     config_implementation:
       error_history:
         database_path: /tmp/everest_error_history.db
+  session_storage:
+    module: PersistentSessionStorage
+    config_module:
+      database_path: /tmp/everest_api_test_sessions.db
+    connections:
+      evse_manager:
+        - module_id: connector_1
+          implementation_id: evse
   evse_security:
     module: EvseSecurity
     config_module:

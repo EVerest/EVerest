@@ -40,6 +40,7 @@ GENERATED_API_CLIENTS = [
     ("powermeter_api", "PowermeterAPI"),
     ("session_cost_api", "SessionCostAPI"),
     ("session_cost_consumer_api", "SessionCostConsumerAPI"),
+    ("session_storage_consumer_api", "SessionStorageConsumerAPI"),
     ("slac_api", "SlacAPI"),
     ("system_api", "SystemAPI"),
 ]

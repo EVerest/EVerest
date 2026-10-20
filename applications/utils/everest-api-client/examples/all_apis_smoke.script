@@ -36,6 +36,7 @@ client_add ErrorHistoryConsumerAPIClient error_history_api
 client_add EvseSecurityConsumerAPIClient evse_security_api
 client_add SessionCostConsumerAPIClient session_cost_consumer_api
 client_add ExternalEnergyLimitsConsumerAPIClient eel_api
+client_add SessionStorageConsumerAPIClient session_storage_api
 # ocpp_api needs the standalone BUOcppConsumer running; comment out if absent.
 client_add OcppConsumerAPIClient ocpp_api
 
@@ -84,6 +85,8 @@ echo [session_cost_consumer_API] scc_send_request_get_default_price
 scc_send_request_get_default_price session_cost_consumer_api {"headers":{"replyTo":"everest_api/1/session_cost_consumer/session_cost_consumer_api/e2m/get_default_price/smoke"}}
 echo [external_energy_limits_consumer_API] eel_send_request_get_capabilities
 eel_send_request_get_capabilities eel_api {"headers":{"replyTo":"everest_api/1/external_energy_limits_consumer/eel_api/e2m/get_capabilities/smoke"}}
+echo [session_storage_consumer_API] ss_send_request_get_sessions
+ss_send_request_get_sessions session_storage_api {"headers":{"replyTo":"everest_api/1/session_storage_consumer/session_storage_api/e2m/get_sessions/smoke"},"payload":{}}
 echo [ocpp_consumer_API]         oc_send_request_get_variables
 oc_send_request_get_variables ocpp_api {"headers":{"replyTo":"everest_api/1/ocpp_consumer/ocpp_api/e2m/get_variables/smoke"},"payload":{"items":[]}}
 

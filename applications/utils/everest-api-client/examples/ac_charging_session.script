@@ -63,6 +63,7 @@ client_add DcExternalDerateConsumerAPIClient ded_api
 client_add ErrorHistoryConsumerAPIClient error_history_api
 client_add EvseSecurityConsumerAPIClient evse_security_api
 client_add SessionCostConsumerAPIClient session_cost_consumer_api
+client_add SessionStorageConsumerAPIClient session_storage_api
 # ocpp_api needs the standalone BUOcppConsumer TUI running (see the config);
 # comment it out if you did not start that module.
 client_add OcppConsumerAPIClient ocpp_api
@@ -93,6 +94,7 @@ send_communication_check ded_api true
 send_communication_check error_history_api true
 send_communication_check evse_security_api true
 send_communication_check session_cost_consumer_api true
+send_communication_check session_storage_api true
 send_communication_check eel_api true
 send_communication_check ocpp_api true
 

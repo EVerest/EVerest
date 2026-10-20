@@ -84,11 +84,12 @@ set(SET18 "session_cost_API" "SessionCostAPI" "session_cost_api" "sc")
 set(SET19 "session_cost_consumer_API" "SessionCostConsumerAPI" "session_cost_consumer_api" "scc")
 set(SET20 "slac_API" "SlacAPI" "slac_api" "slac")
 set(SET21 "system_API" "SystemAPI" "system_api" "sys")
+set(SET22 "session_storage_consumer_API" "SessionStorageConsumerAPI" "session_storage_consumer_api" "ss")
 
 set(API_SPECS
     "SET01" "SET02" "SET03" "SET04" "SET05" "SET06" "SET07" "SET08" "SET09"
     "SET10" "SET11" "SET12" "SET13" "SET14" "SET15" "SET16" "SET17" "SET18"
-    "SET19" "SET20" "SET21"
+    "SET19" "SET20" "SET21" "SET22"
 )
 
 foreach(API_SPEC IN LISTS API_SPECS)
