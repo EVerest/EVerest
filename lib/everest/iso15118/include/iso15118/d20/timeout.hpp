@@ -35,6 +35,10 @@ constexpr auto TIMEOUT_EIM_ONGOING = 1000 * 60 * 3;
 // Leaves 500 ms of the 1,5 s V2G_SECC_Msg_Performance_Time(DC_WeldingDetectionReq) (ISO 15118-20 Table 217)
 // to build and send the response.
 constexpr auto TIMEOUT_WELDING_VOLTAGE = 1000;
+// How long PowerDeliveryRes(Stop) waits for the contactor to be reported open [IEC 61851-23:2023 Table CC.9
+// t103 before t104]: within the 1,5 s V2G_SECC_Msg_Performance_Time(PowerDeliveryRes) (Table 215), 100 ms kept
+// for sending.
+constexpr auto TIMEOUT_CONTACTOR_OPEN = 1400;
 
 class Timeouts {
 public:
