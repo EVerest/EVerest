@@ -1,0 +1,11 @@
+{% set title = 'EVerest API Specification' %}
+.. _everest_api:
+
+{{ '#' * (title | length) }}
+{{ title }}
+{{ '#' * (title | length) }}
+
+{% for model in models %}
+* `{{ model.name }} <{{ model.name }}/index.html>`_
+
+{% endfor %}

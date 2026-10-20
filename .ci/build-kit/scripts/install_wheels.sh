@@ -30,7 +30,7 @@ if ninja -C "$EXT_MOUNT/build" -t targets all 2>/dev/null | grep -q '^everest_ap
     python3 -m pip install --break-system-packages \
         $EXT_MOUNT/wheels/package_*_api-*.whl \
         $EXT_MOUNT/wheels/spyclient_api-*.whl \
-        'cmd2>=2.4,<3' 'paho-mqtt>=2.0'
+        'cmd2>=2.4,<3' 'paho-mqtt>=2.0' pytest jinja2 pyyaml
     retVal=$?
     if [ $retVal -ne 0 ]; then
         echo "Installing generated API client wheels failed with return code $retVal"
@@ -41,6 +41,16 @@ if ninja -C "$EXT_MOUNT/build" -t targets all 2>/dev/null | grep -q '^everest_ap
     retVal=$?
     if [ $retVal -ne 0 ]; then
         echo "EVerest API client smoke test failed with return code $retVal"
+        exit $retVal
+    fi
+
+    # Tests of the generator itself: clients and the HTML API reference,
+    # rendered from every spec.
+    PYTHONPATH="$EXT_MOUNT/source/applications/utils/everest-api-client-gen/src" \
+        python3 -m pytest "$EXT_MOUNT/source/applications/utils/everest-api-client-gen/tests"
+    retVal=$?
+    if [ $retVal -ne 0 ]; then
+        echo "EVerest API generator tests failed with return code $retVal"
         exit $retVal
     fi
 fi

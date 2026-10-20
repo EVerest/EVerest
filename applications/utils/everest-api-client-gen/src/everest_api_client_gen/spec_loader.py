@@ -1,10 +1,11 @@
 # SPDX-License-Identifier: Apache-2.0
 # Copyright Pionix GmbH and Contributors to EVerest
-"""Load an AsyncAPI YAML spec and resolve the local $refs the generator needs.
+"""Load AsyncAPI YAML specs and resolve the $refs the generators need.
 
-Only local refs (``#/...``) are supported; the EVerest API specs are entirely
-self-contained. Anything unexpected raises so a malformed spec fails the build
-loudly rather than producing a silently wrong client.
+Local refs (``#/...``) resolve within one spec. Refs into a sibling spec
+(``other_API.yaml#/...``) resolve through a SpecSet, which loads the specs of
+one directory on demand. Anything unexpected raises so a malformed spec fails
+the build loudly rather than producing silently wrong output.
 """
 
 import re
@@ -35,7 +36,7 @@ _SpecLoader.add_implicit_resolver(_BOOL_TAG, re.compile(r"^(?:true|True|TRUE|fal
 
 def load_spec(path):
     """Parse the YAML spec at *path*. Mapping order is preserved (PyYAML), which
-    the generator relies on to emit operations in source order."""
+    the generators rely on to emit operations in source order."""
     text = Path(path).read_text(encoding="utf-8")
     doc = yaml.load(text, Loader=_SpecLoader)
     if not isinstance(doc, dict):
@@ -43,18 +44,72 @@ def load_spec(path):
     return doc
 
 
+def json_compatible(value):
+    """Convert a parsed YAML value so json.dumps prints it as JavaScript would:
+    integral floats such as 230.0 become 230. bool is checked first since it
+    is a subclass of int."""
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, float) and value.is_integer():
+        return int(value)
+    if isinstance(value, dict):
+        return {k: json_compatible(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [json_compatible(v) for v in value]
+    return value
+
+
+def split_ref(ref):
+    """Split a ``$ref`` into ``(file name or None, JSON pointer)``."""
+    if not isinstance(ref, str) or "#/" not in ref:
+        raise SpecError(f"unsupported $ref: {ref!r}")
+    file_part, pointer = ref.split("#", 1)
+    if file_part and ("/" in file_part or "\\" in file_part):
+        raise SpecError(f"$ref must name a sibling spec file: {ref!r}")
+    return (file_part or None), pointer
+
+
 def resolve_ref(doc, ref):
     """Resolve a local JSON ``$ref`` (e.g. ``#/channels/foo``) against *doc*."""
-    if not isinstance(ref, str) or not ref.startswith("#/"):
-        raise SpecError(f"unsupported or external $ref: {ref!r}")
+    file_part, pointer = split_ref(ref)
+    if file_part is not None:
+        raise SpecError(f"external $ref needs a SpecSet: {ref!r}")
     node = doc
-    for part in ref[2:].split("/"):
+    for part in pointer[1:].split("/"):
         # JSON pointer unescaping (~1 -> /, ~0 -> ~)
         part = part.replace("~1", "/").replace("~0", "~")
         if not isinstance(node, dict) or part not in node:
             raise SpecError(f"could not resolve $ref: {ref!r} (missing {part!r})")
         node = node[part]
     return node
+
+
+class SpecSet:
+    """The specs of one directory, loaded on first use, keyed by file name."""
+
+    def __init__(self, directory):
+        self._directory = Path(directory)
+        self._docs = {}
+
+    def get(self, file_name):
+        if file_name not in self._docs:
+            path = self._directory / file_name
+            if not path.is_file():
+                raise SpecError(f"referenced spec file not found: {path}")
+            self._docs[file_name] = load_spec(path)
+        return self._docs[file_name]
+
+    def resolve(self, file_name, ref):
+        """Resolve *ref* as written in spec *file_name*. Returns
+        ``(file name holding the target, local pointer ref, target node)``."""
+        target_file, pointer = split_ref(ref)
+        target_file = target_file or file_name
+        local_ref = "#" + pointer
+        try:
+            node = resolve_ref(self.get(target_file), local_ref)
+        except SpecError as err:
+            raise SpecError(f"{file_name}: {err} (as {ref!r})") from None
+        return target_file, local_ref, node
 
 
 def resolve_channel(doc, channel_obj):

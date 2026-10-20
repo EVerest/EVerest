@@ -18,7 +18,8 @@ import json
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from everest_api_client_gen.spec_loader import SpecError, channel_ref_id, find_request_operation, resolve_channel
+from everest_api_client_gen.spec_loader import (
+    SpecError, channel_ref_id, find_request_operation, json_compatible, resolve_channel)
 
 # Operations provided globally by the shell (api_client.py), so they are left
 # out of the per-client do_* command verbs. client.py still wires them up.
@@ -26,29 +27,10 @@ _SHELL_GLOBAL_SEND = "send_communication_check"
 _SHELL_GLOBAL_RECV = "receive_heartbeat"
 
 
-def _js_normalize(value):
-    """Recursively convert values so json.dumps reproduces JS JSON.stringify.
-
-    JS numbers are all doubles: an integral float like 230.0 serializes as
-    "230", not "230.0". Non-integral floats already match (both JS and Python
-    print the shortest round-tripping representation). bool must be handled
-    before the numeric branch since bool is a subclass of int.
-    """
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, dict):
-        return {k: _js_normalize(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_js_normalize(v) for v in value]
-    return value
-
-
 def _compact_json(payload) -> str:
     """Match JS JSON.stringify default output: no spaces, keys in source order,
     non-ASCII kept verbatim, integral floats without a trailing ".0"."""
-    return json.dumps(_js_normalize(payload), separators=(",", ":"),
+    return json.dumps(json_compatible(payload), separators=(",", ":"),
                       ensure_ascii=False)
 
 

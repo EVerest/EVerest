@@ -4,7 +4,7 @@
 
 import pytest
 
-from everest_api_client_gen.spec_loader import load_spec
+from everest_api_client_gen.spec_loader import json_compatible, load_spec
 
 
 def test_yaml_1_1_boolean_words_stay_strings(tmp_path):
@@ -23,3 +23,7 @@ def test_load_spec_rejects_non_mapping(tmp_path):
     with pytest.raises(Exception, match="not a mapping"):
         load_spec(spec)
 
+
+def test_json_compatible_drops_trailing_zero_of_integral_floats():
+    assert json_compatible({"a": 230.0, "b": [1.5, True, 2.0], "c": "x"}) == \
+        {"a": 230, "b": [1.5, True, 2], "c": "x"}

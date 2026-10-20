@@ -150,7 +150,7 @@ everest-api-client:
   license: "Apache-2.0"
 everest-api-client-gen:
   name: "EVerest API Client Generator"
-  description: "Generates the EVerest API Python MQTT client packages from their AsyncAPI specs using Jinja2 (replaces the npm asyncapi-cli + python-mqtt-template toolchain)"
+  description: "Generates the EVerest API Python MQTT client packages and the HTML API reference pages from their AsyncAPI specs using Jinja2"
   license: "Apache-2.0"
 # dependencies of everest-api-client
 cmd2:

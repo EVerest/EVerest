@@ -22,8 +22,7 @@ The client is modular:
   `powermeter_api`, `evse_bsp_api`, …). These are generated at build time from
   the AsyncAPI specs in `docs/source/reference/EVerest_API/` by the in-tree
   Python generator `everest-api-client-gen` (`applications/utils/
-  everest-api-client-gen`), which uses only Jinja2 + PyYAML — no npm/asyncapi
-  toolchain.
+  everest-api-client-gen`), which uses only Jinja2 and PyYAML.
 
 Each generated command set uses a short, unique command prefix (see the SET
 table in `CMakeLists.txt`), e.g. `pm_` for the powermeter API:
