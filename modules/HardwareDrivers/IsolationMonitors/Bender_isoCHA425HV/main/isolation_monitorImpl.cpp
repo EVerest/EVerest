@@ -96,7 +96,6 @@ bool isolation_monitorImpl::prepare_device_test(uint16_t system_connection_test)
         EVLOG_error << "Can't set the system connection test for the device test";
         return false;
     }
-    active_system_connection_test = system_connection_test;
     std::this_thread::sleep_for(std::chrono::milliseconds(20));
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 1)) {
@@ -168,8 +167,6 @@ void isolation_monitorImpl::start_self_test_at_start() {
 }
 
 void isolation_monitorImpl::finish_self_test(bool result) {
-    active_system_connection_test = SYSTEM_CONNECTION_TEST_OFF;
-
     bool at_start{false};
     std::optional<double> pending_test_voltage_V;
     {
