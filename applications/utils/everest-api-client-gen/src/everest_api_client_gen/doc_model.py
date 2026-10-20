@@ -107,6 +107,26 @@ class Message:
 
 
 @dataclass
+class Experimental:
+    """Content of an ``x-experimental`` marker: ``true`` or a mapping with
+    optional ``since`` (release) and ``note``."""
+    since: str = ""
+    note: str = ""
+
+
+def _experimental(node, where):
+    marker = node.get("x-experimental") if isinstance(node, dict) else None
+    if marker is None or marker is False:
+        return None
+    if marker is True:
+        return Experimental()
+    if isinstance(marker, dict) and set(marker) <= {"since", "note"}:
+        return Experimental(str(marker.get("since", "")), _text(marker.get("note")))
+    raise SpecError(f"{where}: x-experimental must be true or a mapping with since/note, "
+                    f"not {marker!r}")
+
+
+@dataclass
 class Operation:
     op_id: str
     action: str
@@ -121,6 +141,7 @@ class Operation:
     reply_op_id: Optional[str] = None
     # reply side: the operation this one answers
     request_op_id: Optional[str] = None
+    experimental: Optional[Experimental] = None
 
 
 @dataclass
@@ -151,6 +172,7 @@ class DocModel:
     schemas: List[SchemaNode]
     # schemas of other APIs referenced from this one, each a (SchemaRef, SchemaNode)
     imported_schemas: List[tuple] = field(default_factory=list)
+    experimental: Optional[Experimental] = None
 
     @property
     def send_operations(self):
@@ -445,6 +467,7 @@ def build_doc_model(spec_path, specs=None):
             address=address,
             topic=f"{pathname}/{address}" if address and pathname else address,
             message_ids=_message_ids(doc, channel, op),
+            experimental=_experimental(op, f"operation '{op_id}'"),
         )
         reply = op.get("reply")
         if isinstance(reply, dict):
@@ -494,6 +517,7 @@ def build_doc_model(spec_path, specs=None):
         license_name=_text(license_info.get("name")),
         license_url=_text(license_info.get("url")),
         tags=[_text(t.get("name")) for t in info.get("tags") or [] if isinstance(t, dict)],
+        experimental=_experimental(info, "info"),
         default_content_type=_text(doc.get("defaultContentType")),
         servers=servers,
         operations=operations,

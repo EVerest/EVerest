@@ -51,6 +51,11 @@ and examples (a minimal one is generated from the schema when the spec
 has none), and all component schemas. ``$ref`` s into sibling specs are
 resolved and link to the page that defines them.
 
+An API or a single operation marked ``x-experimental`` (``true``, or a mapping
+with optional ``since`` and ``note``) in its ``info`` section or operation
+gets a warning box or badge. The tests check that every experimental API is
+listed in ``docs/source/project/releases/experimental-index.rst``.
+
 A page has a full-width switch, and on narrow screens the contents list
 starts collapsed. Section headings stay pinned while their section scrolls.
 
