@@ -94,6 +94,8 @@ provides:
           EVerest. The driver selects "on U" if the self test voltage is above DC 100 V and "on" otherwise.
           At all other times, and always when this option is false, 3024 is set to off: the test needs a
           monitored system with low internal resistance and voltage, which is not the case at idle.
+          A device error left by a failed system connection test is cleared by a device test without it,
+          which the driver starts on its own and repeats until it passes.
         type: boolean
         default: false
       selftest_enable_at_start:
