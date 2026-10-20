@@ -61,9 +61,10 @@ on DIN 70121 (1.5 s performance time) and 3 s on ISO 15118-2 (4.5 s), then it se
 anyway and logs a warning. The wait ends early on an emergency shutdown, an HLC stop or a terminated
 connection.
 
-A DC PowerDelivery(Stop) publishes ``welding_detection`` ``Started``; ``Finished`` follows on
-SessionStop or connection teardown, also when the EV sends no WeldingDetectionReq. The first
-WeldingDetectionRes waits for an ``update_dc_present_values`` with ``welding_detection`` set, for
-at most 1 s, so it reports the voltage source EvseManager selected for welding detection
-(IEC 61851-23:2023 CC.7.6.17). Without such a value it reports the last present voltage and logs a
-warning.
+The same stop publishes ``welding_detection`` ``Started``; ``Finished`` follows on SessionStop or
+connection teardown, also when the EV sends no WeldingDetectionReq. Every WeldingDetectionRes waits
+for two ``update_dc_present_values`` with ``welding_detection`` set after its request, for at most
+1.4 s, so it reports the voltage source EvseManager selected for welding detection, measured after
+the request (CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the first value after the request can still
+be a measurement taken just before it, the second was taken after it. With one value at the deadline
+the response carries it (info), with none the last present voltage (warning).

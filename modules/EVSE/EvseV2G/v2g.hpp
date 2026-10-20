@@ -38,7 +38,8 @@ class V2gTelemetryPublisher;
 #define V2G_CP_STATE_B_TO_C_D_TIMEOUT_RELAXED 500  /* [V2G2-847] */
 #define V2G_CP_STATE_C_D_TO_B_TIMEOUT         250  /* [V2G2-848] */
 #define V2G_CONTACTOR_CLOSE_TIMEOUT           3000 /* [V2G2-862] [V2G2-865] 4.5 s for PowerDeliveryRes */
-#define V2G_WELDING_VOLTAGE_TIMEOUT           1000 /* of the 1.5 s V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) */
+#define V2G_WELDING_VOLTAGE_TIMEOUT           1400 /* of the 1.5 s V2G_SECC_Msg_Performance_Time(WeldingDetectionRes) */
+#define V2G_WELDING_VOLTAGE_UPDATES           2    /* marked updates after the request: the first may predate it */
 #define V2G_CONTACTOR_OPEN_TIMEOUT            3000 /* DC stop: wait for the open contactor, 4.5 s for PowerDeliveryRes */
 #define V2G_CONTACTOR_OPEN_TIMEOUT_DIN        1400 /* DIN SPEC 70121 Table 75: 1.5 s for PowerDeliveryRes */
 #define V2G_COMMUNICATION_SETUP_TIMEOUT                                                                                \
@@ -276,8 +277,8 @@ struct v2g_context {
                                       immediately without response message) */
     std::atomic<bool> terminate_connection_on_failed_response;
     std::atomic<bool> contactor_is_closed; /* Actual contactor state */
-    long long int response_wait_ms; /* Time the current request handler waited for another module, not counted as
-                                       response processing time */
+    long long int response_wait_ms;        /* Time the current request handler waited for another module, not counted as
+                                              response processing time */
 
     struct {
         bool meter_info_is_used;
@@ -365,9 +366,9 @@ struct v2g_context {
         /* DC: from PowerDelivery(Stop) until SessionStop or teardown, see welding_detection in ISO15118_charger.
          * Written by the connection thread, read by the MQTT thread. */
         std::atomic<bool> welding_detection_active;
-        bool welding_detection_answered; /* the first WeldingDetectionRes went out */
-        bool welding_voltage_received;   /* guarded by mqtt_lock */
-        uint8_t sa_schedule_tuple_id;    /* selected SA schedule tuple ID*/
+        unsigned int welding_voltage_updates; /* marked present values since the last WeldingDetectionReq, guarded by
+                                                 mqtt_lock */
+        uint8_t sa_schedule_tuple_id;         /* selected SA schedule tuple ID*/
     } session;
 
     struct {
