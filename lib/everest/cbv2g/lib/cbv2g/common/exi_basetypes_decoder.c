@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright chargebyte GmbH and Contributors to EVerest
  */
 
 /*****************************************************
@@ -59,6 +58,31 @@ static int exi_basetypes_decoder_read_unsigned(exi_bitstream_t* stream, exi_unsi
     return (found_sequence_end) ? EXI_ERROR__NO_ERROR : EXI_ERROR__SUPPORTED_MAX_OCTETS_OVERRUN;
 }
 
+static int exi_basetypes_decoder_fold_unsigned(const exi_unsigned_t* raw, size_t max_octets, uint64_t max_value, uint64_t* value)
+{
+    if (raw->octets_count > max_octets)
+    {
+        return EXI_ERROR__OCTET_COUNT_LARGER_THAN_TYPE_SUPPORTS;
+    }
+    if (raw->octets_count == EXI_BASETYPES_UINT64_MAX_OCTETS &&
+        (raw->octets[EXI_BASETYPES_UINT64_MAX_OCTETS - 1] & EXI_BASETYPES_OCTET_SEQ_VALUE_MASK) > 0x01)
+    {
+        return EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION;
+    }
+
+    uint64_t result = 0;
+    for (size_t n = 0; n < raw->octets_count; n++)
+    {
+        result |= (uint64_t)(raw->octets[n] & EXI_BASETYPES_OCTET_SEQ_VALUE_MASK) << (n * 7);
+    }
+    if (result > max_value)
+    {
+        return EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION;
+    }
+    *value = result;
+    return EXI_ERROR__NO_ERROR;
+}
+
 static int exi_basetypes_decoder_read_magnitude(exi_bitstream_t* stream, size_t max_octets, uint64_t max_magnitude, uint64_t* magnitude)
 {
     int error;
@@ -82,13 +106,7 @@ static int exi_basetypes_decoder_read_magnitude(exi_bitstream_t* stream, size_t 
         return EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION;
     }
 
-    error = exi_basetypes_convert_64_from_unsigned(&exi_unsigned, magnitude);
-    if (error != EXI_ERROR__NO_ERROR)
-    {
-        return error;
-    }
-
-    return (*magnitude > max_magnitude) ? EXI_ERROR__ENCODED_INTEGER_SIZE_LARGER_THAN_DESTINATION : EXI_ERROR__NO_ERROR;
+    return exi_basetypes_decoder_fold_unsigned(&exi_unsigned, max_octets, max_magnitude, magnitude);
 }
 
 
@@ -149,7 +167,7 @@ int exi_basetypes_decoder_uint_8(exi_bitstream_t* stream, uint8_t* value)
 {
     int error;
     exi_unsigned_t exi_unsigned;
-    uint32_t result;
+    uint64_t result;
 
     error = exi_basetypes_decoder_read_unsigned(stream, &exi_unsigned);
     if (error != EXI_ERROR__NO_ERROR)
@@ -157,7 +175,7 @@ int exi_basetypes_decoder_uint_8(exi_bitstream_t* stream, uint8_t* value)
         return error;
     }
 
-    error = exi_basetypes_convert_from_unsigned(&exi_unsigned, &result, EXI_BASETYPES_UINT8_MAX_OCTETS);
+    error = exi_basetypes_decoder_fold_unsigned(&exi_unsigned, EXI_BASETYPES_UINT8_MAX_OCTETS, UINT8_MAX, &result);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
@@ -172,7 +190,7 @@ int exi_basetypes_decoder_uint_16(exi_bitstream_t* stream, uint16_t* value)
 {
     int error;
     exi_unsigned_t exi_unsigned;
-    uint32_t result;
+    uint64_t result;
 
     error = exi_basetypes_decoder_read_unsigned(stream, &exi_unsigned);
     if (error != EXI_ERROR__NO_ERROR)
@@ -180,7 +198,7 @@ int exi_basetypes_decoder_uint_16(exi_bitstream_t* stream, uint16_t* value)
         return error;
     }
 
-    error = exi_basetypes_convert_from_unsigned(&exi_unsigned, &result, EXI_BASETYPES_UINT16_MAX_OCTETS);
+    error = exi_basetypes_decoder_fold_unsigned(&exi_unsigned, EXI_BASETYPES_UINT16_MAX_OCTETS, UINT16_MAX, &result);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
@@ -195,6 +213,7 @@ int exi_basetypes_decoder_uint_32(exi_bitstream_t* stream, uint32_t* value)
 {
     int error;
     exi_unsigned_t exi_unsigned;
+    uint64_t result;
 
     error = exi_basetypes_decoder_read_unsigned(stream, &exi_unsigned);
     if (error != EXI_ERROR__NO_ERROR)
@@ -202,11 +221,12 @@ int exi_basetypes_decoder_uint_32(exi_bitstream_t* stream, uint32_t* value)
         return error;
     }
 
-    error = exi_basetypes_convert_from_unsigned(&exi_unsigned, value, EXI_BASETYPES_UINT32_MAX_OCTETS);
+    error = exi_basetypes_decoder_fold_unsigned(&exi_unsigned, EXI_BASETYPES_UINT32_MAX_OCTETS, UINT32_MAX, &result);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
     }
+    *value = (uint32_t)result;
 
     return EXI_ERROR__NO_ERROR;
 }
@@ -222,7 +242,7 @@ int exi_basetypes_decoder_uint_64(exi_bitstream_t* stream, uint64_t* value)
         return error;
     }
 
-    error = exi_basetypes_convert_64_from_unsigned(&exi_unsigned, value);
+    error = exi_basetypes_decoder_fold_unsigned(&exi_unsigned, EXI_BASETYPES_UINT64_MAX_OCTETS, UINT64_MAX, value);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
@@ -233,7 +253,29 @@ int exi_basetypes_decoder_uint_64(exi_bitstream_t* stream, uint64_t* value)
 
 int exi_basetypes_decoder_unsigned(exi_bitstream_t* stream, exi_unsigned_t* value)
 {
-    return exi_basetypes_decoder_read_unsigned(stream, value);
+    exi_unsigned_t raw;
+    int error = exi_basetypes_decoder_read_unsigned(stream, &raw);
+    if (error != EXI_ERROR__NO_ERROR)
+    {
+        return error;
+    }
+    error = exi_basetypes_convert_bytes_from_unsigned(&raw, value->octets, &value->octets_count, sizeof(value->octets));
+    if (error != EXI_ERROR__NO_ERROR)
+    {
+        return error;
+    }
+
+    size_t first = 0;
+    while (first < value->octets_count && value->octets[first] == 0)
+    {
+        first++;
+    }
+    value->octets_count -= first;
+    for (size_t n = 0; n < value->octets_count; n++)
+    {
+        value->octets[n] = value->octets[first + n];
+    }
+    return EXI_ERROR__NO_ERROR;
 }
 
 /*****************************************************************************
@@ -343,7 +385,7 @@ int exi_basetypes_decoder_signed(exi_bitstream_t* stream, exi_signed_t* value)
     value->is_negative = (sign == 0) ? 0 : 1;
 
     exi_unsigned_t raw_value;
-    error = exi_basetypes_decoder_unsigned(stream, &raw_value);
+    error = exi_basetypes_decoder_read_unsigned(stream, &raw_value);
     if (error != EXI_ERROR__NO_ERROR)
     {
         return error;
