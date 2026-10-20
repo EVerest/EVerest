@@ -18,9 +18,11 @@ std::string serialize(float val) noexcept;
 std::string serialize(std::string const& val) noexcept;
 std::string serialize(RequestReply const& val);
 std::string serialize(ErrorEnum val) noexcept;
+std::string serialize(CausedByValue const& val) noexcept;
 std::string serialize(Error const& val) noexcept;
 
 std::ostream& operator<<(std::ostream& os, RequestReply const& val);
+std::ostream& operator<<(std::ostream& os, const CausedByValue& val);
 std::ostream& operator<<(std::ostream& os, const Error& val);
 std::ostream& operator<<(std::ostream& os, const ErrorEnum& val);
 

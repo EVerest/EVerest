@@ -34,6 +34,8 @@ public:
                        const State state) const;
     Error create_error(const ErrorType& type, const ErrorSubType& sub_type, const std::string& message,
                        const Severity severity, const State state) const;
+    Error create_error(const ErrorType& type, const ErrorSubType& sub_type, const std::string& message,
+                       const Severity severity, const CausedByValue& caused_by_value) const;
 
     void set_default_origin(const ImplementationIdentifier& origin);
     void set_default_severity(Severity severity);

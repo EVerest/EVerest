@@ -8,6 +8,7 @@
 #include <everest_api_types/power_supply_DC/API.hpp>
 #include <everest_api_types/power_supply_DC/codec.hpp>
 #include <everest_api_types/power_supply_DC/wrapper.hpp>
+#include <everest_api_types/utilities/ErrorConversions.hpp>
 #include <everest_api_types/utilities/Topics.hpp>
 #include <everest_api_types/utilities/codec.hpp>
 #include <string>
@@ -88,6 +89,7 @@ void power_supply_DC_API::generate_api_var_raise_error() {
             auto error_str = make_error_string(payload);
             auto ev_error = p_main->error_factory->create_error(error_str, sub_type_str, message_str,
                                                                 Everest::error::Severity::High);
+            ev_error.caused_by_value = ev_API::to_caused_by_value(payload.caused_by_value);
             p_main->raise_error(ev_error);
             return true;
         }

@@ -680,6 +680,8 @@ error:
      - Time the error was raised, RFC 3339
    * - ``${uuid}``
      - Unique id of the error instance
+   * - ``${actual_value}``
+     - Value the error was raised with, from the error's ``caused_by_value``; empty when the error names none
 
 Any other name, and a ``${`` without a closing ``}``, is warned about and sent as written. Substituted values are not
 scanned for placeholders again. The character limits of the OCPP fields, 255 for ``vendorId``, 500 for ``techInfo`` and

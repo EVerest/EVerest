@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "isolation_monitor/json_codec.hpp"
+#include "generic/json_codec.hpp"
 #include "isolation_monitor/API.hpp"
 #include "isolation_monitor/codec.hpp"
 #include "nlohmann/json.hpp"
@@ -85,6 +86,9 @@ void to_json(json& j, const Error& k) noexcept {
     if (k.message) {
         j["message"] = k.message.value();
     };
+    if (k.caused_by_value) {
+        j["caused_by_value"] = k.caused_by_value.value();
+    }
 }
 
 void from_json(const json& j, Error& k) {
@@ -94,6 +98,9 @@ void from_json(const json& j, Error& k) {
     }
     if (j.contains("message")) {
         k.message.emplace(j.at("message"));
+    }
+    if (j.contains("caused_by_value")) {
+        k.caused_by_value.emplace(j.at("caused_by_value").get<generic::CausedByValue>());
     }
 }
 

@@ -3,41 +3,75 @@ description: Json schema for EVerest error objects
 type: object
 required:
   - type
+  - sub_type
   - description
   - message
-  - from
+  - origin
+  - vendor_id
+  - severity
   - timestamp
   - uuid
+  - state
 properties:
   type:
     type: string
     minLength: 2
+  sub_type:
+    type: string
   description:
     type: string
     minLength: 2
   message:
     type: string
-    minLength: 2
-  from:
+  origin:
     type: object
     required:
-      - module
-      - implementation
+      - module_id
+      - implementation_id
     properties:
-      module:
+      module_id:
         type: string
         minLength: 2
-      implementation:
+      implementation_id:
         type: string
         minLength: 2
+      mapping:
+        description: EVSE and connector the raising implementation is mapped to
+        type: object
+        required:
+          - evse
+        properties:
+          evse:
+            type: integer
+          connector:
+            type: integer
+        additionalProperties: false
     additionalProperties: false
+  vendor_id:
+    type: string
+  severity:
+    type: string
+    enum:
+      - Low
+      - Medium
+      - High
   timestamp:
     type: string
     format: date-time
   uuid:
     type: string
     minLength: 2
-  severity:
+  state:
     type: string
-    minLength: 2
+    enum:
+      - Active
+      - ClearedByModule
+      - ClearedByReboot
+  caused_by_value:
+    description: Value that caused the error; absent when the raising entity named none
+    type: object
+    properties:
+      actual_value:
+        type: string
+    additionalProperties: false
 additionalProperties: false
