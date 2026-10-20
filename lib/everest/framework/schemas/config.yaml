@@ -21,6 +21,9 @@ type: object
 additionalProperties: false
 properties:
   settings:
+    description: >-
+      Deprecated: move these keys into a settings file (schema settings.yaml) and pass it to the
+      manager with --settings. Ignored when --settings is given.
     type: object
     properties:
       prefix:

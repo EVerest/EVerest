@@ -36,6 +36,7 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
             const auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
             CHECK(ms.deprecated_settings ==
                   std::vector<std::string>{"www_dir", "controller_port", "controller_rpc_timeout_ms"});
+            CHECK(ms.deprecated_settings_block);
         }
     }
     GIVEN("A valid prefix and a valid config file with a custom prefix") {
@@ -78,6 +79,55 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
             Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
                                         bin_dir + "valid_config/non_existing.db");
             CHECK_NOTHROW(Everest::init_database_bootstrap(ms));
+        }
+    }
+}
+
+SCENARIO("Check ManagerSettings with a settings file", "[!throws]") {
+    const auto dir = Everest::tests::get_bin_dir().string() + "/settings_file/";
+    const auto boot_with = [&dir](const std::string& config, const std::string& db, const std::string& settings) {
+        return Everest::ManagerSettings(dir, Everest::resolve_boot_source(config, db, false, false, settings));
+    };
+
+    GIVEN("Only --db and a settings file") {
+        const auto ms = boot_with("", dir + "unused.db", dir + "valid_settings.yaml");
+        THEN("The settings come from the settings file") {
+            CHECK(ms.config_file.empty());
+            CHECK(ms.settings_file == fs::canonical(dir + "valid_settings.yaml"));
+            CHECK(ms.mqtt_settings.everest_prefix == "settings-file-prefix/");
+            CHECK(ms.runtime_settings.telemetry_enabled);
+            CHECK_FALSE(ms.settings_block_ignored);
+            CHECK_FALSE(ms.deprecated_settings_block);
+        }
+    }
+    GIVEN("A config with a settings block and a settings file") {
+        const auto ms = boot_with(dir + "config.yaml", "", dir + "valid_settings.yaml");
+        THEN("The settings file wins and the settings block is reported as ignored") {
+            CHECK(ms.mqtt_settings.everest_prefix == "settings-file-prefix/");
+            CHECK(ms.runtime_settings.telemetry_enabled);
+            CHECK(ms.settings_block_ignored);
+            CHECK_FALSE(ms.deprecated_settings_block);
+        }
+    }
+    GIVEN("A config with a settings block and no settings file") {
+        const auto ms = boot_with(dir + "config.yaml", "", "");
+        THEN("The settings block is applied and reported as deprecated") {
+            CHECK(ms.settings_file.empty());
+            CHECK(ms.mqtt_settings.everest_prefix == "block-prefix/");
+            CHECK_FALSE(ms.runtime_settings.telemetry_enabled);
+            CHECK(ms.deprecated_settings_block);
+            CHECK_FALSE(ms.settings_block_ignored);
+        }
+    }
+    GIVEN("An unusable settings file") {
+        THEN("It throws BootException naming the settings file") {
+            for (const auto* file : {"non_existing.yaml", "settings_deprecated_key.yaml", "settings_unknown_key.yaml",
+                                     "settings_wrong_type.yaml"}) {
+                CAPTURE(file);
+                CHECK_THROWS_AS(boot_with("", dir + "unused.db", dir + file), Everest::BootException);
+                CHECK_THROWS_WITH(boot_with("", dir + "unused.db", dir + file),
+                                  Catch::Matchers::ContainsSubstring(file));
+            }
         }
     }
 }
@@ -284,6 +334,14 @@ SCENARIO("Check resolve_boot_source", "[!throws]") {
         THEN("With --config it is passed through") {
             CHECK(Everest::resolve_boot_source("config.yaml", "", true, false).reset_from_yaml);
             CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", true, false).reset_from_yaml);
+        }
+    }
+    GIVEN("--settings") {
+        THEN("It is passed through in every mode") {
+            CHECK(Everest::resolve_boot_source("", "", false, false, "s.yaml").settings_path == "s.yaml");
+            CHECK(Everest::resolve_boot_source("", "everest.db", false, false, "s.yaml").settings_path == "s.yaml");
+            CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", false, false, "s.yaml").settings_path ==
+                  "s.yaml");
         }
     }
 }

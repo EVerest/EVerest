@@ -51,11 +51,22 @@ Configuration and Storage
   default config file in the default config directory. Without ``--db``, the
   config is loaded from YAML on every start and runtime configuration changes
   are persisted to ``user-config/<config-name>.yaml``. Only YAML is accepted;
-  configuration files in JSON format are not loaded.
+  configuration files in JSON format are not loaded. The ``settings:`` block of
+  the config file is deprecated, use ``--settings`` instead.
 
 ``--conf <path>``
   **Deprecated.** Same as ``--config``. Do not use both — passing both is
   rejected as ambiguous, and using ``--conf`` logs a deprecation warning.
+
+``--settings <path>``
+  Full path to a manager settings file: installation paths, MQTT broker and
+  prefixes, telemetry, schema validation and exception forwarding. Optional:
+  without it, the deprecated ``settings:`` block of the config file applies,
+  with built-in defaults for what it does not set. Works with and without
+  ``--config`` and ``--db``. When given, the ``settings:`` block of the config
+  file is ignored and the manager logs a warning. The file is validated against
+  ``schemas/settings.yaml``; unknown and deprecated keys are rejected. See
+  :ref:`exp_config_service_settings`.
 
 ``--db <path>``
   Full path to the configuration database file. Optional: without ``--db`` an
@@ -65,12 +76,10 @@ Configuration and Storage
   the YAML config. An invalid YAML seeds an empty placeholder slot whose
   description records the error.
 
-  The database holds module configurations only, never the manager
-  ``settings:`` block. With ``--db`` alone, the settings (installation paths,
-  MQTT broker and prefixes, ``run_as_user`` (deprecated), telemetry, schema
-  validation) are the compiled-in defaults. Pass ``--config`` alongside
-  ``--db`` whenever the deployment relies on non-default settings; the YAML
-  ``settings:`` block is then applied on every start.
+  The database holds module configurations only, never manager settings.
+  Pass ``--settings`` alongside ``--db`` whenever the deployment relies on
+  non-default settings; without it, ``--db`` alone runs on the compiled-in
+  defaults.
 
 ``--reset-from-yaml``
   **Experimental.** Replace the contents of the boot slot with the YAML config

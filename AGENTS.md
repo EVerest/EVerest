@@ -100,7 +100,9 @@ LD_LIBRARY_PATH=<prefix>/<libdir>:$LD_LIBRARY_PATH \
 
 `<libdir>` is `lib` or `lib64`, following `CMAKE_INSTALL_LIBDIR`. `--config` also takes
 an extensionless name, looked up in the installed config directory. `--check` validates
-a config and exits 0 on success.
+a config and exits 0 on success. Manager settings (paths, MQTT broker, telemetry) come
+from `--settings <file>` (schema `lib/everest/framework/schemas/settings.yaml`); the
+config's `settings:` block is deprecated and ignored when `--settings` is given.
 
 Logging is one Boost.Log config for the whole system, not per module: the manager reads
 `<prefix>/etc/everest/default_logging.cfg` (`cmake/assets/logging.ini` renamed at
