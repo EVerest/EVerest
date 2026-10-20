@@ -35,7 +35,7 @@ DEPENDS = " \
     json-rpc-cxx \
 "
 
-RDEPENDS:${PN} += "libevent openssl"
+RDEPENDS:${PN} += "libevent openssl tzdata"
 
 INSANE_SKIP:${PN} = "already-stripped useless-rpaths arch file-rdeps"
 INSANE_SKIP:chargebridge = "already-stripped useless-rpaths arch file-rdeps"
