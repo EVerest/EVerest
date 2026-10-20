@@ -197,7 +197,7 @@ public:
     }
     // PowerDelivery owns the open; the engine records the close from the ClosedContactor event.
     void set_contactor_closed(bool closed) {
-        evse_status.ac_contactor_closed = closed;
+        evse_status.contactor_closed = closed;
     }
     // Opening the contactor invalidates a completed cable check (ISO 15118-2 8.7.4.3 NOTE 1).
     void invalidate_cable_check() {

@@ -42,8 +42,8 @@ void ISO15118_chargerImpl::handle_authorization_response(
     // your code for cmd authorization_response goes here
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
-    // your code for cmd ac_contactor_closed goes here
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
+    // your code for cmd contactor_closed goes here
 }
 
 void ISO15118_chargerImpl::handle_cp_state_changed(types::iso15118::CpState& cp_state) {
