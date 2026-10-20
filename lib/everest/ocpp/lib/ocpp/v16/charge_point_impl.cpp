@@ -333,8 +333,16 @@ void ChargePointImpl::on_websocket_connected(const int configuration_slot,
         this->connection_state_changed_callback(true, configuration_slot, network_connection_profile);
     }
     this->publish_default_price(false);
-    this->message_queue->resume(this->message_queue_resume_delay);
+    const bool reconnected_while_booted = this->connection_state == ChargePointConnectionState::Booted;
+    // Update connection state before resuming, otherwise a fast BootNotification.conf can be dropped as received while
+    // disconnected
     this->connected_callback();
+    this->message_queue->resume(this->message_queue_resume_delay);
+    if (reconnected_while_booted) {
+        // According to spec, a charge point should not send a BootNotification.req after a reconnect, still we send
+        // StatusNotification.req for all connectors. Only after resuming: a paused queue would drop them.
+        this->status->trigger_status_notifications();
+    }
 
     // There has been a successful connection so a subsequent
     // InvalidCSMSCertificate should be logged
@@ -1339,10 +1347,8 @@ void ChargePointImpl::connected_callback() {
         break;
     }
     case ChargePointConnectionState::Booted: {
-        // on_open in a Booted state can happen after a successful reconnect.
-        // according to spec, a charge point should not send a BootNotification after a reconnect
-        // still we send StatusNotification.req for all connectors after a reconnect
-        this->status->trigger_status_notifications();
+        // on_open in a Booted state can happen after a successful reconnect, on_websocket_connected reports the
+        // connector status once the message queue resumed
         break;
     }
     case ChargePointConnectionState::Pending: {
