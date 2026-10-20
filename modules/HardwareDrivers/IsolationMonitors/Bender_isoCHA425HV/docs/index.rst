@@ -74,7 +74,7 @@ use it for its own self test at power-on, the driver handles both registers as f
 
 The device's self test at power-on (register 3025) is always disabled. With ``selftest_enable_at_start`` the driver
 runs one self test when it starts instead; a device error found by it is reported as DeviceFault. A self test
-requested while this test is running is started after it.
+requested before this test has ended, from the start of the device configuration on, is started after it.
 
 A device error is raised as DeviceFault in whichever measurement channel the device reports it (E.01 in R_F, E.02 in
 U_N) and also while a self test is running, so an interrupted measuring lead fails the cable check as soon as the
@@ -83,12 +83,13 @@ driver keeps the alarm and test state of the last complete read, so a lost reply
 nor starts the recovery.
 
 The device keeps a device error and the alarm relays until a device test passes; clearing the error memory (register
-8006) does not help. The driver therefore starts a device test without system connection test 5 s after it sees a
-device error with no self test running, whether a failed system connection test, the self test at start or the device
-itself raised it. While the device still answers "busy" the start is retried every 5 s up to six times, afterwards
-every 5 min, and DeviceFault stays raised until the device test passes. A self test requested while a device test is
-running or a device error is active fails immediately, so a device test without system connection test never passes
-as the cable check self test.
+8006) does not help. The driver therefore starts a device test without system connection test at its next read at
+least 5 s after it sees a device error with no self test running (it reads every 10 s while DeviceFault is raised),
+whether a failed system connection test, the self test at start or the device itself raised it. While the device
+still answers "busy" the start is retried at the following reads up to six times, afterwards every 5 min; a device
+error still present after the device test is retried every 5 min. DeviceFault stays raised until the device test
+passes. A self test requested while a device test is running or a device error is active fails immediately, so a
+device test without system connection test never passes as the cable check self test.
 
 Using the internal alarm functions and relays
 =============================================
