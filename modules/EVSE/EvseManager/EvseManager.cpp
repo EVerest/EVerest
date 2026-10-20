@@ -1272,7 +1272,7 @@ void EvseManager::ready() {
             // Reset HLC auth waiting flags on new session
             if (event == CPEvent::CarPluggedIn) {
                 r_hlc[0]->call_reset_error();
-                r_hlc[0]->call_ac_contactor_closed(false);
+                r_hlc[0]->call_contactor_closed(false);
                 r_hlc[0]->call_stop_charging(false);
                 latest_target_voltage = 0;
                 latest_target_current = 0;
@@ -1282,14 +1282,14 @@ void EvseManager::ready() {
 
             if (event == CPEvent::PowerOn) {
                 contactor_open = false;
-                r_hlc[0]->call_ac_contactor_closed(true);
+                r_hlc[0]->call_contactor_closed(true);
             }
 
             if (event == CPEvent::PowerOff) {
                 contactor_open = true;
                 latest_target_voltage = 0;
                 latest_target_current = 0;
-                r_hlc[0]->call_ac_contactor_closed(false);
+                r_hlc[0]->call_contactor_closed(false);
             }
         }
     });
