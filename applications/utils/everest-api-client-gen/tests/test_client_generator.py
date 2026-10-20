@@ -2,12 +2,15 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 """Tests for the generated API clients: reply topics and message routing."""
 
+import importlib
 import importlib.util
+import json
 import sys
 from pathlib import Path
 from types import SimpleNamespace
 
 import pytest
+import yaml
 
 from everest_api_client_gen.generator import generate
 from everest_api_client_gen.model import build_model
@@ -59,3 +62,25 @@ def test_messages_reach_only_their_own_topic(tmp_path, spec_name, snake, topics,
         assert helper.read_and_clear_buffer(expected_key) == [b"1"]
         for key in helper._buffer:
             assert helper._buffer[key] == [], f"{message_topic} also delivered to {key}"
+
+
+def test_example_payload_with_quotes_generates_valid_code(tmp_path):
+    """Examples are offered as tab completion; one with a quote or a
+    backslash must still produce a valid Python literal."""
+    pytest.importorskip("paho.mqtt.client")
+    doc = load_spec(SPECS_DIR / "slac_API.yaml")
+    messages = doc["components"]["messages"]
+    op_id = next(o for o, op in doc["operations"].items()
+                 if op["action"] == "send" and len(messages[o].get("examples") or []) == 1)
+    payload = {"note": "it's a \\ \"quoted\" value"}
+    messages[op_id]["examples"][0]["payload"] = payload
+    spec = tmp_path / "slac_API.yaml"
+    spec.write_text(yaml.safe_dump(doc, sort_keys=False), encoding="utf-8")
+    generate(spec, tmp_path / "out", "X", "x_api", "x")
+    sys.path.insert(0, str(tmp_path / "out" / "src"))
+    try:
+        module = importlib.import_module("x_api.XClientCommandSet")
+    finally:
+        sys.path.remove(str(tmp_path / "out" / "src"))
+    completions = getattr(module.XClientCommandSet, f"complete_{op_id}_payload")(None, "", "", 0, 0)
+    assert [json.loads(c) for c in completions] == [payload]

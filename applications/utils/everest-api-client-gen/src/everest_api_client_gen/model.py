@@ -39,12 +39,15 @@ class Operation:
     op_id: str
     action: str                       # "send" or "receive"
     address: Optional[str]            # channel address, or None for reply channels
-    is_reply: bool                    # address is None
     # For a reply channel (address None), the topic prefix replies arrive under:
     # the request operation's address with m2e turned into e2m. None otherwise.
     referencing_address: Optional[str] = None
     # Single example payload as compact JSON, or "" when not exactly one example.
     payload_json: str = ""
+
+    @property
+    def is_reply(self) -> bool:
+        return self.address is None
 
 
 @dataclass
@@ -77,8 +80,7 @@ class ClientModel:
     def receive_topic(self, op: Operation) -> str:
         """The per-operation _topic used in _initialize_receive_operations
         (bare address; no trailing /+)."""
-        addr = op.address if op.address is not None else op.referencing_address
-        return addr
+        return op.address if op.address is not None else op.referencing_address
 
     def subscribe_topic(self, op: Operation) -> str:
         """The topic string put in the client's subscribe set. Reply-receiver
@@ -162,7 +164,6 @@ def build_model(doc, name_camel, name_snake, interface_prefix, server):
             op_id=op_id,
             action=action,
             address=address,
-            is_reply=is_reply,
             referencing_address=referencing_address,
             payload_json=payload_json,
         )

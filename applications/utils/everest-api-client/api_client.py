@@ -6,6 +6,7 @@
 import uuid
 import os
 import re
+import shlex
 import sys
 import json
 import argparse
@@ -145,17 +146,22 @@ class EVerestAPICmd(cmd2.Cmd):
                             action.set_completer(completer)
 
     def _substitute_replyto_tokens(self, data: cmd2.plugin.PostparsingData) -> cmd2.plugin.PostparsingData:
-        raw = data.statement.raw
-
-        def repl(match):
-            index = 0 if match.group(1) in (None, 'last') else int(match.group(1)) - 1
-            if 0 <= index < len(self.reply_to_cache):
-                return self.reply_to_cache[index]
-            return match.group(0)
-
-        new_raw = re.sub(r'@(last|\d+)\b', repl, raw)
-        if new_raw != raw:
-            data.statement = self.statement_parser.parse(new_raw)
+        # whole shell tokens only, quotes respected, so a JSON payload that
+        # happens to contain @last or @<n> is never touched
+        lexer = shlex.shlex(data.statement.raw, posix=False)
+        lexer.whitespace_split = True
+        lexer.commenters = ''
+        tokens = list(lexer)
+        substituted = []
+        for token in tokens:
+            match = re.fullmatch(r'@(last|\d+)', token)
+            index = 0 if match is None or match.group(1) == 'last' else int(match.group(1)) - 1
+            if match and 0 <= index < len(self.reply_to_cache):
+                substituted.append(self.reply_to_cache[index])
+            else:
+                substituted.append(token)
+        if substituted != tokens:
+            data.statement = self.statement_parser.parse(' '.join(substituted))
         return data
 
     @cmd2.with_category('Client Management')
@@ -232,16 +238,37 @@ class EVerestAPICmd(cmd2.Cmd):
             except queue.Empty:
                 continue
             try:
-                with self.terminal_lock:
-                    self.async_alert(message)
+                self._print_from_background(message)
             finally:
                 self.output_queue.task_done()
+
+    def _print_from_background(self, message):
+        # async_alert redraws the prompt, which only exists when no command is
+        # running and stdout is a terminal; otherwise the message is written
+        # directly, so it shows during run_script and in piped runs
+        if self.use_rawinput and self.stdout.isatty() and self.terminal_lock.acquire(blocking=False):
+            try:
+                self.async_alert(message)
+            finally:
+                self.terminal_lock.release()
+            return
+        self.poutput(message)
 
     def check_match(self, topic, substr_list):
         for substr in substr_list:
             if substr.strip() in topic:
                 return True
         return False
+
+    def format_payload(self, data):
+        """Payload bytes as text for the log: JSON re-serialized (pretty when
+        prettify is set), anything else verbatim with a marker. Never raises,
+        since the generated callbacks run on paho's network thread."""
+        text = (data or b"").decode("utf-8", errors="replace")
+        try:
+            return json.dumps(json.loads(text) if text else "", indent=1 if self.prettify else None)
+        except ValueError:
+            return f"(not JSON) {text}"
 
     def generate_replyTo(self, payload, topic):
         return payload.replace(self.replyToPlaceholder,
@@ -282,7 +309,7 @@ class EVerestAPICmd(cmd2.Cmd):
                 if threading.current_thread() == threading.main_thread():
                     self.poutput(self.OUT_COLOR + topic + " " + payload + self.RESET if self.colors else topic + " " + payload)
                 else:
-                    self.output_queue.put(topic + payload)
+                    self.output_queue.put(topic + " " + payload)
             else:
                 prefix = self.IN_COLOR + "In: " if self.colors else "In: "
                 if "m2e" in topic:
@@ -349,7 +376,7 @@ class EVerestAPICmd(cmd2.Cmd):
         else:
             # No subcommand was provided, so call help
             self.poutput('This command does nothing without sub-parsers registered ...')
-            self.do_help('client_add')
+            self.do_help('receive_heartbeat')
 
     def postloop(self):
         # signal the worker to stop first, then join with a bound so a quit is

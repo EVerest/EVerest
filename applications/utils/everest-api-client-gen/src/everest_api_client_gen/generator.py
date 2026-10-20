@@ -39,6 +39,8 @@ def _make_env():
         undefined=j2.StrictUndefined,
         keep_trailing_newline=True,
     )
+    # spec examples become Python string literals
+    env.filters["py_literal"] = repr
     return env
 
 
