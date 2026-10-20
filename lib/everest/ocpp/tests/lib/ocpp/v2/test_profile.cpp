@@ -387,7 +387,8 @@ TEST_P(CalculateProfileEntryType_NegativeBoundary_Param_Test, CalculateProfileEn
 }
 
 TEST(OCPPTypesTest, PeriodEntry_Equality) {
-    period_entry_t actual_entry;
+    // value-initialize so the members not set below (e.g. limit_L2 and limit_L3) don't hold garbage
+    period_entry_t actual_entry{};
     actual_entry.start = dt("2T08:45");
     actual_entry.end = dt("3T08:00");
     actual_entry.limit.limit =
@@ -396,7 +397,7 @@ TEST(OCPPTypesTest, PeriodEntry_Equality) {
     actual_entry.charging_rate_unit = absolute_profile.chargingSchedule.front().chargingRateUnit;
     period_entry_t same_entry = actual_entry;
 
-    period_entry_t different_entry;
+    period_entry_t different_entry{};
     different_entry.start = dt("3T08:00");
     different_entry.end = dt("3T08:00");
     different_entry.limit.limit =
