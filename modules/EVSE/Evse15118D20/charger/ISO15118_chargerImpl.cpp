@@ -829,7 +829,7 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     std::scoped_lock lock(GEL);
     if (controller) {
         controller->send_control_event(iso15118::d20::ClosedContactor{status});

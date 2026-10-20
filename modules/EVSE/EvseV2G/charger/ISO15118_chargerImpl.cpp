@@ -291,7 +291,7 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     /* signal changes to possible waiters, according to man page, it never returns an error code */
     pthread_mutex_lock(&v2g_ctx->mqtt_lock);
     v2g_ctx->contactor_is_closed = status;

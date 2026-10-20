@@ -564,11 +564,11 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     if (mod->selected_iso20()) {
-        mod->r_iso20->call_ac_contactor_closed(status);
+        mod->r_iso20->call_contactor_closed(status);
     } else {
-        mod->r_iso2->call_ac_contactor_closed(status);
+        mod->r_iso2->call_contactor_closed(status);
     }
 }
 
