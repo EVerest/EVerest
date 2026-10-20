@@ -1,7 +1,11 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <chrono>
 #include <memory>
+#include <string>
+#include <thread>
 #include <v2g_ctx.hpp>
+#include <vector>
 
 #include "ISO15118_chargerImplStub.hpp"
 #include "ModuleAdapterStub.hpp"
@@ -129,6 +133,237 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateFalse) {
     EXPECT_FALSE(ctx->is_connection_terminated);
 }
 
+struct RecordingModuleAdapterStub : public module::stub::QuietModuleAdapterStub {
+    void publish_fn(const std::string&, const std::string& var, Value value) override {
+        if (var == "welding_detection") {
+            welding_detection.push_back(value.get<std::string>());
+        }
+    }
+    std::vector<std::string> welding_detection;
+};
+
+class V2gCtxWeldingDetectionTest : public testing::Test {
+protected:
+    std::unique_ptr<v2g_context, v2g_contextDeleter> ctx;
+    RecordingModuleAdapterStub adapter;
+    module::stub::ISO15118_chargerImplStub charger;
+    module::stub::evse_securityIntfStub security;
+    module::stub::iso15118_extensionsImplStub extensions;
+    module::stub::iso15118_vasIntfStub vas_item;
+
+    V2gCtxWeldingDetectionTest() : charger(adapter), security(adapter), vas_item(adapter) {
+    }
+
+    void SetUp() override {
+        auto ptr = v2g_ctx_create(&charger, &extensions, &security, {&vas_item});
+        ctx = std::unique_ptr<v2g_context, v2g_contextDeleter>(ptr, v2g_contextDeleter());
+        // A connection is up, as v2g_handle_connection() sets it.
+        v2g_ctx_init_charging_state(ctx.get(), false);
+        module::stub::clear_logs();
+    }
+
+    // What ISO15118_chargerImpl::handle_update_dc_present_values does for a marked value.
+    void deliver_welding_voltage() {
+        pthread_mutex_lock(&ctx->mqtt_lock);
+        if (ctx->session.welding_detection_active) {
+            ctx->session.welding_voltage_updates++;
+            pthread_cond_signal(&ctx->mqtt_cond);
+        }
+        pthread_mutex_unlock(&ctx->mqtt_lock);
+    }
+
+    // What ISO15118_chargerImpl::handle_contactor_closed does.
+    void report_contactor(bool closed) {
+        pthread_mutex_lock(&ctx->mqtt_lock);
+        ctx->contactor_is_closed = closed;
+        pthread_cond_signal(&ctx->mqtt_cond);
+        pthread_mutex_unlock(&ctx->mqtt_lock);
+    }
+};
+
+TEST_F(V2gCtxWeldingDetectionTest, start_and_finish_publish_once) {
+    v2g_ctx_start_welding_detection(ctx.get());
+    EXPECT_TRUE(ctx->session.welding_detection_active);
+
+    v2g_ctx_finish_welding_detection(ctx.get());
+    v2g_ctx_finish_welding_detection(ctx.get());
+
+    EXPECT_FALSE(ctx->session.welding_detection_active);
+    EXPECT_EQ(adapter.welding_detection, (std::vector<std::string>{"Started", "Finished"}));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, finish_without_start_publishes_nothing) {
+    v2g_ctx_finish_welding_detection(ctx.get());
+    EXPECT_TRUE(adapter.welding_detection.empty());
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, wait_returns_on_the_second_value_after_the_request) {
+    v2g_ctx_start_welding_detection(ctx.get());
+    // Values from before the request do not count: the EV may have switched its disconnection device since.
+    deliver_welding_voltage();
+    deliver_welding_voltage();
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        deliver_welding_voltage();
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        deliver_welding_voltage();
+    });
+    const auto start = std::chrono::steady_clock::now();
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    const auto waited = std::chrono::steady_clock::now() - start;
+    mqtt.join();
+
+    EXPECT_GE(waited, std::chrono::milliseconds(100));
+    EXPECT_LT(waited, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_INFO).size(), 0);
+    EXPECT_GT(ctx->response_wait_ms, 0);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_and_warns_without_any_value) {
+    v2g_ctx_start_welding_detection(ctx.get());
+
+    const auto start = std::chrono::steady_clock::now();
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, wait_times_out_with_one_value_and_logs_info) {
+    v2g_ctx_start_welding_detection(ctx.get());
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        deliver_welding_voltage();
+    });
+    const auto start = std::chrono::steady_clock::now();
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    mqtt.join();
+    EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_INFO).size(), 1);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, every_request_waits) {
+    v2g_ctx_start_welding_detection(ctx.get());
+    deliver_welding_voltage();
+    deliver_welding_voltage();
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        deliver_welding_voltage();
+        deliver_welding_voltage();
+    });
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    mqtt.join();
+
+    // The second request waits again: its values have to postdate it.
+    const auto again = std::chrono::steady_clock::now();
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_GE(std::chrono::steady_clock::now() - again, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, wait_outside_the_phase_returns_at_once) {
+    const auto start = std::chrono::steady_clock::now();
+    v2g_ctx_wait_for_welding_voltage(ctx.get());
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_waits_for_the_open_contactor) {
+    report_contactor(true);
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        report_contactor(false);
+    });
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    const auto waited = std::chrono::steady_clock::now() - start;
+    mqtt.join();
+
+    EXPECT_GE(waited, std::chrono::milliseconds(50));
+    EXPECT_LT(waited, std::chrono::milliseconds(V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+    EXPECT_GT(ctx->response_wait_ms, 0);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_does_not_wait_for_an_open_contactor) {
+    report_contactor(false);
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(50));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_goes_out_anyway_after_the_timeout) {
+    report_contactor(true);
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_contactor_open(ctx.get(), 100));
+    EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(100));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_wait_ends_on_emergency_shutdown) {
+    report_contactor(true);
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        pthread_mutex_lock(&ctx->mqtt_lock);
+        ctx->intl_emergency_shutdown = true;
+        pthread_cond_signal(&ctx->mqtt_cond);
+        pthread_mutex_unlock(&ctx->mqtt_lock);
+    });
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    mqtt.join();
+}
+
+// What the writers of these flags do: set under mqtt_lock and signal the connection thread's waits.
+class V2gCtxWeldingDetectionWakeUpTest : public V2gCtxWeldingDetectionTest,
+                                         public testing::WithParamInterface<std::atomic_bool v2g_context::*> {
+protected:
+    void wait_wakes_up_on_the_flag() {
+        v2g_ctx_start_welding_detection(ctx.get());
+
+        std::thread mqtt([this] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+            pthread_mutex_lock(&ctx->mqtt_lock);
+            (*ctx).*GetParam() = true;
+            pthread_cond_signal(&ctx->mqtt_cond);
+            pthread_mutex_unlock(&ctx->mqtt_lock);
+        });
+        const auto start = std::chrono::steady_clock::now();
+        v2g_ctx_wait_for_welding_voltage(ctx.get());
+        const auto waited = std::chrono::steady_clock::now() - start;
+        mqtt.join();
+
+        EXPECT_GE(waited, std::chrono::milliseconds(50));
+        EXPECT_LT(waited, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+    }
+};
+
+TEST_P(V2gCtxWeldingDetectionWakeUpTest, wait_wakes_up_on_the_flag) {
+    wait_wakes_up_on_the_flag();
+}
+
+INSTANTIATE_TEST_SUITE_P(shutdown_flags, V2gCtxWeldingDetectionWakeUpTest,
+                         testing::Values(&v2g_context::intl_emergency_shutdown, &v2g_context::stop_hlc,
+                                         &v2g_context::is_connection_terminated));
+
+TEST_F(V2gCtxWeldingDetectionTest, init_charging_state_ends_the_phase) {
+    v2g_ctx_start_welding_detection(ctx.get());
+    deliver_welding_voltage();
+
+    // A new connection on a phase the previous one left open.
+    v2g_ctx_init_charging_state(ctx.get(), false);
+
+    EXPECT_FALSE(ctx->session.welding_detection_active);
+    EXPECT_EQ(ctx->session.welding_voltage_updates, 0);
+    EXPECT_EQ(adapter.welding_detection, (std::vector<std::string>{"Started", "Finished"}));
+}
+
 #if 0
 // v2g_ctx_init_charging_session() is a trivial implementation
 TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionTrue) {
@@ -145,18 +380,8 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionFalse) {
 #endif
 
 TEST(valgrind, memcheck) {
-    GTEST_SKIP() << "pthreads result in valgrind reporting errors";
-    /*
-     * v2g_ctx_free() doesn't stop or wait for threads to finish (no join)
-     * hence there is access to free'd memory reported.
-     *
-     * ==2136== LEAK SUMMARY:
-     * ==2136==    definitely lost: 0 bytes in 0 blocks
-     * ==2136==    indirectly lost: 0 bytes in 0 blocks
-     * ==2136==      possibly lost: 304 bytes in 1 blocks
-     * ==2136==    still reachable: 80 bytes in 2 blocks
-     * ==2136==         suppressed: 0 bytes in 0 blocks
-     */
+    // v2g_ctx_free() now sets shutdown and joins the event thread,
+    // so there is no use-after-free during cleanup.
 
     // run via valgrind to ensure that malloc/free are working
     module::stub::QuietModuleAdapterStub adapter;

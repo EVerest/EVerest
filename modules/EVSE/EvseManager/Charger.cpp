@@ -1059,17 +1059,20 @@ void Charger::run_state_machine() {
         case EvseState::Finished:
 
             if (initialize_state) {
-                // Transaction may already be stopped when it was cancelled earlier.
-                // In that case, do not sent a second transactionFinished event.
-                if (shared_context.flag_transaction_active) {
-                    stop_transaction();
-                }
-
                 // Everything should already be off, just do it here again as a backup.
                 if (config_context.charge_mode == ChargeMode::DC) {
                     signal_dc_supply_off();
                 }
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+            }
+
+            // Transaction may already be stopped when it was cancelled earlier. In that case, do not send a
+            // second transactionFinished event. The stop waits while welding detection holds the powermeter
+            // (see set_transaction_stop_hold), except when the session ends anyway.
+            if (shared_context.flag_transaction_active and
+                (not transaction_stop_held() or not shared_context.flag_ev_plugged_in or
+                 shared_context.flag_disable_requested)) {
+                stop_transaction();
             }
 
             // If unplugged or a disable is pending, end the session.
@@ -2120,6 +2123,30 @@ void Charger::set_hlc_allow_close_contactor(bool on) {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_set_hlc_allow_close_contactor);
     shared_context.hlc_allow_close_contactor = on;
+}
+
+void Charger::set_transaction_stop_hold(std::function<bool()> hold) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex,
+                                      Everest::MutexDescription::Charger_set_transaction_stop_hold);
+    transaction_stop_hold = std::move(hold);
+}
+
+bool Charger::transaction_stop_held() const {
+    return transaction_stop_hold and transaction_stop_hold();
+}
+
+void Charger::dc_open_contactor_request() {
+    // PowerDelivery(stop): the EV asked for the contactors to open, and welding detection
+    // (which follows immediately in DIN/-2/-20) measures against open contactors. The
+    // permissive must be withdrawn BEFORE the EV opens its readiness switch (IEC 61851-23-3
+    // Table CC.111: t103 before t105): an MCS board support treats a CE C-exit under a
+    // standing permissive as an unintended loss of power-transfer readiness (CC.4.3) and
+    // latches an emergency that only an unplug clears. The later C->B CP event still runs
+    // the regular session-stop path in the IEC state machine; cable check re-enables the
+    // hlc contactor permission on resume from pause.
+    session_log.car(true, "DC HLC Open contactor");
+    set_hlc_allow_close_contactor(false);
+    bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
 }
 
 std::optional<types::evse_manager::StopTransactionReason> Charger::get_last_stop_transaction_reason() {

@@ -57,7 +57,8 @@ void populate_physical_value_float(struct iso2_PhysicalValueType* pv, float valu
                                    iso2_unitSymbolType unit);
 
 /*!
- * \brief v2g_ctx_init_charging_state This function inits the charging state. This should be called afer a terminated
+ * \brief v2g_ctx_init_charging_state This function inits the charging state and ends a welding detection phase a
+ * previous connection left open (publishing Finished). This should be called afer a terminated
  * charging session.
  * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
  * \param is_connection_terminated is set to \c true if the connection is terminated
@@ -70,6 +71,40 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
  * \param ctx is a pointer of type \c v2g_context. It holds the charging values.
  */
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_start_welding_detection This function starts the DC welding detection phase at PowerDelivery(Stop)
+ * and publishes welding_detection Started.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_finish_welding_detection This function ends a running welding detection phase and publishes
+ * welding_detection Finished. It does nothing if no phase is running.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_wait_for_welding_voltage This function blocks a WeldingDetectionRes until V2G_WELDING_VOLTAGE_UPDATES
+ * values of the welding detection voltage source arrived after the request, for at most
+ * V2G_WELDING_VOLTAGE_TIMEOUT: the first value after the request can still be a measurement taken just before it, the
+ * second was taken after it [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. Does nothing outside the phase.
+ * \param ctx is a pointer of type \c v2g_context.
+ */
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
+
+/*!
+ * \brief v2g_ctx_wait_contactor_open This function blocks a DC PowerDeliveryRes(Stop) until the board support reported
+ * the contactor open, so that side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before
+ * t104]. Returns early on an emergency shutdown, an HLC stop or a terminated connection, and after \p timeout_ms with
+ * a warning.
+ * \param ctx is a pointer of type \c v2g_context.
+ * \param timeout_ms is the maximum wait.
+ * \return true if the contactor is open.
+ */
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms);
 
 /*!
  * \brief v2g_ctx_free

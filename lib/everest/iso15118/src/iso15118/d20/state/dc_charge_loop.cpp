@@ -12,6 +12,9 @@ namespace iso15118::d20::state {
 
 namespace dt = message_20::datatypes;
 
+// Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the contactor open.
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = d20::TIMEOUT_CONTACTOR_OPEN;
+
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;
 using Dynamic_DC_Req = dt::Dynamic_DC_CLReqControlMode;
@@ -206,9 +209,24 @@ Result DC_ChargeLoop::feed(Event ev) {
             pause = *control_data;
         } else if (const auto* control_data = m_ctx.get_control_event<UpdateDynamicModeParameters>()) {
             dynamic_parameters = *control_data;
+        } else if (const auto* control_data = m_ctx.get_control_event<ClosedContactor>()) {
+            contactor_closed = static_cast<bool>(*control_data);
+            if (pending_stop_res.has_value() and not *contactor_closed) {
+                m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+                return send_pending_stop_res();
+            }
         }
 
-        // Ignore control message
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* const timeout = m_ctx.get_active_timeout();
+        if (pending_stop_res.has_value() and timeout != nullptr and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("Contactor not reported open within %ums, sending PowerDeliveryRes anyway",
+                         DC_OPEN_CONTACTOR_TIMEOUT);
+            return send_pending_stop_res();
+        }
         return {};
     }
 
@@ -221,9 +239,8 @@ Result DC_ChargeLoop::feed(Event ev) {
     if (const auto req = variant->get_if<message_20::PowerDeliveryRequest>()) {
         const auto res = handle_request(*req, m_ctx.session, false);
 
-        m_ctx.respond(res);
-
         if (res.response_code >= dt::ResponseCode::FAILED) {
+            m_ctx.respond(res);
             m_ctx.session_stopped = true;
             return {};
         }
@@ -234,11 +251,20 @@ Result DC_ChargeLoop::feed(Event ev) {
         // Todo(sl): React properly to Start, Stop, Standby and ScheduleRenegotiation
         // TODO(Sl): How to check if the EV wants do a pause in dynamic mode (This should not happen)
         if (req->charge_progress == dt::Progress::Stop) {
+            // Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]:
+            // the response waits for the contactor to be reported open.
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
-            return m_ctx.create_state<DC_WeldingDetection>();
+            m_ctx.welding_detection.start(m_ctx.feedback);
+            pending_stop_res = res;
+            if (not contactor_closed.has_value() or not *contactor_closed) {
+                return send_pending_stop_res();
+            }
+            m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, DC_OPEN_CONTACTOR_TIMEOUT);
+            return {};
         }
 
+        m_ctx.respond(res);
         return {};
     } else if (const auto req = variant->get_if<message_20::DC_ChargeLoopRequest>()) {
         if (first_entry_in_charge_loop) {
@@ -274,6 +300,12 @@ Result DC_ChargeLoop::feed(Event ev) {
         m_ctx.session_stopped = true;
         return {};
     }
+}
+
+Result DC_ChargeLoop::send_pending_stop_res() {
+    m_ctx.respond(*pending_stop_res);
+    pending_stop_res.reset();
+    return m_ctx.create_state<DC_WeldingDetection>();
 }
 
 } // namespace iso15118::d20::state

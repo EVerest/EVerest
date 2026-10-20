@@ -65,6 +65,64 @@ Software over-voltage supervision is always active during DC charging. The confi
 must exceed the negotiated limit before EvseManager raises ``MREC5OverVoltage``.
 Set it to ``0`` to trigger immediately once the threshold is crossed.
 
+Welding detection voltage
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+During welding detection the EV checks its contactors against the voltage the EVSE reports in
+``WeldingDetectionRes``. That has to be the side B voltage at the vehicle connector, measured with the
+EVSE contactors open, within 10 V (IEC 61851-23:2023 CC.6.3, test CC.7.6.17). A power supply measuring
+at its own output, behind the contactors, does not see it. The same holds for any meter or monitor
+wired between the power supply and the contactors: choose the source that is physically connected on
+the EV side of the EVSE output contactors, otherwise the EV is told the power supply output instead of
+the voltage at its connector.
+
+On the DC stop request the ISO module publishes ``dc_open_contactor``: EvseManager switches the DC
+power supply off and withdraws the power permissive, and the board support reports the open contactor
+(``PowerOff``), which EvseManager forwards as ``contactor_closed(false)``. The ISO module holds the
+PowerDeliveryRes until then, so that side B is disabled before the EV learns of it (IEC 61851-23:2023
+Table CC.9, t103 before t104), for at most 3 s on ISO 15118-2 and 1.4 s on DIN SPEC 70121 and
+ISO 15118-20; without the report it sends the response after that and logs a warning.
+
+The ISO module reports the phase with ``welding_detection``: ``Started`` at PowerDelivery(Stop),
+``Finished`` at SessionStop or session teardown. In between, EvseManager reports the voltage of the
+source selected by ``welding_detection_voltage_source`` instead of the power supply measurement:
+
+* ``powermeter_car_side`` (default): ``voltage_V.DC`` of the car side power meter.
+* ``over_voltage_monitor``: ``voltage_measurement_V`` of the over voltage monitor.
+* ``isolation_monitor``: ``voltage_V`` of the isolation monitor.
+* ``power_supply``: the power supply measurement, as outside welding detection.
+
+If the selected source is not connected, the next connected one in the order ``powermeter_car_side``,
+``over_voltage_monitor``, ``power_supply`` is used and a warning is printed at start up. The isolation
+monitor is only used when configured. The power supply is always available.
+
+The over voltage monitor and the isolation monitor are normally stopped when the power path opens.
+If one of them is the source, that stop is deferred until the welding detection phase ends, and
+isolation faults are not evaluated meanwhile. ``Started`` arrives on its own topic and may follow the
+power path events; if no phase has started 2 s after they deferred the stop, the source is stopped. Note that IEC 61851-23:2023 Table CC.9 t103 asks for the
+EVSE IMD to be disabled when side B is disabled, and the EV may enable its own IMD (t104): use
+``isolation_monitor`` only with an IMD that can measure the voltage without its insulation test.
+
+The ISO module holds every ``WeldingDetectionRes`` until two samples of the selected source arrived
+after its request, for at most 1.4 s (1.5 s performance time), so that the reported voltage was
+measured after the request: the EV opens its contactors only after the PowerDeliveryRes and may switch
+them between two requests (CC.6.3, Table CC.9 t105 to t106). Two samples because the first one after
+the request can still have been taken just before it, a polled meter delivers a sample up to one poll
+interval after taking it. With one sample at the deadline the response carries it (logged as info),
+with none it carries the last present voltage (warning). Every publication of the source must be a new
+measurement, so a driver that polls a meter must not republish an unchanged sample (LemDCBM400600
+does not). The source should publish at 5 Hz or more (CC.6.3: at most 200 ms from measurement to
+communication); EvseManager warns once per session if it updates less often than every second. A
+meter that refreshes once per second, as the LEM DCBM 400/600 does whatever its poll interval, cannot
+meet that, and its value in the response can be up to about a second old. If ``Finished`` never
+arrives, the phase also ends on D-LINK events, a failed HLC session, the next cable check or charge
+loop, unplug, or 20 s after it started (CC.9 t104 to t107).
+
+An EVSE-initiated stop ends the powermeter transaction as soon as the contactors are open. Stopping a
+transaction blocks the LEM DCBM 400/600 for seconds while it signs the OCMF record, during which it
+publishes no voltage, so EvseManager delays the ``stop_transaction`` until the welding detection phase
+has ended (or the EV unplugged). An EV-initiated stop keeps the transaction open until unplug anyway.
+
 Published variables
 ===================
 

@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <time.h>
 #include <unistd.h> // sleep
 
 #include "log.hpp"
@@ -87,20 +88,7 @@ static void* v2g_ctx_eventloop(void* data) {
 }
 
 static int v2g_ctx_start_events(struct v2g_context* ctx) {
-    pthread_attr_t attr;
-    int rv;
-
-    /* create the thread in detached state so we don't need to join it later */
-    if (pthread_attr_init(&attr) != 0) {
-        dlog(DLOG_LEVEL_ERROR, "pthread_attr_init failed: %s", strerror(errno));
-        return -1;
-    }
-    if (pthread_attr_setdetachstate(&attr, PTHREAD_CREATE_DETACHED) != 0) {
-        dlog(DLOG_LEVEL_ERROR, "pthread_attr_setdetachstate failed: %s", strerror(errno));
-        return -1;
-    }
-
-    rv = pthread_create(&ctx->event_thread, NULL, v2g_ctx_eventloop, ctx);
+    int rv = pthread_create(&ctx->event_thread, NULL, v2g_ctx_eventloop, ctx);
     return rv ? -1 : 0;
 }
 
@@ -110,6 +98,7 @@ void v2g_ctx_init_charging_session(struct v2g_context* const ctx, bool is_connec
 }
 
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
+    v2g_ctx_finish_welding_detection(ctx);
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
     ctx->is_connection_terminated = is_connection_terminated;
@@ -119,7 +108,88 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;
     ctx->session.renegotiation_required = false;
     ctx->session.is_charging = false;
+    ctx->session.welding_detection_active = false;
+    ctx->session.welding_voltage_updates = 0;
+    ctx->response_wait_ms = 0;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
+}
+
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->session.welding_detection_active = true;
+    ctx->session.welding_voltage_updates = 0;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Started);
+}
+
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active) {
+        return;
+    }
+    ctx->session.welding_detection_active = false;
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Finished);
+}
+
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active) {
+        return;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, V2G_WELDING_VOLTAGE_TIMEOUT);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->session.welding_voltage_updates = 0;
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and ctx->session.welding_voltage_updates < V2G_WELDING_VOLTAGE_UPDATES and
+           not ctx->intl_emergency_shutdown and not ctx->stop_hlc and not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const unsigned int updates = ctx->session.welding_voltage_updates;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (rv != ETIMEDOUT or updates >= V2G_WELDING_VOLTAGE_UPDATES) {
+        return;
+    }
+    // With every update outstanding the source stalled; with one in, the value is at worst one poll interval older
+    // than the request.
+    if (updates == 0) {
+        dlog(DLOG_LEVEL_WARNING,
+             "No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, answering "
+             "with the last present voltage",
+             V2G_WELDING_VOLTAGE_TIMEOUT);
+    } else {
+        dlog(DLOG_LEVEL_INFO,
+             "Only one value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+             "answering with it",
+             V2G_WELDING_VOLTAGE_TIMEOUT);
+    }
+}
+
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) {
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and ctx->contactor_is_closed and not ctx->intl_emergency_shutdown and not ctx->stop_hlc and
+           not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool open = not ctx->contactor_is_closed;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not open and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
+             timeout_ms);
+    }
+    return open;
 }
 
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
@@ -329,6 +399,7 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
         goto free_out;
     }
 
+    ctx->event_thread = 0;
     if (v2g_ctx_start_events(ctx) != 0)
         goto free_out;
 
@@ -339,8 +410,14 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     return ctx;
 
 free_out:
+    ctx->shutdown = true;
     if (ctx->event_base) {
         event_base_loopbreak(ctx->event_base);
+    }
+    if (ctx->event_thread) {
+        pthread_join(ctx->event_thread, NULL);
+    }
+    if (ctx->event_base) {
         event_base_free(ctx->event_base);
     }
     free(ctx->local_tls_addr);
@@ -354,8 +431,17 @@ void v2g_ctx_free(struct v2g_context* ctx) {
         return;
     }
 
+    ctx->shutdown = true;
+
     if (ctx->event_base) {
         event_base_loopbreak(ctx->event_base);
+    }
+
+    if (ctx->event_thread) {
+        pthread_join(ctx->event_thread, NULL);
+    }
+
+    if (ctx->event_base) {
         event_base_free(ctx->event_base);
     }
 

@@ -190,6 +190,17 @@ types:
         type: number
         minimum: 0
         maximum: 10000
+      welding_detection:
+        description: >-
+          True if evse_present_voltage was measured by the voltage source configured for the welding
+          detection phase. The first WeldingDetectionRes waits for such a value.
+        type: boolean
+  WeldingDetectionPhase:
+    description: Start and end of the DC welding detection phase
+    type: string
+    enum:
+      - Started
+      - Finished
   DcEvseMaximumLimits:
     description: Maximum Values (current, power and voltage) the EVSE can deliver
     type: object

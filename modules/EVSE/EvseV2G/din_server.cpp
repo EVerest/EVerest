@@ -697,6 +697,9 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
         conn->ctx->p_charger->publish_current_demand_finished(nullptr);
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
+        v2g_ctx_start_welding_detection(conn->ctx);
+        /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
+        v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT_DIN);
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }
@@ -935,6 +938,9 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
 
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
 
+    /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
+    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+
     /* Now fill the evse response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
 
@@ -967,6 +973,8 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
  */
 static enum v2g_event handle_din_session_stop(struct v2g_connection* conn) {
     struct din_SessionStopResType* res = &conn->exi_out.dinEXIDocument->V2G_Message.Body.SessionStopRes;
+
+    v2g_ctx_finish_welding_detection(conn->ctx);
 
     /* Now fill the EVSE response message */
     res->ResponseCode = din_responseCodeType_OK; // [V2G-DC-388]
