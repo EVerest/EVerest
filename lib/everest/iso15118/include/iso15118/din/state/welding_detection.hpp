@@ -22,11 +22,12 @@ struct WeldingDetection : public StateBase {
 private:
     void process_request(const message_din::WeldingDetectionRequest& req);
     void answer_pending_req();
+    void log_welding_voltage_timeout() const;
 
     // Arm the V2G_SECC_WeldingDetection supervision timer once, on the first WeldingDetectionReq.
     bool welding_started{false};
-    // The first WeldingDetectionRes waits for a value of the welding detection voltage source.
-    bool first_answered{false};
+    // Every WeldingDetectionRes waits for values of the welding detection voltage source measured after
+    // its request.
     bool welding_voltage_wait_expired{false};
     // Answered when B arrives, or with FAILED when the detection timeout expires ([V2G-DC-556]).
     std::optional<message_din::WeldingDetectionRequest> pending_req{};

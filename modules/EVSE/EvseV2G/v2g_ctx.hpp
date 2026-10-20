@@ -94,12 +94,14 @@ void v2g_ctx_start_welding_detection(struct v2g_context* const ctx);
 void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx);
 
 /*!
- * \brief v2g_ctx_wait_for_welding_voltage This function blocks the first WeldingDetectionRes of a phase until a value
- * of the welding detection voltage source arrived, for at most V2G_WELDING_VOLTAGE_TIMEOUT. Otherwise the response
- * would carry a power supply measurement taken before EvseManager switched the source.
+ * \brief v2g_ctx_wait_for_welding_voltage This function blocks a WeldingDetectionRes until V2G_WELDING_VOLTAGE_UPDATES
+ * values of the welding detection voltage source arrived after the request, for at most
+ * V2G_WELDING_VOLTAGE_TIMEOUT: the first value after the request can still be a measurement taken just before it, the
+ * second was taken after it [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. Does nothing outside the phase.
  * \param ctx is a pointer of type \c v2g_context.
  */
 void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx);
+
 /*!
  * \brief v2g_ctx_wait_contactor_open This function blocks a DC PowerDeliveryRes(Stop) until the board support reported
  * the contactor open, so that side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before

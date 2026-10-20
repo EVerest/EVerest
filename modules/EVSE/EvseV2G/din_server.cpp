@@ -1149,6 +1149,7 @@ enum v2g_event states::handle_din_welding_detection(struct v2g_connection* conn)
 
     /* TODO: Waiting for CP-State B [V2G-DC-556]. */
 
+    /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
     v2g_ctx_wait_for_welding_voltage(conn->ctx);
 
     /* Now fill the evse response message */

@@ -259,7 +259,11 @@ cmds:
         type: string
         $ref: /iso15118#/IsolationStatus
   update_dc_present_values:
-    description: Update the present values from the DC powersupply
+    description: >-
+      Update the present values from the DC powersupply. Call it for every new measurement,
+      also when the values did not change: during welding detection the HLC stack holds each
+      WeldingDetectionRes until two values marked welding_detection arrived after the request,
+      so that the reported voltage was measured after it [IEC 61851-23:2023 CC.6.3].
     arguments:
       present_voltage_current:
         description: Present voltage and current
