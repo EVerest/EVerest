@@ -698,6 +698,8 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
         conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
         conn->ctx->session.is_charging = false;
         v2g_ctx_start_welding_detection(conn->ctx);
+        /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
+        v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT_DIN);
     } else {
         conn->ctx->p_charger->publish_v2g_setup_finished(nullptr);
     }
