@@ -42,6 +42,10 @@ void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const) {
     ++welding_voltage_waits;
 }
 
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int) {
+    return not ctx->contactor_is_closed;
+}
+
 uint64_t v2g_session_id_from_exi(bool is_iso, void* exi_in) {
     return 0;
 }

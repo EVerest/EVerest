@@ -122,6 +122,13 @@ wired between the power supply and the contactors: choose the source that is phy
 the EV side of the EVSE output contactors, otherwise the EV is told the power supply output instead of
 the voltage at its connector.
 
+On the DC stop request the ISO module publishes ``dc_open_contactor``: EvseManager switches the DC
+power supply off and withdraws the power permissive, and the board support reports the open contactor
+(``PowerOff``), which EvseManager forwards as ``contactor_closed(false)``. The ISO module holds the
+PowerDeliveryRes until then, so that side B is disabled before the EV learns of it (IEC 61851-23:2023
+Table CC.9, t103 before t104), for at most 3 s on ISO 15118-2 and 1.4 s on DIN SPEC 70121 and
+ISO 15118-20; without the report it sends the response after that and logs a warning.
+
 The ISO module reports the phase with ``welding_detection``: ``Started`` at PowerDelivery(Stop),
 ``Finished`` at SessionStop or session teardown. In between, EvseManager reports the voltage of the
 source selected by ``welding_detection_voltage_source`` instead of the power supply measurement:
