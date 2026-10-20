@@ -124,6 +124,7 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->session.welding_detection_active = false;
     ctx->session.welding_detection_answered = false;
     ctx->session.welding_voltage_received = false;
+    ctx->response_wait_ms = 0;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
     /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.6.19]. It must not outlive
      * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
@@ -172,6 +173,29 @@ void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
              "last present voltage",
              V2G_WELDING_VOLTAGE_TIMEOUT);
     }
+}
+
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) {
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and ctx->contactor_is_closed and not ctx->intl_emergency_shutdown and not ctx->stop_hlc and
+           not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool open = not ctx->contactor_is_closed;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not open and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
+             timeout_ms);
+    }
+    return open;
 }
 
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {

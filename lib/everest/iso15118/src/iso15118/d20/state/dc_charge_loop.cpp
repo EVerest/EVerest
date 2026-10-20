@@ -16,7 +16,7 @@ namespace iso15118::d20::state {
 namespace dt = message_20::datatypes;
 
 // Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the power path off.
-constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 500;
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = d20::TIMEOUT_CONTACTOR_OPEN;
 
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;

@@ -803,6 +803,97 @@ SCENARIO("ISO 15118-2 SECC welding detection phase") {
     }
 }
 
+// IEC 61851-23:2023 Table CC.9: side B is disabled (t103) before the PowerDeliveryRes (t104).
+SCENARIO("ISO 15118-2 SECC holds PowerDeliveryRes(Stop) until the contactor is reported open") {
+    using Signal = session::feedback::Signal;
+
+    GIVEN("A DC session in the charge loop whose contactor was reported closed") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.fsm.context().set_contactor_closed(true);
+
+        WHEN("The EV sends PowerDeliveryReq(Stop)") {
+            secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+
+            THEN("The contactor is opened and welding detection starts, but no response is sent yet") {
+                REQUIRE(secc.fsm.state() == StateID::DcPowerDeliveryStop);
+                REQUIRE(secc.saw_signal(Signal::CHARGE_LOOP_FINISHED));
+                REQUIRE(secc.saw_signal(Signal::DC_OPEN_CONTACTOR));
+                REQUIRE(secc.count_signal(Signal::WELDING_DETECTION_STARTED) == 1);
+                REQUIRE_FALSE(secc.fsm.has_response());
+            }
+
+            AND_WHEN("The contactor is reported open") {
+                secc.fsm.control(d20::ClosedContactor{false});
+
+                THEN("The response is sent and PostCharge follows") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::OK);
+                    REQUIRE(res->dc_evse_status->status_code == dt::DC_EVSEStatusCode::EVSE_Shutdown);
+                }
+            }
+
+            AND_WHEN("A contactor-closed report arrives") {
+                secc.fsm.control(d20::ClosedContactor{true});
+
+                THEN("The response stays held") {
+                    REQUIRE_FALSE(secc.fsm.has_response());
+                }
+            }
+
+            AND_WHEN("The contactor is not reported open in time") {
+                secc.fsm.timeout(d20::TimeoutType::CONTACTOR);
+
+                THEN("The response is sent anyway") {
+                    REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                    REQUIRE(secc.fsm.response<message_2::PowerDeliveryResponse>().has_value());
+                }
+            }
+
+            AND_WHEN("An emergency shutdown is reported meanwhile") {
+                secc.fsm.context().set_emergency_shutdown();
+                secc.fsm.control(d20::EvseError{d20::EvseErrorCode::EmergencyShutdown});
+
+                THEN("The response is sent FAILED at once and the session ends [V2G2-539]") {
+                    const auto res = secc.fsm.response<message_2::PowerDeliveryResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                    REQUIRE(secc.fsm.context().session_stopped);
+                }
+            }
+
+            AND_WHEN("The EV sends another request before the response") {
+                secc.drive(message_2::WeldingDetectionRequest{});
+
+                THEN("It is a sequence error") {
+                    const auto res = secc.fsm.response<message_2::WeldingDetectionResponse>();
+                    REQUIRE(res.has_value());
+                    REQUIRE(res->response_code == dt::ResponseCode::FAILED_SequenceError);
+                }
+            }
+        }
+    }
+
+    GIVEN("A DC session whose contactor was already reported open") {
+        Secc secc;
+        to_current_demand(secc);
+        secc.drive(current_demand_req());
+        secc.fsm.context().set_contactor_closed(false);
+
+        WHEN("The EV sends PowerDeliveryReq(Stop)") {
+            secc.drive(power_delivery_req(dt::ChargeProgress::Stop));
+
+            THEN("The response is sent right away") {
+                REQUIRE(secc.fsm.state() == StateID::PostCharge);
+                REQUIRE(secc.fsm.response<message_2::PowerDeliveryResponse>().has_value());
+            }
+        }
+    }
+}
+
 SCENARIO("ISO 15118-2 SECC EV facts reported to the module") {
 
     GIVEN("A DC machine in ChargeParameterDiscovery") {

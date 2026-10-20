@@ -202,6 +202,14 @@ protected:
         }
         pthread_mutex_unlock(&ctx->mqtt_lock);
     }
+
+    // What ISO15118_chargerImpl::handle_contactor_closed does.
+    void report_contactor(bool closed) {
+        pthread_mutex_lock(&ctx->mqtt_lock);
+        ctx->contactor_is_closed = closed;
+        pthread_cond_signal(&ctx->mqtt_cond);
+        pthread_mutex_unlock(&ctx->mqtt_lock);
+    }
 };
 
 TEST_F(V2gCtxWeldingDetectionTest, start_and_finish_publish_once) {
@@ -263,6 +271,57 @@ TEST_F(V2gCtxWeldingDetectionTest, wait_outside_the_phase_returns_at_once) {
     const auto start = std::chrono::steady_clock::now();
     v2g_ctx_wait_for_welding_voltage(ctx.get());
     EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_WELDING_VOLTAGE_TIMEOUT));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_waits_for_the_open_contactor) {
+    report_contactor(true);
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        report_contactor(false);
+    });
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    const auto waited = std::chrono::steady_clock::now() - start;
+    mqtt.join();
+
+    EXPECT_GE(waited, std::chrono::milliseconds(50));
+    EXPECT_LT(waited, std::chrono::milliseconds(V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 0);
+    EXPECT_GT(ctx->response_wait_ms, 0);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_does_not_wait_for_an_open_contactor) {
+    report_contactor(false);
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_TRUE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(50));
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_goes_out_anyway_after_the_timeout) {
+    report_contactor(true);
+
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_contactor_open(ctx.get(), 100));
+    EXPECT_GE(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(100));
+    EXPECT_EQ(module::stub::get_logs(dloglevel_t::DLOG_LEVEL_WARNING).size(), 1);
+}
+
+TEST_F(V2gCtxWeldingDetectionTest, stop_response_wait_ends_on_emergency_shutdown) {
+    report_contactor(true);
+
+    std::thread mqtt([this] {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        pthread_mutex_lock(&ctx->mqtt_lock);
+        ctx->intl_emergency_shutdown = true;
+        pthread_cond_signal(&ctx->mqtt_cond);
+        pthread_mutex_unlock(&ctx->mqtt_lock);
+    });
+    const auto start = std::chrono::steady_clock::now();
+    EXPECT_FALSE(v2g_ctx_wait_contactor_open(ctx.get(), V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    EXPECT_LT(std::chrono::steady_clock::now() - start, std::chrono::milliseconds(V2G_CONTACTOR_OPEN_TIMEOUT_DIN));
+    mqtt.join();
 }
 
 // What the writers of these flags do: set under mqtt_lock and signal the connection thread's waits.
