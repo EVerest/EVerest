@@ -240,6 +240,9 @@ public:
     void set_hlc_charging_active();
     void set_hlc_allow_close_contactor(bool on);
     void dc_open_contactor_request();
+    // While this returns true, Finished waits with the powermeter stop_transaction: welding detection
+    // needs the meter's voltage, and a LEM DCBM blocks for seconds while it signs the OCMF record.
+    void set_transaction_stop_hold(std::function<bool()> hold);
     void dc_renegotiation_started();
 
     void set_hlc_d20_active(bool dynamic_control_mode);
@@ -595,6 +598,8 @@ private:
     const std::unique_ptr<IECStateMachine>& bsp;
     const std::unique_ptr<ErrorHandling>& error_handling;
     const std::vector<std::unique_ptr<powermeterIntf>>& r_powermeter_billing;
+    std::function<bool()> transaction_stop_hold;
+    bool transaction_stop_held() const;
     const std::unique_ptr<PersistentStore>& store;
     std::atomic<types::evse_board_support::Connector_type> connector_type{
         types::evse_board_support::Connector_type::IEC62196Type2Cable};
