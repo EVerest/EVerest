@@ -1705,3 +1705,59 @@ std::string PersistentStore::get_session() {
 }
 
 } // namespace module
+
+// Finished stops the powermeter transaction, but not while welding detection holds the meter.
+struct ChargerTransactionStopTest : public ChargerTest {
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+    std::vector<std::unique_ptr<kvsIntf>> kvs;
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false, false, 0);
+        charger_store = std::make_unique<PersistentStore>(kvs, "EVSETEST");
+        ChargerTest::SetUp();
+    }
+
+    void finished_with_open_transaction() {
+        auto& ctx = charger->get_shared_context();
+        ctx.current_state = Charger::EvseState::Finished;
+        ctx.session_active = true;
+        ctx.flag_ev_plugged_in = true;
+        ctx.flag_transaction_active = true;
+    }
+};
+
+TEST_F(ChargerTransactionStopTest, FinishedStopsTheTransactionAtOnceWithoutAHold) {
+    finished_with_open_transaction();
+
+    charger->run_state_machine();
+
+    EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_EQ(last_event, SessionEventEnum::ChargingFinished);
+}
+
+TEST_F(ChargerTransactionStopTest, FinishedWaitsForWeldingDetectionBeforeStoppingTheTransaction) {
+    bool welding_detection_running = true;
+    charger->set_transaction_stop_hold([&welding_detection_running] { return welding_detection_running; });
+    finished_with_open_transaction();
+
+    charger->run_state_machine();
+    EXPECT_TRUE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+
+    welding_detection_running = false;
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_EQ(last_event, SessionEventEnum::ChargingFinished);
+}
+
+TEST_F(ChargerTransactionStopTest, UnplugStopsTheTransactionDespiteTheHold) {
+    charger->set_transaction_stop_hold([] { return true; });
+    finished_with_open_transaction();
+    charger->run_state_machine();
+    EXPECT_TRUE(charger->get_shared_context().flag_transaction_active);
+
+    charger->get_shared_context().flag_ev_plugged_in = false;
+    charger->run_state_machine();
+    EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+}

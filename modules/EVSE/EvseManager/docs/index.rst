@@ -164,6 +164,11 @@ meet that, and its value in the response can be up to about a second old. If ``F
 arrives, the phase also ends on D-LINK events, a failed HLC session, the next cable check or charge
 loop, unplug, or 20 s after it started (CC.9 t104 to t107).
 
+An EVSE-initiated stop ends the powermeter transaction as soon as the contactors are open. Stopping a
+transaction blocks the LEM DCBM 400/600 for seconds while it signs the OCMF record, during which it
+publishes no voltage, so EvseManager delays the ``stop_transaction`` until the welding detection phase
+has ended (or the EV unplugged). An EV-initiated stop keeps the transaction open until unplug anyway.
+
 Published variables
 ===================
 

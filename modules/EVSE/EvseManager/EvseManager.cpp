@@ -394,6 +394,10 @@ void EvseManager::ready() {
 
         if (config.charge_mode == "DC") {
             setup_welding_detection_voltage();
+            // Stopping the powermeter transaction blocks a LEM DCBM for seconds while it signs; the
+            // WeldingDetectionRes needs its voltage until the phase ends.
+            charger->set_transaction_stop_hold(
+                [this] { return welding_detection_voltage and welding_detection_voltage->is_active(); });
         }
 
         // Set up EVSE ID
