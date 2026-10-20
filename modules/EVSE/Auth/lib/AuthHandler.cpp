@@ -1079,6 +1079,9 @@ WithdrawAuthorizationResult AuthHandler::handle_withdraw_authorization(const Wit
         result = WithdrawAuthorizationResult::Accepted;
     }
 
+    // All tokens in process targeted by this request have finished
+    this->withdraw_request.reset();
+
     // It might still be the case that the withdraw request is also targeting already granted authorization so we
     // continue checking for this
 
