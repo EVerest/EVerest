@@ -29,9 +29,13 @@ message_din::PowerDeliveryResponse handle_request(const message_din::PowerDelive
     // Mandatory in PowerDeliveryRes even on a FAILED_UnknownSession response, so populate it first.
     // [V2G-DC-638]: a module-reported fault wins here, and EVSE_Shutdown / EVSE_EmergencyShutdown are
     // the two codes the EV is required to act on rather than disregard ([V2G-DC-893]/[V2G-DC-896]).
+    // ReadyToChargeState false answers EVSE_Shutdown whoever initiated the stop: IEC 61851-23:2023 Table
+    // CC.9 t104 has the EVSE confirm the disabled side B that way, and CC.7.6.19 tests it for the
+    // EV-initiated shutdown.
+    const bool stopping = charger_stop or not req.ready_to_charge_state;
     dt::DcEvseStatus status;
-    status.evse_status_code = error_status_code.value_or(charger_stop ? dt::DcEvseStatusCode::EVSE_Shutdown
-                                                                      : dt::DcEvseStatusCode::EVSE_Ready);
+    status.evse_status_code =
+        error_status_code.value_or(stopping ? dt::DcEvseStatusCode::EVSE_Shutdown : dt::DcEvseStatusCode::EVSE_Ready);
     status.evse_isolation_status = dt::IsolationLevel::Valid;
     res.dc_evse_status = status;
     // The referenced SAScheduleTupleID must be the single tuple offered in ChargeParameterDiscoveryRes;
