@@ -170,32 +170,35 @@ macro(_add_trailbook_copy_stem_command)
         list(APPEND STEM_FILES_BUILD_DIR "${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/${rel_path}")
     endforeach()
 
+    # The file list is an input of its own, rewritten only when it changes:
+    # a deleted page leaves nothing newer behind, yet its copy has to go and
+    # the site has to be rebuilt.
+    set(STEM_FILE_LIST "${CMAKE_CURRENT_BINARY_DIR}/stem_files.txt")
+    list(JOIN STEM_FILES_SOURCE_DIR "\n" STEM_FILE_LIST_CONTENT)
+    file(WRITE "${STEM_FILE_LIST}.tmp" "${STEM_FILE_LIST_CONTENT}\n")
+    configure_file("${STEM_FILE_LIST}.tmp" "${STEM_FILE_LIST}" COPYONLY)
+    file(REMOVE "${STEM_FILE_LIST}.tmp")
+
     add_custom_command(
         OUTPUT
             ${STEM_FILES_BUILD_DIR}
         DEPENDS
             ${STEM_FILES_SOURCE_DIR}
+            ${STEM_FILE_LIST}
             trailbook_${args_NAME}_stage_prepare_sphinx_source_before
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_PREPARE_SPHINX_SOURCE_BEFORE>
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
         COMMENT
             "Trailbook: ${args_NAME} - Copying stem files to build directory"
+        # Only changed files are copied, so unchanged pages keep their
+        # modification time and Sphinx does not read them again.
         COMMAND
             ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
-            remove
+            sync
             --data-file ${CMAKE_CURRENT_BINARY_DIR}/copy_stem_filelist.yaml
+            --source-directory ${args_STEM_DIRECTORY}
             --root-directory ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
-        COMMAND
-            ${Python3_EXECUTABLE}
-            ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
-            create
-            --data-file ${CMAKE_CURRENT_BINARY_DIR}/copy_stem_filelist.yaml
-            --root-directory ${args_STEM_DIRECTORY}
-        COMMAND
-            ${CMAKE_COMMAND} -E copy_directory
-            ${args_STEM_DIRECTORY}
-            ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
     )
 endmacro()
 
@@ -302,6 +305,7 @@ macro(_add_trailbook_sphinx_build_command)
             trailbook_${args_NAME}_stage_build_sphinx_before
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE>
             ${STEM_FILES_BUILD_DIR}
+            ${STEM_FILE_LIST}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
         COMMENT
             "Trailbook: ${args_NAME} - Building HTML documentation with Sphinx"
@@ -312,10 +316,14 @@ macro(_add_trailbook_sphinx_build_command)
             remove
             --data-file ${CMAKE_CURRENT_BINARY_DIR}/sphinx_build_filelist.yaml
             --root-directory ${TRAILBOOK_INSTANCE_BUILD_DIRECTORY}/
+        # The doctrees stay outside the output directory, which is emptied by
+        # the move below: unchanged sources are not read again, and the
+        # pickled environment is not deployed with the site.
         COMMAND
             ${_SPHINX_BUILD_EXECUTABLE}
             -b html
             -j auto
+            -d ${CMAKE_CURRENT_BINARY_DIR}/sphinx_doctrees/
             ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
             ${CMAKE_CURRENT_BINARY_DIR}/sphinx_build_temp/
         COMMAND
