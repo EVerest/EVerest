@@ -110,6 +110,10 @@ function(trailbook_ev_generate_rst_from_interface)
 
 
     _trailbook_ev_generate_rst_from_interface_generate_command()
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${GENERATED_FILE}
+    )
 
     add_custom_target(
         trailbook_${args_TRAILBOOK_NAME}_generate_rst_from_interface_${INTERFACE_NAME}

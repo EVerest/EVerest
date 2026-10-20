@@ -95,6 +95,10 @@ function(trailbook_ev_generate_rst_from_types)
     set(TRAILBOOK_EV_REFERENCE_TYPES_DIRECTORY "${TRAILBOOK_EV_REFERENCE_DIRECTORY}/types")
 
     _trailbook_ev_generate_rst_from_types_generate_command()
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${GENERATED_FILE}
+    )
 
     add_custom_target(
         trailbook_${args_TRAILBOOK_NAME}_generate_rst_from_types_${TYPES_NAME}

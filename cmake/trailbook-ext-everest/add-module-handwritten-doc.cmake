@@ -54,22 +54,10 @@ macro(_trailbook_ev_add_module_reference_copy_handwritten_command)
         list(APPEND COPY_DEPENDENCIES "${DEST_FILE_PATH}")
     endforeach()
 
-    # Remove files if they were deleted in the source tree
-    if(EXISTS "${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}")
-        file(GLOB_RECURSE EXISTING_DEST_FILES "${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}/*")
-        
-        foreach(EXISTING_FILE IN LISTS EXISTING_DEST_FILES)
-            if(IS_DIRECTORY "${EXISTING_FILE}")
-                continue()
-            endif()
-
-            list(FIND EXPECTED_DEST_FILES "${EXISTING_FILE}" FILE_INDEX)
-            if(FILE_INDEX EQUAL -1)
-                message(STATUS "  Removing orphaned doc file: ${EXISTING_FILE}")
-                file(REMOVE "${EXISTING_FILE}")
-            endif()
-        endforeach()
-    endif()
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${EXPECTED_DEST_FILES}
+    )
 
     if(COPY_DEPENDENCIES)
         set(ASSET_TARGET "${TARGET_NAME_PREFIX}_assets")
@@ -95,33 +83,6 @@ macro(_trailbook_ev_add_module_reference_copy_handwritten_command)
             )
         endif()
     endif()
-
-    # set(MODULE_HANDWRITTEN_TARGET_FILES "")
-    # foreach(source_file IN LISTS MODULE_HANDWRITTEN_SOURCE_FILES)
-    #     file(RELATIVE_PATH rel_path "${args_HANDWRITTEN_DIR}" "${source_file}")
-    #     set(target_file "${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}/${rel_path}")
-    #     list(APPEND MODULE_HANDWRITTEN_TARGET_FILES "${target_file}")
-    # endforeach()
-
-    # add_custom_command(
-    #     OUTPUT
-    #         ${MODULE_HANDWRITTEN_TARGET_FILES}
-    #     DEPENDS
-    #         ${MODULE_HANDWRITTEN_SOURCE_FILES}
-    #         ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
-    #     COMMENT
-    #         "Copying handwritten documentation files of module ${args_MODULE_NAME} to: ${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}/"
-    #     COMMAND
-    #         ${CMAKE_COMMAND} -E rm -rf
-    #         ${MODULE_HANDWRITTEN_TARGET_FILES}
-    #     COMMAND
-    #         ${CMAKE_COMMAND} -E make_directory
-    #         ${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}/
-    #     COMMAND
-    #         ${CMAKE_COMMAND} -E copy_directory
-    #         ${args_HANDWRITTEN_DIR}
-    #         ${TRAILBOOK_EV_HANDWRITTEN_MODULE_DOC_DIRECTORY}/
-    # )
 endmacro()
 
 # This function adds a handwritten module documentation to a trailbook.

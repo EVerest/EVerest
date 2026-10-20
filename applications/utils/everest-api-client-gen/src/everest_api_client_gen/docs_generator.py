@@ -124,6 +124,11 @@ def generate_reference(spec_files, html_dir, index_rst):
         except SpecError as err:
             raise SpecError(f"{spec.name}: {err}") from None
     write_assets(html_dir / "_assets")
+    # pages of specs that no longer exist
+    expected = {spec.stem for spec in spec_files} | {"_assets"}
+    for entry in html_dir.iterdir():
+        if entry.name not in expected:
+            shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
     index_rst = Path(index_rst)
     index_rst.parent.mkdir(parents=True, exist_ok=True)
     index_rst.write_text(env.get_template("api_index.rst.j2").render(models=models),
