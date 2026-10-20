@@ -31,9 +31,6 @@ std::string format_mmtype(const uint16_t mmtype);
 // Whether a CM_SET_KEY.CNF result byte counts as success under the configured acceptance mode.
 bool accepts_set_key_cnf_success_result(fsm::evse::SetKeyCnfSuccessMode mode, uint8_t result);
 
-// NMK as plain hex without separators, as printed in the "Using SLAC session NMK" log line.
-std::string format_session_nmk_for_log(Nmk const& nmk);
-
 // Log prefix identifying a matching session, same style as EvseSlac's session_log().
 std::string session_log_prefix(fsm::evse::MatchingSessionData const& session_data);
 

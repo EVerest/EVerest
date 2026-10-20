@@ -1358,7 +1358,7 @@ void ChargePointImpl::connected_callback() {
 }
 
 void ChargePointImpl::message_callback(const std::string& message) {
-    EVLOG_debug << "Received Message: " << message;
+    EVLOG_debug << "Received message with length: " << message.size();
 
     EnhancedMessage<v16::MessageType> enhanced_message;
     try {
@@ -2032,7 +2032,7 @@ bool ChargePointImpl::set_powermeter_public_key(const int32_t connector, const s
 }
 
 void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabilityRequest> call) {
-    EVLOG_debug << "Received ChangeAvailabilityRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ChangeAvailabilityRequest with messageId: " << call.uniqueId;
 
     const auto& request = call.msg;
 
@@ -2052,7 +2052,7 @@ void ChargePointImpl::handleChangeAvailabilityRequest(ocpp::Call<ChangeAvailabil
 }
 
 void ChargePointImpl::handleChangeConfigurationRequest(ocpp::Call<ChangeConfigurationRequest> call) {
-    EVLOG_debug << "Received ChangeConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ChangeConfigurationRequest with messageId: " << call.uniqueId;
 
     if (const auto kv = configuration.get(call.msg.key); kv.has_value() && kv->readonly) {
         ChangeConfigurationResponse response;
@@ -2118,7 +2118,7 @@ void ChargePointImpl::switchSecurityProfile(std::int32_t new_security_profile, s
 }
 
 void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call) {
-    EVLOG_debug << "Received ClearCacheRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ClearCacheRequest with messageId: " << call.uniqueId;
 
     ClearCacheResponse response;
 
@@ -2141,7 +2141,7 @@ void ChargePointImpl::handleClearCacheRequest(ocpp::Call<ClearCacheRequest> call
 }
 
 void ChargePointImpl::handleDataTransferRequest(ocpp::Call<DataTransferRequest> call) {
-    EVLOG_debug << "Received DataTransferRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received DataTransferRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 
@@ -2190,7 +2190,7 @@ void ChargePointImpl::handleDataTransferRequest(ocpp::Call<DataTransferRequest> 
 }
 
 void ChargePointImpl::handleGetConfigurationRequest(ocpp::Call<GetConfigurationRequest> call) {
-    EVLOG_debug << "Received GetConfigurationRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetConfigurationRequest with messageId: " << call.uniqueId;
 
     const auto response = this->get_configuration_key(call.msg);
     const ocpp::CallResult<GetConfigurationResponse> call_result(response, call.uniqueId);
@@ -2198,7 +2198,7 @@ void ChargePointImpl::handleGetConfigurationRequest(ocpp::Call<GetConfigurationR
 }
 
 void ChargePointImpl::handleRemoteStartTransactionRequest(ocpp::Call<RemoteStartTransactionRequest> call) {
-    EVLOG_debug << "Received RemoteStartTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received RemoteStartTransactionRequest with messageId: " << call.uniqueId;
 
     RemoteStartTransactionResponse response;
     std::vector<std::int32_t> referenced_connectors;
@@ -2344,7 +2344,7 @@ bool ChargePointImpl::validate_against_cache_entries(CiString<20> id_tag) {
 }
 
 void ChargePointImpl::handleRemoteStopTransactionRequest(ocpp::Call<RemoteStopTransactionRequest> call) {
-    EVLOG_debug << "Received RemoteStopTransactionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received RemoteStopTransactionRequest with messageId: " << call.uniqueId;
 
     RemoteStopTransactionResponse response;
     response.status = RemoteStartStopStatus::Rejected;
@@ -2363,7 +2363,7 @@ void ChargePointImpl::handleRemoteStopTransactionRequest(ocpp::Call<RemoteStopTr
 }
 
 void ChargePointImpl::handleResetRequest(ocpp::Call<ResetRequest> call) {
-    EVLOG_debug << "Received ResetRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ResetRequest with messageId: " << call.uniqueId;
 
     const auto reset_type = call.msg.type;
     ResetResponse response;
@@ -2507,7 +2507,7 @@ void ChargePointImpl::handleStopTransactionResponse(const EnhancedMessage<v16::M
 }
 
 void ChargePointImpl::handleUnlockConnectorRequest(ocpp::Call<UnlockConnectorRequest> call) {
-    EVLOG_debug << "Received UnlockConnectorRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received UnlockConnectorRequest with messageId: " << call.uniqueId;
     const std::lock_guard<std::mutex> lock(this->stop_transaction_mutex);
 
     UnlockConnectorResponse response;
@@ -2539,7 +2539,7 @@ void ChargePointImpl::handleHeartbeatResponse(CallResult<HeartbeatResponse> call
 }
 
 void ChargePointImpl::handleSetChargingProfileRequest(ocpp::Call<SetChargingProfileRequest> call) {
-    EVLOG_debug << "Received SetChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SetChargingProfileRequest with messageId: " << call.uniqueId;
 
     // FIXME(kai): after a new profile has been installed we must notify interested parties (energy manager?)
 
@@ -2594,7 +2594,7 @@ void ChargePointImpl::handleSetChargingProfileRequest(ocpp::Call<SetChargingProf
 }
 
 void ChargePointImpl::handleGetCompositeScheduleRequest(ocpp::Call<GetCompositeScheduleRequest> call) {
-    EVLOG_debug << "Received GetCompositeScheduleRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetCompositeScheduleRequest with messageId: " << call.uniqueId;
 
     GetCompositeScheduleResponse response;
 
@@ -2633,7 +2633,7 @@ void ChargePointImpl::handleGetCompositeScheduleRequest(ocpp::Call<GetCompositeS
 }
 
 void ChargePointImpl::handleClearChargingProfileRequest(ocpp::Call<ClearChargingProfileRequest> call) {
-    EVLOG_debug << "Received ClearChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ClearChargingProfileRequest with messageId: " << call.uniqueId;
 
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatus::Unknown;
@@ -2663,7 +2663,7 @@ void ChargePointImpl::handleClearChargingProfileRequest(ocpp::Call<ClearCharging
 }
 
 void ChargePointImpl::handleTriggerMessageRequest(ocpp::Call<TriggerMessageRequest> call) {
-    EVLOG_debug << "Received TriggerMessageRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received TriggerMessageRequest with messageId: " << call.uniqueId;
 
     TriggerMessageResponse response;
     response.status = TriggerMessageStatus::Rejected;
@@ -2780,7 +2780,7 @@ void ChargePointImpl::triggered_status_notification(const std::int32_t connector
 }
 
 void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsRequest> call) {
-    EVLOG_debug << "Received GetDiagnosticsRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetDiagnosticsRequest with messageId: " << call.uniqueId;
     GetDiagnosticsResponse response;
     if (this->upload_diagnostics_callback) {
         const auto get_log_response = this->upload_diagnostics_callback(call.msg);
@@ -2793,7 +2793,7 @@ void ChargePointImpl::handleGetDiagnosticsRequest(ocpp::Call<GetDiagnosticsReque
 }
 
 void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareRequest> call) {
-    EVLOG_debug << "Received UpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received UpdateFirmwareRequest with messageId: " << call.uniqueId;
     const UpdateFirmwareResponse response;
     if (this->update_firmware_callback) {
         this->update_firmware_callback(call.msg);
@@ -2803,7 +2803,7 @@ void ChargePointImpl::handleUpdateFirmwareRequest(ocpp::Call<UpdateFirmwareReque
 }
 
 void ChargePointImpl::handleExtendedTriggerMessageRequest(ocpp::Call<ExtendedTriggerMessageRequest> call) {
-    EVLOG_debug << "Received ExtendedTriggerMessageRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ExtendedTriggerMessageRequest with messageId: " << call.uniqueId;
 
     ExtendedTriggerMessageResponse response;
     response.status = TriggerMessageStatusEnumType::Rejected;
@@ -2971,7 +2971,7 @@ void ChargePointImpl::update_ocsp_cache() {
 }
 
 void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSignedRequest> call) {
-    EVLOG_debug << "Received CertificateSignedRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received CertificateSignedRequest with messageId: " << call.uniqueId;
 
     CertificateSignedResponse response;
     response.status = CertificateSignedStatusEnumType::Rejected;
@@ -3005,7 +3005,7 @@ void ChargePointImpl::handleCertificateSignedRequest(ocpp::Call<CertificateSigne
 }
 
 void ChargePointImpl::handleGetInstalledCertificateIdsRequest(ocpp::Call<GetInstalledCertificateIdsRequest> call) {
-    EVLOG_debug << "Received GetInstalledCertificatesRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetInstalledCertificatesRequest with messageId: " << call.uniqueId;
     GetInstalledCertificateIdsResponse response;
     response.status = GetInstalledCertificateStatusEnumType::NotFound;
 
@@ -3099,7 +3099,7 @@ void ChargePointImpl::handleGetLogRequest(ocpp::Call<GetLogRequest> call) {
 }
 
 void ChargePointImpl::handleSignedUpdateFirmware(ocpp::Call<SignedUpdateFirmwareRequest> call) {
-    EVLOG_debug << "Received SignedUpdateFirmwareRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SignedUpdateFirmwareRequest with messageId: " << call.uniqueId;
     SignedUpdateFirmwareResponse response;
 
     if (this->evse_security->verify_certificate(call.msg.firmware.signingCertificate.get(),
@@ -3247,7 +3247,7 @@ void ChargePointImpl::handleCancelReservationRequest(ocpp::Call<CancelReservatio
 }
 
 void ChargePointImpl::handleSendLocalListRequest(ocpp::Call<SendLocalListRequest> call) {
-    EVLOG_debug << "Received SendLocalListRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SendLocalListRequest with messageId: " << call.uniqueId;
 
     SendLocalListResponse response;
     response.status = UpdateStatus::Failed;
@@ -3301,7 +3301,7 @@ void ChargePointImpl::handleSendLocalListRequest(ocpp::Call<SendLocalListRequest
 }
 
 void ChargePointImpl::handleGetLocalListVersionRequest(ocpp::Call<GetLocalListVersionRequest> call) {
-    EVLOG_debug << "Received GetLocalListVersionRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetLocalListVersionRequest with messageId: " << call.uniqueId;
 
     GetLocalListVersionResponse response;
     if ((this->configuration.getSupportedFeatureProfilesSet().count(
@@ -4130,7 +4130,7 @@ void ChargePointImpl::data_transfer_pnc_get_certificate_status(const ocpp::v2::O
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_trigger_message(Call<DataTransferRequest> call) {
-    EVLOG_info << "Received Data Transfer TriggerMessage: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_info << "Received Data Transfer TriggerMessage with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 
@@ -4157,8 +4157,7 @@ void ChargePointImpl::handle_data_transfer_pnc_trigger_message(Call<DataTransfer
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTransferRequest> call) {
-    EVLOG_info << "Received Data Transfer CertificateSignedRequest: " << call.msg
-               << "\nwith messageId: " << call.uniqueId;
+    EVLOG_info << "Received Data Transfer CertificateSignedRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
     response.status = DataTransferStatus::Rejected;
@@ -4224,8 +4223,7 @@ void ChargePointImpl::handle_data_transfer_pnc_certificate_signed(Call<DataTrans
 }
 
 void ChargePointImpl::handle_data_transfer_pnc_get_installed_certificates(Call<DataTransferRequest> call) {
-    EVLOG_debug << "Received Data Transfer GetInstalledCertificatesRequest: " << call.msg
-                << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received Data Transfer GetInstalledCertificatesRequest with messageId: " << call.uniqueId;
 
     DataTransferResponse response;
 

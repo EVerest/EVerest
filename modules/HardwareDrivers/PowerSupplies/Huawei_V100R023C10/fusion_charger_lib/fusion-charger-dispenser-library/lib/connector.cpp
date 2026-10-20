@@ -273,11 +273,7 @@ void Connector::start() {
     connector_registers = ConnectorRegisters(connector_registers_config),
 
     connector_registers.hmac_key.add_write_callback([this](const std::uint8_t* value) {
-        char hmac_str[97];
-        for (int i = 0; i < 48; i++) {
-            sprintf(hmac_str + i * 2, "%02X", value[i]);
-        }
-        log.info << log_prefix + "🔑 HMAC key changed to " + std::string(hmac_str);
+        log.info << log_prefix + "🔑 HMAC key changed.";
 
         goose_sender.on_new_hmac_key(std::vector<std::uint8_t>(value, value + 48));
 

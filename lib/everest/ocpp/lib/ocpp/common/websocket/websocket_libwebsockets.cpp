@@ -1183,7 +1183,7 @@ void WebsocketLibwebsockets::poll_message(const std::shared_ptr<WebsocketMessage
         }
     }
 
-    EVLOG_debug << "Queueing message: " << msg->payload;
+    EVLOG_debug << "Queueing message with length: " << msg->payload.size();
     send_message_queue.push(msg);
 
     // Request a write callback
