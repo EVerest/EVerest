@@ -4,6 +4,7 @@
 #include <cstdint>
 
 #include <iso15118/din/state/current_demand.hpp>
+#include <iso15118/din/state/power_delivery.hpp>
 #include <iso15118/din/state/session_stop.hpp>
 #include <iso15118/din/state/welding_detection.hpp>
 
@@ -72,11 +73,14 @@ Result process_power_delivery(Context& m_ctx, const message_din::PowerDeliveryRe
     if (res.dc_evse_status.has_value()) {
         apply_isolation_status(m_ctx, res.dc_evse_status.value());
     }
-    m_ctx.respond(res);
 
     if (res.response_code >= dt::ResponseCode::FAILED) {
+        m_ctx.respond(res);
         m_ctx.session_stopped = true;
         return {};
+    }
+    if (req.ready_to_charge_state) {
+        m_ctx.respond(res);
     }
 
     if (req.dc_ev_power_delivery_parameter.has_value()) {
@@ -106,7 +110,66 @@ Result process_power_delivery(Context& m_ctx, const message_din::PowerDeliveryRe
     m_ctx.invalidate_cable_check();
     m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
     m_ctx.welding_detection.start(m_ctx.feedback);
-    return m_ctx.create_state<WeldingDetection>();
+
+    // Already open (or never reported closed): nothing to wait for. An emergency shutdown fails the
+    // response in respond() and ends the session, so there is nothing to wait for either.
+    if (not m_ctx.evse().contactor_closed or m_ctx.evse().emergency_shutdown) {
+        return finish_stop(m_ctx, res);
+    }
+    return m_ctx.create_state<PowerDeliveryStop>(res);
+}
+
+Result finish_stop(Context& ctx, const message_din::PowerDeliveryResponse& res) {
+    ctx.respond(res);
+    if (ctx.session_stopped) {
+        return {};
+    }
+    return ctx.create_state<WeldingDetection>();
+}
+
+void PowerDeliveryStop::enter() {
+    logf_debug("Enter state: PowerDeliveryStop");
+    m_ctx.start_timeout(d20::TimeoutType::CONTACTOR, d20::TIMEOUT_CONTACTOR_OPEN);
+}
+
+Result PowerDeliveryStop::on_event(Event ev) {
+    if (ev == Event::CONTROL_MESSAGE) {
+        if (const auto* control = m_ctx.get_control_event<d20::PresentVoltageCurrent>()) {
+            m_ctx.set_present_voltage(control->voltage);
+        } else if (const auto* closed = m_ctx.get_control_event<d20::ClosedContactor>()) {
+            m_ctx.set_contactor_closed(static_cast<bool>(*closed));
+        }
+        // An emergency (recorded by the engine before the state sees the event) fails the response in
+        // respond() and ends the session; waiting on would let the 2 s emergency guard close the connection
+        // without a response.
+        if (not m_ctx.evse().contactor_closed or m_ctx.evse().emergency_shutdown) {
+            m_ctx.stop_timeout(d20::TimeoutType::CONTACTOR);
+            return send_pending_res();
+        }
+        return {};
+    }
+
+    if (ev == Event::TIMEOUT) {
+        const auto* timeout = m_ctx.get_active_timeout();
+        if (timeout and *timeout == d20::TimeoutType::CONTACTOR) {
+            logf_warning("Contactor not reported open within %d ms, sending PowerDeliveryRes anyway",
+                         d20::TIMEOUT_CONTACTOR_OPEN);
+            return send_pending_res();
+        }
+    }
+
+    return {};
+}
+
+Result PowerDeliveryStop::on_request(const message_din::Variant& received) {
+    // The EV has to wait for the PowerDeliveryRes before it sends anything else.
+    logf_warning("Expected no request before PowerDeliveryRes! But got type id: %d", received.get_type());
+    respond_sequence_error(m_ctx, received);
+    return {};
+}
+
+Result PowerDeliveryStop::send_pending_res() {
+    return finish_stop(m_ctx, pending_res);
 }
 
 } // namespace iso15118::din::state

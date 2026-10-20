@@ -198,6 +198,9 @@ public:
         return evse_status;
     }
 
+    void set_contactor_closed(bool closed) {
+        evse_status.contactor_closed = closed;
+    }
     void set_active_error(d20::EvseErrorCode code) {
         evse_status.active_error = code;
     }

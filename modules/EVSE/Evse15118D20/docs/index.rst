@@ -405,11 +405,15 @@ are omitted, since they end the session rather than move it to another state.
 On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
 shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
 published before the response, and the response is held
-until ``contactor_closed(false)`` reports the power path off, for at most 500 ms.
-The EV leaves state C as soon as it has the response, so this withdraws the power
+until ``contactor_closed(false)`` reports the power path off, for at most 1.4 s
+(1.5 s performance time), then it is sent anyway with a warning. Side B is disabled
+before the EV learns of it (IEC 61851-23:2023 Table CC.9, t103 before t104), and the
+EV leaves state C as soon as it has the response, so this withdraws the power
 permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
-(CC.4.3).
+(CC.4.3). The ISO 15118-2 and DIN 70121 engines hold their PowerDeliveryRes the same
+way, for at most 3 s and 1.4 s. An emergency shutdown reported meanwhile answers the
+held response FAILED at once.
 
 Welding detection
 -----------------

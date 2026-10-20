@@ -252,7 +252,13 @@ void DinSeccEngine::on_control_event(const d20::ControlEvent& event) {
             ctx.set_emergency_shutdown();
             ctx.start_timeout(d20::TimeoutType::EMERGENCY_SHUTDOWN, d20::TIMEOUT_EMERGENCY_SHUTDOWN_GUARD);
         }
-        return;
+        // Still fed to the FSM below: a state holding a response back (the stop waiting for the open
+        // contactor) answers at once with it, before the guard closes the connection.
+    }
+
+    // Recorded here so that every state knows it.
+    if (const auto* contactor = std::get_if<d20::ClosedContactor>(&event)) {
+        ctx.set_contactor_closed(static_cast<bool>(*contactor));
     }
 
     // Still feed the event to the FSM below, so a state parked waiting for CP State B resumes on it.
