@@ -158,14 +158,8 @@ void isolation_monitorImpl::start_self_test_at_start() {
 }
 
 void isolation_monitorImpl::finish_self_test(bool result) {
-    const bool system_connection_test_failed = not result and last_alarm == AlarmType::DeviceError and
-                                               active_system_connection_test != SYSTEM_CONNECTION_TEST_OFF;
     active_system_connection_test = SYSTEM_CONNECTION_TEST_OFF;
     reset_system_connection_test();
-    if (system_connection_test_failed) {
-        // The device keeps the device error and the alarm relays until a device test passes, 8006 does not clear it
-        request_recovery(RECOVERY_START_DELAY);
-    }
 
     bool at_start{false};
     std::optional<double> pending_test_voltage_V;
@@ -376,6 +370,11 @@ void isolation_monitorImpl::ready() {
                     self_test_running = true;
                 }
             }
+        }
+        if (last_alarm == AlarmType::DeviceError and not self_test_started and recovery_state == RecoveryState::Idle) {
+            // The device keeps a device error and the alarm relays until a device test passes, 8006 does not clear
+            // it, and a self test is refused while the error is active. Whatever raised it, the recovery clears it.
+            request_recovery(RECOVERY_START_DELAY);
         }
         if (run_recovery()) {
             need_to_disable_device = true;
