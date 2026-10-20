@@ -32,9 +32,11 @@ static_assert(TIMEOUT_TYPE_SIZE == to_underlying_value(TimeoutType::WELDING_VOLT
 constexpr auto TIMEOUT_ONGOING = 1000 * 55;
 constexpr auto TIMEOUT_SEQUENCE = 1000 * 60;
 constexpr auto TIMEOUT_EIM_ONGOING = 1000 * 60 * 3;
-// Leaves 500 ms of the 1,5 s V2G_SECC_Msg_Performance_Time(DC_WeldingDetectionReq) (ISO 15118-20 Table 217)
-// to build and send the response.
-constexpr auto TIMEOUT_WELDING_VOLTAGE = 1000;
+// How long a DC_WeldingDetectionRes waits for marked values of the welding detection voltage source received
+// after its request (IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106): within the 1,5 s
+// V2G_SECC_Msg_Performance_Time(DC_WeldingDetectionRes) (ISO 15118-20 Table 215), 100 ms kept for sending.
+// EvseV2G waits as long.
+constexpr auto TIMEOUT_WELDING_VOLTAGE = 1400;
 // How long PowerDeliveryRes(Stop) waits for the contactor to be reported open [IEC 61851-23:2023 Table CC.9
 // t103 before t104]: within the 1,5 s V2G_SECC_Msg_Performance_Time(PowerDeliveryRes) (Table 215), 100 ms kept
 // for sending.
