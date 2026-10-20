@@ -90,7 +90,9 @@ runs before the core is constructed. `resolve_boot_source()` is unit-tested in
 | `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above. `register_config_update_handler` returns a function that unregisters `cb` |
 
 Manager wiring, in `src/manager.cpp`: the `UserConfigStorage` persistence mirror is created for
-`BootMode::YamlWithInMemoryDb`, then `ConfigServiceCore`, then
+`BootMode::YamlWithInMemoryDb` on `ManagerSettings::user_config_file` (the `--user-config` path, by
+default `user-config/<config-name>.yaml` next to the config file), the same file the config parser
+merges, then `ConfigServiceCore`, then
 `MqttConfigServiceHandler`, then `register_set_runtime_parameter_handler()` mapping
 `SetResponseStatus::Accepted` to `ModuleReplied_Applied`, `RebootRequired` to
 `ModuleReplied_RequiresRestart`, anything else to `ModuleReplied_Rejected`, and `SetCallFailed`

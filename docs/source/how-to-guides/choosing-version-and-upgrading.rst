@@ -75,7 +75,8 @@ exposes in its device model (OCPP 1.6 does not expose module parameters). Such
 changes are persisted outside the config file:
 
 - Without ``--db``, in ``user-config/<config-name>.yaml`` next to the config
-  file. The file is merged over the config file on every start.
+  file, or in the file given with ``--user-config``. The file is merged over
+  the config file on every start.
 - With ``--db``, in the configuration database. The database takes precedence
   over the config file once its boot slot holds modules.
 

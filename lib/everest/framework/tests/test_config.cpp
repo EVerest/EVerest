@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+#include <fstream>
+
 #include <catch2/catch_all.hpp>
 
 #include <framework/runtime.hpp>
@@ -336,6 +339,19 @@ SCENARIO("Check resolve_boot_source", "[!throws]") {
             CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", true, false).reset_from_yaml);
         }
     }
+    GIVEN("--user-config") {
+        THEN("Without --config it throws BootException") {
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "", false, false, "", "uc.yaml"), Everest::BootException);
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "everest.db", false, false, "", "uc.yaml"),
+                            Everest::BootException);
+        }
+        THEN("With --config it is passed through") {
+            CHECK(Everest::resolve_boot_source("config.yaml", "", false, false, "", "uc.yaml").user_config_path ==
+                  "uc.yaml");
+            CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", false, false, "", "uc.yaml")
+                      .user_config_path == "uc.yaml");
+        }
+    }
     GIVEN("--settings") {
         THEN("It is passed through in every mode") {
             CHECK(Everest::resolve_boot_source("", "", false, false, "s.yaml").settings_path == "s.yaml");
@@ -493,6 +509,51 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
                 }
             }());
         }
+    }
+    GIVEN("A valid config with a valid module and an explicit user-config path") {
+        const auto dir = bin_dir + "valid_module_config_userconfig/";
+        const auto tmp_dir = fs::temp_directory_path() / "everest_test_config_explicit_user_config";
+        fs::remove_all(tmp_dir);
+        fs::create_directories(tmp_dir);
+        const auto explicit_user_config = tmp_dir / "explicit.yaml";
+        std::ofstream(explicit_user_config)
+            << "active_modules:\n  valid_module:\n    config_module:\n      valid_config_entry: \"explicit\"\n";
+
+        const auto boot_with_user_config = [&dir](const fs::path& user_config) {
+            return Everest::ManagerSettings(
+                dir, Everest::resolve_boot_source(dir + "config.yaml", "", false, false, "", user_config.string()));
+        };
+        const auto valid_config_entry = [](const Everest::ManagerSettings& ms) {
+            auto mc = Everest::ManagerConfig(ms);
+            const auto config_params =
+                mc.get_module_configurations().at("valid_module").configuration_parameters.at("!module");
+            const auto it = std::find_if(config_params.begin(), config_params.end(),
+                                         [](const auto& param) { return param.name == "valid_config_entry"; });
+            REQUIRE(it != config_params.end());
+            return std::get<std::string>(it->value);
+        };
+
+        THEN("Without --user-config the default location next to the config is used") {
+            const Everest::ManagerSettings ms(dir, Everest::resolve_boot_source(dir + "config.yaml", "", false, false));
+            CHECK(ms.user_config_file == fs::canonical(dir + "config.yaml").parent_path() / "user-config/config.yaml");
+            CHECK(valid_config_entry(ms) == "hi");
+        }
+        THEN("The explicit user-config is merged instead of the default one") {
+            const auto ms = boot_with_user_config(explicit_user_config);
+            CHECK(ms.user_config_file == explicit_user_config);
+            CHECK(valid_config_entry(ms) == "explicit");
+        }
+        THEN("A missing explicit user-config is not an error and nothing is merged") {
+            const auto ms = boot_with_user_config(tmp_dir / "missing.yaml");
+            CHECK(valid_config_entry(ms) == "hello there");
+        }
+        THEN("A user-config in a missing directory throws BootException") {
+            CHECK_THROWS_AS(boot_with_user_config(tmp_dir / "missing_dir" / "uc.yaml"), Everest::BootException);
+        }
+        THEN("A user-config path that is a directory throws BootException") {
+            CHECK_THROWS_AS(boot_with_user_config(tmp_dir), Everest::BootException);
+        }
+        fs::remove_all(tmp_dir);
     }
     GIVEN("A valid config with a valid module and enabled schema validation") {
         auto ms = Everest::ManagerSettings(bin_dir + "valid_module_config_validate/",
