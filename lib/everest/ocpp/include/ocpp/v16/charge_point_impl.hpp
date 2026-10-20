@@ -290,7 +290,6 @@ private:
     void try_resume_transactions(const std::set<std::string>& resuming_session_ids);
     void stop_all_transactions();
     void stop_all_transactions(Reason reason);
-    bool validate_against_cache_entries(CiString<20> id_tag);
 
     // new transaction handling:
     void start_transaction(std::shared_ptr<Transaction> transaction);
