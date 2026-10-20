@@ -872,7 +872,7 @@ enum v2g_event states::handle_din_power_delivery(struct v2g_connection* conn) {
 
     if (req->ReadyToChargeState == (int)0) {
         /* The EV requested to stop the charging session. Mark the remaining phases as shut down, so that
-         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.5.19]. More
+         * PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown [IEC 61851-23:2023 CC.7.6.19]. More
          * specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are preserved. */
         for (const auto phase : {PHASE_CHARGE, PHASE_WELDING}) {
             uint8_t& status_code = conn->ctx->evse_v2g_data.evse_status_code[phase];

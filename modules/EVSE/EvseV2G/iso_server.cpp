@@ -287,7 +287,7 @@ static telemetry_types::ChargeProgress to_telemetry_charge_progress(iso2_chargeP
 /*!
  * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
  * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
- * [IEC 61851-23:2023 CC.7.5.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
+ * [IEC 61851-23:2023 CC.7.6.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
  * preserved.
  * \param ctx points to the V2G context.
  */
