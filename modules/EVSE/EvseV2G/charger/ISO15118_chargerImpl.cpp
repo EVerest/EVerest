@@ -635,7 +635,7 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
     if (present_voltage_current.welding_detection.value_or(false)) {
         pthread_mutex_lock(&v2g_ctx->mqtt_lock);
         if (v2g_ctx->session.welding_detection_active) {
-            v2g_ctx->session.welding_voltage_received = true;
+            v2g_ctx->session.welding_voltage_updates++;
             pthread_cond_signal(&v2g_ctx->mqtt_cond);
         }
         pthread_mutex_unlock(&v2g_ctx->mqtt_lock);

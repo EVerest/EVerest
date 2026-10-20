@@ -422,12 +422,15 @@ The same DC stop publishes ``welding_detection`` ``Started``. ``Finished`` follo
 ``SessionStopReq``, on a renegotiation (ISO 15118-2 ``ChargeParameterDiscoveryReq``
 after the stop), on a failed response or on session teardown, also when the EV sends
 no ``WeldingDetectionReq`` at all. In ISO 15118-20, ISO 15118-2 and DIN 70121 alike,
-the first ``WeldingDetectionRes`` is held until ``update_dc_present_values`` delivers a
-value with ``welding_detection`` set, for at most 1 s, concurrently with the wait for
-CP state B. This makes sure the response reports the voltage source EvseManager selected
-for welding detection (IEC 61851-23:2023 CC.7.6.17) rather than a power supply reading
-taken before the source was switched. If no such value arrives, the last present
-voltage is sent and a warning is logged. Later responses are answered at once.
+every ``WeldingDetectionRes`` is held until ``update_dc_present_values`` delivered two
+values with ``welding_detection`` set after the request, for at most 1.4 s (1.5 s
+performance time), concurrently with the wait for CP state B. This makes sure the
+response reports the voltage source EvseManager selected for welding detection, measured
+after the request (IEC 61851-23:2023 CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the
+first value after the request can still be a measurement taken just before it, the
+second was taken after it. With one value at the deadline the response carries it
+(info), with none the last present voltage (warning). A request parked when the session
+ends gets no answer.
 
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may

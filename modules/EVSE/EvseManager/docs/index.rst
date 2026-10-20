@@ -149,15 +149,20 @@ power path events; if no phase has started 2 s after they deferred the stop, the
 EVSE IMD to be disabled when side B is disabled, and the EV may enable its own IMD (t104): use
 ``isolation_monitor`` only with an IMD that can measure the voltage without its insulation test.
 
-The ISO module holds the first ``WeldingDetectionRes`` until a value of the selected source arrived,
-for at most 1 s. EvseManager sends the first sample of the source, or after 500 ms its last value of
-this session, which is valid because side B stays at the battery voltage until the EV opens its
-contactors. The
-source should publish at 5 Hz or more (CC.6.3: at most 200 ms from measurement to communication);
-EvseManager warns once per session if it updates less often than every second. Over voltage
-monitors often publish only at about 1 Hz. If ``Finished`` never arrives, the phase also ends on
-D-LINK events, a failed HLC session, the next cable check or charge loop, unplug, or 20 s after it
-started (CC.9 t104 to t107).
+The ISO module holds every ``WeldingDetectionRes`` until two samples of the selected source arrived
+after its request, for at most 1.4 s (1.5 s performance time), so that the reported voltage was
+measured after the request: the EV opens its contactors only after the PowerDeliveryRes and may switch
+them between two requests (CC.6.3, Table CC.9 t105 to t106). Two samples because the first one after
+the request can still have been taken just before it, a polled meter delivers a sample up to one poll
+interval after taking it. With one sample at the deadline the response carries it (logged as info),
+with none it carries the last present voltage (warning). Every publication of the source must be a new
+measurement, so a driver that polls a meter must not republish an unchanged sample (LemDCBM400600
+does not). The source should publish at 5 Hz or more (CC.6.3: at most 200 ms from measurement to
+communication); EvseManager warns once per session if it updates less often than every second. A
+meter that refreshes once per second, as the LEM DCBM 400/600 does whatever its poll interval, cannot
+meet that, and its value in the response can be up to about a second old. If ``Finished`` never
+arrives, the phase also ends on D-LINK events, a failed HLC session, the next cable check or charge
+loop, unplug, or 20 s after it started (CC.9 t104 to t107).
 
 Published variables
 ===================
