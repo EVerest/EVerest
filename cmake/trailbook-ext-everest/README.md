@@ -25,3 +25,17 @@ the files recorded by the previous run that no generator registered again are
 deleted, so a removed interface, type, module or handwritten page does not
 linger in the glob toctrees. The API reference generator cleans its own page
 directories the same way.
+
+## Dependencies of the generators
+
+The commands that render interface, type, module and API pages depend on
+their own inputs only (the definition file, the templates, the script),
+not on the outputs of the prepare stage. They write only the files they
+register, so they do not need the stem copy to have happened first, and an
+edit of a handwritten page does not regenerate the reference.
+
+Each command is wrapped in a custom target because CMake only keeps a
+custom command whose output some target in the same directory depends on,
+and the module commands are defined below `modules/<Category>/`. The
+wrapper targets and the generated files are what the Sphinx stage depends
+on.

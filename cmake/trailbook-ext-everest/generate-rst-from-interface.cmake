@@ -13,8 +13,6 @@ macro(_trailbook_ev_generate_rst_from_interface_generate_command)
         OUTPUT
             ${GENERATED_FILE}
         DEPENDS
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/process_template.py
             ${args_INTERFACE_FILE}
             ${ERROR_FILES}
@@ -33,7 +31,6 @@ macro(_trailbook_ev_generate_rst_from_interface_generate_command)
             --target-file "${GENERATED_FILE}"
     )
 endmacro()
-
 
 # This function generates an RST file from an interface definition file.
 #
@@ -93,21 +90,9 @@ function(trailbook_ev_generate_rst_from_interface)
         trailbook_${args_TRAILBOOK_NAME}
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
     )
-    get_target_property(
-        TRAILBOOK_CURRENT_BINARY_DIR
-        trailbook_${args_TRAILBOOK_NAME}
-        TRAILBOOK_CURRENT_BINARY_DIR
-    )
-    get_target_property(
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-        trailbook_${args_TRAILBOOK_NAME}
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-    )
-
 
     set(TRAILBOOK_EV_REFERENCE_DIRECTORY "${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/reference")
     set(TRAILBOOK_EV_REFERENCE_INTERFACES_DIRECTORY "${TRAILBOOK_EV_REFERENCE_DIRECTORY}/interfaces")
-
 
     _trailbook_ev_generate_rst_from_interface_generate_command()
     _trailbook_ev_register_generated_files(
@@ -119,8 +104,6 @@ function(trailbook_ev_generate_rst_from_interface)
         trailbook_${args_TRAILBOOK_NAME}_generate_rst_from_interface_${INTERFACE_NAME}
         DEPENDS
             ${GENERATED_FILE}
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
         COMMENT
             "Target to generate RST file ${GENERATED_FILE} from interface definition ${args_INTERFACE_FILE}"
     )
