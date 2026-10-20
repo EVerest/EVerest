@@ -46,6 +46,19 @@ struct WeldingDetection : public StateBase {
     void enter() final;
     Result on_event(Event) final;
     Result on_request(const message_2::Variant& received) final;
+    void leave() final;
+
+private:
+    void answer_pending_weld();
+
+    // Parked until values of the welding detection voltage source measured after it arrived.
+    std::optional<message_2::WeldingDetectionRequest> pending_weld{};
+    bool welding_voltage_wait_expired{false};
 };
+
+// Parks a WeldingDetectionReq until marked values received after it arrived, or waiting for them expired.
+void park_welding_detection(Context& ctx, bool& wait_expired);
+bool welding_voltage_ready(const Context& ctx, bool wait_expired);
+void log_welding_voltage_timeout(const Context& ctx);
 
 } // namespace iso15118::d2::state
