@@ -22,8 +22,6 @@ macro(_trailbook_ev_generate_rst_from_manifest_generate_command)
             ${args_MANIFEST_FILE}
             ${TEMPLATES_DIRECTORY}/module.rst.jinja
             ${TEMPLATES_DIRECTORY}/macros.jinja
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
         COMMENT
             "Generating RST file ${GENERATED_FILE} from manifest ${args_MANIFEST_FILE}"
         COMMAND
@@ -76,8 +74,6 @@ macro(_trailbook_ev_generate_rst_from_manifest_generate_command)
                 DEPENDS
                     "${INDEX_TEMPLATE_FILE}"
                     "${CUSTOM_TEMPLATE_SUBSTITUTION_SCRIPT}"
-                    trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-                    ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
                 COMMENT "Rendering Jinja2 template for ${INDEX_TARGET_SUFFIX}"
                 VERBATIM
             )
@@ -95,8 +91,6 @@ macro(_trailbook_ev_generate_rst_from_manifest_generate_command)
                 trailbook_${args_TRAILBOOK_NAME}_generate_reference_index_for_module_${INDEX_TARGET_SUFFIX}
                 DEPENDS
                     "${INDEX_FILE}"
-                    trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-                    ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
                 COMMENT
                     "Target to generate RST file ${INDEX_FILE}"
             )
@@ -117,7 +111,6 @@ macro(_trailbook_ev_generate_rst_from_manifest_generate_command)
         get_filename_component(CURRENT_RELATIVE_FOLDER "${CURRENT_RELATIVE_FOLDER}" DIRECTORY)
     endwhile()
 endmacro()
-
 
 # This function generates an RST file from a manifest definition file.
 # It takes the following arguments:
@@ -177,11 +170,6 @@ function(trailbook_ev_generate_rst_from_manifest)
         trailbook_${args_TRAILBOOK_NAME}
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
     )
-    get_target_property(
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-        trailbook_${args_TRAILBOOK_NAME}
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-    )
 
     set(TRAILBOOK_EV_REFERENCE_DIRECTORY "${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/reference")
     set(TRAILBOOK_EV_REFERENCE_MODULES_DIRECTORY "${TRAILBOOK_EV_REFERENCE_DIRECTORY}/modules")
@@ -203,8 +191,6 @@ function(trailbook_ev_generate_rst_from_manifest)
         trailbook_${args_TRAILBOOK_NAME}_generate_rst_from_manifest_${MODULE_NAME}
         DEPENDS
             ${GENERATED_FILE}
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
         COMMENT
             "Target to generate RST file ${GENERATED_FILE} from manifest definition ${args_MANIFEST_FILE}"
     )

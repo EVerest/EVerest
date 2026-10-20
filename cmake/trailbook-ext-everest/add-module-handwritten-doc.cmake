@@ -149,16 +149,10 @@ function(trailbook_ev_add_module_handwritten_doc)
         message(FATAL_ERROR "trailbook_ev_add_module_handwritten_doc: HANDWRITTEN_DIR does not exist")
     endif()
 
-
     get_target_property(
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
         trailbook_${args_TRAILBOOK_NAME}
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
-    )
-    get_target_property(
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-        trailbook_${args_TRAILBOOK_NAME}
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
     )
 
     file(RELATIVE_PATH RELATIVE_PATH_HANDWRITTEN_DIR

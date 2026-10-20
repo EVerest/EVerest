@@ -52,11 +52,6 @@ function(trailbook_ev_generate_api_doc)
         trailbook_${args_TRAILBOOK_NAME}
         TRAILBOOK_INSTANCE_SOURCE_DIRECTORY
     )
-    get_target_property(
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-        trailbook_${args_TRAILBOOK_NAME}
-        DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
-    )
 
     get_filename_component(
         GENERATOR_SOURCE_DIRECTORY
@@ -76,8 +71,6 @@ function(trailbook_ev_generate_api_doc)
         OUTPUT
             ${INDEX_RST_FILE}
         DEPENDS
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
             ${args_API_FILES}
             ${GENERATOR_FILES}
         COMMENT
@@ -93,8 +86,6 @@ function(trailbook_ev_generate_api_doc)
         trailbook_${args_TRAILBOOK_NAME}_generate_api_doc
         DEPENDS
             ${INDEX_RST_FILE}
-            trailbook_${args_TRAILBOOK_NAME}_stage_prepare_sphinx_source_after
-            ${DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER}
         COMMENT
             "Target to generate the EVerest API reference in ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}"
     )
