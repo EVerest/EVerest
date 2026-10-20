@@ -1886,6 +1886,32 @@ TEST_F(AuthTest, test_withdraw_authorization) {
     ASSERT_EQ(withdraw_result, WithdrawAuthorizationResult::AuthorizationNotFound);
 }
 
+/// \brief Test that a handled withdraw request does not withdraw tokens presented afterwards
+TEST_F(AuthTest, test_withdraw_authorization_does_not_affect_later_tokens) {
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    types::authorization::WithdrawAuthorizationRequest withdraw_request;
+    withdraw_request.evse_id = 1;
+    ASSERT_EQ(this->auth_handler->handle_withdraw_authorization(withdraw_request),
+              WithdrawAuthorizationResult::AuthorizationNotFound);
+
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_2, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 /// \brief Test if a authorization can be withdrawn while authorization process is still selecting an EVSE
 TEST_F(AuthTest, test_withdraw_authorization_while_waiting_for_ev_plugin) {
 
