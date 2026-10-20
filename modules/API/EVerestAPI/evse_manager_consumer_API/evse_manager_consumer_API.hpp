@@ -118,6 +118,7 @@ private:
     void generate_api_var_selected_protocol();
     void generate_api_var_powermeter_public_key_ocmf();
     void generate_api_var_supported_energy_transfer_modes();
+    void generate_api_var_all_errors_cleared();
 
     void generate_api_var_ac_nr_of_phases_available();
     void generate_api_var_ac_pp_ampacity();
