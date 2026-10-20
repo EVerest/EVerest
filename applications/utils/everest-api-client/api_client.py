@@ -192,8 +192,9 @@ class EVerestAPICmd(cmd2.Cmd):
         Requires a SpyClient (or a subscription that logs the topic) to be active. Useful in scripts to
         wait for a state, e.g.:  wait_for /bsp_api/e2m/enable true
                                  wait_for session_event Authorized
-        Returns True on timeout so a script started with `run_script -t` can branch; with --optional a
-        timeout is not treated as an error.
+        last_result is True on a match and False on a timeout. A timeout without --optional is an
+        error: the shell keeps running, but exits with status 1 at the end, so a scripted run can
+        detect it.
         """
         event = threading.Event()
         waiter = (event, args.topic_match, args.value_match)
@@ -203,14 +204,16 @@ class EVerestAPICmd(cmd2.Cmd):
             if event.wait(timeout=args.timeout):
                 self.poutput(f"matched: topic contains '{args.topic_match}'" +
                              (f", payload contains '{args.value_match}'" if args.value_match else ""))
-                return False
+                self.last_result = True
+                return
+            self.last_result = False
             note = (f"wait_for timed out after {args.timeout}s waiting for topic '{args.topic_match}'" +
                     (f" / value '{args.value_match}'" if args.value_match else ""))
             if args.optional:
                 self.poutput(note + " (optional, continuing)")
-                return False
+                return
             self.perror(note)
-            return True
+            self.exit_code = 1
         finally:
             with self.wait_waiters_lock:
                 self.wait_waiters.remove(waiter)
