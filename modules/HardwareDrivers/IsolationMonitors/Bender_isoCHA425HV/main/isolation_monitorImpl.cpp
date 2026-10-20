@@ -48,7 +48,7 @@ void isolation_monitorImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3023, (config.chademo_mode ? 1 : 0));
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        // The system connection test is only enabled during self tests started by the driver, see begin_self_test()
+        // Leaving stop mode below runs a device test in cbl mode, which must not use the stored system connection test
         successful &= send_to_imd_if_changed(3024, SYSTEM_CONNECTION_TEST_OFF);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         // The device's own self test at power-on would run with whatever value of 3024 is stored, so it stays off.
@@ -90,7 +90,8 @@ void isolation_monitorImpl::configure_device() {
 }
 
 bool isolation_monitorImpl::prepare_device_test(uint16_t system_connection_test) {
-    // Write 3024 before enabling the device: in cbl mode leaving stop mode already starts the self test
+    // Write 3024 before enabling the device: in cbl mode leaving stop mode already starts the self test.
+    // The device stores 3024 permanently, so it keeps the selection until the next test instead of being reset.
     if (not send_to_imd_if_changed(3024, system_connection_test)) {
         EVLOG_error << "Can't set the system connection test for the device test";
         return false;
@@ -135,7 +136,6 @@ bool isolation_monitorImpl::begin_self_test(uint16_t system_connection_test) {
     // A test the device already runs is tracked instead of started
     if (last_test != TestType::ExternalTest and not send_self_test_start()) {
         set_deviceFault("Failed to start self test");
-        reset_system_connection_test();
         return false;
     }
     self_test_started = true;
@@ -169,7 +169,6 @@ void isolation_monitorImpl::start_self_test_at_start() {
 
 void isolation_monitorImpl::finish_self_test(bool result) {
     active_system_connection_test = SYSTEM_CONNECTION_TEST_OFF;
-    reset_system_connection_test();
 
     bool at_start{false};
     std::optional<double> pending_test_voltage_V;
@@ -194,15 +193,6 @@ void isolation_monitorImpl::finish_self_test(bool result) {
     if (pending_test_voltage_V.has_value()) {
         start_requested_self_test(pending_test_voltage_V.value());
     }
-}
-
-bool isolation_monitorImpl::reset_system_connection_test() {
-    // With selftest_enable_gridconnection off, 3024 is never changed from 0
-    if (config.selftest_enable_gridconnection and not send_to_imd_if_changed(3024, SYSTEM_CONNECTION_TEST_OFF)) {
-        EVLOG_error << "Can't disable the system connection test after the self test";
-        return false;
-    }
-    return true;
 }
 
 void isolation_monitorImpl::request_recovery(std::chrono::seconds delay) {

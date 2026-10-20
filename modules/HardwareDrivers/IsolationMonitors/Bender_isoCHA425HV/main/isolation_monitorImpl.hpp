@@ -426,7 +426,6 @@ private:
     void start_requested_self_test(double test_voltage_V);
     void start_self_test_at_start();
     void finish_self_test(bool result);
-    bool reset_system_connection_test();
     std::mutex self_test_mutex;
     bool self_test_at_start_running{false};
     std::optional<double> pending_self_test_voltage_V;
