@@ -2677,17 +2677,25 @@ void Charger::dlink_error() {
         }
 
         if (hlc_use_5percent_current_session) {
-            // [V2G3-M07-06] Within the control pilot state X1, the communication node shall leave the
-            // logical network and change the matching state to "Unmatched". [V2G3-M07-07] With reaching the
-            // state "Unmatched", the EVSE shall switch to state E/F.
-
-            // FIXME: We don't wait for SLAC to go to UNMATCHED in X1 for now but just do a normal 3 seconds
-            // t_step_X1 instead. This should be more then sufficient for the SLAC module to reset.
-
-            // Do t_step_X1 with a t_step_EF afterwards
-            // [V2G3-M07-08] The state E/F shall be applied at least T_step_EF: This is already handled in
-            // the t_step_EF state.
+            // 5 percent PWM: [V2G3-M07-05] X2 -> X1 -> E/F -> X1/X2. The oscillator goes off right away.
             cp_state_X1();
+
+            const bool session_setup = shared_context.current_state == EvseState::WaitingForAuthentication or
+                                       shared_context.current_state == EvseState::PrepareCharging;
+            if (session_setup) {
+                // Before the charging loop (the HLC session ended with a FAILED response, a sequence timeout or a
+                // TCP close): the -3 sequence with its timers. T_step_X1 resets SLAC and holds X1 until the node
+                // left the logical network ([V2G3-M07-06], TP_match_leave), T_step_EF applies E/F for at least
+                // T_step_EF ([V2G3-M07-07], [V2G3-M07-08]) and returns to WaitingForAuthentication, which
+                // re-decides the duty cycle with HLC failed for this session (nominal PWM once authorized).
+                session_log.evse(false, "D-LINK_ERROR with 5 percent PWM: X1, E/F for T_step_EF, then X1/nominal");
+                internal_context.t_step_EF_return_state = EvseState::WaitingForAuthentication;
+                internal_context.t_step_EF_return_pwm = 0.;
+                internal_context.t_step_EF_return_ampere = 0.;
+                internal_context.t_step_X1_until_unmatched = true;
+                shared_context.current_state = EvseState::T_step_X1;
+                return;
+            }
         }
     }
 
@@ -2696,12 +2704,8 @@ void Charger::dlink_error() {
     // don't do anything here, SLAC will be notified anyway to reset
     // [V2G3-M07-04]: With receiving a D-LINK_ERROR.request from HLE in X1 state, the EVSE's
     // communication node shall perform a state X1 to state E/F to state X1 or X2 transition.
-    // [V2G3-M07-05]: With receiving a D-LINK_ERROR.request in X2 state from HLC, the EVSE's
-    // communication node shall perform a state X2 to X1 to state E/F to state X1 or X2 transition.
-    // [V2G3-M07-06] Within the control pilot state X1, the communication node shall leave the
-    // logical network and change the matching state to "Unmatched". [V2G3-M07-07] With reaching the
-    // state "Unmatched", the EVSE shall switch to state E/F.
     if (hlc_use_5percent_current_session) {
+        // In the charging loop or while stopping: the reinit sequence stops the energy transfer first.
         start_reinit();
     }
 }

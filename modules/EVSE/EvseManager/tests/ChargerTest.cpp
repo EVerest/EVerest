@@ -810,9 +810,10 @@ TEST_F(ChargerTest, DisableDuringIdle) {
 // ----------------------------------------------------------------------------
 // tests for dlink_error()
 // A D-LINK_ERROR normally restarts SLAC matching according to the ISO 15118-3
-// error recovery sequence ([V2G3-M07-05]). For an HLC session, CP is first
-// switched to X1 before the state machine starts the configured reinitialization
-// (defaulting to T_step_EF).
+// error recovery sequence ([V2G3-M07-05]): CP X1 at once; during the session
+// setup the state machine then holds X1 until the node left the logical network
+// and applies E/F for T_step_EF (T_step_X1 -> T_step_EF); in the charging loop
+// or while stopping it starts the configured reinitialization instead.
 // When the session is being stopped for good or is already finished, the
 // D-LINK_ERROR is just the consequence of the HLC session shutting down and
 // matching must NOT be restarted, so the session can end in
@@ -891,21 +892,46 @@ TEST_F(ChargerDlinkErrorTest, NoMatchingRestartWhenFinished) {
 }
 
 TEST_F(ChargerDlinkErrorTest, MatchingRestartDuringActiveSession) {
-    // A D-LINK_ERROR during an active session (e.g. HLC communication error during
-    // cable check with the transaction still running) switches CP to X1 before
-    // the configured reinitialization starts.
+    // A D-LINK_ERROR during the session setup (e.g. a FAILED response of the HLC
+    // stack with the transaction still running) switches CP to X1 at once and runs
+    // the ISO 15118-3 error sequence: X1 until the node left the logical network,
+    // then E/F for T_step_EF ([V2G3-M07-05]..[V2G3-M07-08]), back to
+    // WaitingForAuthentication -- not the configured reinitialization, whose
+    // duration is not bound to T_step_EF.
     setup_hlc_session_in(Charger::EvseState::PrepareCharging);
+    charger->get_shared_context().flag_ev_plugged_in = true;
+    int slac_resets{0};
+    charger->signal_slac_reset.connect([&slac_resets] { ++slac_resets; });
 
     charger->dlink_error();
 
     EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
     EXPECT_FALSE(charger->get_shared_context().pwm_running);
-    EXPECT_TRUE(charger->get_shared_context().reinit_requested);
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
+    EXPECT_FALSE(charger->get_shared_context().reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    const auto& internal = charger->get_internal_context();
+    EXPECT_TRUE(internal.t_step_X1_until_unmatched);
+    EXPECT_EQ(internal.t_step_EF_return_state, Charger::EvseState::WaitingForAuthentication);
+    EXPECT_EQ(internal.t_step_EF_return_pwm, 0.);
 
     charger->run_state_machine();
 
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::Reinit);
+    // X1 is held for the node to leave the network (TP_match_leave) before E/F.
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_EQ(slac_resets, 1);
+}
+
+TEST_F(ChargerDlinkErrorTest, MatchingRestartWhileWaitingForAuthentication) {
+    // Same sequence when the HLC session fails before the charger left WaitingForAuthentication.
+    setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
+
+    charger->dlink_error();
+
+    EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
+    EXPECT_FALSE(charger->get_shared_context().reinit_requested);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
+    EXPECT_TRUE(charger->get_internal_context().t_step_X1_until_unmatched);
+    EXPECT_EQ(charger->get_internal_context().t_step_EF_return_state, Charger::EvseState::WaitingForAuthentication);
 }
 
 TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
@@ -917,8 +943,9 @@ TEST_F(ChargerDlinkErrorTest, MatchingRestartWhenStoppingToPause) {
 
     charger->dlink_error();
 
-    // A pause continues the session, so it follows the same X1-before-reinit
-    // recovery sequence as an active session.
+    // A pause continues the session: X1 at once, then the reinit sequence (the
+    // energy transfer is stopped first; the T_step_X1/T_step_EF sequence is for
+    // the session setup states).
     EXPECT_EQ(observed_cp_state_commands, std::vector<std::string>{"X1"});
     EXPECT_FALSE(ctx.pwm_running);
     EXPECT_TRUE(ctx.reinit_requested);
@@ -1263,12 +1290,18 @@ TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterLostDataLinkGoesThroughX1) {
 }
 
 TEST_F(ChargerDlinkErrorTest, ErrorRoutineAfterHlcDlinkErrorGoesToStepEF) {
+    // The HLC D-LINK_ERROR runs the X1 / E/F sequence itself: an error routine arriving during it changes
+    // nothing, one after it is a new matching failure without a data link and goes to E/F directly.
     setup_hlc_session_in(Charger::EvseState::WaitingForAuthentication);
     charger->set_dlink_ready(true);
 
     charger->dlink_error();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
     charger->request_error_sequence();
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1);
 
+    charger->current_state(Charger::EvseState::WaitingForAuthentication); // the sequence ended
+    charger->request_error_sequence();
     EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_EF);
 }
 
