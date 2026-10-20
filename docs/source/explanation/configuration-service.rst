@@ -97,10 +97,12 @@ telemetry, schema validation) come from ``--settings`` in all of them, see
 :ref:`exp_config_service_settings`.
 
 **No** ``--db`` **(with** ``--config`` **or the default config lookup)**
-  The YAML config is authoritative. It is parsed, including the
-  ``user-config/<config-name>.yaml`` merge, and seeded into a process-private
-  **in-memory** database on every start. Nothing is persisted to disk except
-  runtime configuration writes, which go to the user-config YAML.
+  The YAML config is authoritative. It is parsed, including the user-config
+  merge, and seeded into a process-private **in-memory** database on every
+  start. Nothing is persisted to disk except runtime configuration writes,
+  which go to the user-config YAML. The user-config is
+  ``user-config/<config-name>.yaml`` in the directory of the config file, or
+  the file given with ``--user-config``.
   The default config file ``<prefix>/etc/everest/default.yaml`` is optional: if
   neither ``--config`` is given nor that file exists, the manager starts with an
   empty configuration on built-in defaults (and exits with no modules unless

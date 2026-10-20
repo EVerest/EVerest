@@ -50,13 +50,23 @@ Configuration and Storage
   it is looked up in the default config directory. Optional: defaults to the
   default config file in the default config directory. Without ``--db``, the
   config is loaded from YAML on every start and runtime configuration changes
-  are persisted to ``user-config/<config-name>.yaml``. Only YAML is accepted;
-  configuration files in JSON format are not loaded. The ``settings:`` block of
-  the config file is deprecated, use ``--settings`` instead.
+  are persisted to the user-config file (see ``--user-config``). Only YAML is
+  accepted; configuration files in JSON format are not loaded. The
+  ``settings:`` block of the config file is deprecated, use ``--settings``
+  instead.
 
 ``--conf <path>``
   **Deprecated.** Same as ``--config``. Do not use both — passing both is
   rejected as ambiguous, and using ``--conf`` logs a deprecation warning.
+
+``--user-config <path>``
+  Full path to the user-config file. It is merged into the config file when
+  the config is loaded and, without ``--db``, receives the runtime
+  configuration changes. Optional: defaults to
+  ``user-config/<config-name>.yaml`` in the directory of the config file. The
+  file may be absent and is then created on the first runtime change; its
+  directory must exist. Requires ``--config``. With ``--db``, the user-config
+  is merged only when the database boot slot is seeded from the YAML config.
 
 ``--settings <path>``
   Full path to a manager settings file: installation paths, MQTT broker and

@@ -54,6 +54,7 @@ struct ConfigParseSettings {
     fs::path modules_dir;        ///< Directory that contains EVerest modules
     fs::path configs_dir;        ///< Directory that contains EVerest configs
     fs::path config_file;        ///< Path to the loaded config file
+    fs::path user_config_file;   ///< Path to the user-config merged into the config, empty for none
     nlohmann::json config;       ///< Parsed json of the config_file
     bool validate_schema{false}; ///< If schema validation is enabled
 };
@@ -83,15 +84,18 @@ struct BootSource {
     /// Settings file option as given; empty means the settings come from the config's deprecated settings block
     /// or the compiled-in defaults.
     std::string settings_path;
+    /// User-config file option as given; empty means user-config/<config filename> next to the config file.
+    std::string user_config_path;
     bool reset_from_yaml = false;
 };
 
 /// \brief Resolves the configuration boot source from the command line options (empty string = option
 /// not given). Logs a deprecation warning for \p db_init (and ignores it unless both \p config_path
 /// and \p db_path are given). Throws BootException for invalid combinations
-/// (--reset-from-yaml without --config).
+/// (--reset-from-yaml or --user-config without --config).
 BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
-                               bool db_init, const std::string& settings_path = "");
+                               bool db_init, const std::string& settings_path = "",
+                               const std::string& user_config_path = "");
 
 /// \brief Settings needed by the manager to load and validate a config
 struct ManagerSettings : public ConfigParseSettings {
@@ -130,7 +134,8 @@ struct ManagerSettings : public ConfigParseSettings {
 
     /// \brief Constructor that initializes the ManagerSettings from a resolved \p boot_source: DatabaseOnly
     /// behaves like the WithoutConfig constructor, the other modes resolve the config file. Settings are read
-    /// from the boot source's settings file if given.
+    /// from the boot source's settings file if given. A given user-config file may be absent, but its
+    /// directory must exist.
     ManagerSettings(const std::string& prefix, const BootSource& boot_source);
 
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
@@ -145,7 +150,8 @@ struct ManagerSettings : public ConfigParseSettings {
     /// config file is looked up; if it is absent this is not an error and init_no_config() is used instead.
     void init_config_file(const std::string& config);
 
-    /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", config = empty object.
+    /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", user_config_file = "",
+    /// config = empty object.
     void init_no_config();
 
     /// \brief Initializes the ManagerSettings prefix and data_dir base on user provided \p prefix or the default

@@ -881,6 +881,7 @@ int Manager::run() {
     const auto conf_opt = parse_string_option(m_vm, "conf");
     const auto db_opt = parse_string_option(m_vm, "db");
     const auto settings_opt = parse_string_option(m_vm, "settings");
+    const auto user_config_opt = parse_string_option(m_vm, "user-config");
     const bool reset_from_yaml = (m_vm.count("reset-from-yaml") != 0);
 
     warn_about_experimental_options(m_vm);
@@ -897,8 +898,8 @@ int Manager::run() {
     const auto config_path = config_opt.empty() ? conf_opt : config_opt;
 
     const bool have_config = not config_path.empty();
-    const auto boot_source =
-        resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0, settings_opt);
+    const auto boot_source = resolve_boot_source(config_path, db_opt, reset_from_yaml, m_vm.count("db-init") != 0,
+                                                 settings_opt, user_config_opt);
 
     // DatabaseOnly never looks for default.yaml; the other modes resolve the config file. Without --config
     // the default config is looked up and, if it is absent, the manager runs with an empty config
@@ -1036,9 +1037,8 @@ int Manager::run() {
     // merges back into the config on the next start (the pre-database write behavior).
     std::unique_ptr<everest::config::StorageInterface> persistence_mirror;
     if (boot_source.mode == BootMode::YamlWithInMemoryDb) {
-        if (not ms.config_file.empty()) {
-            const auto user_config_path = ms.config_file.parent_path() / "user-config" / ms.config_file.filename();
-            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
+        if (not ms.user_config_file.empty()) {
+            persistence_mirror = std::make_unique<everest::config::UserConfigStorage>(ms.user_config_file);
         } else {
             // No --config and no default.yaml: there is no YAML to mirror into, and the loader would not read
             // a user-config back without a main config file anyway.
@@ -2045,7 +2045,7 @@ int main(int argc, char* argv[]) {
                        "<prefix>/etc/everest/default.yaml if it exists; otherwise the manager starts with an empty "
                        "configuration on built-in defaults (and exits with no modules unless --into-idle or "
                        "--idle-on-failure is given). Without --db, the config is loaded from YAML on every start "
-                       "and runtime configuration changes are persisted to user-config/<config-name>.yaml. Its "
+                       "and runtime configuration changes are persisted to the user-config (see --user-config). Its "
                        "'settings' block is deprecated, use --settings instead.");
     desc.add_options()("conf", po::value<std::string>(), "Deprecated: Same as --config. Do not use both.");
     desc.add_options()("settings", po::value<std::string>(),
@@ -2053,6 +2053,11 @@ int main(int argc, char* argv[]) {
                        "telemetry, schema validation). Optional: without it, the deprecated 'settings' block of the "
                        "config file or the built-in defaults are used. Works with and without --config and --db; "
                        "when given, the 'settings' block of the config file is ignored.");
+    desc.add_options()("user-config", po::value<std::string>(),
+                       "Full path to the user-config file that is merged into the config on load and, without "
+                       "--db, receives runtime configuration changes. Optional: defaults to "
+                       "user-config/<config-name>.yaml next to the config file. The file may be absent, its directory "
+                       "must exist. Requires --config.");
     desc.add_options()("configuration-api", po::value<std::string>()->implicit_value("ro"),
                        "Experimental: Start the configuration_API. Value must be 'ro' (default) or 'rw' (e.g. '=rw' "
                        "for read-write)");
