@@ -453,7 +453,11 @@ void isolation_monitorImpl::read_imd_values() {
     auto rf = read_register(ImdRegisters::RESISTANCE_R_F_OHM);
     EVLOG_debug << "Resistance: " << to_string(rf);
 
-    last_test = rf.test;
+    // A missing or short Modbus reply says nothing about the device: the alarm and test state of the last complete
+    // read stays, so a lost reply neither ends a running self test nor counts as a device error
+    if (rf.received) {
+        last_test = rf.test;
+    }
 
     // Small delay between reads to avoid overwhelming the device
     std::this_thread::sleep_for(std::chrono::milliseconds(10));
@@ -499,19 +503,21 @@ void isolation_monitorImpl::read_imd_values() {
 
     // A device error is reported in the channel it belongs to (manual table 5.3.1): E.01 (earth connection) in R_F,
     // E.02 (connection to system, i.e. an interrupted L1/+ or L2/- lead) in U_N. Check every channel that was read.
-    last_alarm = rf.alarm;
-    std::string device_error_channels;
-    const std::array<std::pair<const char*, const MeasurementValue*>, 4> channels{
-        {{"R_F", &rf}, {"U_N", &voltage}, {"U_L1e", &voltage_to_earth_l1e}, {"U_L2e", &voltage_to_earth_l2e}}};
-    for (const auto& [name, value] : channels) {
-        if (value->alarm == AlarmType::DeviceError) {
-            last_alarm = AlarmType::DeviceError;
-            device_error_channels += (device_error_channels.empty() ? "" : ", ") + std::string(name);
+    if (rf.received and voltage.received) {
+        last_alarm = rf.alarm;
+        std::string device_error_channels;
+        const std::array<std::pair<const char*, const MeasurementValue*>, 4> channels{
+            {{"R_F", &rf}, {"U_N", &voltage}, {"U_L1e", &voltage_to_earth_l1e}, {"U_L2e", &voltage_to_earth_l2e}}};
+        for (const auto& [name, value] : channels) {
+            if (value->alarm == AlarmType::DeviceError) {
+                last_alarm = AlarmType::DeviceError;
+                device_error_channels += (device_error_channels.empty() ? "" : ", ") + std::string(name);
+            }
         }
-    }
 
-    if (last_alarm == AlarmType::DeviceError) {
-        set_deviceFault("Device Error (" + device_error_channels + ")");
+        if (last_alarm == AlarmType::DeviceError) {
+            set_deviceFault("Device Error (" + device_error_channels + ")");
+        }
     }
 
     bool valid_readings = true;
@@ -611,16 +617,10 @@ isolation_monitorImpl::MeasurementValue isolation_monitorImpl::read_register(con
     register_response = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id, static_cast<std::underlying_type<ImdRegisters>::type>(start_register), 4);
 
-    MeasurementValue m;
-
-    if (register_response.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
+    if (register_response.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success or
+        not register_response.value.has_value() or register_response.value.value().size() not_eq 4) {
         set_deviceFault("Can't read registers");
-    }
-
-    if (not register_response.value.has_value() or register_response.value.value().size() not_eq 4) {
-        // force an error since we did not received fully the registers
-        m.alarm = AlarmType::DeviceError;
-        return m;
+        return {};
     }
 
     // Convert std::vector<int> to std::vector<uint16_t>
@@ -634,10 +634,10 @@ isolation_monitorImpl::parse_register_data(const std::vector<uint16_t>& reg_valu
     MeasurementValue m;
 
     if (reg_value.size() < offset + 4) {
-        m.alarm = AlarmType::DeviceError;
         return m;
     }
 
+    m.received = true;
     m.alarm = to_alarm_type(reg_value.at(offset + 2) >> 8);
     m.test = to_test_type(reg_value.at(offset + 2) >> 8);
     m.unit = to_unit_type(reg_value.at(offset + 2) & 0xFF);
