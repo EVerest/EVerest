@@ -12,9 +12,6 @@ from cmd2 import CommandSet, with_default_category
 class SpyClientCommandSet(CommandSet):
   """ SpyClient """
 
-  def __init__(self):
-    super().__init__()
-
   def on_receive(self, topic, data):
     self._cmd.log_event(topic, data.decode('utf-8'))
 

@@ -21,6 +21,7 @@ If the path is omitted, api_client.py next to this script's parent is used.
 
 import importlib.util
 import sys
+from importlib.metadata import distributions
 from pathlib import Path
 
 
@@ -48,6 +49,17 @@ def main(argv=None):
         sys.argv = saved_argv
 
     expected = list(module.GENERATED_API_CLIENTS)
+
+    # every installed generated client must be known to the shell, otherwise
+    # a spec added to the CMake table only would pass unnoticed
+    known = {f"package_{snake}" for snake, _ in expected}
+    installed = {d.metadata["Name"].lower().replace("-", "_") for d in distributions()}
+    unknown = sorted(n for n in installed
+                     if n.startswith("package_") and n.endswith("_api") and n not in known)
+    if unknown:
+        print("error: generated clients not listed in GENERATED_API_CLIENTS: "
+              + ", ".join(unknown), file=sys.stderr)
+        return 1
 
     # Importing each generated command set must not fail. load_generated_command
     # _sets() only warns on a missing package, so check imports explicitly here.

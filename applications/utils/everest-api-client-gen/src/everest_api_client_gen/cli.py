@@ -6,7 +6,7 @@ import argparse
 import sys
 
 from everest_api_client_gen import __version__
-from everest_api_client_gen.generator import generate, template_files
+from everest_api_client_gen.generator import generate
 from everest_api_client_gen.spec_loader import SpecError
 
 
@@ -17,10 +17,6 @@ def main(argv=None):
                     "AsyncAPI spec.")
     parser.add_argument("--version", action="version",
                         version=f"%(prog)s {__version__}")
-    parser.add_argument("--get-templates", action="store_true",
-                        help="print the generator's template files (one per "
-                             "line) and exit; used by the build for dependency "
-                             "tracking")
     parser.add_argument("--spec", help="path to the AsyncAPI YAML spec")
     parser.add_argument("--out", help="output directory for the generated package")
     parser.add_argument("--name-camel-case", dest="name_camel",
@@ -33,10 +29,6 @@ def main(argv=None):
                         help="server name in the spec (default: default)")
 
     args = parser.parse_args(argv)
-
-    if args.get_templates:
-        print("\n".join(template_files()))
-        return 0
 
     missing = [name for name, val in (
         ("--spec", args.spec), ("--out", args.out),

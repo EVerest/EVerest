@@ -13,7 +13,7 @@ set(EVEREST_ROOT_DIR ${CMAKE_CURRENT_SOURCE_DIR}/../../..)
 set(EVEREST_API_SPECS_DIR ${EVEREST_ROOT_DIR}/docs/source/reference/EVerest_API)
 
 # provides EVEREST_API_CLIENT_GEN (the generator) and
-# EVEREST_API_CLIENT_GEN_TEMPLATES (its template files, used as build deps)
+# EVEREST_API_CLIENT_GEN_TEMPLATES (its source and template files, used as build deps)
 include(${EVEREST_ROOT_DIR}/cmake/everest-api-client-gen.cmake)
 setup_everest_api_client_gen()
 

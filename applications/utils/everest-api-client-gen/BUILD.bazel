@@ -1,5 +1,5 @@
 load("//applications/utils:requirements.bzl", "requirement")
-load("@rules_python//python:defs.bzl", "py_binary", "py_library")
+load("@rules_python//python:defs.bzl", "py_binary", "py_library", "py_test")
 load("//third-party/bazel/toolchains:defs.bzl", "CROSS_PYTHON_INCOMPATIBLE")
 
 exports_files(
@@ -26,4 +26,15 @@ py_binary(
     visibility = ["//visibility:public"],
     target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
     deps = [":lib"],
+)
+
+py_test(
+    name = "spec_loader_test",
+    srcs = ["tests/test_spec_loader.py"],
+    main = "tests/test_spec_loader.py",
+    target_compatible_with = CROSS_PYTHON_INCOMPATIBLE,
+    deps = [
+        ":lib",
+        requirement("pytest"),
+    ],
 )

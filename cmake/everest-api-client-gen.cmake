@@ -3,10 +3,12 @@
 #
 # Makes the `everest-api-client-gen` tool available in the build (installed into
 # the build venv when one is active, otherwise found on the system) and exposes
-# its template files as a variable so generated clients regenerate when a
-# template changes. Mirrors cmake/ev-cli.cmake.
+# its source and template files as a variable so generated clients regenerate
+# when the generator changes. Mirrors cmake/ev-cli.cmake.
 
 function(setup_everest_api_client_gen)
+    get_target_property(SOURCE_DIRECTORY ev_pip_package_everest-api-client-gen SOURCE_DIRECTORY)
+
     if(NOT ${${PROJECT_NAME}_USE_PYTHON_VENV})
         message(STATUS "Using system everest-api-client-gen instead of installing it in the build venv.")
         find_program(EVEREST_API_CLIENT_GEN everest-api-client-gen REQUIRED)
@@ -18,7 +20,6 @@ function(setup_everest_api_client_gen)
             message(FATAL_ERROR "Python venv is not active. Please activate the python venv before running this command.")
         endif()
 
-        get_target_property(SOURCE_DIRECTORY ev_pip_package_everest-api-client-gen SOURCE_DIRECTORY)
         message(STATUS "Installing everest-api-client-gen from: ${SOURCE_DIRECTORY}")
         ev_pip_install_local(
             PACKAGE_NAME "everest-api-client-gen"
@@ -29,18 +30,13 @@ function(setup_everest_api_client_gen)
         message(STATUS "Using everest-api-client-gen from: ${EVEREST_API_CLIENT_GEN}")
     endif()
 
-    # Expose the generator's template files so generated clients rebuild when a
-    # template changes (used as DEPENDS on the generation custom commands).
-    execute_process(
-        COMMAND ${EVEREST_API_CLIENT_GEN} --get-templates
-        OUTPUT_VARIABLE API_CLIENT_GEN_TEMPLATES
-        OUTPUT_STRIP_TRAILING_WHITESPACE
-        RESULT_VARIABLE API_CLIENT_GEN_TEMPLATES_RESULT
+    # The venv install is editable, so these sources are what runs: generated
+    # clients rebuild when any of them changes (used as DEPENDS on the
+    # generation custom commands).
+    file(GLOB_RECURSE API_CLIENT_GEN_SOURCES CONFIGURE_DEPENDS
+        "${SOURCE_DIRECTORY}/src/everest_api_client_gen/*.py"
+        "${SOURCE_DIRECTORY}/src/everest_api_client_gen/templates/*.j2"
     )
-    if(API_CLIENT_GEN_TEMPLATES_RESULT)
-        message(FATAL_ERROR "Could not get templates from everest-api-client-gen.")
-    endif()
-    string(REPLACE "\n" ";" API_CLIENT_GEN_TEMPLATES "${API_CLIENT_GEN_TEMPLATES}")
     set(EVEREST_API_CLIENT_GEN "${EVEREST_API_CLIENT_GEN}" PARENT_SCOPE)
-    set(EVEREST_API_CLIENT_GEN_TEMPLATES "${API_CLIENT_GEN_TEMPLATES}" PARENT_SCOPE)
+    set(EVEREST_API_CLIENT_GEN_TEMPLATES "${API_CLIENT_GEN_SOURCES}" PARENT_SCOPE)
 endfunction()

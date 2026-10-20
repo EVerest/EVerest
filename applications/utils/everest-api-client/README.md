@@ -6,9 +6,6 @@ It can act as any external counterpart of those modules (send commands,
 publish values, answer requests) and spy on all EVerest API traffic. Use it to
 bring up, test, or debug an external module integration without writing code.
 
-This tool was migrated from the basecamp repository
-(`utilities/API/basecamp_api_client`).
-
 ## Architecture
 
 The client is modular:
@@ -21,8 +18,8 @@ The client is modular:
 - One **generated** Python package per EVerest API module (22 packages, e.g.
   `powermeter_api`, `evse_bsp_api`, …). These are generated at build time from
   the AsyncAPI specs in `docs/source/reference/EVerest_API/` by the in-tree
-  Python generator `everest-api-client-gen` (`applications/utils/
-  everest-api-client-gen`), which uses only Jinja2 and PyYAML.
+  Python generator `everest-api-client-gen` in `applications/utils/everest-api-client-gen`,
+  which uses only Jinja2 and PyYAML.
 
 Each generated command set uses a short, unique command prefix (see the SET
 table in `CMakeLists.txt`), e.g. `pm_` for the powermeter API:
@@ -145,7 +142,7 @@ confirm each generated client and module round-trips. It is fire-and-forget
 
 ### Gotchas when driving a live charge
 
-These bit us while bringing the tool up; the example script encodes the fixes:
+The example script encodes these:
 
 - **Answer the startup stop-transaction.** On startup EvseManager sends a
   `stop_transaction` to the powermeter and blocks until it is answered, so the
@@ -161,8 +158,8 @@ These bit us while bringing the tool up; the example script encodes the fixes:
   zero setpoint** (a `schedule_setpoints` entry of 0 caps the connector at 0),
   and re-send periodically — the limit expires (`valid_for` ~10s). The powermeter
   value is similarly periodic.
-- **`tariff_messages` is required** in a validate-token reply (empty list is
-  fine); older spec examples omitted it.
+- **`tariff_messages` is required** in a validate-token reply; an empty list is
+  accepted.
 - **Read the `source` field** of `enforced_limits` to see which node is
   binding — e.g. `connector_1/evse_board_support_caps` means your BSP
   capabilities are the limit, `api` means your external energy limit is.

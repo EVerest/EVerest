@@ -6,12 +6,18 @@ import paho.mqtt.client as mqtt
 from .client import {{ model.class_name }}
 from cmd2 import CommandSet, with_default_category, with_argparser
 
+{% macro receive(op_id, module_id) %}
+    api_client = self._cmd.get_instance_by_id({{ module_id }})
+    if api_client:
+      api_client.receive.{{ op_id }}.register_callback(None)
+      self._cmd.log_event(api_client.receive.{{ op_id }}._topic, self._cmd.format_payload(api_client.receive.{{ op_id }}.wait_for_message()))
+      lambada_{{ op_id }} = lambda data: self.on_{{ op_id }}({{ module_id }}, data)
+      api_client.receive.{{ op_id }}.register_callback(lambada_{{ op_id }})
+    else:
+      self._cmd.log_event("ERROR:", "Invalid module id: '" + {{ module_id }} + "' Have you created the client using the 'add_client' function?"){% endmacro %}
 @with_default_category('{{ model.class_name }}')
 class {{ model.command_set_name }}(CommandSet):
   """ {{ model.class_name }} """
-
-  def __init__(self):
-    super().__init__()
 
   def complete_module_id(self, text, line, begidx, endidx):
     return [module["id"] for module in self._cmd.api_clients if module["id"].startswith(text)]
@@ -38,14 +44,7 @@ class {{ model.command_set_name }}(CommandSet):
   {{ op.op_id }}_parser.add_argument('module_id', help='the module id for the client', completer=complete_module_id)
   @cmd2.with_argparser({{ op.op_id }}_parser)
   def do_{{ model.interface_prefix }}_{{ op.op_id }}(self, args):
-    api_client = self._cmd.get_instance_by_id(args.module_id)
-    if api_client:
-      api_client.receive.{{ op.op_id }}.register_callback(None)
-      self._cmd.log_event(api_client.receive.{{ op.op_id }}._topic, self._cmd.format_payload(api_client.receive.{{ op.op_id }}.wait_for_message()))
-      lambada_{{ op.op_id }} = lambda data: self.on_{{ op.op_id }}(args.module_id, data)
-      api_client.receive.{{ op.op_id }}.register_callback(lambada_{{ op.op_id }})
-    else:
-      self._cmd.log_event("ERROR:", "Invalid module id: '" + args.module_id + "' Have you created the client using the 'add_client' function?")
+{{ receive(op.op_id, 'args.module_id') }}
 {% endfor %}
 {% for op in model.send_command_ops %}
 
@@ -75,14 +74,7 @@ class {{ model.command_set_name }}(CommandSet):
   receive_heartbeat_{{ model.class_name }}_parser.add_argument('module_id', help='the module id for the client', completer=complete_module_id)
   @cmd2.as_subcommand_to('receive_heartbeat', '{{ model.class_name }}', receive_heartbeat_{{ model.class_name }}_parser)
   def receive_heartbeat_{{ model.class_name }}(self, ns: argparse.Namespace):
-    api_client = self._cmd.get_instance_by_id(ns.module_id)
-    if api_client:
-      api_client.receive.receive_heartbeat.register_callback(None)
-      self._cmd.log_event(api_client.receive.receive_heartbeat._topic, self._cmd.format_payload(api_client.receive.receive_heartbeat.wait_for_message()))
-      lambada_receive_heartbeat = lambda data: self.on_receive_heartbeat(ns.module_id, data)
-      api_client.receive.receive_heartbeat.register_callback(lambada_receive_heartbeat)
-    else:
-      self._cmd.log_event("ERROR:", "Invalid module id: '" + ns.module_id + "' Have you created the client using the 'add_client' function?")
+{{ receive('receive_heartbeat', 'ns.module_id') }}
 
   client_add_parser = cmd2.Cmd2ArgumentParser()
   client_add_parser.add_argument('module_id', help='the module id for the client')
@@ -90,14 +82,14 @@ class {{ model.command_set_name }}(CommandSet):
   def client_add_{{ model.class_name }}(self, ns: argparse.Namespace):
     # Call whatever subcommand function was selected
     mqtt_client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2)
-    mqtt_host = (os.getenv('MQTT_BROKER') or {{ '' }}
-      os.getenv('MQTT_SERVER_ADDRESS') or {{ '' }}
-      os.getenv('MQTT_HOST') or {{ '' }}
+    mqtt_host = (os.getenv('MQTT_BROKER') or
+      os.getenv('MQTT_SERVER_ADDRESS') or
+      os.getenv('MQTT_HOST') or
       'localhost')
     try:
-      mqtt_port = int(os.getenv('MQTT_BROKER_PORT') or {{ '' }}
-        os.getenv('MQTT_SERVER_PORT') or {{ '' }}
-        os.getenv('MQTT_PORT') or {{ '' }}
+      mqtt_port = int(os.getenv('MQTT_BROKER_PORT') or
+        os.getenv('MQTT_SERVER_PORT') or
+        os.getenv('MQTT_PORT') or
         1883)
     except ValueError:
       self._cmd.log_event("WARNING:", "Invalid MQTT port value, using default port 1883")

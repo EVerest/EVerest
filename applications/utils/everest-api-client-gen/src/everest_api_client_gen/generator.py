@@ -19,15 +19,11 @@ _TEMPLATES_DIR = Path(__file__).parent / "templates"
 # template name -> relative output path within the package (list-of-tuples keeps
 # generation order deterministic)
 _OUTPUTS = [
-    ("gitignore.j2", ".gitignore"),
-    ("README.j2", "README"),
     ("pyproject.toml.j2", "pyproject.toml"),
-    ("setup.py.j2", "setup.py"),
     ("init.py.j2", "src/{snake}/__init__.py"),
     ("client.py.j2", "src/{snake}/client.py"),
     ("command_set.py.j2", "src/{snake}/{camel}ClientCommandSet.py"),
     ("fixture.py.j2", "src/{snake}/fixture.py"),
-    ("requirements.txt.j2", "src/{snake}/requirements.txt"),
 ]
 
 
@@ -42,11 +38,6 @@ def _make_env():
     # spec examples become Python string literals
     env.filters["py_literal"] = repr
     return env
-
-
-def template_files():
-    """List the template files (used by CMake as build dependencies)."""
-    return sorted(str(p) for p in _TEMPLATES_DIR.glob("*.j2"))
 
 
 def generate(spec_path, out_dir, name_camel, name_snake, interface_prefix,
