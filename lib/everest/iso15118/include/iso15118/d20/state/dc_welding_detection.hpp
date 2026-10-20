@@ -22,9 +22,8 @@ private:
     Result answer(const message_20::DC_WeldingDetectionRequest& req);
     Result answer_pending_req();
 
-    // The first request waits for a value of the welding detection voltage source.
+    // Every request waits for values of the welding detection voltage source measured after it.
     std::optional<message_20::DC_WeldingDetectionRequest> pending_req{};
-    bool first_answered{false};
     bool welding_voltage_wait_expired{false};
 };
 

@@ -5,7 +5,6 @@
 
 #include <chrono>
 #include <functional>
-#include <mutex>
 #include <optional>
 #include <string>
 
@@ -44,8 +43,10 @@ WeldingDetectionVoltageSource resolve_welding_detection_voltage_source(WeldingDe
 /// ends. Started travels on another MQTT topic than the power path events and may arrive after them, so a deferred
 /// stop waits for the phase; if none starts within Timing::deferred_stop_timeout the stop runs anyway.
 ///
-/// Callbacks run without the internal lock held, from the calling thread or from the timer thread. Pushes are
-/// serialized, so a fallback push never overtakes a sample that arrived meanwhile.
+/// Every sample of the source is pushed while the phase runs; the ISO stack holds each WeldingDetectionRes until
+/// two marked samples arrived after its request, so no sample is ever invented here.
+///
+/// Callbacks run without the internal lock held, from the calling thread or from the timer thread.
 class WeldingDetectionVoltage {
 public:
     using PushCallback = std::function<void(float voltage_V)>;
@@ -53,9 +54,6 @@ public:
     using WarningCallback = std::function<void(const std::string&)>;
 
     struct Timing {
-        // Fallback to the last value of the source since the previous end of a phase if it sends nothing; ends
-        // before the ISO stack stops waiting (1 s).
-        std::chrono::milliseconds first_sample_timeout{500};
         // IEC 61851-23:2023 Table CC.9 t104 > t107: SessionStopReq is due 20 s after PowerDeliveryRes.
         std::chrono::milliseconds watchdog_timeout{20000};
         // Warn above this sample interval (CC.6.3: <= 200 ms from measurement to communication).
@@ -100,11 +98,8 @@ private:
     struct State {
         bool active{false};
         bool stop_deferred{false};
-        bool sample_pushed{false};
         bool slow_warned{false};
-        std::optional<float> cached_voltage_V;
         std::optional<Clock::time_point> last_sample;
-        std::optional<Clock::time_point> first_sample_deadline;
         std::optional<Clock::time_point> watchdog_deadline;
         std::optional<Clock::time_point> deferred_stop_deadline;
     };
@@ -112,7 +107,6 @@ private:
     // Arms the timer for the nearest deadline, or stops it. Called with the state locked.
     void arm_timer(const State& state);
     void on_timer();
-    void push_fallback();
 
     const WeldingDetectionVoltageSource m_source;
     const PushCallback m_push;
@@ -121,8 +115,6 @@ private:
     const Timing m_timing;
 
     mutable everest::lib::util::monitor<State> m_state;
-    // Orders the pushes of update() and the fallback; taken before the state.
-    std::mutex m_push_mutex;
     // Last member: destroyed first, so no timer callback outlives the state.
     Everest::SteadyTimer m_timer;
 };

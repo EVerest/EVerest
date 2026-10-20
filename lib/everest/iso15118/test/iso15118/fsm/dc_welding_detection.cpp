@@ -109,25 +109,11 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
         }
     }
 
-    GIVEN("The welding detection voltage arrives before the first DC_WeldingDetectionReq") {
-        push(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
-
+    GIVEN("DC_WeldingDetection") {
         WHEN("The first DC_WeldingDetectionReq arrives") {
-            state_helper.handle_request(make_welding_detection(ctx.session, dt::Processing::Ongoing));
-            fsm.feed(d20::Event::V2GTP_MESSAGE);
-
-            THEN("It is answered at once with that voltage, not 0 V") {
-                const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
-                REQUIRE(res.has_value());
-                REQUIRE(res->response_code == dt::ResponseCode::OK);
-                REQUIRE(volts(res->present_voltage) == 398.0f);
-            }
-        }
-    }
-
-    GIVEN("DC_WeldingDetection without a welding detection voltage") {
-
-        WHEN("The first DC_WeldingDetectionReq arrives before a welding detection voltage") {
+            // A marked value from before the request does not count: the EV may have switched its
+            // disconnection device since (Table CC.9 t105 to t106).
+            push(d20::PresentVoltageCurrent{900.0f, 0.0f, true});
             state_helper.handle_request(make_welding_detection(ctx.session, dt::Processing::Ongoing));
             fsm.feed(d20::Event::V2GTP_MESSAGE);
 
@@ -135,7 +121,8 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
                 REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
             }
 
-            AND_WHEN("Another power supply value arrives") {
+            AND_WHEN("Power supply values arrive") {
+                push(d20::PresentVoltageCurrent{21.0f, 0.0f});
                 push(d20::PresentVoltageCurrent{21.0f, 0.0f});
 
                 THEN("It is still held back") {
@@ -143,14 +130,48 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
                 }
             }
 
-            AND_WHEN("The welding detection voltage arrives") {
+            AND_WHEN("One welding detection voltage arrives") {
                 push(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
 
-                THEN("It is answered with that voltage") {
-                    const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
-                    REQUIRE(res.has_value());
-                    REQUIRE(res->response_code == dt::ResponseCode::OK);
-                    REQUIRE(volts(res->present_voltage) == 398.0f);
+                THEN("It is still held back: the value may predate the request") {
+                    REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
+                }
+
+                AND_WHEN("The second one arrives") {
+                    push(d20::PresentVoltageCurrent{2.0f, 0.0f, true});
+
+                    THEN("It is answered with that voltage") {
+                        const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(res->response_code == dt::ResponseCode::OK);
+                        REQUIRE(volts(res->present_voltage) == 2.0f);
+                    }
+
+                    AND_WHEN("The next DC_WeldingDetectionReq arrives") {
+                        state_helper.get_message_exchange().check_and_clear_response();
+                        state_helper.handle_request(make_welding_detection(ctx.session, dt::Processing::Ongoing));
+                        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+                        THEN("It waits for values measured after it as well") {
+                            REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
+                            push(d20::PresentVoltageCurrent{1.0f, 0.0f, true});
+                            push(d20::PresentVoltageCurrent{1.0f, 0.0f, true});
+                            const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                            REQUIRE(res.has_value());
+                            REQUIRE(volts(res->present_voltage) == 1.0f);
+                        }
+                    }
+                }
+
+                AND_WHEN("No second one arrives in time") {
+                    ctx.set_active_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+                    fsm.feed(d20::Event::TIMEOUT);
+
+                    THEN("It is answered with the one that arrived") {
+                        const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
+                        REQUIRE(res.has_value());
+                        REQUIRE(volts(res->present_voltage) == 398.0f);
+                    }
                 }
             }
 
@@ -162,15 +183,26 @@ SCENARIO("ISO15118-20 DC welding detection phase") {
                     const auto res = ctx.get_response<message_20::DC_WeldingDetectionResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
-                    REQUIRE(volts(res->present_voltage) == 20.0f);
+                    REQUIRE(volts(res->present_voltage) == 900.0f);
+                }
+            }
+
+            AND_WHEN("The session ends while it is parked") {
+                ctx.session_stopped = true;
+                push(d20::PresentVoltageCurrent{1.0f, 0.0f, true});
+                push(d20::PresentVoltageCurrent{1.0f, 0.0f, true});
+
+                THEN("It gets no answer") {
+                    REQUIRE_FALSE(state_helper.get_message_exchange().has_response());
                 }
             }
         }
 
         WHEN("The EV finishes welding detection") {
-            push(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
             state_helper.handle_request(make_welding_detection(ctx.session, dt::Processing::Finished));
-            const auto result = fsm.feed(d20::Event::V2GTP_MESSAGE);
+            fsm.feed(d20::Event::V2GTP_MESSAGE);
+            push(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
+            const auto result = push(d20::PresentVoltageCurrent{398.0f, 0.0f, true});
 
             THEN("The phase finishes once and SessionStop follows") {
                 REQUIRE(result.transitioned());
