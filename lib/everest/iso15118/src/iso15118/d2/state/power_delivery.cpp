@@ -62,9 +62,13 @@ handle_request(const message_2::PowerDeliveryRequest& req, const dt::SessionId& 
     res.header.session_id = session_id;
 
     // [V2G2-366]: a module-reported fault wins over the EVSE_Ready this state would otherwise claim,
-    // which per Table 98 means the charging procedure is running (EvseV2G parity).
-    const auto dc_status_code = error_status_code.value_or(charger_stop ? dt::DC_EVSEStatusCode::EVSE_Shutdown
-                                                                        : dt::DC_EVSEStatusCode::EVSE_Ready);
+    // which per Table 98 means the charging procedure is running (EvseV2G parity). A Stop answers
+    // EVSE_Shutdown whoever initiated it: IEC 61851-23:2023 Table CC.9 t104 has the EVSE confirm the
+    // disabled side B that way, and CC.7.6.19 tests it for the EV-initiated shutdown. The notification
+    // stays with the charger-initiated stop.
+    const bool stopping = charger_stop or req.charge_progress == dt::ChargeProgress::Stop;
+    const auto dc_status_code =
+        error_status_code.value_or(stopping ? dt::DC_EVSEStatusCode::EVSE_Shutdown : dt::DC_EVSEStatusCode::EVSE_Ready);
     const auto notification = charger_stop ? dt::EVSENotification::StopCharging : dt::EVSENotification::None;
     const auto set_status = [&]() {
         if (is_dc) {
