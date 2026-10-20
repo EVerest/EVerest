@@ -284,14 +284,16 @@ Result DC_ChargeLoop::feed(Event ev) {
 
         return {};
     } else if (const auto req = variant->get_if<message_20::DC_ChargeLoopRequest>()) {
-        if (first_entry_in_charge_loop) {
-            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_STARTED);
-            first_entry_in_charge_loop = false;
-        }
-
         const bool notify_pause = pause_notification.update(pause and not stop, m_ctx.session, m_ctx.feedback);
         const auto res = handle_request(*req, m_ctx.session, present_voltage, present_current, stop, notify_pause,
                                         m_ctx.session_config.dc_limits, dynamic_parameters);
+
+        // Only a validated request that is not being stopped may authorize the charge loop.
+        if (first_entry_in_charge_loop and res.response_code < dt::ResponseCode::FAILED and not stop and
+            not m_ctx.shutdown_requested()) {
+            m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_STARTED);
+            first_entry_in_charge_loop = false;
+        }
 
         m_ctx.respond(res);
 

@@ -105,3 +105,13 @@ catch_discover_tests(test_variant_decode)
 add_executable(test_session session.cpp)
 target_link_libraries(test_session PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_session)
+
+add_executable(test_dc_stop dc_stop.cpp)
+
+target_link_libraries(test_dc_stop
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_dc_stop)
