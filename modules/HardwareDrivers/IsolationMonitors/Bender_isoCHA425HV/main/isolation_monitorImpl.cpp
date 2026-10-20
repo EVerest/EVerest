@@ -89,22 +89,33 @@ void isolation_monitorImpl::configure_device() {
     } while (not successful);
 }
 
-bool isolation_monitorImpl::start_self_test() {
-    if (last_test != TestType::ExternalTest) {
-        // Wait a bit to ensure device is ready (not processing previous read
-        // operations) This prevents conflicts with the regular reading loop
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-
-        if (not write_imd_register(SELF_TEST_START_REGISTER, SELF_TEST_START_COMMAND)) {
-            set_deviceFault("Failed to start self test");
-            self_test_started = false;
-            return false;
-        }
-        // Give device time to process the self-test command
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+bool isolation_monitorImpl::prepare_device_test(uint16_t system_connection_test) {
+    // Write 3024 before enabling the device: in cbl mode leaving stop mode already starts the self test
+    if (not send_to_imd_if_changed(3024, system_connection_test)) {
+        EVLOG_error << "Can't set the system connection test for the device test";
+        return false;
     }
-    self_test_started = true;
-    self_test_timeout = 30;
+    active_system_connection_test = system_connection_test;
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    if (config.disable_device_on_stop) {
+        if (not send_to_imd(3026, 1)) {
+            EVLOG_error << "Can't enable the device: " << read_device_name();
+        } else {
+            EVLOG_info << "Device enabled for device test";
+        }
+    }
+    return true;
+}
+
+bool isolation_monitorImpl::send_self_test_start() {
+    // Wait a bit to ensure device is ready (not processing previous read
+    // operations) This prevents conflicts with the regular reading loop
+    std::this_thread::sleep_for(std::chrono::milliseconds(50));
+    if (not write_imd_register(SELF_TEST_START_REGISTER, SELF_TEST_START_COMMAND)) {
+        return false;
+    }
+    // Give device time to process the self-test command
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
     return true;
 }
 
@@ -118,29 +129,29 @@ uint16_t isolation_monitorImpl::system_connection_test_for(double test_voltage_V
 }
 
 bool isolation_monitorImpl::begin_self_test(uint16_t system_connection_test) {
-    // Write 3024 before enabling the device: in cbl mode leaving stop mode already starts the self test
-    if (not send_to_imd_if_changed(3024, system_connection_test)) {
-        EVLOG_error << "Can't set the system connection test for the self test";
+    if (not prepare_device_test(system_connection_test)) {
         return false;
     }
-    active_system_connection_test = system_connection_test;
-    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-    // make sure that the device is on
-    if (config.disable_device_on_stop) {
-        if (not send_to_imd(3026, 1)) {
-            EVLOG_error << "Can't enable the device: " << read_device_name();
-        } else {
-            EVLOG_info << "Device enabled for self test";
-        }
-    }
-    if (not start_self_test()) {
+    // A test the device already runs is tracked instead of started
+    if (last_test != TestType::ExternalTest and not send_self_test_start()) {
+        set_deviceFault("Failed to start self test");
         reset_system_connection_test();
         return false;
     }
+    self_test_started = true;
+    self_test_timeout = 30;
     return true;
 }
 
 void isolation_monitorImpl::start_requested_self_test(double test_voltage_V) {
+    if (recovery_state == RecoveryState::Running or last_test == TestType::ExternalTest or
+        last_alarm == AlarmType::DeviceError) {
+        // A device test without system connection test must not pass as the cable check self test, and a device
+        // error is only cleared by a passing device test
+        EVLOG_warning << "IMD self test requested while the device runs a device test or reports a device error";
+        publish_self_test_result(false);
+        return;
+    }
     EVLOG_info << "IMD Starting self-test...";
     if (not begin_self_test(system_connection_test_for(test_voltage_V))) {
         publish_self_test_result(false);
@@ -148,12 +159,11 @@ void isolation_monitorImpl::start_requested_self_test(double test_voltage_V) {
 }
 
 void isolation_monitorImpl::start_self_test_at_start() {
-    std::scoped_lock lock(self_test_mutex);
     EVLOG_info << "IMD Starting self test at start...";
     // Without HV on the output the system connection test cannot pass
-    self_test_at_start_running = begin_self_test(SYSTEM_CONNECTION_TEST_OFF);
-    if (not self_test_at_start_running) {
+    if (not begin_self_test(SYSTEM_CONNECTION_TEST_OFF)) {
         EVLOG_error << "Could not start the self test at start";
+        finish_self_test(false);
     }
 }
 
@@ -203,12 +213,7 @@ void isolation_monitorImpl::request_recovery(std::chrono::seconds delay) {
 
 void isolation_monitorImpl::start_recovery_test() {
     EVLOG_info << "Starting a device test without system connection test to clear the device error";
-    bool started = reset_system_connection_test();
-    if (started and config.disable_device_on_stop) {
-        started = send_to_imd(3026, 1);
-    }
-    started = started and write_imd_register(SELF_TEST_START_REGISTER, SELF_TEST_START_COMMAND);
-    if (started) {
+    if (prepare_device_test(SYSTEM_CONNECTION_TEST_OFF) and send_self_test_start()) {
         recovery_started = std::chrono::steady_clock::now();
         recovery_seen_test = false;
         recovery_state = RecoveryState::Running;
@@ -222,7 +227,7 @@ void isolation_monitorImpl::start_recovery_test() {
         recovery_due = std::chrono::steady_clock::now() + RECOVERY_START_DELAY;
     } else {
         EVLOG_warning << "Could not start the device test, retrying in " << RECOVERY_RETRY_INTERVAL.count() << " s";
-        request_recovery(RECOVERY_RETRY_INTERVAL);
+        recovery_due = std::chrono::steady_clock::now() + RECOVERY_RETRY_INTERVAL;
     }
 }
 
@@ -323,7 +328,12 @@ bool isolation_monitorImpl::send_to_imd(const uint16_t& command, const uint16_t&
 }
 
 void isolation_monitorImpl::ready() {
-    this->configure_device();
+    if (config.selftest_enable_at_start) {
+        // A self test requested while the device is configured waits for the self test at start too
+        std::scoped_lock lock(self_test_mutex);
+        self_test_at_start_running = true;
+    }
+    configure_device();
     if (config.selftest_enable_at_start) {
         start_self_test_at_start();
     }
@@ -417,7 +427,6 @@ void isolation_monitorImpl::handle_start() {
 
 void isolation_monitorImpl::handle_stop() {
     enable_publishing = false;
-    reset_system_connection_test();
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 0)) {
             EVLOG_error << "Can't disable the device: " << read_device_name();
@@ -436,14 +445,6 @@ void isolation_monitorImpl::handle_start_self_test(double& test_voltage_V) {
             pending_self_test_voltage_V = test_voltage_V;
             return;
         }
-    }
-    if (recovery_state == RecoveryState::Running or last_test == TestType::ExternalTest or
-        last_alarm == AlarmType::DeviceError) {
-        // A device test without system connection test must not pass as the cable check self test, and a device
-        // error is only cleared by a passing device test
-        EVLOG_warning << "IMD self test requested while the device runs a device test or reports a device error";
-        publish_self_test_result(false);
-        return;
     }
     start_requested_self_test(test_voltage_V);
 }
@@ -555,8 +556,10 @@ void isolation_monitorImpl::read_imd_values() {
             }
         }
     }
-    // let at least one round of values unpublished not to use unstable ones
-    if (last_alarm not_eq AlarmType::DeviceError and valid_readings and recovery_state != RecoveryState::Running and
+    // let at least one round of values unpublished not to use unstable ones; configure_device() would reset the
+    // system connection test under a running self test
+    if (last_alarm not_eq AlarmType::DeviceError and valid_readings and not self_test_started and
+        recovery_state != RecoveryState::Running and
         error_state_monitor->is_error_active("isolation_monitor/DeviceFault", "")) {
         clear_deviceFault();
         configure_device();

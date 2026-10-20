@@ -413,7 +413,8 @@ private:
     void configure_device();
     void start_measurements();
     void stop_measurements();
-    bool start_self_test();
+    bool prepare_device_test(uint16_t system_connection_test);
+    bool send_self_test_start();
     // Values of register 3024 "nEt", system connection test during the self test
     static constexpr uint16_t SYSTEM_CONNECTION_TEST_OFF{0};
     static constexpr uint16_t SYSTEM_CONNECTION_TEST_ON{1};
