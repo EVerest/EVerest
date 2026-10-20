@@ -53,6 +53,7 @@ enum class MutexDescription {
     Charger_notify_hlc_pause_notified,
     Charger_set_hlc_charging_active,
     Charger_set_hlc_allow_close_contactor,
+    Charger_set_transaction_stop_hold,
     Charger_dc_renegotiation_started,
     Charger_errors_prevent_charging,
     Charger_set_max_current,
@@ -174,6 +175,8 @@ static std::string to_string(MutexDescription d) {
         return "Charger.cpp: notify_hlc_pause_notified";
     case MutexDescription::Charger_set_hlc_charging_active:
         return "Charger.cpp: set_hlc_charging_active";
+    case MutexDescription::Charger_set_transaction_stop_hold:
+        return "Charger_set_transaction_stop_hold";
     case MutexDescription::Charger_set_hlc_allow_close_contactor:
         return "Charger.cpp: set_hlc_allow_close_contactor";
     case MutexDescription::Charger_dc_renegotiation_started:
