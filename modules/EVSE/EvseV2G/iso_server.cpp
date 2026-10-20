@@ -2420,6 +2420,7 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_iso_welding_detection_req(conn->ctx, req);
 
+    /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
     v2g_ctx_wait_for_welding_voltage(conn->ctx);
 
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx

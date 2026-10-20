@@ -42,16 +42,23 @@ void WeldingDetection::process_request([[maybe_unused]] const message_din::Weldi
     }
 }
 
-// Answered once CP State B is measured and, for the first one, a value of the welding detection voltage
-// source arrived or waiting for it expired; otherwise it would carry a stale power supply measurement.
+// Answered once CP State B is measured and values of the welding detection voltage source measured after
+// the request arrived, or waiting for them expired [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106].
 void WeldingDetection::answer_pending_req() {
     if (not pending_req.has_value()) {
+        return;
+    }
+    // A session that ended meanwhile (CP State A, error) gets no answer to a parked request.
+    if (m_ctx.session_stopped) {
+        pending_req.reset();
+        m_ctx.clear_cp_state_timeout();
+        m_ctx.clear_welding_voltage_timeout();
         return;
     }
     if (m_ctx.power_delivery_stopped and m_ctx.evse().current_cp_state != d20::CpState::B) {
         return;
     }
-    if (not first_answered and not m_ctx.welding_detection.has_voltage() and not welding_voltage_wait_expired) {
+    if (not m_ctx.welding_detection.has_fresh_voltage() and not welding_voltage_wait_expired) {
         return;
     }
 
@@ -59,8 +66,21 @@ void WeldingDetection::answer_pending_req() {
     m_ctx.clear_welding_voltage_timeout();
     const auto req = pending_req.value();
     pending_req.reset();
-    first_answered = true;
     process_request(req);
+}
+
+// With every update outstanding the source stalled; with one in, the value is at worst one poll interval
+// older than the request.
+void WeldingDetection::log_welding_voltage_timeout() const {
+    if (m_ctx.welding_detection.updates_since_request() == 0) {
+        logf_warning("No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+                     "answering with the last present voltage",
+                     d20::TIMEOUT_WELDING_VOLTAGE);
+    } else {
+        logf_info("Only one value from the welding detection voltage source within %d ms of the "
+                  "WeldingDetectionReq, answering with it",
+                  d20::TIMEOUT_WELDING_VOLTAGE);
+    }
 }
 
 Result WeldingDetection::on_event(Event ev) {
@@ -90,10 +110,8 @@ Result WeldingDetection::on_event(Event ev) {
         if (timeout and *timeout == d20::TimeoutType::ONGOING) {
             logf_warning("WeldingDetection timeout reached, terminating session");
             m_ctx.session_stopped = true;
-        } else if (timeout and *timeout == d20::TimeoutType::WELDING_VOLTAGE) {
-            logf_warning("No value from the welding detection voltage source within %d ms, answering "
-                         "WeldingDetection with the last present voltage",
-                         d20::TIMEOUT_WELDING_VOLTAGE);
+        } else if (timeout and *timeout == d20::TimeoutType::WELDING_VOLTAGE and pending_req.has_value()) {
+            log_welding_voltage_timeout();
             welding_voltage_wait_expired = true;
             answer_pending_req();
         } else if (timeout and *timeout == d20::TimeoutType::CPSTATE and pending_stop.has_value()) {
@@ -134,12 +152,12 @@ Result WeldingDetection::on_request(const message_din::Variant& received) {
         if (not welding_started) {
             m_ctx.start_timeout(d20::TimeoutType::ONGOING, TIMEOUT_WELDING_DETECTION_MS);
             welding_started = true;
-            if (not m_ctx.welding_detection.has_voltage()) {
-                m_ctx.arm_welding_voltage_timeout();
-            }
         }
 
         pending_req = *req;
+        m_ctx.welding_detection.request_received();
+        welding_voltage_wait_expired = false;
+        m_ctx.arm_welding_voltage_timeout();
         // [V2G-DC-988]: give the EV V2G_SECC_CPState_Detection_Timeout from the request before failing.
         if (m_ctx.power_delivery_stopped and m_ctx.evse().current_cp_state != d20::CpState::B) {
             m_ctx.arm_cp_state_timeout(TIMEOUT_CPSTATE_DETECTION_MS);

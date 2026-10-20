@@ -97,7 +97,7 @@ WeldingDetectionVoltageSource WeldingDetectionVoltage::source() const {
 
 void WeldingDetectionVoltage::arm_timer(const State& state) {
     std::optional<Clock::time_point> next;
-    for (const auto& deadline : {state.first_sample_deadline, state.watchdog_deadline, state.deferred_stop_deadline}) {
+    for (const auto& deadline : {state.watchdog_deadline, state.deferred_stop_deadline}) {
         if (deadline.has_value() and (not next.has_value() or *deadline < *next)) {
             next = deadline;
         }
@@ -115,14 +115,11 @@ void WeldingDetectionVoltage::start() {
         return;
     }
     state->active = true;
-    state->sample_pushed = false;
     state->slow_warned = false;
     state->last_sample.reset();
     // The stop now waits for the end of this phase.
     state->deferred_stop_deadline.reset();
-    const auto now = Clock::now();
-    state->first_sample_deadline = now + m_timing.first_sample_timeout;
-    state->watchdog_deadline = now + m_timing.watchdog_timeout;
+    state->watchdog_deadline = Clock::now() + m_timing.watchdog_timeout;
     arm_timer(*state);
 }
 
@@ -133,8 +130,6 @@ void WeldingDetectionVoltage::finish() {
         stop_source = state->stop_deferred;
         state->active = false;
         state->stop_deferred = false;
-        state->cached_voltage_V.reset();
-        state->first_sample_deadline.reset();
         state->watchdog_deadline.reset();
         state->deferred_stop_deadline.reset();
         arm_timer(*state);
@@ -168,11 +163,9 @@ void WeldingDetectionVoltage::update(WeldingDetectionVoltageSource source, float
         return;
     }
 
-    std::scoped_lock push_lock(m_push_mutex);
     std::optional<std::chrono::milliseconds> slow_interval;
     {
         auto state = m_state.handle();
-        state->cached_voltage_V = voltage_V;
         if (not state->active) {
             return;
         }
@@ -185,11 +178,6 @@ void WeldingDetectionVoltage::update(WeldingDetectionVoltageSource source, float
             }
         }
         state->last_sample = now;
-        state->sample_pushed = true;
-        if (state->first_sample_deadline.has_value()) {
-            state->first_sample_deadline.reset();
-            arm_timer(*state);
-        }
     }
 
     if (slow_interval.has_value()) {
@@ -200,36 +188,7 @@ void WeldingDetectionVoltage::update(WeldingDetectionVoltageSource source, float
     m_push(voltage_V);
 }
 
-void WeldingDetectionVoltage::push_fallback() {
-    std::scoped_lock push_lock(m_push_mutex);
-    std::optional<float> cached;
-    bool pushed = true;
-    {
-        auto state = m_state.handle();
-        if (not is_due(state->first_sample_deadline, Clock::now())) {
-            return;
-        }
-        state->first_sample_deadline.reset();
-        cached = state->cached_voltage_V;
-        pushed = state->sample_pushed;
-    }
-    if (pushed) {
-        return;
-    }
-    if (cached.has_value()) {
-        m_warning("No sample from welding detection voltage source " + to_string(m_source) + " within " +
-                  std::to_string(m_timing.first_sample_timeout.count()) + " ms, reporting its last value " +
-                  std::to_string(*cached) + " V");
-        m_push(*cached);
-    } else {
-        m_warning("Welding detection voltage source " + to_string(m_source) +
-                  " has reported no voltage yet; the EV gets the last present voltage");
-    }
-}
-
 void WeldingDetectionVoltage::on_timer() {
-    push_fallback();
-
     bool watchdog = false;
     bool stop_source = false;
     {

@@ -57,16 +57,9 @@ std::unique_ptr<WeldingDetectionVoltage> make(Recorder& rec, Source source, Weld
 // No timer fires while a test drives the phase itself; a test that waits for one shortens that timer.
 WeldingDetectionVoltage::Timing idle_timing() {
     WeldingDetectionVoltage::Timing timing;
-    timing.first_sample_timeout = 5000ms;
     timing.watchdog_timeout = 5000ms;
     timing.slow_sample_interval = 5000ms;
     timing.deferred_stop_timeout = 5000ms;
-    return timing;
-}
-
-WeldingDetectionVoltage::Timing fast_first_sample_timing() {
-    auto timing = idle_timing();
-    timing.first_sample_timeout = 50ms;
     return timing;
 }
 
@@ -119,60 +112,6 @@ TEST(WeldingDetectionVoltageTest, pushes_only_the_selected_source_while_active) 
     std::scoped_lock lock(rec.mtx);
     EXPECT_EQ(rec.pushed, std::vector<float>{398.0f});
     EXPECT_TRUE(rec.warnings.empty());
-}
-
-TEST(WeldingDetectionVoltageTest, falls_back_to_the_cached_value_without_a_sample) {
-    Recorder rec;
-    auto welding = make(rec, Source::IsolationMonitor, fast_first_sample_timing());
-
-    welding->update(Source::IsolationMonitor, 405.0f);
-    welding->start();
-
-    ASSERT_TRUE(rec.wait([](auto& r) { return not r.pushed.empty(); }));
-    std::scoped_lock lock(rec.mtx);
-    EXPECT_EQ(rec.pushed, std::vector<float>{405.0f});
-    EXPECT_EQ(rec.warnings.size(), 1);
-}
-
-TEST(WeldingDetectionVoltageTest, no_fallback_after_a_sample) {
-    Recorder rec;
-    auto timing = idle_timing();
-    timing.first_sample_timeout = 300ms;
-    auto welding = make(rec, Source::IsolationMonitor, timing);
-
-    welding->update(Source::IsolationMonitor, 405.0f);
-    welding->start();
-    welding->update(Source::IsolationMonitor, 401.0f);
-    std::this_thread::sleep_for(600ms);
-    welding->finish();
-
-    std::scoped_lock lock(rec.mtx);
-    EXPECT_EQ(rec.pushed, std::vector<float>{401.0f});
-}
-
-TEST(WeldingDetectionVoltageTest, warns_without_any_value) {
-    Recorder rec;
-    auto welding = make(rec, Source::PowermeterCarSide, fast_first_sample_timing());
-
-    welding->start();
-
-    ASSERT_TRUE(rec.wait([](auto& r) { return not r.warnings.empty(); }));
-    std::scoped_lock lock(rec.mtx);
-    EXPECT_TRUE(rec.pushed.empty());
-}
-
-TEST(WeldingDetectionVoltageTest, forgets_the_value_of_an_earlier_phase) {
-    Recorder rec;
-    auto welding = make(rec, Source::PowermeterCarSide, fast_first_sample_timing());
-
-    welding->update(Source::PowermeterCarSide, 405.0f);
-    welding->start();
-    welding->finish();
-    welding->start();
-
-    ASSERT_TRUE(rec.wait([](auto& r) { return not r.warnings.empty(); }));
-    std::scoped_lock lock(rec.mtx);
-    EXPECT_TRUE(rec.pushed.empty());
 }
 
 TEST(WeldingDetectionVoltageTest, deferred_stop_runs_once_at_finish) {
@@ -248,32 +187,6 @@ TEST(WeldingDetectionVoltageTest, a_phase_started_in_time_keeps_the_deferred_sto
     welding->finish();
     std::scoped_lock lock(rec.mtx);
     EXPECT_EQ(rec.stops, 1);
-}
-
-TEST(WeldingDetectionVoltageTest, the_fallback_does_not_follow_a_sample) {
-    Recorder rec;
-    auto timing = idle_timing();
-    timing.first_sample_timeout = 20ms;
-    auto welding = make(rec, Source::IsolationMonitor, timing);
-
-    welding->update(Source::IsolationMonitor, 405.0f);
-    for (int i = 0; i < 50; i++) {
-        welding->start();
-        std::this_thread::sleep_for(timing.first_sample_timeout);
-        welding->update(Source::IsolationMonitor, 401.0f);
-        welding->finish();
-        welding->update(Source::IsolationMonitor, 405.0f);
-    }
-
-    std::scoped_lock lock(rec.mtx);
-    // Whatever the race between the deadline and the sample, the last push of every phase is the sample.
-    ASSERT_FALSE(rec.pushed.empty());
-    for (std::size_t i = 0; i + 1 < rec.pushed.size(); i++) {
-        if (rec.pushed[i] == 405.0f) {
-            EXPECT_EQ(rec.pushed[i + 1], 401.0f);
-        }
-    }
-    EXPECT_EQ(rec.pushed.back(), 401.0f);
 }
 
 TEST(WeldingDetectionVoltageTest, watchdog_ends_the_phase) {
