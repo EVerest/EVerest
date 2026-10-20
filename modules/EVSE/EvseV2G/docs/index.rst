@@ -53,6 +53,14 @@ Internet Service
 Welding detection
 =================
 
+On a DC stop request (DIN 70121 PowerDeliveryReq with ReadyToChargeState false, ISO 15118-2
+PowerDeliveryReq with ChargeProgress Stop), EvseV2G publishes ``dc_open_contactor`` and holds the
+PowerDeliveryRes until ``contactor_closed(false)`` reports the contactor open, so that side B is
+disabled before the EV learns of it (IEC 61851-23:2023 Table CC.9, t103 before t104): at most 1.4 s
+on DIN 70121 (1.5 s performance time) and 3 s on ISO 15118-2 (4.5 s), then it sends the response
+anyway and logs a warning. The wait ends early on an emergency shutdown, an HLC stop or a terminated
+connection.
+
 A DC PowerDelivery(Stop) publishes ``welding_detection`` ``Started``; ``Finished`` follows on
 SessionStop or connection teardown, also when the EV sends no WeldingDetectionReq. The first
 WeldingDetectionRes waits for an ``update_dc_present_values`` with ``welding_detection`` set, for
