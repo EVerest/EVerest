@@ -25,15 +25,20 @@ and the :doc:`Plug&Charge Configuration Howto </how-to-guides/configure-pnc>`
 Certificates for ISO 15118 communication
 ----------------------------------------
 
-The ISO 15118-2 development PKI is generated only when Josev is fetched. With
-default options, configure with ``-DBUILD_TESTING=ON`` or
-``-DEVEREST_DEPENDENCY_ENABLED_JOSEV=ON`` and leave
-``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` enabled.
+The ISO 15118-2 development PKI is generated when Josev is fetched, which a
+build does when it includes one of the ISO 15118 modules ``Ev15118``,
+``EvseV2G`` or ``Evse15118D20``, as a build with default options does. Keep
+``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` enabled and do not set
+``-DEVEREST_DEPENDENCY_ENABLED_JOSEV=OFF``.
 The EVerest install then ships this test PKI under ``etc/everest/certs`` of the install
 prefix (sources in ``config/certs``): CA certificates in ``certs/ca`` and client
 certificates, private keys and password files in ``certs/client``. The EV
 simulation (``Ev15118``) and the charger (``Evse15118D20``) both use it, so no extra
 setup is needed for Plug&Charge in the software in the loop.
+
+To check that an install holds every file the TLS and Plug&Charge configurations
+load, run ``tests/dev_pki/test_installed_dev_pki.sh <prefix>`` after
+``cmake --install``. It is a manual check and not part of any test suite.
 
 .. attention::
 
