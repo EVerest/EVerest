@@ -502,6 +502,13 @@ TEST_CASE("ConfigurationAPI failure and no-replyTo paths", "[configuration_api]"
         CHECK(last_reply(mock).at("slots").empty());
     }
 
+    SECTION("a request that is not valid UTF-8 is ignored") {
+        REQUIRE_NOTHROW(invoke_command(mock, "mark_active_slot", make_invalid_utf8_request()));
+
+        CHECK(svc.mark_active_slot_calls == 0);
+        CHECK(mock.published().empty());
+    }
+
     SECTION("no headers.replyTo -> command still runs, reply is discarded to the empty topic") {
         REQUIRE_NOTHROW(invoke_command(mock, "mark_active_slot", make_request_without_reply_to(json{{"slot_id", 1}})));
 

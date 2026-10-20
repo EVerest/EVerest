@@ -9,6 +9,7 @@
 #include <everest_api_types/generic/API.hpp>
 #include <everest_api_types/generic/codec.hpp>
 #include <everest_api_types/utilities/codec.hpp>
+#include <nlohmann/json.hpp>
 #include <utils/mqtt_abstraction.hpp>
 
 #include <exception>
@@ -16,9 +17,15 @@
 
 namespace ev_API = everest::lib::API;
 
-// Both helpers live in the enclosing Everest::api namespace so that the unqualified call sites in
+// The helpers live in the enclosing Everest::api namespace so that the unqualified call sites in
 // Everest::api::configuration and Everest::api::lifecycle keep resolving to them.
 namespace Everest::api {
+
+/// \brief Renders \p data for logging. Payloads of external topics arrive as raw bytes wrapped in a JSON string and
+/// may hold invalid UTF-8, which a plain dump() rejects by throwing.
+inline std::string printable(nlohmann::json const& data) {
+    return data.dump(-1, ' ', false, nlohmann::json::error_handler_t::replace);
+}
 
 /// \brief Publishes \p reply, serialized, on the replyTo topic of the request \p msg.
 template <typename ReplyT>
