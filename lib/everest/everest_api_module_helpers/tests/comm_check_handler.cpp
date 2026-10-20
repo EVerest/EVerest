@@ -80,6 +80,9 @@ protected:
     std::shared_ptr<Everest::error::ErrorStateMonitor> error_state_monitor;
     std::shared_ptr<Everest::error::ErrorFactory> error_factory;
     std::shared_ptr<Everest::error::ErrorManagerImpl> error_manager;
+    // Declared before the handler so they outlive it during teardown.
+    std::atomic_int calls{0};
+    std::atomic_int second_calls{0};
     std::unique_ptr<CommCheckHandlerBase> handler;
 };
 
@@ -155,8 +158,7 @@ TEST_F(CommCheckHandlerTest, false_value_stops_checks) {
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_rejects_non_positive_interval) {
-    std::atomic_int calls{0};
-    auto ftor = [&calls] {
+    auto ftor = [this] {
         ++calls;
         return true;
     };
@@ -167,76 +169,68 @@ TEST_F(CommCheckHandlerTest, heartbeat_rejects_non_positive_interval) {
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_calls_functor_repeatedly) {
-    std::atomic_int calls{0};
-    ASSERT_TRUE(handler->heartbeat(10, [&calls] {
+    ASSERT_TRUE(handler->heartbeat(10, [this] {
         ++calls;
         return true;
     }));
-    EXPECT_TRUE(wait_until([&calls] { return calls.load() >= 5; }, 1s));
+    EXPECT_TRUE(wait_until([this] { return calls.load() >= 5; }, 1s));
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_stops_when_functor_fails) {
-    std::atomic_int calls{0};
-    ASSERT_TRUE(handler->heartbeat(10, [&calls] { return ++calls < 3; }));
-    ASSERT_TRUE(wait_until([&calls] { return calls.load() == 3; }, 1s));
+    ASSERT_TRUE(handler->heartbeat(10, [this] { return ++calls < 3; }));
+    ASSERT_TRUE(wait_until([this] { return calls.load() == 3; }, 1s));
 
     std::this_thread::sleep_for(100ms);
     EXPECT_EQ(calls.load(), 3);
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_rejects_second_start) {
-    std::atomic_int first_calls{0};
-    std::atomic_int second_calls{0};
-    ASSERT_TRUE(handler->heartbeat(10, [&first_calls] {
-        ++first_calls;
+    ASSERT_TRUE(handler->heartbeat(10, [this] {
+        ++calls;
         return true;
     }));
-    EXPECT_FALSE(handler->heartbeat(10, [&second_calls] {
+    EXPECT_FALSE(handler->heartbeat(10, [this] {
         ++second_calls;
         return true;
     }));
 
-    EXPECT_TRUE(wait_until([&first_calls] { return first_calls.load() >= 5; }, 1s));
+    EXPECT_TRUE(wait_until([this] { return calls.load() >= 5; }, 1s));
     EXPECT_EQ(second_calls.load(), 0);
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_rejects_restart_after_functor_fails) {
-    std::atomic_int first_calls{0};
-    std::atomic_int second_calls{0};
-    ASSERT_TRUE(handler->heartbeat(10, [&first_calls] {
-        ++first_calls;
+    ASSERT_TRUE(handler->heartbeat(10, [this] {
+        ++calls;
         return false;
     }));
-    ASSERT_TRUE(wait_until([&first_calls] { return first_calls.load() == 1; }, 1s));
+    ASSERT_TRUE(wait_until([this] { return calls.load() == 1; }, 1s));
 
-    EXPECT_FALSE(handler->heartbeat(10, [&second_calls] {
+    EXPECT_FALSE(handler->heartbeat(10, [this] {
         ++second_calls;
         return true;
     }));
     std::this_thread::sleep_for(50ms);
-    EXPECT_EQ(first_calls.load(), 1);
+    EXPECT_EQ(calls.load(), 1);
     EXPECT_EQ(second_calls.load(), 0);
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_starts_after_rejected_interval) {
-    std::atomic_int calls{0};
-    auto ftor = [&calls] {
+    auto ftor = [this] {
         ++calls;
         return true;
     };
     EXPECT_FALSE(handler->heartbeat(0, ftor));
     ASSERT_TRUE(handler->heartbeat(10, ftor));
-    EXPECT_TRUE(wait_until([&calls] { return calls.load() >= 2; }, 1s));
+    EXPECT_TRUE(wait_until([this] { return calls.load() >= 2; }, 1s));
 }
 
 TEST_F(CommCheckHandlerTest, heartbeat_concurrent_starts_create_one_thread) {
     constexpr int callers = 8;
     std::atomic_int accepted{0};
-    std::atomic_int calls{0};
     std::vector<std::thread> threads;
     for (int i = 0; i < callers; ++i) {
-        threads.emplace_back([this, &accepted, &calls] {
-            if (handler->heartbeat(60000, [&calls] {
+        threads.emplace_back([this, &accepted] {
+            if (handler->heartbeat(60000, [this] {
                     ++calls;
                     return true;
                 })) {
@@ -249,15 +243,14 @@ TEST_F(CommCheckHandlerTest, heartbeat_concurrent_starts_create_one_thread) {
     }
 
     EXPECT_EQ(accepted.load(), 1);
-    ASSERT_TRUE(wait_until([&calls] { return calls.load() == 1; }, 1s));
+    ASSERT_TRUE(wait_until([this] { return calls.load() == 1; }, 1s));
     std::this_thread::sleep_for(50ms);
     EXPECT_EQ(calls.load(), 1);
 }
 
 TEST_F(CommCheckHandlerTest, destruction_stops_running_threads) {
     handler->start(1);
-    std::atomic_int calls{0};
-    ASSERT_TRUE(handler->heartbeat(10, [&calls] {
+    ASSERT_TRUE(handler->heartbeat(10, [this] {
         ++calls;
         return true;
     }));
@@ -277,12 +270,11 @@ TEST_F(CommCheckHandlerTest, destruction_stops_running_threads) {
 
 TEST_F(CommCheckHandlerTest, destruction_interrupts_long_waits) {
     handler->start(60);
-    std::atomic_int calls{0};
-    ASSERT_TRUE(handler->heartbeat(60000, [&calls] {
+    ASSERT_TRUE(handler->heartbeat(60000, [this] {
         ++calls;
         return true;
     }));
-    ASSERT_TRUE(wait_until([&calls] { return calls.load() == 1; }, 1s));
+    ASSERT_TRUE(wait_until([this] { return calls.load() == 1; }, 1s));
 
     const auto begin = std::chrono::steady_clock::now();
     handler.reset();
