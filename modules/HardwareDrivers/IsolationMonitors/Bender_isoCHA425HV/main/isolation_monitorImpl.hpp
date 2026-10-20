@@ -15,6 +15,8 @@
 
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
+#include <atomic>
+#include <chrono>
 #include <mutex>
 #include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
@@ -401,8 +403,8 @@ private:
     std::atomic_bool self_test_started{false};
     std::atomic_int self_test_timeout{0};
 
-    TestType last_test{TestType::NoTest};
-    AlarmType last_alarm{AlarmType::NoAlarm};
+    std::atomic<TestType> last_test{TestType::NoTest};
+    std::atomic<AlarmType> last_alarm{AlarmType::NoAlarm};
 
     void set_deviceFault(const std::string& message);
     void clear_deviceFault();
@@ -421,10 +423,34 @@ private:
     void start_requested_self_test(double test_voltage_V);
     void start_self_test_at_start();
     void finish_self_test(bool result);
-    void reset_system_connection_test();
+    bool reset_system_connection_test();
     std::mutex self_test_mutex;
     bool self_test_at_start_running{false};
     std::optional<double> pending_self_test_voltage_V;
+    std::atomic<uint16_t> active_system_connection_test{SYSTEM_CONNECTION_TEST_OFF};
+    static constexpr uint16_t SELF_TEST_START_REGISTER{8005};
+    static constexpr uint16_t SELF_TEST_START_COMMAND{0x5445};
+    // A failed system connection test leaves a device error that only a passing device test clears. The recovery
+    // runs one without system connection test and repeats it while the device is busy or the error stays.
+    enum class RecoveryState {
+        Idle,
+        Pending,
+        Running,
+    };
+    static constexpr std::chrono::seconds RECOVERY_START_DELAY{5};
+    static constexpr std::chrono::seconds RECOVERY_RETRY_INTERVAL{300};
+    static constexpr std::chrono::seconds RECOVERY_TIMEOUT{60};
+    static constexpr std::chrono::seconds RECOVERY_ASSUME_STARTED{20};
+    static constexpr int RECOVERY_MAX_START_ATTEMPTS{6};
+    std::atomic<RecoveryState> recovery_state{RecoveryState::Idle};
+    std::chrono::steady_clock::time_point recovery_due{};
+    std::chrono::steady_clock::time_point recovery_started{};
+    int recovery_start_attempts{0};
+    bool recovery_seen_test{false};
+    void request_recovery(std::chrono::seconds delay);
+    void start_recovery_test();
+    bool run_recovery();
+    bool write_imd_register(uint16_t address, uint16_t value);
     bool send_to_imd(const uint16_t& command, const uint16_t& value);
     bool send_to_imd_if_changed(const uint16_t& command, const uint16_t& value);
     void read_imd_values();
