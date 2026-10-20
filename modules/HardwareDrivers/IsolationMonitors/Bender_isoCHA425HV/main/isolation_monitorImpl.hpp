@@ -430,8 +430,8 @@ private:
     std::atomic<uint16_t> active_system_connection_test{SYSTEM_CONNECTION_TEST_OFF};
     static constexpr uint16_t SELF_TEST_START_REGISTER{8005};
     static constexpr uint16_t SELF_TEST_START_COMMAND{0x5445};
-    // A failed system connection test leaves a device error that only a passing device test clears. The recovery
-    // runs one without system connection test and repeats it while the device is busy or the error stays.
+    // A device error, e.g. from a failed system connection test, is only cleared by a passing device test. The
+    // recovery runs one without system connection test and repeats it while the device is busy or the error stays.
     enum class RecoveryState {
         Idle,
         Pending,
