@@ -75,7 +75,8 @@ Configuration and Storage
   with built-in defaults for what it does not set. Works with and without
   ``--config`` and ``--db``. When given, the ``settings:`` block of the config
   file is ignored and the manager logs a warning. The file is validated against
-  ``schemas/settings.yaml``; unknown and deprecated keys are rejected. See
+  ``schemas/settings.yaml``; unknown and deprecated keys are rejected. Example
+  files are installed as ``etc/everest/settings-*.yaml``. See
   :ref:`exp_config_service_settings`.
 
 ``--db <path>``
