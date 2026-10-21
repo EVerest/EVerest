@@ -113,3 +113,30 @@ SCENARIO("A power timeline compares per phase once either side is per phase") {
         }
     }
 }
+
+SCENARIO("A discharge timeline tells whether a demand discharges more than it allows") {
+    const std::vector<dt::PowerScheduleEntry> entries{entry(3600, -7000)};
+    const auto offered = iso15118::d20::PowerTimeline::from(1000, entries);
+
+    THEN("charging or discharging up to the offered power is fine") {
+        REQUIRE_FALSE(offered.undercut_by(1000, 4600, total(11000.0f)));
+        REQUIRE_FALSE(offered.undercut_by(1000, 4600, total(-7000.0f)));
+    }
+
+    THEN("discharging more than offered undercuts it") {
+        REQUIRE(offered.undercut_by(1000, 4600, total(-7001.0f)));
+    }
+
+    THEN("time the timeline does not cover allows no discharge [V2G20-1811]") {
+        REQUIRE(offered.undercut_by(4600, 5000, total(-1.0f)));
+        REQUIRE_FALSE(offered.undercut_by(4600, 5000, total(0.0f)));
+    }
+
+    GIVEN("no discharge schedule at all") {
+        const iso15118::d20::PowerTimeline none{};
+        THEN("any discharge undercuts it, charging does not") {
+            REQUIRE(none.undercut_by(1000, 4600, total(-1.0f)));
+            REQUIRE_FALSE(none.undercut_by(1000, 4600, total(11000.0f)));
+        }
+    }
+}
