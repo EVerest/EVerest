@@ -2,7 +2,9 @@
 // Copyright 2023 Pionix GmbH and Contributors to EVerest
 #include <iso15118/message/authorization.hpp>
 
+#include <stdexcept>
 #include <type_traits>
+#include <variant>
 
 #include <iso15118/detail/variant_access.hpp>
 
@@ -35,6 +37,23 @@ template <> void convert(const struct iso20_AuthorizationResType& in, Authorizat
     convert(in.Header, out.header);
 }
 
+struct AuthorizationModeVisitor {
+    AuthorizationModeVisitor(iso20_AuthorizationReqType& out_) : out(out_){};
+    void operator()([[maybe_unused]] const datatypes::EIM_ASReqAuthorizationMode& in) {
+        CB_SET_USED(out.EIM_AReqAuthorizationMode);
+        init_iso20_EIM_AReqAuthorizationModeType(&out.EIM_AReqAuthorizationMode);
+    }
+    void operator()([[maybe_unused]] const datatypes::PnC_ASReqAuthorizationMode& in) {
+        // Todo(mlitre): none of Id, GenChallenge and ContractCertificateChain are converted,
+        // so in.id and in.gen_challenge are discarded. Reject the request until they are,
+        // rather than let a PnC selection go out on the wire as EIM.
+        throw std::runtime_error("PnC authorization mode not implemented");
+    }
+
+private:
+    iso20_AuthorizationReqType& out;
+};
+
 template <> void convert(const AuthorizationRequest& in, iso20_AuthorizationReqType& out) {
     init_iso20_AuthorizationReqType(&out);
 
@@ -42,8 +61,9 @@ template <> void convert(const AuthorizationRequest& in, iso20_AuthorizationReqT
 
     cb_convert_enum(in.selected_authorization_service, out.SelectedAuthorizationService);
 
-    // Todo(rb): add pnc
-    out.EIM_AReqAuthorizationMode_isUsed = true;
+    // Encode what the caller selected. Which modes the EV offers is application logic, not
+    // this conversion's business; forcing EIM here made a PnC request serialize as EIM.
+    std::visit(AuthorizationModeVisitor{out}, in.authorization_mode);
 }
 
 template <> void convert(const AuthorizationResponse& in, iso20_AuthorizationResType& out) {
