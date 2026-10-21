@@ -23,8 +23,9 @@ jobs:
     env:
       ESDK_IMAGE: ${{ inputs.esdk_image }}
     steps:
-      # The eSDK image is ~9 GB compressed and ~12 GB unpacked, and the everest-core build
-      # needs several GB more, which does not fit next to the tools preinstalled on the runner.
+      # The eSDK images are up to ~12 GB compressed and ~18 GB unpacked, and the everest-core
+      # build needs several GB more, which does not fit next to the tools preinstalled on the
+      # runner.
       - name: Free disk space
         run: |
           df -h /
@@ -52,9 +53,9 @@ jobs:
       # The image runs as builder (uid 1001), the user of the GitHub hosted runners,
       # so the bind-mounted checkout is writable inside the container.
       # The checkout replaces the copy of this repository in the eSDK, so bitbake uses
-      # the recipes of yocto/scarthgap/meta-everest from it. Only everest-core and the
-      # ev-cli it generates code with are built from the checkout, the other recipes stay
-      # locked to the prebuilt state in the eSDK.
+      # the recipes of the meta-everest of the eSDK release and of meta-everest-common
+      # from it. Only everest-core and the ev-cli it generates code with are built from the
+      # checkout, the other recipes stay locked to the prebuilt state in the eSDK.
       - name: Build everest-core with devtool
         run: |
           docker run --rm \
