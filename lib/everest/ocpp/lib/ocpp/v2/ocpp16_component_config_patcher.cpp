@@ -12,6 +12,7 @@
 #include <everest/logging.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/utils.hpp>
+#include <ocpp/v16/variable_resolver.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 
@@ -353,6 +354,7 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
                                         const Ocpp16KeyMappings& custom_key_mappings, int32_t network_config_slot) {
 
     const auto config_keys = ocpp16_config.get_all_key_value();
+    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
 
     for (const auto& config_key : config_keys) {
         const auto key_enum = ocpp::v16::keys::convert(config_key.key.get());
@@ -360,15 +362,7 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
             continue;
         }
 
-        auto mapping_opt = ocpp::v16::keys::convert_v2(config_key.key.get());
-
-        if (!mapping_opt.has_value()) {
-            const auto custom_mapping_it = custom_key_mappings.find(config_key.key.get());
-            if (custom_mapping_it != custom_key_mappings.end()) {
-                const auto& [comp, var] = custom_mapping_it->second;
-                mapping_opt = std::make_pair(comp, var);
-            }
-        }
+        const auto mapping_opt = resolver.key_to_cv(config_key.key.get());
 
         if (!mapping_opt.has_value()) {
             if (!is_special_case_key(config_key.key.get())) {

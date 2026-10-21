@@ -10,7 +10,10 @@
 #include <ryml.hpp>
 #include <ryml_std.hpp>
 
+#include <everest/logging.hpp>
+#include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/variable_resolver.hpp>
+#include <ocpp/v2/comparators.hpp>
 
 namespace ocpp::v2 {
 
@@ -36,6 +39,58 @@ namespace {
 
     error_message.write(msg.str, static_cast<std::streamsize>(msg.len));
     throw Ocpp16KeyMappingsError(error_message.str());
+}
+
+std::string describe(const Component& component, const Variable& variable) {
+    std::string result = component.name.get();
+    if (component.instance.has_value()) {
+        result += '[' + component.instance->get() + ']';
+    }
+    result += '/' + variable.name.get();
+    if (variable.instance.has_value()) {
+        result += '[' + variable.instance->get() + ']';
+    }
+    return result;
+}
+
+/// Entries for known OCPP 1.6 keys override the built-in mapping. Only OCPP16LegacyCtrlr keys may be overridden,
+/// and an override must not share its target with another key, since the target is the key's only storage.
+void validate_overrides(const Ocpp16KeyMappings& mappings, const std::filesystem::path& mapping_file_path) {
+    const auto error_prefix = "Invalid custom mapping in '" + mapping_file_path.string() + "': key '";
+
+    for (const auto& [ocpp16_key, cv] : mappings) {
+        const auto key = v16::keys::convert(ocpp16_key);
+        if (!key.has_value()) {
+            continue;
+        }
+        const auto& [component, variable] = cv;
+        const auto builtin = v16::keys::convert_v2(key.value());
+
+        if (!v16::is_overridable_key(key.value())) {
+            const auto builtin_target =
+                builtin.has_value() ? describe(builtin->first, builtin->second) : std::string{"no variable"};
+            throw Ocpp16KeyMappingsError(
+                error_prefix + ocpp16_key + "' is a built-in OCPP 1.6 key mapped to " + builtin_target +
+                "; only built-in keys mapped to OCPP16LegacyCtrlr can be custom-mapped, except NumberOfConnectors, "
+                "SupportedFeatureProfiles, MeterPublicKeys and DefaultPriceText");
+        }
+
+        if (const auto owner = v16::keys::convert_v2(component, variable, AttributeEnum::Actual);
+            owner.has_value() && owner.value() != ocpp16_key) {
+            throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
+                                         ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'");
+        }
+
+        for (const auto& [other_key, other_cv] : mappings) {
+            if (other_key != ocpp16_key && other_cv == cv) {
+                throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
+                                             ", which is also the target of key '" + other_key + "'");
+            }
+        }
+
+        EVLOG_info << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to " << describe(component, variable)
+                   << " instead of its built-in " << describe(builtin->first, builtin->second);
+    }
 }
 
 [[noreturn]] void yaml_error_basic(c4::csubstr msg, const ryml::ErrorDataBasic& err, void*) {
@@ -244,6 +299,7 @@ Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path
         }
     }
 
+    validate_overrides(mappings, mapping_file_path);
     return mappings;
 }
 

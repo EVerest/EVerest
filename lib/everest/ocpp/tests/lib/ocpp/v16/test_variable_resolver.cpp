@@ -240,4 +240,100 @@ TEST(VariableResolver, ClassifyFree) {
     EXPECT_EQ(resolver.classify(make_component("VendorCtrlr"), make_variable("FooSetting")), CVClass::Free);
 }
 
+TEST(VariableResolver, LegacyKeyOverride) {
+    ocpp::v2::Ocpp16KeyMappings mappings;
+    mappings.emplace("LightIntensity",
+                     std::make_pair(make_component("VendorStation"), make_variable("LightIntensity")));
+    const VariableResolver resolver{mappings};
+
+    const auto cv = resolver.key_to_cv("LightIntensity");
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_TRUE(same_cv(cv.value(), {make_component("VendorStation"), make_variable("LightIntensity")}));
+
+    const auto reverse = resolver.cv_to_key(make_component("VendorStation"), make_variable("LightIntensity"));
+    EXPECT_TRUE(reverse.usable());
+    EXPECT_EQ(reverse.key, "LightIntensity");
+    EXPECT_EQ(resolver.classify(make_component("VendorStation"), make_variable("LightIntensity")), CVClass::KeyBacked);
+
+    // the built-in OCPP16LegacyCtrlr variable is no longer backed by the key
+    EXPECT_FALSE(resolver.cv_to_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")).key);
+    EXPECT_EQ(resolver.classify(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")), CVClass::Free);
+}
+
+ocpp::v2::Ocpp16KeyMappings light_intensity_override() {
+    return {{"LightIntensity", {make_component("VendorStation"), make_variable("LightIntensity")}}};
+}
+
+TEST(VariableResolver, OnlyOcpp16LegacyCtrlrKeysAreOverridable) {
+    using ocpp::v16::is_overridable_key;
+    EXPECT_TRUE(is_overridable_key(keys::valid_keys::LightIntensity));
+    EXPECT_TRUE(is_overridable_key(keys::valid_keys::Language));
+    EXPECT_TRUE(is_overridable_key(keys::valid_keys::BlinkRepeat));
+
+    // standard and InternalCtrlr mappings
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::HeartbeatInterval));
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::ChargePointModel));
+    // no device model mapping
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::CentralSystemURI));
+    // derived or expanded by the OCPP 1.6 stack
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::NumberOfConnectors));
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::SupportedFeatureProfiles));
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::MeterPublicKeys));
+    EXPECT_FALSE(is_overridable_key(keys::valid_keys::DefaultPriceText));
+}
+
+TEST(VariableResolver, KnownKeyWithoutOverrideMatchesBuiltin) {
+    const VariableResolver resolver;
+    const auto cv = resolver.known_key_to_cv(keys::valid_keys::LightIntensity);
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_TRUE(same_cv(cv.value(), {make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")}));
+    EXPECT_EQ(resolver.cv_to_known_key(cv->first, cv->second), "LightIntensity");
+}
+
+TEST(VariableResolver, KnownKeyOverrideReplacesForwardAndReverseMapping) {
+    const VariableResolver resolver{light_intensity_override()};
+    EXPECT_TRUE(resolver.is_overridden(keys::valid_keys::LightIntensity));
+    EXPECT_TRUE(resolver.custom_keys().empty());
+
+    const auto cv = resolver.known_key_to_cv(keys::valid_keys::LightIntensity);
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_TRUE(same_cv(cv.value(), {make_component("VendorStation"), make_variable("LightIntensity")}));
+
+    EXPECT_EQ(resolver.cv_to_known_key(make_component("VendorStation"), make_variable("LightIntensity")),
+              "LightIntensity");
+    EXPECT_FALSE(resolver
+                     .cv_to_known_key(make_component("VendorStation"), make_variable("LightIntensity"),
+                                      ocpp::v2::AttributeEnum::Target)
+                     .has_value());
+    EXPECT_FALSE(
+        resolver.cv_to_known_key(make_component("OCPP16LegacyCtrlr"), make_variable("LightIntensity")).has_value());
+}
+
+TEST(VariableResolver, OtherKnownKeysKeepBuiltinMapping) {
+    const VariableResolver resolver{light_intensity_override()};
+    EXPECT_FALSE(resolver.is_overridden(keys::valid_keys::BlinkRepeat));
+    const auto cv = resolver.known_key_to_cv(keys::valid_keys::BlinkRepeat);
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_EQ(cv->first.name.get(), "OCPP16LegacyCtrlr");
+}
+
+TEST(VariableResolver, NotOverridableKnownKeysAreIgnored) {
+    const VariableResolver resolver{
+        {{"HeartbeatInterval", {make_component("VendorStation"), make_variable("Heartbeat")}},
+         {"NumberOfConnectors", {make_component("VendorStation"), make_variable("Connectors")}}}};
+    EXPECT_TRUE(resolver.overrides().empty());
+    EXPECT_TRUE(resolver.custom_keys().empty());
+    const auto cv = resolver.known_key_to_cv(keys::valid_keys::HeartbeatInterval);
+    ASSERT_TRUE(cv.has_value());
+    EXPECT_EQ(cv->first.name.get(), "OCPPCommCtrlr");
+}
+
+TEST(VariableResolver, CustomKeysExcludeKnownKeys) {
+    auto mappings = light_intensity_override();
+    mappings.emplace("VendorKey", std::make_pair(make_component("VendorStation"), make_variable("VendorVariable")));
+    const VariableResolver resolver{mappings};
+    EXPECT_EQ(resolver.custom_keys().size(), 1);
+    EXPECT_NE(resolver.custom_keys().find("VendorKey"), resolver.custom_keys().end());
+}
+
 } // namespace

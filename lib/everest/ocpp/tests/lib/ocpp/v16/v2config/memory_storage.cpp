@@ -171,10 +171,6 @@ const std::vector<MemoryStorage::Storage*> vars_list = {
 const ocpp::v2::VariableCharacteristics characteristics = {ocpp::v2::DataEnum::string, false, {}, {}, {}, {}, {}, {}};
 const ocpp::v2::VariableMetaData meta_data = {characteristics, {}, {}};
 
-bool operator==(const ocpp::v2::Component& lhs, const ocpp::v2::Component& rhs) {
-    return lhs.name == rhs.name;
-}
-
 bool operator==(const std::optional<ocpp::v2::Variable>& lhs, const ocpp::v2::Variable& rhs) {
     if (lhs) {
         return lhs.value().name == rhs.name;
@@ -184,7 +180,7 @@ bool operator==(const std::optional<ocpp::v2::Variable>& lhs, const ocpp::v2::Va
 
 bool is_same(const ocpp::v2::RequiredComponentVariable& var, const ocpp::v2::Component& component,
              const ocpp::v2::Variable& variable) {
-    return ((var.component == component) && (var.variable == variable));
+    return ((var.component.name == component.name) && (var.variable == variable));
 }
 
 std::string enhanced_convert(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,

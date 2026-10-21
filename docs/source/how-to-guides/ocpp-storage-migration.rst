@@ -227,6 +227,50 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
+.. _howto-ocpp-storage-migration-share-legacy-key:
+
+Share an OCPP 1.6 key with your own OCPP 2.x variable
+-----------------------------------------------------
+
+Built-in OCPP 1.6 keys without a standard OCPP 2.x equivalent, such as
+``LightIntensity`` or ``Language``, are stored in the ``OCPP16LegacyCtrlr``
+component. If your component configuration already has an OCPP 2.x variable for
+the same setting, add an entry for the built-in key to the mapping file. The
+key is then stored in your variable instead, so OCPP 1.6 and OCPP 2.x read and
+write the same value:
+
+.. code-block:: yaml
+
+   mappings:
+     - ocpp16_key: LightIntensity
+       component:
+         name: VendorStation
+       variable:
+         name: LightIntensity
+
+The entry replaces the built-in mapping everywhere: during the one-time
+migration, for ``GetConfiguration`` and ``ChangeConfiguration``, and for the
+canonical address of the key. The ``OCPP16LegacyCtrlr`` variable of the key is
+no longer used. The module logs every replaced mapping at startup.
+
+The module does not start when the mapping file:
+
+* replaces the mapping of a built-in key that is not stored in
+  ``OCPP16LegacyCtrlr``. Keys with a standard OCPP 2.x or ``InternalCtrlr``
+  variable already share it between protocol versions.
+* replaces the mapping of ``NumberOfConnectors``, ``SupportedFeatureProfiles``,
+  ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
+  or expands itself.
+* maps a built-in key to a variable that is the built-in mapping of another key
+  or the target of another entry in the file.
+* maps a built-in key to a variable that does not exist in the component
+  configuration.
+
+The value is not carried over when a mapping is replaced after the database was
+migrated: the key then reads the current value of the new variable, and the
+value in ``OCPP16LegacyCtrlr`` is left unused. To migrate it, set the value on
+the new variable, or delete the database to repeat the migration.
+
 Run the migration
 -----------------
 
