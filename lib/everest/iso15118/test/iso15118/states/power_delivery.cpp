@@ -137,12 +137,30 @@ SCENARIO("Power delivery state handling") {
             }
         }
 
-        WHEN("the profile extends past the offered schedule") {
+        WHEN("the profile draws power past the offered schedule") {
             req.power_profile->time_anchor = (ANCHOR_S + 7200) * d20::MICROSECONDS_PER_SECOND;
-            req.power_profile->entries = {profile_entry(3600, {22, 3})};
+            req.power_profile->entries = {profile_entry(3600, {1, 0})};
             const auto res = d20::state::handle_request(req, session, false, false);
-            THEN("time the schedule does not cover is unconstrained: ResponseCode: OK") {
+            THEN("time the schedule does not cover allows zero power [V2G20-1811]: FAILED_EVPowerProfileInvalid") {
+                REQUIRE(res.response_code == dt::ResponseCode::FAILED_EVPowerProfileInvalid);
+            }
+        }
+
+        WHEN("the profile is 0 W past the offered schedule") {
+            req.power_profile->time_anchor = (ANCHOR_S + 7200) * d20::MICROSECONDS_PER_SECOND;
+            req.power_profile->entries = {profile_entry(3600, {0, 0})};
+            const auto res = d20::state::handle_request(req, session, false, false);
+            THEN("ResponseCode: OK") {
                 REQUIRE(res.response_code == dt::ResponseCode::OK);
+            }
+        }
+
+        WHEN("the profile is anchored before the offered schedule") {
+            req.power_profile->time_anchor = 0;
+            req.power_profile->entries = {profile_entry(3600, {11, 3})};
+            const auto res = d20::state::handle_request(req, session, false, false);
+            THEN("ResponseCode: FAILED_EVPowerProfileInvalid") {
+                REQUIRE(res.response_code == dt::ResponseCode::FAILED_EVPowerProfileInvalid);
             }
         }
     }

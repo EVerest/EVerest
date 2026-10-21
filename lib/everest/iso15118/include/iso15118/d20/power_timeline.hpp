@@ -83,8 +83,11 @@ struct PowerTimeline {
     }
 
     // Whether \p demand over [\p start_s, \p end_s) exceeds the power of any entry it overlaps. Time no entry
-    // covers is unconstrained.
+    // covers allows zero power [V2G20-1811].
     bool exceeded_by(uint64_t start_s, uint64_t end_s, const Entry& demand) const {
+        if (start_s >= end_s) {
+            return false;
+        }
         uint64_t slot_start = time_anchor_s;
         for (const auto& entry : entries) {
             const uint64_t slot_end = slot_start + entry.duration_s;
@@ -93,7 +96,8 @@ struct PowerTimeline {
             }
             slot_start = slot_end;
         }
-        return false;
+        const bool uncovered = start_s < time_anchor_s or end_s > slot_start;
+        return uncovered and demand.exceeds(Entry{});
     }
 };
 
