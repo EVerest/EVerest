@@ -538,12 +538,11 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
     auto factory_result = module::config_factory_v16::create_charge_point_configuration(
         ocpp_share_path, params, static_cast<int32_t>(config.number_of_connectors), config.everest_device_model);
     m_charge_point_configuration = std::move(factory_result.configuration);
-    m_custom_mappings = std::move(factory_result.custom_mappings);
 
     // m_charge_point is constructed later in init(); the lambdas resolve it at call time.
     // check_configured() guards get/set_variables until then.
     m_variable_access.reset();
-    m_variable_resolver.emplace(m_custom_mappings);
+    m_variable_resolver.emplace(m_charge_point_configuration->get_variable_resolver());
     m_variable_access.emplace(
         m_variable_resolver.value(), m_charge_point_configuration->get_device_model(),
         [this](const std::vector<ocpp::CiString<50>>& keys) {

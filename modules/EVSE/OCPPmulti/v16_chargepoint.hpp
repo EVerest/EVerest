@@ -21,7 +21,6 @@ class ChargePointV16 : public GenericChargePointInterface {
 private:
     std::shared_ptr<EvseSecurity> m_evse_security;
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> m_charge_point_configuration;
-    ocpp::v2::Ocpp16KeyMappings m_custom_mappings;
     // resolver must outlive m_variable_access, which holds a reference to it
     std::optional<ocpp::v16::VariableResolver> m_variable_resolver;
     std::optional<V16VariableAccess> m_variable_access;

@@ -227,10 +227,17 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
-Each variable stores exactly one OCPP 1.6 key. The module does not start when
-two entries in the file target the same component and variable, or when an
-entry targets the built-in mapping of an OCPP 1.6 key, for example
-``OCPPCommCtrlr`` ``HeartbeatInterval``.
+Each variable stores exactly one OCPP 1.6 key. Entries that break this rule
+are ignored with an error log, and the remaining entries still apply. Entries
+are read in file order, so of two entries for the same key or the same
+component and variable the first one is used. An entry is also ignored when it
+targets the built-in mapping of an OCPP 1.6 key, for example
+``OCPPCommCtrlr`` ``HeartbeatInterval``, or the connection configuration.
+Check the log after changing the mapping file: the one-time migration does not
+migrate the value of an ignored key.
+
+A file that cannot be read or does not match the mapping file schema stops the
+module at startup.
 
 .. _howto-ocpp-storage-migration-share-legacy-key:
 
@@ -258,7 +265,8 @@ migration, for ``GetConfiguration`` and ``ChangeConfiguration``, and for the
 canonical address of the key. The ``OCPP16LegacyCtrlr`` variable of the key is
 no longer used. The module logs every replaced mapping at startup.
 
-The module does not start when the mapping file:
+The module ignores the entry with an error log, and the key keeps its built-in
+mapping, when the entry:
 
 * replaces the mapping of a built-in key that is not stored in
   ``OCPP16LegacyCtrlr``. Keys with a standard OCPP 2.x or ``InternalCtrlr``
@@ -267,7 +275,8 @@ The module does not start when the mapping file:
   ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
   or expands itself.
 * maps a built-in key to a variable that does not exist in the component
-  configuration.
+  configuration. The migration then writes the value to the
+  ``OCPP16LegacyCtrlr`` variable of the key.
 
 The value is not carried over when a mapping is replaced after the database was
 migrated: the key then reads the current value of the new variable, and the
