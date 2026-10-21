@@ -1,5 +1,7 @@
 description: >-
-  This module is a draft implementation of iso15118-20 for the EVSE side
+  ISO 15118 SECC module on the C++ ISO 15118 stack: DIN SPEC 70121, ISO 15118-2 and
+  ISO 15118-20 (AC and DC), selectable per protocol generation. Successor of the
+  deprecated EvseV2G and IsoMux modules.
 config:
   device:
     description: >-
