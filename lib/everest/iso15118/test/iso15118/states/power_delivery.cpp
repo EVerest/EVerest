@@ -18,7 +18,8 @@ d20::Session scheduled_session_offering_tuple_1() {
     d20::Session session(
         d20::SelectedServiceParameters(dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
                                        dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
-    session.offered_schedules.emplace(1, d20::PowerTimeline{ANCHOR_S, {{3600, 11000.0f}, {3600, 0.0f}}});
+    session.offered_schedules.emplace(
+        1, d20::OfferedSchedule{d20::PowerTimeline{ANCHOR_S, {{3600, 11000.0f}, {3600, 0.0f}}}, {}});
     return session;
 }
 
@@ -152,6 +153,14 @@ SCENARIO("Power delivery state handling") {
             const auto res = d20::state::handle_request(req, session, false, false);
             THEN("ResponseCode: OK") {
                 REQUIRE(res.response_code == dt::ResponseCode::OK);
+            }
+        }
+
+        WHEN("the profile discharges although the tuple offers no DischargingSchedule") {
+            req.power_profile->entries = {profile_entry(3600, {-5, 3})};
+            const auto res = d20::state::handle_request(req, session, false, false);
+            THEN("no discharge is allowed [V2G20-1811]: FAILED_EVPowerProfileInvalid") {
+                REQUIRE(res.response_code == dt::ResponseCode::FAILED_EVPowerProfileInvalid);
             }
         }
 
