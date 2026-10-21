@@ -81,6 +81,19 @@ TEST_F(TlsTest, BoundPortReportsEphemeralPort) {
     EXPECT_NE(server.bound_port(), 0);
 }
 
+TEST_F(TlsTest, StopBeforeServeIsIgnored) {
+    // EvseV2G and IsoMux stop an initialised server before every serve(), which must not end that serve()
+    using state_t = tls::Server::state_t;
+    const auto res = server.init(server_config, nullptr);
+    ASSERT_TRUE((res == state_t::init_complete) || (res == state_t::init_socket));
+    server.stop();
+    server_thread = std::thread(&run_server, std::ref(server));
+    server.wait_running();
+
+    connect();
+    EXPECT_TRUE(is_set(flags_t::connected));
+}
+
 TEST_F(TlsTest, StartConnectDisconnect) {
     // test shouldn't hang
     start();

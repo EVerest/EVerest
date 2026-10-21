@@ -7,6 +7,7 @@
 #include "extensions/status_request.hpp"
 #include "extensions/trusted_ca_keys.hpp"
 #include <everest/tls/tls_types.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <array>
 #include <atomic>
@@ -504,20 +505,24 @@ private:
     using trusted_ca_keys_t = trusted_ca_keys::trusted_ca_keys_t;
     using ServerTrustedCaKeys = trusted_ca_keys::ServerTrustedCaKeys;
 
+    /// state shared between serve() and the threads calling stop(), wait_running() and wait_stopped()
+    struct serve_state_t {
+        bool running{false}; //!< server is listening for connections
+        pthread_t thread{};  //!< serve() POSIX threads ID, valid while running
+    };
+    using serve_monitor_t = everest::lib::util::monitor<serve_state_t>;
+
     std::unique_ptr<server_ctx> m_context;              //!< opaque object data
     int m_socket{INVALID_SOCKET};                       //!< server socket value
-    volatile bool m_running{false};                     //!< server is listening for connections
+    serve_monitor_t m_serve_state;                      //!< serve() thread state
     std::int32_t m_timeout_ms{-1};                      //!< default operation timeout passed to new connections
     std::atomic_bool m_exit{false};                     //!< stop listening for connections
     std::atomic<state_t> m_state{state_t::init_needed}; //!< server state
     std::mutex m_mutex;                                 //!< prevent multiple initialisation or serve requests
     std::mutex m_update_mutex;                          //!< ensure safe updating of SSL configuration
-    std::mutex m_cv_mutex;                              //!< used by wait_running() and wait_stopped()
-    std::condition_variable m_cv;                       //!< used by wait_running() and wait_stopped()
     OcspCache m_cache;                                  //!< cached OCSP responses
     ServerStatusRequestV2 m_status_request_v2;          //!< status request extension handler
     ServerTrustedCaKeys m_server_trusted_ca_keys;       //!< trusted ca keys extension handler
-    pthread_t m_server_thread{};                        //!< serve() POSIX threads ID
     static int s_sig_int;                               //!< signal to use to wakeup serve()
     ConfigurationCallback m_init_callback{nullptr};     //!< callback to retrieve SSL configuration
 
@@ -594,7 +599,7 @@ public:
 
     /**
      * \brief configure a signal handler to wakeup serve()
-     * \note stop() sends interrupt_signal to m_server_thread to interrupt poll()
+     * \note stop() sends interrupt_signal to the serve() thread to interrupt poll()
      */
     static void configure_signal_handler(int interrupt_signal);
 
@@ -651,7 +656,10 @@ public:
      * \brief stop listening for new connections
      * \note returns immediately
      *
-     * may raise a signal on the m_server_thread to terminate poll() so that
+     * has no effect unless serve() is running, so call it after wait_running()
+     * returned to stop a server that is starting.
+     *
+     * may raise a signal on the serve() thread to terminate poll() so that
      * serve() stops quickly. (see configure_signal_handler())
      */
     void stop();
