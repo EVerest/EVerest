@@ -69,6 +69,9 @@ class RuntimeSession:
     @overload
     def __init__(self, prefix: str, config_file_path: str) -> None: ...
 
+    @overload
+    def __init__(self, prefix: str, config_file_path: str, settings_file_path: str) -> None: ...
+
 
 class Module:
     @overload

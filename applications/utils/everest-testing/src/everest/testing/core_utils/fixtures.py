@@ -49,35 +49,38 @@ def core_config(request) -> EverestEnvironmentCoreConfiguration:
         ]
         everest_prefix = next((path for path in candidates if path.exists()), candidates[0])
 
-    marker = request.node.get_closest_marker("everest_core_config")
-    if marker is None:
-        everest_config_path = None  # config auto-detected by everest core
-    else:
-        config_name = marker.args[0]
-        installed_config_dir = Path('/etc/everest') if everest_prefix == '/usr' else everest_prefix / 'etc/everest'
-        installed_config_path = installed_config_dir / config_name
-        if installed_config_path.exists():
-            everest_config_path = installed_config_path
-        else:
-            # Local dev runs can point at a prefix that is not freshly installed.
-            # In that case, fall back to repository config directories.
-            repo_config_candidates = [
-                request.config.rootpath / "config" / config_name,
-                request.config.rootpath.parent / "config" / config_name,
-            ]
-            matching_repo_path = next((path for path in repo_config_candidates if path.exists()), None)
-            if matching_repo_path is not None:
-                everest_config_path = matching_repo_path
-            else:
-                searched_paths = "', '".join(str(path.parent) for path in [installed_config_path] + repo_config_candidates)
-                raise FileNotFoundError(
-                    f"EVerest config '{config_name}' not found in '{searched_paths}'. "
-                    "Install/update the build output or provide a valid config marker."
-                )
+    config_marker = request.node.get_closest_marker("everest_core_config")
+    # without a config marker the config is auto-detected by everest core
+    everest_config_path = _find_config_file(request, everest_prefix, config_marker.args[0]) if config_marker else None
+    settings_marker = request.node.get_closest_marker("everest_core_settings")
+    everest_settings_path = _find_config_file(request, everest_prefix, settings_marker.args[0]) if settings_marker else None
 
     return EverestEnvironmentCoreConfiguration(
         everest_core_path=everest_prefix,
         template_everest_config_path=everest_config_path,
+        template_everest_settings_path=everest_settings_path,
+    )
+
+
+def _find_config_file(request, everest_prefix: Path, file_name: str) -> Path:
+    """Looks up a config or settings file in the installed config directory, then in the repository."""
+    installed_config_dir = Path('/etc/everest') if everest_prefix == '/usr' else everest_prefix / 'etc/everest'
+    installed_config_path = installed_config_dir / file_name
+    if installed_config_path.exists():
+        return installed_config_path
+    # Local dev runs can point at a prefix that is not freshly installed.
+    # In that case, fall back to repository config directories.
+    repo_config_candidates = [
+        request.config.rootpath / "config" / file_name,
+        request.config.rootpath.parent / "config" / file_name,
+    ]
+    matching_repo_path = next((path for path in repo_config_candidates if path.exists()), None)
+    if matching_repo_path is not None:
+        return matching_repo_path
+    searched_paths = "', '".join(str(path.parent) for path in [installed_config_path] + repo_config_candidates)
+    raise FileNotFoundError(
+        f"EVerest config '{file_name}' not found in '{searched_paths}'. "
+        "Install/update the build output or provide a valid config marker."
     )
 
 
