@@ -49,14 +49,16 @@ std::optional<dt::ResponseCode> power_profile_error(const message_20::PowerDeliv
         return dt::ResponseCode::FAILED_ScheduleSelectionInvalid;
     }
 
-    // [V2G20-478], [V2G20-1559]: each entry against the offered power of every slot it overlaps. The EV's
-    // TimeAnchor is in microseconds (Table 103). Only charge power is checked: no discharge schedule is offered.
+    // [V2G20-478], [V2G20-1559]: each entry against the offered charge and discharge power of every slot it
+    // overlaps. The EV's TimeAnchor is in microseconds (Table 103).
     const auto profile =
         PowerTimeline::from(req.power_profile->time_anchor / MICROSECONDS_PER_SECOND, req.power_profile->entries);
+    const auto& [charge, discharge] = offered->second;
     uint64_t entry_start_s = profile.time_anchor_s;
     for (const auto& entry : profile.entries) {
         const uint64_t entry_end_s = entry_start_s + entry.duration_s;
-        if (offered->second.exceeded_by(entry_start_s, entry_end_s, entry)) {
+        if (charge.exceeded_by(entry_start_s, entry_end_s, entry) or
+            discharge.undercut_by(entry_start_s, entry_end_s, entry)) {
             return dt::ResponseCode::FAILED_EVPowerProfileInvalid;
         }
         entry_start_s = entry_end_s;

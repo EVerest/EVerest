@@ -21,6 +21,13 @@
 
 namespace iso15118::d20 {
 
+// A tuple without a DischargingSchedule leaves the discharge timeline empty, so it allows no discharge
+// [V2G20-1811].
+struct OfferedSchedule {
+    PowerTimeline charge;
+    PowerTimeline discharge;
+};
+
 namespace dt = message_20::datatypes;
 
 // Key: service IDs, value: vector with the parameter set ids
@@ -216,9 +223,9 @@ public:
     // EVPowerProfile are both sized from it, so limits updated since must not reach the offer.
     std::optional<MaxChargePower> cpd_max_charge_power{};
 
-    // The charge schedule of each tuple offered in the last finished ScheduleExchangeRes, by ScheduleTupleID.
-    // Empty in dynamic control mode.
-    std::map<dt::NumericId, PowerTimeline> offered_schedules{};
+    // The schedules of each tuple offered in the last finished ScheduleExchangeRes, by ScheduleTupleID. Empty in
+    // dynamic control mode.
+    std::map<dt::NumericId, OfferedSchedule> offered_schedules{};
 
     // The EVPowerProfile of the EV's latest PowerDeliveryReq that carried one.
     std::optional<PowerTimeline> ev_power_profile{};
