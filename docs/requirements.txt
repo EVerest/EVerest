@@ -15,3 +15,7 @@ sphinxcontrib-mermaid
 
 # Required for processing templates
 PyYAML
+
+# 2.0 dropped its namespace .pth, which hides the other sphinxcontrib
+# extensions when the docs venv also sees system site-packages
+sphinxcontrib-jsmath==1.0.1
