@@ -558,6 +558,7 @@ TEST_F(DeviceModelTest, test_check_integrity_invalid_missing_required_variable_v
     device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
                                                                std::nullopt, "OrganizationName", std::nullopt,
                                                                AttributeEnum::Actual);
+    dm = device_model_test_helper.get_device_model();
     // This should throw an exception.
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }
@@ -567,6 +568,7 @@ TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_is_accepted_and_
     ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
                                                                            std::nullopt, "OrganizationName",
                                                                            std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
 
     std::string value = "stale";
     EXPECT_EQ(dm->get_variable(organization_name.component, organization_name.variable.value(), AttributeEnum::Actual,
@@ -594,6 +596,7 @@ TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_write_only_witho
     ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
                                                                            std::nullopt, "BasicAuthPassword",
                                                                            std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
 
     std::string value;
     EXPECT_EQ(dm->get_variable(basic_auth_password.component, basic_auth_password.variable.value(),
@@ -606,6 +609,7 @@ TEST_F(DeviceModelTest, test_get_variable_write_only_without_value_is_rejected_b
     ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
                                                                            std::nullopt, "BasicAuthPassword",
                                                                            std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
 
     std::string value;
     EXPECT_EQ(dm->get_variable(basic_auth_password.component, basic_auth_password.variable.value(),

@@ -38,7 +38,7 @@ template <size_t L> bool operator==(const CiString<L>& lhs, const std::string_vi
 namespace {
 using namespace ocpp;
 using SetResult = v16::ChargePointConfigurationDeviceModel::SetResult;
-using DeviceModelInterface = v2::DeviceModelInterface;
+using DeviceModelInterface = v2::DeviceModelVariablesInterface;
 using SupportedFeatureProfiles = v16::SupportedFeatureProfiles;
 
 constexpr const std::string_view cost_and_price_feature{"CostAndPrice"};
@@ -1196,7 +1196,7 @@ std::string ChargePointConfigurationDeviceModel::calculateSupportedMeasurands() 
 // Public methods
 
 ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
-    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelInterface> device_model_interface,
+    const std::string_view& ocpp_main_path, std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
     v2::Ocpp16CustomConfigMappings custom_config_mappings_) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
