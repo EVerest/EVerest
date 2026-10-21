@@ -12,6 +12,7 @@
 #include <vector>
 
 #include <iso15118/d20/der_functions.hpp>
+#include <iso15118/d20/limits.hpp>
 #include <iso15118/d20/power_timeline.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
@@ -213,7 +214,7 @@ public:
 
     // The EVSEMaximumChargePower sent in the ChargeParameterDiscoveryRes. The schedule offer and the EV's
     // EVPowerProfile are both sized from it, so limits updated since must not reach the offer.
-    std::optional<dt::RationalNumber> cpd_max_charge_power{};
+    std::optional<MaxChargePower> cpd_max_charge_power{};
 
     // The charge schedule of each tuple offered in the last finished ScheduleExchangeRes, by ScheduleTupleID.
     // Empty in dynamic control mode.
