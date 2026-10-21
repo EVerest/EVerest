@@ -72,9 +72,17 @@ SCENARIO("A power timeline tells whether a demand exceeds it") {
         REQUIRE(offered.exceeded_by(1000, 8200, total(11000.0f)));
     }
 
-    THEN("time the timeline does not cover is unconstrained") {
-        REQUIRE_FALSE(offered.exceeded_by(0, 1000, total(22000.0f)));
-        REQUIRE_FALSE(offered.exceeded_by(8200, 9000, total(22000.0f)));
+    THEN("time the timeline does not cover allows zero power [V2G20-1811]") {
+        REQUIRE(offered.exceeded_by(0, 1000, total(1.0f)));
+        REQUIRE(offered.exceeded_by(8200, 9000, total(1.0f)));
+        REQUIRE(offered.exceeded_by(999, 1001, total(1.0f)));
+        REQUIRE_FALSE(offered.exceeded_by(8199, 8201, total(0.0f)));
+        REQUIRE_FALSE(offered.exceeded_by(0, 1000, total(0.0f)));
+        REQUIRE_FALSE(offered.exceeded_by(8200, 9000, total(0.0f)));
+    }
+
+    THEN("an entry without duration demands nothing") {
+        REQUIRE_FALSE(offered.exceeded_by(9000, 9000, total(22000.0f)));
     }
 }
 
