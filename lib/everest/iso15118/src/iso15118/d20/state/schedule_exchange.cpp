@@ -218,11 +218,15 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.session.offered_schedules.clear();
         if (const auto* scheduled = std::get_if<ScheduledResControlMode>(&res.control_mode)) {
+            const auto timeline = [](const dt::PowerSchedule& schedule) {
+                return PowerTimeline::from(schedule.time_anchor / MILLISECONDS_PER_SECOND, schedule.entries);
+            };
             for (const auto& tuple : scheduled->schedule_tuple) {
-                const auto& power_schedule = tuple.charging_schedule.power_schedule;
-                m_ctx.session.offered_schedules.emplace(
-                    tuple.schedule_tuple_id,
-                    PowerTimeline::from(power_schedule.time_anchor / MILLISECONDS_PER_SECOND, power_schedule.entries));
+                OfferedSchedule offered{timeline(tuple.charging_schedule.power_schedule), {}};
+                if (tuple.discharging_schedule.has_value()) {
+                    offered.discharge = timeline(tuple.discharging_schedule->power_schedule);
+                }
+                m_ctx.session.offered_schedules.emplace(tuple.schedule_tuple_id, offered);
             }
         }
 
