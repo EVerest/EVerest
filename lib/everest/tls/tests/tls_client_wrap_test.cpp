@@ -395,9 +395,6 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdNonBlocking) {
     const auto drive = drive_client_handshake(*conn, client_fd, 0, 200, 500);
     ASSERT_EQ(drive.result, result_t::success);
 
-    EXPECT_TRUE(drive.want_read > 0 || drive.want_write > 0)
-        << "expected at least one want_read or want_write during non-blocking handshake";
-
     const std::array<std::byte, 4> ping{std::byte{'p'}, std::byte{'i'}, std::byte{'n'}, std::byte{'g'}};
     std::size_t written = 0;
     for (int i = 0; i < 50 && written < ping.size(); ++i) {
@@ -449,5 +446,32 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdNonBlocking) {
     if (server_side.joinable()) {
         server_side.join();
     }
+    std::ignore = ::close(listener.fd);
+}
+
+// A non-blocking connect() hands control back instead of waiting for a peer that has not answered yet.
+TEST_F(TlsClientWrapTest, WrapConnectingFdConnectDoesNotWaitForPeer) {
+    using result_t = tls::Connection::result_t;
+
+    // Never accepted: the kernel completes the TCP handshake, but nobody answers the ClientHello.
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
+
+    const int client_fd = connect_loopback_nonblocking(listener.port);
+    ASSERT_GE(client_fd, 0);
+
+    tls::Client::config_t nb_config = client_config;
+    nb_config.io_timeout_ms = 0;
+
+    ClientTest local_client;
+    local_client.init(nb_config);
+
+    auto conn = local_client.wrap_connecting_fd(client_fd, "localhost");
+    ASSERT_TRUE(conn);
+
+    const auto result = conn->connect(0);
+    EXPECT_TRUE(result == result_t::want_read || result == result_t::want_write);
+
+    conn.reset();
     std::ignore = ::close(listener.fd);
 }
