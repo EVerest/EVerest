@@ -364,6 +364,15 @@ config:
     type: integer
     minimum: 6000
     default: 7000
+  soft_over_current_stale_data_warning_ms:
+    description: >-
+      Diagnostics only: warn if the current measurements used for soft over current checking during AC charging
+      have not been updated for more than N ms, which may indicate a frozen power meter or a broken communication
+      link. The measurements are still used as-is. Increase this value for power meters with slow update intervals.
+      Set to 0 to disable the warning.
+    type: integer
+    minimum: 0
+    default: 5000
   lock_connector_in_state_b:
     description: >-
       Indicates if the connector lock should be locked in state B. If set to false, connector will remain unlocked in CP state B
