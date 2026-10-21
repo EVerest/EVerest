@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:error_history_consumer_API'
 info:
   title: 'EVerest API definition for error history (consumer)'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients for error status and history.
 

@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:session_cost_consumer_API'
 info:
   title: 'EVerest API definition for session cost consumer'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients that consume session cost and tariff
     information from the `session_cost` interface. See the
