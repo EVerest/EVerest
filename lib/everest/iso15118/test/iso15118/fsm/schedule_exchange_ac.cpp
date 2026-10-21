@@ -61,6 +61,40 @@ SCENARIO("ISO15118-20 scheduled AC schedule exchange state transitions") {
             const auto& entry = power_schedule.entries.front();
             REQUIRE(dt::from_RationalNumber(entry.power) == 11000);
             REQUIRE(entry.duration == dt::SCHEDULED_POWER_DURATION_S);
+            REQUIRE_FALSE(entry.power_l2.has_value());
+            REQUIRE_FALSE(entry.power_l3.has_value());
+        }
+    }
+
+    GIVEN("Good case - the ChargeParameterDiscoveryRes sent the power per phase") {
+        ctx.session = d20::Session(d20::SelectedServiceParameters(
+            dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
+        ctx.session.cpd_max_charge_power =
+            d20::MaxChargePower{{7, 3}, dt::RationalNumber{6, 3}, dt::RationalNumber{5, 3}};
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::ScheduleExchange>()};
+
+        message_20::ScheduleExchangeRequest req;
+        req.header.session_id = ctx.session.get_id();
+        req.header.timestamp = 1691411798;
+        req.max_supporting_points = 12;
+        req.control_mode.emplace<dt::Scheduled_SEReqControlMode>();
+
+        state_helper.handle_request(req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("the offer carries the same per phase values") {
+            const auto response_message = ctx.get_response<message_20::ScheduleExchangeResponse>();
+            REQUIRE(response_message.has_value());
+            const auto& schedules =
+                std::get<dt::Scheduled_SEResControlMode>(response_message->control_mode).schedule_tuple;
+            const auto& entry = schedules.front().charging_schedule.power_schedule.entries.front();
+            REQUIRE(dt::from_RationalNumber(entry.power) == 7000);
+            REQUIRE(entry.power_l2.has_value());
+            REQUIRE(dt::from_RationalNumber(*entry.power_l2) == 6000);
+            REQUIRE(entry.power_l3.has_value());
+            REQUIRE(dt::from_RationalNumber(*entry.power_l3) == 5000);
         }
     }
 }
