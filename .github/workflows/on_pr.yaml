@@ -160,3 +160,19 @@ jobs:
     with:
       runner: ${{ inputs.runner || 'ubuntu-24.04' }}
       platform: ${{ matrix.platform }}
+
+
+  # The eSDK image is not public, so PRs from forks cannot pull it.
+  yocto-esdk-build:
+    name: Yocto eSDK (${{ matrix.release }})
+    needs:
+      - setup-env
+    if: ${{ needs.setup-env.outputs.is_fork != 'true' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [kirkstone, scarthgap, wrynose]
+    uses: ./.github/workflows/job_build-yocto-esdk.yaml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      esdk_image: ghcr.io/everest/everest-ci/yocto-esdk:${{ matrix.release }}-qemuarm64-20261020
