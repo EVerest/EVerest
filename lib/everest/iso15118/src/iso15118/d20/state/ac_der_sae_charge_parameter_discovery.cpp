@@ -208,7 +208,7 @@ Result AC_DER_SAE_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
-        m_ctx.session.cpd_max_charge_power = limits.charge_power.max;
+        m_ctx.session.cpd_max_charge_power = max_charge_power(limits);
 
         m_ctx.session_ev_info.ev_transfer_limits.emplace<dt::sae::DER_SAE_AC_CPDReqEnergyTransferMode>(
             req->transfer_mode);

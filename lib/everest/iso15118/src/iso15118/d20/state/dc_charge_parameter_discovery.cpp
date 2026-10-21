@@ -139,7 +139,7 @@ Result DC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
-        m_ctx.session.cpd_max_charge_power = limits.charge_limits.power.max;
+        m_ctx.session.cpd_max_charge_power = MaxChargePower{limits.charge_limits.power.max, std::nullopt, std::nullopt};
 
         return m_ctx.create_state<ScheduleExchange>();
     } else if (const auto req = variant->get_if<message_20::SessionStopRequest>()) {

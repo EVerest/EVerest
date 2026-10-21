@@ -41,6 +41,23 @@ struct AcTransferLimits {
     std::optional<Limit<dt::RationalNumber>> discharge_power_L3;
 };
 
+/// \brief An EVSEMaximumChargePower with its optional _L2 and _L3 peers [V2G20-1817], [V2G20-1818].
+struct MaxChargePower {
+    dt::RationalNumber power;
+    std::optional<dt::RationalNumber> power_L2;
+    std::optional<dt::RationalNumber> power_L3;
+};
+
+inline MaxChargePower max_charge_power(const AcTransferLimits& limits) {
+    const auto max = [](const std::optional<Limit<dt::RationalNumber>>& limit) -> std::optional<dt::RationalNumber> {
+        if (not limit.has_value()) {
+            return std::nullopt;
+        }
+        return limit->max;
+    };
+    return {limits.charge_power.max, max(limits.charge_power_L2), max(limits.charge_power_L3)};
+}
+
 struct IecDerTransferLimits {
     dt::RationalNumber nominal_charge_power;
     std::optional<dt::RationalNumber> nominal_charge_power_L2;
