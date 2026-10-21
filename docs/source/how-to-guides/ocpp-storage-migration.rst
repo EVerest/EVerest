@@ -227,6 +227,11 @@ The referenced component and variable must already exist in the component
 configuration at ``DeviceModelConfigPath``. The mapping file tells the
 migration where to write the value — it does not create the target variable.
 
+Each variable stores exactly one OCPP 1.6 key. The module does not start when
+two entries in the file target the same component and variable, or when an
+entry targets the built-in mapping of an OCPP 1.6 key, for example
+``OCPPCommCtrlr`` ``HeartbeatInterval``.
+
 .. _howto-ocpp-storage-migration-share-legacy-key:
 
 Share an OCPP 1.6 key with your own OCPP 2.x variable
@@ -261,8 +266,6 @@ The module does not start when the mapping file:
 * replaces the mapping of ``NumberOfConnectors``, ``SupportedFeatureProfiles``,
   ``MeterPublicKeys`` or ``DefaultPriceText``, which the OCPP 1.6 stack derives
   or expands itself.
-* maps a built-in key to a variable that is the built-in mapping of another key
-  or the target of another entry in the file.
 * maps a built-in key to a variable that does not exist in the component
   configuration.
 

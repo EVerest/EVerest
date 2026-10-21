@@ -4,6 +4,7 @@
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <fstream>
+#include <map>
 #include <sstream>
 
 #include <nlohmann/json-schema.hpp>
@@ -53,19 +54,32 @@ std::string describe(const Component& component, const Variable& variable) {
     return result;
 }
 
-/// Entries for known OCPP 1.6 keys override the built-in mapping. Only OCPP16LegacyCtrlr keys may be overridden,
-/// and an override must not share its target with another key, since the target is the key's only storage.
-void validate_overrides(const Ocpp16KeyMappings& mappings, const std::filesystem::path& mapping_file_path) {
+/// Entries for known OCPP 1.6 keys override the built-in mapping; only OCPP16LegacyCtrlr keys may be overridden.
+/// Every target is the storage of exactly one key, so no entry may target the built-in mapping of another key or
+/// the target of another entry.
+void validate_targets(const Ocpp16KeyMappings& mappings, const std::filesystem::path& mapping_file_path) {
     const auto error_prefix = "Invalid custom mapping in '" + mapping_file_path.string() + "': key '";
 
+    std::map<std::pair<Component, Variable>, std::string> key_by_target;
     for (const auto& [ocpp16_key, cv] : mappings) {
+        const auto& [component, variable] = cv;
+
+        if (const auto owner = v16::keys::convert_v2(component, variable, AttributeEnum::Actual);
+            owner.has_value() && owner.value() != ocpp16_key) {
+            throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
+                                         ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'");
+        }
+
+        if (const auto [it, inserted] = key_by_target.emplace(cv, ocpp16_key); !inserted) {
+            throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
+                                         ", which is also the target of key '" + it->second + "'");
+        }
+
         const auto key = v16::keys::convert(ocpp16_key);
         if (!key.has_value()) {
             continue;
         }
-        const auto& [component, variable] = cv;
         const auto builtin = v16::keys::convert_v2(key.value());
-
         if (!v16::is_overridable_key(key.value())) {
             const auto builtin_target =
                 builtin.has_value() ? describe(builtin->first, builtin->second) : std::string{"no variable"};
@@ -74,20 +88,6 @@ void validate_overrides(const Ocpp16KeyMappings& mappings, const std::filesystem
                 "; only built-in keys mapped to OCPP16LegacyCtrlr can be custom-mapped, except NumberOfConnectors, "
                 "SupportedFeatureProfiles, MeterPublicKeys and DefaultPriceText");
         }
-
-        if (const auto owner = v16::keys::convert_v2(component, variable, AttributeEnum::Actual);
-            owner.has_value() && owner.value() != ocpp16_key) {
-            throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
-                                         ", which is the built-in mapping of OCPP 1.6 key '" + owner.value() + "'");
-        }
-
-        for (const auto& [other_key, other_cv] : mappings) {
-            if (other_key != ocpp16_key && other_cv == cv) {
-                throw Ocpp16KeyMappingsError(error_prefix + ocpp16_key + "' targets " + describe(component, variable) +
-                                             ", which is also the target of key '" + other_key + "'");
-            }
-        }
-
         EVLOG_info << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to " << describe(component, variable)
                    << " instead of its built-in " << describe(builtin->first, builtin->second);
     }
@@ -299,7 +299,7 @@ Ocpp16KeyMappings load_ocpp16_key_mappings_from_yaml(const std::filesystem::path
         }
     }
 
-    validate_overrides(mappings, mapping_file_path);
+    validate_targets(mappings, mapping_file_path);
     return mappings;
 }
 
