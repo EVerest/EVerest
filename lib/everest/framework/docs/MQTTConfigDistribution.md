@@ -76,6 +76,7 @@ class ConfigParseSettings{
     +fs::path modules_dir
     +fs::path configs_dir
     +fs::path config_file
+    +fs::path user_config_file
     +nlohmann::json config
     +bool validate_schema
 }

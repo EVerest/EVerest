@@ -1163,7 +1163,8 @@ ValidatedModuleConfigurations validate_module_configs(const ConfigParseSettings&
     ConfigParseSettings val_ps = ps;
     val_ps.config = json_config;
     val_ps.config_file.clear(); // no file; skip canonical() and user-config lookup
-    ManagerConfig tmp(val_ps);  // validation-only path; validates manifests and requirements
+    val_ps.user_config_file.clear();
+    ManagerConfig tmp(val_ps); // validation-only path; validates manifests and requirements
     return {tmp.get_module_configurations(), tmp.get_manifests()};
 }
 
@@ -1245,11 +1246,11 @@ json ManagerConfig::apply_user_config_and_defaults() {
     const fs::path config_path = m_ps.config_file;
     if (!config_path.empty()) {
         EVLOG_info << fmt::format("Loading config file at: {}", fs::canonical(config_path).string());
-        // try to load user config from a directory "user-config" that might be in the same parent directory as the
-        // config_file. The config is supposed to have the same name as the parent config.
-        // TODO(kai): introduce a parameter that can overwrite the location of the user config?
-        // TODO(kai): or should we introduce a "meta-config" that references all configs that should be merged here?
-        const auto user_config_path = config_path.parent_path() / "user-config" / config_path.filename();
+    }
+
+    // TODO(kai): should we introduce a "meta-config" that references all configs that should be merged here?
+    const fs::path user_config_path = m_ps.user_config_file;
+    if (!user_config_path.empty()) {
         m_user_config_storage = std::make_unique<everest::config::UserConfigStorage>(user_config_path);
         if (fs::exists(user_config_path)) {
             EVLOG_info << fmt::format("Loading user-config file at: {}", fs::canonical(user_config_path).string());
