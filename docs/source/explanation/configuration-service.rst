@@ -168,8 +168,18 @@ Relative paths are resolved against the installation prefix:
 
 .. code-block:: yaml
 
-   mqtt_broker_socket_path: /var/run/mosquitto/mosquitto.sock
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
    telemetry_enabled: true
+
+Example settings files are installed next to the example configs in
+``<prefix>/etc/everest``:
+
+``settings-all-options.yaml``
+  Every available setting with its built-in default and a short explanation.
+``settings-mqtt-tcp.yaml``
+  An MQTT broker reachable over TCP.
+``settings-mqtt-uds.yaml``
+  An MQTT broker reachable over a Unix domain socket.
 
 The keys are ``configs_dir``, ``schemas_dir``, ``modules_dir``,
 ``interfaces_dir``, ``types_dir``, ``errors_dir``, ``logging_config_file``,

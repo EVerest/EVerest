@@ -17,13 +17,23 @@ In Mosquitto, config file add the line:
 
 .. code-block::
 
-   listener 0 /tmp/mosquitto.socket
+   listener 0 /run/mosquitto/mosquitto.sock
 
 In the EVerest settings file passed to the manager with ``--settings``, add:
 
 .. code-block:: yaml
 
-   mqtt_broker_socket_path: /tmp/mosquitto.socket
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
+
+Access to the socket is controlled by the permissions of its directory. Use a
+directory that only the broker and the user running EVerest can access, for
+example ``/run/mosquitto`` owned by the broker user and a group shared with
+EVerest, mode ``0750``. Do not place the socket in a world-writable directory
+such as ``/tmp``: any local user could connect to it, or create a socket there
+before the broker does.
+
+The installed example ``etc/everest/settings-mqtt-uds.yaml`` is a complete
+settings file for this setup.
 
 - If a part of an MQTT API should be exposed, e.g. to a mobile app on
   the same wireless LAN, use mutually authenticated TLS for the MQTT

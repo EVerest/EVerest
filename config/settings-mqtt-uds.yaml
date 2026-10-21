@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Example manager settings for an MQTT broker reachable over a Unix domain
+# socket. Pass it to the manager with --settings, e.g.
+#
+#   manager --config config-sil.yaml --settings settings-mqtt-uds.yaml
+#
+# A Unix domain socket keeps the internal MQTT traffic off the network, see
+# the security best practices in the documentation. Access to the socket is
+# controlled by the permissions of its directory: use a directory that only
+# the broker and the user running EVerest can access, for example
+# /run/mosquitto owned by the broker user and a group shared with EVerest,
+# mode 0750. Avoid world-writable directories like /tmp, where any local user
+# could connect to the socket or create one in place of the broker.
+#
+# The matching listener in the mosquitto configuration is:
+#
+#   listener 0 /run/mosquitto/mosquitto.sock
+#
+# The manager refuses to start when a broker host is set as well, either as
+# mqtt_broker_host or in the environment variable MQTT_SERVER_ADDRESS.
+# All settings are listed in settings-all-options.yaml.
+
+mqtt_broker_socket_path: '/run/mosquitto/mosquitto.sock'
+mqtt_everest_prefix: 'everest'
+mqtt_external_prefix: ''
