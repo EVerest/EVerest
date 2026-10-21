@@ -4,7 +4,9 @@
 #include "tls_connection_test.hpp"
 
 #include <algorithm>
+#include <chrono>
 #include <cstring>
+#include <future>
 #include <poll.h>
 #include <tuple>
 #include <unistd.h>
@@ -350,12 +352,18 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdNonBlocking) {
     const auto init_state = server.init(server_config, nullptr);
     ASSERT_TRUE(init_state == state_t::init_complete || init_state == state_t::init_socket);
 
+    // The server holds back its handshake until the client's first connect() has returned, so that call
+    // cannot find a reply already buffered and must report want_read or want_write.
+    std::promise<void> first_connect_done;
+    auto first_connect_future = first_connect_done.get_future();
+
     // Echo 4 bytes back so the client's non-blocking write/read paths run.
     std::thread server_side([&]() {
         auto server_conn = accept_and_wrap(server, listener.fd);
         if (!server_conn) {
             return;
         }
+        std::ignore = first_connect_future.wait_for(std::chrono::seconds(5));
         if (server_conn->accept(1000) == result_t::success) {
             std::array<std::byte, 4> buf{};
             std::size_t total = 0;
@@ -392,11 +400,12 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdNonBlocking) {
     auto conn = local_client.wrap_connecting_fd(client_fd, "localhost");
     ASSERT_TRUE(conn);
 
+    const auto first_connect = conn->connect(0);
+    first_connect_done.set_value();
+    EXPECT_TRUE(first_connect == result_t::want_read || first_connect == result_t::want_write);
+
     const auto drive = drive_client_handshake(*conn, client_fd, 0, 200, 500);
     ASSERT_EQ(drive.result, result_t::success);
-
-    EXPECT_TRUE(drive.want_read > 0 || drive.want_write > 0)
-        << "expected at least one want_read or want_write during non-blocking handshake";
 
     const std::array<std::byte, 4> ping{std::byte{'p'}, std::byte{'i'}, std::byte{'n'}, std::byte{'g'}};
     std::size_t written = 0;
