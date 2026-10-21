@@ -60,15 +60,19 @@ list. `cmake -LH build` lists all options; the two easiest to miss are
 `EVEREST_ENABLE_COVERAGE` and `CMAKE_RUN_CLANG_TIDY`, both OFF.
 
 Rust modules (`modules/**/Rs*`) build only with `-DEVEREST_ENABLE_RS_SUPPORT=ON`. CMake
-assembles a cargo workspace in `build/rust_workspace` and runs cargo there, in release
-profile for every build type but Debug. Cross builds set `EVEREST_RS_TARGET_TRIPLE` and
-`EVEREST_RS_LINKER`; the defaults are `<CMAKE_SYSTEM_PROCESSOR>-unknown-linux-gnu` and
-`CMAKE_CXX_COMPILER`. `modules/Cargo.lock` pins the crates for Bazel and Yocto alike:
+runs cargo on the workspace `modules/Cargo.toml`, selecting the modules it builds with
+`-p`, so a new Rust module must be listed in that workspace's `members`. The target
+directory and the generated cargo config (linker, jobs) live in `build/rust_workspace`;
+cargo builds in release profile for every build type but Debug. Cross builds set
+`EVEREST_RS_TARGET_TRIPLE` and `EVEREST_RS_LINKER`; the defaults are
+`<CMAKE_SYSTEM_PROCESSOR>-unknown-linux-gnu` and `CMAKE_CXX_COMPILER`.
+`modules/Cargo.lock` pins the crates for Bazel, CMake and Yocto alike:
 after editing a Rust module's `Cargo.toml`, update it (`cargo update` in `modules/`),
 regenerate `yocto/meta-everest-common/recipes-core/everest/everest-core-crates.inc`
 with `bitbake -c update_crates everest-core`, and mirror a new zvt revision in the
 `SRCREV` of `everest-core-rust.inc` next to it. `bazel test //yocto:rust_pins_test` checks
-that manifests, lock file and recipe name the same revision.
+that manifests, lock file and recipe name the same zvt revision, and that
+`everest-core-crates.inc` fetches exactly the crates.io crates the lock pins.
 
 The Yocto layers `yocto/<release>/meta-everest` build everest-core from this tree. Recipes
 and classes they share live in the layer `yocto/meta-everest-common`, which a
