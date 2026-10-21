@@ -5,6 +5,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -15,7 +16,7 @@ namespace iso15118::d20 {
 constexpr uint64_t MICROSECONDS_PER_SECOND = 1'000'000;
 constexpr uint64_t MILLISECONDS_PER_SECOND = 1'000;
 
-// Charge power over consecutive time slots from an anchor. Both the schedule tuples the SECC offers in
+// Power over consecutive time slots from an anchor, negative for discharge. Both the schedules the SECC offers in
 // ScheduleExchangeRes and the EVPowerProfile of the EV's PowerDeliveryReq are kept in this form.
 struct PowerTimeline {
     struct Entry {
@@ -23,22 +24,30 @@ struct PowerTimeline {
         float power_w{0.0f};                                 // total over all phases
         std::optional<std::array<float, 3>> phase_power_w{}; // L1, L2, L3 if sent per phase [V2G20-1818]
 
-        // [V2G20-1817]: a total without per phase values is spread evenly over the three phases.
         bool exceeds(const Entry& limit) const {
+            return beyond(limit, std::greater<float>{});
+        }
+
+        bool falls_below(const Entry& limit) const {
+            return beyond(limit, std::less<float>{});
+        }
+
+    private:
+        // [V2G20-1817]: a total without per phase values is spread evenly over the three phases.
+        template <typename Compare> bool beyond(const Entry& limit, Compare compare) const {
             if (not phase_power_w.has_value() and not limit.phase_power_w.has_value()) {
-                return power_w > limit.power_w;
+                return compare(power_w, limit.power_w);
             }
             const auto demand = phases();
             const auto allowed = limit.phases();
             for (std::size_t i = 0; i < demand.size(); ++i) {
-                if (demand[i] > allowed[i]) {
+                if (compare(demand[i], allowed[i])) {
                     return true;
                 }
             }
             return false;
         }
 
-    private:
         std::array<float, 3> phases() const {
             return phase_power_w.value_or(std::array<float, 3>{power_w / 3, power_w / 3, power_w / 3});
         }
@@ -82,22 +91,33 @@ struct PowerTimeline {
         return std::nullopt;
     }
 
-    // Whether \p demand over [\p start_s, \p end_s) exceeds the power of any entry it overlaps. Time no entry
-    // covers allows zero power [V2G20-1811].
+    // Whether \p demand over [\p start_s, \p end_s) is above the power of any entry it overlaps. Time no entry
+    // covers has zero power [V2G20-1811].
     bool exceeded_by(uint64_t start_s, uint64_t end_s, const Entry& demand) const {
+        return violated_by(start_s, end_s, [&demand](const Entry& limit) { return demand.exceeds(limit); });
+    }
+
+    // Whether \p demand over [\p start_s, \p end_s) is below the power of any entry it overlaps, i.e. discharges
+    // more than a discharge schedule allows. Time no entry covers has zero power [V2G20-1811].
+    bool undercut_by(uint64_t start_s, uint64_t end_s, const Entry& demand) const {
+        return violated_by(start_s, end_s, [&demand](const Entry& limit) { return demand.falls_below(limit); });
+    }
+
+private:
+    template <typename Violates> bool violated_by(uint64_t start_s, uint64_t end_s, Violates violates) const {
         if (start_s >= end_s) {
             return false;
         }
         uint64_t slot_start = time_anchor_s;
         for (const auto& entry : entries) {
             const uint64_t slot_end = slot_start + entry.duration_s;
-            if (start_s < slot_end and slot_start < end_s and demand.exceeds(entry)) {
+            if (start_s < slot_end and slot_start < end_s and violates(entry)) {
                 return true;
             }
             slot_start = slot_end;
         }
         const bool uncovered = start_s < time_anchor_s or end_s > slot_start;
-        return uncovered and demand.exceeds(Entry{});
+        return uncovered and violates(Entry{});
     }
 };
 
