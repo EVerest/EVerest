@@ -12,7 +12,7 @@
 /.github/labeler.yml @andistorm @nzbr @pietfried @corneliusclaussen
 
 # applications
-/applications/pionix_chargebridge @djchhp @corneliusclaussen
+/applications/pionix_chargebridge @djchhp @corneliusclaussen @pietfried
 
 # cmake
 /cmake/ @hikinggrass @a-w50 @corneliusclaussen @andistorm
