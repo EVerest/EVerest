@@ -1286,12 +1286,6 @@ const ComponentVariable MinimumStatusDuration = {
         "MinimumStatusDuration",
     }),
 };
-const ComponentVariable StopTransactionOnEVSideDisconnect = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "StopTransactionOnEVSideDisconnect",
-    }),
-};
 const RequiredComponentVariable SupportedFeatureProfiles = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
@@ -1302,12 +1296,6 @@ const ComponentVariable SupportedFeatureProfilesMaxLength = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "SupportedFeatureProfilesMaxLength",
-    }),
-};
-const RequiredComponentVariable UnlockConnectorOnEVSideDisconnect = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "UnlockConnectorOnEVSideDisconnect",
     }),
 };
 const ComponentVariable ReserveConnectorZeroSupported = {
@@ -1370,12 +1358,6 @@ const ComponentVariable ISO15118CertificateManagementEnabled = {
         "ISO15118CertificateManagementEnabled",
     }),
 };
-const ComponentVariable CustomDisplayCostAndPrice = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "CustomDisplayCostAndPrice",
-    }),
-};
 const ComponentVariable DefaultPrice = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
@@ -1398,12 +1380,6 @@ const ComponentVariable SupportedLanguages = {
     ControllerComponents::OCPP16LegacyCtrlr,
     std::optional<Variable>({
         "SupportedLanguages",
-    }),
-};
-const ComponentVariable CustomMultiLanguageMessages = {
-    ControllerComponents::OCPP16LegacyCtrlr,
-    std::optional<Variable>({
-        "CustomMultiLanguageMessages",
     }),
 };
 const ComponentVariable Language = {
