@@ -166,13 +166,12 @@ class EVerestAPICmd(cmd2.Cmd):
         for index, reply_to in enumerate(self.reply_to_cache, 1):
             self.poutput(f"@{index}\t{reply_to}")
 
-    echo_parser = cmd2.Cmd2ArgumentParser()
-    echo_parser.add_argument('message', nargs=argparse.REMAINDER, help='text to print')
-    @cmd2.with_argparser(echo_parser)
     @cmd2.with_category('Client Management')
-    def do_echo(self, args):
-        """Prints a message to the console. Useful in scripts to mark phases; prints even while muted."""
-        text = ' '.join(args.message)
+    def do_echo(self, statement: cmd2.Statement):
+        """Usage: echo <text>
+
+        Prints the text to the console as typed. Useful in scripts to mark phases; prints even while muted."""
+        text = statement.args
         self.poutput(self.IN_COLOR + text + self.RESET if self.colors else text)
 
     wait_for_parser = cmd2.Cmd2ArgumentParser()

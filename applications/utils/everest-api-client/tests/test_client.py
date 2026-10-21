@@ -539,3 +539,8 @@ def test_the_placeholder_is_only_replaced_in_requests(app):
     run(app, "set replyToPlaceholder XX")
     run(app, 'pm.send_powermeter_values {"meter_id":"XX"}')
     assert app.fakes[1].published[-1][1] == '{"meter_id": "XX"}'
+
+
+@pytest.mark.parametrize("text", ["---", "-h", "--- [1/2] phase ---", "=== x ==="])
+def test_echo_prints_any_text(app, text):
+    assert output(app, f"echo {text}") == text + "\n"
