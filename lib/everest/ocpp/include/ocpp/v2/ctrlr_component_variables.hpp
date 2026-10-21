@@ -13,7 +13,7 @@
 namespace ocpp {
 namespace v2 {
 
-class DeviceModelInterface;
+class DeviceModelVariablesInterface;
 
 ///
 /// \brief Required ComponentVariable.
@@ -448,11 +448,11 @@ extern const Variable CsmsRootCertificateIssuerNameHash;
 extern const Variable CsmsRootCertificateSerialNumber;
 extern const Variable HostName;
 ComponentVariable get_component_variable(const std::int32_t slot, const Variable& variable);
-std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelInterface& dm, int32_t slot);
-bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const NetworkConnectionProfile& profile,
-                                   const std::string& source);
-void migrate_from_blob_if_needed(DeviceModelInterface& dm);
-void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
+std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelVariablesInterface& dm, int32_t slot);
+bool write_profile_to_device_model(DeviceModelVariablesInterface& dm, int32_t slot,
+                                   const NetworkConnectionProfile& profile, const std::string& source);
+void migrate_from_blob_if_needed(DeviceModelVariablesInterface& dm);
+void clear_slot_in_device_model(DeviceModelVariablesInterface& dm, int32_t slot);
 } // namespace NetworkConfigurationComponentVariables
 
 namespace DERComponentVariables {

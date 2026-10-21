@@ -75,7 +75,7 @@ bool is_actual(const std::optional<ocpp::v2::AttributeEnum>& attribute_type) {
 namespace ocpp_multi {
 
 V16VariableAccess::V16VariableAccess(const ocpp::v16::VariableResolver& resolver,
-                                     ocpp::v2::DeviceModelInterface& device_model, get_keys_fn get_keys,
+                                     ocpp::v2::DeviceModelVariablesInterface& device_model, get_keys_fn get_keys,
                                      set_key_fn set_key, on_connection_config_changed_fn on_connection_config_changed) :
     m_resolver(resolver),
     m_device_model(device_model),
