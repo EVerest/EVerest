@@ -1148,7 +1148,8 @@ TEST_F(ChargerDlinkErrorTest, NoSlacRetryWithNominalPwm) {
 }
 
 // A PnC authorization in a 5% session whose EV never starts the charging loop: the end of the data link switches
-// to nominal PWM for basic charging with the authorization kept, instead of a matching restart on 5%.
+// to nominal PWM for basic charging with the authorization kept (ISO 15118-3 6.4.2.1, 7.5.2), instead of a return to
+// WaitingForAuthentication.
 struct ChargerPncWithoutChargingLoopTest : public ChargerDlinkErrorTest {
     void setup_pnc_authorized_waiting_for_charging_loop() {
         auto& ctx = charger->get_shared_context();
@@ -1177,7 +1178,7 @@ TEST_F(ChargerPncWithoutChargingLoopTest, DlinkErrorFallsBackToNominalThroughX1A
     EXPECT_FALSE(charger->get_hlc_use_5percent_current_session());
     EXPECT_TRUE(ctx.flag_authorized) << "the PnC authorization is kept";
     EXPECT_TRUE(ctx.flag_transaction_active);
-    EXPECT_FALSE(ctx.reinit_requested) << "no matching restart";
+    EXPECT_FALSE(ctx.reinit_requested) << "SLAC is reset in X1 [V2G3-M07-06], not by the reinit sequence";
 }
 
 TEST_F(ChargerPncWithoutChargingLoopTest, TerminateFallsBackToNominalThroughEF) {
@@ -1196,29 +1197,38 @@ TEST_F(ChargerPncWithoutChargingLoopTest, TerminateFallsBackToNominalThroughEF) 
     EXPECT_FALSE(ctx.reinit_requested);
 }
 
-TEST_F(ChargerPncWithoutChargingLoopTest, DlinkErrorAfterChargingLoopRestartsMatching) {
+// Outside the PnC fallback, a D-LINK_ERROR on 5 percent during session setup runs the generic -3 sequence and returns
+// to WaitingForAuthentication: X2 -> X1 -> E/F -> X1/X2 [V2G3-M07-05], Unmatched within X1 [V2G3-M07-06], E/F once
+// Unmatched [V2G3-M07-07] for at least T_step_EF [V2G3-M07-08], then X1/X2 ready for matching [V2G3-M07-09].
+TEST_F(ChargerPncWithoutChargingLoopTest, DlinkErrorAfterChargingLoopRunsGenericX1AndEF) {
     setup_pnc_authorized_waiting_for_charging_loop();
     auto& ctx = charger->get_shared_context();
+    auto& ictx = charger->get_internal_context();
     ctx.current_state = Charger::EvseState::PrepareCharging;
     ctx.hlc_charging_active = true;
 
     charger->dlink_error();
 
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::PrepareCharging);
-    EXPECT_TRUE(ctx.reinit_requested) << "a lost link after the charging loop started restarts matching";
-    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1) << "[V2G3-M07-05]";
+    EXPECT_TRUE(ictx.t_step_X1_until_unmatched) << "[V2G3-M07-06], [V2G3-M07-07]";
+    EXPECT_EQ(ictx.t_step_EF_return_state, Charger::EvseState::WaitingForAuthentication)
+        << "the charging loop started: no PnC fallback to PrepareCharging";
+    EXPECT_FALSE(ctx.reinit_requested) << "the reinit sequence skips Unmatched and T_step_EF";
 }
 
-TEST_F(ChargerPncWithoutChargingLoopTest, EimDlinkErrorRestartsMatching) {
+TEST_F(ChargerPncWithoutChargingLoopTest, EimDlinkErrorRunsGenericX1AndEF) {
     setup_pnc_authorized_waiting_for_charging_loop();
     auto& ctx = charger->get_shared_context();
+    auto& ictx = charger->get_internal_context();
     ctx.authorized_pnc = false;
 
     charger->dlink_error();
 
-    EXPECT_EQ(charger->current_state(), Charger::EvseState::WaitingForAuthentication);
-    EXPECT_TRUE(ctx.reinit_requested);
-    EXPECT_TRUE(charger->get_hlc_use_5percent_current_session());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::T_step_X1) << "[V2G3-M07-05]";
+    EXPECT_TRUE(ictx.t_step_X1_until_unmatched) << "[V2G3-M07-06], [V2G3-M07-07]";
+    EXPECT_EQ(ictx.t_step_EF_return_state, Charger::EvseState::WaitingForAuthentication)
+        << "EIM: no PnC fallback to PrepareCharging";
+    EXPECT_FALSE(ctx.reinit_requested) << "the reinit sequence skips Unmatched and T_step_EF";
 }
 
 // A PnC authorization in WaitingForAuthentication before the EV started the charging loop
