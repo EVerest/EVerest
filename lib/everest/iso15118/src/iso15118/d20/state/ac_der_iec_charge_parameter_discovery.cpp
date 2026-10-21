@@ -348,7 +348,7 @@ Result AC_DER_IEC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
-        m_ctx.session.cpd_max_charge_power = limits.charge_power.max;
+        m_ctx.session.cpd_max_charge_power = max_charge_power(limits);
 
         // An EV that does not accept the settings may restart the service selection, but only once this
         // state has finished. The schedule exchange state answers that ServiceDiscoveryReq.

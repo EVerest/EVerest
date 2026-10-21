@@ -135,7 +135,7 @@ Result AC_ChargeParameterDiscovery::feed(Event ev) {
             m_ctx.session_stopped = true;
             return {};
         }
-        m_ctx.session.cpd_max_charge_power = limits.charge_power.max;
+        m_ctx.session.cpd_max_charge_power = max_charge_power(limits);
 
         if (const auto* mode = std::get_if<AC_ModeReq>(&req->transfer_mode)) {
             m_ctx.session_ev_info.ev_transfer_limits.emplace<AC_ModeReq>(*mode);

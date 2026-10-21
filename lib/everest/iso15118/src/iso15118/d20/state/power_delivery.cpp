@@ -57,7 +57,7 @@ std::optional<dt::ResponseCode> power_profile_error(const message_20::PowerDeliv
     uint64_t entry_start_s = profile.time_anchor_s;
     for (const auto& entry : profile.entries) {
         const uint64_t entry_end_s = entry_start_s + entry.duration_s;
-        if (offered->second.exceeded_by(entry_start_s, entry_end_s, entry.power_w)) {
+        if (offered->second.exceeded_by(entry_start_s, entry_end_s, entry)) {
             return dt::ResponseCode::FAILED_EVPowerProfileInvalid;
         }
         entry_start_s = entry_end_s;
