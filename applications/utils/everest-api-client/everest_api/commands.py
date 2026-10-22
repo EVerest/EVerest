@@ -11,6 +11,7 @@
 
 import argparse
 import json
+import re
 import textwrap
 
 import cmd2
@@ -65,9 +66,15 @@ class ClientCommandSet(CommandSet):
         if not self._cmd.mute:
             self._cmd.poutput(f"received: {topic}")
 
-    def send(self, op, args):
+    def send(self, op, args, arguments_text):
+        """Publish *op*. *arguments_text* is the text after the command word; the
+        payload is what follows the replyTo and topic parameter arguments."""
+        payload_text = text_after_words(arguments_text, int(op.is_reply) + len(op.params))
+        if not payload_text:
+            self._cmd.perror("the payload is missing")
+            return
         try:
-            payload = json.dumps(parse_payload(args.payload))
+            payload = json.dumps(parse_payload(payload_text))
         except ValueError as err:
             self._cmd.perror(f"invalid JSON payload: {err}")
             return
@@ -81,6 +88,11 @@ class ClientCommandSet(CommandSet):
         if op.reply_op_id is not None:
             payload = self._cmd.generate_replyTo(payload, topic)
         send.publish(payload, topic=topic)
+
+
+def text_after_words(text, count):
+    """*text* without its first *count* whitespace-separated words."""
+    return re.sub(r"^\s*(?:\S+\s+){%d}" % count, "", text, count=1).strip() if count else text.strip()
 
 
 def parse_payload(text):
@@ -130,11 +142,12 @@ def _send_command(op, module_id):
                             completer=ClientCommandSet.complete_reply_to)
     for param in op.params:
         parser.add_argument(param, help=f'value of the {param} topic parameter')
-    parser.add_argument('payload', help='the payload as JSON (TAB inserts the example from the spec)',
+    parser.add_argument('payload', nargs=argparse.REMAINDER,
+                        help='the payload as JSON, the rest of the line (TAB inserts the example from the spec)',
                         completer=ClientCommandSet.complete_payload)
 
     def do_send(self, args):
-        self.send(op, args)
+        self.send(op, args, self._cmd.line_after_command(args.cmd2_statement.get()))
 
     return parser, do_send
 

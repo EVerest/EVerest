@@ -68,8 +68,9 @@ $ ./everest_api_client.py
 (Cmd) client_remove spy                      # a spy's id is 'spy', or its topic if one was given
 ```
 
-Payloads are JSON, written without spaces or quoted as a whole
-(`'{"a": 1}'`). `help` lists all commands, grouped by client. Useful settables
+Payloads are JSON: the payload is the rest of the line, as typed, so it may
+contain spaces, `>` and `|`. The shell does not redirect output. `help` lists
+all commands, grouped by client. Useful settables
 (`set <name> <value>`): `show_topic`, `hide_topic`, `quiet`, `mute`,
 `prettify`, `colors`, `replyToPlaceholder`.
 

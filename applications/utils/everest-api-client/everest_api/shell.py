@@ -19,12 +19,27 @@ from everest_api.mqtt_client import close_mqtt, is_valid_topic_level
 from everest_api.spy import SpyCommandSet
 
 
+def cut_at_terminator(text):
+    """*text* up to the first ';' outside quotes."""
+    quote = None
+    for index, char in enumerate(text):
+        if quote:
+            if char == quote:
+                quote = None
+        elif char in "'\"":
+            quote = char
+        elif char == ";":
+            return text[:index]
+    return text
+
+
 class EVerestAPICmd(cmd2.Cmd):
     """EVerest API command line client application"""
 
     def __init__(self, models):
+        # no output redirection: '>' and '|' are kept as typed, e.g. in payloads
         super().__init__(include_py=True, persistent_history_file=os.path.expanduser("~/.everest_api_client"),
-                         auto_load_commands=False)
+                         auto_load_commands=False, allow_redirection=False)
         self.mqtt_clients = []
         self.api_clients = []
         self.stop_requested = False
@@ -166,12 +181,27 @@ class EVerestAPICmd(cmd2.Cmd):
         for index, reply_to in enumerate(self.reply_to_cache, 1):
             self.poutput(f"@{index}\t{reply_to}")
 
+    def line_after_command(self, statement):
+        """The rest of the line after the command word, as typed: cmd2's arguments
+        stop at characters like '|' and '>' and split JSON at its spaces. An
+        alias is replaced by its value, and the line ends at a ';' that ends
+        the command for cmd2."""
+        word, rest = re.match(r"\s*(\S*)\s?(.*)", statement.raw, re.S).groups()
+        expanded = set()
+        while word in self.aliases and word not in expanded:
+            expanded.add(word)
+            word, rest = re.match(r"\s*(\S*)\s?(.*)", self.aliases[word] + (" " + rest if rest else ""),
+                                  re.S).groups()
+        if statement.terminator:
+            rest = cut_at_terminator(rest)
+        return rest.rstrip()
+
     @cmd2.with_category('Client Management')
     def do_echo(self, statement: cmd2.Statement):
         """Usage: echo <text>
 
         Prints the text to the console as typed. Useful in scripts to mark phases; prints even while muted."""
-        text = statement.args
+        text = self.line_after_command(statement)
         self.poutput(self.IN_COLOR + text + self.RESET if self.colors else text)
 
     wait_for_parser = cmd2.Cmd2ArgumentParser()

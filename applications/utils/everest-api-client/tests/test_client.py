@@ -544,3 +544,48 @@ def test_the_placeholder_is_only_replaced_in_requests(app):
 @pytest.mark.parametrize("text", ["---", "-h", "--- [1/2] phase ---", "=== x ==="])
 def test_echo_prints_any_text(app, text):
     assert output(app, f"echo {text}") == text + "\n"
+
+
+# ---- payloads and echo are taken as typed ----
+
+@pytest.mark.parametrize("payload", ['{"a": 1, "b": [1, 2]}', '{"type":"T","sub_type":"","message":"a b"}',
+                                     '{"x": "a > b | c"}', """'{"a": 1}'"""])
+def test_payload_as_typed(app, payload):
+    run(app, "client_add powermeter pm")
+    run(app, f"pm.send_powermeter_values {payload}")
+    assert json.loads(app.fakes[0].published[-1][1]) == json.loads(payload.strip("'"))
+
+
+def test_payload_after_reply_to_and_parameters(app):
+    run(app, "client_add entrypoint")
+    run(app, 'entrypoint.send_request_query_module powermeter {"headers": {"replyTo": "r/1"}}')
+    assert app.fakes[0].published[-1] == ("everest_api/query-modules/powermeter", '{"headers": {"replyTo": "r/1"}}')
+    run(app, "client_add powermeter pm")
+    run(app, 'pm.send_reply_stop_transaction r/2 {"status": "OK", "error": ""}')
+    assert app.fakes[1].published[-1] == ("r/2", '{"status": "OK", "error": ""}')
+
+
+def test_missing_payload(app, capsys):
+    run(app, "client_add powermeter pm")
+    run(app, "pm.send_powermeter_values")
+    assert "payload is missing" in capsys.readouterr().err
+    assert app.fakes[0].published == []
+
+
+def test_alias_keeps_the_payload(app):
+    run(app, "client_add powermeter pm")
+    run(app, "alias create sr pm.send_reply_stop_transaction r/2")
+    run(app, 'sr {"status": "OK", "error": ""}')
+    assert app.fakes[0].published[-1] == ("r/2", '{"status": "OK", "error": ""}')
+
+
+def test_terminator_is_not_part_of_the_payload(app):
+    run(app, "client_add powermeter pm")
+    run(app, 'pm.send_powermeter_values {"a": "x;y"};')
+    assert app.fakes[0].published[-1][1] == '{"a": "x;y"}'
+
+
+def test_echo_does_not_redirect(app, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert output(app, "echo a | b > c") == "a | b > c\n"
+    assert list(tmp_path.iterdir()) == []
