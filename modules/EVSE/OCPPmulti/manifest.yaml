@@ -54,8 +54,8 @@ config:
       connection attempt and the websocket is bound to the interface address it returns. The provider must
       answer promptly (NotSupported is acceptable); with system_API the external client must reply to
       e2m/configure_network, otherwise every connection attempt blocks until the framework command timeout.
-      If false (default), no configure_network request is sent and the connection is established like
-      with the OCPP201 module (success, no interface address).
+      If false (default), no configure_network request is sent and the connection is established without
+      an interface address.
     type: boolean
     default: false
   DeviceModelConfigPath:

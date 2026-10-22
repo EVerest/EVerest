@@ -1,12 +1,5 @@
 # DC D20 EIM SIL config for the OCPP 2.1 DER (grid_support) acceptance suite,
 # targeting the combined OCPPmulti module.
-#
-# The OCPP module is declared here as OCPP201 on purpose. The everest-testing
-# framework's OCPPModuleConfigurationStrategy asserts the on-disk module is
-# OCPP201 for OCPP 2.x and injects the temporary libocpp device-model paths into
-# it. OCPPMultiConfigurationStrategy then runs afterwards, renames the module to
-# OCPPmulti and sets Mode=Only2, so the running module is OCPPmulti even though
-# the file names OCPP201. der.py forces this swap (ocpp_multi_only marker).
 active_modules:
   iso15118_charger:
     module: Evse15118D20
@@ -99,7 +92,7 @@ active_modules:
         - module_id: slac
           implementation_id: ev
   ocpp:
-    module: OCPP201
+    module: OCPPmulti
     config_module:
       EnableExternalWebsocketControl: true
     connections:

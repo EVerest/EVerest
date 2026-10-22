@@ -241,7 +241,7 @@ async def test_k28_rapid_updates_converge_to_last_limit(
 
     This asserts via GetCompositeSchedule, which reflects libocpp's profile store
     (mutated synchronously by each UpdateDynamicSchedule) and is therefore independent
-    of the OCPP201 recompute callback. The single-flight + coalescing serialization of
+    of the OCPPmulti recompute callback. The single-flight + coalescing serialization of
     that callback — which keeps a concurrent fire from applying a stale composite to the
     energy sink — is an EVerest-internal change carried by the production logic; this
     test guards the observable OCPP-level convergence, not the internal apply path.

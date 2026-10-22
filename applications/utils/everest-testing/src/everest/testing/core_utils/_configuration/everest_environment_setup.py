@@ -207,7 +207,8 @@ class EverestTestEnvironmentSetup:
                 DatabasePath=str(temporary_paths.ocpp_database_dir),
                 DeviceModelDatabasePath=str(temporary_paths.ocpp_device_model_database_file),
                 DeviceModelDatabaseMigrationPath=str(temporary_paths.ocpp_device_model_migration_path),
-                DeviceModelConfigPath=str(temporary_paths.ocpp_device_model_config_path)
+                DeviceModelConfigPath=str(temporary_paths.ocpp_device_model_config_path),
+                EverestDeviceModelDatabasePath=str(temporary_paths.ocpp_database_dir / "everest_device_model_storage.db")
             )
         elif self._ocpp_config.ocpp_version == OCPPVersion.ocpp201 or self._ocpp_config.ocpp_version == OCPPVersion.ocpp21:
             ocpp_paths = OCPPModulePaths2X(

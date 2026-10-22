@@ -99,9 +99,9 @@ cc_library(
     defines = [
         "LIBOCPP_ENABLE_V16=1",
         "LIBOCPP_ENABLE_V2=1",
-        "MIGRATION_FILE_VERSION_V16=1",
-        "MIGRATION_FILE_VERSION_V2=6",
-        "MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=3",
+        "MIGRATION_FILE_VERSION_V16={}".format(len(glob(["config/v16/core_migrations/*_up-*.sql"]))),
+        "MIGRATION_FILE_VERSION_V2={}".format(len(glob(["config/v2/core_migrations/*_up-*.sql"]))),
+        "MIGRATION_DEVICE_MODEL_FILE_VERSION_V2={}".format(len(glob(["config/common/device_model_migrations/*_up-*.sql"]))),
     ],
     # See https://github.com/HowardHinnant/date/issues/324
     local_defines = [
@@ -111,4 +111,56 @@ cc_library(
         "USE_AUTOLOAD=0",
         "HAS_REMOTE_API=0",
     ],
+)
+
+# Mirrors the install rules in config/v16/CMakeLists.txt and config/v2/CMakeLists.txt: the runtime files that
+# OCPPmulti loads from share/everest/modules/OCPP (OCPP 1.6) and share/everest/modules/OCPP201 (OCPP 2.x).
+_MODULE_SHARE_FILES = [
+    (src, "share/everest/modules/OCPP/core_migrations/" + src.split("/")[-1])
+    for src in glob(["config/v16/core_migrations/*.sql"])
+] + [
+    (src, "share/everest/modules/{}/device_model_migrations/{}".format(module, src.split("/")[-1]))
+    for module in ["OCPP", "OCPP201"]
+    for src in glob(["config/common/device_model_migrations/*.sql"])
+] + [
+    (src, "share/everest/modules/{}/component_config/standardized/{}".format(module, src.split("/")[-1]))
+    for module in ["OCPP", "OCPP201"]
+    for src in glob(["config/common/component_config/standardized/*.json"])
+] + [
+    (src, "share/everest/modules/OCPP/profile_schemas/" + src.split("/")[-1])
+    for src in glob(
+        ["config/v16/profile_schemas/*.json"],
+        exclude = ["config/v16/profile_schemas/Custom.json"],
+    )
+] + [
+    ("config/v16/" + name, "share/everest/modules/OCPP/" + name)
+    for name in [
+        "config.json",
+        "config-docker.json",
+        "config-docker-tls.json",
+        "config-full.json",
+        "ocpp16-custom-config-mappings.yaml",
+    ]
+] + [
+    (src, "share/everest/modules/OCPP201/core_migrations/" + src.split("/")[-1])
+    for src in glob(["config/v2/core_migrations/*.sql"])
+] + [
+    ("config/logging.ini", "share/everest/modules/{}/logging.ini".format(module))
+    for module in ["OCPP", "OCPP201"]
+]
+
+genrule(
+    name = "module_share_files",
+    srcs = depset([src for src, _ in _MODULE_SHARE_FILES]).to_list(),
+    outs = [dst for _, dst in _MODULE_SHARE_FILES] + [
+        "share/everest/modules/OCPP201/component_config/custom/.gitkeep",
+    ],
+    cmd = " && ".join([
+        "mkdir -p $$(dirname $(RULEDIR)/{dst}) && cp $(location {src}) $(RULEDIR)/{dst}".format(src = src, dst = dst)
+        for src, dst in _MODULE_SHARE_FILES
+    ] + [
+        "mkdir -p $(RULEDIR)/share/everest/modules/OCPP201/component_config/custom",
+        "touch $(RULEDIR)/share/everest/modules/OCPP201/component_config/custom/.gitkeep",
+    ]),
+    visibility = ["//visibility:public"],
 )

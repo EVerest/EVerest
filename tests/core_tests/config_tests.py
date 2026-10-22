@@ -47,15 +47,6 @@ class IsolateDatabasePaths(EverestConfigAdjustmentStrategy):
     # module type -> config keys holding a database file or directory
     # A key is its path within the module entry; it maps to the database file name, or None for a directory.
     DATABASE_KEYS = {
-        "OCPP": {
-            ("config_module", "DatabasePath"): None,
-            ("config_module", "DeviceModelDatabasePath"): "device_model_storage.db",
-        },
-        "OCPP201": {
-            ("config_module", "CoreDatabasePath"): None,
-            ("config_module", "DeviceModelDatabasePath"): "device_model_storage.db",
-            ("config_module", "EverestDeviceModelDatabasePath"): "everest_device_model_storage.db",
-        },
         "OCPPmulti": {
             ("config_module", "CoreDatabasePath"): None,
             ("config_module", "DatabasePath"): None,

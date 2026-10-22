@@ -152,10 +152,12 @@ active_modules:
         - module_id: evse_manager_2
           implementation_id: evse
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
+      Mode: Only1.6
+      EnableLegacyConfigMigration: true
       ChargePointConfigPath: config-docker.json
-      PublishChargingScheduleIntervalS: 0
+      CompositeScheduleIntervalS: 0
     connections:
       evse_manager:
         - module_id: evse_manager_1

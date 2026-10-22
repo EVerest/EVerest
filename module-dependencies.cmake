@@ -20,7 +20,7 @@ ev_define_dependency(
 
 ev_define_dependency(
     DEPENDENCY_NAME libocpp
-    DEPENDENT_MODULES_LIST OCPP OCPP201 OCPPmulti)
+    DEPENDENT_MODULES_LIST OCPPmulti)
 
 ev_define_dependency(
     DEPENDENCY_NAME Josev
@@ -34,7 +34,7 @@ ev_define_dependency(
 ev_define_dependency(
     DEPENDENCY_NAME libevse-security
     OUTPUT_VARIABLE_SUFFIX LIBEVSE_SECURITY
-    DEPENDENT_MODULES_LIST OCPP OCPP201 EvseSecurity EvseV2G)
+    DEPENDENT_MODULES_LIST OCPPmulti EvseSecurity EvseV2G)
 
 ev_define_dependency(
     DEPENDENCY_NAME everest-sqlite

@@ -102,7 +102,6 @@ def v2x_discharge_markers(func):
     func = pytest.mark.asyncio(func)
     func = pytest.mark.xdist_group(name="ISO15118")(func)
     func = pytest.mark.ocpp_version("ocpp2.1")(func)
-    func = pytest.mark.ocpp_multi_only(func)
     func = pytest.mark.everest_core_config(
         "everest-config-ocppmulti-sil-dc-d20-eim.yaml"
     )(func)

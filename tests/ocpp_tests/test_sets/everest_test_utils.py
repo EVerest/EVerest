@@ -94,18 +94,6 @@ from ocpp.v201.enums import (
 # smallest well-formed one: responseStatus tryLater without responseBytes, i.e. the responder has no status yet.
 OCSP_RESULT_TRY_LATER = "MAMKAQM="
 
-# NOTE: The module name and the `Mode` enum values below are duplicated from
-# `modules/EVSE/OCPPmulti/manifest.yaml`. They must stay in sync with that
-# manifest: `OCPP_MULTI_MODULE_NAME` matches the module directory name and the
-# values here must match the `Mode` config option's enum entries.
-OCPP_MULTI_MODULE_NAME = "OCPPmulti"
-
-OCPP_VERSION_TO_MULTI_MODE = {
-    OCPPVersion.ocpp16: "Only1.6",
-    OCPPVersion.ocpp201: "Only2",
-    OCPPVersion.ocpp21: "Only2",
-}
-
 
 class SystemStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
     def __init__(self, enabled=True):
@@ -122,11 +110,10 @@ class SystemStoreConfigurationStrategy(EverestConfigAdjustmentStrategy):
                 {"module_id": "persistent_store", "implementation_id": "main"}
             ]
         if "persistent_store" in modules:
-            ocpp_modules = [module for module in modules.values()
-                            if module.get("module") in ("OCPP", "OCPP201", "OCPPmulti")]
+            ocpp_modules = [module for module in modules.values() if module.get("module") == "OCPPmulti"]
             if len(ocpp_modules) != 1:
-                raise ValueError("SystemStoreConfigurationStrategy requires exactly one OCPP, OCPP201 or OCPPmulti "
-                                 f"module, found {len(ocpp_modules)}")
+                raise ValueError(f"SystemStoreConfigurationStrategy requires exactly one OCPPmulti module, "
+                                 f"found {len(ocpp_modules)}")
             ocpp_module = ocpp_modules[0]
             # everest-testing's built-in OCPP strategy sets per-test MessageLogPath before everest_config_adaptions.
             message_log_path = ocpp_module.get("config_module", {}).get("MessageLogPath")
@@ -144,40 +131,8 @@ def received_calls(charge_point, action):
             if isinstance(message, Call) and message.action == action]
 
 
-class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
-    """Rewrites the EVerest config so the OCPP module is the combined `OCPPmulti`
-    module instead of legacy `OCPP`/`OCPP201`. Must run AFTER the framework's
-    OCPPModuleConfigurationStrategy so the temporary libocpp paths are already
-    present in `config_module` (this strategy only renames the module and sets `Mode`)."""
-
-    def __init__(self, ocpp_version: OCPPVersion, ocpp_module_id: str = "ocpp"):
-        self._ocpp_version = ocpp_version
-        self._ocpp_module_id = ocpp_module_id
-
-    def adjust_everest_configuration(self, everest_config: dict) -> dict:
-        adjusted = deepcopy(everest_config)
-        assert "active_modules" in adjusted and self._ocpp_module_id in adjusted["active_modules"], \
-            f"OCPP module id '{self._ocpp_module_id}' missing from EVerest config"
-        module_config = adjusted["active_modules"][self._ocpp_module_id]
-        assert module_config["module"] in ("OCPP", "OCPP201"), \
-            f"OCPPMultiConfigurationStrategy expected legacy 'OCPP'/'OCPP201' module, got '{module_config['module']}'"
-        module_config["module"] = OCPP_MULTI_MODULE_NAME
-        module_config.setdefault("config_module", {})
-        module_config["config_module"]["Mode"] = OCPP_VERSION_TO_MULTI_MODE[self._ocpp_version]
-        if self._ocpp_version == OCPPVersion.ocpp16:
-            module_config["config_module"]["EnableLegacyConfigMigration"] = True
-            # Set an individual device model db for the test, otherwise this will create race conditions
-            config_module = module_config["config_module"]
-            device_model_database = Path(config_module["DeviceModelDatabasePath"])
-            config_module.setdefault("EverestDeviceModelDatabasePath",
-                                     str(device_model_database.with_name("everest_device_model_storage.db")))
-        return adjusted
-
-
 class OCPPMultiModuleConfigStrategy(EverestConfigAdjustmentStrategy):
-    """Sets additional `config_module` keys on the OCPP module, for OCPPmulti-only options such as
-    `DelegateNetworkConfigurationToSystem`. Use together with `ocpp_multi_only`: the keys are applied before the
-    rename to `OCPPmulti` and survive it because the framework strategies merge `config_module`."""
+    """Sets additional `config_module` keys on the OCPP module, such as `DelegateNetworkConfigurationToSystem`."""
 
     def __init__(self, config_module: dict, ocpp_module_id: str = "ocpp"):
         self._config_module = config_module

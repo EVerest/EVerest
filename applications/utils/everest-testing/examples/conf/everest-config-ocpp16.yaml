@@ -43,8 +43,10 @@ active_modules:
       - module_id: slac
         implementation_id: ev
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
+      Mode: Only1.6
+      EnableLegacyConfigMigration: true
       ChargePointConfigPath: ocpp16-config.json
       UserConfigPath: user_config.json
       EnableExternalWebsocketControl: true

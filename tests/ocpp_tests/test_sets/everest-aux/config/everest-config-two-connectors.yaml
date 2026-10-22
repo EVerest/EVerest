@@ -86,8 +86,10 @@ active_modules:
         - module_id: connector_2
           implementation_id: evse
   ocpp:
-    module: OCPP
+    module: OCPPmulti
     config_module:
+      Mode: Only1.6
+      EnableLegacyConfigMigration: true
       ChargePointConfigPath: libocpp-config-test.json
       UserConfigPath: user_config.json
       EnableExternalWebsocketControl: true
