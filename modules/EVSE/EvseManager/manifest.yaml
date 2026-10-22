@@ -225,6 +225,17 @@ config:
           This may save a few seconds as it avoids unnecessary voltage down and up ramping.
     type: boolean
     default: true
+  unmated_enable_imd:
+    description: >-
+      Keep the IMD switched on while nothing is plugged in, and switch it off as soon as the CP changes from A to B
+      (IEC 61851-23 Table CC.8 t0). This makes the insulation measurements of the EVSE side available between
+      sessions; while unmated they are published but not evaluated. The standard allows an active IMD while unmated
+      but does not require it (Figures CC.5 and CC.6: "Active as necessary by EVSE"), and for a short moment after
+      the plug-in both the EVSE and the EV IMD may be active. Only has an effect in DC mode with an IMD connected.
+      Some IMDs cannot measure without voltage. With the Bender_isoCHA425HV, stop only switches the device off if
+      disable_device_on_stop is true.
+    type: boolean
+    default: false
   hack_skoda_enyaq:
     description: >-
       Skoda Enyaq requests DC charging voltages below its battery level or even below 0 initially.

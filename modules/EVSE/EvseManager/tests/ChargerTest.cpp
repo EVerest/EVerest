@@ -1008,6 +1008,60 @@ TEST_F(ChargerEvsePauseTest, UnplugWhilePausedStopsInsteadOfResuming) {
     EXPECT_EQ(slac_starts, 0) << "no SLAC restart for a car that left";
 }
 
+// ----------------------------------------------------------------------------
+// EvseManager's option unmated_enable_imd starts the IMD when the Charger enters Idle. EvseManager stops the IMD
+// itself on signal_dc_supply_off at the end of a session, so that signal has to come before Idle, or the stop
+// would undo the start.
+
+struct ChargerUnplugOrderTest : public ChargerDlinkErrorTest {
+    std::vector<std::string> order;
+
+    /// Record the order of the Charger's DC supply-off and Idle announcements in order.
+    void SetUp() override {
+        ChargerDlinkErrorTest::SetUp();
+        // signal_dc_supply_off is only emitted in DC mode
+        charger->get_config_context().charge_mode = Charger::ChargeMode::DC;
+        charger->signal_dc_supply_off.connect([this] { order.push_back("dc_supply_off"); });
+        charger->signal_state.connect([this](Charger::EvseState state) {
+            if (state == Charger::EvseState::Idle) {
+                order.push_back("idle");
+            }
+        });
+    }
+
+    /// Finished session with the car still plugged in: the Charger waits for the unplug.
+    void setup_finished_session() {
+        setup_hlc_session_in(Charger::EvseState::Finished);
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_transaction_active = false;
+        ctx.flag_authorized = false;
+        ctx.flag_ev_plugged_in = true;
+    }
+};
+
+TEST_F(ChargerUnplugOrderTest, DcSupplyOffComesBeforeIdleWhenUnpluggedAfterTheSession) {
+    // The session is finished and the car is still plugged in; the unplug comes later.
+    setup_finished_session();
+    charger->run_state_machine();
+    ASSERT_EQ(charger->current_state(), Charger::EvseState::Finished);
+
+    charger->process_event(CPEvent::CarUnplugged);
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+    EXPECT_EQ(order, (std::vector<std::string>{"dc_supply_off", "idle"}));
+}
+
+TEST_F(ChargerUnplugOrderTest, DcSupplyOffComesBeforeIdleWhenUnpluggedInTheSamePass) {
+    // The car is already unplugged when the Charger reaches Finished, so one pass ends in Idle.
+    setup_finished_session();
+    charger->get_shared_context().flag_ev_plugged_in = false;
+
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+    EXPECT_EQ(order, (std::vector<std::string>{"dc_supply_off", "idle"}));
+}
+
 // [V2G3-M07-27]: after a wake-up from an EV pause the PLC link has to be detected within T_conn_max_comm,
 // else the EVSE applies E/F for T_step_EF and lets a new matching process start. The link lost during the
 // sleep (reported by the matched-state link polling, dlink_established cleared) is the bench case:

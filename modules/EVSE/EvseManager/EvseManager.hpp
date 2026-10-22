@@ -122,6 +122,7 @@ struct Conf {
     int cable_check_relays_open_voltage_V;
     int cable_check_relays_closed_timeout_s;
     bool cable_check_wait_below_60V_before_finish;
+    bool unmated_enable_imd;
     bool hack_skoda_enyaq;
     int hack_present_current_offset;
     bool hack_pause_imd_during_precharge;
@@ -498,6 +499,9 @@ private:
 
     void imd_stop();
     void imd_start();
+    // unmated_enable_imd: the IMD is switched on from the Charger thread and off from the BSP event thread
+    std::mutex imd_unmated_mutex;
+    bool imd_car_plugged{false};
     Everest::Thread telemetryThreadHandle;
 
     void fail_cable_check(const std::string& reason);

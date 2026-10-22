@@ -195,6 +195,10 @@ void EvseManager::init() {
         EVLOG_warning << "DC mode without isolation monitoring configured, please check your national regulations.";
     }
 
+    if (config.unmated_enable_imd and (config.charge_mode != "DC" or r_imd.empty())) {
+        EVLOG_warning << "unmated_enable_imd is set but has no effect without DC mode and a connected IMD.";
+    }
+
     pnc_enabled = config.payment_enable_contract;
     central_contract_validation_allowed = config.central_contract_validation_allowed;
     contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
@@ -667,6 +671,21 @@ void EvseManager::ready() {
             if (not r_imd.empty()) {
 
                 imd_stop();
+
+                if (config.unmated_enable_imd) {
+                    // Switch the IMD on when the Charger enters Idle: at startup, after the car was unplugged and
+                    // the session was cleaned up (the IMD is already stopped by then), and when the connector is
+                    // enabled again. It is switched off at the plug-in (CP A->B) in the BSP event handler below.
+                    charger->signal_state.connect([this](Charger::EvseState state) {
+                        if (state == Charger::EvseState::Idle) {
+                            std::scoped_lock lock(imd_unmated_mutex);
+                            if (not imd_car_plugged) {
+                                EVLOG_info << "Nothing plugged in: IMD switched on";
+                                imd_start();
+                            }
+                        }
+                    });
+                }
 
                 r_imd[0]->subscribe_isolation_measurement([this](
                                                               types::isolation_monitor::IsolationMeasurement const& m) {
@@ -1168,6 +1187,20 @@ void EvseManager::ready() {
     }
 
     bsp->signal_event.connect([this](const CPEvent event) {
+        // Switch the IMD off before anything else at plug-in, to keep both IMDs active together as short as
+        // possible (IEC 61851-23 Table CC.8 t0).
+        if (config.unmated_enable_imd and config.charge_mode == "DC" and not r_imd.empty()) {
+            if (event == CPEvent::CarPluggedIn) {
+                std::scoped_lock lock(imd_unmated_mutex);
+                imd_car_plugged = true;
+                EVLOG_info << "Car plugged in: IMD switched off until cable check";
+                imd_stop();
+            } else if (event == CPEvent::CarUnplugged) {
+                std::scoped_lock lock(imd_unmated_mutex);
+                imd_car_plugged = false;
+            }
+        }
+
         // Forward events from BSP to SLAC module before we process the events in the charger
         if (slac_enabled) {
             if (event == CPEvent::EFtoBCD) {
