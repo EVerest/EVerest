@@ -9,6 +9,7 @@
 #include <cstring>
 #include <ctime>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -856,6 +857,12 @@ bool OpenSSLSupplier::digest_file_sha256(const fs::path& path, std::vector<std::
 
 namespace {
 template <typename T> bool base64_decode(const std::string& base64_string, T& out_decoded) {
+    // EVP_DecodeUpdate takes the input length and returns the output length as int
+    if (base64_string.size() > static_cast<std::size_t>(std::numeric_limits<int>::max() / 2)) {
+        EVLOG_error << "Input of " << base64_string.size() << " bytes is too large for base64 decoding";
+        return false;
+    }
+
     const EVP_ENCODE_CTX_ptr base64_decode_context_ptr(EVP_ENCODE_CTX_new());
     if (!base64_decode_context_ptr.get()) {
         EVLOG_error << "Error during EVP_ENCODE_CTX_new";
@@ -870,10 +877,9 @@ template <typename T> bool base64_decode(const std::string& base64_string, T& ou
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
     const auto* encoded_str = reinterpret_cast<const unsigned char*>(base64_string.data());
-    const int base64_length = base64_string.size();
+    const int base64_length = static_cast<int>(base64_string.size());
 
-    std::vector<std::uint8_t> decoded_out;
-    decoded_out.reserve(base64_length);
+    std::vector<std::uint8_t> decoded_out(EVP_DECODE_LENGTH(base64_string.size()));
 
     int decoded_out_length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
@@ -884,20 +890,27 @@ template <typename T> bool base64_decode(const std::string& base64_string, T& ou
     }
 
     int decode_final_out = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
-    if (EVP_DecodeFinal(base64_decode_context_ptr.get(), reinterpret_cast<unsigned char*>(decoded_out.data()),
+    if (EVP_DecodeFinal(base64_decode_context_ptr.get(),
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+                        std::next(reinterpret_cast<unsigned char*>(decoded_out.data()), decoded_out_length),
                         &decode_final_out) < 0) {
         EVLOG_error << "Error during EVP_DecodeFinal";
         return false;
     }
 
     out_decoded.clear();
-    std::copy_n(decoded_out.begin(), decoded_out_length, std::back_inserter((out_decoded)));
+    std::copy_n(decoded_out.begin(), decoded_out_length + decode_final_out, std::back_inserter((out_decoded)));
 
     return true;
 }
 
-bool base64_encode(const unsigned char* bytes_str, int bytes_size, std::string& out_encoded) {
+bool base64_encode(const unsigned char* bytes_str, std::size_t bytes_size, std::string& out_encoded) {
+    // EVP_EncodeUpdate takes the input length and returns the output length as int
+    if (bytes_size > static_cast<std::size_t>(std::numeric_limits<int>::max() / 2)) {
+        EVLOG_error << "Input of " << bytes_size << " bytes is too large for base64 encoding";
+        return false;
+    }
+
     const EVP_ENCODE_CTX_ptr base64_encode_context_ptr(EVP_ENCODE_CTX_new());
     if (base64_encode_context_ptr.get() == nullptr) {
         EVLOG_error << "Error during EVP_ENCODE_CTX_new";
@@ -913,16 +926,14 @@ bool base64_encode(const unsigned char* bytes_str, int bytes_size, std::string& 
         return false;
     }
 
-    const int base64_length = ((bytes_size / 3) * 4) + 2;
-    // If it causes issues, replace with 'alloca' on different platform
-    std::vector<char> base64_out;
-    base64_out.reserve(base64_length + 66); // + 66 bytes for final block
+    // EVP_ENCODE_LENGTH includes the newline EVP_EncodeUpdate inserts after every 64 characters and the final block
+    std::vector<char> base64_out(EVP_ENCODE_LENGTH(bytes_size));
     int full_len = 0;
 
     int base64_out_length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
     if (EVP_EncodeUpdate(base64_encode_context_ptr.get(), reinterpret_cast<unsigned char*>(base64_out.data()),
-                         &base64_out_length, bytes_str, bytes_size) < 0) {
+                         &base64_out_length, bytes_str, static_cast<int>(bytes_size)) < 0) {
         EVLOG_error << "Error during EVP_EncodeUpdate";
         return false;
     }
