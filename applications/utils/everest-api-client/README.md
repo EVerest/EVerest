@@ -225,6 +225,12 @@ payload schema and examples (a minimal one is generated from the schema when
 the spec has none), and all component schemas; `$ref`s into sibling specs are
 resolved and link to the page that defines them.
 
+An API or a single operation marked `x-experimental` (`true`, or a mapping
+with optional `since` and `note`) in its `info` section or operation gets a
+warning box or badge, and the index page flags it. The tests check that the
+specs named in `docs/source/project/releases/experimental-index.rst` carry
+the marker and that every marked spec is listed there.
+
 The docs build (`cmake/trailbook-ext-everest/generate-api-docs.cmake`) runs
 this command from the source tree, and Sphinx copies the pages into the site
 through `html_extra_path`.

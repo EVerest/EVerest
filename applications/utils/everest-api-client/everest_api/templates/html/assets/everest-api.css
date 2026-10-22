@@ -18,6 +18,9 @@
   --receive-bg: light-dark(#e3f6ed, #11342a);
   --req: light-dark(#b4232c, #ff8a8f);
   --shadow: 0 1px 2px light-dark(rgba(16, 24, 40, 0.06), transparent);
+  --warn: light-dark(#8a5300, #ffd27a);
+  --warn-bg: light-dark(#fff7e0, #352a12);
+  --warn-border: light-dark(#f0c360, #7a5a1c);
   --sec-servers: light-dark(#5c6370, #9aa3b2);
   --sec-operations: light-dark(#0a5bd6, #6ea8ff);
   --sec-messages: light-dark(#7a3fc4, #b994ff);
@@ -253,6 +256,27 @@ h3.group .count { font-weight: 400; }
 }
 .badge.send { color: var(--send); background: var(--send-bg); }
 .badge.receive { color: var(--receive); background: var(--receive-bg); }
+.badge.experimental { color: var(--warn); background: var(--warn-bg); border: 1px solid var(--warn-border); min-width: 0; }
+
+.callout {
+  margin: 0 0 1.25rem;
+  padding: 0.8rem 1rem;
+  border-radius: 8px;
+  border: 1px solid var(--warn-border);
+  border-left-width: 5px;
+  background: var(--warn-bg);
+}
+.callout p { margin: 0.3rem 0; }
+.callout-title { font-weight: 700; color: var(--warn); }
+.callout-title::before { content: "⚠ "; }
+.callout-inline {
+  margin: 0.6rem 0 0;
+  padding: 0.35rem 0.6rem;
+  font-size: 0.85rem;
+  color: var(--warn);
+  background: var(--warn-bg);
+  border-radius: 6px;
+}
 
 /* ---- cards: servers and operations ---- */
 

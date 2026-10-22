@@ -5,7 +5,17 @@
 {{ title }}
 {{ '#' * (title | length) }}
 
+{% if models | selectattr('experimental') | list %}
+.. warning::
+
+   APIs marked **experimental** are exempt from the stability guarantees and
+   the deprecation period. They may change or be removed in any release
+   without notice until promoted to stable. See
+   :ref:`project-experimental-components` and the
+   :ref:`experimental feature index <project-experimental-index>`.
+
+{% endif %}
 {% for model in models %}
-* `{{ model.name }} <{{ model.name }}/index.html>`_
+* `{{ model.name }} <{{ model.name }}/index.html>`_{% if model.experimental %} — **experimental**{% if model.experimental.since %} (since {{ model.experimental.since }}){% endif %}{% endif %}
 
 {% endfor %}
