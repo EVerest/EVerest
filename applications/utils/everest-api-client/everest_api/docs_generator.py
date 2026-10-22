@@ -20,6 +20,8 @@ from everest_api.spec_loader import SpecError, SpecSet
 _TEMPLATES_DIR = Path(__file__).parent / "templates" / "html"
 _ASSETS_DIR = _TEMPLATES_DIR / "assets"
 ASSET_FILES = ("everest-api.css", "everest-api.js")
+# written by index.html.j2; marks the pages this generator may delete again
+GENERATOR_MARK = '<meta name="generator" content="everest_api.docs_cli">'
 
 _LIST_ITEM = re.compile(r"^\s*[-*]\s+(.*)$")
 _CODE = re.compile(r"`([^`]+)`")
@@ -105,11 +107,20 @@ def write_assets(out_dir):
         shutil.copyfile(_ASSETS_DIR / name, out_dir / name)
 
 
+def _is_generated_page(directory):
+    page = directory / "index.html"
+    try:
+        return GENERATOR_MARK in page.read_text(encoding="utf-8")
+    except (OSError, UnicodeDecodeError):
+        return False
+
+
 def generate_reference(spec_files, html_dir, index_rst):
     """Render the whole reference: ``<html_dir>/<name>/index.html`` per spec,
     the shared assets in ``<html_dir>/_assets`` and the RST index page at
-    *index_rst*. The specs must share one directory, since they refer to each
-    other by file name."""
+    *index_rst*. Pages of specs that are no longer listed are deleted; other
+    content of *html_dir* is left alone. The specs must share one directory,
+    since they refer to each other by file name."""
     spec_files = [Path(p) for p in spec_files]
     directories = {p.resolve().parent for p in spec_files}
     if len(directories) != 1:
@@ -124,11 +135,10 @@ def generate_reference(spec_files, html_dir, index_rst):
         except SpecError as err:
             raise SpecError(f"{spec.name}: {err}") from None
     write_assets(html_dir / "_assets")
-    # pages of specs that no longer exist
     expected = {spec.stem for spec in spec_files} | {"_assets"}
     for entry in html_dir.iterdir():
-        if entry.name not in expected:
-            shutil.rmtree(entry) if entry.is_dir() else entry.unlink()
+        if entry.name not in expected and entry.is_dir() and _is_generated_page(entry):
+            shutil.rmtree(entry)
     index_rst = Path(index_rst)
     index_rst.parent.mkdir(parents=True, exist_ok=True)
     index_rst.write_text(env.get_template("api_index.rst.j2").render(models=models),

@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from everest_api.doc_model import _SchemaBuilder  # noqa: E402
 from everest_api import docs_cli  # noqa: E402
-from everest_api.docs_generator import ASSET_FILES, generate_html, generate_reference, render_description  # noqa: E402
+from everest_api.docs_generator import ASSET_FILES, GENERATOR_MARK, generate_html, generate_reference, render_description  # noqa: E402
 from everest_api.spec_loader import SpecError, SpecSet, load_spec  # noqa: E402
 from everest_api.specs import find_spec_dir  # noqa: E402
 
@@ -291,6 +291,27 @@ def test_pages_of_removed_specs_are_deleted(tmp_path):
     assert (html / "auth_consumer_API" / "index.html").is_file()
     assert not (html / "display_message_API").exists()
     assert (html / "_assets").is_dir()
+
+
+def test_pages_carry_the_generator_mark(site):
+    root, _ = site
+    assert GENERATOR_MARK in (root / "auth_consumer_API" / "index.html").read_text(encoding="utf-8")
+
+
+def test_foreign_content_in_html_dir_is_kept(tmp_path):
+    specs = [SPECS_DIR / "auth_consumer_API.yaml", SPECS_DIR / "display_message_API.yaml"]
+    html, index = tmp_path / "html", tmp_path / "index.rst"
+    (html / "other").mkdir(parents=True)
+    (html / "other" / "README.txt").write_text("keep", encoding="utf-8")
+    (html / "other_page").mkdir()
+    (html / "other_page" / "index.html").write_text("<html>not ours</html>", encoding="utf-8")
+    (html / "notes.txt").write_text("keep", encoding="utf-8")
+    generate_reference(specs, html, index)
+    generate_reference(specs[:1], html, index)
+    assert not (html / "display_message_API").exists()
+    assert (html / "other" / "README.txt").read_text(encoding="utf-8") == "keep"
+    assert (html / "other_page" / "index.html").is_file()
+    assert (html / "notes.txt").read_text(encoding="utf-8") == "keep"
 
 
 def test_specs_from_two_directories_are_rejected(tmp_path):

@@ -18,7 +18,8 @@ def main(argv=None):
     parser.add_argument("--spec", nargs="+", action="extend", required=True, metavar="FILE",
                         help="AsyncAPI YAML specs of the reference (all in one directory)")
     parser.add_argument("--html-out", required=True, metavar="DIR",
-                        help="directory receiving <name>/index.html per spec and _assets/")
+                        help="directory receiving <name>/index.html per spec and _assets/; "
+                             "pages of specs no longer listed are deleted")
     parser.add_argument("--index-out", required=True, metavar="FILE",
                         help="path of the RST index page")
 
