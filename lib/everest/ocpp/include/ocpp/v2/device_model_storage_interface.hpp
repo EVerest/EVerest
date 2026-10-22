@@ -80,9 +80,12 @@ public:
                                                                const AttributeEnum& attribute_enum,
                                                                const std::string& value, const std::string& source) = 0;
 
-    /// \brief Inserts or replaces a variable monitor in the database
+    /// \brief Inserts or replaces a variable monitor in the database. The storage does not check that the variable
+    /// exists, so a monitor of a variable without a row in the component tables is stored but not attached by
+    /// get_device_model; the caller validates the variable against its device model. The monitor is stored without
+    /// an owner.
     /// \param data Monitor data to set
-    /// \return true if the value could be inserted, or valse otherwise
+    /// \return the stored monitor, or std::nullopt if it could not be stored
     virtual std::optional<VariableMonitoringMeta> set_monitoring_data(const SetMonitoringData& data,
                                                                       const VariableMonitorType type) = 0;
 

@@ -350,6 +350,23 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_on_a_variable_without_row) {
     EXPECT_TRUE(storage.get_all_monitors().empty());
 }
 
+TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_of_an_unknown_variable_is_stored_but_not_attached) {
+    const Variable misspelled = make_variable("HeartbeatIntervall");
+    const auto monitor = storage.set_monitoring_data(
+        make_monitor_request(heartbeat_component, misspelled, MonitorEnum::UpperThreshold, 100, 5),
+        VariableMonitorType::CustomMonitor);
+    ASSERT_TRUE(monitor.has_value());
+
+    const auto all_monitors = storage.get_all_monitors();
+    ASSERT_EQ(all_monitors.size(), 1);
+    EXPECT_EQ(all_monitors.at(0).variable, misspelled);
+    EXPECT_FALSE(all_monitors.at(0).owner.has_value());
+
+    const auto model = storage.get_device_model();
+    EXPECT_EQ(model.at(heartbeat_component).count(misspelled), 0);
+    EXPECT_TRUE(model.at(heartbeat_component).at(heartbeat_variable).monitors.empty());
+}
+
 TEST_F(DeviceModelStorageSqliteNameKeyTest, device_model_attaches_monitors_by_name_key) {
     const auto attached = storage.set_monitoring_data(
         make_monitor_request(heartbeat_component, heartbeat_variable, MonitorEnum::UpperThreshold, 100, 5),
