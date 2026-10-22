@@ -1,0 +1,12 @@
+# The DummyTokenValidator, played through the EVerest API: a token validator
+# (auth_token_validator_API, client token_validator_api) that answers every
+# validation request at once.
+#
+# Configure before running it: validation_result (the authorization status,
+# default Accepted).
+
+client_add auth_token_validator token_validator_api
+
+let --default validation_result Accepted
+
+on token_validator_api.receive_request_validate_token token_validator_api.send_reply_validate_token ${msg.headers.replyTo} {"authorization_status":"${validation_result}","tariff_messages":[]}

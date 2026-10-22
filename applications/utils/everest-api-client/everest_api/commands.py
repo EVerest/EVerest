@@ -18,6 +18,7 @@ import cmd2
 from cmd2 import CommandSet, with_default_category
 from cmd2.utils import strip_quotes
 
+from everest_api.automation import parse_value
 from everest_api.model import compact_json
 from everest_api.mqtt_client import ApiClient, close_mqtt, connect_mqtt
 
@@ -31,6 +32,7 @@ class ClientCommandSet(CommandSet):
     module_id = None
     api_client = None
     send_ops = {}
+    send_parsers = {}
 
     def complete_reply_to(self, text, line, begidx, endidx):
         return self._cmd.complete_reply_to(text, self.module_id)
@@ -40,17 +42,19 @@ class ClientCommandSet(CommandSet):
         payload = example_payload(op, self._cmd.replyToPlaceholder) if op is not None else ""
         return [payload] if payload and payload.startswith(text) else []
 
-    def on_message(self, topic, data):
+    def on_message(self, op_id, topic, data):
         text = data.decode('utf-8', errors='replace') if data else '""'
         try:
             text = json.dumps(json.loads(text), indent=1 if self._cmd.prettify else None)
         except ValueError:
             pass
         self._cmd.log_event(topic, text)
+        self._cmd.rules.message_received(command_name(self.module_id, op_id),
+                                         {"msg": parse_value(text), "topic": topic})
 
     def register_callbacks(self):
-        for receiver in vars(self.api_client.receive).values():
-            receiver.register_callback(self.on_message)
+        for op_id, receiver in vars(self.api_client.receive).items():
+            receiver.register_callback(lambda topic, data, op_id=op_id: self.on_message(op_id, topic, data))
 
     def blocking_receive(self, op_id, args):
         receiver = getattr(self.api_client.receive, op_id)
@@ -63,21 +67,27 @@ class ClientCommandSet(CommandSet):
         text = data.decode('utf-8', errors='replace')
         # @last refers to the request just received, even if newer ones are queued
         self._cmd.cache_reply_to(text)
+        if args.save:
+            try:
+                self._cmd.check_variable_name(args.save)
+            except ValueError as err:
+                self._cmd.fail(str(err))
+                return
+            self._cmd.set_variable(args.save, parse_value(text))
         if not self._cmd.mute:
             self._cmd.poutput(f"received: {topic}")
 
     def send(self, op, args, arguments_text):
         """Publish *op*. *arguments_text* is the text after the command word; the
-        payload is what follows the replyTo and topic parameter arguments."""
+        payload is what follows the replyTo and topic parameter arguments.
+        Raises ValueError for a missing or invalid payload."""
         payload_text = text_after_words(arguments_text, int(op.is_reply) + len(op.params))
         if not payload_text:
-            self._cmd.perror("the payload is missing")
-            return
+            raise ValueError("the payload is missing")
         try:
             payload = json.dumps(parse_payload(payload_text))
         except ValueError as err:
-            self._cmd.perror(f"invalid JSON payload: {err}")
-            return
+            raise ValueError(f"invalid JSON payload: {err}") from None
         send = getattr(self.api_client.send, op.op_id)
         if op.is_reply:
             send.publish(payload, topic=strip_quotes(args.replyTo))
@@ -147,7 +157,10 @@ def _send_command(op, module_id):
                         completer=ClientCommandSet.complete_payload)
 
     def do_send(self, args):
-        self.send(op, args, self._cmd.line_after_command(args.cmd2_statement.get()))
+        try:
+            self.send(op, args, self._cmd.line_after_command(args.cmd2_statement.get()))
+        except ValueError as err:
+            self._cmd.fail(str(err))
 
     return parser, do_send
 
@@ -160,6 +173,8 @@ def _receive_command(op):
                         help='seconds to wait before giving up (default: wait until a message arrives)')
     parser.add_argument('--optional', action='store_true',
                         help='on timeout, print a note and continue instead of failing')
+    parser.add_argument('--save', metavar='NAME',
+                        help='store the received payload in the variable NAME (use it as ${NAME} or ${NAME.key})')
 
     def do_receive(self, args):
         self.blocking_receive(op.op_id, args)
@@ -173,10 +188,12 @@ def command_name(module_id, op_id):
 
 def make_client_command_set(model, module_id, api_client):
     """Create the CommandSet instance with the commands of one added client."""
-    attrs = {"module_id": module_id, "api_client": api_client, "send_ops": {op.op_id: op for op in model.send_ops}}
+    attrs = {"module_id": module_id, "api_client": api_client, "send_ops": {op.op_id: op for op in model.send_ops},
+             "send_parsers": {}}
 
     for op in model.send_ops:
         parser, func = _send_command(op, module_id)
+        attrs["send_parsers"][op.op_id] = parser
         attrs[f"do_{command_name(module_id, op.op_id)}"] = _command(
             command_name(module_id, op.op_id), parser, func, op.help)
 

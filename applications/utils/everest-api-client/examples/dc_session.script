@@ -1,0 +1,47 @@
+# DC charging session with ISO 15118-2 (or DIN SPEC 70121), driven from the
+# EVerest API client.
+#
+# Run it right after starting EVerest with config-test-dc-iso15118-external-api.yaml:
+#     run_script examples/dc_session.script
+#
+# The ISO 15118 / DIN 70121 stacks are real EVerest modules: the charger
+# (Evse15118D20) and the simulated car (PyEvJosev + EvManager), which plugs in
+# by itself a few seconds after EVerest is up and charges for about 20
+# seconds. Everything else is simulated by the scripts in simulators/: the
+# charging cable with both board supports (YetiSimulator), the DC power supply
+# with its powermeter (DCSupplySimulator), the isolation monitor
+# (IMDSimulator), the over voltage monitor (OVMSimulator), and the token
+# provider and validator. This script follows the session.
+#
+# Set 'mute' off to watch every message.
+
+set mute true
+echo ============== EVerest API client: DC charging session ==============
+
+echo [1/4] Simulating the hardware and the backend ...
+# --- 1. the spy feeds wait_for; the simulators run on rules ---
+client_add spy
+@@ simulators/cable.script
+@@ simulators/dc_power_supply.script
+@@ simulators/imd.script
+@@ simulators/ovm.script
+@@ simulators/token_validator.script
+@@ simulators/token_provider.script
+
+echo [2/4] Waiting for the car to plug in and to be authorized ...
+wait_for session_event SessionStarted --timeout 30
+wait_for session_event Authorized --timeout 30
+
+echo [3/4] Cable check and pre-charge ...
+# --- 3. the charger checks the isolation (the IMD runs while the supply
+#        raises the voltage) and pre-charges to the car's battery voltage ---
+wait_for /psu_api/e2m/mode Export --timeout 60
+
+echo [4/4] Charging until the car stops and unplugs ...
+wait_for session_event ChargingStarted --timeout 60
+echo charging at ${dc_voltage} V / ${dc_current} A ...
+wait_for session_event SessionFinished --timeout 90
+echo energy charged: ${= round(dc_energy_import)} Wh
+
+rule_remove all
+echo ==================== Session finished ====================
