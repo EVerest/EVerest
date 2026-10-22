@@ -586,6 +586,21 @@ void EvseManager::ready() {
                     p_evse->publish_ev_info(ev_info);
                 });
 
+            r_hlc[0]->subscribe_display_parameters([this](types::iso15118::DisplayParameters const& p) {
+                Everest::scoped_lock_timeout lock(ev_info_mutex,
+                                                  Everest::MutexDescription::EVSE_subscribe_display_parameters);
+                if (p.present_soc.has_value()) {
+                    ev_info.soc = p.present_soc.value();
+                }
+                if (p.target_soc.has_value()) {
+                    ev_info.battery_full_soc = p.target_soc.value();
+                }
+                if (p.battery_energy_capacity.has_value()) {
+                    ev_info.battery_capacity = p.battery_energy_capacity.value();
+                }
+                p_evse->publish_ev_info(ev_info);
+            });
+
         } else if (config.charge_mode == "DC") {
             // Create voltage plausibility monitor for DC charging
             voltage_plausibility_monitor = std::make_unique<VoltagePlausibilityMonitor>(
