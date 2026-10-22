@@ -87,6 +87,10 @@ macro(_trailbook_ev_generate_rst_from_manifest_generate_command)
                 PROPERTY did_add_create_index_cmd
                 "TRUE"
             )
+            _trailbook_ev_register_generated_files(
+                TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+                FILES "${INDEX_FILE}"
+            )
             add_custom_target(
                 trailbook_${args_TRAILBOOK_NAME}_generate_reference_index_for_module_${INDEX_TARGET_SUFFIX}
                 DEPENDS
@@ -190,6 +194,10 @@ function(trailbook_ev_generate_rst_from_manifest)
     )
 
     _trailbook_ev_generate_rst_from_manifest_generate_command()
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${GENERATED_FILE}
+    )
 
     add_custom_target(
         trailbook_${args_TRAILBOOK_NAME}_generate_rst_from_manifest_${MODULE_NAME}

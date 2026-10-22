@@ -107,4 +107,8 @@ function(trailbook_ev_generate_api_doc)
                 ${INDEX_RST_FILE}
                 trailbook_${args_TRAILBOOK_NAME}_generate_api_doc
     )
+    _trailbook_ev_register_generated_files(
+        TRAILBOOK_NAME ${args_TRAILBOOK_NAME}
+        FILES ${INDEX_RST_FILE} ${HTML_DIRECTORY}
+    )
 endfunction()
