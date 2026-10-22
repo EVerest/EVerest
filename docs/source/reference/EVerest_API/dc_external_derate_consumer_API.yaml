@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:dc_external_derate_API'
 info:
   title: 'EVerest API definition for external derating of a DC powersupply'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     Specification of a the EVerest API for implementing DC power supply derating
     functionality. This allows integration of hardware-specific derating logic, for
