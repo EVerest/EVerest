@@ -447,15 +447,11 @@ bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t mo
 
 std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_data(const SetMonitoringData& data,
                                                                                     const VariableMonitorType type) {
+    // The reference of a delta monitor stays NULL if this storage holds no value for the variable; DeviceModel sets
+    // it from the value it holds
     std::optional<std::string> actual_value;
-
-    // For a delta monitor, the actual value is mandatory,
-    // since it is used as a reference value when triggering
     if (data.type == MonitorEnum::Delta) {
         actual_value = this->get_actual_value(data.component, data.variable);
-        if (!actual_value.has_value()) {
-            return std::nullopt;
-        }
     }
 
     auto transaction = this->db->begin_transaction();

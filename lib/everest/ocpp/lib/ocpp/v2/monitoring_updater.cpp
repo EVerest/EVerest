@@ -19,18 +19,18 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
     if constexpr (T == DataEnum::boolean) {
         return (value_old != value_new);
     } else {
-        auto raw_val_current = to_specific_type_auto<T>(value_new);
-
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
-            if (monitor_meta.reference_value.has_value()) {
-                auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-                auto delta = std::abs(raw_val_reference - raw_val_current);
-
-                return (delta > monitor_meta.monitor.value);
+            // N07.FR.18: a monitor set while the variable had no value triggers on the first value, which becomes the
+            // reference
+            if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
+                return !value_new.empty();
             }
-            EVLOG_error << "Invalid reference value for monitor: " << monitor_meta.monitor;
-            return false;
+            auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
+            auto delta = std::abs(raw_val_reference - to_specific_type_auto<T>(value_new));
+            return (delta > monitor_meta.monitor.value);
         }
+
+        auto raw_val_current = to_specific_type_auto<T>(value_new);
         if (monitor_meta.monitor.type == MonitorEnum::LowerThreshold) {
             return (raw_val_current < monitor_meta.monitor.value);
         }
@@ -243,19 +243,27 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
 
     bool monitor_triggered = false;
 
-    // N07.FR.19 - Based on this it seems that OptionList, SequenceList, MemberList will
-    // cause a trigger if the value is changed regardless of the content (or monitor delta)
-    if ((characteristics.dataType == DataEnum::boolean) || (characteristics.dataType == DataEnum::string) ||
-        (characteristics.dataType == DataEnum::dateTime) || (characteristics.dataType == DataEnum::OptionList) ||
-        (characteristics.dataType == DataEnum::MemberList) || (characteristics.dataType == DataEnum::SequenceList)) {
-        monitor_triggered = triggers_monitor<DataEnum::boolean>(monitor_meta, value_previous, value_current);
-    } else if (characteristics.dataType == DataEnum::decimal) {
-        monitor_triggered = triggers_monitor<DataEnum::decimal>(monitor_meta, value_previous, value_current);
-    } else if (characteristics.dataType == DataEnum::integer) {
-        monitor_triggered = triggers_monitor<DataEnum::integer>(monitor_meta, value_previous, value_current);
-    } else {
-        EVLOG_error << "Requested unsupported 'DataEnum' type: "
-                    << conversions::data_enum_to_string(characteristics.dataType);
+    try {
+        // N07.FR.19 - Based on this it seems that OptionList, SequenceList, MemberList will
+        // cause a trigger if the value is changed regardless of the content (or monitor delta)
+        if ((characteristics.dataType == DataEnum::boolean) || (characteristics.dataType == DataEnum::string) ||
+            (characteristics.dataType == DataEnum::dateTime) || (characteristics.dataType == DataEnum::OptionList) ||
+            (characteristics.dataType == DataEnum::MemberList) ||
+            (characteristics.dataType == DataEnum::SequenceList)) {
+            monitor_triggered = triggers_monitor<DataEnum::boolean>(monitor_meta, value_previous, value_current);
+        } else if (characteristics.dataType == DataEnum::decimal) {
+            monitor_triggered = triggers_monitor<DataEnum::decimal>(monitor_meta, value_previous, value_current);
+        } else if (characteristics.dataType == DataEnum::integer) {
+            monitor_triggered = triggers_monitor<DataEnum::integer>(monitor_meta, value_previous, value_current);
+        } else {
+            EVLOG_error << "Requested unsupported 'DataEnum' type: "
+                        << conversions::data_enum_to_string(characteristics.dataType);
+            return;
+        }
+    } catch (const std::exception& e) {
+        EVLOG_warning << "Could not evaluate monitor " << monitor_meta.monitor.id << " on variable "
+                      << variable.name.get() << " with value [" << loggable_value(attribute, value_current)
+                      << "]: " << e.what();
         return;
     }
 

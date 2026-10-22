@@ -809,6 +809,49 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_follows_trigger) {
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
+/// N07.FR.18: a numeric Delta monitor set while the variable has no value triggers on its first value
+TEST_F(DeviceModelTest, test_numeric_delta_monitor_without_value_triggers_on_first_value) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
+    ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null(
+        interval.component.name, std::nullopt, std::nullopt, std::nullopt, interval.variable->name, std::nullopt,
+        AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+    ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
+    const auto sent = [&sent_events]() { return *sent_events.handle(); };
+    MonitoringUpdater updater(
+        *dm,
+        [&sent_events](const std::vector<EventData>& events) {
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
+        []() { return false; });
+    updater.start_monitoring();
+
+    const auto results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::Delta, 50.0F, 3)});
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    const auto monitor_id = results[0].id.value();
+
+    EXPECT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "900", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    ASSERT_EQ(sent().size(), 1);
+    EXPECT_EQ(sent()[0].actualValue, "900");
+    EXPECT_EQ(dm->get_variable_meta_data(interval.component, interval.variable.value())
+                  ->monitors.at(monitor_id)
+                  .reference_value,
+              "900");
+
+    updater.stop_monitoring();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+}
+
 /// N07.FR.18: a Delta event dropped while offline does not move the reference, so the CSMS still learns of the change
 TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_kept_when_event_dropped_offline) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;

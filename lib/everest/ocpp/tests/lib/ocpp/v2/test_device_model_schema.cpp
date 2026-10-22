@@ -406,10 +406,21 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, value_of_a_variable_with_row_is_not_
               "123");
 }
 
+TEST_F(DeviceModelStorageSqliteNameKeyTest, delta_monitor_without_value_has_no_reference) {
+    const auto monitor = storage.set_monitoring_data(
+        make_monitor_request(runtime_component, runtime_variable, MonitorEnum::Delta, 10, 5),
+        VariableMonitorType::CustomMonitor);
+    ASSERT_TRUE(monitor.has_value());
+    EXPECT_FALSE(monitor->reference_value.has_value());
+
+    ASSERT_TRUE(storage.update_monitoring_reference(monitor->monitor.id, "50"));
+    const auto all_monitors = storage.get_all_monitors();
+    ASSERT_EQ(all_monitors.size(), 1);
+    EXPECT_EQ(all_monitors.at(0).monitor.reference_value, "50");
+}
+
 TEST_F(DeviceModelStorageSqliteNameKeyTest, delta_monitor_without_row_takes_the_stored_value_as_reference) {
     const auto request = make_monitor_request(runtime_component, runtime_variable, MonitorEnum::Delta, 10, 5);
-    EXPECT_FALSE(storage.set_monitoring_data(request, VariableMonitorType::CustomMonitor).has_value());
-
     ASSERT_EQ(storage.set_stored_value(make_stored_value("50", "internal", std::nullopt)),
               SetVariableStatusEnum::Accepted);
     const auto monitor = storage.set_monitoring_data(request, VariableMonitorType::CustomMonitor);
