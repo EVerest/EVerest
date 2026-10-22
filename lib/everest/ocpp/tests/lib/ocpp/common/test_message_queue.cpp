@@ -159,6 +159,8 @@ public:
 class MessageQueueTest : public ::testing::Test {
     int internal_message_count{0};
     int call_count{0};
+    int responses_scheduled{0};
+    int responses_delivered{0};
 
 protected:
     MessageQueueConfig<TestMessageType> config{};
@@ -185,15 +187,22 @@ protected:
     template <typename R> auto MarkAndReturn(R value, bool respond = false) {
         return testing::Invoke([this, value, respond](const json::array_t& s) -> R {
             if (respond) {
+                {
+                    std::lock_guard<std::mutex> lock(call_marker_mutex);
+                    this->responses_scheduled++;
+                }
                 reception_timer.timeout(
                     [this, s]() {
                         this->message_queue->receive(json{3, s[1], json::object()}.dump());
+                        std::lock_guard<std::mutex> lock(call_marker_mutex);
+                        this->responses_delivered++;
+                        this->call_marker_cond_var.notify_all();
                     },
                     std::chrono::milliseconds(0));
             }
             std::lock_guard<std::mutex> lock(call_marker_mutex);
             this->call_count++;
-            this->call_marker_cond_var.notify_one();
+            this->call_marker_cond_var.notify_all();
             return value;
         });
     }
@@ -246,6 +255,13 @@ protected:
     }
 
     void TearDown() override {
+        // Let reception_timer deliver all pending CallResults before the queue stops
+        {
+            std::unique_lock<std::mutex> lock(call_marker_mutex);
+            std::ignore = call_marker_cond_var.wait_for(lock, std::chrono::seconds(3), [this] {
+                return this->responses_delivered == this->responses_scheduled;
+            });
+        }
         message_queue->stop();
     };
 };
