@@ -28,6 +28,9 @@ get_target_property(
 # The stem-copy custom command fills this directory at build time, but
 # configure_file runs at configure time — so ensure the directory exists now.
 file(MAKE_DIRECTORY ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY})
+# conf.py.in lists _extra in html_extra_path unconditionally; it is filled by
+# trailbook_ev_generate_api_doc, which not every build runs.
+file(MAKE_DIRECTORY ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/_extra)
 
 # Compute EVEREST_GIT_VERSION_STRING for conf.py.in substitution.
 # Mirrors everest-cmake's evc_generate_version_information(); we run it
