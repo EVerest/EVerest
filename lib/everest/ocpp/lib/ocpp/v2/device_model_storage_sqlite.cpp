@@ -45,6 +45,18 @@ std::pair<Component, Variable> read_component_variable(StatementInterface& state
     return {component, variable};
 }
 
+VariableMetaData* find_variable(DeviceModelMap& device_model, const Component& component, const Variable& variable) {
+    const auto component_it = device_model.find(component);
+    if (component_it == device_model.end()) {
+        return nullptr;
+    }
+    const auto variable_it = component_it->second.find(variable);
+    if (variable_it == component_it->second.end()) {
+        return nullptr;
+    }
+    return &variable_it->second;
+}
+
 constexpr auto NAME_KEY_CONDITION =
     "COMPONENT_NAME = @component_name AND COMPONENT_INSTANCE = @component_instance AND EVSE_ID = @evse_id AND "
     "CONNECTOR_ID = @connector_id AND VARIABLE_NAME = @variable_name AND VARIABLE_INSTANCE = @variable_instance";
@@ -258,27 +270,25 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
 
     while (attributes_stmt->step() == SQLITE_ROW) {
         const auto [component, variable] = read_component_variable(*attributes_stmt, 0);
-        const auto component_it = device_model.find(component);
-        if (component_it == device_model.end()) {
+        auto* meta_data = find_variable(device_model, component, variable);
+        if (meta_data == nullptr) {
             continue;
         }
-        const auto variable_it = component_it->second.find(variable);
-        if (variable_it == component_it->second.end()) {
-            continue;
-        }
-        variable_it->second.attributes.push_back(read_attribute(*attributes_stmt, 6));
+        meta_data->attributes.push_back(read_attribute(*attributes_stmt, 6));
     }
 
     for (auto& stored_monitor : get_all_monitors()) {
-        const auto component_it = device_model.find(stored_monitor.component);
-        if (component_it == device_model.end()) {
+        auto* meta_data = find_variable(device_model, stored_monitor.component, stored_monitor.variable);
+        if (meta_data == nullptr) {
+            // Monitors with an owner belong to a variable registered at runtime
+            if (!stored_monitor.owner.has_value()) {
+                EVLOG_warning << "Monitor " << stored_monitor.monitor.monitor.id << " of component "
+                              << stored_monitor.component << " and variable " << stored_monitor.variable
+                              << " has no variable in the component config and is not active";
+            }
             continue;
         }
-        const auto variable_it = component_it->second.find(stored_monitor.variable);
-        if (variable_it == component_it->second.end()) {
-            continue;
-        }
-        variable_it->second.monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
+        meta_data->monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
     }
 
     EVLOG_info << "Successfully retrieved Device Model from DeviceModelStorage";

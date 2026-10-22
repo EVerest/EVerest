@@ -1300,16 +1300,26 @@ bool operator<(const ComponentKey& l, const ComponentKey& r) {
 void from_json(const json& j, ComponentKey& c) {
     c.name = j.at("name");
 
+    // Monitors and stored values key an absent instance as '' and an absent id as 0
     if (j.contains("evse_id")) {
         c.evse_id = j.at("evse_id");
+        if (c.evse_id.value() == 0) {
+            throw InitDeviceModelDbError("Component " + c.name + " has evse_id 0");
+        }
     }
 
     if (j.contains("connector_id")) {
         c.connector_id = j.at("connector_id");
+        if (c.connector_id.value() == 0) {
+            throw InitDeviceModelDbError("Component " + c.name + " has connector_id 0");
+        }
     }
 
     if (j.contains("instance")) {
         c.instance = j.at("instance");
+        if (c.instance->empty()) {
+            throw InitDeviceModelDbError("Component " + c.name + " has an empty instance");
+        }
     }
 }
 
@@ -1343,6 +1353,9 @@ void from_json(const json& j, DeviceModelVariable& c) {
 
     if (j.contains("instance")) {
         c.instance = j.at("instance");
+        if (c.instance->empty()) {
+            throw InitDeviceModelDbError("Variable " + c.name + " has an empty instance");
+        }
     }
 
     if (j.contains(DEFAULT_SOURCE)) {

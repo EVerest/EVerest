@@ -87,7 +87,8 @@ variables that have no row in the component tables:
 
 The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
 `VARIABLE_NAME` and `VARIABLE_INSTANCE`. SQLite treats NULLs as distinct in keys, so an absent instance is stored as
-`''` and an absent EVSE or connector id as `0`.
+`''` and an absent EVSE or connector id as `0`. A component config with an empty component or variable instance, or
+with an EVSE or connector id of `0`, is therefore skipped with a warning.
 
 Monitors are not linked to variable rows. Removing a variable from the component config removes all of its monitors
 without an owner, custom monitors included; this also happens when an `evse_id` change re-creates the component.

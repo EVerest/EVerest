@@ -522,5 +522,38 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_wi
     EXPECT_EQ(monitors.at(0).owner, "RUNTIME_OWNER");
 }
 
+namespace {
+nlohmann::json name_key_component_config() {
+    return {{"name", "NameKeyCtrlr"},
+            {"type", "object"},
+            {"properties",
+             {{"Value",
+               {{"variable_name", "Value"},
+                {"characteristics", {{"supportsMonitoring", true}, {"dataType", "integer"}}},
+                {"attributes", {{{"type", "Actual"}, {"mutability", "ReadWrite"}, {"value", 1}}}},
+                {"type", "integer"}}}}}};
+}
+} // namespace
+
+/// Monitors and stored values key an absent instance as '' and an absent id as 0, so the component config must not
+/// use these
+TEST(ComponentConfigNameKeyTest, empty_instances_and_id_zero_are_rejected) {
+    EXPECT_NO_THROW(parse_component_config_from_string(name_key_component_config().dump()));
+
+    auto empty_component_instance = name_key_component_config();
+    empty_component_instance["instance"] = "";
+    auto evse_id_zero = name_key_component_config();
+    evse_id_zero["evse_id"] = 0;
+    auto connector_id_zero = name_key_component_config();
+    connector_id_zero["evse_id"] = 1;
+    connector_id_zero["connector_id"] = 0;
+    auto empty_variable_instance = name_key_component_config();
+    empty_variable_instance["properties"]["Value"]["instance"] = "";
+
+    for (const auto& config : {empty_component_instance, evse_id_zero, connector_id_zero, empty_variable_instance}) {
+        EXPECT_THROW(parse_component_config_from_string(config.dump()), InitDeviceModelDbError) << config.dump();
+    }
+}
+
 } // namespace v2
 } // namespace ocpp
