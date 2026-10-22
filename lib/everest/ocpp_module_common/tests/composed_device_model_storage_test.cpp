@@ -116,31 +116,31 @@ public:
     std::optional<std::string> last_set_value;
 };
 
-ocpp::v2::VariableMetaData make_meta(const std::optional<std::string>& source) {
+ocpp::v2::VariableMetaData make_meta(const std::optional<std::string>& owner) {
     ocpp::v2::VariableMetaData meta;
     meta.characteristics.dataType = ocpp::v2::DataEnum::string;
     meta.characteristics.supportsMonitoring = false;
-    meta.owner = source;
+    meta.owner = owner;
     return meta;
 }
 
 ocpp::v2::DeviceModelMap make_device_model_map(const std::string& component_name, const std::string& variable_name,
-                                               const std::optional<std::string>& source) {
+                                               const std::optional<std::string>& owner) {
     ocpp::v2::DeviceModelMap map;
-    map[make_component(component_name)][make_variable(variable_name)] = make_meta(source);
+    map[make_component(component_name)][make_variable(variable_name)] = make_meta(owner);
     return map;
 }
 
 class ComposedDeviceModelStorageFactoryTest : public ::testing::Test {
 protected:
-    // OCPP-side variable carries no source (defaults to "OCPP"); EVerest-side variable is tagged "EVEREST".
+    // OCPP-side variable has no owner (defaults to "OCPP"); EVerest-side variable is owned by "EVEREST".
     std::shared_ptr<FakeDeviceModelStorage> ocpp_storage = std::make_shared<FakeDeviceModelStorage>(
         make_device_model_map("OCPPCommCtrlr", "HeartbeatInterval", std::nullopt), "ocpp-value");
     std::shared_ptr<FakeDeviceModelStorage> everest_storage = std::make_shared<FakeDeviceModelStorage>(
         make_device_model_map("ConnectedEV", "VehicleId", "EVEREST"), "everest-value");
 };
 
-TEST_F(ComposedDeviceModelStorageFactoryTest, EverestSourcedVariableRoutesToEverestStorage) {
+TEST_F(ComposedDeviceModelStorageFactoryTest, EverestOwnedVariableRoutesToEverestStorage) {
     const auto composed = make_composed_device_model_storage(ocpp_storage, everest_storage);
 
     const auto attribute = composed->get_variable_attribute(make_component("ConnectedEV"), make_variable("VehicleId"),
@@ -156,7 +156,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, EverestSourcedVariableRoutesToEver
     EXPECT_FALSE(ocpp_storage->last_set_value.has_value());
 }
 
-TEST_F(ComposedDeviceModelStorageFactoryTest, UnsourcedVariableDefaultsToOcppStorage) {
+TEST_F(ComposedDeviceModelStorageFactoryTest, VariableWithoutOwnerDefaultsToOcppStorage) {
     const auto composed = make_composed_device_model_storage(ocpp_storage, everest_storage);
 
     const auto attribute = composed->get_variable_attribute(
@@ -173,7 +173,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, UnsourcedVariableDefaultsToOcppSto
     EXPECT_FALSE(everest_storage->last_set_value.has_value());
 }
 
-TEST_F(ComposedDeviceModelStorageFactoryTest, GetDeviceModelMergesBothSources) {
+TEST_F(ComposedDeviceModelStorageFactoryTest, GetDeviceModelMergesBothStorages) {
     const auto composed = make_composed_device_model_storage(ocpp_storage, everest_storage);
 
     const auto device_model_map = composed->get_device_model();
@@ -182,7 +182,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, GetDeviceModelMergesBothSources) {
     EXPECT_NE(device_model_map.find(make_component("ConnectedEV")), device_model_map.end());
 }
 
-TEST_F(ComposedDeviceModelStorageFactoryTest, OverlappingVariablePrefersEverestSource) {
+TEST_F(ComposedDeviceModelStorageFactoryTest, OverlappingVariablePrefersEverestOwner) {
     // The EVSE component exists in both storages: "Power" overlaps, "AllowReset" is OCPP-only.
     auto ocpp_map = make_device_model_map("EVSE", "Power", std::nullopt);
     ocpp_map[make_component("EVSE")][make_variable("AllowReset")] = make_meta(std::nullopt);
@@ -257,7 +257,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, NullOcppStorageThrows) {
     EXPECT_THROW(make_composed_device_model_storage(nullptr, everest_storage), std::invalid_argument);
 }
 
-TEST_F(ComposedDeviceModelStorageFactoryTest, EverestSourcedVariableWithoutEverestStorageIsRejected) {
+TEST_F(ComposedDeviceModelStorageFactoryTest, EverestOwnedVariableWithoutEverestStorageIsRejected) {
     // The OCPP storage declares a variable whose metadata routes to "EVEREST", but no EVEREST storage is
     // registered: lookups must fail gracefully and the variable must not appear in the merged model.
     const auto orphan_storage = std::make_shared<FakeDeviceModelStorage>(
@@ -285,7 +285,7 @@ TEST_F(ComposedDeviceModelStorageFactoryTest, NullEverestStorageIsSkipped) {
     ASSERT_TRUE(attribute->value.has_value());
     EXPECT_EQ(attribute->value.value().get(), "ocpp-value");
 
-    // EVEREST-sourced lookups have no registered storage and must not crash.
+    // EVEREST-owned lookups have no registered storage and must not crash.
     EXPECT_EQ(composed->get_variable_attribute(make_component("ConnectedEV"), make_variable("VehicleId"),
                                                ocpp::v2::AttributeEnum::Actual),
               std::nullopt);

@@ -9,12 +9,12 @@
 
 namespace ocpp_module_common::device_model {
 
-using ComponentVariableSourceMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
+using ComponentVariableOwnerMap = std::map<ocpp::v2::Component, std::map<ocpp::v2::Variable, std::string>>;
 class ComposedDeviceModelStorage : public ocpp::v2::DeviceModelStorageInterface {
 private:
     std::map<std::string, std::shared_ptr<ocpp::v2::DeviceModelStorageInterface>>
         device_model_storages; // key is identifier for the device model storage
-    ComponentVariableSourceMap component_variable_source_map;
+    ComponentVariableOwnerMap component_variable_owner_map;
 
 public:
     ComposedDeviceModelStorage() = default;
@@ -57,23 +57,23 @@ public:
 
 private:
     ///
-    /// \brief Get variable source of given variable.
+    /// \brief Get the owner of the given variable.
     /// \param component    Component the variable belongs to.
-    /// \param variable     The variable to get the source from.
-    /// \return The variable source. Defaults to 'OCPP'.
+    /// \param variable     The variable to get the owner of.
+    /// \return The owner of the variable. Defaults to 'OCPP'.
     ///
-    std::string get_variable_source(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
+    std::string get_variable_owner(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 };
 
 /// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
-/// source id "OCPP" (the default source) and \p everest_storage under "EVEREST". For component/variable
+/// owner "OCPP" (the default owner) and \p everest_storage under "EVEREST". For component/variable
 /// combinations defined in both storages, the EVerest device model takes precedence and a warning is
 /// logged; the integrator is responsible for avoiding overlaps.
 /// \param ocpp_storage     Must have a fully seeded backing database, because registration snapshots
-///                         get_device_model() to build the per-variable source map. A null pointer
+///                         get_device_model() to build the per-variable owner map. A null pointer
 ///                         raises std::invalid_argument.
 /// \param everest_storage  Registered under "EVEREST"; a null pointer is skipped with a warning.
-/// \return The composed storage with both sources registered.
+/// \return The composed storage with both owners registered.
 std::unique_ptr<ComposedDeviceModelStorage>
 make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> ocpp_storage,
                                    std::shared_ptr<ocpp::v2::DeviceModelStorageInterface> everest_storage);
