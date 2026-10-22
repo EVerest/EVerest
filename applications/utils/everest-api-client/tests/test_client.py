@@ -463,8 +463,6 @@ def test_apis_with_an_api_without_operations(tmp_path, monkeypatch):
     shell.stop_requested = True
 
 
-# ---- second review ----
-
 def test_messages_from_mqtt_threads_are_printed_while_a_command_runs(app):
     with mock.patch.object(app, "stdout", io.StringIO()) as stdout:
         with app.terminal_lock:  # held by cmd2 while a command runs
