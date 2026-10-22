@@ -1,0 +1,70 @@
+{# Schema tree rendering. A node is a doc_model.SchemaNode. #}
+
+{% macro head(node) %}
+<span class="s-name">{{ node.name }}</span>
+<span class="s-type">{{ node.type }}</span>
+{% if node.required %}<span class="s-req">required</span>{% endif %}
+{% if node.ref %}<a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}
+{% endmacro %}
+
+{% macro details_body(node) %}
+{% if node.description %}<div class="s-desc">{{ node.description | md }}</div>{% endif %}
+{% if node.enum %}
+<div class="s-enum"><span class="s-label">enum</span>{% for value in node.enum %}<code>{{ value }}</code>{% endfor %}</div>
+{% endif %}
+{% if node.constraints %}
+<div class="s-constraints">{% for label, value in node.constraints %}<span class="chip"><span class="s-label">{{ label }}</span> {{ value }}</span>{% endfor %}</div>
+{% endif %}
+{% if node.additional_properties %}
+<p class="s-note">Additional properties {{ node.additional_properties }}.</p>
+{% endif %}
+{% if node.children %}
+{% if node.children_kind in ('allOf', 'oneOf', 'anyOf') %}
+<p class="s-note">{{ {'allOf': 'All of', 'oneOf': 'Exactly one of', 'anyOf': 'Any of'}[node.children_kind] }}:</p>
+{% endif %}
+<ul class="s-tree">
+{% for child in node.children %}
+{{ tree_item(child) }}
+{% endfor %}
+</ul>
+{% endif %}
+{% endmacro %}
+
+{% macro tree_item(node) %}
+<li>
+{% if node.deferred %}
+<details class="s-node" data-inline="{{ node.ref.anchor }}">
+<summary>{{ head(node) }}</summary>
+{% if node.description %}<div class="s-desc">{{ node.description | md }}</div>{% endif %}
+<p class="s-inline"><a href="#{{ node.ref.anchor }}">Definition of {{ node.ref.name }}</a></p>
+</details>
+{% elif node.children %}
+<details class="s-node">
+<summary>{{ head(node) }}</summary>
+{{ details_body(node) }}
+</details>
+{% else %}
+<div class="s-leaf">
+<div class="s-head">{{ head(node) }}</div>
+{{ details_body(node) }}
+</div>
+{% endif %}
+</li>
+{% endmacro %}
+
+{# Top level of a payload, header or component schema: the root's own
+   facts, then its children as an expandable tree. #}
+{% macro root(node) %}
+{% if node.deferred %}
+<details class="s-node s-top" data-inline="{{ node.ref.anchor }}" open>
+<summary><span class="s-type">{{ node.type }}</span> <a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a></summary>
+{% if node.description %}<div class="s-desc">{{ node.description | md }}</div>{% endif %}
+<p class="s-inline"><a href="#{{ node.ref.anchor }}">Definition of {{ node.ref.name }}</a></p>
+</details>
+{% else %}
+<div class="s-root">
+<div class="s-head"><span class="s-type">{{ node.type }}</span>{% if node.ref %} <a class="s-ref" href="{{ node.ref.href }}" title="{{ node.ref.file_name }}">{{ node.ref.name }}{% if node.ref.external %} ↗{% endif %}</a>{% endif %}</div>
+{{ details_body(node) }}
+</div>
+{% endif %}
+{% endmacro %}

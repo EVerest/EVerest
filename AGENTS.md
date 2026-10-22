@@ -213,6 +213,21 @@ Traps:
 `ev-cli --help` lists the available actions; `--only which` lists the files an action
 would touch.
 
+## EVerest API specs (AsyncAPI)
+
+`docs/source/reference/EVerest_API/*.yaml` feed the EVerest API client in
+`applications/utils/everest-api-client/` and, through its `everest_api.docs_cli` entry
+point, the HTML reference of the docs build (`reference/api/<name>/index.html`, one
+shared `reference/api/_assets/`, and the RST index page). The docs build runs that
+generator once for all specs into the trailbook instance source directory, and Sphinx
+copies the pages in through `html_extra_path`. After editing a spec, the client or the
+generator, run the client's tests, which load and render every spec and check links,
+anchors and that nothing from a spec is dropped:
+
+```bash
+python3 -m pytest applications/utils/everest-api-client/tests
+```
+
 ## Code style
 
 Full C++ conventions: `docs/source/how-to-guides/c++-coding-guidelines.rst`.
