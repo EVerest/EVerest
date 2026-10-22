@@ -89,8 +89,9 @@ The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EV
 `VARIABLE_NAME` and `VARIABLE_INSTANCE`. SQLite treats NULLs as distinct in keys, so an absent instance is stored as
 `''` and an absent EVSE or connector id as `0`.
 
-Because monitors are not linked to variable rows, removing a variable from the component config removes only the
-hardwired and preconfigured monitors that the component config defines for it. Custom monitors stay in the database.
+Monitors are not linked to variable rows. Removing a variable from the component config removes all of its monitors
+without an owner, custom monitors included; this also happens when an `evse_id` change re-creates the component.
+Monitors with an owner belong to a variable registered at runtime and are kept.
 `DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
 `get_all_monitors` returns all of them.
 

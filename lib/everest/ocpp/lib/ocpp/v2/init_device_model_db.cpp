@@ -565,7 +565,7 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
         return;
     }
 
-    delete_configured_monitors("v.ID = @id", variable.db_id.value());
+    delete_monitors("v.ID = @id", variable.db_id.value());
 
     static const std::string delete_variable_statement = "DELETE FROM VARIABLE WHERE ID=@variable_id";
 
@@ -912,9 +912,9 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
     }
 }
 
-void InitDeviceModelDb::delete_configured_monitors(const std::string& variable_condition, const std::uint64_t id) {
+void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
     const std::string delete_query =
-        "DELETE FROM VARIABLE_MONITORING WHERE CONFIG_TYPE_ID != @custom AND ID IN (SELECT vm.ID FROM "
+        "DELETE FROM VARIABLE_MONITORING WHERE OWNER IS NULL AND ID IN (SELECT vm.ID FROM "
         "VARIABLE_MONITORING vm JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME AND "
         "IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND "
         "c.NAME = vm.COMPONENT_NAME AND IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE AND "
@@ -922,7 +922,6 @@ void InitDeviceModelDb::delete_configured_monitors(const std::string& variable_c
         variable_condition + ")";
     try {
         auto delete_stmt = this->database->new_statement(delete_query);
-        delete_stmt->bind_int("@custom", static_cast<int>(VariableMonitorType::CustomMonitor));
         delete_stmt->bind_int("@id", static_cast<int>(id));
         if (delete_stmt->step() != SQLITE_DONE) {
             throw InitDeviceModelDbError("Can not delete monitors: " +
@@ -1124,7 +1123,7 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
         return false;
     }
 
-    delete_configured_monitors("c.ID = @id", component.db_id.value());
+    delete_monitors("c.ID = @id", component.db_id.value());
 
     delete_statement->bind_int("@component_id", static_cast<int>(component.db_id.value()));
 

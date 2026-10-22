@@ -381,12 +381,13 @@ private: // Functions
     void delete_variable_monitor(const VariableMonitoringMeta& monitor, const std::int64_t& variable_id);
 
     ///
-    /// \brief Deletes the hardwired and preconfigured monitors of the variables matching \p variable_condition.
-    /// Monitors are keyed by name, so they are not removed together with their variable rows.
+    /// \brief Deletes the monitors of the component config variables matching \p variable_condition, custom
+    /// monitors included. Monitors are keyed by name, so they are not removed together with their variable rows.
+    /// Monitors with an owner belong to a variable registered at runtime and are kept.
     /// \param variable_condition   SQL condition on the variable (alias v) or component (alias c), using \@id
     /// \param id                   The value bound to \@id
     ///
-    void delete_configured_monitors(const std::string& variable_condition, const std::uint64_t id);
+    void delete_monitors(const std::string& variable_condition, const std::uint64_t id);
 
     ///
     /// \brief Get all components with its variables (and characteristics / attributes) from the database.

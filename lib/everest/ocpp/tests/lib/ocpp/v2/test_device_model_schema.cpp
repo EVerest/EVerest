@@ -489,7 +489,7 @@ TEST_F(InitDeviceModelDbMonitorTest, preconfigured_monitor_is_seeded_by_name_key
     EXPECT_EQ(monitors_after.at(0).monitor.monitor.id, monitors.at(0).monitor.monitor.id);
 }
 
-TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_preconfigured_monitors_only) {
+TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_without_owner) {
     auto configs = configs_with_heartbeat_monitor();
     initialize(configs);
     {
@@ -501,6 +501,14 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_preconfigur
                                              VariableMonitorType::CustomMonitor)
                         .has_value());
     }
+    {
+        everest::db::sqlite::Connection database(db_path);
+        ASSERT_TRUE(database.open_connection());
+        ASSERT_TRUE(database.execute_statement(
+            "INSERT INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
+            "VARIABLE_NAME, VARIABLE_INSTANCE, OWNER, SEVERITY, \"TRANSACTION\", TYPE_ID, CONFIG_TYPE_ID, VALUE) "
+            "VALUES ('OCPPCommCtrlr', '', 0, 0, 'HeartbeatInterval', '', 'RUNTIME_OWNER', 4, 0, 0, 2, 20)"));
+    }
 
     auto& variables = configs.at(heartbeat_component_key);
     variables.erase(std::remove_if(variables.begin(), variables.end(),
@@ -511,7 +519,7 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_preconfigur
     DeviceModelStorageSqlite storage(db_path);
     const auto monitors = storage.get_all_monitors();
     ASSERT_EQ(monitors.size(), 1);
-    EXPECT_EQ(monitors.at(0).monitor.type, VariableMonitorType::CustomMonitor);
+    EXPECT_EQ(monitors.at(0).owner, "RUNTIME_OWNER");
 }
 
 } // namespace v2
