@@ -1,0 +1,51 @@
+# The charging cable between the charger's board support (evse_board_support_API,
+# client bsp_api) and the car's (ev_board_support_API, client ev_bsp_api), as
+# the YetiSimulator simulates it. Used by yeti.script and the DC sessions.
+#
+#   - CP: the car's CP state is reported by the charger's board support and
+#     seen by the car; the charger's PWM duty cycle is measured by the car
+#     (PWM off, X1 and F read as 100 %). Disabling the car unplugs it.
+#   - relays: they close (PowerOn) in CP state C or D while the PWM runs and
+#     the charger allows power, and open (PowerOff) in A, B, E and F, and in C
+#     or D when the PWM stops (in C only if power is not allowed). Checked
+#     every 0.1 s, like the YetiSimulator's state machine.
+#   - the board support capabilities, which also enable the charging port.
+#
+# Variables it keeps, for the other simulators: cp (the CP state), duty (PWM
+# duty cycle in %), pwm_running, pwm_amps (the current the duty cycle allows),
+# power_allowed, relays (1 closed, 0 open), ev_max (the car's maximum AC
+# current, negative to discharge), phases (the car's AC phases).
+# The connector lock and RCD commands are accepted without effect.
+
+client_add evse_board_support bsp_api
+client_add ev_board_support ev_bsp_api
+
+let cp A
+let duty 100
+let pwm_running 0
+let pwm_amps 0
+let power_allowed 0
+let relays 0
+let ev_max 0
+let phases 3
+
+# --- CP state ---
+on ev_bsp_api.receive_set_cp_state let cp ${msg}; bsp_api.send_event {"event":"${msg}"}; ev_bsp_api.send_bsp_event {"event":"${msg}"}
+on --if msg=false ev_bsp_api.receive_enable let cp A; bsp_api.send_event {"event":"A"}; ev_bsp_api.send_bsp_event {"event":"A"}
+
+# --- PWM ---
+on bsp_api.receive_pwm_on let duty ${= msg if msg > 0 else 100}; let pwm_running ${= 1 if msg > 0 else 0}; let pwm_amps ${= 0 if duty < 8 else duty * 0.6 if duty < 85 else (duty - 64) * 2.5 if duty < 96 else 80 if duty < 97 else 0}; ev_bsp_api.send_bsp_measurement {"proximity_pilot":{"ampacity":"A_32"},"rcd_current_mA":0,"cp_pwm_duty_cycle":${duty}}
+on bsp_api.receive_cp_state_X1 let duty 100; let pwm_running 0; let pwm_amps 0; ev_bsp_api.send_bsp_measurement {"proximity_pilot":{"ampacity":"A_32"},"rcd_current_mA":0,"cp_pwm_duty_cycle":100}
+on bsp_api.receive_cp_state_F let duty 100; let pwm_running 0; let pwm_amps 0; ev_bsp_api.send_bsp_measurement {"proximity_pilot":{"ampacity":"A_32"},"rcd_current_mA":0,"cp_pwm_duty_cycle":100}
+
+# --- relays ---
+on bsp_api.receive_allow_power_on let power_allowed ${= 1 if msg.allow_power_on else 0}
+every 0.1 --if ${= relays == 0 and cp in ("C", "D") and pwm_running == 1 and power_allowed == 1} let relays 1; bsp_api.send_event {"event":"PowerOn"}
+every 0.1 --if ${= relays == 1 and (cp in ("A", "B", "E", "F") or (cp == "C" and pwm_running == 0 and power_allowed == 0) or (cp == "D" and pwm_running == 0))} let relays 0; bsp_api.send_event {"event":"PowerOff"}
+
+# --- what the car draws on AC ---
+on ev_bsp_api.receive_set_ac_max_current let ev_max ${msg}
+on ev_bsp_api.receive_set_three_phases let phases ${= 3 if msg else 1}
+
+# --- capabilities ---
+bsp_api.send_capabilities {"max_current_A_import":32,"min_current_A_import":6,"max_phase_count_import":3,"min_phase_count_import":1,"max_current_A_export":32,"min_current_A_export":6,"max_phase_count_export":3,"min_phase_count_export":1,"supports_changing_phases_during_charging":true,"max_plug_temperature_C":80,"supports_cp_state_E":true,"connector_type":"IEC62196Type2Cable"}

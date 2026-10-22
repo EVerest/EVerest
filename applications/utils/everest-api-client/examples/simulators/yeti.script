@@ -1,0 +1,12 @@
+# The YetiSimulator, played through the EVerest API: the charging cable between
+# the charger's board support (client bsp_api) and the car's (client
+# ev_bsp_api), and the AC powermeter (client powermeter_api). It replaces the
+# YetiSimulator module in a config that uses evse_board_support_API,
+# ev_board_support_API and powermeter_API with these module ids.
+#
+# Run it from a session script before the car plugs in:
+#     @@ simulators/yeti.script
+# Its rules keep running; remove them with 'rule_remove all' at the end.
+
+@@ cable.script
+@@ ac_powermeter.script

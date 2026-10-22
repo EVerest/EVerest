@@ -1,0 +1,15 @@
+# The DummyTokenProvider, played through the EVerest API: a token provider
+# (auth_token_provider_API, client token_provider_api) that presents a token
+# whenever a session starts, as seen by evse_manager_consumer_API (client
+# evse_manager_api).
+#
+# Configure before running it: token (default DEADBEEF), token_type (the
+# authorization type, default RFID).
+
+client_add auth_token_provider token_provider_api
+client_add evse_manager_consumer evse_manager_api
+
+let --default token DEADBEEF
+let --default token_type RFID
+
+on --if msg.event=SessionStarted evse_manager_api.receive_session_event token_provider_api.send_provided_token {"authorization_type":"${token_type}","id_token":{"type":"ISO14443","value":"${token}"},"parent_id_token":{"type":"ISO14443","value":"${token}"}}

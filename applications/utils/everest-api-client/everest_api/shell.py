@@ -13,31 +13,26 @@ import threading
 import time
 from cmd2 import rl_utils
 
-from everest_api.commands import command_name, make_client_add_command_set
+from everest_api.automation import (RuleEngine, SubstitutionError, has_references, parse_condition, parse_value,
+                                    split_commands, substitute)
+from everest_api.commands import COMMAND_SEPARATOR, command_name, make_client_add_command_set
 from everest_api.model import reply_topic
 from everest_api.mqtt_client import close_mqtt, is_valid_topic_level
 from everest_api.spy import SpyCommandSet
 
 
-def cut_at_terminator(text):
-    """*text* up to the first ';' outside quotes."""
-    quote = None
-    for index, char in enumerate(text):
-        if quote:
-            if char == quote:
-                quote = None
-        elif char in "'\"":
-            quote = char
-        elif char == ";":
-            return text[:index]
-    return text
+# names that rules bind to the received message
+RESERVED_NAMES = ("msg", "topic")
+
+# commands a rule may run, besides the <module_id>.send_* commands
+RULE_COMMANDS = ("echo", "let")
 
 
 class EVerestAPICmd(cmd2.Cmd):
     """EVerest API command line client application"""
 
     def __init__(self, models):
-        # no output redirection: '>' and '|' are kept as typed, e.g. in payloads
+        # no output redirection: '>' and '|' are needed literally in ${= ...} expressions
         super().__init__(include_py=True, persistent_history_file=os.path.expanduser("~/.everest_api_client"),
                          auto_load_commands=False, allow_redirection=False)
         self.mqtt_clients = []
@@ -90,6 +85,11 @@ class EVerestAPICmd(cmd2.Cmd):
         self.script_failed = False
         self.output_lock = threading.Lock()
 
+        self.variables = {}
+        self.variables_lock = threading.Lock()
+        self.rules = RuleEngine(self.run_rule_command, lambda text: self.log_event("ERROR:", text),
+                                self.variables_snapshot)
+
         self.models = models
         self.register_command_set(SpyCommandSet())
         self.register_command_set(make_client_add_command_set(models))
@@ -136,12 +136,9 @@ class EVerestAPICmd(cmd2.Cmd):
                 return False
         return True
 
-    def timed_out(self, note, optional):
-        """Report a timeout of a blocking command. Unless optional, it is an
-        error: the exit code becomes 1 and a running script is stopped."""
-        if optional:
-            self.poutput(note + " (optional, continuing)")
-            return
+    def fail(self, note):
+        """Report an error that a script must not continue after: the exit code
+        becomes 1 and a running script is stopped."""
         self.perror(note)
         self.exit_code = 1
         if self.in_script():
@@ -149,8 +146,20 @@ class EVerestAPICmd(cmd2.Cmd):
             # cmd2 stops a script, but not the shell, on KeyboardInterrupt
             raise KeyboardInterrupt("script stopped")
 
-    def _substitute_replyto_tokens(self, data: cmd2.plugin.PostparsingData) -> cmd2.plugin.PostparsingData:
-        raw = data.statement.raw
+    def timed_out(self, note, optional):
+        """Report a timeout of a blocking command: an error unless optional."""
+        if optional:
+            self.poutput(note + " (optional, continuing)")
+            return
+        self.fail(note)
+
+    def expand(self, line, scope=None):
+        """Replace the ${...} references and the @last / @<n> words in a command line."""
+        if has_references(line):
+            with self.variables_lock:
+                full_scope = dict(self.variables)
+            full_scope.update(scope or {})
+            line = substitute(line, full_scope)
         unresolved = []
 
         def repl(match):
@@ -160,18 +169,83 @@ class EVerestAPICmd(cmd2.Cmd):
             unresolved.append(match.group(0))
             return match.group(0)
 
-        new_raw = re.sub(r'(?<!\S)@(last|\d+)(?!\S)', repl, raw)
+        line = re.sub(r'(?<!\S)@(last|\d+)(?!\S)', repl, line)
         if unresolved:
-            self.perror(f"{', '.join(unresolved)}: no such replyTo address received (see 'replyto'), "
-                        "the command is not run")
-            self.exit_code = 1
-            if self.in_script():
-                self.script_failed = True
-                raise KeyboardInterrupt("script stopped")
-            raise cmd2.exceptions.EmptyStatement
+            raise SubstitutionError(f"{', '.join(unresolved)}: no such replyTo address received (see 'replyto'), "
+                                    "the command is not run")
+        return line
+
+    def _substitute_replyto_tokens(self, data: cmd2.plugin.PostparsingData) -> cmd2.plugin.PostparsingData:
+        # the commands of rules are expanded each time a rule runs, not when it is defined
+        if data.statement.command in ("on", "every"):
+            return data
+        raw = data.statement.raw
+        try:
+            new_raw = self.expand(raw)
+        except SubstitutionError as err:
+            self.fail(str(err))
+            raise cmd2.exceptions.EmptyStatement from None
         if new_raw != raw:
             data.statement = self.statement_parser.parse(new_raw)
         return data
+
+    def variables_snapshot(self):
+        with self.variables_lock:
+            return dict(self.variables)
+
+    def line_after_command(self, statement):
+        """The rest of the line after the command word, as typed: cmd2's arguments
+        stop at characters like '|' and '>' and split JSON at its spaces. An
+        alias is replaced by its value, and the line ends at a ';' that ends
+        the command for cmd2."""
+        word, rest = re.match(r"\s*(\S*)\s?(.*)", statement.raw, re.S).groups()
+        expanded = set()
+        while word in self.aliases and word not in expanded:
+            expanded.add(word)
+            word, rest = re.match(r"\s*(\S*)\s?(.*)", self.aliases[word] + (" " + rest if rest else ""),
+                                  re.S).groups()
+        if statement.terminator:
+            rest = (split_commands(rest) or [""])[0]
+        return rest.rstrip()
+
+    def check_variable_name(self, name):
+        if not re.fullmatch(r"[A-Za-z_][A-Za-z0-9_]*", name) or name in RESERVED_NAMES:
+            raise ValueError(f"'{name}' cannot be used as a variable name")
+
+    def set_variable(self, name, value):
+        with self.variables_lock:
+            self.variables[name] = value
+
+    def run_rule_command(self, command, scope):
+        """Run the command of a rule: a <module_id>.send_* command, let or echo."""
+        statement = self.statement_parser.parse(self.expand(command, scope))
+        if statement.command == "echo":
+            self.output_queue.put(self.line_after_command(statement))
+            return
+        if statement.command == "let":
+            self._let(self.line_after_command(statement))
+            return
+        client_id, _, op_id = statement.command.rpartition(COMMAND_SEPARATOR)
+        entry = next((client for client in self.api_clients if client["id"] == client_id), None)
+        if entry is None or op_id not in getattr(entry.get("command_set"), "send_ops", {}):
+            raise ValueError(f"'{statement.command}' is not a send command of an added client")
+        command_set = entry["command_set"]
+        arg_list = self.statement_parser.get_command_arg_list(statement.command, statement, True)[1]
+        try:
+            args = command_set.send_parsers[op_id].parse_args(arg_list)
+        except SystemExit:
+            raise ValueError("invalid arguments") from None
+        command_set.send(command_set.send_ops[op_id], args, self.line_after_command(statement))
+
+    def _let(self, text):
+        only_default = text.strip().startswith("--default ")
+        if only_default:
+            text = text.strip()[len("--default "):]
+        name, _, value = text.strip().partition(" ")
+        self.check_variable_name(name)
+        with self.variables_lock:
+            if not (only_default and name in self.variables):
+                self.variables[name] = parse_value(value.strip())
 
     @cmd2.with_category('Client Management')
     def do_replyto(self, _):
@@ -190,21 +264,6 @@ class EVerestAPICmd(cmd2.Cmd):
             self.poutput('No replyTo addresses received yet. Subscribe to requests (e.g. pm.receive_request_stop_transaction) or add a spy client first (client_add spy).')
         for index, reply_to in enumerate(self.reply_to_cache, 1):
             self.poutput(f"@{index}\t{reply_to}")
-
-    def line_after_command(self, statement):
-        """The rest of the line after the command word, as typed: cmd2's arguments
-        stop at characters like '|' and '>' and split JSON at its spaces. An
-        alias is replaced by its value, and the line ends at a ';' that ends
-        the command for cmd2."""
-        word, rest = re.match(r"\s*(\S*)\s?(.*)", statement.raw, re.S).groups()
-        expanded = set()
-        while word in self.aliases and word not in expanded:
-            expanded.add(word)
-            word, rest = re.match(r"\s*(\S*)\s?(.*)", self.aliases[word] + (" " + rest if rest else ""),
-                                  re.S).groups()
-        if statement.terminator:
-            rest = cut_at_terminator(rest)
-        return rest.rstrip()
 
     @cmd2.with_category('Client Management')
     def do_echo(self, statement: cmd2.Statement):
@@ -355,6 +414,153 @@ class EVerestAPICmd(cmd2.Cmd):
         self.mqtt_clients = [client for client in self.mqtt_clients if client["id"] != args.module_id]
         self.api_clients = [client for client in self.api_clients if client["id"] != args.module_id]
 
+    @staticmethod
+    def _split_rule(raw, value_options, flag_options):
+        """Split an 'on' or 'every' line into its options, its first argument
+        and its command. The command is taken from the line as typed: cmd2's
+        argument parsing would cut it at characters like '>' and '|'.
+        Options may come before and after the first argument."""
+        options = {option: [] for option in value_options}
+        options.update({option: False for option in flag_options})
+        # a ${...} with spaces in it is one word
+        words = [(match.group(), match.start()) for match in re.finditer(r"(?:\$\{[^}]*\}|\S)+", raw)][1:]
+        argument = None
+        while words:
+            word, start = words.pop(0)
+            if word in value_options:
+                if not words:
+                    raise ValueError(f"{word} needs a value")
+                options[word].append(words.pop(0)[0])
+            elif word in flag_options:
+                options[word] = True
+            elif argument is None:
+                argument = word
+            else:
+                return options, argument, raw[start:].strip()
+        return options, argument, ""
+
+    def _check_rule_command(self, command):
+        """The command of a rule if each of its ';'-separated commands is a
+        <module_id>.send_* command, let or echo; fails otherwise."""
+        commands = split_commands(command)
+        for single in commands or [""]:
+            name = single.split(maxsplit=1)[0] if single else ""
+            if not (name in RULE_COMMANDS or name.rpartition(COMMAND_SEPARATOR)[2].startswith("send_")):
+                self.fail("a rule runs <module_id>.send_* commands, let or echo" + (f", not '{name}'" if name else ""))
+                return None
+        return command
+
+    on_parser = cmd2.Cmd2ArgumentParser(
+        epilog="In the command, ${msg} is the received payload (${msg.key}, ${msg.list[0]} for parts of it), "
+               "${topic} its topic, and ${name} any variable. Several commands separated by ';' run in order. "
+               "The conditions are checked right before the commands run. Examples:\n"
+               "  on ev_bsp.receive_set_cp_state bsp.send_event {\"event\":\"${msg}\"}\n"
+               "  on bsp.receive_allow_power_on --if msg.allow_power_on=true bsp.send_event {\"event\":\"PowerOn\"}\n"
+               "  on pm.receive_request_start_transaction let start ${msg}; echo started\n"
+               "  on --if ${= msg > limit} imd.receive_x echo above the limit")
+    on_parser.add_argument('--if', dest='conditions', action='append', default=[],
+                           metavar='NAME.PATH=VALUE|${= EXPRESSION}',
+                           help='only when the value at the path (of msg or of a variable) equals VALUE '
+                                '(strings as they are, other values as compact JSON), or when the expression '
+                                'is true; may be repeated')
+    on_parser.add_argument('--once', action='store_true', help='remove the rule after it ran once')
+    on_parser.add_argument('trigger', help='<module_id>.<receive operation> of an added or future client')
+    on_parser.add_argument('command', nargs=argparse.REMAINDER,
+                           help="<module_id>.send_* commands, let or echo, separated by ';'; ${...} is expanded "
+                                "when they run")
+    @cmd2.with_argparser(on_parser, preserve_quotes=True)
+    @cmd2.with_category('Automation')
+    def do_on(self, args):
+        """Runs a command whenever a client receives a message"""
+        try:
+            options, trigger, command = self._split_rule(args.cmd2_statement.get().raw, ["--if"], ["--once"])
+            # the trigger is expanded now, the command each time the rule runs
+            args.trigger = self.expand(trigger or "")
+            conditions = [parse_condition(condition) for condition in options["--if"]]
+        except ValueError as err:
+            self.fail(f"invalid on command: {err}")
+            return
+        args.once = options["--once"]
+        client_id, _, op_id = args.trigger.rpartition(COMMAND_SEPARATOR)
+        if not client_id or not op_id.startswith("receive_"):
+            self.fail(f"'{args.trigger}' is not <module_id>.receive_*")
+            return
+        command = self._check_rule_command(command)
+        if command is not None:
+            rule = self.rules.add_on(args.trigger, command, conditions, args.once)
+            self.poutput(f"rule {rule.rule_id}: {rule.describe()}")
+
+    every_parser = cmd2.Cmd2ArgumentParser(
+        epilog="${...} are expanded each time the commands run; several commands separated by ';' run in order. "
+               "Example:\n"
+               "  every 1 let energy ${= energy + power / 3600}; pm.send_powermeter_values "
+               "{\"energy_Wh_import\":{\"total\":${energy}}}")
+    every_parser.add_argument('--count', help='stop after running this many times (may be a ${variable})')
+    every_parser.add_argument('--if', dest='conditions', action='append', default=[],
+                              metavar='NAME.PATH=VALUE|${= EXPRESSION}',
+                              help='only run while the variable at the path equals VALUE, or while the expression '
+                                   'is true; may be repeated')
+    every_parser.add_argument('interval', help='seconds between two runs (may be a ${variable})')
+    every_parser.add_argument('command', nargs=argparse.REMAINDER,
+                              help="<module_id>.send_* commands, let or echo, separated by ';'")
+    @cmd2.with_argparser(every_parser, preserve_quotes=True)
+    @cmd2.with_category('Automation')
+    def do_every(self, args):
+        """Runs a command periodically, the first time after one interval"""
+        try:
+            options, interval, command = self._split_rule(args.cmd2_statement.get().raw, ["--count", "--if"], [])
+            # the interval is expanded now, the command each time the rule runs
+            args.interval = float(self.expand(interval or ""))
+            args.count = int(self.expand(options["--count"][-1])) if options["--count"] else None
+            conditions = [parse_condition(condition) for condition in options["--if"]]
+        except (TypeError, ValueError) as err:
+            self.fail(f"invalid every command: {err}")
+            return
+        if args.interval <= 0 or (args.count is not None and args.count <= 0):
+            self.fail("interval and count must be positive")
+            return
+        command = self._check_rule_command(command)
+        if command is not None:
+            rule = self.rules.add_every(args.interval, command, args.count, conditions)
+            self.poutput(f"rule {rule.rule_id}: {rule.describe()}")
+
+    @cmd2.with_category('Automation')
+    def do_rules(self, _):
+        """Lists the rules created with on and every"""
+        for rule in self.rules.rules():
+            self.poutput(f"{rule.rule_id}: {rule.describe()}")
+
+    rule_remove_parser = cmd2.Cmd2ArgumentParser()
+    rule_remove_parser.add_argument('rule', help="a rule number from 'rules', or all")
+    @cmd2.with_argparser(rule_remove_parser)
+    @cmd2.with_category('Automation')
+    def do_rule_remove(self, args):
+        """Removes a rule, or all of them"""
+        if args.rule == "all":
+            self.rules.remove()
+        elif not args.rule.isdigit() or not self.rules.remove(int(args.rule)):
+            self.fail(f"No rule '{args.rule}'")
+
+    @cmd2.with_category('Automation')
+    def do_let(self, statement: cmd2.Statement):
+        """Usage: let [--default] <name> <value>
+
+        Sets a variable, used as ${name} (or ${name.key}, ${name.list[0]}) in any command. The value is
+        parsed as JSON if it is JSON, and kept as text otherwise. With --default the variable is only set
+        if it does not exist yet, so that a script can be configured before it runs."""
+        try:
+            self._let(self.line_after_command(statement))
+        except ValueError as err:
+            self.fail(str(err))
+
+    @cmd2.with_category('Automation')
+    def do_vars(self, _):
+        """Lists the variables"""
+        with self.variables_lock:
+            variables = dict(self.variables)
+        for name, value in variables.items():
+            self.poutput(f"{name} = {json.dumps(value)}")
+
     def complete_api_name(self, text, line, begidx, endidx):
         return [model.api for model in self.models if model.api.startswith(text)]
 
@@ -379,6 +585,7 @@ class EVerestAPICmd(cmd2.Cmd):
             self.poutput(f"{op.op_id:<{width}}  {op.help}")
 
     def postloop(self):
+        self.rules.stop()
         # signal the worker to stop first, then join with a bound so a quit is
         # not delayed by the queue's poll interval
         self.stop_requested = True
