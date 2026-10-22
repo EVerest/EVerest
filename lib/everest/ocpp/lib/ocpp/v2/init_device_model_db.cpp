@@ -815,7 +815,7 @@ void InitDeviceModelDb::insert_variable_monitor(const VariableMonitoringMeta& mo
     }
     insert_stmt->bind_int(7, clamp_to<int>(variable_id));
 
-    if (insert_stmt->step() != SQLITE_DONE) {
+    if (insert_stmt->step() != SQLITE_DONE || insert_stmt->changes() != 1) {
         throw InitDeviceModelDbError("Can not insert monitor for variable id:" + std::to_string(variable_id));
     }
 }
