@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
 # AC charging session driven entirely from the EVerest API client.
 #
 # Run it against an EVerest started with config-test-all-external-api.yaml:

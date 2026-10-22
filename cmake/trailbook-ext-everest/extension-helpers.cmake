@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
 # Generated documentation files and directories are recorded across configure
 # runs so that a file whose input disappeared (a removed interface, type, module page or
 # handwritten page) is deleted instead of lingering in the instance source
