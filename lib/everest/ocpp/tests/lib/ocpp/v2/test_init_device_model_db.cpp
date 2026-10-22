@@ -99,8 +99,7 @@ public:
     ///
     bool variable_exists(const std::string& component_name, const std::optional<std::string>& component_instance,
                          const std::optional<int>& component_evse_id, const std::optional<int>& component_connector_id,
-                         const std::string& variable_name, const std::optional<std::string>& variable_instance,
-                         const std::optional<std::string> source = std::nullopt);
+                         const std::string& variable_name, const std::optional<std::string>& variable_instance);
 
     ///
     /// \brief Check if variable characteristics exists in the database.
@@ -263,7 +262,7 @@ TEST_F(InitDeviceModelDbTest, init_db) {
     EXPECT_TRUE(characteristics_exists("UnitTestCtrlr", std::nullopt, 2, 3, "UnitTestPropertyAName", std::nullopt,
                                        DataEnum::boolean, std::nullopt, std::nullopt, true, std::nullopt,
                                        std::nullopt));
-    EXPECT_TRUE(variable_exists("UnitTestCtrlr", std::nullopt, 2, 3, "UnitTestPropertyAName", std::nullopt, "OCPP"));
+    EXPECT_TRUE(variable_exists("UnitTestCtrlr", std::nullopt, 2, 3, "UnitTestPropertyAName", std::nullopt));
     EXPECT_TRUE(variable_exists("UnitTestCtrlr", std::nullopt, 2, 3, "UnitTestPropertyBName", std::nullopt));
     EXPECT_TRUE(variable_exists("UnitTestCtrlr", std::nullopt, 2, 3, "UnitTestPropertyCName", std::nullopt));
 
@@ -652,8 +651,7 @@ bool InitDeviceModelDbTest::variable_exists(const std::string& component_name,
                                             const std::optional<int>& component_evse_id,
                                             const std::optional<int>& component_connector_id,
                                             const std::string& variable_name,
-                                            const std::optional<std::string>& variable_instance,
-                                            const std::optional<std::string> source) {
+                                            const std::optional<std::string>& variable_instance) {
     static const std::string select_variable_statement = "SELECT ID "
                                                          "FROM VARIABLE v "
                                                          "WHERE v.COMPONENT_ID=("
@@ -664,8 +662,7 @@ bool InitDeviceModelDbTest::variable_exists(const std::string& component_name,
                                                          "AND c.EVSE_ID IS @evse_id "
                                                          "AND c.CONNECTOR_ID IS @connector_id) "
                                                          "AND v.NAME=@variable_name "
-                                                         "AND v.INSTANCE IS @variable_instance "
-                                                         "AND v.source IS @variable_source";
+                                                         "AND v.INSTANCE IS @variable_instance";
 
     std::unique_ptr<StatementInterface> statement = this->database->new_statement(select_variable_statement);
 
@@ -694,12 +691,6 @@ bool InitDeviceModelDbTest::variable_exists(const std::string& component_name,
         statement->bind_text("@variable_instance", variable_instance.value(), SQLiteString::Transient);
     } else {
         statement->bind_null("@variable_instance");
-    }
-
-    if (source.has_value()) {
-        statement->bind_text("@variable_source", source.value(), SQLiteString::Transient);
-    } else {
-        statement->bind_null("@variable_source");
     }
 
     if (statement->step() == SQLITE_ERROR) {
@@ -1467,10 +1458,8 @@ VariableMonitoringMeta make_preconfigured_delta_monitor(const float value, const
 
 /// The reference of a Delta monitor is runtime state: re-initializing the database from the configuration keeps it
 TEST_F(InitDeviceModelDbTest, delta_monitor_reference_survives_reinitialization) {
-    const std::string monitor_query = "SELECT vm.ID, vm.VALUE, vm.REFERENCE_VALUE FROM VARIABLE_MONITORING vm "
-                                      "JOIN VARIABLE v ON v.ID = vm.VARIABLE_ID "
-                                      "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID "
-                                      "WHERE c.NAME = 'AlignedDataCtrlr' AND v.NAME = 'Interval'";
+    const std::string monitor_query = "SELECT ID, VALUE, REFERENCE_VALUE FROM VARIABLE_MONITORING "
+                                      "WHERE COMPONENT_NAME = 'AlignedDataCtrlr' AND VARIABLE_NAME = 'Interval'";
     struct StoredMonitor {
         int id;
         double value;

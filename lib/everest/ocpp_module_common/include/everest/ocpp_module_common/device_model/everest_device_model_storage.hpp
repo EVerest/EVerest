@@ -174,11 +174,9 @@ public:
     virtual std::optional<ocpp::v2::VariableMonitoringMeta>
     set_monitoring_data(const ocpp::v2::SetMonitoringData& data, const ocpp::v2::VariableMonitorType type) override;
     virtual bool update_monitoring_reference(const int32_t monitor_id, const std::string& reference_value) override;
-    virtual std::vector<ocpp::v2::VariableMonitoringMeta>
-    get_monitoring_data(const std::vector<ocpp::v2::MonitoringCriterionEnum>& criteria,
-                        const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id) override;
     virtual ocpp::v2::ClearMonitoringStatusEnum clear_variable_monitor(int monitor_id, bool allow_protected) override;
     virtual int32_t clear_custom_variable_monitors() override;
+    virtual std::vector<ocpp::v2::StoredMonitor> get_all_monitors() override;
     virtual void check_integrity() override;
     virtual bool create_network_configuration_slot_from_default_schema(std::int32_t new_slot) override;
 

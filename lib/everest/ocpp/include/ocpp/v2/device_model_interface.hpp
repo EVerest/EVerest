@@ -34,7 +34,7 @@ struct VariableMonitoringPeriodic {
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
-    std::optional<std::string> source;
+    std::optional<std::string> owner;
     /// \brief The attributes of the variable with their current values
     std::vector<VariableAttribute> attributes;
 };
