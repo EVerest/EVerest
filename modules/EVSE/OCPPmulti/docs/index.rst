@@ -209,25 +209,27 @@ OCPP device model vs. EVerest device model
 
 The module composes two device model storages behind libocpp's ``DeviceModelStorageInterface``:
 
-* The **OCPP device model** (source id ``OCPP``): the integrator-facing configuration described above. It is defined
+* The **OCPP device model** (owner ``OCPP``): the integrator-facing configuration described above. It is defined
   by the component config JSON files and backed by libocpp's SQLite storage (``DeviceModelDatabasePath``). This is
   the storage integrators configure.
-* The **EVerest device model** (source id ``EVEREST``): runtime telemetry that is closely related to EVerest and
+* The **EVerest device model** (owner ``EVEREST``): runtime telemetry that is closely related to EVerest and
   therefore not owned and managed by libocpp. Examples: ``Available`` and ``AvailabilityState`` of the EVSE and
   Connector components, ``Power`` of the EVSE component, and ``Available``, ``VehicleId`` and ``ProtocolAgreed`` of
   the ``ConnectedEV`` component. It is persisted in ``EverestDeviceModelDatabasePath`` and populated by the module at
   runtime, e.g. from power meter values and EV information reported by the connected EVSE managers.
 
-The ``ComposedDeviceModelStorage`` routes each variable access to its owning storage by the variable's ``source``
-field, which defaults to ``OCPP``.
+The ``ComposedDeviceModelStorage`` routes each variable access to its owning storage by the variable's ``owner``
+(``VariableMetaData::owner``), which defaults to ``OCPP``. The EVerest device model storage reports all of its
+variables with the owner ``EVEREST``. Monitors are always stored in the OCPP device model storage; a monitor on a
+variable owned by ``EVEREST`` is not active again after a restart.
 
 The composed storage backs **both** protocol paths: in OCPP 2.x it is the device model of the libocpp
 ``ChargePoint``, and in OCPP 1.6 it backs the device-model-based charge point configuration. Variables of both
-sources are therefore visible and settable through the EVerest ``ocpp`` interface (``get_variables`` /
+owners are therefore visible and settable through the EVerest ``ocpp`` interface (``get_variables`` /
 ``set_variables``, e.g. via the ``ocpp_consumer_API`` module) regardless of the active protocol version. Note that
 an OCPP 1.6 **CSMS** still cannot address EVerest device model variables directly: ``GetConfiguration`` /
 ``ChangeConfiguration`` are key-based, and only keys with a device model mapping (built-in or via
-``DeviceModelConfigMappings``) reach the device model. Also note that variables of source ``EVEREST`` are updated
+``DeviceModelConfigMappings``) reach the device model. Also note that variables owned by ``EVEREST`` are updated
 by the module at runtime directly in the ``EverestDeviceModelStorage``; such updates do not trigger
 ``monitor_variables`` events on the ``ocpp`` interface (in either protocol version) — only writes performed through
 the OCPP stack or the ``ocpp`` interface do. If a component/variable is defined in both storages, the EVerest
@@ -248,8 +250,8 @@ responsible for avoiding such overlaps.
        DeviceModelStorageInterface <|.. ComposedDeviceModelStorage
        DeviceModelStorageInterface <|.. DeviceModelStorageSqlite
        DeviceModelStorageInterface <|.. EverestDeviceModelStorage
-       ComposedDeviceModelStorage o-- DeviceModelStorageSqlite : source OCPP
-       ComposedDeviceModelStorage o-- EverestDeviceModelStorage : source EVEREST
+       ComposedDeviceModelStorage o-- DeviceModelStorageSqlite : owner OCPP
+       ComposedDeviceModelStorage o-- EverestDeviceModelStorage : owner EVEREST
 
 A ``SetVariables.req`` from the CSMS is routed as follows:
 
@@ -264,11 +266,11 @@ A ``SetVariables.req`` from the CSMS is routed as follows:
 
        CSMS->>CP: SetVariables.req
        CP->>Composed: set_variable_attribute_value(component, variable, value)
-       Composed->>Composed: get_variable_source(component, variable)
-       alt source is OCPP (default)
+       Composed->>Composed: get_variable_owner(component, variable)
+       alt owner is OCPP (default)
            Composed->>Sqlite: set_variable_attribute_value(...)
            Sqlite-->>Composed: SetVariableStatus
-       else source is EVEREST
+       else owner is EVEREST
            Composed->>Everest: set_variable_attribute_value(...)
            Everest-->>Composed: SetVariableStatus
        end
