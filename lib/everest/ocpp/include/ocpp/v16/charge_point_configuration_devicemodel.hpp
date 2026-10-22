@@ -8,7 +8,7 @@
 #include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/types.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <set>
 #include <vector>
@@ -30,7 +30,7 @@ public:
 
 protected:
     std::unique_ptr<v2::DeviceModelVariablesInterface> storage;
-    ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings;
+    ocpp::v2::Ocpp16KeyMappings custom_key_mappings;
 
     SetResult setInternalAllowChargingProfileWithoutStartSchedule(const std::string& value);
     SetResult setInternalCentralSystemURI(const std::string& value);
@@ -110,7 +110,7 @@ public:
     explicit ChargePointConfigurationDeviceModel(
         const std::string_view& ocpp_main_path,
         std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
-        ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings = {});
+        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {});
     virtual ~ChargePointConfigurationDeviceModel() = default;
 
     /// \brief The device model backing this configuration.

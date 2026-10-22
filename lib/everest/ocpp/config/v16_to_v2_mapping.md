@@ -12,7 +12,7 @@ A machine-readable list of the built-in mappings is generated from the code at b
 `ocpp16_default_mappings_generator` (`tools/ocpp16_default_mappings/`) and installed as
 `share/everest/modules/OCPP/default_ocpp-16_mappings.yaml`. It lists every known key with its section, target
 Component/Variable and target field (`Actual` or `maxLimit`), plus the keys without an OCPP 2.x mapping. It is a
-reference document, not a custom mapping file for `DeviceModelConfigMappings`. The generator is not run when
+reference document, not a custom mapping file for `Ocpp16KeyMappingsPath`. The generator is not run when
 cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 
 ## Core Profile

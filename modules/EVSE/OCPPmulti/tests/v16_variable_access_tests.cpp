@@ -53,8 +53,8 @@ ocpp::v2::SetVariableData make_set(const std::string& component, const std::stri
     return data;
 }
 
-ocpp::v2::Ocpp16CustomConfigMappings custom_mappings_fixture() {
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+ocpp::v2::Ocpp16KeyMappings custom_mappings_fixture() {
+    ocpp::v2::Ocpp16KeyMappings mappings;
     mappings.emplace("VendorBar", std::make_pair(make_component("VendorCtrlr"), make_variable("BarSetting")));
     mappings.emplace("VendorEmpty", std::make_pair(make_component("VendorCtrlr"), make_variable("EmptySetting")));
     // two custom keys mapping to the same CV -> ambiguous reverse
@@ -589,10 +589,10 @@ TEST_F(V16VariableAccess, rejectedSecurityGlobalWriteLeavesOverrides) {
     EXPECT_EQ(m_device_model.entry(slot1, make_variable("BasicAuthPassword")).value, "slot-one-secret-16");
 }
 
-// Custom config mappings can target connection-config CVs; both the legacy key path (path 1) and the key-backed
+// Custom key mappings can target connection-config CVs; both the legacy key path (path 1) and the key-backed
 // canonical path (path 2) must then fire the callback on a committed write.
 TEST_F(V16VariableAccess, customMappedConnectionConfigKeyFiresCallback) {
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    ocpp::v2::Ocpp16KeyMappings mappings;
     mappings.emplace("VendorCsmsUrl", std::make_pair(make_component("NetworkConfiguration", std::string("2")),
                                                      make_variable("OcppCsmsUrl")));
     const ocpp::v16::VariableResolver resolver(mappings);
@@ -703,7 +703,7 @@ TEST_F(V16VariableAccess, slotUrlSchemeSecurityProfileMismatchIsRejected) {
 
 TEST_F(V16VariableAccess, customMappedWriteToActiveSlotIsRejected) {
     // the B09-style gate must also cover key-routed writes (paths 1 and 2) targeting slot CVs
-    ocpp::v2::Ocpp16CustomConfigMappings mappings;
+    ocpp::v2::Ocpp16KeyMappings mappings;
     mappings.emplace("VendorCsmsUrl", std::make_pair(make_component("NetworkConfiguration", std::string("2")),
                                                      make_variable("OcppCsmsUrl")));
     const ocpp::v16::VariableResolver resolver(mappings);
@@ -785,7 +785,7 @@ TEST_F(V16VariableAccess, ambiguousCustomMappingIsRejected) {
     EXPECT_EQ(get_results[0].attributeStatusInfo.value().reasonCode.get(), "AmbiguousMapping");
     ASSERT_TRUE(get_results[0].attributeStatusInfo.value().additionalInfo.has_value());
     EXPECT_EQ(get_results[0].attributeStatusInfo.value().additionalInfo.value().get(),
-              "Ambiguous custom config mapping; fix DeviceModelConfigMappings");
+              "Ambiguous custom key mapping; fix Ocpp16KeyMappingsPath");
     EXPECT_EQ(m_get_keys_calls, 0);
 
     const auto set_results = access.set({make_set("VendorCtrlr", "FooSetting", "x")}, "csms");
@@ -795,7 +795,7 @@ TEST_F(V16VariableAccess, ambiguousCustomMappingIsRejected) {
     EXPECT_EQ(set_results[0].result.attributeStatusInfo.value().reasonCode.get(), "AmbiguousMapping");
     ASSERT_TRUE(set_results[0].result.attributeStatusInfo.value().additionalInfo.has_value());
     EXPECT_EQ(set_results[0].result.attributeStatusInfo.value().additionalInfo.value().get(),
-              "Ambiguous custom config mapping; fix DeviceModelConfigMappings");
+              "Ambiguous custom key mapping; fix Ocpp16KeyMappingsPath");
     EXPECT_TRUE(m_set_calls.empty());
 }
 

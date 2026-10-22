@@ -87,10 +87,10 @@ config:
       If false (default), the device model is initialized only from the component configs (DeviceModelConfigPath).
     type: boolean
     default: false
-  DeviceModelConfigMappings:
+  Ocpp16KeyMappingsPath:
     description: >-
       OCPP 1.6
-      Optional path to a YAML file with custom OCPP1.6 to device model component-config mappings.
+      Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model variables.
       Relative paths are resolved against this module's share path.
       Applied both when migrating the legacy OCPP 1.6 JSON config into the device model and when
       serving the device-model-backed configuration at runtime.
