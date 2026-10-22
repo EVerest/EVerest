@@ -298,7 +298,27 @@ std::unique_ptr<ocpp::MessageQueue<v16::MessageType>> ChargePointImpl::create_me
         this->external_notify, this->database_handler, start_transaction_message_retry_callback);
 }
 
+<<<<<<< HEAD
 void ChargePointImpl::init_websocket() {
+=======
+void ChargePointImpl::on_websocket_connected(const int configuration_slot,
+                                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile,
+                                             const ocpp::OcppProtocolVersion /*ocpp_version*/) {
+    if (this->connection_state_changed_callback != nullptr) {
+        this->connection_state_changed_callback(true, configuration_slot, network_connection_profile);
+    }
+    this->publish_default_price(false);
+    const bool reconnected_while_booted = this->connection_state == ChargePointConnectionState::Booted;
+    // Update connection state before resuming, otherwise a fast BootNotification.conf can be dropped as received while
+    // disconnected
+    this->connected_callback();
+    this->message_queue->resume(this->message_queue_resume_delay);
+    if (reconnected_while_booted) {
+        // According to spec, a charge point should not send a BootNotification.req after a reconnect, still we send
+        // StatusNotification.req for all connectors. Only after resuming: a paused queue would drop them.
+        this->status->trigger_status_notifications();
+    }
+>>>>>>> 2bf6d06 (fix(libocpp): set v16 connection state before resuming the message queue (#3188))
 
     auto connection_options = this->get_ws_connection_options();
 
@@ -1352,10 +1372,8 @@ void ChargePointImpl::connected_callback() {
         break;
     }
     case ChargePointConnectionState::Booted: {
-        // on_open in a Booted state can happen after a successful reconnect.
-        // according to spec, a charge point should not send a BootNotification after a reconnect
-        // still we send StatusNotification.req for all connectors after a reconnect
-        this->status->trigger_status_notifications();
+        // on_open in a Booted state can happen after a successful reconnect, on_websocket_connected reports the
+        // connector status once the message queue resumed
         break;
     }
     case ChargePointConnectionState::Pending: {
