@@ -1358,6 +1358,11 @@ void from_json(const json& j, DeviceModelVariable& c) {
         }
     }
 
+    if (j.contains("source")) {
+        EVLOG_warning << "Variable " << c.name << ": the component config key \"source\" is no longer supported and is "
+                      << "ignored";
+    }
+
     if (j.contains(DEFAULT_SOURCE)) {
         // I want the default value as string here as it is stored in the db as a string as well.
         const json& default_value = j.at(DEFAULT_SOURCE);
