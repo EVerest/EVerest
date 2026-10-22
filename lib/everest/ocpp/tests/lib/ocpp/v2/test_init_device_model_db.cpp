@@ -1259,6 +1259,21 @@ TEST_F(InitDeviceModelDbTest, patch_with_ocpp16_full_config_maps_values) {
                                     "NextTransition", AttributeEnum::Actual, "01:00"));
 
     // ============================================================================
+    // Keys with a standard OCPP 2.x equivalent
+    // ============================================================================
+
+    EXPECT_TRUE(attribute_has_value("TxCtrlr", std::nullopt, std::nullopt, std::nullopt, "StopTxOnEVSideDisconnect",
+                                    std::nullopt, AttributeEnum::Actual, "false"));
+    EXPECT_TRUE(attribute_has_value("OCPPCommCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                    "UnlockOnEVSideDisconnect", std::nullopt, AttributeEnum::Actual, "false"));
+    EXPECT_TRUE(attribute_has_value("CustomizationCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                    "CustomImplementationEnabled", "org.openchargealliance.costmsg",
+                                    AttributeEnum::Actual, "false"));
+    EXPECT_TRUE(attribute_has_value("CustomizationCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                    "CustomImplementationEnabled", "org.openchargealliance.multilanguage",
+                                    AttributeEnum::Actual, "true"));
+
+    // ============================================================================
     // Keys that do not exist in OCPP2.x
     // ============================================================================
 
@@ -1272,16 +1287,12 @@ TEST_F(InitDeviceModelDbTest, patch_with_ocpp16_full_config_maps_values) {
                                     std::nullopt, AttributeEnum::Actual, "12"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                     "MinimumStatusDuration", std::nullopt, AttributeEnum::Actual, "2"));
-    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
-                                    "StopTransactionOnEVSideDisconnect", std::nullopt, AttributeEnum::Actual, "false"));
     EXPECT_TRUE(
         attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt, "SupportedFeatureProfiles",
                             std::nullopt, AttributeEnum::Actual,
                             "Core,FirmwareManagement,RemoteTrigger,Reservation,LocalAuthListManagement,SmartCharging"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                     "SupportedFeatureProfilesMaxLength", std::nullopt, AttributeEnum::Actual, "512"));
-    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
-                                    "UnlockConnectorOnEVSideDisconnect", std::nullopt, AttributeEnum::Actual, "false"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                     "ReserveConnectorZeroSupported", std::nullopt, AttributeEnum::Actual, "true"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
@@ -1306,8 +1317,6 @@ TEST_F(InitDeviceModelDbTest, patch_with_ocpp16_full_config_maps_values) {
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
                                     "ISO15118CertificateManagementEnabled", std::nullopt, AttributeEnum::Actual,
                                     "false"));
-    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
-                                    "CustomDisplayCostAndPrice", std::nullopt, AttributeEnum::Actual, "false"));
 
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt, "DefaultPrice",
                                     std::nullopt, AttributeEnum::Actual,
@@ -1326,8 +1335,6 @@ TEST_F(InitDeviceModelDbTest, patch_with_ocpp16_full_config_maps_values) {
                                     "CustomIdleFeeAfterStop", std::nullopt, AttributeEnum::Actual, "false"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt, "SupportedLanguages",
                                     std::nullopt, AttributeEnum::Actual, "en, nl, de, nb_NO"));
-    EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
-                                    "CustomMultiLanguageMessages", std::nullopt, AttributeEnum::Actual, "true"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt, "Language",
                                     std::nullopt, AttributeEnum::Actual, "en"));
     EXPECT_TRUE(attribute_has_value("OCPP16LegacyCtrlr", std::nullopt, std::nullopt, std::nullopt,
