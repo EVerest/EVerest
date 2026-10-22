@@ -78,12 +78,13 @@ all commands, grouped by client. Useful settables
 
 Requests from EVerest carry a `replyTo` address in their payload headers, and
 the `<module_id>.send_reply_*` commands need it as their first argument. The shell
-caches every `replyTo` it sees in incoming messages, so you never have to
-copy it by hand:
+caches every `replyTo` it sees in requests from EVerest (`e2m` topics), so you
+never have to copy it by hand:
 
 - press TAB on the replyTo argument; it completes from the client's own
   addresses: `powermeter_api.send_reply_stop_transaction <TAB>`
-- or type `@last` (most recent) / `@1`, `@2`, … as a word of a command
+- or type `@last` (most recent) / `@1`, `@2`, … as a word of a command; if
+  there is no such address, the command is not run and a running script stops
 - `replyto` lists the cached addresses with their `@<n>` shortcuts
 
 The cache fills from the messages of the added clients and spies.

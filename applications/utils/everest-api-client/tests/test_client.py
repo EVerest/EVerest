@@ -276,6 +276,36 @@ def test_reply_to_cache_completion_and_last(app):
     assert fake.published[-1] == (reply_to, '{"status": "OK"}')
 
 
+def test_own_requests_seen_by_a_spy_are_not_cached(app):
+    run(app, "client_add powermeter pm")
+    run(app, "client_add spy")
+    pm, spy_fake = app.fakes
+    spy_fake.deliver("everest_api/1/powermeter/pm/m2e/communication_check", {"headers": {"replyTo": "own/1"}})
+    assert app.reply_to_cache == []
+    pm.deliver("everest_api/1/powermeter/pm/e2m/stop_transaction", {"headers": {"replyTo": "everest/1"}})
+    assert app.reply_to_cache == ["everest/1"]
+
+
+def test_an_unresolved_last_is_not_sent(app, capsys):
+    run(app, "client_add powermeter pm")
+    run(app, 'pm.send_reply_stop_transaction @last {"status":"OK"}')
+    run(app, 'pm.send_reply_stop_transaction @3 {"status":"OK"}')
+    assert app.fakes[-1].published == []
+    err = capsys.readouterr().err
+    assert "@last: no such replyTo" in err and "@3: no such replyTo" in err
+    assert app.exit_code == 1
+
+
+def test_an_unresolved_last_stops_the_script(app, tmp_path):
+    run(app, "client_add powermeter pm")
+    script = tmp_path / "s.script"
+    script.write_text('pm.send_reply_stop_transaction @last {"status":"OK"}\necho NOT-REACHED\n')
+    out = output(app, f"run_script {script}", "echo AFTER")
+    assert "NOT-REACHED" not in out and "AFTER" in out
+    assert app.fakes[-1].published == []
+    assert app.exit_code == 1
+
+
 def test_last_is_only_substituted_as_a_whole_word(app):
     run(app, "client_add powermeter pm")
     fake = app.fakes[-1]

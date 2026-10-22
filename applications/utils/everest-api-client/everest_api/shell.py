@@ -151,14 +151,24 @@ class EVerestAPICmd(cmd2.Cmd):
 
     def _substitute_replyto_tokens(self, data: cmd2.plugin.PostparsingData) -> cmd2.plugin.PostparsingData:
         raw = data.statement.raw
+        unresolved = []
 
         def repl(match):
             index = 0 if match.group(1) in (None, 'last') else int(match.group(1)) - 1
             if 0 <= index < len(self.reply_to_cache):
                 return self.reply_to_cache[index]
+            unresolved.append(match.group(0))
             return match.group(0)
 
         new_raw = re.sub(r'(?<!\S)@(last|\d+)(?!\S)', repl, raw)
+        if unresolved:
+            self.perror(f"{', '.join(unresolved)}: no such replyTo address received (see 'replyto'), "
+                        "the command is not run")
+            self.exit_code = 1
+            if self.in_script():
+                self.script_failed = True
+                raise KeyboardInterrupt("script stopped")
+            raise cmd2.exceptions.EmptyStatement
         if new_raw != raw:
             data.statement = self.statement_parser.parse(new_raw)
         return data
@@ -167,7 +177,7 @@ class EVerestAPICmd(cmd2.Cmd):
     def do_replyto(self, _):
         """Lists the replyTo addresses received in requests so far.
 
-        Replying to a request from EVerest: every incoming message with a headers.replyTo is cached, newest
+        Replying to a request from EVerest: the headers.replyTo of every request from EVerest (e2m) is cached, newest
         first. In a <module_id>.send_reply_* command, TAB on the replyTo argument completes from the cache,
         and the word @last (or @1, @2, ...) is replaced by the most recent (or n-th) address.
 
@@ -288,7 +298,10 @@ class EVerestAPICmd(cmd2.Cmd):
 
     def log_event(self, topic, payload):
         # cache/notify happen even while muted so wait_for and @last keep working
-        self.cache_reply_to(payload)
+        # Only requests from EVerest (e2m) carry a replyTo to answer; the client's own
+        # requests (m2e), seen by a spy, carry the reply address it generated itself.
+        if "e2m" in topic.split("/"):
+            self.cache_reply_to(payload)
         self._notify_waiters(topic, payload)
         if topic in ("ERROR:", "WARNING:"):
             message = self.OUT_COLOR + topic + " " + payload + self.RESET if self.colors else topic + " " + payload
