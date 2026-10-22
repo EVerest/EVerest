@@ -996,13 +996,21 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             return;
         }
 
+        std::optional<uint32_t> departure_time;
         if (const auto* ev_se_control_mode = std::get_if<dt::Scheduled_SEReqControlMode>(&ev_control_mode)) {
             fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
+            departure_time = ev_se_control_mode->departure_time;
         } else if (const auto* ev_se_control_mode = std::get_if<dt::Dynamic_SEReqControlMode>(&ev_control_mode)) {
             fill_v2x_charging_parameters(v2x_charging_parameters, *ev_se_control_mode);
+            departure_time = ev_se_control_mode->departure_time;
         } else {
             EVLOG_error << "Invalid type received for EV Control Mode! Not sending 'ChargingNeeds'.";
             return;
+        }
+
+        // Optional in Scheduled mode, mandatory in Dynamic mode
+        if (departure_time.has_value()) {
+            publish_departure_time(seconds_from_now_to_rfc3339(departure_time.value()));
         }
 
         // Publish charging needs through the extensions
