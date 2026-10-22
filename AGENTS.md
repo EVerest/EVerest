@@ -33,6 +33,13 @@ that behavior, and fix what went stale. Libraries document themselves in
 libocpp); internal library changes count too when they touch documented behavior. A
 change to build, run, test or codegen mechanics means updating this file as well.
 
+Building the manual: configure with `-DEVEREST_BUILD_DOCS=ON` and build the target
+`trailbook_everest`; the site lands in `build/docs/trailbook_everest_build/<instance>/`.
+Rebuilds are incremental: Sphinx keeps its environment in `build/docs/sphinx_doctrees/`
+(delete it to force a full read), reference pages regenerate only when their own inputs
+change, and generated pages whose input disappeared are removed at configure time.
+`-DEVEREST_SKIP_BUILD_API_DOC=ON` leaves out the EVerest API reference.
+
 ## Build
 
 `make build`, `make test` and `make lint` do not exist here.
