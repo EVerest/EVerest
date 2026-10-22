@@ -201,8 +201,12 @@ Add mappings for custom OCPP 1.6 keys
 Standard OCPP 1.6 keys are migrated through the built-in mapping table. The
 full list of built-in key mappings is documented in
 `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
-in the repository. Custom or vendor-specific keys that are not covered there
-need an explicit YAML mapping file.
+in the repository. A machine-readable list, generated from the code at build
+time, is installed as
+``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``. That file is a
+reference only: do not point ``DeviceModelConfigMappings`` at it. Custom or
+vendor-specific keys that are not covered by the built-in table need an
+explicit YAML mapping file.
 
 Example:
 
@@ -302,7 +306,9 @@ What to keep in mind
 * Only keys with a built-in mapping or an explicit custom mapping entry are
   migrated. Unknown keys produce a warning log at startup and are otherwise
   ignored. The complete built-in mapping table is in
-  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
+  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
+  and, generated from the code, in the installed
+  ``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``.
 * Some OCPP 1.6 values are represented differently in the device model than in
   the JSON configuration. For example, ``MeterPublicKeys`` is expanded into
   individual ``MeterPublicKey[N]`` variables, and

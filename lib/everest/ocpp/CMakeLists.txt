@@ -45,6 +45,10 @@ add_subdirectory(config/v2)
 # library code
 add_subdirectory(lib)
 
+if(LIBOCPP_ENABLE_V16)
+    add_subdirectory(tools/ocpp16_default_mappings)
+endif()
+
 # packaging
 install(
     TARGETS ocpp
