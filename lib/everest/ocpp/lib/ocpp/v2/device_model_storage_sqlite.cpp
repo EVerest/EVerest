@@ -340,12 +340,12 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
                                                                              const AttributeEnum& attribute_enum,
                                                                              const std::string& value,
                                                                              const std::string& source) {
+    auto transaction = this->db->begin_transaction();
+
     const auto _variable_id = this->get_variable_id(component_id, variable_id);
     if (_variable_id == -1) {
         return SetVariableStatusEnum::Rejected;
     }
-
-    auto transaction = this->db->begin_transaction();
 
     const std::string insert_query =
         "UPDATE VARIABLE_ATTRIBUTE SET VALUE = ?, VALUE_SOURCE = ? WHERE VARIABLE_ID = ? AND TYPE_ID = ?";
@@ -429,8 +429,9 @@ bool DeviceModelStorageSqlite::remove_stored_value(const Component& component_id
         return false;
     }
 
+    const auto changes = delete_stmt->changes();
     transaction->commit();
-    return delete_stmt->changes() == 1;
+    return changes == 1;
 }
 
 bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t monitor_id,
@@ -448,23 +449,21 @@ bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t mo
         return false;
     }
 
-    transaction->commit();
-
     const int changes = update_stmt->changes();
-
-    return (changes == 1);
+    transaction->commit();
+    return changes == 1;
 }
 
 std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_data(const SetMonitoringData& data,
                                                                                     const VariableMonitorType type) {
+    auto transaction = this->db->begin_transaction();
+
     // The reference of a delta monitor stays NULL if this storage holds no value for the variable; DeviceModel sets
     // it from the value it holds
     std::optional<std::string> actual_value;
     if (data.type == MonitorEnum::Delta) {
         actual_value = this->get_actual_value(data.component, data.variable);
     }
-
-    auto transaction = this->db->begin_transaction();
 
     std::string insert_query =
         "INSERT OR REPLACE INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
@@ -505,9 +504,8 @@ std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_d
         return std::nullopt;
     }
 
-    transaction->commit();
-
     const std::int64_t last_row_id = this->db->get_last_inserted_rowid();
+    transaction->commit();
 
     VariableMonitoringMeta meta;
 
@@ -569,6 +567,8 @@ std::vector<StoredMonitor> DeviceModelStorageSqlite::get_all_monitors() {
 }
 
 ClearMonitoringStatusEnum DeviceModelStorageSqlite::clear_variable_monitor(int monitor_id, bool allow_protected) {
+    auto transaction = this->db->begin_transaction();
+
     const std::string select_query = "SELECT COUNT(*) FROM VARIABLE_MONITORING WHERE ID = ?";
 
     auto select_stmt = this->db->new_statement(select_query);
@@ -591,7 +591,6 @@ ClearMonitoringStatusEnum DeviceModelStorageSqlite::clear_variable_monitor(int m
         delete_query = "DELETE FROM VARIABLE_MONITORING WHERE ID = ? AND CONFIG_TYPE_ID = ?";
     }
 
-    auto transaction = this->db->begin_transaction();
     auto delete_stmt = this->db->new_statement(delete_query);
 
     delete_stmt->bind_int(1, monitor_id);
@@ -605,10 +604,10 @@ ClearMonitoringStatusEnum DeviceModelStorageSqlite::clear_variable_monitor(int m
         return ClearMonitoringStatusEnum::Rejected;
     }
 
-    transaction->commit();
-
     // Ensure that we deleted 1 row
-    return ((delete_stmt->changes() == 1) ? ClearMonitoringStatusEnum::Accepted : ClearMonitoringStatusEnum::Rejected);
+    const auto changes = delete_stmt->changes();
+    transaction->commit();
+    return changes == 1 ? ClearMonitoringStatusEnum::Accepted : ClearMonitoringStatusEnum::Rejected;
 }
 
 std::int32_t DeviceModelStorageSqlite::clear_custom_variable_monitors() {
@@ -623,9 +622,9 @@ std::int32_t DeviceModelStorageSqlite::clear_custom_variable_monitors() {
         return 0;
     }
 
+    const auto changes = delete_stmt->changes();
     transaction->commit();
-
-    return delete_stmt->changes();
+    return changes;
 }
 
 void DeviceModelStorageSqlite::check_integrity() {
