@@ -166,3 +166,10 @@ to the corresponding migration guide.
      - :ref:`Migrate from EvseV2G and IsoMux to Evse15118D20
        <howto-iso15118-stack-migration>`. The module logs a deprecation warning
        at startup.
+   * - :ref:`Evse15118D20 <everest_modules_Evse15118D20>` configuration option
+       ``logging_path``
+     - 2026.10.0
+     - 2027.04.0
+     - Remove the option. The built-in session logger is removed and the
+       option has no effect; capture sessions with PacketSniffer, tcpdump or
+       Wireshark instead.
