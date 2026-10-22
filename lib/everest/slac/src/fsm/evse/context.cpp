@@ -26,6 +26,24 @@ void Context::signal_error_routine_request() {
     invoke_callback(callbacks.signal_error_routine_request);
 }
 
+void Context::raise_error(const std::string& sub_type, const std::string& message) {
+    if (active_errors.count(sub_type) != 0) {
+        return;
+    }
+    if (invoke_callback(callbacks.raise_error, sub_type, message)) {
+        active_errors.insert(sub_type);
+    }
+}
+
+void Context::clear_error(const std::string& sub_type) {
+    if (active_errors.count(sub_type) == 0) {
+        return;
+    }
+    if (invoke_callback(callbacks.clear_error, sub_type)) {
+        active_errors.erase(sub_type);
+    }
+}
+
 void Context::publish_slac_state() {
     if (last_published_d3_state.has_value() && *last_published_d3_state == status.d3_state) {
         return;

@@ -1,53 +1,84 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <chrono>
+#include <algorithm>
+#include <cerrno>
+#include <cstddef>
 #include <everest/slac/EvseSlacConfig.hpp>
-#include <limits>
-#include <random>
 #include <stdexcept>
 #include <string_view>
+#include <sys/random.h>
 
 namespace everest::lib::slac::fsm::evse {
 
-void EvseSlacConfig::generate_nmk() {
-    generate_nmk(session_nmk);
+namespace {
+
+bool fill_random(std::uint8_t* data, std::size_t len) {
+    std::size_t filled = 0;
+    while (filled < len) {
+        auto const result = getrandom(data + filled, len - filled, 0);
+        if (result < 0) {
+            if (errno == EINTR) {
+                continue;
+            }
+            return false;
+        }
+        filled += static_cast<std::size_t>(result);
+    }
+    return true;
 }
 
-void EvseSlacConfig::generate_nmk(Nmk& target_nmk) {
-    generate_nmk(target_nmk.data());
+} // namespace
+
+bool EvseSlacConfig::generate_nmk() {
+    return generate_nmk(session_nmk);
 }
 
-void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
+bool EvseSlacConfig::generate_nmk(Nmk& target_nmk) {
+    return generate_nmk(target_nmk.data());
+}
+
+bool EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
     if (target_nmk == nullptr) {
         throw std::invalid_argument("NMK target must not be null");
     }
 
-    static constexpr std::string_view kLegacyPrintableCharacters = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
-    // Called from Reset's on_entry on every key regeneration, inside a transition: nothing here
-    // may throw (see msm_helpers.hpp). std::random_device can, when no entropy source opens; the
-    // clock then seeds the key, which keeps the keys apart between runs.
-    auto const seed = []() -> std::mt19937::result_type {
-        try {
-            return std::random_device{}();
-        } catch (...) {
-            return static_cast<std::mt19937::result_type>(std::chrono::steady_clock::now().time_since_epoch().count());
+    auto const fill = [this](std::uint8_t* data, std::size_t len) {
+        return random_source ? random_source(data, len) : fill_random(data, len);
+    };
+
+    Nmk nmk{};
+    if (nmk_generation_mode == NmkGenerationMode::full_byte_range) {
+        if (not fill(nmk.data(), nmk.size())) {
+            return false;
         }
-    }();
-    std::mt19937 generator(seed);
+        std::copy(nmk.begin(), nmk.end(), target_nmk);
+        return true;
+    }
+
+    static constexpr std::string_view LEGACY_PRINTABLE_CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+    // 256 = 7 * 36 + 4, so mapping every byte with % 36 would make '0'-'3' more likely than the rest.
+    // Bytes from 252 up are dropped instead; each character then has exactly 7 byte values mapping to it.
+    static constexpr std::uint8_t UNBIASED_BYTE_LIMIT = 256 - (256 % LEGACY_PRINTABLE_CHARACTERS.size());
 
     std::size_t generated = 0;
-    if (nmk_generation_mode == NmkGenerationMode::legacy_printable) {
-        std::uniform_int_distribution<std::size_t> byte_distribution{0, kLegacyPrintableCharacters.size() - 1};
-        while (generated < slac::defs::NMK_LEN) {
-            target_nmk[generated++] =
-                static_cast<std::uint8_t>(kLegacyPrintableCharacters[byte_distribution(generator)]);
+    Nmk random_bytes{};
+    while (generated < nmk.size()) {
+        if (not fill(random_bytes.data(), random_bytes.size())) {
+            return false;
         }
-    } else {
-        std::uniform_int_distribution<int> byte_distribution(0, std::numeric_limits<std::uint8_t>::max());
-        while (generated < slac::defs::NMK_LEN) {
-            target_nmk[generated++] = static_cast<std::uint8_t>(byte_distribution(generator));
+        for (auto const value : random_bytes) {
+            if (value >= UNBIASED_BYTE_LIMIT) {
+                continue;
+            }
+            nmk[generated++] =
+                static_cast<std::uint8_t>(LEGACY_PRINTABLE_CHARACTERS[value % LEGACY_PRINTABLE_CHARACTERS.size()]);
+            if (generated == nmk.size()) {
+                break;
+            }
         }
     }
+    std::copy(nmk.begin(), nmk.end(), target_nmk);
+    return true;
 }
 
 } // namespace everest::lib::slac::fsm::evse

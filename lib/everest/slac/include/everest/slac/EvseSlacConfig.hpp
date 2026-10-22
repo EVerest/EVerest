@@ -4,9 +4,11 @@
 
 #include <chrono>
 
+#include <cstddef>
 #include <cstdint>
 #include <everest/slac/slac_defs.hpp>
 #include <everest/slac/slac_types.hpp>
+#include <functional>
 #include <vector>
 
 namespace everest::lib::slac::fsm::evse {
@@ -31,10 +33,14 @@ struct EvseSlacConfig {
     // MAC address of our (EVSE) PLC modem
     MacAddress plc_peer_mac{0x00, 0xB0, 0x52, 0x00, 0x00, 0x01};
 
-    void generate_nmk();
-    void generate_nmk(Nmk& target_nmk);
-    void generate_nmk(std::uint8_t* target_nmk);
+    // Returns false, leaving the target untouched, when random_source fails.
+    [[nodiscard]] bool generate_nmk();
+    [[nodiscard]] bool generate_nmk(Nmk& target_nmk);
+    [[nodiscard]] bool generate_nmk(std::uint8_t* target_nmk);
     Nmk session_nmk{};
+
+    // Source of the NMK bytes: getrandom when unset. Allows tests to inject a failing source.
+    std::function<bool(std::uint8_t*, std::size_t)> random_source{nullptr};
 
     SetKeyHandlingMode set_key_handling_mode = SetKeyHandlingMode::retry_confirmed;
 

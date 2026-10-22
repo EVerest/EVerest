@@ -77,9 +77,9 @@ void slacImpl::FrameworkSink::raise_fault(std::string const& type, std::string c
     }
 }
 
-void slacImpl::FrameworkSink::clear_fault(std::string const& type) {
+void slacImpl::FrameworkSink::clear_fault(std::string const& type, std::string const& sub_type) {
     if (owner.error_manager) {
-        owner.clear_error(type);
+        owner.clear_error(type, sub_type);
     }
 }
 

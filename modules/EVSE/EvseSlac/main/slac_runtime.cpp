@@ -16,6 +16,8 @@ namespace module::main {
 namespace {
 constexpr char const* COMMUNICATION_FAULT = "generic/CommunicationFault";
 constexpr char const* VENDOR_ERROR = "generic/VendorError";
+// EvseManager keeps the connector available on a VendorWarning from SLAC, so AC basic charging still works.
+constexpr char const* VENDOR_WARNING = "generic/VendorWarning";
 } // namespace
 
 SlacRuntime::SlacRuntime(SlacRuntimeConfig config_, SlacIoFactory io_factory_, SlacSink& sink_) :
@@ -49,7 +51,9 @@ void SlacRuntime::init() {
         return;
     }
     configure_callbacks();
-    configure_fsm_context();
+    if (!configure_fsm_context()) {
+        return;
+    }
     if (!create_fsm_controller()) {
         return;
     }
@@ -223,6 +227,10 @@ void SlacRuntime::configure_callbacks() {
         }
     };
     callbacks.signal_error_routine_request = [this]() { sink.request_error_routine(); };
+    callbacks.raise_error = [this](const std::string& sub_type, const std::string& message) {
+        sink.raise_fault(VENDOR_WARNING, sub_type, message);
+    };
+    callbacks.clear_error = [this](const std::string& sub_type) { sink.clear_fault(VENDOR_WARNING, sub_type); };
     callbacks.log_debug = [this](const std::string& text) { log(LogLevel::Debug, text); };
     callbacks.log_info = [this](const std::string& text) { log(LogLevel::Info, text); };
     callbacks.log_warn = [this](const std::string& text) { log(LogLevel::Warning, text); };
@@ -249,7 +257,7 @@ void SlacRuntime::configure_callbacks() {
     }
 }
 
-void SlacRuntime::configure_fsm_context() {
+bool SlacRuntime::configure_fsm_context() {
     fsm_ctx = std::make_unique<everest::lib::slac::fsm::evse::Context>(callbacks);
     fsm_ctx->slac_config = config.slac;
     if (config.slac.max_matching_sessions > 16) {
@@ -291,8 +299,12 @@ void SlacRuntime::configure_fsm_context() {
     }
 
     fsm_ctx->slac_config.provide_telemetry = config.telemetry_enabled;
-    fsm_ctx->slac_config.generate_nmk();
+    if (not fsm_ctx->slac_config.generate_nmk()) {
+        abort_event_loop("No random data available to generate the SLAC session NMK");
+        return false;
+    }
     std::copy_n(slac_io->mac_address(), fsm_ctx->evse_mac.size(), fsm_ctx->evse_mac.begin());
+    return true;
 }
 
 bool SlacRuntime::create_fsm_controller() {
@@ -585,7 +597,7 @@ void SlacRuntime::raise_communication_fault(std::string const& message) {
         lifecycle->communication_fault_message = message;
     }
     if (should_replace) {
-        sink.clear_fault(COMMUNICATION_FAULT);
+        sink.clear_fault(COMMUNICATION_FAULT, "");
     }
     if (should_raise || should_replace) {
         sink.raise_fault(COMMUNICATION_FAULT, "", message);
@@ -607,7 +619,7 @@ void SlacRuntime::clear_communication_fault() {
         }
     }
     if (should_clear) {
-        sink.clear_fault(COMMUNICATION_FAULT);
+        sink.clear_fault(COMMUNICATION_FAULT, "");
     }
     lifecycle_state.notify_all();
 }

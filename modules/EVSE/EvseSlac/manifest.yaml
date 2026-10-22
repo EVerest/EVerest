@@ -49,8 +49,10 @@ provides:
       nmk_generation_mode:
         description: |
           NMK generation mode for internal session NMK generation:
-            - legacy_printable: default compatibility mode; use legacy printable characters only (0-9A-Z).
-            - full_byte_range: explicit opt-in for the full byte range 0x00..0xFF to reduce collision probability.
+            - legacy_printable: default compatibility mode; use legacy printable characters only (0-9A-Z),
+              which some EVs require. Reduces the key to about 82 bits of entropy.
+            - full_byte_range: explicit opt-in for the full byte range 0x00..0xFF, the full 128-bit key.
+              Use it when the EVs served accept it.
         type: string
         enum:
           - legacy_printable

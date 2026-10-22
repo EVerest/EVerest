@@ -28,7 +28,7 @@ public:
 
     // \p type is the interface error type, e.g. "generic/CommunicationFault".
     virtual void raise_fault(std::string const& type, std::string const& sub_type, std::string const& message) = 0;
-    virtual void clear_fault(std::string const& type) = 0;
+    virtual void clear_fault(std::string const& type, std::string const& sub_type) = 0;
 
     // Serialised telemetry value for \p block / \p key; the module decodes and publishes it.
     virtual void publish_telemetry(std::string const& block, std::string const& key, std::string const& value) = 0;

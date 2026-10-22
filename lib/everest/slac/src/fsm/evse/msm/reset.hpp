@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 // Reset sub-machine: (re)generates the NMK and programs it into the modem with CM_SET_KEY.REQ,
-// then exits to ResetChip or Idle.
+// then exits to ResetChip or Idle. Without a fresh key nothing is sent and it exits to KeyFailed.
 
 #pragma once
 #include "../../msm_helpers.hpp"
@@ -27,8 +27,10 @@ struct Reset_def : public state_machine_def<Reset_def> {
     struct Init      : public state<>{ };
     struct MsgSent   : public state<>{ };
     struct MsgValid  : public state<>{ };
+    struct NoKey     : public state<>{ };
     struct ResetChip : public exit_pseudo_state<update>{ };
     struct Idle      : public exit_pseudo_state<update>{ };
+    struct KeyFailed : public exit_pseudo_state<update>{ };
     // clang-format on
 
     // Transition guards
@@ -39,6 +41,8 @@ struct Reset_def : public state_machine_def<Reset_def> {
     using set_key_failed_retry = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_set_key_attempts_left>>;
     using set_key_failed_give_up = And_<set_key_failed, And_<is_retry_confirmed_set_key, has_no_set_key_attempts_left>>;
     using no_reset_chip = Not_<is_reset_chip_on>;
+    using no_nmk = is_nmk_generation_failed;
+    using has_nmk = Not_<no_nmk>;
 
     // Transitions
     using initial_state = Init;
@@ -47,7 +51,9 @@ struct Reset_def : public state_machine_def<Reset_def> {
         //  +----------+---------+-----------+------------------------+--------------------------+
         //  | Source   | Event   | Target    | Action                 | Guard                    |
         //  +----------+---------+-----------+------------------------+--------------------------+
-        Row < Init     , none    , MsgSent   , send_set_key_req       , none                     >,
+        Row < Init     , none    , MsgSent   , send_set_key_req       , has_nmk                  >,
+        Row < Init     , none    , NoKey     , raise_nmk_error        , no_nmk                   >,
+        Row < NoKey    , update  , KeyFailed , none                   , none                     >,
         Row < MsgSent  , update  , MsgSent   , retry_send_set_key_req , timeout_retry            >,
         Row < MsgSent  , update  , MsgValid  , fail_send_set_key_req  , timeout_give_up          >,
         Row < MsgSent  , message , MsgValid  , apply_set_key_cnf      , set_key_ok               >,
@@ -76,6 +82,7 @@ struct Reset_def : public state_machine_def<Reset_def> {
     // Members
     fsm::evse::Context* ctx;
     Nmk pending_nmk{};
+    bool nmk_generation_failed{false};
     int set_key_attempts{0};
     timer set_key_timer;
 
