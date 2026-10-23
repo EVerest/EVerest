@@ -552,6 +552,13 @@ config:
       when energy is available again.
     type: integer
     default: 5
+  hlc_charge_loop_without_energy_pause:
+    description: >-
+      ISO 15118-20 dynamic control mode only: when hlc_charge_loop_without_energy_timeout_s is exceeded,
+      pause the session instead of terminating it. The paused session resumes once energy is available again.
+      Scheduled control mode, DIN SPEC 70121 and ISO 15118-2 sessions are still terminated.
+    type: boolean
+    default: false
   dc_ramp_ampere_per_second:
     description: >-
       Maximum ampere per second limit for up/down ramping of current in charging loop.
