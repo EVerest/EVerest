@@ -15,22 +15,26 @@
 
 #include <iso15118/detail/helper.hpp>
 
-// FIXME(Sl): Not sure with define
-/* link-local multicast address ff02::1 aka ip6-allnodes */
-#define IN6ADDR_ALLNODES                                                                                               \
-    { 0xff, 0x02, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0x01 }
-
 namespace iso15118 {
+
+/* link-local multicast address ff02::1 aka ip6-allnodes */
+static constexpr auto LINK_LOCAL_MULTICAST = "ff02::1";
 
 static void log_peer_hostname(const struct sockaddr_in6& address) {
     char hostname[128];
     socklen_t hostname_len = sizeof(hostname);
 
-    const auto get_if_name_result = getnameinfo(reinterpret_cast<const struct sockaddr*>(&address), sizeof(address),
-                                                hostname, hostname_len, nullptr, 0, NI_NUMERICHOST);
+    // Only the numeric address is needed: inet_ntop() is enough and more widely available than getnameinfo()
+    const auto get_if_name_result = inet_ntop(AF_INET6, &address.sin6_addr, hostname, hostname_len);
 
-    if (0 == get_if_name_result) {
-        logf_info("Got SDP request from %s", hostname);
+    if (nullptr != get_if_name_result) {
+        // Append the scope like getnameinfo() does, e.g. fe80::1%eth1
+        char scope_name[IF_NAMESIZE];
+        if (address.sin6_scope_id != 0 && if_indextoname(address.sin6_scope_id, scope_name) != nullptr) {
+            logf_info("Got SDP request from %s%%%s", hostname, scope_name);
+        } else {
+            logf_info("Got SDP request from %s", hostname);
+        }
     } else {
         logf_warning("Got SDP request, but failed to get the address");
     }
@@ -70,7 +74,10 @@ SdpServer::SdpServer(const std::string& interface_name) {
     }
 
     // Bind only to specified device
-    result = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, interface_name.c_str(), interface_name.length());
+    // Pass a struct ifreq, the documented argument; Linux also accepts the bare name
+    struct ifreq interface {};
+    strncpy(interface.ifr_name, interface_name.c_str(), sizeof(interface.ifr_name) - 1);
+    result = setsockopt(fd, SOL_SOCKET, SO_BINDTODEVICE, &interface, sizeof(interface));
     if (result == -1) {
         const auto error_msg = adding_err_msg("Setsockopt(SO_BINDTODEVICE) failed");
         log_and_throw(error_msg.c_str());
@@ -78,7 +85,10 @@ SdpServer::SdpServer(const std::string& interface_name) {
 
     // Join multicast group
     struct ipv6_mreq mreq {};
-    mreq.ipv6mr_multiaddr = {{IN6ADDR_ALLNODES}};
+    if (inet_pton(AF_INET6, LINK_LOCAL_MULTICAST, &mreq.ipv6mr_multiaddr) <= 0) {
+        const auto error_msg = adding_err_msg("Failed to setup multicast address");
+        log_and_throw(error_msg.c_str());
+    }
     mreq.ipv6mr_interface = if_nametoindex(interface_name.c_str());
 
     result = setsockopt(fd, IPPROTO_IPV6, IPV6_JOIN_GROUP, &mreq, sizeof(mreq));
@@ -201,8 +211,6 @@ void SdpServer::send_response(const PeerRequestContext& request, const Ipv6EndPo
     sendto(fd, v2g_packet, sizeof(v2g_packet), 0, reinterpret_cast<const sockaddr*>(&request.address), peer_addr_len);
 }
 TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint16_t port_) : port(port_) {
-    static constexpr auto LINK_LOCAL_MULTICAST = "ff02::1";
-
     fd = socket(AF_INET6, SOCK_DGRAM, 0);
     if (fd < 0) {
         const auto error_msg = adding_err_msg("Could not create socket");
@@ -215,7 +223,10 @@ TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint
     auto could_bind = false;
     auto source_port = 49152;
     for (; source_port < 65535; source_port++) {
-        sockaddr_in6 source_address = {AF_INET6, htons(source_port), 0, {}, 0};
+        // Set the fields by name: the member order of sockaddr_in6 differs (BSD-style stacks start with sin6_len)
+        sockaddr_in6 source_address{};
+        source_address.sin6_family = AF_INET6;
+        source_address.sin6_port = htons(source_port);
         if (bind(fd, reinterpret_cast<sockaddr*>(&source_address), sizeof(sockaddr_in6)) == 0) {
             could_bind = true;
             break;
@@ -246,7 +257,10 @@ TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint
         log_and_throw(error_msg.c_str());
     }
 
-    destination_address = {AF_INET6, htons(port), 0, {}, 0};
+    // Set the fields by name: the member order of sockaddr_in6 differs (BSD-style stacks start with sin6_len)
+    destination_address = {};
+    destination_address.sin6_family = AF_INET6;
+    destination_address.sin6_port = htons(port);
     if (inet_pton(AF_INET6, LINK_LOCAL_MULTICAST, &destination_address.sin6_addr) <= 0) {
         const auto error_msg = adding_err_msg("Failed to setup server address, reset key_log_fd");
         log_and_throw(error_msg.c_str());
