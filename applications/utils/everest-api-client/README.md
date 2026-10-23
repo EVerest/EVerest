@@ -162,11 +162,36 @@ whitespace, quotes, `/`, the MQTT wildcards `+` `#` or the characters
 `examples/ac_charging_session.script` drives a complete plug → authorize →
 charge sequence against an EVerest started with
 `config/config-test-all-external-api.yaml` (which instantiates all EVerest
-API modules). Start the client, then:
+API modules). The config contains the standalone module `ocpp_cli`
+(BUOcppConsumer): EVerest only finishes starting up once it runs. From the
+repository root, after `cmake --build build --target install`, use three
+terminals in this order:
 
-```
-run_script examples/ac_charging_session.script
-```
+1. EVerest, which then waits for `ocpp_cli`:
+
+   ```
+   build/run-scripts/run-test-all-external-api.sh
+   ```
+
+2. The client, running the script. It waits up to 30 s for EVerest's startup
+   handshake, so it can be started before EVerest is up:
+
+   ```
+   cd applications/utils/everest-api-client
+   ./everest_api_client.py "run_script examples/ac_charging_session.script"
+   ```
+
+3. The standalone `ocpp_cli`, which lets EVerest finish starting up (use
+   `build/dist/lib64` if your libraries are installed there):
+
+   ```
+   LD_LIBRARY_PATH=build/dist/lib build/dist/libexec/everest/modules/BUOcppConsumer/BUOcppConsumer --module ocpp_cli
+   ```
+
+The script then runs through to `Session finished`. To run it again, restart
+EVerest and `ocpp_cli` first: the startup handshake happens once per start.
+Without the `ocpp_consumer_API`, remove `ocpp_api` and `ocpp_cli` from the
+config; step 3 is then not needed.
 
 It plays every counterpart of one AC EvseManager (board support, powermeter,
 token provider + validator, external energy limit) and uses the blocking
@@ -186,8 +211,8 @@ The example script takes care of these:
   charger never enables until you reply (`powermeter_api.receive_request_stop_transaction`
   then `powermeter_api.send_reply_stop_transaction @last {"status":"OK"}`).
   It is sent only once, when the first powermeter value arrives or at the
-  latest 5 s after EVerest is up, so start `ac_charging_session.script` right
-  after EVerest starts. A request nobody saw is only answered by the
+  latest 5 s after EVerest is up; `ac_charging_session.script` waits up to 30 s
+  for it, so start the script before EVerest is up or right after. A request nobody saw is only answered by the
   powermeter_API's reply timeout (`cfg_request_reply_to_s`, 550 s by default).
 - **Send capabilities before events.** EvseManager needs `<bsp>.send_capabilities`
   to initialize phases and enable the port; CP events sent before it are

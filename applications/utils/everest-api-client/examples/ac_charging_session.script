@@ -111,14 +111,16 @@ echo [2/10] Answering EvseManager startup stop-transaction (if pending) ...
 #        the initial meter value from step 1 arrives, and the manager blocks
 #        on it (the charger is not enabled until it is answered).
 #
-#        The startup request only appears ONCE per manager start, so on a
-#        SECOND run of this script against the same running EVerest it never
-#        comes: --timeout 5 --optional waits briefly and continues otherwise.
+#        The script may be started before EVerest has finished starting up
+#        (e.g. while EVerest waits for the standalone ocpp_cli), so this waits
+#        up to 30 s. The startup request only appears ONCE per manager start:
+#        on a SECOND run of this script against the same running EVerest it
+#        never comes, and --optional continues after the 30 s.
 #        Receiving it here also keeps it from being returned by the receive
 #        for the final stop-transaction in step 9.
 #        The reply is sent regardless; on a re-run @last is a stale address and
 #        the publish is a harmless no-op. ---
-powermeter_api.receive_request_stop_transaction --timeout 5 --optional
+powermeter_api.receive_request_stop_transaction --timeout 30 --optional
 powermeter_api.send_reply_stop_transaction @last {"status":"OK"}
 
 echo [3/10] Announcing BSP capabilities, waiting for port enable ...
