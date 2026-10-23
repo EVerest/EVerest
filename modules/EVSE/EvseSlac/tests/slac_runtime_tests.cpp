@@ -436,6 +436,26 @@ struct Harness {
         std::this_thread::sleep_for(60ms);
         return true;
     }
+    // Armed in Matching: nothing is published for it, MATCHING follows the first CM_SLAC_PARM.REQ.
+    bool wait_for_listening() {
+        return sink.wait_for(WAIT, [&] { return sink.has_log(LogLevel::Info, "Entered Matching state"); });
+    }
+    // Idle -> Matching with one session: the first CM_SLAC_PARM.REQ publishes MATCHING.
+    bool reach_matching() {
+        EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x02};
+        RunId run_id{};
+        for (std::size_t i = 0; i < run_id.size(); ++i) {
+            run_id[i] = static_cast<std::uint8_t>(0x21 + i);
+        }
+        if (not runtime->enter_bcd() or not wait_for_listening()) {
+            return false;
+        }
+        if (not io.instance.load()->inject(create_cm_slac_parm_req(ev_mac, run_id)) or
+            not wait_for_frames(SLAC_PARM_CNF, 1)) {
+            return false;
+        }
+        return sink.wait_for(WAIT, [&] { return sink.has_state(D3State::Matching); });
+    }
     // Idle -> Matching -> one full matching session with a fake EV -> Matched, link up. Link
     // detection is off in the harness config, so Matched raises dlink_ready(true) at once.
     bool reach_matched() {
@@ -445,7 +465,7 @@ struct Harness {
             run_id[i] = static_cast<std::uint8_t>(0x11 + i);
         }
         auto* link = io.instance.load();
-        if (not runtime->enter_bcd() or not sink.wait_for(WAIT, [&] { return sink.has_state(D3State::Matching); })) {
+        if (not runtime->enter_bcd() or not wait_for_listening()) {
             return false;
         }
         if (not link->inject(create_cm_slac_parm_req(ev_mac, run_id)) or not wait_for_frames(SLAC_PARM_CNF, 1)) {
@@ -530,12 +550,14 @@ TEST(SlacRuntime, CommandsBeforeTheMachineRunsAreRefusedAndLogged) {
 }
 
 // A command whose publication throws is fatal for the loop. The consumer had just been told
-// MATCHING (or the publication of it failed, which is the same doubt); it must be told UNMATCHED
-// before the machine goes away, through the machine's own reset path when that still works.
+// MATCHING; it must be told UNMATCHED before the machine goes away, through the machine's own
+// reset path when that still works.
 TEST(SlacRuntime, AThrowingPublisherEndsTheLoopWithAFaultAndUnmatched) {
     Harness h;
-    h.sink.on_state = [](D3State state) {
-        if (state == D3State::Matching) {
+    // Armed only once MATCHING is delivered: Reset and Idle publish UNMATCHED as well.
+    std::atomic<int> explosions_left{0};
+    h.sink.on_state = [&explosions_left](D3State state) {
+        if (state == D3State::Unmatched and explosions_left.load() > 0 and explosions_left.fetch_sub(1) > 0) {
             throw std::runtime_error("publisher exploded");
         }
     };
@@ -543,14 +565,15 @@ TEST(SlacRuntime, AThrowingPublisherEndsTheLoopWithAFaultAndUnmatched) {
     h.runtime->init();
     h.start_ready_thread_tracked();
     ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.reach_matching());
     auto const unmatched_before = h.sink.count_state(D3State::Unmatched);
-    ASSERT_TRUE(h.runtime->enter_bcd());
-    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "enter_bcd"); }));
+    explosions_left.store(1);
+    ASSERT_TRUE(h.runtime->leave_bcd()); // Idle publishes UNMATCHED on the command path
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "leave_bcd"); }));
     EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"));
     EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal command";
-    ASSERT_EQ(h.sink.count_attempted(D3State::Matching), 1U) << "the throwing publication was not the MATCHING one";
     EXPECT_EQ(h.sink.count_state(D3State::Unmatched), unmatched_before + 1)
-        << "the consumer was not told UNMATCHED after the failed MATCHING";
+        << "the consumer was not told UNMATCHED after the failed publication";
     EXPECT_EQ(h.sink.last_state(), D3State::Unmatched);
     EXPECT_FALSE(h.sink.has_log(LogLevel::Error, "could not publish")) << "the reset path should have done it";
     EXPECT_FALSE(h.runtime->enter_bcd()) << "commands must be refused after the fault";
@@ -604,10 +627,7 @@ TEST(SlacRuntime, AFatalCommandInMatchedTakesTheLinkDownAndPublishesUnmatched) {
 TEST(SlacRuntime, APersistentlyThrowingPublisherIsRetriedByHandAndLogged) {
     Harness h;
     std::atomic<bool> exploding{false};
-    h.sink.on_state = [&exploding](D3State state) {
-        if (state == D3State::Matching) {
-            exploding.store(true);
-        }
+    h.sink.on_state = [&exploding](D3State) {
         if (exploding.load()) {
             throw std::runtime_error("publisher exploded");
         }
@@ -616,17 +636,18 @@ TEST(SlacRuntime, APersistentlyThrowingPublisherIsRetriedByHandAndLogged) {
     h.runtime->init();
     h.start_ready_thread_tracked();
     ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.reach_matching());
     auto const unmatched_attempts_before = h.sink.count_attempted(D3State::Unmatched);
-    ASSERT_TRUE(h.runtime->enter_bcd());
-    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "enter_bcd"); }));
+    exploding.store(true);
+    ASSERT_TRUE(h.runtime->leave_bcd());
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "leave_bcd"); }));
     EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal command";
-    // The failed MATCHING does not count as delivered, so the consumer's last state is still the
-    // UNMATCHED from Reset and the machine's reset has nothing new to publish: no second throw, no
-    // "teardown failed". The runtime cannot know whether the sink delivered before it threw, so it
-    // still tries UNMATCHED by hand, survives that throw and says so.
-    EXPECT_FALSE(h.sink.has_log(LogLevel::Error, "teardown failed"));
+    // The consumer holds MATCHING, so the machine's reset publishes UNMATCHED once more and throws
+    // again ("teardown failed"). The runtime then tries UNMATCHED by hand, survives that throw as
+    // well and says so: the command's attempt, the reset's and the one by hand.
+    EXPECT_TRUE(h.sink.has_log(LogLevel::Error, "teardown failed"));
     EXPECT_TRUE(h.sink.has_log(LogLevel::Error, "could not publish UNMATCHED"));
-    EXPECT_EQ(h.sink.count_attempted(D3State::Unmatched), unmatched_attempts_before + 1);
+    EXPECT_EQ(h.sink.count_attempted(D3State::Unmatched), unmatched_attempts_before + 3);
     EXPECT_TRUE(h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"));
 }
 
@@ -688,9 +709,10 @@ TEST(SlacRuntime, AThrowingPublisherOnAReceivedFrameEndsTheLoopInsteadOfDeadlock
     }
     auto* link = h.io.instance.load();
     ASSERT_TRUE(h.runtime->enter_bcd());
-    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }));
+    ASSERT_TRUE(h.wait_for_listening());
     ASSERT_TRUE(link->inject(create_cm_slac_parm_req(ev_mac, run_id)));
     ASSERT_TRUE(h.wait_for_frames(SLAC_PARM_CNF, 1));
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }));
     ASSERT_TRUE(link->inject(create_cm_start_atten_char_ind(ev_mac, run_id)));
     for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
         ASSERT_TRUE(link->inject(create_cm_atten_profile_ind(ev_mac, static_cast<std::uint8_t>(0xA0 + i))));
@@ -716,8 +738,9 @@ TEST(SlacRuntime, AThrowingPublisherOnAReceivedFrameEndsTheLoopInsteadOfDeadlock
 // never runs, so the test cannot fail for the wrong reason.)
 TEST(SlacRuntime, AReadyQueuedBehindAFatalCommandDoesNotClearTheFault) {
     Harness h;
-    h.sink.on_state = [](D3State state) {
-        if (state == D3State::Matching) {
+    std::atomic<int> explosions_left{0};
+    h.sink.on_state = [&explosions_left](D3State state) {
+        if (state == D3State::Unmatched and explosions_left.load() > 0 and explosions_left.fetch_sub(1) > 0) {
             throw std::runtime_error("publisher exploded");
         }
     };
@@ -725,7 +748,9 @@ TEST(SlacRuntime, AReadyQueuedBehindAFatalCommandDoesNotClearTheFault) {
     h.runtime->init();
     h.start_ready_thread_tracked();
     ASSERT_TRUE(h.reach_idle());
-    ASSERT_TRUE(h.runtime->enter_bcd());
+    ASSERT_TRUE(h.reach_matching());
+    explosions_left.store(1);
+    ASSERT_TRUE(h.runtime->leave_bcd());
     ASSERT_TRUE(h.io.instance.load()->fire_ready());
     ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_fault(COMMUNICATION_FAULT, "publisher exploded"); }));
     EXPECT_TRUE(h.ready_thread_finished(WAIT)) << "the loop did not end after the fatal command";
@@ -833,11 +858,32 @@ TEST(SlacRuntime, ATelemetryFailureDoesNotStopMatching) {
     h.runtime->init();
     h.start_ready_thread();
     ASSERT_TRUE(h.reach_idle());
-    ASSERT_TRUE(h.runtime->enter_bcd());
-    EXPECT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }))
-        << "matching did not start although only telemetry failed";
+    EXPECT_TRUE(h.reach_matching()) << "matching did not start although only telemetry failed";
     EXPECT_TRUE(h.sink.has_log(LogLevel::Warning, "not published"));
     EXPECT_TRUE(h.sink.faults.empty());
+}
+
+// The public state follows the matching process: arming on enter_bcd publishes nothing, the first
+// CM_SLAC_PARM.REQ publishes MATCHING. The consumer needs the difference for [V2G3-M06-08].
+TEST(SlacRuntime, MatchingIsPublishedOnTheFirstParmReqNotOnEnterBcd) {
+    Harness h;
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread();
+    ASSERT_TRUE(h.reach_idle());
+    ASSERT_TRUE(h.runtime->enter_bcd());
+    ASSERT_TRUE(h.wait_for_listening());
+    EXPECT_FALSE(h.sink.has_state(D3State::Matching)) << "MATCHING published before any CM_SLAC_PARM.REQ";
+    EXPECT_EQ(h.sink.last_state(), D3State::Unmatched);
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x03};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x31 + i);
+    }
+    ASSERT_TRUE(h.io.instance.load()->inject(create_cm_slac_parm_req(ev_mac, run_id)));
+    ASSERT_TRUE(h.wait_for_frames(SLAC_PARM_CNF, 1));
+    EXPECT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }));
+    EXPECT_EQ(h.sink.count_state(D3State::Matching), 1U);
 }
 
 } // namespace
