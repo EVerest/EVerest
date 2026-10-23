@@ -73,8 +73,6 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::charging_schedules_timer_running;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_start;
     using ocpp_multi::GenericOcpp::charging_schedules_timer_stop;
-    using ocpp_multi::GenericOcpp::create_limits_entry;
-    using ocpp_multi::GenericOcpp::create_setpoint_entry;
     using ocpp_multi::GenericOcpp::custom_error_mapping;
     using ocpp_multi::GenericOcpp::GenericOcpp;
     using ocpp_multi::GenericOcpp::get_connector_structure;
