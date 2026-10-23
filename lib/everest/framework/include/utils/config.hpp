@@ -84,6 +84,9 @@ void loader(const nlohmann::json_uri& uri, nlohmann::json& schema);
 /// validator supporting uris
 void format_checker(const std::string& format, const std::string& value);
 
+/// \brief Expands the module-id placeholder used in string configuration values.
+std::string expand_module_id_placeholder(std::string value, const std::string& module_id);
+
 ///
 /// \brief loads and validates a json schema at the provided \p path
 ///
