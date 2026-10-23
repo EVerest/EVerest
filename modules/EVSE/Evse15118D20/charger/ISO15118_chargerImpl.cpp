@@ -1275,6 +1275,12 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         case Signal::CHARGE_LOOP_FINISHED:
             publish_current_demand_finished(nullptr);
             break;
+        case Signal::WELDING_DETECTION_STARTED:
+            publish_welding_detection(types::iso15118::WeldingDetectionPhase::Started);
+            break;
+        case Signal::WELDING_DETECTION_FINISHED:
+            publish_welding_detection(types::iso15118::WeldingDetectionPhase::Finished);
+            break;
         case Signal::DC_OPEN_CONTACTOR:
             publish_dc_open_contactor(nullptr);
             break;
@@ -1788,7 +1794,7 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     std::scoped_lock lock(GEL);
     if (controller) {
         controller->send_control_event(iso15118::d20::ClosedContactor{status});
@@ -2335,10 +2341,11 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
 
     float voltage = present_voltage_current.evse_present_voltage;
     float current = present_voltage_current.evse_present_current.value_or(0);
+    const bool welding_detection = present_voltage_current.welding_detection.value_or(false);
 
     std::scoped_lock lock(GEL);
     if (controller) {
-        controller->send_control_event(iso15118::d20::PresentVoltageCurrent{voltage, current});
+        controller->send_control_event(iso15118::d20::PresentVoltageCurrent{voltage, current, welding_detection});
     }
 }
 

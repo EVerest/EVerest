@@ -16,7 +16,7 @@ namespace iso15118::d20::state {
 namespace dt = message_20::datatypes;
 
 // Bounds how long PowerDeliveryRes(Stop) waits for the board support to report the power path off.
-constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = 500;
+constexpr uint32_t DC_OPEN_CONTACTOR_TIMEOUT = d20::TIMEOUT_CONTACTOR_OPEN;
 
 using Scheduled_DC_Req = dt::Scheduled_DC_CLReqControlMode;
 using Scheduled_BPT_DC_Req = dt::BPT_Scheduled_DC_CLReqControlMode;
@@ -268,6 +268,7 @@ Result DC_ChargeLoop::feed(Event ev) {
             // t105); on MCS a C-exit under a standing permissive is an emergency shutdown (CC.4.3).
             m_ctx.feedback.signal(session::feedback::Signal::CHARGE_LOOP_FINISHED);
             m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+            m_ctx.welding_detection.start(m_ctx.feedback);
             pending_stop_res = res;
             if (contactor_closed.has_value() and not *contactor_closed) {
                 return send_pending_stop_res();

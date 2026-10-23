@@ -7,6 +7,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <math.h>
+#include <time.h>
 #include <unistd.h> // sleep
 
 #include "log.hpp"
@@ -108,6 +109,7 @@ void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx) {
 }
 
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
+    v2g_ctx_finish_welding_detection(ctx);
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
     ctx->error_shutdown = false;
@@ -119,10 +121,91 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->selected_protocol = V2G_UNKNOWN_PROTOCOL;
     ctx->session.renegotiation_required = false;
     ctx->session.is_charging = false;
+    ctx->session.welding_detection_active = false;
+    ctx->session.welding_voltage_updates = 0;
+    ctx->response_wait_ms = 0;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
-    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.5.19]. It must not outlive
+    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.6.19]. It must not outlive
      * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
     v2g_ctx_init_dc_evse_status_codes(ctx);
+}
+
+void v2g_ctx_start_welding_detection(struct v2g_context* const ctx) {
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->session.welding_detection_active = true;
+    ctx->session.welding_voltage_updates = 0;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Started);
+}
+
+void v2g_ctx_finish_welding_detection(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active) {
+        return;
+    }
+    ctx->session.welding_detection_active = false;
+    ctx->p_charger->publish_welding_detection(types::iso15118::WeldingDetectionPhase::Finished);
+}
+
+void v2g_ctx_wait_for_welding_voltage(struct v2g_context* const ctx) {
+    if (not ctx->session.welding_detection_active) {
+        return;
+    }
+
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, V2G_WELDING_VOLTAGE_TIMEOUT);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    ctx->session.welding_voltage_updates = 0;
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and ctx->session.welding_voltage_updates < V2G_WELDING_VOLTAGE_UPDATES and
+           not ctx->intl_emergency_shutdown and not ctx->stop_hlc and not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const unsigned int updates = ctx->session.welding_voltage_updates;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (rv != ETIMEDOUT or updates >= V2G_WELDING_VOLTAGE_UPDATES) {
+        return;
+    }
+    // With every update outstanding the source stalled; with one in, the value is at worst one poll interval older
+    // than the request.
+    if (updates == 0) {
+        dlog(DLOG_LEVEL_WARNING,
+             "No value from the welding detection voltage source within %d ms of the WeldingDetectionReq, answering "
+             "with the last present voltage",
+             V2G_WELDING_VOLTAGE_TIMEOUT);
+    } else {
+        dlog(DLOG_LEVEL_INFO,
+             "Only one value from the welding detection voltage source within %d ms of the WeldingDetectionReq, "
+             "answering with it",
+             V2G_WELDING_VOLTAGE_TIMEOUT);
+    }
+}
+
+bool v2g_ctx_wait_contactor_open(struct v2g_context* const ctx, int timeout_ms) {
+    const long long int wait_start = getmonotonictime();
+    struct timespec ts_abs_timeout;
+    clock_gettime(CLOCK_MONOTONIC, &ts_abs_timeout);
+    timespec_add_ms(&ts_abs_timeout, timeout_ms);
+
+    pthread_mutex_lock(&ctx->mqtt_lock);
+    int rv = 0;
+    while ((rv != ETIMEDOUT) and ctx->contactor_is_closed and not ctx->intl_emergency_shutdown and not ctx->stop_hlc and
+           not ctx->is_connection_terminated) {
+        rv = pthread_cond_timedwait(&ctx->mqtt_cond, &ctx->mqtt_lock, &ts_abs_timeout);
+    }
+    const bool open = not ctx->contactor_is_closed;
+    pthread_mutex_unlock(&ctx->mqtt_lock);
+    ctx->response_wait_ms += getmonotonictime() - wait_start;
+
+    if (not open and rv == ETIMEDOUT) {
+        dlog(DLOG_LEVEL_WARNING, "Contactor not reported open within %d ms, sending the PowerDeliveryRes anyway",
+             timeout_ms);
+    }
+    return open;
 }
 
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {

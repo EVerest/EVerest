@@ -27,7 +27,7 @@ struct EvseStatus {
 
     // The contactor state survives a renegotiation: it does not re-open, so no fresh ClosedContactor
     // confirmation arrives and PowerDelivery must answer from what it already knows.
-    bool ac_contactor_closed{false};
+    bool contactor_closed{false};
 
     // Result of the physical isolation test. Invalidated when the contactor opens, because the
     // verified isolation no longer holds (ISO 15118-2 8.7.4.3 NOTE 1).

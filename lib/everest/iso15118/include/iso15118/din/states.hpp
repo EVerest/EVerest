@@ -28,6 +28,7 @@ enum class StateID {
     PreCharge,
     CurrentDemandStart,
     CurrentDemand,
+    PowerDeliveryStop,
     WeldingDetection,
     SessionStop,
 };

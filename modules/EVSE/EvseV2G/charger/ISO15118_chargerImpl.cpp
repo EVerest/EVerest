@@ -305,7 +305,7 @@ void ISO15118_chargerImpl::handle_authorization_response(
     }
 }
 
-void ISO15118_chargerImpl::handle_ac_contactor_closed(bool& status) {
+void ISO15118_chargerImpl::handle_contactor_closed(bool& status) {
     /* signal changes to possible waiters, according to man page, it never returns an error code */
     pthread_mutex_lock(&v2g_ctx->mqtt_lock);
     v2g_ctx->contactor_is_closed = status;
@@ -325,7 +325,10 @@ void ISO15118_chargerImpl::handle_dlink_ready(bool& value) {
 
     // If dlink becomes not ready (false), stop TCP connection in the read thread
     if (!value) {
+        pthread_mutex_lock(&v2g_ctx->mqtt_lock);
         v2g_ctx->is_connection_terminated = true;
+        pthread_cond_signal(&v2g_ctx->mqtt_cond);
+        pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
     }
 }
 
@@ -371,7 +374,10 @@ void ISO15118_chargerImpl::handle_stop_charging(bool& stop) {
 
             // If it did not stop within timeout, stop session using FAILED reply
             if (timeout_reached) {
+                pthread_mutex_lock(&v2g_ctx->mqtt_lock);
                 v2g_ctx->stop_hlc = stop;
+                pthread_cond_signal(&v2g_ctx->mqtt_cond);
+                pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
             }
         }).detach();
     } else {
@@ -624,6 +630,15 @@ void ISO15118_chargerImpl::handle_update_dc_present_values(
         populate_physical_value_float(&v2g_ctx->evse_v2g_data.evse_present_current,
                                       static_cast<float>(present_voltage_current.evse_present_current.value()), 1,
                                       iso2_unitSymbolType_A);
+    }
+
+    if (present_voltage_current.welding_detection.value_or(false)) {
+        pthread_mutex_lock(&v2g_ctx->mqtt_lock);
+        if (v2g_ctx->session.welding_detection_active) {
+            v2g_ctx->session.welding_voltage_updates++;
+            pthread_cond_signal(&v2g_ctx->mqtt_cond);
+        }
+        pthread_mutex_unlock(&v2g_ctx->mqtt_lock);
     }
 }
 

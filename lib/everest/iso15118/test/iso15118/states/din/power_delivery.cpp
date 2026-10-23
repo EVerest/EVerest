@@ -37,6 +37,18 @@ SCENARIO("DIN SECC PowerDelivery state handling") {
         }
     }
 
+    GIVEN("The EV ends power delivery") {
+        message_din::PowerDeliveryRequest req;
+        req.header.session_id = session;
+        req.ready_to_charge_state = false;
+
+        const auto res = din::state::handle_request(req, session);
+        THEN("EVSE_Shutdown confirms the disabled side B [IEC 61851-23:2023 Table CC.9 t104]") {
+            REQUIRE(res.response_code == dt::ResponseCode::OK);
+            REQUIRE(res.dc_evse_status->evse_status_code == dt::DcEvseStatusCode::EVSE_Shutdown);
+        }
+    }
+
     // [V2G-DC-638]/[V2G-DC-401]: the module error is the status code and refuses a ReadyToChargeState.
     GIVEN("A module-reported malfunction while the EV asks to start charging") {
         message_din::PowerDeliveryRequest req;
