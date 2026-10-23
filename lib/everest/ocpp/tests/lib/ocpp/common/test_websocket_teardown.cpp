@@ -1,15 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
-// Regression test for the reset-teardown stall in TC_B_49_CS: while the websocket dials a dead
-// port, the receive thread parked in SafeQueue::wait_on_queue_element() could miss the interrupt
-// wakeup and stall the teardown join for a full poll interval. Drives a real in-flight connection
-// to an unresponsive endpoint and asserts disconnect() returns well under the poll interval.
+// Regression tests for websocket teardown. In TC_B_49_CS the websocket dials a dead port, and the
+// receive thread waiting for a message must be woken by the interrupt, or the teardown join stalls.
+// Drives a real in-flight connection to an unresponsive endpoint and asserts disconnect() returns
+// promptly. The destructor must likewise wake and join the deferred callback thread.
 
 #include <gmock/gmock.h>
 #include <gtest/gtest.h>
 
 #include <chrono>
+#include <future>
 #include <memory>
 #include <string>
 #include <thread>
@@ -54,11 +55,9 @@ WebsocketConnectionOptions make_options() {
 
 } // namespace
 
-// Acceptance: teardown while a connection to an unresponsive endpoint is in flight must return
-// promptly. The receive thread's poll interval is 1 s, so the unfixed code takes about that long
-// (the interrupt does not wake the parked receive thread); the fix wakes it at once. The 900 ms
-// bound sits safely below the 1 s stall it guards against while staying tolerant of CI scheduling
-// jitter (a tight 500 ms bound flaked under load).
+// Teardown while a connection to an unresponsive endpoint is in flight must return promptly: the
+// interrupt wakes the waiting receive thread at once. The 900 ms bound stays below a 1 s stall
+// while staying tolerant of CI scheduling jitter (a tight 500 ms bound flaked under load).
 TEST(WebsocketTeardown, DisconnectReturnsPromptlyWhileConnectingToDeadPort) {
     auto evse_security = std::make_shared<testing::NiceMock<EvseSecurityMock>>();
     auto ws = std::make_shared<WebsocketLibwebsockets>(make_options(), evse_security);
@@ -79,6 +78,37 @@ TEST(WebsocketTeardown, DisconnectReturnsPromptlyWhileConnectingToDeadPort) {
     EXPECT_LT(elapsed, 900ms) << "disconnect() stalled for "
                               << std::chrono::duration_cast<std::chrono::milliseconds>(elapsed).count()
                               << " ms: the receive thread was not woken on interrupt";
+}
+
+// The destructor stops the deferred callback queue and joins its thread. A wakeup lost while the
+// thread goes idle, or right after it ran the disconnect callbacks, hangs the destructor forever.
+TEST(WebsocketTeardown, DestructorReturnsWithIdleDeferredThread) {
+    constexpr int iterations = 20;
+
+    for (int i = 0; i < iterations; ++i) {
+        auto evse_security = std::make_shared<testing::NiceMock<EvseSecurityMock>>();
+        auto ws = std::make_unique<WebsocketLibwebsockets>(make_options(), evse_security);
+
+        ws->register_connected_callback([](OcppProtocolVersion) {});
+        ws->register_stopped_connecting_callback([](WebsocketCloseReason) {});
+        ws->register_message_callback([](const std::string&) {});
+
+        ASSERT_TRUE(ws->start_connecting());
+        ws->disconnect(WebsocketCloseReason::Normal);
+        if (i % 2 == 0) {
+            std::this_thread::sleep_for(20ms);
+        }
+
+        auto destroyed = std::make_shared<std::promise<void>>();
+        auto destroyed_future = destroyed->get_future();
+        std::thread([ws = std::move(ws), destroyed]() mutable {
+            ws.reset();
+            destroyed->set_value();
+        }).detach();
+
+        ASSERT_EQ(destroyed_future.wait_for(5s), std::future_status::ready)
+            << "websocket destructor hung joining the deferred callback thread (iteration " << i << ")";
+    }
 }
 
 } // namespace ocpp
