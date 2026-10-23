@@ -47,7 +47,7 @@ Agenda
 - Events Recap
     - EU Workshop: Integration of charging stations in fleet management (Brussels, Oct 7)
 - Upcoming Events
-    - EVerest CPO Forum
+    - EVerest CPO Forum (online, Nov 3, 17:00 CET)
     - The Connected Homes Energy Forum (Berlin, Oct 26-27)
     - Electronica 2026 (Munich, Nov 10-13)
     - 5th joint meeting of D4E, STF and CoW on bidirectional charging (Brussels, Nov 23)
