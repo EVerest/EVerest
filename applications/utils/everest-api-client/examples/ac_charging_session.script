@@ -1,0 +1,190 @@
+# AC charging session driven entirely from the EVerest API client.
+#
+# Run it against an EVerest started with config-test-all-external-api.yaml:
+#     run_script examples/ac_charging_session.script
+#
+# It plays every hardware/backend counterpart of a single AC EvseManager:
+# the board support (BSP), powermeter, token provider + validator, and the
+# external energy limit.
+#
+# Ordering is handled two ways so the script does not race EVerest:
+#   - <module_id>.receive_request_* returns the oldest request of that kind no
+#     receive has returned yet, and BLOCKS until one arrives if there is none.
+#     Every incoming request also updates the replyTo cache, so @last on the
+#     next line is the address to reply to. Reply immediately after.
+#   - wait_for BLOCKS until a spied message matches a topic (+ value); it does
+#     not consume the message, so use it to gate on a published state. It
+#     needs a spy active.
+#
+# A timeout of either (without --optional) stops the script with an error.
+#
+# Re-running: the startup stop-transaction (step 2) only fires once per manager
+# start, so it is received with `--timeout 5 --optional` and skipped on a re-run.
+# The other blocking receives fire on every session, so to run this script
+# again let the previous session finish first (it ends at SessionFinished);
+# otherwise a receive with no matching request will block.
+#
+# Console noise: this script sets 'mute' on to hide the per-message In:/Out:
+# logging and prints phase banners with 'echo' instead. Set 'mute' off (or
+# comment out the 'set mute true' line) to watch every message; wait_for and
+# @last keep working either way.
+#
+# Lines beginning with # are comments (cmd2). @last expands to the most
+# recently received replyTo address (see the 'replyto' command).
+
+set mute true
+echo ==================== EVerest API client: AC charging session ====================
+
+# --- register the clients; MQTT buffering for each starts here. The
+#     spy feeds wait_for, so add it first. This charging flow only
+#     needs the clients below; the full comm-check block further down adds
+#     the remaining API modules of config-test-all-external-api.yaml. ---
+client_add spy
+client_add evse_board_support bsp_api
+client_add powermeter powermeter_api
+client_add auth_token_validator token_validator_api
+client_add auth_token_provider token_provider_api
+client_add evse_manager_consumer evse_manager_api
+client_add external_energy_limits_consumer eel_api
+
+# --- register the remaining API modules so we can send them the initial
+#     communication_check below (they are not otherwise driven here) ---
+client_add ev_board_support ev_bsp_api
+client_add slac slac_api
+client_add isolation_monitor imd_api
+client_add over_voltage_monitor ovm_api
+client_add power_supply_dc psu_dc_api
+client_add display_message display_message_api
+client_add generic_error_raiser error_raiser_api
+client_add system system_api
+client_add session_cost session_cost_api
+client_add auth_consumer auth_api
+client_add dc_external_derate_consumer ded_api
+client_add error_history_consumer error_history_api
+client_add evse_security_consumer evse_security_api
+client_add session_cost_consumer session_cost_consumer_api
+client_add charger_information charger_information_api
+client_add session_storage_consumer session_storage_api
+# ocpp_api needs the standalone BUOcppConsumer TUI running (see the config);
+# comment it out if you did not start that module.
+client_add ocpp_consumer ocpp_api
+
+echo [0/10] Sending communication_check to all API modules ...
+# --- send the initial communication_check to every API module. This clears
+#     each module's startup "waiting for external" error and marks the
+#     external counterpart as alive. It is a no-op for the comm-check timeout
+#     itself when cfg_communication_check_to_s is 0 (as in the test config),
+#     but keeps the modules error-free. Re-send periodically if you configure
+#     a non-zero cfg_communication_check_to_s. ---
+bsp_api.send_communication_check true
+ev_bsp_api.send_communication_check true
+powermeter_api.send_communication_check true
+slac_api.send_communication_check true
+imd_api.send_communication_check true
+ovm_api.send_communication_check true
+psu_dc_api.send_communication_check true
+token_provider_api.send_communication_check true
+token_validator_api.send_communication_check true
+display_message_api.send_communication_check true
+error_raiser_api.send_communication_check true
+system_api.send_communication_check true
+session_cost_api.send_communication_check true
+evse_manager_api.send_communication_check true
+auth_api.send_communication_check true
+ded_api.send_communication_check true
+error_history_api.send_communication_check true
+evse_security_api.send_communication_check true
+session_cost_consumer_api.send_communication_check true
+charger_information_api.send_communication_check true
+session_storage_api.send_communication_check true
+eel_api.send_communication_check true
+ocpp_api.send_communication_check true
+
+echo [1/10] Sending initial powermeter value ...
+# --- 1. an initial powermeter value FIRST: at startup EvseManager waits up
+#        to initial_meter_value_timeout_ms (5s) for it and only then sends
+#        the startup stop-transaction answered in step 2 ---
+powermeter_api.send_powermeter_values {"current_A":{"L1":0,"L2":0,"L3":0,"N":0},"energy_Wh_import":{"L1":0,"L2":0,"L3":0,"total":0},"frequency_Hz":{"L1":50,"L2":50,"L3":50},"meter_id":"THE_POWERMETER","phase_seq_error":false,"power_W":{"L1":0,"L2":0,"L3":0,"total":0},"timestamp":"2026-01-01T00:00:00Z","voltage_V":{"L1":230,"L2":230,"L3":230}}
+
+echo [2/10] Answering EvseManager startup stop-transaction (if pending) ...
+# --- 2. answer EvseManager's startup stop-transaction: it fires as soon as
+#        the initial meter value from step 1 arrives, and the manager blocks
+#        on it (the charger is not enabled until it is answered).
+#
+#        The script may be started before EVerest has finished starting up
+#        (e.g. while EVerest waits for the standalone ocpp_cli), so this waits
+#        up to 30 s. The startup request only appears ONCE per manager start:
+#        on a SECOND run of this script against the same running EVerest it
+#        never comes, and --optional continues after the 30 s.
+#        Receiving it here also keeps it from being returned by the receive
+#        for the final stop-transaction in step 9.
+#        The reply is sent regardless; on a re-run @last is a stale address and
+#        the publish is a harmless no-op. ---
+powermeter_api.receive_request_stop_transaction --timeout 30 --optional
+powermeter_api.send_reply_stop_transaction @last {"status":"OK"}
+
+echo [3/10] Announcing BSP capabilities, waiting for port enable ...
+# --- 3. become the hardware: announce capabilities (this is the current
+#        ceiling - max_current_A_import is what you charge at), then wait
+#        for EvseManager to enable the port before sending CP events.
+#
+#        enable is published only when EvseManager transitions the port (at
+#        startup, or on disable/re-enable), not repeatedly - so on a re-run
+#        where the port is already enabled it does not come again. --optional
+#        waits for it on the first run and continues (already enabled) after. ---
+bsp_api.send_capabilities {"max_current_A_import":32,"min_current_A_import":1,"max_phase_count_import":3,"min_phase_count_import":1,"max_current_A_export":32,"min_current_A_export":1,"max_phase_count_export":3,"min_phase_count_export":1,"supports_changing_phases_during_charging":true,"max_plug_temperature_C":80,"supports_cp_state_E":true,"connector_type":"IEC62196Type2Cable"}
+wait_for /bsp_api/e2m/enable true --timeout 5 --optional
+
+echo [4/10] Granting external energy budget ...
+# --- 4. grant an external energy budget. limits_to_leaves must be non-zero
+#        and there must be NO zero setpoint, or the connector is capped at 0.
+#        Re-send this periodically (the limit expires, valid_for ~10s). ---
+eel_api.send_set_external_limits {"schedule_import":[{"timestamp":"2026-01-01T00:00:00Z","limits_to_root":{"total_power_W":{"value":22000,"source":"api"},"ac_max_current_A":{"value":32,"source":"api"},"ac_max_phase_count":{"value":3,"source":"api"}},"limits_to_leaves":{"total_power_W":{"value":22000,"source":"api"},"ac_max_current_A":{"value":32,"source":"api"},"ac_max_phase_count":{"value":3,"source":"api"}}}],"schedule_export":[],"schedule_setpoints":[]}
+
+echo [5/10] Plugging in (CP state A then B) ...
+# --- 5. plug the car in: CP state A (idle) then B (plugged, no power) ---
+bsp_api.send_event {"event":"A"}
+bsp_api.send_event {"event":"B"}
+
+echo [6/10] Authorizing: provide token, answer validate request ...
+# --- 6. authorize: provide a token, wait for Auth's validate request, accept
+#        it (tariff_messages is required - empty is fine). The receive blocks
+#        until the request arrives and caches its replyTo. ---
+token_provider_api.send_provided_token {"authorization_type":"OCPP","id_token":{"type":"Central","value":"DEADBEEF"}}
+token_validator_api.receive_request_validate_token
+token_validator_api.send_reply_validate_token @last {"authorization_status":"Accepted","evse_ids":[1],"tariff_messages":[]}
+
+echo [7/10] Car requests power (CP state C), starting transaction ...
+# --- 7. car requests power: CP state C. EvseManager asks the powermeter to
+#        start the transaction - wait for that request, answer it, then wait
+#        for the session to actually reach Charging. ---
+bsp_api.send_event {"event":"C"}
+powermeter_api.receive_request_start_transaction
+powermeter_api.send_reply_start_transaction @last {"status":"OK"}
+wait_for session_event ChargingStarted
+
+echo [8/10] Reporting charging energy ...
+# --- 8. report consumed energy so session_info shows progress. Re-send with a
+#        rising 'total' to simulate charging. ---
+powermeter_api.send_powermeter_values {"current_A":{"L1":31.8,"L2":31.8,"L3":31.8,"N":0},"energy_Wh_import":{"L1":0,"L2":0,"L3":0,"total":500},"frequency_Hz":{"L1":50,"L2":50,"L3":50},"meter_id":"THE_POWERMETER","phase_seq_error":false,"power_W":{"L1":7300,"L2":7300,"L3":7300,"total":22000},"timestamp":"2026-01-01T00:05:00Z","voltage_V":{"L1":230,"L2":230,"L3":230}}
+
+echo [9/10] Ending session: stop, unplug, final stop-transaction ...
+# --- 9. end the session: car stops (B), unplug (A). EvseManager sends a final
+#        stop-transaction to the powermeter - wait for it and answer it. ---
+bsp_api.send_event {"event":"B"}
+bsp_api.send_event {"event":"A"}
+powermeter_api.receive_request_stop_transaction
+powermeter_api.send_reply_stop_transaction @last {"status":"OK"}
+wait_for session_event SessionFinished
+
+echo [10/10] Reading the stored session back ...
+# --- 10. the session storage records every session. Ask for the first page
+#         of stored sessions and wait for the reply. The replyTo placeholder
+#         is replaced by a fresh reply address. Records come oldest
+#         first, so with set mute false this session is the last entry (as
+#         long as the store holds no more than one page). ---
+session_storage_api.send_request_get_sessions {"headers":{"replyTo":"everest_api/1/{interface_type}/{module_id}/e2m/{operation_name}/{uuid}"},"payload":{}}
+session_storage_api.receive_reply_get_sessions --timeout 5
+echo ==================== Session finished ====================
+# uncomment to restore live logging at the end:
+# set mute false
