@@ -8,6 +8,7 @@
 #include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/types.hpp>
+#include <ocpp/v16/variable_resolver.hpp>
 #include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <set>
@@ -30,7 +31,7 @@ public:
 
 protected:
     std::unique_ptr<v2::DeviceModelVariablesInterface> storage;
-    ocpp::v2::Ocpp16KeyMappings custom_key_mappings;
+    VariableResolver resolver;
 
     SetResult setInternalAllowChargingProfileWithoutStartSchedule(const std::string& value);
     SetResult setInternalCentralSystemURI(const std::string& value);

@@ -155,7 +155,11 @@ network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Ident
 those are managed via the standardized OCPP 1.6 keys with their reboot/reconnect semantics, and a mapping file
 containing such a target is rejected at startup. OCPP 1.6
 keys without a standardized device model counterpart are kept in a dedicated ``OCPP16LegacyCtrlr`` component, whose
-``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs. This component is
+``NumberOfConnectors`` value is automatically patched to the actual number of connected EVSEs. An entry in the mapping
+file for such a key, for example ``LightIntensity``, replaces its ``OCPP16LegacyCtrlr`` variable with a variable of
+your component configuration, so that OCPP 1.6 and OCPP 2.x share the value; see
+:ref:`Share an OCPP 1.6 key with your own OCPP 2.x variable <howto-ocpp-storage-migration-share-legacy-key>` for
+the rules. This component is
 required for OCPP 2.x operation as well: the device model is shared between all supported OCPP versions so that the
 station can switch between OCPP 1.6 and OCPP 2.x seamlessly, which requires the full set of components for every
 version to be present. If ``standardized/OCPP16LegacyCtrlr.json`` is absent from ``DeviceModelConfigPath``, a
@@ -883,7 +887,8 @@ Addressing rules:
 
 - Standard OCPP 2.x variables: their standard component (``OCPPCommCtrlr``,
   ``SecurityCtrlr``, ...). Works for the same datum in both protocol modes.
-- 1.6-only/vendor keys: component ``OCPP16LegacyCtrlr``, variable = key name.
+- 1.6-only/vendor keys: component ``OCPP16LegacyCtrlr``, variable = key name,
+  unless the mapping file replaces the mapping of the key (see below).
 - Custom-mapped keys (station-specific YAML): the mapped component/variable
   from the mapping file.
 - The deprecation warning emitted for legacy requests names the canonical
