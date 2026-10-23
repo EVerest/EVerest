@@ -103,7 +103,9 @@ In addition, on the DC side the following hardware modules can be connected:
 * A DC powermeter: This will be used for billing purposes if present.
   If not connected, billing will fall back to the AC side power meter.
 * Isolation monitoring: This will be used to monitor isolation during
-  CableCheck, PreCharge and CurrentDemand steps.
+  CableCheck, PreCharge and CurrentDemand steps. With the option
+  ``unmated_enable_imd`` it is also on while nothing is plugged in, and off
+  from the CP change A to B until the cable check.
 * DC power supply: This is the AC/DC converter that actually charges the car.
 
 Software over-voltage supervision is always active during DC charging. The configuration option

@@ -67,7 +67,7 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, cable_check_measurements: int = 1):
+    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, cable_check_measurements: int = 1, unmated_enable_imd: bool = False):
         self.zero_power_ignore_pause = zero_power_ignore_pause
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
         self.ev_d20_only = ev_d20_only
@@ -75,6 +75,7 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         self.force_payment_option = force_payment_option
         self.fail_cable_check = fail_cable_check
         self.cable_check_measurements = cable_check_measurements
+        self.unmated_enable_imd = unmated_enable_imd
 
     def adjust_everest_configuration(self, everest_config: Dict):
         adjusted_config = deepcopy(everest_config)
@@ -90,6 +91,7 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         adjusted_config["active_modules"]["ev_manager"]["config_module"]["force_payment_option"] = self.force_payment_option
         adjusted_config["active_modules"]["imd"]["config_implementation"]["main"]["resistance_F_Ohm"] = 0 if self.fail_cable_check else 900000
         adjusted_config["active_modules"]["evse_manager"]["config_module"]["cable_check_wait_number_of_imd_measurements"] = self.cable_check_measurements
+        adjusted_config["active_modules"]["evse_manager"]["config_module"]["unmated_enable_imd"] = self.unmated_enable_imd
         return adjusted_config
 
 
@@ -1652,3 +1654,52 @@ async def test_iso15118_dc_stop_transaction_during_cable_check(
     test_controller.plug_out()
     await wait_for_session_events(session_event_mock, ["SessionFinished"])
 
+
+@pytest.mark.asyncio
+@pytest.mark.xdist_group(name="ISO15118")
+@pytest.mark.probe_module(
+    connections={
+        "evse_manager": [Requirement("evse_manager", "evse")],
+        "imd": [Requirement("imd", "main")],
+    }
+)
+@pytest.mark.everest_core_config("config-sil-dc.yaml")
+@pytest.mark.everest_config_adaptions(DcConfigAdjustmentStrategy(unmated_enable_imd=True))
+async def test_iso15118_dc_imd_active_while_unmated(
+    test_controller: TestController, everest_core: EverestCore
+):
+    """
+    Test that with unmated_enable_imd the IMD measures while nothing is plugged in, is switched
+    off by the plug-in until the cable check, and measures again after the unplug. A complete
+    session must still pass the cable check and start charging.
+    """
+    probe_module, session_event_mock, _, _ = await setup_session_mocks(
+        test_controller, everest_core
+    )
+    imd_measurement_mock = Mock()
+    probe_module.subscribe_variable("imd", "isolation_measurement", imd_measurement_mock)
+
+    # Unmated: the IMD is started when the Charger enters Idle, so it publishes before any plug-in
+    await wait_for_ready(imd_measurement_mock, timeout=30)
+
+    test_controller.plug_in_dc_iso()
+
+    # The IMD is stopped at the plug-in. Wait for the short time the stop command needs to reach it
+    # then count: the next measurement may only come from the cable check, which starts the IMD again
+    # several seconds later (the simulator's self test alone takes 3 s).
+    await asyncio.sleep(1)
+    imd_measurement_mock.reset_mock()
+    await wait_for_session_events(session_event_mock, NO_ENERGY_SESSION_START_SEQUENCE)
+    assert imd_measurement_mock.call_count == 0, (
+        "The IMD must not measure between the plug-in and the cable check, "
+        f"got {imd_measurement_mock.call_count} measurement(s)"
+    )
+
+    # The cable check must still pass: the session starts charging
+    await wait_for_session_events(session_event_mock, ["ChargingStarted"])
+
+    await end_session(test_controller, session_event_mock)
+
+    # Unplugged again: the IMD is switched on once the session is finished
+    imd_measurement_mock.reset_mock()
+    await wait_for_ready(imd_measurement_mock, timeout=30)
