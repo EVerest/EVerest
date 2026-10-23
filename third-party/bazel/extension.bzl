@@ -1,8 +1,8 @@
 load("@bazel_features//:features.bzl", "bazel_features")
-load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:git.bzl", "git_repository")
-load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
+load("@bazel_tools//tools/build_defs/repo:http.bzl", "http_archive")
 load("@bazel_tools//tools/build_defs/repo:local.bzl", "new_local_repository")
+load("@bazel_tools//tools/build_defs/repo:utils.bzl", "maybe")
 
 def _deps_impl(module_ctx):
     maybe(
@@ -79,12 +79,12 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.openssl-foreign-cc.bazel",
     )
 
-    version = "0.2.15"
     maybe(
         http_archive,
         name = "pybind11_json",
-        strip_prefix = "pybind11_json-%s" % version,
-        urls = ["https://github.com/pybind/pybind11_json/archive/refs/tags/%s.tar.gz" % version],
+        strip_prefix = "pybind11_json-0.2.15",
+        urls = ["https://github.com/pybind/pybind11_json/archive/refs/tags/0.2.15.tar.gz"],
+        sha256 = "9a4a1494549a2db27bc4c5a16743a5c88ebc18e13c73019c56f399ae0310baf2",
         build_file_content = """
 load("@rules_cc//cc:defs.bzl", "cc_library")
 

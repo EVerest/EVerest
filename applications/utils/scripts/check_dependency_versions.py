@@ -68,8 +68,6 @@ def main():
     branch_re = re.compile(r'branch=([^;|^"|\s]*)')
 
     for key, entry in snapshot.items():
-        branch = entry['branch']
-        git_rev = entry['git_rev']
         git_tag = entry['git_tag']
         version = git_tag.removeprefix('wip-release-')
         version = version.removeprefix('v')

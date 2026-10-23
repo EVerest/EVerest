@@ -1,0 +1,176 @@
+# Verifies that the Bazel and Yocto dependency definitions match dependencies.yaml.
+# Each job runs its sync script on the checkout and fails if anything changes.
+# A list of these changes is shown in the job summary with a command to run to
+# update these files.
+# Versions that cannot be synced by the script, e.g. if missing in the
+# Bazel Central Registry, are reported as warnings without failing the job.
+
+name: Dependency sync
+
+on:
+  pull_request:
+    paths:
+      - dependencies.yaml
+      - MODULE.bazel
+      - third-party/bazel/**
+      - yocto/**
+      - applications/utils/scripts/sync_bazel_dependencies.py
+      - applications/utils/scripts/snapshot2bb.py
+      - .github/workflows/on_pr_dependency-sync.yaml
+  workflow_dispatch: {}
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  bazel:
+    name: Bazel
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pyyaml packaging
+
+      - name: Run sync_bazel_dependencies.py
+        run: |
+          set +e
+          "$RUNNER_TEMP/venv/bin/python" applications/utils/scripts/sync_bazel_dependencies.py --no-format \
+            > "$RUNNER_TEMP/sync.log" 2>&1
+          status=$?
+          set -e
+          cat "$RUNNER_TEMP/sync.log"
+          # 0: in sync after the run, 1: versions that need manual attention, anything else: error
+          if [ "$status" -gt 1 ]; then
+            echo "::error::sync_bazel_dependencies.py failed with exit code $status"
+            exit "$status"
+          fi
+
+      - name: Check for changes
+        run: |
+          log="$RUNNER_TEMP/sync.log"
+          changed=$(git status --porcelain -- MODULE.bazel third-party/bazel)
+          manual=$(sed -n '/^Still mismatched, needs manual attention:$/,/^$/p' "$log" | sed '1d;/^$/d')
+
+          {
+            echo "## Bazel dependencies"
+            if [ -z "$changed" ]; then
+              echo ":white_check_mark: \`MODULE.bazel\` and \`third-party/bazel/extension.bzl\` match \`dependencies.yaml\`."
+            else
+              echo ":x: Out of sync with \`dependencies.yaml\`. Run and commit the result:"
+              echo '```bash'
+              echo 'applications/utils/scripts/sync_bazel_dependencies.py'
+              echo '```'
+              echo "Changes the script makes:"
+              echo '```'
+              sed -n '/^Updated:$/,/^$/p' "$log" | sed '/^$/d'
+              echo '```'
+            fi
+            if [ -n "$manual" ]; then
+              echo ""
+              echo ":warning: Not fixable by the script, needs manual attention:"
+              echo '```'
+              echo "$manual"
+              echo '```'
+            fi
+            echo ""
+            echo "<details><summary>Full output</summary>"
+            echo ""
+            echo '```'
+            cat "$log"
+            echo '```'
+            echo "</details>"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$manual" ]; then
+            while IFS= read -r line; do
+              echo "::warning title=Bazel dependency needs manual attention::${line#  }"
+            done <<< "$manual"
+          fi
+          if [ -n "$changed" ]; then
+            git diff -- MODULE.bazel third-party/bazel
+            echo "::error::Bazel dependencies are out of sync, run applications/utils/scripts/sync_bazel_dependencies.py"
+            exit 1
+          fi
+
+  yocto:
+    name: Yocto
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Install Python dependencies
+        run: |
+          python3 -m venv "$RUNNER_TEMP/venv"
+          "$RUNNER_TEMP/venv/bin/pip" install --quiet pyyaml
+
+      - name: Run snapshot2bb.py for every layer
+        run: |
+          for layer in yocto/*/meta-everest; do
+            echo "::group::$layer"
+            "$RUNNER_TEMP/venv/bin/python" applications/utils/scripts/snapshot2bb.py \
+              --input dependencies.yaml --out "$layer" | tee -a "$RUNNER_TEMP/snapshot2bb.log"
+            echo "::endgroup::"
+          done
+
+      - name: Check for changes
+        run: |
+          log="$RUNNER_TEMP/snapshot2bb.log"
+          git add -A -- yocto
+          changed=$(git diff --cached --name-status -M -- yocto)
+          skipped=$(grep -E 'skipping' "$log" || true)
+
+          {
+            echo "## Yocto recipes"
+            if [ -z "$changed" ]; then
+              echo ":white_check_mark: The recipes mapped in \`snapshot2bb.py\` match \`dependencies.yaml\`."
+            else
+              echo ":x: Out of sync with \`dependencies.yaml\`. Run and commit the result:"
+              echo '```bash'
+              echo 'for layer in yocto/*/meta-everest; do'
+              # shellcheck disable=SC2016 # printed literally as part of the command to run
+              echo '    applications/utils/scripts/snapshot2bb.py --input dependencies.yaml --out "$layer"'
+              echo 'done'
+              echo '```'
+              echo "Files the script changes:"
+              echo '```'
+              echo "$changed"
+              echo '```'
+              echo ""
+              echo "<details><summary>Diff</summary>"
+              echo ""
+              echo '```diff'
+              git diff --cached -M -- yocto
+              echo '```'
+              echo "</details>"
+            fi
+            if [ -n "$skipped" ]; then
+              echo ""
+              echo ":warning: Recipes the script could not update:"
+              echo '```'
+              echo "$skipped"
+              echo '```'
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          if [ -n "$skipped" ]; then
+            while IFS= read -r line; do
+              echo "::warning title=Yocto recipe not updated::$line"
+            done <<< "$skipped"
+          fi
+          if [ -n "$changed" ]; then
+            echo "::error::Yocto recipes are out of sync, run applications/utils/scripts/snapshot2bb.py for every layer"
+            exit 1
+          fi

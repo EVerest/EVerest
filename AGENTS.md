@@ -51,7 +51,12 @@ Pass `-j` yourself, since generator defaults are either the whole machine or a s
 job. When several agents share a host, cap the total to the core count.
 
 Dependencies are pinned in `dependencies.yaml` and fetched by edm at configure time;
-`-DDISABLE_EDM=ON` uses system packages. `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
+`-DDISABLE_EDM=ON` uses system packages. Bazel declares the same libraries in
+`MODULE.bazel` (registry modules) and `third-party/bazel/extension.bzl` (archives).
+After editing `dependencies.yaml`, run
+`applications/utils/scripts/sync_bazel_dependencies.py` to bring both in line; it
+prefers a registry module whenever the exact version exists and reports versions the
+registry lacks (`--dry-run` only reports). `ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`
 defaults to ON, so development certificates need no extra flag.
 
 To iterate faster, build one module (`cmake --build build --target OCPP201`) or skip
