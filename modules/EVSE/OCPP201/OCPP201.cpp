@@ -14,6 +14,7 @@
 #include <everest/ocpp_module_common/conversions.hpp>
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/external_limits.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace {
@@ -67,7 +68,6 @@ const std::string CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "Contract
 const std::string SETPOINT_PRIORITY_VAR_NAME = "SetpointPriority";
 const std::string TX_START_POINT_VAR_NAME = "TxStartPoint";
 const std::string TX_STOP_POINT_VAR_NAME = "TxStopPoint";
-const std::string SETPOINT_SOURCE = "OCPP";
 
 static constexpr int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 static constexpr int32_t HIGHEST_SETPOINT_PRIORITY = 0;
@@ -1819,10 +1819,6 @@ void OCPP201::publish_charging_schedules(const std::vector<ocpp::v2::EnhancedCom
 void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeSchedule>& composite_schedules) {
     const auto start_time = ocpp::DateTime();
 
-    auto to_timestamp = [&](int seconds_offset) {
-        return ocpp::DateTime(start_time.to_time_point() + std::chrono::seconds(seconds_offset)).to_rfc3339();
-    };
-
     int32_t setpoint_priority = LOWEST_SETPOINT_PRIORITY;
     const auto resp = this->charge_point->request_value<std::string>(ocpp::v2::ControllerComponents::SmartChargingCtrlr,
                                                                      ocpp::v2::Variable{SETPOINT_PRIORITY_VAR_NAME},
@@ -1832,99 +1828,16 @@ void OCPP201::set_external_limits(const std::vector<ocpp::v2::EnhancedCompositeS
         setpoint_priority = resp.value.value() == "CSMS" ? HIGHEST_SETPOINT_PRIORITY : LOWEST_SETPOINT_PRIORITY;
     }
 
-    auto create_setpoint_entry =
-        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
-            const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleSetpointEntry> {
-        const bool has_basic_setpoint = period.setpoint.has_value();
-        const bool has_freq_table = period.v2xFreqWattCurve.has_value() && !period.v2xFreqWattCurve->empty();
-
-        if (!has_basic_setpoint && !has_freq_table) {
-            return std::nullopt;
-        }
-
-        types::energy::ScheduleSetpointEntry entry;
-        types::energy::SetpointType setpoint;
-        setpoint.source = SETPOINT_SOURCE;
-        setpoint.priority = setpoint_priority;
-        entry.timestamp = timestamp;
-
-        if (has_basic_setpoint) {
-            if (unit == ocpp::v2::ChargingRateUnitEnum::A) {
-                setpoint.ac_current_A = period.setpoint.value();
-            } else {
-                setpoint.total_power_W = period.setpoint.value();
-            }
-        }
-
-        if (has_freq_table) {
-            std::vector<types::energy::FrequencyWattPoint> frequency_table;
-            for (const auto& point : period.v2xFreqWattCurve.value()) {
-                types::energy::FrequencyWattPoint freq_point;
-                freq_point.frequency_Hz = point.frequency;
-                freq_point.total_power_W = point.power;
-                frequency_table.push_back(freq_point);
-            }
-            setpoint.frequency_table = std::move(frequency_table);
-        }
-
-        entry.setpoint = std::move(setpoint);
-        return entry;
-    };
-
-    auto create_limits_entry =
-        [&](const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
-            const ocpp::v2::ChargingRateUnitEnum& unit) -> std::optional<types::energy::ScheduleReqEntry> {
-        if (!period.limit.has_value()) {
-            return std::nullopt;
-        }
-
-        types::energy::ScheduleReqEntry entry;
-        entry.timestamp = timestamp;
-
-        types::energy::LimitsReq limits_req;
-        if (unit == ocpp::v2::ChargingRateUnitEnum::A) {
-            limits_req.ac_max_current_A = {period.limit.value(), source_ext_limit};
-            if (period.numberPhases.has_value()) {
-                limits_req.ac_max_phase_count = {period.numberPhases.value(), source_ext_limit};
-            }
-        } else {
-            limits_req.total_power_W = {period.limit.value(), source_ext_limit};
-        }
-
-        entry.limits_to_leaves = limits_req;
-        return entry;
-    };
-
     for (const auto& composite_schedule : composite_schedules) {
-        auto evse_id = composite_schedule.evseId;
+        const auto evse_id = composite_schedule.evseId;
         if (not external_energy_limits::is_evse_sink_configured(this->r_evse_energy_sink, evse_id)) {
             EVLOG_warning << "Can not apply external limits! No evse energy sink configured for evse_id: " << evse_id;
             continue;
         }
 
-        types::energy::ExternalLimits limits;
-        std::vector<types::energy::ScheduleReqEntry> schedule_import;
-        std::vector<types::energy::ScheduleSetpointEntry> schedule_setpoints;
-
-        const auto& unit = composite_schedule.chargingRateUnit;
-
-        for (const auto& period : composite_schedule.chargingSchedulePeriod) {
-            const auto timestamp = to_timestamp(period.startPeriod);
-
-            if (auto setpoint_entry = create_setpoint_entry(timestamp, period, unit)) {
-                schedule_setpoints.push_back(*setpoint_entry);
-            }
-
-            if (auto limits_entry = create_limits_entry(timestamp, period, unit)) {
-                schedule_import.push_back(*limits_entry);
-            }
-        }
-
-        limits.schedule_import = std::move(schedule_import);
-        limits.schedule_setpoints = std::move(schedule_setpoints);
-
         auto& evse_sink = external_energy_limits::get_evse_sink_by_evse_id(this->r_evse_energy_sink, evse_id);
-        evse_sink.call_set_external_limits(limits);
+        evse_sink.call_set_external_limits(ocpp_module_common::external_limits::to_external_limits(
+            composite_schedule, start_time, source_ext_limit, setpoint_priority));
     }
 }
 
