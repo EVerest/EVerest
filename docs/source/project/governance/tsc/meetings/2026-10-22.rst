@@ -83,6 +83,4 @@ Other:
 - AFIR: 11 of 12 charger-side obligations ready; already covers the 1 Jan 2027 ISO 15118-20 mandate
 - OSS and AI: maintainers flooded by PRs; open question how merit-based step-up to committer/maintainer should evolve when review is the bottleneck
 - EU Roadmap SG 8: draft due 7 Nov, presented at V2G Leaders Europe 24 Nov
-
-@[2026-10-22 EVerest TSC](https://docs.google.com/presentation/d/1X-wZ0kL8N4ySGAmXg2TgTmQwOtW4jFk0jiu0jygd9Vk)
 ```
