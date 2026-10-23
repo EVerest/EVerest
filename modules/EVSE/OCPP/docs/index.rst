@@ -445,8 +445,8 @@ The following module configuration parameters are relevant for device model back
   `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
   Mappings must not target the connection configuration (``NetworkConfiguration`` slots, the
   ``OCPPCommCtrlr`` network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity``
-  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys, and a mapping file
-  containing such a target is rejected at startup
+  and ``BasicAuthPassword``); those are managed via the standardized OCPP 1.6 keys, and an entry with
+  such a target is ignored with an error log
 * **Ocpp16NetworkConfigSlot**: ``NetworkConfiguration`` slot number that OCPP 1.6 network connection
   details (``CentralSystemURI``, ``SecurityProfile``, ``AuthorizationKey``, ``HostName``,
   ``ChargePointId``) are migrated to during the one-time migration (default: ``1``; set to ``0`` to skip).

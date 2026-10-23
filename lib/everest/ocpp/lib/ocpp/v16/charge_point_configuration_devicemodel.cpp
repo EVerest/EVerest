@@ -548,6 +548,24 @@ std::optional<v16::KeyValue> get_derived_key_value_optional(DeviceModelInterface
     return kv;
 }
 
+/// Overrides of built-in keys whose target is not in the device model are dropped, so the key keeps its built-in
+/// OCPP16LegacyCtrlr variable.
+v2::Ocpp16KeyMappings without_missing_override_targets(DeviceModelInterface& storage,
+                                                       const v2::Ocpp16KeyMappings& mappings) {
+    v2::Ocpp16KeyMappings result;
+    for (const auto& [ocpp16_key, cv] : mappings) {
+        const auto& [component, variable] = cv;
+        if (v16::keys::convert(ocpp16_key).has_value() &&
+            !storage.get_variable_meta_data(component, variable).has_value()) {
+            EVLOG_error << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to " << component.name << '/'
+                        << variable.name << ", which is not in the device model; using its built-in mapping instead";
+            continue;
+        }
+        result.emplace(ocpp16_key, cv);
+    }
+    return result;
+}
+
 } // namespace
 
 // ----------------------------------------------------------------------------
@@ -1220,7 +1238,7 @@ ChargePointConfigurationDeviceModel::ChargePointConfigurationDeviceModel(
     v2::Ocpp16KeyMappings custom_key_mappings) :
     ChargePointConfigurationBase(ocpp_main_path),
     storage(std::move(device_model_interface)),
-    resolver(custom_key_mappings) {
+    resolver(without_missing_override_targets(*storage, custom_key_mappings)) {
     const auto profiles = get_optional<std::string>(*storage, resolver, keys::valid_keys::SupportedFeatureProfiles);
     const auto measurands = calculateSupportedMeasurands();
     ProfilesSet initial;
@@ -1374,13 +1392,11 @@ void ChargePointConfigurationDeviceModel::check_integrity(int32_t expected_numbe
     check_profile(SupportedFeatureProfiles::CostAndPrice,
                   [&](auto require_for_profile) { require_for_profile(keys::valid_keys::CustomDisplayCostAndPrice); });
 
-    // A custom-mapped key is stored only in its target, so the target must exist in the device model
+    // overrides whose target is missing are dropped at construction
     for (const auto& [key, cv] : resolver.overrides()) {
         const auto& [component, variable] = cv;
         const auto target = storage->get_variable_meta_data(component, variable);
         if (!target.has_value()) {
-            errors.emplace_back(std::string(keys::convert(key)) + " (custom-mapped to " + component.name.get() + '/' +
-                                variable.name.get() + ", which is not in the device model)");
             continue;
         }
         const auto builtin = keys::convert_v2(key);

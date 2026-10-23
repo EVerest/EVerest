@@ -39,7 +39,7 @@ enum class CVClass {
 ///
 /// Custom key mappings must not target these CVs: the key path writes the device model without
 /// the RebootRequired/reconnect semantics the standardized keys and canonical CVs carry.
-/// load_ocpp16_key_mappings_from_yaml rejects such mappings.
+/// load_ocpp16_key_mappings_from_yaml ignores such mappings.
 bool is_connection_config_cv(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
 /// \brief Whether a custom mapping entry may override the built-in mapping of the known key \p key.
@@ -69,7 +69,7 @@ struct ReverseResult {
 class VariableResolver {
 public:
     /// \brief Entries for known keys that are not overridable are ignored with a warning; the custom mapping file
-    /// loader rejects them before they get here.
+    /// loader drops them before they get here.
     explicit VariableResolver(const ocpp::v2::Ocpp16KeyMappings& custom_mappings = {});
 
     /// \brief Forward lookup: known keys first (built-in mapping or its override; keys with no v2 mapping and

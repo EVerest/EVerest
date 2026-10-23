@@ -99,6 +99,45 @@ get_variable_to_patch(std::map<ComponentKey, std::vector<DeviceModelVariable>>& 
     return get_variable_to_patch(component_configs, device_model_cv->first, device_model_cv->second);
 }
 
+bool has_variable(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                  const Component& component, const Variable& variable) {
+    ComponentKey component_key;
+    component_key.name = component.name.get();
+    if (component.instance.has_value()) {
+        component_key.instance = component.instance.value().get();
+    }
+    const auto component_it = component_configs.find(component_key);
+    if (component_it == component_configs.end()) {
+        return false;
+    }
+
+    DeviceModelVariable wanted;
+    wanted.name = variable.name.get();
+    if (variable.instance.has_value()) {
+        wanted.instance = variable.instance->get();
+    }
+    return std::any_of(component_it->second.begin(), component_it->second.end(),
+                       [&wanted](const DeviceModelVariable& var) { return is_same_variable(var, wanted); });
+}
+
+/// Overrides of built-in keys whose target is not in the component configs are dropped, so the key keeps its
+/// built-in OCPP16LegacyCtrlr variable and its value is not lost.
+Ocpp16KeyMappings
+without_missing_override_targets(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs,
+                                 const Ocpp16KeyMappings& custom_key_mappings) {
+    Ocpp16KeyMappings result;
+    for (const auto& [ocpp16_key, cv] : custom_key_mappings) {
+        if (ocpp::v16::keys::convert(ocpp16_key).has_value() && !has_variable(component_configs, cv.first, cv.second)) {
+            EVLOG_error << "OCPP 1.6 key " << ocpp16_key << " is custom-mapped to " << cv.first.name << '/'
+                        << cv.second.name
+                        << ", which is not in the component config; using its built-in mapping instead";
+            continue;
+        }
+        result.emplace(ocpp16_key, cv);
+    }
+    return result;
+}
+
 ocpp::v16::keys::DeviceModel_CV component_variable_to_dm_cv(const ComponentVariable& cv) {
     if (!cv.variable.has_value()) {
         return std::nullopt;
@@ -354,7 +393,8 @@ void patch_component_config_with_ocpp16(std::map<ComponentKey, std::vector<Devic
                                         const Ocpp16KeyMappings& custom_key_mappings, int32_t network_config_slot) {
 
     const auto config_keys = ocpp16_config.get_all_key_value();
-    const ocpp::v16::VariableResolver resolver{custom_key_mappings};
+    const ocpp::v16::VariableResolver resolver{
+        without_missing_override_targets(component_configs, custom_key_mappings)};
 
     for (const auto& config_key : config_keys) {
         const auto key_enum = ocpp::v16::keys::convert(config_key.key.get());
