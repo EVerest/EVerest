@@ -7,19 +7,26 @@
 #include <cstdint>
 #include <map>
 #include <optional>
-#include <set>
 #include <string>
 #include <variant>
 #include <vector>
 
 #include <iso15118/d20/der_functions.hpp>
-#include <iso15118/d20/ev_power_profile.hpp>
+#include <iso15118/d20/limits.hpp>
+#include <iso15118/d20/power_timeline.hpp>
 #include <iso15118/io/sha_hash.hpp>
 #include <iso15118/message/common_types.hpp>
 
 #include <everest/util/vector/fixed_vector.hpp>
 
 namespace iso15118::d20 {
+
+// A tuple without a DischargingSchedule leaves the discharge timeline empty, so it allows no discharge
+// [V2G20-1811].
+struct OfferedSchedule {
+    PowerTimeline charge;
+    PowerTimeline discharge;
+};
 
 namespace dt = message_20::datatypes;
 
@@ -212,11 +219,16 @@ public:
 
     bool service_renegotiation_supported{false};
 
-    // The ScheduleTupleIDs offered in the last finished ScheduleExchangeRes. Empty in dynamic control mode.
-    std::set<dt::NumericId> offered_schedules{};
+    // The EVSEMaximumChargePower sent in the ChargeParameterDiscoveryRes. The schedule offer and the EV's
+    // EVPowerProfile are both sized from it, so limits updated since must not reach the offer.
+    std::optional<MaxChargePower> cpd_max_charge_power{};
 
-    // From the EV's latest PowerDeliveryReq that carried one.
-    std::optional<EvPowerProfile> ev_power_profile{};
+    // The schedules of each tuple offered in the last finished ScheduleExchangeRes, by ScheduleTupleID. Empty in
+    // dynamic control mode.
+    std::map<dt::NumericId, OfferedSchedule> offered_schedules{};
+
+    // The EVPowerProfile of the EV's latest PowerDeliveryReq that carried one.
+    std::optional<PowerTimeline> ev_power_profile{};
 
     // Set once a charge loop response carried EVSENotification=Pause ([V2G20-1195]).
     bool secc_pause_notified{false};
