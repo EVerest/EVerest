@@ -1,0 +1,22 @@
+{
+    "id": 8,
+    "chargingProfileKind": "Absolute",
+    "chargingProfilePurpose": "TxProfile",
+    "chargingSchedule": [
+        {
+            "id": 0,
+            "chargingRateUnit": "W",
+            "chargingSchedulePeriod": [
+                {
+                    "limit": 7000.0,
+                    "numberPhases": 2,
+                    "startPeriod": 0
+                }
+            ],
+            "duration": 3000,
+            "startSchedule": "2024-01-17T18:00:00.000Z"
+        }
+    ],
+    "stackLevel": 0,
+    "transactionId": "f1522902-1170-416f-8e43-9e3bce28fde7"
+}

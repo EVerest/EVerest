@@ -513,15 +513,6 @@ protected:
     /// point exists.
     void on_grid_support_alarm(const types::grid_support::GridAlarm& alarm);
 
-    std::optional<types::energy::ScheduleReqEntry>
-    create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
-                        ocpp::v2::ChargingRateUnitEnum unit);
-    std::optional<types::energy::ScheduleReqEntry>
-    create_export_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
-                               ocpp::v2::ChargingRateUnitEnum unit);
-    std::optional<types::energy::ScheduleSetpointEntry>
-    create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
-                          const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);
     std::pair<GenericChargePointInterface::ConnectorStructure, GenericChargePointInterface::ConnectorStructureV16>
     get_connector_structure();
     void process_authorised(std::int32_t evse_id, std::int32_t connector_id,
