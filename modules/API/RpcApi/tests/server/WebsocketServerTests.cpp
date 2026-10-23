@@ -3,6 +3,7 @@
 
 #include <everest/logging.hpp>
 #include <gtest/gtest.h>
+#include <set>
 #include <thread>
 
 #include "../helpers/WebSocketTestClient.hpp"
@@ -139,6 +140,36 @@ TEST_F(WebSocketServerTest, ServerCanSendDataToClient) {
 
     ASSERT_FALSE(received_data.empty());
     ASSERT_EQ(received_data, "Hello from server!");
+}
+
+TEST_F(WebSocketServerTest, ConcurrentSendersDeliverEveryQueuedMessage) {
+    WebSocketTestClient client("localhost", test_port);
+    ASSERT_TRUE(client.connect());
+    ASSERT_TRUE(client.wait_until_connected(std::chrono::milliseconds(100)));
+
+    constexpr int sender_count = 4;
+    constexpr int messages_per_sender = 25;
+    const auto client_id = get_connected_clients().front();
+    std::vector<std::thread> senders;
+    for (int sender = 0; sender < sender_count; ++sender) {
+        senders.emplace_back([&, sender] {
+            for (int message = 0; message < messages_per_sender; ++message) {
+                const auto payload = std::to_string(sender) + ":" + std::to_string(message);
+                ws_server->send_data(client_id, std::vector<uint8_t>(payload.begin(), payload.end()));
+            }
+        });
+    }
+    for (auto& sender : senders) {
+        sender.join();
+    }
+
+    std::set<std::string> received;
+    for (int i = 0; i < sender_count * messages_per_sender; ++i) {
+        const auto message = client.wait_for_data(std::chrono::seconds(2), false);
+        ASSERT_FALSE(message.empty()) << "Timed out waiting for queued message " << i;
+        received.insert(message);
+    }
+    ASSERT_EQ(received.size(), sender_count * messages_per_sender);
 }
 
 // Test: Server kills client connection

@@ -5,6 +5,7 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <deque>
 #include <libwebsockets.h>
 #include <memory>
 #include <string>
@@ -26,7 +27,6 @@ public:
     bool running() const override;
     void send_data(const std::vector<uint8_t>& data) override;
     void send_data(const ClientId& client_id, const Data& data) override;
-    void send_data(struct lws* wsi, const std::vector<uint8_t>& data);
     void kill_client_connection(const ClientId& client_id, const std::string& kill_reason) override;
     uint connections_count() const override;
 
@@ -43,6 +43,8 @@ private:
     struct lws_context* m_context = nullptr;
     std::thread m_server_thread;
     std::unordered_map<ClientId, struct lws*> m_clients; // Client-Mapping
+    std::unordered_map<ClientId, std::deque<Data>> m_outgoing_messages;
+    std::unordered_map<ClientId, std::string> m_pending_close_reasons;
     mutable std::mutex m_clients_mutex;
 
     // Methods
