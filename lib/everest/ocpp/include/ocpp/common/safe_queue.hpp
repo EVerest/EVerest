@@ -37,7 +37,7 @@ public:
         // Unlock here and notify
         lock.unlock();
 
-        notify_waiting_thread();
+        notify_waiting_thread_unlocked();
 
         return front;
     }
@@ -49,7 +49,7 @@ public:
             queue.push(std::move(value));
         }
 
-        notify_waiting_thread();
+        notify_waiting_thread_unlocked();
     }
 
     /// \brief Queues an element and notifies any threads waiting on the internal conditional variable
@@ -59,7 +59,7 @@ public:
             queue.push(value);
         }
 
-        notify_waiting_thread();
+        notify_waiting_thread_unlocked();
     }
 
     /// \brief Clears the queue
@@ -71,7 +71,7 @@ public:
             empty.swap(queue);
         }
 
-        notify_waiting_thread();
+        notify_waiting_thread_unlocked();
     }
 
     /// \brief Waits for the queue to receive an element
@@ -107,11 +107,20 @@ public:
     }
 
     /// \brief Notifies a single waiting thread to wake up
+    /// \note Call this after changing state that a wait predicate reads. Taking the lock first ensures a
+    /// waiter that already evaluated its predicate is blocked in the wait and receives the notification.
     void notify_waiting_thread() {
-        cv.notify_one();
+        { const std::lock_guard<std::mutex> lock(mutex); }
+        notify_waiting_thread_unlocked();
     }
 
 private:
+    /// \brief Notifies a single waiting thread without taking the lock
+    /// \note Only valid after the queue itself was changed under the lock, as push(), pop() and clear() do
+    void notify_waiting_thread_unlocked() {
+        cv.notify_one();
+    }
+
     std::queue<T> queue;
 
     mutable std::mutex mutex;
