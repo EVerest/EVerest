@@ -69,8 +69,7 @@ $ ./everest_api_client.py
 ```
 
 Payloads are JSON: the payload is the rest of the line, as typed, so it may
-contain spaces, `>` and `|`. The shell does not redirect output. `help` lists
-all commands, grouped by client. Useful settables
+contain spaces. `help` lists all commands, grouped by client. Useful settables
 (`set <name> <value>`): `show_topic`, `hide_topic`, `quiet`, `mute`,
 `prettify`, `colors`, `replyToPlaceholder`.
 
@@ -129,6 +128,64 @@ and sets the exit code of the client to 1. With `--optional` it prints a note
 and continues instead, for a message that only appears sometimes, such as a
 startup handshake that is absent when the script is run a second time
 against the same EVerest.
+
+### Variables and rules (on, every)
+
+Values can be kept and reused, and commands can run by themselves:
+
+- `let <name> <value>` sets a variable (JSON if the value is JSON, text
+  otherwise), `let --default <name> <value>` only if it is not set yet; `<module_id>.receive_* --save <name>` stores the received
+  payload. `${name}`, `${name.key}` and `${name.list[0]}` are replaced by the
+  value in any command (strings as they are, other values as compact JSON).
+  `vars` lists the variables.
+- `${= expression}` is replaced by the value of an expression over the
+  variables: numbers, strings, `true` / `false`, lists and dicts, `+ - * / // %`,
+  comparisons including `in`, `and` / `or` / `not`, `x if condition else y`,
+  `min max abs round int float`, `now()` (the current UTC time as a timestamp),
+  `json(value)` (the value as JSON, e.g. a string quoted and escaped to put it
+  into a payload) and `a.key` / `a[0]`. For example
+  `let energy ${= energy + amps * 230 / 3600}` or
+  `pm.send_x {"text": ${= json(msg.text)}}`. Nothing else can be evaluated, and
+  the size of repeated strings and formatted numbers is limited.
+- `on [--if <condition>] [--once] <module_id>.<receive_operation> <command>`
+  runs the command whenever that client receives a message. In the command,
+  `${msg}` is the received payload (`${msg.headers.replyTo}`, ...) and
+  `${topic}` its topic. A condition is `<path>=<value>`
+  (`--if msg.allow_power_on=true`) or an expression
+  (`--if ${= msg.voltage_V > limit}`). The client may be added later.
+- `every [--if <condition>] [--count N] <seconds> <command>` runs the command
+  periodically, with `--if` only while the condition holds (e.g.
+  `--if imd_active=1`). The interval and the count may be variables.
+- A rule runs `<module_id>.send_*` commands, `let` and `echo`; several
+  commands separated by `;` run in order, e.g.
+  `every 1 let energy ${= energy + power / 3600}; pm.send_powermeter_values ...`.
+  The `${...}` in a command are expanded right before it runs, so it sees the
+  variables the commands before it set. The conditions are checked right
+  before the commands run.
+  `rules` lists the rules and `rule_remove <n>` / `rule_remove all` removes
+  them.
+- Rules are global and run one after the other on one thread. The rules that
+  match a message run in the order they were created, so a `let` rule can
+  prepare a value for the next rule. Messages of different clients, the
+  `every` rules and the commands of the shell itself are not ordered with
+  respect to each other: what has to happen together belongs into one rule.
+- An error in the definition of a rule or variable, a missing variable and
+  an invalid payload stop a running script, like a timeout; errors while a
+  rule runs are printed as `ERROR:`.
+
+The shell does not redirect output: `>` and `|` are kept as typed, as
+expressions need them.
+
+For example, answering every powermeter start-transaction request, sending a
+powermeter value every 2 s, and forwarding a car's CP state to the charger's
+board support:
+
+```
+(Cmd) on pm.receive_request_start_transaction pm.send_reply_start_transaction ${msg.headers.replyTo} {"status":"OK"}
+(Cmd) let meter {"energy_Wh_import":{"total":0},"timestamp":"2026-01-01T00:00:00Z"}
+(Cmd) every 2 pm.send_powermeter_values ${meter}
+(Cmd) on ev_bsp.receive_set_cp_state bsp.send_event {"event":"${msg}"}
+```
 
 ### Quieting the console and marking phases
 
@@ -201,6 +258,61 @@ token provider + validator, external energy limit) and uses the blocking
 representative operation from **every** API module, including OCPP, to
 confirm each API client and module round-trips. It is fire-and-forget
 (no reply waits), so it never blocks and can be re-run any time.
+
+### Simulators
+
+`examples/simulators/` plays the simulation modules of EVerest through the
+EVerest API, each with fixed client ids that match the test configs. They
+are building blocks for session scripts, run with `@@ simulators/<name>.script`
+from a script in `examples/`, and leave their rules running.
+
+| Script | Simulates | Clients |
+|---|---|---|
+| `cable.script` | the charging cable of the YetiSimulator: CP state, PWM, relays | `bsp_api`, `ev_bsp_api` |
+| `ac_powermeter.script` | the AC powermeter of the YetiSimulator, from the current the car draws | `powermeter_api` |
+| `yeti.script` | the YetiSimulator: `cable.script` and `ac_powermeter.script` | |
+| `dc_power_supply.script` | the DCSupplySimulator and its DC powermeter | `psu_api`, `dc_powermeter_api` |
+| `imd.script` | the IMDSimulator | `imd_api` |
+| `ovm.script` | the OVMSimulator, from the DC supply's voltage | `ovm_api` |
+| `token_provider.script` | the DummyTokenProvider: a token when a session starts | `token_provider_api`, `evse_manager_api` |
+| `token_validator.script` | the DummyTokenValidator | `token_validator_api` |
+| `session_cost.script` | the DummySessionCostProvider | `session_cost_api` |
+
+Each script documents its variables; the ones set with `let --default` can be
+set before the script runs to configure it, like a module's config (e.g.
+`let token 123456` before `@@ simulators/token_provider.script`). Simulators
+share state through variables: `ovm.script` reports the `dc_voltage` of
+`dc_power_supply.script`. The SlacSimulator stays a module, as the car side of
+SLAC has no EVerest API.
+
+### Example: AC charging with ISO 15118-2
+
+`examples/ac_iso15118_2_session.script` charges with ISO 15118-2 against an
+EVerest started with `config/config-test-ac-iso15118-external-api.yaml`. The
+ISO 15118 stacks are real EVerest modules: the charger (`Evse15118D20`) and a
+simulated car (`PyEvJosev` and `EvManager`), connected by the `SlacSimulator`.
+Everything else is played by the simulators (`yeti.script`, the token
+provider and validator); the session script follows the session. The car plugs in by itself a few seconds after EVerest is up, so
+start the script right after EVerest:
+
+```
+run_script examples/ac_iso15118_2_session.script
+```
+
+The ISO 15118 modules need a network interface with an IPv6 link-local
+address (`device: auto` picks the first one).
+
+### Example: DC charging with ISO 15118-2 or DIN SPEC 70121
+
+`examples/dc_session.script` charges DC against an EVerest started with
+`config/config-test-dc-iso15118-external-api.yaml`. Like the AC example, the
+ISO 15118 / DIN 70121 stacks and the car are EVerest modules; the cable, the
+DC power supply with its powermeter, the isolation monitor, the over voltage
+monitor and the token provider and validator are the simulators. The session
+goes through cable check, pre-charge and current demand. The car uses
+ISO 15118-2; with its `supported_ISO15118_2` set to false in the config it
+charges with DIN SPEC 70121, and the header of the config says how to switch
+it to ISO 15118-20 (TLS 1.3). The same goes for the AC config.
 
 ### Gotchas when driving a live charge
 

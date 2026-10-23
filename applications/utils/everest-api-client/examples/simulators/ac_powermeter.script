@@ -1,0 +1,25 @@
+# The AC powermeter of the YetiSimulator (powermeter_API, client powermeter_api).
+# Run it after cable.script, whose variables it uses.
+#
+# With the relays closed the car draws the current the PWM duty cycle allows,
+# limited by the maximum current the car set (with 5 % PWM, ISO 15118, only the
+# car's maximum), on the car's phases; a negative maximum discharges. Every
+# second the powermeter publishes current, power and the imported and
+# exported energy integrated over time. Transactions are started and stopped
+# on request.
+#
+# Variables it keeps: amps, energy (imported Wh), energy_export (Wh).
+# Configure before running it: voltage (default 230 V).
+
+client_add powermeter powermeter_api
+
+let --default voltage 230
+let amps 0
+let energy 0
+let energy_export 0
+
+on powermeter_api.receive_request_start_transaction powermeter_api.send_reply_start_transaction ${msg.headers.replyTo} {"status":"OK"}
+on powermeter_api.receive_request_stop_transaction powermeter_api.send_reply_stop_transaction ${msg.headers.replyTo} {"status":"OK"}
+
+every 1 let amps ${= relays * (ev_max if 3 <= duty <= 7 else pwm_amps if ev_max == 0 else min(pwm_amps, abs(ev_max)) * (-1 if ev_max < 0 else 1))}; let energy ${= energy + max(amps, 0) * voltage * phases / 3600}; let energy_export ${= energy_export + max(-amps, 0) * voltage * phases / 3600}; powermeter_api.send_powermeter_values {"timestamp":"${= now()}","meter_id":"YETI_SIMULATOR","energy_Wh_import":{"total":${= round(energy, 1)},"L1":${= round(energy / phases, 1)},"L2":${= round(energy / phases, 1) if phases > 1 else 0},"L3":${= round(energy / phases, 1) if phases > 2 else 0}},"energy_Wh_export":{"total":${= round(energy_export, 1)}},"power_W":{"total":${= round(amps * voltage * phases, 1)},"L1":${= round(amps * voltage, 1)},"L2":${= round(amps * voltage, 1) if phases > 1 else 0},"L3":${= round(amps * voltage, 1) if phases > 2 else 0}},"current_A":{"L1":${amps},"L2":${= amps if phases > 1 else 0},"L3":${= amps if phases > 2 else 0},"N":0},"voltage_V":{"L1":${voltage},"L2":${voltage},"L3":${voltage}},"frequency_Hz":{"L1":50,"L2":50,"L3":50},"phase_seq_error":false}
+powermeter_api.send_powermeter_values {"timestamp":"${= now()}","meter_id":"YETI_SIMULATOR","energy_Wh_import":{"total":0},"power_W":{"total":0},"current_A":{"L1":0,"L2":0,"L3":0,"N":0},"voltage_V":{"L1":${voltage},"L2":${voltage},"L3":${voltage}}}

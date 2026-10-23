@@ -8,9 +8,11 @@ subscriptions and publications and lets the tests inject messages.
 
 import io
 import json
+import re
 import readline
 import sys
 import threading
+import time
 from pathlib import Path
 from types import SimpleNamespace
 from unittest import mock
@@ -574,14 +576,168 @@ def test_echo_prints_any_text(app, text):
     assert output(app, f"echo {text}") == text + "\n"
 
 
-# ---- payloads and echo are taken as typed ----
+# ---- variables, on and every ----
 
-@pytest.mark.parametrize("payload", ['{"a": 1, "b": [1, 2]}', '{"type":"T","sub_type":"","message":"a b"}',
-                                     '{"x": "a > b | c"}', """'{"a": 1}'"""])
+def test_variables_in_commands(app, capsys):
+    run(app, 'let meter {"id":"M1","limits":[16,32]}')
+    run(app, "let label plain text")
+    assert app.variables == {"meter": {"id": "M1", "limits": [16, 32]}, "label": "plain text"}
+    assert output(app, "echo ${meter.id} ${meter.limits[1]} ${label} ${meter.limits}") == 'M1 32 plain text [16,32]\n'
+    assert "meter" in output(app, "vars")
+    run(app, "echo ${missing}")
+    assert "unknown variable 'missing'" in capsys.readouterr().err
+    assert app.exit_code == 1
+
+
+def test_let_rejects_bad_names(app, capsys):
+    run(app, "let msg 1")
+    run(app, "let 1x 1")
+    assert capsys.readouterr().err.count("cannot be used as a variable name") == 2
+    assert app.variables == {}
+
+
+def test_receive_save(app):
+    run(app, "client_add powermeter pm")
+    app.fakes[-1].deliver("everest_api/1/powermeter/pm/e2m/start_transaction",
+                          {"headers": {"replyTo": "r/1"}, "payload": {"transaction_id": "T7"}})
+    run(app, "pm.receive_request_start_transaction --timeout 1 --save start")
+    run(app, 'pm.send_powermeter_values {"meter_id":"${start.payload.transaction_id}"}')
+    assert app.fakes[-1].published[-1][1] == '{"meter_id": "T7"}'
+
+
+def test_on_bridges_a_message_to_another_client(app):
+    run(app, "client_add ev_board_support ev_bsp")
+    run(app, "client_add evse_board_support bsp")
+    run(app, 'on ev_bsp.receive_set_cp_state bsp.send_event {"event":"${msg}"}')
+    app.fakes[0].deliver("everest_api/1/ev_board_support/ev_bsp/e2m/set_cp_state", "B")
+    app.rules.wait_idle()
+    assert app.fakes[1].published == [("everest_api/1/evse_board_support/bsp/m2e/event", '{"event": "B"}')]
+
+
+def test_on_conditions_and_once(app):
+    run(app, "client_add evse_board_support bsp")
+    run(app, 'on bsp.receive_allow_power_on --if msg.allow_power_on=true bsp.send_event {"event":"PowerOn"}')
+    run(app, 'on --if msg.allow_power_on=false bsp.receive_allow_power_on bsp.send_event {"event":"PowerOff"}')
+    run(app, "on --once bsp.receive_allow_power_on let first ${msg.reason}")
+    topic = "everest_api/1/evse_board_support/bsp/e2m/allow_power_on"
+    for value, reason in ((True, "a"), (False, "b"), (True, "c")):
+        app.fakes[0].deliver(topic, {"allow_power_on": value, "reason": reason})
+    app.rules.wait_idle()
+    assert [json.loads(data)["event"] for _, data in app.fakes[0].published] == ["PowerOn", "PowerOff", "PowerOn"]
+    assert app.variables == {"first": "a"}
+    assert len(app.rules.rules()) == 2
+
+
+def test_rules_are_expanded_when_they_run(app):
+    run(app, "on pm.receive_request_start_transaction pm.send_powermeter_values {\"meter_id\":\"${id}\"}")
+    run(app, "client_add powermeter pm")  # a rule may refer to a client added later
+    run(app, "let id first")
+    topic = "everest_api/1/powermeter/pm/e2m/start_transaction"
+    app.fakes[0].deliver(topic, {})
+    app.rules.wait_idle()
+    run(app, "let id second")
+    app.fakes[0].deliver(topic, {})
+    app.rules.wait_idle()
+    assert [data for _, data in app.fakes[0].published] == ['{"meter_id": "first"}', '{"meter_id": "second"}']
+
+
+def test_every_with_count(app):
+    run(app, "client_add powermeter pm")
+    run(app, "every 0.05 --count 3 pm.send_communication_check true")
+    deadline = time.monotonic() + 5
+    while len(app.fakes[0].published) < 3 and time.monotonic() < deadline:
+        time.sleep(0.01)
+    time.sleep(0.2)
+    app.rules.wait_idle()
+    assert len(app.fakes[0].published) == 3
+    assert app.rules.rules() == []
+
+
+def test_rule_remove(app, capsys):
+    run(app, "every 10 echo a")
+    run(app, "on pm.receive_heartbeat echo b")
+    assert "1: every 10s" in output(app, "rules")
+    run(app, "rule_remove 1")
+    assert [rule.rule_id for rule in app.rules.rules()] == [2]
+    run(app, "rule_remove 7")
+    assert "No rule '7'" in capsys.readouterr().err
+    run(app, "rule_remove all")
+    assert app.rules.rules() == []
+
+
+@pytest.mark.parametrize("line", ["on pm.receive_heartbeat pm.receive_heartbeat",
+                                  "on pm.send_communication_check echo x",
+                                  "every 1 wait_for x",
+                                  "every 0 echo x",
+                                  "on --if nonsense pm.receive_heartbeat echo x"])
+def test_invalid_rules_are_rejected(app, capsys, line):
+    run(app, line)
+    assert capsys.readouterr().err
+    assert app.rules.rules() == []
+
+
+def test_a_failing_rule_is_reported(app):
+    run(app, "on pm.receive_heartbeat nobody.send_x {}")
+    run(app, "client_add powermeter pm")
+    with mock.patch.object(app, "log_event", wraps=app.log_event) as log_event:
+        app.fakes[0].deliver("everest_api/1/powermeter/pm/e2m/heartbeat", 1)
+        app.rules.wait_idle()
+    assert any(call.args[0] == "ERROR:" and "not a send command" in call.args[1]
+               for call in log_event.call_args_list)
+
+
+# ---- expressions ----
+
+@pytest.mark.parametrize("expression,expected", [
+    ("1 + 2 * 3", "7"),
+    ("min(32, 16) if 3 <= duty <= 7 else 0", "0"),
+    ("round(energy / 3, 1)", "33.3"),
+    ("m.a.b[1] * 10", "20"),
+    ('m["a"]["b"][0]', "1"),
+    ("true and not false", "true"),
+    ("'x' if duty > 50 else 'y'", "x"),
+])
+def test_expressions(app, expression, expected):
+    run(app, "let duty 53.3")
+    run(app, "let energy 100")
+    run(app, 'let m {"a":{"b":[1,2]}}')
+    assert output(app, f"echo ${{= {expression}}}") == expected + "\n"
+
+
+@pytest.mark.parametrize("expression", ['__import__("os")', "duty.real", "(lambda: 1)()", "1/0", "nope + 1", "1 +"])
+def test_bad_expressions_are_errors(app, capsys, expression):
+    run(app, "let duty 1")
+    run(app, f"echo ${{= {expression}}}")
+    assert capsys.readouterr().err
+    assert app.exit_code == 1
+
+
+def test_now_is_a_utc_timestamp(app):
+    out = output(app, "echo ${= now()}").strip()
+    assert re.fullmatch(r"\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z", out)
+
+
+def test_rules_and_echo_keep_redirection_characters(app, tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    assert output(app, "echo a | b > c") == "a | b > c\n"
+    run(app, "let phases 3")
+    run(app, "on pm.receive_heartbeat let x ${= 1 if phases > 1 else 0}")
+    assert app.rules.rules()[0].command == "let x ${= 1 if phases > 1 else 0}"
+    run(app, "client_add powermeter pm")
+    app.fakes[0].deliver("everest_api/1/powermeter/pm/e2m/heartbeat", 1)
+    app.rules.wait_idle()
+    assert app.variables["x"] == 1
+    assert list(tmp_path.iterdir()) == []
+
+
+# ---- payloads are the rest of the line ----
+
+@pytest.mark.parametrize("payload", ['{"a": 1, "b": [1, 2]}', '{"type":"T","sub_type":"","message":"a b c"}',
+                                     '{"x": "a > b | c"}'])
 def test_payload_as_typed(app, payload):
     run(app, "client_add powermeter pm")
     run(app, f"pm.send_powermeter_values {payload}")
-    assert json.loads(app.fakes[0].published[-1][1]) == json.loads(payload.strip("'"))
+    assert json.loads(app.fakes[0].published[-1][1]) == json.loads(payload)
 
 
 def test_payload_after_reply_to_and_parameters(app):
@@ -593,12 +749,22 @@ def test_payload_after_reply_to_and_parameters(app):
     assert app.fakes[1].published[-1] == ("r/2", '{"status": "OK", "error": ""}')
 
 
+def test_payload_with_spaces_in_a_rule(app):
+    run(app, "client_add over_voltage_monitor ovm")
+    run(app, 'on ovm.receive_reset_over_voltage_error ovm.send_clear_error {"type": "T", "sub_type": "", "message": "a b"}')
+    app.fakes[0].deliver("everest_api/1/over_voltage_monitor/ovm/e2m/reset_over_voltage_error", None)
+    app.rules.wait_idle()
+    assert json.loads(app.fakes[0].published[-1][1]) == {"type": "T", "sub_type": "", "message": "a b"}
+
+
 def test_missing_payload(app, capsys):
     run(app, "client_add powermeter pm")
     run(app, "pm.send_powermeter_values")
     assert "payload is missing" in capsys.readouterr().err
     assert app.fakes[0].published == []
 
+
+# ---- third review ----
 
 def test_alias_keeps_the_payload(app):
     run(app, "client_add powermeter pm")
@@ -613,7 +779,108 @@ def test_terminator_is_not_part_of_the_payload(app):
     assert app.fakes[0].published[-1][1] == '{"a": "x;y"}'
 
 
-def test_echo_does_not_redirect(app, tmp_path, monkeypatch):
-    monkeypatch.chdir(tmp_path)
-    assert output(app, "echo a | b > c") == "a | b > c\n"
-    assert list(tmp_path.iterdir()) == []
+@pytest.mark.parametrize("expression", ["int(1e400)", "not " * 3000 + "1", '"%99999d" % 1', '"a" * 500000000',
+                                        'float("nan")'])
+def test_every_evaluation_error_fails_the_script(app, tmp_path, expression):
+    script = tmp_path / "s.script"
+    script.write_text(f"echo ${{= {expression}}}\necho NOT-REACHED\n")
+    assert "NOT-REACHED" not in output(app, f"run_script {script}")
+    assert app.exit_code == 1
+
+
+def test_substitution_is_one_pass_and_allows_braces(app):
+    app.set_variable("a", "${b}")  # a value that looks like a reference is not expanded again
+    run(app, "let b X")
+    run(app, 'let s say "hi"')
+    assert output(app, 'echo ${= a} ${= json({"k": "}"})} ${= json(s)} ${= 3 in (1, 3)} ${other-thing}') == \
+        '${b} {"k":"}"} "say \\"hi\\"" true ${other-thing}\n'
+
+
+def test_definition_errors_fail_the_script(app, tmp_path, capsys):
+    for line in ("let 1x 2", "on nobody pm.send_x {}", "on pm.receive_y wait_for x", "every 0 echo x",
+                 "rule_remove 9"):
+        app.exit_code = 0
+        script = tmp_path / "s.script"
+        script.write_text(f"{line}\necho NOT-REACHED\n")
+        assert "NOT-REACHED" not in output(app, f"run_script {script}"), line
+        assert app.exit_code == 1, line
+
+
+def test_send_errors_in_rules_are_reported(app):
+    run(app, "client_add powermeter pm")
+    run(app, 'on pm.receive_heartbeat pm.send_powermeter_values {"m": "${msg}"}')
+    with mock.patch.object(app, "log_event", wraps=app.log_event) as log_event:
+        app.fakes[0].deliver("everest_api/1/powermeter/pm/e2m/heartbeat", 'say "hi"')
+        app.rules.wait_idle()
+    assert any(call.args[0] == "ERROR:" and "invalid JSON payload" in call.args[1]
+               for call in log_event.call_args_list)
+    run(app, "rule_remove all")
+    run(app, 'on pm.receive_heartbeat pm.send_powermeter_values {"m": ${= json(msg)}}')
+    app.fakes[0].deliver("everest_api/1/powermeter/pm/e2m/heartbeat", 'say "hi"')
+    app.rules.wait_idle()
+    assert json.loads(app.fakes[0].published[-1][1]) == {"m": 'say "hi"'}
+
+
+def test_save_checks_the_name(app, capsys):
+    run(app, "client_add powermeter pm")
+    app.fakes[0].deliver("everest_api/1/powermeter/pm/e2m/start_transaction", {})
+    run(app, "pm.receive_request_start_transaction --timeout 1 --save msg")
+    assert "cannot be used as a variable name" in capsys.readouterr().err
+    assert "msg" not in app.variables
+
+
+def test_a_queued_once_rule_can_still_be_removed(app):
+    started, release = threading.Event(), threading.Event()
+    run(app, "on --once pm.receive_heartbeat let x 1")
+    real_run = app.rules._run
+
+    def slow_run(rule, scope):
+        if rule.rule_id == 99:
+            started.set()
+            release.wait(5)
+        real_run(rule, scope)
+    with mock.patch.object(app.rules, "_run", slow_run):
+        blocker = app.rules.add_on("pm.receive_block", "let y 1")
+        blocker.rule_id = 99
+        app.rules.message_received("pm.receive_block", {})
+        started.wait(5)
+        app.rules.message_received("pm.receive_heartbeat", {"msg": 1})
+        assert [rule.rule_id for rule in app.rules.rules() if rule.once]  # still listed while queued
+        run(app, "rule_remove 1")
+        release.set()
+        app.rules.wait_idle()
+    assert "x" not in app.variables
+
+
+def test_several_commands_run_in_order_in_one_tick(app):
+    run(app, "let n 0")
+    run(app, "every 0.05 --count 3 let n ${= n + 1}; let twice ${= n * 2}")
+    deadline = time.monotonic() + 5
+    while app.rules.rules() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    app.rules.wait_idle()
+    assert app.variables["n"] == 3 and app.variables["twice"] == 6
+
+
+def test_every_with_an_expression_condition_and_variables(app):
+    run(app, "let --default period 0.05")
+    run(app, "let --default period 9")
+    run(app, "let times 2")
+    run(app, "let on 0")
+    run(app, "let n 0")
+    run(app, "every ${period} --count ${times} --if ${= on == 1 and n < 10} let n ${= n + 1}")
+    time.sleep(0.3)
+    app.rules.wait_idle()
+    assert app.variables["n"] == 0 and app.rules.rules()
+    run(app, "let on 1")
+    deadline = time.monotonic() + 5
+    while app.rules.rules() and time.monotonic() < deadline:
+        time.sleep(0.01)
+    app.rules.wait_idle()
+    assert app.variables["n"] == 2
+
+
+def test_rules_stop_on_quit(app):
+    run(app, "every 0.05 let x 1")
+    app.postloop()
+    assert app.rules.rules() == []

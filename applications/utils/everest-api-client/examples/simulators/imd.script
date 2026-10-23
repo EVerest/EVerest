@@ -1,0 +1,21 @@
+# The IMDSimulator, played through the EVerest API: an isolation monitor
+# (isolation_monitor_API, client imd_api).
+#
+#   - between start and stop it reports an isolation measurement periodically;
+#   - a self test reports its result (immediately; the IMDSimulator waits 3 s).
+#
+# Configure before running it: imd_resistance (default 900000 Ohm),
+# imd_interval (default 1 s), imd_selftest_success (default true).
+# Change imd_resistance while it runs to simulate an isolation fault.
+
+client_add isolation_monitor imd_api
+
+let --default imd_resistance 900000
+let --default imd_interval 1
+let --default imd_selftest_success true
+let imd_active 0
+
+on imd_api.receive_start let imd_active 1
+on imd_api.receive_stop let imd_active 0
+on imd_api.receive_start_self_test imd_api.send_self_test_result ${imd_selftest_success}
+every ${imd_interval} --if imd_active=1 imd_api.send_isolation_measurement {"resistance_F_Ohm":${imd_resistance}}
