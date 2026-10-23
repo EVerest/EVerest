@@ -5,7 +5,7 @@
 name: Backport
 
 on:
-  pull_request_target:
+  pull_request_target: # zizmor: ignore[dangerous-triggers] PR commits are cherry-picked, never executed
     types:
       - closed
       - labeled
@@ -15,31 +15,38 @@ jobs:
     if: github.event.pull_request.labels && contains(join(github.event.pull_request.labels.*.name, ', '), 'backport ')
     name: backport pr
     runs-on: ubuntu-24.04
-    permissions:
-      contents: write
-      pull-requests: write
+    # Every step authenticates with the App token, so GITHUB_TOKEN gets no permissions.
+    permissions: {}
     outputs:
       created_pull_numbers: ${{ steps.backport.outputs.created_pull_numbers }}
     steps:
-      - name: Check actor permissions
-        id: check-permissions
-        uses: prince-chrismc/check-actor-permissions-action@v4.0.0
-        with:
-          permission: write
-
       - name: Generate App Token
         id: app-token
         uses: actions/create-github-app-token@v3
         with:
-          app-id: ${{ secrets.BACKPORT_APP_ID }}
+          client-id: ${{ secrets.BACKPORT_APP_CLIENT_ID }}
           private-key: ${{ secrets.BACKPORT_APP_PRIVATE_KEY }}
+          permission-contents: write
+          permission-metadata: read
+          permission-pull-requests: write
 
+      - name: Check actor permissions
+        id: check-permissions
+        uses: prince-chrismc/check-actor-permissions-action@v4.0.0
+        with:
+          github_token: ${{ steps.app-token.outputs.token }}
+          permission: write
+
+      # backport-action cherry-picks in this clone and pushes with its stored credentials.
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          persist-credentials: true
 
       - name: Create backport PR
         id: backport
-        uses: korthout/backport-action@v4.6.0
+        uses: korthout/backport-action@v4.7.0
         with:
           github_token: ${{ steps.app-token.outputs.token }}
           merge_commits: "skip"

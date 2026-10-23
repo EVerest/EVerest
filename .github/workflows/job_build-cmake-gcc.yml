@@ -54,11 +54,11 @@ on:
         default: 'wheels'
         type: string
     secrets:
-      coverage_deploy_token:
-        description: 'The token to use to deploy the coverage report'
-        required: true
-      SA_GITHUB_SSH_KEY:
-        description: 'The ssh key to use for git operations'
+      PRIVATE_DEPS_SSH_KEY:
+        description: >-
+          Optional SSH private key granting read access to private
+          dependencies. Leave unset when every dependency is public, which is
+          the case for everest-core upstream.
         required: false
     outputs:
       ctest_report_artifact_name:
@@ -81,6 +81,8 @@ jobs:
   build-cmake-gcc:
     name: build + unit tests
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     env:
       CTEST_REPORT_ARTIFACT_NAME: ctest-report
       COVERAGE_REPORT_ARTIFACT_NAME: coverage-report
@@ -96,26 +98,10 @@ jobs:
       dist_artifact_name: ${{ env.DIST_ARTIFACT_NAME }}
       wheels_artifact_name: ${{ env.WHEELS_ARTIFACT_NAME }}
     steps:
-      - name: Setup SSH Agent, optional with SSH key
-        env:
-          SSH_KEY: ${{ secrets.SA_GITHUB_SSH_KEY }}
-        run: |
-          ssh-agent -a $SSH_AUTH_SOCK > /dev/null
-          if [ -z "${{ env.SSH_KEY }}" ]; then
-            echo "No SSH key provided, skipping SSH key setup"
-            exit 0
-          fi
-          mkdir -p ~/.ssh
-          echo "${{ env.SSH_KEY }}" > ~/.ssh/id_ed25519
-          chmod 600 ~/.ssh/id_ed25519
-          # Check if github.com is already in known_hosts, if not, add it
-          if ! grep -q "^github.com " ~/.ssh/known_hosts; then
-            ssh-keyscan github.com >> ~/.ssh/known_hosts
-          fi
-          ssh-add ~/.ssh/id_ed25519
       - name: Checkout local github actions
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/everest-ci
           ref: ${{ inputs.ref_everest_ci }}
           path: everest-ci
@@ -136,11 +122,19 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           path: source
+      - name: Setup SSH agent for private dependencies
+        uses: ./source/.github/actions/setup-ssh-agent
+        with:
+          ssh_private_key: ${{ secrets.PRIVATE_DEPS_SSH_KEY }}
+          ssh_auth_sock: ${{ env.SSH_AUTH_SOCK }}
       - name: Setup run scripts
+        env:
+          BUILD_KIT_SCRIPTS_DIRECTORY: ${{ inputs.build_kit_scripts_directory }}
         run: |
           mkdir scripts
-          rsync -a source/${{ inputs.build_kit_scripts_directory }}/ scripts
+          rsync -a "source/${BUILD_KIT_SCRIPTS_DIRECTORY}/" scripts
       - name: Download build-kit image
         uses: actions/download-artifact@v8
         with:
@@ -148,11 +142,11 @@ jobs:
       - name: Load build-kit image
         run: |
           docker load -i build-kit.tar
-          docker image tag ${{ env.BUILD_KIT_IMAGE }} build-kit
+          docker image tag "$BUILD_KIT_IMAGE" build-kit
       - name: Compile
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
           --env SSH_AUTH_SOCK=/ssh-agent \
           --volume "${{ github.workspace }}:/ext" \
           --name compile-container \
@@ -180,7 +174,7 @@ jobs:
         id: run_unit_tests
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
           --env SSH_AUTH_SOCK=/ssh-agent \
           --volume "${{ github.workspace }}:/ext" \
           --name unit-test-container \
@@ -221,7 +215,10 @@ jobs:
       #   uses: ./everest-ci/github-actions/deploy-ci-artifact
       #   with:
       #     target_repo: ${{ inputs.artifact_deploy_target_repo }}
-      #     github_token: ${{ secrets.coverage_deploy_token }}
+      #     github_token: ${{ steps.coverage-deploy-token.outputs.token }}
+      # Re-enabling this needs a "Mint coverage deploy token" step using
+      # actions/create-github-app-token@v3 with COVERAGE_DEPLOY_APP_CLIENT_ID and
+      # COVERAGE_DEPLOY_APP_PRIVATE_KEY; see job_create-coverage-badge.yml.
       #     artifact_name: coverage-report
       #     artifact_directory: ${{ inputs.coverage_report_path }}
       # - name: Write summary coverage
@@ -232,7 +229,7 @@ jobs:
         id: create_dist
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
           --env SSH_AUTH_SOCK=/ssh-agent \
           --volume "${{ github.workspace }}:/ext" \
           --name dist-container \
@@ -255,7 +252,7 @@ jobs:
         id: create_wheels
         run: |
           docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --mount "type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent" \
           --env SSH_AUTH_SOCK=/ssh-agent \
           --volume "${{ github.workspace }}:/ext" \
           --name wheels-container \

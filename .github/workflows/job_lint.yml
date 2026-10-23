@@ -17,16 +17,20 @@ jobs:
   lint:
     name: clang-format
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     steps:
       - name: Checkout local github actions
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           repository: ${{ github.repository_owner }}/everest-ci
           ref: ${{ inputs.ref_everest_ci }}
           path: everest-ci
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
+          persist-credentials: false
           path: source
       - name: Run clang-format
         uses: ./everest-ci/github-actions/run-clang-format
