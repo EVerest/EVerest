@@ -175,6 +175,18 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_sessionFalse) {
 }
 #endif
 
+TEST_F(V2gCtxTest, v2g_ctx_init_charging_session_keeps_free_service) {
+    EXPECT_EQ(ctx->evse_v2g_data.charge_service.FreeService, 0);
+
+    ctx->evse_v2g_data.charge_service.FreeService = 1;
+
+    v2g_ctx_init_charging_session(ctx.get(), false);
+    EXPECT_EQ(ctx->evse_v2g_data.charge_service.FreeService, 1);
+
+    v2g_ctx_init_charging_session(ctx.get(), true);
+    EXPECT_EQ(ctx->evse_v2g_data.charge_service.FreeService, 1);
+}
+
 TEST(valgrind, memcheck) {
     // v2g_ctx_free() now sets shutdown and joins the event thread,
     // so there is no use-after-free during cleanup.

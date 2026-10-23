@@ -107,6 +107,7 @@ din::SessionConfig make_din_config(const session::SessionConfig& config) {
     cfg.evse_id =
         config.evse_id_din.empty() ? din_evse_id_to_hex(config.evse_id) : din_evse_id_from_hex(config.evse_id_din);
     cfg.evse_peak_current_ripple = 1.0;
+    cfg.free_service = config.free_service;
 
     // The DIN ChargeService advertises exactly one mode: DC_extended when offered, else DC_core. With
     // neither configured the DC_extended default stands, so an EV asking for DC_core against e.g. a

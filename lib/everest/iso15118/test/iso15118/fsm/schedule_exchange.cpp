@@ -70,8 +70,9 @@ d20::SelectedServiceParameters make_service_parameters(dt::ServiceCategory energ
 // parameter discovery has finished, so the schedule exchange state has to accept a ServiceDiscoveryReq.
 SCENARIO("ISO15118-20 schedule exchange service discovery escape") {
 
-    const auto run = [](dt::ServiceCategory energy_service) {
-        const auto evse_setup = make_evse_setup(energy_service);
+    const auto run = [](dt::ServiceCategory energy_service, bool free_service) {
+        auto evse_setup = make_evse_setup(energy_service);
+        evse_setup.free_service = free_service;
 
         std::optional<d20::PauseContext> pause_ctx{std::nullopt};
         session::feedback::Callbacks callbacks{};
@@ -96,22 +97,25 @@ SCENARIO("ISO15118-20 schedule exchange service discovery escape") {
             bool session_stopped;
             dt::ResponseCode response_code;
             std::vector<dt::ServiceCategory> offered_energy_services;
+            std::vector<bool> offered_free_flags;
         };
 
         const auto res = ctx.get_response<message_20::ServiceDiscoveryResponse>();
         REQUIRE(res.has_value());
 
         std::vector<dt::ServiceCategory> offered_energy_services;
+        std::vector<bool> offered_free_flags;
         for (const auto& service : res.value().energy_transfer_service_list) {
             offered_energy_services.push_back(service.service_id);
+            offered_free_flags.push_back(service.free_service);
         }
 
-        return Outcome{result.transitioned(), fsm.get_current_state_id(), ctx.session_stopped,
-                       res.value().response_code, offered_energy_services};
+        return Outcome{result.transitioned(),     fsm.get_current_state_id(), ctx.session_stopped,
+                       res.value().response_code, offered_energy_services,    offered_free_flags};
     };
 
     GIVEN("An AC_DER_SAE session") {
-        const auto outcome = run(dt::ServiceCategory::AC_DER_SAE);
+        const auto outcome = run(dt::ServiceCategory::AC_DER_SAE, false);
 
         THEN("The service discovery is answered and the service detail state is entered") {
             REQUIRE(outcome.response_code == dt::ResponseCode::OK);
@@ -123,7 +127,7 @@ SCENARIO("ISO15118-20 schedule exchange service discovery escape") {
     }
 
     GIVEN("An AC_DER_IEC session") {
-        const auto outcome = run(dt::ServiceCategory::AC_DER_IEC);
+        const auto outcome = run(dt::ServiceCategory::AC_DER_IEC, false);
 
         THEN("The service discovery is answered and the service detail state is entered") {
             REQUIRE(outcome.response_code == dt::ResponseCode::OK);
@@ -134,8 +138,17 @@ SCENARIO("ISO15118-20 schedule exchange service discovery escape") {
         }
     }
 
+    GIVEN("An AC_DER_SAE session with the charge service offered free of charge") {
+        const auto outcome = run(dt::ServiceCategory::AC_DER_SAE, true);
+
+        THEN("The restarted service discovery keeps FreeService=true") {
+            REQUIRE(outcome.response_code == dt::ResponseCode::OK);
+            REQUIRE(outcome.offered_free_flags == std::vector{true});
+        }
+    }
+
     GIVEN("A plain AC session") {
-        const auto outcome = run(dt::ServiceCategory::AC);
+        const auto outcome = run(dt::ServiceCategory::AC, false);
 
         THEN("ResponseCode: FAILED_SequenceError and the session is stopped") {
             REQUIRE(outcome.response_code == dt::ResponseCode::FAILED_SequenceError);

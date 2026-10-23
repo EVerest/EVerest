@@ -81,6 +81,10 @@ bool evse_managerImpl::handle_force_unlock(int& connector_id) {
     return true;
 }
 
+void evse_managerImpl::handle_set_free_service(bool& free_service) {
+    // your code for cmd set_free_service goes here
+}
+
 bool evse_managerImpl::handle_external_ready_to_start_charging() {
     publish_ready(true);
     return true;

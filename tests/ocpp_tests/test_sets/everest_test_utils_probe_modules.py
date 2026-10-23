@@ -134,6 +134,7 @@ def implement_ocpp16_probe_commands(
         _add(evse_manager, "resume_charging", True)
         _add(evse_manager, "stop_transaction", True)
         _add(evse_manager, "force_unlock", True)
+        _add(evse_manager, "set_free_service", None)
         _add(evse_manager, "update_allowed_energy_transfer_modes", None)
         _add(evse_manager, "external_ready_to_start_charging", True)
         _add(evse_manager, "set_plug_and_charge_configuration", True)

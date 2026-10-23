@@ -328,6 +328,10 @@ void TbdController::update_iso2_pnc_config(bool pnc_enabled, bool central_contra
     s->central_contract_validation_allowed = central_contract_validation_allowed;
 }
 
+void TbdController::update_free_service(bool free_service) {
+    evse_setup.handle()->free_service = free_service;
+}
+
 void TbdController::update_dc_limits(const d20::DcTransferLimits& limits) {
 
     {

@@ -102,6 +102,7 @@ private:
     void generate_api_cmd_resume_charging();
     void generate_api_cmd_stop_transaction();
     void generate_api_cmd_force_unlock();
+    void generate_api_cmd_set_free_service();
     void generate_api_cmd_random_delay_enable();
     void generate_api_cmd_random_delay_disable();
     void generate_api_cmd_random_delay_cancel();
