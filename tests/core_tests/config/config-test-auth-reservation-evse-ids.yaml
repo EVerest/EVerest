@@ -1,0 +1,25 @@
+# EVSE managers are connected in an order that does not match their ids (3, then 1), so the position of an EVSE
+# manager in the connection list can not be derived from its id.
+active_modules:
+  auth:
+    module: Auth
+    config_module:
+      connection_timeout: 10
+    connections:
+      token_provider:
+        - module_id: probe
+          implementation_id: token_provider
+      token_validator:
+        - module_id: probe
+          implementation_id: token_validator
+      evse_manager:
+        - module_id: probe
+          implementation_id: evse_manager_id_3
+        - module_id: probe
+          implementation_id: evse_manager_id_1
+  probe:
+    module: ProbeModule
+    connections:
+      reservation:
+        - module_id: auth
+          implementation_id: reservation
