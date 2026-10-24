@@ -338,12 +338,12 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
                                                                              const AttributeEnum& attribute_enum,
                                                                              const std::string& value,
                                                                              const std::string& source) {
-    auto transaction = this->db->begin_transaction();
-
     const auto _variable_id = this->get_variable_id(component_id, variable_id);
     if (_variable_id == -1) {
         return SetVariableStatusEnum::Rejected;
     }
+
+    auto transaction = this->db->begin_transaction();
 
     const std::string insert_query =
         "UPDATE VARIABLE_ATTRIBUTE SET VALUE = ?, VALUE_SOURCE = ? WHERE VARIABLE_ID = ? AND TYPE_ID = ?";
