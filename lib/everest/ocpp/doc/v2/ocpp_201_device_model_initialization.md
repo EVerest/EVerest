@@ -87,11 +87,11 @@ variables that have no row in the component tables:
 | `VARIABLE_ATTRIBUTE_VALUE` | attribute values of variables without a row in the component tables, written by `DeviceModelStorageSqlite::set_stored_value`. `set_variable_attribute_value` rejects a variable without a row. The primary key is the name key plus the attribute type. `OWNER` records the owner of the variable when the value was stored. |
 
 The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
-`VARIABLE_NAME` and `VARIABLE_INSTANCE`. SQLite treats NULLs as distinct in keys, so an absent instance is stored as
-`''` and an absent EVSE or connector id as `0`. A component config with an empty component or variable instance, or
-with an EVSE or connector id of `0`, therefore stops the initialization with an error that names the file. Other
-invalid component configs are skipped with a warning; a skipped custom config is then replaced by the standardized
-config of the same component, if there is one.
+`VARIABLE_NAME` and `VARIABLE_INSTANCE`. Names and instances compare case-insensitively, like OCPP identifiers. SQLite
+treats NULLs as distinct in keys, so an absent instance is stored as `''` and an absent EVSE or connector id as `0`. A
+component config with an empty component or variable instance, or with an EVSE or connector id of `0`, therefore stops
+the initialization with an error that names the file. Other invalid component configs are skipped with a warning; a
+skipped custom config is then replaced by the standardized config of the same component, if there is one.
 
 Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
 configured removes all of its monitors without an owner, custom monitors included. Monitors with an owner belong to a

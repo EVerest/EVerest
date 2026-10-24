@@ -21,6 +21,15 @@ const static std::string DEFAULT_SOURCE = "default";
 constexpr bool DEFAULT_PERSISTENT = true;
 constexpr bool DEFAULT_CONSTANT = false;
 
+// Joins the monitors (alias vm) to the variables (alias v) and components (alias c) of their name key. Names and
+// instances are case-insensitive, like OCPP identifiers.
+constexpr auto MONITOR_VARIABLE_JOIN =
+    "JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME COLLATE NOCASE AND "
+    "IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE COLLATE NOCASE "
+    "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND c.NAME = vm.COMPONENT_NAME COLLATE NOCASE AND "
+    "IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE COLLATE NOCASE AND IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND "
+    "IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID";
+
 using namespace everest::db;
 using namespace everest::db::sqlite;
 
@@ -916,12 +925,9 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
 
 void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
     const std::string delete_query =
-        "DELETE FROM VARIABLE_MONITORING WHERE OWNER IS NULL AND ID IN (SELECT vm.ID FROM "
-        "VARIABLE_MONITORING vm JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME AND "
-        "IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND "
-        "c.NAME = vm.COMPONENT_NAME AND IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE AND "
-        "IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID WHERE " +
-        variable_condition + ")";
+        std::string("DELETE FROM VARIABLE_MONITORING WHERE OWNER IS NULL AND ID IN (SELECT vm.ID FROM "
+                    "VARIABLE_MONITORING vm ") +
+        MONITOR_VARIABLE_JOIN + " WHERE " + variable_condition + ")";
     try {
         auto delete_stmt = this->database->new_statement(delete_query);
         delete_stmt->bind_int("@id", static_cast<int>(id));
@@ -1228,13 +1234,9 @@ std::vector<VariableMonitoringMeta> InitDeviceModelDb::get_variable_monitors_fro
     std::vector<VariableMonitoringMeta> monitors{};
 
     const std::string select_query =
-        "SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, vm.REFERENCE_VALUE "
-        "FROM VARIABLE_MONITORING vm "
-        "JOIN VARIABLE v ON v.NAME = vm.VARIABLE_NAME AND IFNULL(v.INSTANCE, '') = vm.VARIABLE_INSTANCE "
-        "JOIN COMPONENT c ON c.ID = v.COMPONENT_ID AND c.NAME = vm.COMPONENT_NAME AND "
-        "IFNULL(c.INSTANCE, '') = vm.COMPONENT_INSTANCE AND IFNULL(c.EVSE_ID, 0) = vm.EVSE_ID AND "
-        "IFNULL(c.CONNECTOR_ID, 0) = vm.CONNECTOR_ID "
-        "WHERE v.ID = @variable_id";
+        std::string("SELECT vm.TYPE_ID, vm.ID, vm.SEVERITY, vm.'TRANSACTION', vm.VALUE, vm.CONFIG_TYPE_ID, "
+                    "vm.REFERENCE_VALUE FROM VARIABLE_MONITORING vm ") +
+        MONITOR_VARIABLE_JOIN + " WHERE v.ID = @variable_id";
 
     auto select_stmt = this->database->new_statement(select_query);
     select_stmt->bind_int(1, clamp_to<int>(variable_id));
