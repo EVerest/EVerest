@@ -30,6 +30,10 @@ struct VariableMonitoringPeriodic {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
+/// \brief The owner of the variables whose values DeviceModel holds in memory, and of a variable without an owner. A
+/// variable of another owner is held by the storage of that owner, which changes its value without DeviceModel.
+inline constexpr auto VARIABLE_OWNER_OCPP = "OCPP";
+
 /// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;

@@ -3,8 +3,8 @@
 
 /// \file charge_point_config_factory_v16_tests.cpp
 /// \brief Tests that the OCPP 1.6 config factory backs the configuration with the composed device model
-/// storage: variables supplied by an EVerest device model storage (source "EVEREST") are readable and
-/// writable through the returned configuration, next to the SQLite-backed OCPP source — the same
+/// storage: variables supplied by an EVerest device model storage (owner "EVEREST") are readable and
+/// writable through the returned configuration, next to the SQLite-backed OCPP storage — the same
 /// composition the OCPP 2.x path provides to its ChargePoint.
 
 #include <gtest/gtest.h>

@@ -2,11 +2,9 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <everest/ocpp_module_common/device_model/composed_device_model_storage.hpp>
+#include <everest/ocpp_module_common/device_model/definitions.hpp>
 
 #include <stdexcept>
-
-static constexpr auto VARIABLE_OWNER_OCPP = "OCPP";
-static constexpr auto VARIABLE_OWNER_EVEREST = "EVEREST";
 
 namespace ocpp_module_common::device_model {
 

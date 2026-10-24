@@ -50,12 +50,12 @@ struct config_factory_result_t {
 /// migration from the legacy OCPP 1.6 JSON config on the first startup (see \ref Ocpp16DeviceModelParams),
 /// then returns a device-model-backed configuration after an integrity check.
 /// The returned configuration is backed by the composed device model storage: the SQLite device model
-/// database as source "OCPP" and \p everest_device_model as source "EVEREST" — the same composition the
+/// database as owner "OCPP" and \p everest_device_model as owner "EVEREST" — the same composition the
 /// OCPP 2.x path provides to its ChargePoint.
 /// \param ocpp_share_path The share path of the OCPP module, used to resolve relative paths in the config.
 /// \param config The OCPP 1.6 device-model configuration parameters.
 /// \param n_evse The number of EVSEs, used for the device model integrity check.
-/// \param everest_device_model Registered as source "EVEREST" in the composed device model storage; must be
+/// \param everest_device_model Registered as owner "EVEREST" in the composed device model storage; must be
 ///        fully constructed (components/variables created) before this call.
 /// \return The configuration and the custom config mappings it uses.
 config_factory_result_t
