@@ -229,6 +229,22 @@ std::vector<std::filesystem::path> get_component_config_from_directory(const std
     return component_config_files;
 }
 
+void warn_about_source_keys(const std::filesystem::path& path, const json& data) {
+    if (!data.contains("properties")) {
+        return;
+    }
+    std::string variables;
+    for (const auto& [key, variable] : data.at("properties").items()) {
+        if (variable.contains("source")) {
+            variables += (variables.empty() ? "" : ", ") + variable.value("variable_name", key);
+        }
+    }
+    if (!variables.empty()) {
+        EVLOG_warning << path.string() << ": the component config key \"source\" is no longer supported and is ignored "
+                      << "(variables: " << variables << ")";
+    }
+}
+
 ///
 /// \brief Read component config from given files.
 /// \param components_config_path   The paths to the component config files.
@@ -240,7 +256,9 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
         try {
-            auto parsed = parse_component_config_from_json(json::parse(config_file));
+            const auto data = json::parse(config_file);
+            warn_about_source_keys(path, data);
+            auto parsed = parse_component_config_from_json(data);
             components.insert({parsed.first, std::move(parsed.second)});
         } catch (const json::parse_error& e) {
             EVLOG_error << "Error while parsing config file: " << path;
@@ -1360,11 +1378,6 @@ void from_json(const json& j, DeviceModelVariable& c) {
         if (c.instance->empty()) {
             throw ComponentConfigNameKeyError("Variable " + c.name + " has an empty instance");
         }
-    }
-
-    if (j.contains("source")) {
-        EVLOG_warning << "Variable " << c.name << ": the component config key \"source\" is no longer supported and is "
-                      << "ignored";
     }
 
     if (j.contains(DEFAULT_SOURCE)) {
