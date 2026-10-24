@@ -23,7 +23,12 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
             // N07.FR.18: a monitor set while the variable had no value triggers on the first value, which becomes the
             // reference
             if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
-                return !value_new.empty();
+                if (value_new.empty()) {
+                    return false;
+                }
+                // An unparsable value throws here, so it never becomes the reference
+                static_cast<void>(to_specific_type_auto<T>(value_new));
+                return true;
             }
             auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
             auto delta = std::abs(raw_val_reference - to_specific_type_auto<T>(value_new));
