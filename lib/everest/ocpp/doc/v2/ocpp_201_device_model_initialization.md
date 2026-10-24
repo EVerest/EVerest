@@ -57,13 +57,14 @@ composed storage keeps all of them in the OCPP storage.
 
 To update a component, just place the correct json component config in the `component_config/custom` or 
 `component_config/standardized` folder. When restarting the software, it will:
-- Check if there are Components in the database that are not in the component config's. Those will be removed.
+- Check if there are Components in the database that are not in the component config's. Those are kept in the
+  database, together with their variables and monitors, and a warning is logged for each of them.
 - Check if there are Components in the component config's that are not in the database. Those will be added.
 - Check if anything has changed inside the Component (`Variable`, `Characteristics` or `Attributes`). 
   Those will be removed, changed or added to the database as well. 
   
-Note: When the `evse_id` or `connector_id` of a component is changed, this is seen as the removal of a Component and 
-addition of a new one. 
+Note: When the `evse_id` or `connector_id` of a component is changed, the component with the new key is added. The
+component with the old key, including its monitors, stays in the database and is reported by the warning above.
 
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
@@ -92,9 +93,10 @@ with an EVSE or connector id of `0`, therefore stops the initialization with an 
 invalid component configs are skipped with a warning; a skipped custom config is then replaced by the standardized
 config of the same component, if there is one.
 
-Monitors are not linked to variable rows. Removing a variable from the component config removes all of its monitors
-without an owner, custom monitors included; this also happens when an `evse_id` change re-creates the component.
-Monitors with an owner belong to a variable registered at runtime and are kept.
+Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
+configured removes all of its monitors without an owner, custom monitors included. Monitors with an owner belong to a
+variable registered at runtime and are kept. Components that are no longer configured are kept with their monitors,
+see [Update component config](#update-component-config).
 `DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
 `get_all_monitors` returns all of them.
 
