@@ -236,6 +236,8 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
         } catch (const json::parse_error& e) {
             EVLOG_error << "Error while parsing config file: " << path;
             throw;
+        } catch (const ComponentConfigNameKeyError& e) {
+            throw ComponentConfigNameKeyError("Invalid component config " + path.string() + ": " + e.what());
         } catch (const InitDeviceModelDbError& e) {
             EVLOG_warning << "Skipping component config " << path << ": " << e.what();
             continue;
@@ -1304,21 +1306,21 @@ void from_json(const json& j, ComponentKey& c) {
     if (j.contains("evse_id")) {
         c.evse_id = j.at("evse_id");
         if (c.evse_id.value() == 0) {
-            throw InitDeviceModelDbError("Component " + c.name + " has evse_id 0");
+            throw ComponentConfigNameKeyError("Component " + c.name + " has evse_id 0");
         }
     }
 
     if (j.contains("connector_id")) {
         c.connector_id = j.at("connector_id");
         if (c.connector_id.value() == 0) {
-            throw InitDeviceModelDbError("Component " + c.name + " has connector_id 0");
+            throw ComponentConfigNameKeyError("Component " + c.name + " has connector_id 0");
         }
     }
 
     if (j.contains("instance")) {
         c.instance = j.at("instance");
         if (c.instance->empty()) {
-            throw InitDeviceModelDbError("Component " + c.name + " has an empty instance");
+            throw ComponentConfigNameKeyError("Component " + c.name + " has an empty instance");
         }
     }
 }
@@ -1354,7 +1356,7 @@ void from_json(const json& j, DeviceModelVariable& c) {
     if (j.contains("instance")) {
         c.instance = j.at("instance");
         if (c.instance->empty()) {
-            throw InitDeviceModelDbError("Variable " + c.name + " has an empty instance");
+            throw ComponentConfigNameKeyError("Variable " + c.name + " has an empty instance");
         }
     }
 

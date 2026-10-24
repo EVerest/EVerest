@@ -121,19 +121,34 @@ private:
 };
 
 ///
+/// \brief A component config uses a name key that monitors and stored values cannot represent: an empty component
+/// or variable instance, or an EVSE or connector id of 0. Unlike other errors in a component config, it is not
+/// skipped, because the standardized config of the same component would replace a skipped custom config and its
+/// variables would be removed with their monitors.
+///
+class ComponentConfigNameKeyError : public InitDeviceModelDbError {
+public:
+    using InitDeviceModelDbError::InitDeviceModelDbError;
+};
+
+///
 /// \brief Read all component config files from the given directory and create a map holding the structure.
 /// \param directory    The parent directory containing the standardized and custom component config files.
 /// \return A map with the device model components, variables, characteristics and attributes.
 ///
+/// \throws ComponentConfigNameKeyError if a component config uses a name key that monitors cannot represent; other
+/// invalid component configs are skipped with a warning
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 get_all_component_configs(const std::filesystem::path& directory);
 
 /// \brief Parse a component config JSON document into ComponentKey + variables.
-/// \throws InitDeviceModelDbError if "properties" missing.
+/// \throws InitDeviceModelDbError if "properties" missing; ComponentConfigNameKeyError for an empty instance or an
+/// EVSE or connector id of 0.
 std::pair<ComponentKey, std::vector<DeviceModelVariable>> parse_component_config_from_json(const json& data);
 
 /// \brief Parse a component config JSON document from a string.
-/// \throws nlohmann::json::parse_error on invalid JSON; InitDeviceModelDbError if "properties" missing.
+/// \throws nlohmann::json::parse_error on invalid JSON; InitDeviceModelDbError if "properties" missing;
+/// ComponentConfigNameKeyError for an empty instance or an EVSE or connector id of 0.
 std::pair<ComponentKey, std::vector<DeviceModelVariable>>
 parse_component_config_from_string(const std::string& json_content);
 

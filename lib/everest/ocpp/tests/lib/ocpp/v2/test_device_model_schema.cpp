@@ -3,6 +3,7 @@
 
 #include <algorithm>
 #include <filesystem>
+#include <fstream>
 
 #include <gtest/gtest.h>
 
@@ -568,8 +569,26 @@ TEST(ComponentConfigNameKeyTest, empty_instances_and_id_zero_are_rejected) {
     empty_variable_instance["properties"]["Value"]["instance"] = "";
 
     for (const auto& config : {empty_component_instance, evse_id_zero, connector_id_zero, empty_variable_instance}) {
-        EXPECT_THROW(parse_component_config_from_string(config.dump()), InitDeviceModelDbError) << config.dump();
+        EXPECT_THROW(parse_component_config_from_string(config.dump()), ComponentConfigNameKeyError) << config.dump();
     }
+}
+
+/// A skipped custom config would be replaced by the standardized config of the same component, whose initialization
+/// removes the variables only the custom config defines, together with their monitors
+TEST(ComponentConfigNameKeyTest, custom_config_with_invalid_name_key_is_not_skipped) {
+    const auto directory = libocpp_test::unique_temp_directory("libocpp_test_component_config_name_key");
+    std::filesystem::create_directories(directory / "standardized");
+    std::filesystem::create_directories(directory / "custom");
+    auto custom = name_key_component_config();
+    custom["properties"]["Custom"] = custom["properties"]["Value"];
+    custom["properties"]["Custom"]["variable_name"] = "Custom";
+    custom["properties"]["Custom"]["instance"] = "";
+    std::ofstream(directory / "standardized" / "NameKeyCtrlr.json") << name_key_component_config().dump();
+    std::ofstream(directory / "custom" / "NameKeyCtrlr.json") << custom.dump();
+
+    EXPECT_THROW(get_all_component_configs(directory), ComponentConfigNameKeyError);
+
+    std::filesystem::remove_all(directory);
 }
 
 } // namespace v2
