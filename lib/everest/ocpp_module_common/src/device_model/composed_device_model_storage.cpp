@@ -94,76 +94,74 @@ ocpp::v2::SetVariableStatusEnum ComposedDeviceModelStorage::set_variable_attribu
 std::optional<ocpp::v2::VariableMonitoringMeta>
 ComposedDeviceModelStorage::set_monitoring_data(const ocpp::v2::SetMonitoringData& data,
                                                 const ocpp::v2::VariableMonitorType type) {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot set monitoring data";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return std::nullopt;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->set_monitoring_data(data, type);
+    return storage->set_monitoring_data(data, type);
 }
 
 bool ComposedDeviceModelStorage::update_monitoring_reference(const int32_t monitor_id,
                                                              const std::string& reference_value) {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot update monitoring reference";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return false;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)
-        ->update_monitoring_reference(monitor_id, reference_value);
+    return storage->update_monitoring_reference(monitor_id, reference_value);
 }
 
 ocpp::v2::ClearMonitoringStatusEnum ComposedDeviceModelStorage::clear_variable_monitor(int monitor_id,
                                                                                        bool allow_protected) {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot clear variable monitor";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return ocpp::v2::ClearMonitoringStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->clear_variable_monitor(monitor_id, allow_protected);
+    return storage->clear_variable_monitor(monitor_id, allow_protected);
 }
 
 int32_t ComposedDeviceModelStorage::clear_custom_variable_monitors() {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot clear custom variable monitors";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return 0;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->clear_custom_variable_monitors();
+    return storage->clear_custom_variable_monitors();
 }
 
 // Monitors and stored values are keyed by name and need no row in the component tables, so they all live in
 // the OCPP storage, whichever storage holds the variable.
 std::vector<ocpp::v2::StoredMonitor> ComposedDeviceModelStorage::get_all_monitors() {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot read monitors";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return {};
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->get_all_monitors();
+    return storage->get_all_monitors();
 }
 
 std::vector<ocpp::v2::StoredVariableValue> ComposedDeviceModelStorage::get_stored_values() {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot read stored values";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return {};
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->get_stored_values();
+    return storage->get_stored_values();
 }
 
 ocpp::v2::SetVariableStatusEnum
 ComposedDeviceModelStorage::set_stored_value(const ocpp::v2::StoredVariableValue& value) {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot store a value";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return ocpp::v2::SetVariableStatusEnum::Rejected;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)->set_stored_value(value);
+    return storage->set_stored_value(value);
 }
 
 bool ComposedDeviceModelStorage::remove_stored_value(const ocpp::v2::Component& component,
                                                      const ocpp::v2::Variable& variable,
                                                      const ocpp::v2::AttributeEnum& attribute_enum) {
-    if (this->device_model_storages.find(VARIABLE_OWNER_OCPP) == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot remove a stored value";
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return false;
     }
-    return this->device_model_storages.at(VARIABLE_OWNER_OCPP)
-        ->remove_stored_value(component, variable, attribute_enum);
+    return storage->remove_stored_value(component, variable, attribute_enum);
 }
 
 void ComposedDeviceModelStorage::check_integrity() {
@@ -178,12 +176,20 @@ bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_
     // DeviceModelStorageInterface's default virtual (returns false) and the operator's
     // NetworkConnectionProfiles blob ends up cleared without ever populating the per-slot
     // device-model rows on targets that ship no NetworkConfiguration_<N>.json.
-    const auto it = this->device_model_storages.find(VARIABLE_OWNER_OCPP);
-    if (it == this->device_model_storages.end()) {
-        EVLOG_error << "OCPP device model storage not registered, cannot create NetworkConfiguration_" << new_slot;
+    auto* storage = this->ocpp_storage();
+    if (storage == nullptr) {
         return false;
     }
-    return it->second->create_network_configuration_slot_from_default_schema(new_slot);
+    return storage->create_network_configuration_slot_from_default_schema(new_slot);
+}
+
+ocpp::v2::DeviceModelStorageInterface* ComposedDeviceModelStorage::ocpp_storage() {
+    const auto it = this->device_model_storages.find(VARIABLE_OWNER_OCPP);
+    if (it == this->device_model_storages.end()) {
+        EVLOG_error << "No OCPP device model storage registered";
+        return nullptr;
+    }
+    return it->second.get();
 }
 
 std::string

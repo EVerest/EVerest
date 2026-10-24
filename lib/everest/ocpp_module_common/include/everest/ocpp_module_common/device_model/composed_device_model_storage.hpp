@@ -63,6 +63,10 @@ private:
     /// \return The owner of the variable. Defaults to 'OCPP'.
     ///
     std::string get_variable_owner(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
+
+    /// \return The storage of the owner 'OCPP', which holds all monitors and stored values, or nullptr with an error
+    /// logged if it is not registered
+    ocpp::v2::DeviceModelStorageInterface* ocpp_storage();
 };
 
 /// \brief Builds the module-standard composed device model storage: \p ocpp_storage registered under
