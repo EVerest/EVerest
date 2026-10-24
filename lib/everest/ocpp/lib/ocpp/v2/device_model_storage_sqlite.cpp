@@ -280,12 +280,10 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
     for (auto& stored_monitor : get_all_monitors()) {
         auto* meta_data = find_variable(device_model, stored_monitor.component, stored_monitor.variable);
         if (meta_data == nullptr) {
-            // Monitors with an owner belong to a variable registered at runtime
-            if (!stored_monitor.owner.has_value()) {
-                EVLOG_warning << "Monitor " << stored_monitor.monitor.monitor.id << " of component "
-                              << stored_monitor.component << " and variable " << stored_monitor.variable
-                              << " has no variable in the component config and is not active";
-            }
+            // The variable can belong to another storage or be registered at runtime
+            EVLOG_debug << "Monitor " << stored_monitor.monitor.monitor.id << " of component "
+                        << stored_monitor.component << " and variable " << stored_monitor.variable
+                        << " is not attached to a variable of this storage";
             continue;
         }
         meta_data->monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
