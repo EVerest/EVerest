@@ -246,6 +246,18 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
         return;
     }
 
+    auto& updater_monitors_meta = state.updater_monitors_meta;
+    auto it = updater_monitors_meta.find(monitor_meta.monitor.id);
+
+    // Always update the current values if the trigger is found, also when the value cannot be evaluated: a pending
+    // event reports the current value
+    if (it != std::end(updater_monitors_meta)) {
+        auto& triggered_meta = it->second;
+
+        triggered_meta.value_previous = value_previous;
+        triggered_meta.value_current = value_current;
+    }
+
     bool monitor_triggered = false;
 
     try {
@@ -275,18 +287,6 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
     EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
                 << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
                 << loggable_value(attribute, value_current) << "]";
-
-    auto monitor_id = monitor_meta.monitor.id;
-    auto& updater_monitors_meta = state.updater_monitors_meta;
-    auto it = updater_monitors_meta.find(monitor_id);
-
-    // Always update the current values is the trigger is found
-    if (it != std::end(updater_monitors_meta)) {
-        auto& triggered_meta = it->second;
-
-        triggered_meta.value_previous = value_previous;
-        triggered_meta.value_current = value_current;
-    }
 
     if (monitor_triggered) {
         if (it == std::end(updater_monitors_meta)) {

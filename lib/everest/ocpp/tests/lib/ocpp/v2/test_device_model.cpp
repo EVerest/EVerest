@@ -852,6 +852,47 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_without_value_triggers_on_fir
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
+/// A pending event reports the current value, also when that value cannot be evaluated
+TEST_F(DeviceModelTest, test_pending_monitor_event_reports_a_value_that_cannot_be_evaluated) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "900", "test"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
+    const auto sent = [&sent_events]() { return *sent_events.handle(); };
+    MonitoringUpdater updater(
+        *dm,
+        [&sent_events](const std::vector<EventData>& events) {
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
+        []() { return false; });
+    updater.start_monitoring();
+
+    const auto results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::UpperThreshold, 1000.0F, 3)});
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1200", "test"),
+              SetVariableStatusEnum::Accepted);
+    // clear_value bypasses the validation, so the threshold monitor cannot evaluate the empty value
+    ASSERT_EQ(dm->clear_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+
+    ASSERT_EQ(sent().size(), 1);
+    EXPECT_EQ(sent()[0].trigger, EventTriggerEnum::Alerting);
+    EXPECT_EQ(sent()[0].actualValue, "");
+
+    updater.stop_monitoring();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+}
+
 /// N07.FR.18: a Delta event dropped while offline does not move the reference, so the CSMS still learns of the change
 TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_kept_when_event_dropped_offline) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;
