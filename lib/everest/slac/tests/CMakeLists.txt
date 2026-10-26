@@ -22,3 +22,15 @@ include(GoogleTest)
 gtest_discover_tests(${TEST_TARGET_NAME})
 
 ev_register_test_target(${TEST_TARGET_NAME})
+
+set(EVSE_MATCHING_TEST_TARGET_NAME slac_evse_matching_sessions_test)
+add_executable(${EVSE_MATCHING_TEST_TARGET_NAME} evse_matching_sessions_test.cpp)
+
+target_link_libraries(${EVSE_MATCHING_TEST_TARGET_NAME} PRIVATE
+        ${GTEST_LIBRARIES}
+        slac::fsm::evse
+)
+
+gtest_discover_tests(${EVSE_MATCHING_TEST_TARGET_NAME})
+
+ev_register_test_target(${EVSE_MATCHING_TEST_TARGET_NAME})
