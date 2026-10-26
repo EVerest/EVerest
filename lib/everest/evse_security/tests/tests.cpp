@@ -4,6 +4,7 @@
 #include <fstream>
 #include <gtest/gtest.h>
 #include <openssl/crypto.h>
+#include <openssl/evp.h>
 #include <regex>
 #include <sstream>
 #include <string>
@@ -1444,6 +1445,36 @@ TEST_F(EvseSecurityTests, verify_base64) {
     out_encoded.erase(std::remove(out_encoded.begin(), out_encoded.end(), '\n'), out_encoded.cend());
 
     ASSERT_EQ(test_string1, out_encoded);
+}
+
+TEST(EvseSecurityBase64, encode_inputs_spanning_many_lines) {
+    // EVP_EncodeUpdate inserts a newline after every 64 characters, inputs of 3073 bytes and more used to overflow
+    for (const std::size_t size : {0, 1, 2, 47, 48, 49, 3071, 3072, 3073, 3074, 100000}) {
+        std::vector<std::uint8_t> bytes(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            bytes[i] = static_cast<std::uint8_t>(i * 7);
+        }
+
+        std::string expected(EVP_ENCODE_LENGTH(size), '\0');
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+        const auto expected_length =
+            EVP_EncodeBlock(reinterpret_cast<unsigned char*>(expected.data()), bytes.data(), static_cast<int>(size));
+        expected.resize(expected_length);
+
+        std::string encoded = EvseSecurity::base64_encode_from_bytes(bytes);
+        encoded.erase(std::remove(encoded.begin(), encoded.end(), '\n'), encoded.end());
+        EXPECT_EQ(encoded, expected) << "input size " << size;
+        EXPECT_EQ(EvseSecurity::base64_decode_to_bytes(encoded), bytes) << "input size " << size;
+    }
+}
+
+TEST(EvseSecurityBase64, decode) {
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QQ=="), "A");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QUJD\nQUI=\n"), "ABCAB");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string(""), "");
+    // incomplete final block
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QUJDR"), "");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("not base64!"), "");
 }
 
 TEST_F(EvseSecurityTestsMulti, verify_with_multiple_leaf_types_accepts_valid_cert) {
