@@ -5,7 +5,7 @@
 
 //
 // AUTO GENERATED - MARKED REGIONS WILL BE KEPT
-// template version 3
+// template version 4
 //
 
 #include <generated/interfaces/auth_token_provider/Implementation.hpp>
@@ -15,6 +15,8 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include "pn532_serial/PN532Serial.h"
+#include <chrono>
+#include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -24,6 +26,7 @@ struct Conf {
     std::string serial_port;
     int baud_rate;
     int read_timeout;
+    int debounce_timeout;
     bool debug;
 };
 
@@ -51,10 +54,15 @@ private:
 
     virtual void init() override;
     virtual void ready() override;
+    void shutdown() override;
 
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
     // insert your private definitions here
     PN532Serial serial;
+    std::string last_id;
+    std::optional<std::chrono::steady_clock::time_point> last_seen;
+
+    bool is_bounce(const std::string& id);
     // ev@3370e4dd-95f4-47a9-aaec-ea76f34a66c9:v1
 };
 
