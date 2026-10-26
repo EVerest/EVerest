@@ -22,6 +22,10 @@
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
 
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
 #include <evse_security/crypto/openssl/openssl_types.hpp>
 #include <evse_security/utils/evse_filesystem.hpp>
@@ -102,10 +106,29 @@ bool OpenSSLSupplier::supports_tpm_key_creation() {
 }
 
 namespace {
+// Created with owner-only permissions right away, so the key is never readable by others, not even briefly
+BIO_ptr open_private_key_file(const fs::path& path) {
+    constexpr mode_t owner_read_write = S_IRUSR | S_IWUSR;
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, owner_read_write);
+    if (fd < 0) {
+        return nullptr;
+    }
+    // O_CREAT keeps the mode of a file that already exists
+    if (::fchmod(fd, owner_read_write) != 0) {
+        ::close(fd);
+        return nullptr;
+    }
+    BIO_ptr bio(BIO_new_fd(fd, BIO_CLOSE));
+    if (!bio) {
+        ::close(fd);
+    }
+    return bio;
+}
+
 bool export_key_internal(const KeyGenerationInfo& key_info, const EVP_PKEY_ptr& evp_key) {
     // write private key to file
     if (key_info.private_key_file.has_value()) {
-        const BIO_ptr key_bio(BIO_new_file(key_info.private_key_file.value().c_str(), "w"));
+        const BIO_ptr key_bio = open_private_key_file(key_info.private_key_file.value());
 
         if (!key_bio) {
             EVLOG_error << "Failed to create private key file!";
