@@ -22,6 +22,7 @@ target_sources(ocpp
         ocpp/common/call_types.cpp
         ocpp/common/charging_station_base.cpp
         ocpp/common/connectivity_manager.cpp
+        ocpp/common/json_number.cpp
         ocpp/common/ocpp_logging.cpp
         ocpp/common/schemas.cpp
         ocpp/common/types.cpp

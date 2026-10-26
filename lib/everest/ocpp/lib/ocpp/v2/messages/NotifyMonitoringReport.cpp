@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -41,8 +43,8 @@ void to_json(json& j, const NotifyMonitoringReportRequest& k) {
 
 void from_json(const json& j, NotifyMonitoringReportRequest& k) {
     // the required parts of the message
-    k.requestId = j.at("requestId");
-    k.seqNo = j.at("seqNo");
+    k.requestId = ocpp::integer_from_json(j.at("requestId"));
+    k.seqNo = ocpp::integer_from_json(j.at("seqNo"));
     k.generatedAt = ocpp::DateTime(std::string(j.at("generatedAt")));
 
     // the optional parts of the message

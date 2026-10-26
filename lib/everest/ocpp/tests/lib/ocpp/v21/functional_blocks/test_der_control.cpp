@@ -1523,7 +1523,7 @@ TEST_F(DERControlTest, SetDERControl_RejectsCurveWithExcessivePoints) {
     der_control.handle_message(msg);
 }
 
-// Non-finite duration is rejected before persistence.
+// Non-finite duration is rejected while deserialising, before persistence.
 TEST_F(DERControlTest, SetDERControl_RejectsNonFiniteDuration) {
     DERControl der_control(functional_block_context);
 
@@ -1533,12 +1533,9 @@ TEST_F(DERControlTest, SetDERControl_RejectsNonFiniteDuration) {
     auto msg = make_set_der_control_msg(req);
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
-        EXPECT_EQ(response.status, DERControlStatusEnum::Rejected);
-    }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
 
-    der_control.handle_message(msg);
+    EXPECT_THROW(der_control.handle_message(msg), json::out_of_range);
 }
 
 // Negative duration is rejected before persistence.
@@ -2006,8 +2003,8 @@ TEST_F(DERControlTest, SetDERControl_SelfSuperseded_DoesNotMarkNotified) {
 // M1: non-finite float rejection on every variant
 // =============================================================================
 
-// A NaN on a curve point.x / y must fail validation BEFORE persistence so it
-// can never round-trip through CONTROL_JSON into a ReportDERControl.
+// A NaN on a curve point.x / y must fail deserialisation BEFORE persistence so
+// it can never round-trip through CONTROL_JSON into a ReportDERControl.
 TEST_F(DERControlTest, SetDERControl_Rejects_NaN_In_CurvePoint) {
     DERControl der_control(functional_block_context);
 
@@ -2019,12 +2016,9 @@ TEST_F(DERControlTest, SetDERControl_Rejects_NaN_In_CurvePoint) {
 
     // Must NOT reach persistence.
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
-        EXPECT_EQ(response.status, DERControlStatusEnum::Rejected);
-    }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
 
-    der_control.handle_message(msg);
+    EXPECT_THROW(der_control.handle_message(msg), json::out_of_range);
 }
 
 // +Infinity on any FreqDroop float must be rejected.
@@ -2036,12 +2030,9 @@ TEST_F(DERControlTest, SetDERControl_Rejects_Inf_In_FreqDroop) {
     auto msg = make_set_der_control_msg(req);
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
-        EXPECT_EQ(response.status, DERControlStatusEnum::Rejected);
-    }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
 
-    der_control.handle_message(msg);
+    EXPECT_THROW(der_control.handle_message(msg), json::out_of_range);
 }
 
 // NaN on a FixedVar.setpoint must be rejected (FixedVar is a supported mode).
@@ -2060,12 +2051,9 @@ TEST_F(DERControlTest, SetDERControl_Rejects_NaN_In_FixedVar) {
     auto msg = make_set_der_control_msg(req);
 
     EXPECT_CALL(database_handler_mock, insert_or_update_der_control(_, _, _, _, _, _, _, _)).Times(0);
-    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).WillOnce(Invoke([](const json& call_result) {
-        auto response = call_result[ocpp::CALLRESULT_PAYLOAD].get<SetDERControlResponse>();
-        EXPECT_EQ(response.status, DERControlStatusEnum::Rejected);
-    }));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_result(_)).Times(0);
 
-    der_control.handle_message(msg);
+    EXPECT_THROW(der_control.handle_message(msg), json::out_of_range);
 }
 
 // =============================================================================
