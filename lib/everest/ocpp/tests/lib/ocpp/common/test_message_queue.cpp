@@ -834,4 +834,19 @@ TEST_F(MessageQueueTest, test_boot_notification_survives_when_only_message_in_no
     EXPECT_TRUE(boot_sent) << "BootNotification was dropped from the queue!";
 }
 
+TEST_F(MessageQueueTest, test_destruction_without_stop_joins_worker) {
+    auto queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    queue->start();
+    queue->resume(std::chrono::seconds(0));
+
+    // Destroyed on a detached thread, so a destructor that does not return fails the test instead of hanging it.
+    std::promise<void> destroyed;
+    auto destroyed_future = destroyed.get_future();
+    std::thread([queue = std::move(queue), destroyed = std::move(destroyed)]() mutable {
+        queue.reset();
+        destroyed.set_value();
+    }).detach();
+    EXPECT_EQ(destroyed_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+}
+
 } // namespace ocpp
