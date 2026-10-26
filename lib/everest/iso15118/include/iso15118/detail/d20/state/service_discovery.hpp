@@ -15,6 +15,6 @@ message_20::ServiceDiscoveryResponse
 handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& session,
                const std::vector<message_20::datatypes::ServiceCategory>& energy_services,
                const std::vector<uint16_t>& vas_services,
-               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services);
+               std::vector<message_20::datatypes::ServiceCategory>& ev_energy_services, bool free_service);
 
 } // namespace iso15118::d20::state

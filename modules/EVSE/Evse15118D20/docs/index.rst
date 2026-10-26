@@ -48,6 +48,15 @@ The two DER flavors are mutually exclusive per EVSE, so at most one is ever
 advertised. EvseManager enforces that when it builds the energy transfer mode
 set; see "DER flavor selection" below.
 
+Free service
+============
+
+The ``FreeService`` flag of the charge service in ``ServiceDiscoveryRes`` (DIN
+70121 and ISO 15118-2) and of the energy transfer services (ISO 15118-20)
+follows the ``set_free_service`` command. It defaults to ``false`` and applies
+from the next session on. The value is not persisted, so it falls back to
+``false`` when the module restarts.
+
 Plug and Charge
 ===============
 

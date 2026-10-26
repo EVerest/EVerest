@@ -1660,6 +1660,15 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     setup_steps_done.set(SetupStep::AUTH_SETUP);
 }
 
+void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
+    std::scoped_lock lock(GEL);
+
+    setup_config.free_service = free_service;
+    if (controller) {
+        controller->update_free_service(free_service);
+    }
+}
+
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
     std::scoped_lock lock(GEL);
 

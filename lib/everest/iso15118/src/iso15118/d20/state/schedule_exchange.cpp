@@ -244,9 +244,9 @@ Result ScheduleExchange::feed(Event ev) {
         // The EV may restart service selection if it rejects the dictated DER settings: [V2G20-3153] IEC,
         // [V2G20-3231] SAE, allowed as the next request by [V2G20-3348] and [V2G20-3355]. The Finished
         // plus OK precondition is discharged by both CPD states' transition guards.
-        const auto res =
-            handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
-                           m_ctx.session_config.supported_vas_services, m_ctx.session_ev_info.ev_energy_services);
+        const auto res = handle_request(*req, m_ctx.session, m_ctx.session_config.supported_energy_transfer_services,
+                                        m_ctx.session_config.supported_vas_services,
+                                        m_ctx.session_ev_info.ev_energy_services, m_ctx.session_config.free_service);
 
         m_ctx.respond(res);
 

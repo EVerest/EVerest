@@ -20,6 +20,7 @@ struct SessionConfig {
     std::string evse_id{"DE*EVR*E00000*1"};
 
     uint16_t charge_service_id{1};
+    bool free_service{false};
     everest::lib::util::fixed_vector<dt::EnergyTransferMode, 6> supported_energy_transfer_modes{};
 
     // Advertised in the ServiceDiscoveryRes ServiceList (Table 105) after the built-in Certificate

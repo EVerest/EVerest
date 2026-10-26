@@ -262,6 +262,10 @@ void ISO15118_chargerImpl::handle_session_setup(std::vector<types::iso15118::Pay
     v2g_ctx->is_fake_dc = fake_dc_enabled;
 }
 
+void ISO15118_chargerImpl::handle_set_free_service(bool& free_service) {
+    v2g_ctx->evse_v2g_data.charge_service.FreeService = free_service ? 1 : 0;
+}
+
 void ISO15118_chargerImpl::handle_bpt_setup(types::iso15118::BptSetup& bpt_config) {
     EVLOG_warning << "Ignoring handle_bpt_setup call";
 }

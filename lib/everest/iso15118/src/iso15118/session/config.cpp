@@ -260,6 +260,7 @@ SessionConfig::SessionConfig(EvseSetupConfig config) :
     contract_mo_root_path(std::move(config.contract_mo_root_path)),
     contract_v2g_root_path(std::move(config.contract_v2g_root_path)),
     central_contract_validation_allowed(config.central_contract_validation_allowed),
+    free_service(config.free_service),
     iso2_ac_max_current(config.iso2_ac_max_current),
     physical_values(config.physical_values),
     no_energy_pause(config.no_energy_pause),

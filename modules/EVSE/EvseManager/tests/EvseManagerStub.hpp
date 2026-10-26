@@ -53,6 +53,8 @@ struct evse_managerImplStub : public evse_managerImplBase {
     virtual bool handle_force_unlock(int& connector_id) {
         return true;
     }
+    virtual void handle_set_free_service(bool& free_service) {
+    }
     virtual void handle_set_external_limits(types::energy::ExternalLimits& value) {
     }
     virtual types::evse_manager::SwitchThreePhasesWhileChargingResult

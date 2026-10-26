@@ -86,6 +86,11 @@ channels:
     messages:
       receive_reply_force_unlock:
         $ref: '#/components/messages/receive_reply_force_unlock'
+  send_set_free_service:
+    address: 'm2e/set_free_service'
+    messages:
+      send_set_free_service:
+        $ref: '#/components/messages/send_set_free_service'
   # update_allowed_energy_transfer_modes not implemented
 
   receive_session_event:
@@ -518,6 +523,12 @@ operations:
     action: receive
     channel:
       $ref: '#/channels/receive_reply_force_unlock'
+  send_set_free_service:
+    title: 'Set whether the EVCharging service is offered free of charge'
+    action: send
+    channel:
+      $ref: '#/channels/send_set_free_service'
+    description: 'Direction: Module to EVerest'
   # update_allowed_energy_transfer_modes not implemented
 
   receive_session_event:
@@ -1214,6 +1225,21 @@ components:
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ForceUnlockReply'
+    send_set_free_service:
+      name: send_set_free_service
+      title: 'Send set free service'
+      summary: >-
+        Set whether the EVCharging service is offered free of charge (the FreeService flag in
+        ServiceDiscoveryRes). The default is false, so only a call with true marks the service as
+        free. The value is not persisted: it is lost when EVerest restarts, so send it again after
+        a restart.
+      contentType: application/json
+      payload:
+        $ref: '#/components/schemas/FreeService'
+      examples:
+        - summary: ""
+          payload:
+            true
     # update_allowed_energy_transfer_modes not implemented
 
     receive_session_event:
@@ -2537,6 +2563,9 @@ components:
     ForceUnlockRequest:
       description: "Specifies the ID of the connector that should be unlocked"
       type: integer
+    FreeService:
+      description: "Set to true when the EVCharging service is offered free of charge"
+      type: boolean
     PauseChargingReply:
       description: "Reply to pause charging request. 'true' on success"
       type: boolean
