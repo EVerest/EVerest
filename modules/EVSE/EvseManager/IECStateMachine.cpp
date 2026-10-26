@@ -104,6 +104,10 @@ IECStateMachine::IECStateMachine(const std::unique_ptr<evse_board_supportIntf>& 
             process_bsp_event(event);
         } else {
             EVLOG_info << "Ignoring BSP Event, BSP is not enabled yet.";
+            const auto parsed = from_bsp_event(event.event);
+            if (const auto* raw_state = std::get_if<RawCPState>(&parsed)) {
+                raw_cp_state_while_disabled = *raw_state;
+            }
         }
     });
 }
@@ -591,6 +595,14 @@ void IECStateMachine::setup(bool has_ventilation) {
 void IECStateMachine::enable(bool en) {
     enabled = en;
     r_bsp->call_enable(en);
+    if (not en) {
+        return;
+    }
+    // Not every BSP republishes its CP state on enable, so feed the last state it reported while disabled.
+    // A BSP that does republish reports the same state again, which the state machine ignores.
+    if (const auto raw_state = raw_cp_state_while_disabled.exchange(std::nullopt)) {
+        feed_state_machine(raw_state.value());
+    }
 }
 
 // Forward the over current detection limit to the BSP. Many BSP MCUs monitor the charge current and trigger a fault

@@ -134,11 +134,13 @@ class D20TlsConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
         return adjusted_config
 
 
-async def wait_for_session_events(mock, expected_events, timeout=30):
+async def wait_for_session_events(mock, expected_events, timeout=30, reset=True):
     """Wait for specific events to appear in the mock's call list in the exact order.
     
     After successfully matching events, the mock is automatically reset so subsequent
     calls will only see new events. This allows checking for the same event multiple times.
+    With reset=False the events stay in the mock, for a later wait that must not miss an
+    event arriving right after the matched one.
     """
     start_time = asyncio.get_event_loop().time()
 
@@ -156,7 +158,8 @@ async def wait_for_session_events(mock, expected_events, timeout=30):
                 expected_idx += 1
         
         if expected_idx == len(expected_events):
-            mock.reset_mock()
+            if reset:
+                mock.reset_mock()
             return
 
         await asyncio.sleep(0.1)
@@ -1679,17 +1682,21 @@ async def test_iso15118_dc_imd_active_while_unmated(
     imd_measurement_mock = Mock()
     probe_module.subscribe_variable("imd", "isolation_measurement", imd_measurement_mock)
 
-    # Unmated: the IMD is started when the Charger enters Idle, so it publishes before any plug-in
+    # Unmated: the IMD is started when the BSP reports CP state A, so it publishes before any plug-in
     await wait_for_ready(imd_measurement_mock, timeout=30)
 
     test_controller.plug_in_dc_iso()
 
-    # The IMD is stopped at the plug-in. Wait for the short time the stop command needs to reach it
-    # then count: the next measurement may only come from the cable check, which starts the IMD again
-    # several seconds later (the simulator's self test alone takes 3 s).
-    await asyncio.sleep(1)
+    # The IMD is stopped at the plug-in (CP A->B) before the Charger learns about the event, so once
+    # SessionStarted arrives only a measurement already in flight can follow. Then count: the next
+    # measurement may only come from the cable check, which starts the IMD again after its 3 s self
+    # test, so the window up to 2 s after PrepareCharging spans two measurement intervals (1 s).
+    # PrepareCharging may arrive together with SessionStarted, so the first wait keeps the events.
+    await wait_for_session_events(session_event_mock, ["SessionStarted"], reset=False)
+    await asyncio.sleep(0.5)
     imd_measurement_mock.reset_mock()
-    await wait_for_session_events(session_event_mock, NO_ENERGY_SESSION_START_SEQUENCE)
+    await wait_for_session_events(session_event_mock, ["PrepareCharging"])
+    await asyncio.sleep(2)
     assert imd_measurement_mock.call_count == 0, (
         "The IMD must not measure between the plug-in and the cable check, "
         f"got {imd_measurement_mock.call_count} measurement(s)"
@@ -1700,6 +1707,7 @@ async def test_iso15118_dc_imd_active_while_unmated(
 
     await end_session(test_controller, session_event_mock)
 
-    # Unplugged again: the IMD is switched on once the session is finished
+    # Unplugged again (CP state A): the IMD is switched on, and the Charger's own IMD stop at the end
+    # of the session must not undo it
     imd_measurement_mock.reset_mock()
     await wait_for_ready(imd_measurement_mock, timeout=30)
