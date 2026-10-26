@@ -230,6 +230,7 @@ static void check_iso2_charging_profile_values(iso2_PowerDeliveryReqType* req, i
                     //  setting response code is commented because some EVs do not support schedules correctly
                     dlog(DLOG_LEVEL_WARNING,
                          "EV's charging profile is invalid (EV charging profile time exceeds provided schedule)!");
+                    return;
                 } else {
                     /* Now we checked if the current EV interval fits within the EVSE interval, but it fails.
                      * Next step is to check the EVSE interval until we reached the last EVSE interval */
