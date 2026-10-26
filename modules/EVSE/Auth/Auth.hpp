@@ -24,6 +24,7 @@
 // insert your custom include headers here
 #include <AuthHandler.hpp>
 #include <everest/util/async/monitor.hpp>
+#include <map>
 #include <memory>
 #include <queue>
 #include <variant>
@@ -126,6 +127,9 @@ private:
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
     // insert your private definitions here
     everest::lib::util::monitor<EventQueueState> event_state;
+    std::map<int32_t, int32_t> m_evse_index_by_id;
+
+    evse_managerIntf* evse_manager_by_id(int32_t evse_id) const;
     // ev@211cfdbe-f69a-4cd6-a4ec-f8aaa3d1b6c8:v1
 };
 
