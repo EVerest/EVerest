@@ -41,6 +41,15 @@ A lot of configuration parameters specify directory or file paths from which
 certificates and private keys are loaded or new certificates and keys are
 written to. Please make sure that these paths are writeable for EVerest.
 
+The ``csms_leaf_key_directory`` and ``secc_leaf_key_directory`` are restricted
+to the user EVerest runs as (mode ``0700``) on startup, and generated private
+keys are written with mode ``0600``. If a key directory is shared with the
+corresponding certificate directory, the certificates in it are restricted as
+well. Keys installed by other means keep the permissions they were installed
+with. Modules receive the paths of keys and read the files themselves, so they
+must run as the same user as this module, including modules started
+standalone.
+
 Configuration for OCPP
 ----------------------
 

@@ -389,6 +389,47 @@ TEST_F(EvseSecurityTests, verify_normal_keygen) {
     ASSERT_TRUE(gen);
 }
 
+TEST_F(EvseSecurityTests, private_key_file_is_owner_only) {
+    const fs::path private_key_file("key/perm_privkey.key");
+    // a key file left world-readable by an earlier run is tightened on rewrite
+    ASSERT_TRUE(filesystem_utils::write_to_file(private_key_file, "stale", std::ios::trunc));
+    fs::permissions(private_key_file, fs::perms::all, fs::perm_options::replace);
+
+    KeyGenerationInfo info;
+    KeyHandle_ptr key;
+    info.key_type = CryptoKeyType::EC_prime256v1;
+    info.generate_on_custom = false;
+    info.private_key_file = private_key_file;
+
+    ASSERT_TRUE(CryptoSupplier::generate_key(info, key));
+    ASSERT_EQ(fs::status(private_key_file).permissions(), fs::perms::owner_read | fs::perms::owner_write);
+    ASSERT_NE(read_file_to_string(private_key_file).find("PRIVATE KEY"), std::string::npos);
+}
+
+TEST_F(EvseSecurityTests, private_key_file_does_not_follow_symlink) {
+    const fs::path target("key/symlink_target.txt");
+    const fs::path private_key_file("key/symlink_privkey.key");
+    fs::remove(private_key_file);
+    ASSERT_TRUE(filesystem_utils::write_to_file(target, "untouched", std::ios::trunc));
+    fs::create_symlink(fs::absolute(target), private_key_file);
+
+    KeyGenerationInfo info;
+    KeyHandle_ptr key;
+    info.key_type = CryptoKeyType::EC_prime256v1;
+    info.generate_on_custom = false;
+    info.private_key_file = private_key_file;
+
+    ASSERT_FALSE(CryptoSupplier::generate_key(info, key));
+    ASSERT_EQ(read_file_to_string(target), "untouched");
+    fs::remove(private_key_file);
+    fs::remove(target);
+}
+
+TEST_F(EvseSecurityTests, leaf_key_directories_are_owner_only) {
+    ASSERT_EQ(fs::status("certs/client/csms/").permissions(), fs::perms::owner_all);
+    ASSERT_EQ(fs::status("certs/client/cso/").permissions(), fs::perms::owner_all);
+}
+
 TEST_F(EvseSecurityTests, verify_keygen_csr) {
     KeyGenerationInfo info;
     KeyHandle_ptr key;
