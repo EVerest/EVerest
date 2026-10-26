@@ -20,6 +20,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     DerSaeRelayTest.cpp
     GridEventTest.cpp
     AcEvFeedbackTest.cpp
+    V2xChargingParametersTest.cpp
     ../charger/der_setup.cpp
     ../charger/der_relay.cpp
     ../charger/der_relay_sae.cpp
