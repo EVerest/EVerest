@@ -31,11 +31,6 @@ jobs:
       - name: Run clang-format
         uses: ./everest-ci/github-actions/run-clang-format
         with:
-          # The action appends a slash before `exclude`, so `source-dir` must not
-          # end in one: the resulting `//` matches no path and the exclusion is
-          # silently dropped.
           source-dir: source
           extensions: hpp,cpp
-          # Expected generator output, compared byte for byte and produced with
-          # --disable-clang-format.
           exclude: applications/utils/ev-dev-tools/tests/fixtures/golden
