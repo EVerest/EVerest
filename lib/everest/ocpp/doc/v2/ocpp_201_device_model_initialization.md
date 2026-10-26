@@ -83,7 +83,7 @@ variables that have no row in the component tables:
 
 | Table | Holds |
 |---|---|
-| `VARIABLE_MONITORING` | every monitor. `ID` is `AUTOINCREMENT`, so monitor ids stay unique and are never reused. `OWNER` records the owner of a variable registered at runtime. It is NULL for variables of the component config. |
+| `VARIABLE_MONITORING` | every monitor. `ID` is `AUTOINCREMENT`, so monitor ids stay unique and are never reused. |
 | `VARIABLE_ATTRIBUTE_VALUE` | attribute values of variables without a row in the component tables, written by `DeviceModelStorageSqlite::set_stored_value`. `set_variable_attribute_value` rejects a variable without a row. The primary key is the name key plus the attribute type. `OWNER` records the owner of the variable when the value was stored. |
 
 The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EVSE_ID`, `CONNECTOR_ID`,
@@ -94,9 +94,8 @@ the initialization with an error that names the file. Other invalid component co
 skipped custom config is then replaced by the standardized config of the same component, if there is one.
 
 Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
-configured removes all of its monitors without an owner, custom monitors included. Monitors with an owner belong to a
-variable registered at runtime and are kept. Components that are no longer configured are kept with their monitors,
-see [Update component config](#update-component-config).
+configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept
+with their monitors, see [Update component config](#update-component-config).
 `DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
 `get_all_monitors` returns all of them.
 

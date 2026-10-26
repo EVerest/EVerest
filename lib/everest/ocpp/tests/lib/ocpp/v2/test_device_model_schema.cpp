@@ -82,7 +82,6 @@ struct MonitorRow {
     int connector_id;
     std::string variable_name;
     std::string variable_instance;
-    std::optional<std::string> owner;
     int severity;
     int type_id;
     int config_type_id;
@@ -90,9 +89,9 @@ struct MonitorRow {
 
     bool operator==(const MonitorRow& other) const {
         return std::tie(id, component_name, component_instance, evse_id, connector_id, variable_name, variable_instance,
-                        owner, severity, type_id, config_type_id, reference_value) ==
+                        severity, type_id, config_type_id, reference_value) ==
                std::tie(other.id, other.component_name, other.component_instance, other.evse_id, other.connector_id,
-                        other.variable_name, other.variable_instance, other.owner, other.severity, other.type_id,
+                        other.variable_name, other.variable_instance, other.severity, other.type_id,
                         other.config_type_id, other.reference_value);
     }
 };
@@ -167,13 +166,13 @@ protected:
     std::vector<MonitorRow> monitor_rows() {
         auto statement = database->new_statement(
             "SELECT ID, COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, VARIABLE_INSTANCE, "
-            "OWNER, SEVERITY, TYPE_ID, CONFIG_TYPE_ID, REFERENCE_VALUE FROM VARIABLE_MONITORING ORDER BY ID");
+            "SEVERITY, TYPE_ID, CONFIG_TYPE_ID, REFERENCE_VALUE FROM VARIABLE_MONITORING ORDER BY ID");
         std::vector<MonitorRow> rows;
         while (statement->step() == SQLITE_ROW) {
             rows.push_back({statement->column_int(0), statement->column_text(1), statement->column_text(2),
                             statement->column_int(3), statement->column_int(4), statement->column_text(5),
-                            statement->column_text(6), statement->column_text_nullable(7), statement->column_int(8),
-                            statement->column_int(9), statement->column_int(10), statement->column_text_nullable(11)});
+                            statement->column_text(6), statement->column_int(7), statement->column_int(8),
+                            statement->column_int(9), statement->column_text_nullable(10)});
         }
         return rows;
     }
@@ -207,9 +206,9 @@ TEST_F(DeviceModelSchemaMigrationTest, ocpp_database_monitors_keep_their_ids_and
     migrate_to(SCHEMA_WITH_NAME_KEYED_MONITORS);
 
     const std::vector<MonitorRow> expected{
-        {1, "EVSE", "", 1, 0, "Power", "", std::nullopt, 5, 0, 2, std::nullopt},
-        {2, "OCPPCommCtrlr", "", 0, 0, "HeartbeatInterval", "", std::nullopt, 7, 2, 1, "300"},
-        {4, "NetworkConfiguration", "1", 0, 0, "MessageTimeout", "Default", std::nullopt, 8, 1, 2, std::nullopt},
+        {1, "EVSE", "", 1, 0, "Power", "", 5, 0, 2, std::nullopt},
+        {2, "OCPPCommCtrlr", "", 0, 0, "HeartbeatInterval", "", 7, 2, 1, "300"},
+        {4, "NetworkConfiguration", "1", 0, 0, "MessageTimeout", "Default", 8, 1, 2, std::nullopt},
     };
     EXPECT_EQ(monitor_rows(), expected);
     EXPECT_EQ(monitor_sequence(), 4);
@@ -226,7 +225,7 @@ TEST_F(DeviceModelSchemaMigrationTest, ocpp_database_monitors_keep_their_ids_and
     EXPECT_EQ(monitor->monitor.id, 5);
 }
 
-TEST_F(DeviceModelSchemaMigrationTest, migrated_monitors_have_no_owner) {
+TEST_F(DeviceModelSchemaMigrationTest, migrated_connector_monitor_gets_its_evse_and_connector_id) {
     create_schema_3_database(OCPP_DATABASE_SCHEMA_3);
     ASSERT_TRUE(database->execute_statement(
         "INSERT INTO VARIABLE_MONITORING (ID, VARIABLE_ID, SEVERITY, \"TRANSACTION\", TYPE_ID, CONFIG_TYPE_ID, VALUE) "
@@ -240,7 +239,6 @@ TEST_F(DeviceModelSchemaMigrationTest, migrated_monitors_have_no_owner) {
     EXPECT_EQ(rows.back().component_name, "Connector");
     EXPECT_EQ(rows.back().evse_id, 1);
     EXPECT_EQ(rows.back().connector_id, 1);
-    EXPECT_EQ(rows.back().owner, std::nullopt);
 }
 
 TEST_F(DeviceModelSchemaMigrationTest, everest_database_migrates_without_monitors) {
@@ -345,7 +343,6 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_on_a_variable_without_row) {
     EXPECT_EQ(it->component, runtime_component);
     EXPECT_EQ(it->variable, runtime_variable);
     EXPECT_EQ(it->monitor.monitor.value, 7000);
-    EXPECT_FALSE(it->owner.has_value());
 
     EXPECT_EQ(storage.clear_variable_monitor(monitor->monitor.id, false), ClearMonitoringStatusEnum::Accepted);
     EXPECT_TRUE(storage.get_all_monitors().empty());
@@ -361,7 +358,6 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_of_an_unknown_variable_is_st
     const auto all_monitors = storage.get_all_monitors();
     ASSERT_EQ(all_monitors.size(), 1);
     EXPECT_EQ(all_monitors.at(0).variable, misspelled);
-    EXPECT_FALSE(all_monitors.at(0).owner.has_value());
 
     const auto model = storage.get_device_model();
     EXPECT_EQ(model.at(heartbeat_component).count(misspelled), 0);
@@ -519,7 +515,7 @@ TEST_F(InitDeviceModelDbMonitorTest, preconfigured_monitor_is_seeded_by_name_key
     EXPECT_EQ(monitors_after.at(0).monitor.monitor.id, monitors.at(0).monitor.monitor.id);
 }
 
-TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_without_owner) {
+TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors) {
     auto configs = configs_with_heartbeat_monitor();
     initialize(configs);
     {
@@ -530,14 +526,7 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_wi
                                                                   MonitorEnum::LowerThreshold, 10, 4),
                                              VariableMonitorType::CustomMonitor)
                         .has_value());
-    }
-    {
-        everest::db::sqlite::Connection database(db_path);
-        ASSERT_TRUE(database.open_connection());
-        ASSERT_TRUE(database.execute_statement(
-            "INSERT INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
-            "VARIABLE_NAME, VARIABLE_INSTANCE, OWNER, SEVERITY, \"TRANSACTION\", TYPE_ID, CONFIG_TYPE_ID, VALUE) "
-            "VALUES ('OCPPCommCtrlr', '', 0, 0, 'HeartbeatInterval', '', 'RUNTIME_OWNER', 4, 0, 0, 2, 20)"));
+        ASSERT_EQ(storage.get_all_monitors().size(), 2);
     }
 
     auto& variables = configs.at(heartbeat_component_key);
@@ -547,9 +536,7 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_wi
     initialize(configs);
 
     DeviceModelStorageSqlite storage(db_path);
-    const auto monitors = storage.get_all_monitors();
-    ASSERT_EQ(monitors.size(), 1);
-    EXPECT_EQ(monitors.at(0).owner, "RUNTIME_OWNER");
+    EXPECT_TRUE(storage.get_all_monitors().empty());
 }
 
 namespace {

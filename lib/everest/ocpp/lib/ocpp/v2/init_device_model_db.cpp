@@ -820,9 +820,9 @@ void InitDeviceModelDb::insert_variable_monitor(const VariableMonitoringMeta& mo
                                                 const std::int64_t& variable_id) {
     const std::string insert_statement =
         "INSERT INTO VARIABLE_MONITORING (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, "
-        "VARIABLE_INSTANCE, OWNER, SEVERITY, 'TRANSACTION', TYPE_ID, CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
+        "VARIABLE_INSTANCE, SEVERITY, 'TRANSACTION', TYPE_ID, CONFIG_TYPE_ID, VALUE, REFERENCE_VALUE) "
         "SELECT c.NAME, IFNULL(c.INSTANCE, ''), IFNULL(c.EVSE_ID, 0), IFNULL(c.CONNECTOR_ID, 0), v.NAME, "
-        "IFNULL(v.INSTANCE, ''), NULL, ?, ?, ?, ?, ?, ? "
+        "IFNULL(v.INSTANCE, ''), ?, ?, ?, ?, ?, ? "
         "FROM VARIABLE v JOIN COMPONENT c ON c.ID = v.COMPONENT_ID WHERE v.ID = ?";
 
     auto insert_stmt = this->database->new_statement(insert_statement);
@@ -943,8 +943,7 @@ void InitDeviceModelDb::delete_variable_monitor(const VariableMonitoringMeta& mo
 
 void InitDeviceModelDb::delete_monitors(const std::string& variable_condition, const std::uint64_t id) {
     const std::string delete_query =
-        std::string("DELETE FROM VARIABLE_MONITORING WHERE OWNER IS NULL AND ID IN (SELECT vm.ID FROM "
-                    "VARIABLE_MONITORING vm ") +
+        std::string("DELETE FROM VARIABLE_MONITORING WHERE ID IN (SELECT vm.ID FROM VARIABLE_MONITORING vm ") +
         MONITOR_VARIABLE_JOIN + " WHERE " + variable_condition + ")";
     try {
         auto delete_stmt = this->database->new_statement(delete_query);

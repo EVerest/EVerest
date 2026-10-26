@@ -19,8 +19,6 @@ namespace v2 {
 struct StoredMonitor {
     Component component;
     Variable variable;
-    /// \brief The owner of the variable when the monitor was attached, if known
-    std::optional<std::string> owner;
     VariableMonitoringMeta monitor;
 };
 

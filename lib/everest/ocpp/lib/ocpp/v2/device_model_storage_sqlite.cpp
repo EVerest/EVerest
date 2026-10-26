@@ -548,7 +548,7 @@ std::optional<std::string> DeviceModelStorageSqlite::get_actual_value(const Comp
 std::vector<StoredMonitor> DeviceModelStorageSqlite::get_all_monitors() {
     auto select_stmt = this->db->new_statement(
         std::string("SELECT COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, VARIABLE_NAME, "
-                    "VARIABLE_INSTANCE, OWNER, ") +
+                    "VARIABLE_INSTANCE, ") +
         MONITOR_COLUMNS + " FROM VARIABLE_MONITORING ORDER BY ID");
 
     std::vector<StoredMonitor> monitors;
@@ -557,8 +557,7 @@ std::vector<StoredMonitor> DeviceModelStorageSqlite::get_all_monitors() {
         StoredMonitor stored_monitor;
         stored_monitor.component = std::move(component);
         stored_monitor.variable = std::move(variable);
-        stored_monitor.owner = select_stmt->column_text_nullable(6);
-        stored_monitor.monitor = read_monitor(*select_stmt, 7);
+        stored_monitor.monitor = read_monitor(*select_stmt, 6);
         monitors.push_back(std::move(stored_monitor));
     }
     return monitors;
