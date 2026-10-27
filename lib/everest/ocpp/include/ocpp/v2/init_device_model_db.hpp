@@ -123,9 +123,7 @@ private:
 ///
 /// \brief A component config uses a name key that monitors and stored values cannot represent: an empty component
 /// or variable instance, or an EVSE or connector id of 0, and when two components or two variables of one component
-/// share a name key, which compares names and instances case-insensitively. Unlike other errors in a component config,
-/// it is not skipped, because the standardized config of the same component would replace a skipped custom config and
-/// its variables would be removed with their monitors.
+/// share a name key, which compares names and instances case-insensitively.
 ///
 class ComponentConfigNameKeyError : public InitDeviceModelDbError {
 public:
@@ -137,8 +135,10 @@ public:
 /// \param directory    The parent directory containing the standardized and custom component config files.
 /// \return A map with the device model components, variables, characteristics and attributes.
 ///
-/// \throws ComponentConfigNameKeyError if a component config uses a name key that monitors cannot represent; other
-/// invalid component configs are skipped with a warning
+/// \throws InitDeviceModelDbError if a component config is invalid, with the path of the file. No file is skipped:
+/// the standardized config of the same component would replace a skipped custom config, and the variables only the
+/// custom config defines would be removed with their monitors.
+/// \throws ComponentConfigNameKeyError if a component config uses a name key that monitors cannot represent
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 get_all_component_configs(const std::filesystem::path& directory);
 

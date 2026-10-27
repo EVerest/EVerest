@@ -271,8 +271,7 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
         } catch (const ComponentConfigNameKeyError& e) {
             throw ComponentConfigNameKeyError("Invalid component config " + path.string() + ": " + e.what());
         } catch (const InitDeviceModelDbError& e) {
-            EVLOG_warning << "Skipping component config " << path << ": " << e.what();
-            continue;
+            throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
     }
 

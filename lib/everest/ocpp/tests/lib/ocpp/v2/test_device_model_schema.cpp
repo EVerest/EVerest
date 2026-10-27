@@ -584,22 +584,38 @@ TEST(ComponentConfigNameKeyTest, empty_instances_and_id_zero_are_rejected) {
     }
 }
 
-/// A skipped custom config would be replaced by the standardized config of the same component, whose initialization
-/// removes the variables only the custom config defines, together with their monitors
-TEST(ComponentConfigNameKeyTest, custom_config_with_invalid_name_key_is_not_skipped) {
+namespace {
+/// Writes a standardized NameKeyCtrlr config and a custom one with an additional variable \p custom_variable
+std::filesystem::path write_configs_with_custom_variable(const nlohmann::json& custom_variable) {
     const auto directory = libocpp_test::unique_temp_directory("libocpp_test_component_config_name_key");
     std::filesystem::create_directories(directory / "standardized");
     std::filesystem::create_directories(directory / "custom");
     auto custom = name_key_component_config();
-    custom["properties"]["Custom"] = custom["properties"]["Value"];
-    custom["properties"]["Custom"]["variable_name"] = "Custom";
-    custom["properties"]["Custom"]["instance"] = "";
+    custom["properties"]["Custom"] = custom_variable;
     std::ofstream(directory / "standardized" / "NameKeyCtrlr.json") << name_key_component_config().dump();
     std::ofstream(directory / "custom" / "NameKeyCtrlr.json") << custom.dump();
+    return directory;
+}
+} // namespace
 
-    EXPECT_THROW(get_all_component_configs(directory), ComponentConfigNameKeyError);
+/// A skipped custom config would be replaced by the standardized config of the same component, whose initialization
+/// removes the variables only the custom config defines, together with their monitors
+TEST(ComponentConfigNameKeyTest, invalid_custom_config_is_not_skipped) {
+    auto empty_instance = name_key_component_config()["properties"]["Value"];
+    empty_instance["variable_name"] = "Custom";
+    empty_instance["instance"] = "";
+    const auto name_key_directory = write_configs_with_custom_variable(empty_instance);
+    EXPECT_THROW(get_all_component_configs(name_key_directory), ComponentConfigNameKeyError);
+    std::filesystem::remove_all(name_key_directory);
 
-    std::filesystem::remove_all(directory);
+    auto unsupported_monitor = name_key_component_config()["properties"]["Value"];
+    unsupported_monitor["variable_name"] = "Custom";
+    unsupported_monitor["characteristics"]["supportsMonitoring"] = false;
+    unsupported_monitor["monitors"] = {
+        {{"type", "UpperThreshold"}, {"severity", 3}, {"value", 10}, {"config_type", "CustomMonitor"}}};
+    const auto monitor_directory = write_configs_with_custom_variable(unsupported_monitor);
+    EXPECT_THROW(get_all_component_configs(monitor_directory), InitDeviceModelDbError);
+    std::filesystem::remove_all(monitor_directory);
 }
 
 /// Monitors and stored values compare names and instances case-insensitively, so components or variables that differ

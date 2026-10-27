@@ -93,8 +93,9 @@ treats NULLs as distinct in keys, so an absent instance is stored as `''` and an
 component config with an empty component or variable instance, or with an EVSE or connector id of `0`, therefore stops
 the initialization with an error that names the file. Two components, or two variables of one component, whose names
 or instances differ only in case would share monitors and stored values, so they stop the initialization as well.
-Other invalid component configs are skipped with a warning; a skipped custom config is then replaced by the
-standardized config of the same component, if there is one.
+Any other invalid component config, for example a monitor on a variable without `supportsMonitoring`, stops the
+initialization too. No file is skipped: the standardized config of the same component would replace a skipped custom
+config, and the variables only the custom config defines would be removed with their monitors.
 
 Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
 configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept
