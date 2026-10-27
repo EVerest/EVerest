@@ -6,6 +6,8 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients implementing DC power supplies.
+    All numbers are carried as 32-bit floats: values with more than about seven significant digits are rounded
+    on the way in and out.
 
   license:
     name: Apache-2.0
@@ -155,6 +157,12 @@ components:
       name: receive_mode
       title: 'Receive mode'
       summary: 'Receive the requested mode for DC power supply and the current charging phase.'
+      description: >-
+        Over a session Export is requested with charging_phase CableCheck, then PreCharge, then Charging. Off
+        ends every phase and carries the phase that was active, for example Off/CableCheck after the cable check
+        and Off/Charging at the end of charging, never Other. At the end of a session EVerest requests Off before
+        it opens the output contactors. The setpoint for a phase arrives shortly before the mode request: keep
+        the last setpoint while Off and apply it when Export or Import is requested.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ModeRequest'
@@ -167,6 +175,12 @@ components:
         IEC 61851-23:2023 CC.5.5.2). Do not raise it to the minimum. If the hardware cannot regulate to 0 A,
         switch its output off, keep the mode, and switch it on again when a current at or above the minimum is
         requested.
+        The setpoint arrives shortly before the matching mode request. During CableCheck the voltage is the
+        maximum voltage the EV reported and the current at least 2 A; during PreCharge the voltage is the EV
+        target and the current at least 2 A and not below min_export_current_A. The reported voltage_V must
+        reach the setpoint within 10 s, otherwise the cable check fails with MREC11CableCheckFault and the EVSE
+        becomes inoperative. From the first current-demand target of the EV on, the EV target applies, including
+        the 0 A rule above.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -204,6 +218,7 @@ components:
       name: send_mode
       title: 'Send mode'
       summary: 'Current mode of DC power supply.'
+      description: Informational; EvseManager does not act on it.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Mode'
@@ -498,6 +513,10 @@ components:
         If they cannot be sent to the hardware, cache the last values received.
         Once the PSU is back on-line (e.g. after a CommunicationFault), set the last mode and voltage/current
         values and only after that clear the error.
+        The sub_type is part of the error identity: clear_error must repeat the sub_type of the raise (or omit
+        it when the raise omitted it). A raise of an error that is already active with the same type and
+        sub_type is ignored, as is a clear of an error that is not active; neither is answered or logged. An
+        unknown type is rejected with a log warning.
       type: object
       additionalProperties: true
       required:
@@ -529,7 +548,8 @@ components:
       description: >-
         Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive. Without
         it EVerest raises a CommunicationFault error on the API module, with sub_type "Initial communication check"
-        when no true arrived within the first period after start and "Bridge to implementation connection lost"
+        when no true arrived within the first period after the module became ready (the heartbeat starts at
+        the same moment) and "Bridge to implementation connection lost"
         after a later silence; the next true clears the fault. Send false to stop the check for the rest of the
         module's run: it clears an active CommunicationFault, no further fault is raised, and a later true does not
         start the check again; restart the module to re-enable it. Payloads other than a JSON boolean are ignored

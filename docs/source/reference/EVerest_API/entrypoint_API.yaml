@@ -119,13 +119,19 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                description: >-
+                  Address to send the response to. A request without it is parsed but not answered; EVerest
+                  only logs a warning.
       examples:
         - summary: "requesting available APIs"
           payload:
@@ -154,13 +160,19 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                description: >-
+                  Address to send the response to. A request without it is parsed but not answered; EVerest
+                  only logs a warning.
       examples:
         - summary: "requesting available APIs of type {api_type}"
           payload:

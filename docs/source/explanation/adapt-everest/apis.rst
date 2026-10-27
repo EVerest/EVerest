@@ -180,9 +180,16 @@ requirement for these messages).
 When no *communication_check* arrives in time, the API module raises a
 *CommunicationFault* error (sub type *Initial communication check* for the
 first period after start, *Bridge to implementation connection lost*
-afterwards) which the next *true* clears. Sending *false* stops the check for
-the rest of the run: it clears an active fault, and a later *true* does not
+afterwards) which the next *true* clears. The first period starts when the
+module is ready, together with the heartbeat. Sending *false* stops the check
+for the rest of the run: it clears an active fault, and a later *true* does not
 start the check again; restart the module to re-enable it.
+
+Errors raised through an API are identified by their type and sub type: a
+*clear_error* must repeat the sub type of the *raise_error*, a second raise of
+an already active error is ignored, and so is a clear of an error that is not
+active. All numbers in API payloads are carried as 32-bit floats, so values
+with more than about seven significant digits are rounded.
 
 In situations where a request/reply pattern is implemented, the timeout
 for a response can be configured (*cfg_request_reply_to_s* - these timeouts
