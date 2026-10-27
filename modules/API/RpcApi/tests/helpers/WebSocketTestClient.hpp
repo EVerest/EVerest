@@ -86,6 +86,7 @@ private:
     std::atomic<bool> m_lws_service_running{false};
     std::thread m_lws_service_thread;
     std::string m_received_data;
+    std::string m_partial_message;
     std::deque<std::string> m_received_messages;
 
 public:

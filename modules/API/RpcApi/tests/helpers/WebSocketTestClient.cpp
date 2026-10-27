@@ -56,9 +56,13 @@ int WebSocketTestClient::callback(struct lws* wsi, enum lws_callback_reasons rea
     case LWS_CALLBACK_CLIENT_RECEIVE: {
         std::lock_guard<std::mutex> lock(client->m_cv_mutex);
         try {
-            client->m_received_data.assign(static_cast<char*>(in), len);
-            client->m_received_messages.push_back(client->m_received_data);
-            client->m_cv.notify_all();
+            client->m_partial_message.append(static_cast<char*>(in), len);
+            if (lws_is_final_fragment(wsi) && lws_remaining_packet_payload(wsi) == 0) {
+                client->m_received_data = std::move(client->m_partial_message);
+                client->m_partial_message.clear();
+                client->m_received_messages.push_back(client->m_received_data);
+                client->m_cv.notify_all();
+            }
         } catch (const std::exception& e) {
             EVLOG_error << "Exception occurred while handling data available: " << e.what();
         }
@@ -148,23 +152,8 @@ const std::string& WebSocketTestClient::receive() const {
 }
 
 void WebSocketTestClient::close() {
-    if (m_wsi) {
-        if (m_connected == true) {
-            lws_close_reason(m_wsi, LWS_CLOSE_STATUS_NORMAL, nullptr, 0);
-        }
-
-        if (m_context == nullptr) {
-            EVLOG_error << "Error: WebSocket m_context not found!";
-            return;
-        }
-
-        stop_lws_service_thread();
-        m_wsi = nullptr;
-
-        if (m_lws_service_thread.joinable()) {
-            m_lws_service_thread.join(); // Wait for client thread to finish
-        }
-    }
+    stop_lws_service_thread();
+    m_wsi = nullptr;
     if (m_context) {
         lws_context_destroy(m_context);
         m_context = nullptr;

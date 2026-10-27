@@ -5,9 +5,12 @@
 
 #include <atomic>
 #include <boost/asio.hpp>
+#include <cstddef>
 #include <deque>
 #include <libwebsockets.h>
 #include <memory>
+#include <mutex>
+#include <optional>
 #include <string>
 #include <thread>
 #include <unordered_map>
@@ -34,6 +37,23 @@ public:
     bool stop_server() override;
 
 private:
+    friend class WebSocketServerTestAccess;
+
+    static constexpr std::size_t MAX_PENDING_MESSAGES_PER_CLIENT = 256;
+    static constexpr std::size_t MAX_PENDING_PAYLOAD_BYTES_PER_CLIENT = 1024 * 1024;
+
+    struct ClientState {
+        struct lws* wsi;
+        std::deque<Data> outgoing_messages;
+        std::size_t pending_payload_bytes = 0;
+        std::optional<std::string> close_reason;
+        bool close_scheduled = false;
+
+        explicit ClientState(struct lws* connection) : wsi(connection) {
+        }
+        void request_close(const std::string& reason);
+    };
+
     // Members
     bool m_ssl_enabled;
     std::shared_ptr<char> m_iface;
@@ -42,13 +62,12 @@ private:
     std::atomic<bool> m_running{false};
     struct lws_context* m_context = nullptr;
     std::thread m_server_thread;
-    std::unordered_map<ClientId, struct lws*> m_clients; // Client-Mapping
-    std::unordered_map<ClientId, std::deque<Data>> m_outgoing_messages;
-    std::unordered_map<ClientId, std::string> m_pending_close_reasons;
+    std::unordered_map<ClientId, ClientState> m_clients;
     mutable std::mutex m_clients_mutex;
 
     // Methods
     static int callback_ws(struct lws* wsi, enum lws_callback_reasons reason, void* user, void* in, size_t len);
+    void enqueue_message(const ClientId& client_id, ClientState& client, const Data& data);
 };
 
 } // namespace server
