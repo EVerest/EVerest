@@ -281,17 +281,20 @@ void InfyCanDevice::tick_handler() {
         return;
     }
 
-    // The module is not polled while the resync steps go out, so the timeout runs only once they are through.
+    // The module is not polled while the resync steps go out, so they have their own deadline instead of the
+    // receive timeout. Frames keep being dropped when the module stops acknowledging in the middle of them.
     if (not resync_steps.empty()) {
-        if (resync_steps.front()()) {
-            resync_steps.pop_front();
-            if (resync_steps.empty()) {
-                settings_restored = true;
-                ticks_since_rx = 0;
+        if (resync_ticks_left > 0) {
+            --resync_ticks_left;
+            if (send_resync_step()) {
+                last_tick_was_cycle = false;
+                return;
             }
+        } else {
+            EVLOG_warning << "Infy: module stopped answering while its settings were being restored";
+            abort_resync();
+            ticks_since_rx = RX_TIMEOUT_TICKS;
         }
-        last_tick_was_cycle = false;
-        return;
     }
 
     if (ticks_since_rx < RX_TIMEOUT_TICKS) {
@@ -314,7 +317,9 @@ void InfyCanDevice::tick_handler() {
     last_tick_was_cycle = true;
 }
 
-// Writes wait until the resync has restored the module, so it is never switched on with stale settings.
+// Writes wait until the resync has restored the module. Frames that were already queued in the socket or the CAN
+// controller when the module went silent still reach it before the resync does; CommunicationFault is raised by
+// then, so the contactors are open.
 void InfyCanDevice::send_cycle_step() {
     bool const writes_allowed = reported_connection.value_or(false);
     for (std::size_t i = 0; i < tx_cycle.size(); ++i) {
@@ -341,7 +346,8 @@ void InfyCanDevice::link_handler(bool up) {
 // Restores everything the module needs before it is reported as connected: errors/power_supply_DC.yaml requires mode
 // and setpoints to be set before CommunicationFault is cleared. Mode, setpoints and output state are read when their
 // frame is sent, so a command given while the module is being restored is not overridden. The output is switched on
-// last.
+// last, although the module may already have executed commands that sat in the socket or CAN controller queue while
+// it was silent.
 void InfyCanDevice::start_resync() {
     using namespace can_packet_acdc;
     EVLOG_info << "Infy: module answering, restoring settings and setpoints";
@@ -354,25 +360,52 @@ void InfyCanDevice::start_resync() {
     resync_steps.clear();
     settings_restored = false;
     if (power_factor.has_value()) {
-        resync_steps.push_back(
-            [this, pf = power_factor.value()] { return send(write_frame(ADDR_MODULE, PowerFactorAdjust(pf))); });
+        resync_steps.push_back([this, pf = power_factor.value()] {
+            return as_resync_step(send(write_frame(ADDR_MODULE, PowerFactorAdjust(pf))));
+        });
     }
     for (auto const& setting : generic_settings) {
         auto const address = setting.first;
         auto const value = setting.second;
         resync_steps.push_back([this, address, value] {
-            return send(write_frame(ADDR_BROADCAST, GenericSetting(address.first, address.second, value)));
+            return as_resync_step(
+                send(write_frame(ADDR_BROADCAST, GenericSetting(address.first, address.second, value))));
         });
     }
-    resync_steps.push_back([this] { return send(write_frame(ADDR_BROADCAST, WorkingMode(inverter_mode))); });
-    resync_steps.push_back([this] { return send(write_frame(ADDR_BROADCAST, WalkInEnable(walkin_enable))); });
+    resync_steps.push_back(
+        [this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, WorkingMode(inverter_mode)))); });
+    resync_steps.push_back(
+        [this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, WalkInEnable(walkin_enable)))); });
     resync_steps.push_back([this] {
-        return not setpoint_valid() or send(write_frame(ADDR_BROADCAST, SystemDCVoltage(setpoint_voltage)));
+        return setpoint_valid() ? as_resync_step(send(write_frame(ADDR_BROADCAST, SystemDCVoltage(setpoint_voltage))))
+                                : ResyncStep::Skipped;
     });
     resync_steps.push_back([this] {
-        return not setpoint_valid() or send(write_frame(ADDR_BROADCAST, SystemDCCurrent(setpoint_current)));
+        return setpoint_valid() ? as_resync_step(send(write_frame(ADDR_BROADCAST, SystemDCCurrent(setpoint_current))))
+                                : ResyncStep::Skipped;
     });
-    resync_steps.push_back([this] { return send(write_frame(ADDR_BROADCAST, OnOff(on))); });
+    resync_steps.push_back([this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, OnOff(on)))); });
+    resync_ticks_left = static_cast<unsigned>(resync_steps.size()) + RX_TIMEOUT_TICKS;
+}
+
+InfyCanDevice::ResyncStep InfyCanDevice::as_resync_step(bool sent) {
+    return sent ? ResyncStep::Sent : ResyncStep::Dropped;
+}
+
+// One frame per tick; steps with nothing to send do not cost a tick. Returns whether a frame went out.
+bool InfyCanDevice::send_resync_step() {
+    auto result = ResyncStep::Skipped;
+    while (result == ResyncStep::Skipped and not resync_steps.empty()) {
+        result = resync_steps.front()();
+        if (result != ResyncStep::Dropped) {
+            resync_steps.pop_front();
+        }
+    }
+    if (resync_steps.empty()) {
+        settings_restored = true;
+        ticks_since_rx = 0;
+    }
+    return result == ResyncStep::Sent;
 }
 
 void InfyCanDevice::abort_resync() {

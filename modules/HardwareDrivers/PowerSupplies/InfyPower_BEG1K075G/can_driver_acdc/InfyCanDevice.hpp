@@ -107,7 +107,14 @@ private:
     void requeue_front(Frame frame);
     bool setpoint_valid() const;
     void send_cycle_step();
+    enum class ResyncStep {
+        Sent,
+        Skipped,
+        Dropped
+    };
+    static ResyncStep as_resync_step(bool sent);
     void start_resync();
+    bool send_resync_step();
     void abort_resync();
     void report_connection(bool connected);
 
@@ -137,8 +144,10 @@ private:
 
     // CAN thread only
     bool link{false};
-    // Sent one per tick after the module answers, before anything else. A step that drops its frame is retried.
-    std::deque<std::function<bool()>> resync_steps;
+    // Sent one per tick after the module answers, before anything else. A step that drops its frame is retried
+    // until the deadline runs out.
+    std::deque<std::function<ResyncStep()>> resync_steps;
+    unsigned resync_ticks_left{0};
     // All resync steps sent; the next reply to a poll reports the module connected.
     bool settings_restored{false};
     bool last_tick_was_cycle{false};

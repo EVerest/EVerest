@@ -42,8 +42,9 @@ protected:
     // Whenever the interface is (re)opened or lost.
     virtual void link_handler(bool up) = 0;
     // Event thread only, so from the handlers above: socket_can is not thread safe. Returns false when the frame was
-    // dropped, which happens while the link is down or while the previous frame has not left the socket.
-    bool tx_frame(uint32_t can_id, const std::vector<uint8_t>& payload);
+    // dropped, which happens while the link is down or while the previous frame has not left the socket. Virtual so
+    // that a test can replace the socket.
+    virtual bool tx_frame(uint32_t can_id, const std::vector<uint8_t>& payload);
 
 private:
     void on_ready();
