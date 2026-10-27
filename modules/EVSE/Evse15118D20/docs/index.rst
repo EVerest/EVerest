@@ -48,6 +48,20 @@ The two DER flavors are mutually exclusive per EVSE, so at most one is ever
 advertised. EvseManager enforces that when it builds the energy transfer mode
 set; see "DER flavor selection" below.
 
+Network device
+==============
+
+``device`` names the interface the SECC listens on. It does not have to exist
+when the module starts: the module waits for it, checking once a second, and
+opens the SDP server as soon as it appears. The interface index is checked at
+the same rate, so a device that disappears (USB PLC modem unplugged, driver
+reloaded) terminates the running session with ``DLINK_TERMINATE`` (or reports
+``DLINK_ERROR`` when the link was ready but no EV had connected yet) and closes
+the SDP server. The replacement device is picked up again under its new index;
+its SDP server stays silent until SLAC reports the data link ready again. With ``device: auto`` the first interface with an IPv6 link-local
+address is used, so a PLC device that is missing at startup is not waited for
+in that mode.
+
 Plug and Charge
 ===============
 
