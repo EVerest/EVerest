@@ -171,8 +171,10 @@ available and in good working conditions. For this reason, a
 bidirectional communication check is available.
 
 EVerest APIs sends *heartbeat* messages periodically
-(*cfg_heartbeat_interval_ms* - with negative values disabling heartbeat
-messages) and on the other hand requires the clients to send
+(*cfg_heartbeat_interval_ms* - with values of zero or less disabling heartbeat
+messages) from the moment the module is ready; the payload is an integer id
+that starts at 0, increases by 1 per message and wraps at the 64-bit limit.
+On the other hand EVerest requires the clients to send
 *communication_check* messages within the timeout interval specified
 (*cfg_communication_check_to_s* - with negative values disabling the
 requirement for these messages).
