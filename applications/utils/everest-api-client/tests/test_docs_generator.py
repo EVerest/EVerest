@@ -206,6 +206,35 @@ def test_ref_with_conflicting_sibling_type_fails(tmp_path):
         builder.node(specs.get("x_API.yaml")["components"]["schemas"]["Session"], "Session")
 
 
+def test_payload_ref_to_a_non_schema_fails(tmp_path):
+    (tmp_path / "x_API.yaml").write_text(
+        "info: {title: X}\n"
+        "servers: {default: {pathname: x}}\n"
+        "channels: {c: {address: a, messages: {m: {$ref: '#/components/messages/m'}}}}\n"
+        "operations: {op: {action: send, channel: {$ref: '#/channels/c'}}}\n"
+        "components:\n"
+        "  messages:\n"
+        "    m: {payload: {$ref: '#/info/title'}}\n",
+        encoding="utf-8")
+    with pytest.raises(SpecError, match="'#/info/title' is not a schema"):
+        generate_html(tmp_path / "x_API.yaml", tmp_path / "out")
+
+
+def test_null_operation_fails(tmp_path):
+    (tmp_path / "x_API.yaml").write_text("operations: {op: }\n", encoding="utf-8")
+    with pytest.raises(SpecError, match="operation 'op' is not a mapping"):
+        generate_html(tmp_path / "x_API.yaml", tmp_path / "out")
+
+
+def test_invalid_spec_fails_the_reference(tmp_path):
+    spec = tmp_path / "x_API.yaml"
+    spec.write_text((SPECS_DIR / "powermeter_API.yaml").read_text(encoding="utf-8")
+                    .replace("asyncapi:", "bogus: 1\nasyncapi:", 1), encoding="utf-8")
+    with pytest.raises(SpecError, match="x_API.yaml is not a valid AsyncAPI 3.0 document"):
+        generate_reference([spec], tmp_path / "html", tmp_path / "index.rst")
+    assert not (tmp_path / "html").exists()
+
+
 def test_render_description_escapes_and_formats():
     out = str(render_description("Use `a<b>` **now**\n\n- one\n- two <script>"))
     assert "<code>a&lt;b&gt;</code>" in out

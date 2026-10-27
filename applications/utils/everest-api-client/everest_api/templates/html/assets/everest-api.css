@@ -2,38 +2,87 @@
 /* Copyright Pionix GmbH and Contributors to EVerest */
 /* Shared stylesheet of the EVerest API reference pages. */
 
+/* Light values on :root; the dark set below applies when the OS prefers
+   dark and the theme switch did not pick light, or when it picked dark. */
 :root {
   color-scheme: light dark;
-  --bg: light-dark(#ffffff, #15171c);
-  --bg-soft: light-dark(#f6f7f9, #1c1f26);
-  --bg-code: light-dark(#f1f3f6, #232731);
-  --fg: light-dark(#1d2129, #e4e7ec);
-  --fg-muted: light-dark(#5c6370, #9aa3b2);
-  --border: light-dark(#dde1e7, #2f3542);
-  --accent: light-dark(#0a5bd6, #6ea8ff);
-  --accent-soft: light-dark(#e6effc, #1b2a44);
-  --send: light-dark(#9a4d00, #ffb46b);
-  --send-bg: light-dark(#fff1e0, #3a2610);
-  --receive: light-dark(#0b6b47, #5fd3a2);
-  --receive-bg: light-dark(#e3f6ed, #11342a);
-  --req: light-dark(#b4232c, #ff8a8f);
-  --shadow: 0 1px 2px light-dark(rgba(16, 24, 40, 0.06), transparent);
-  --warn: light-dark(#8a5300, #ffd27a);
-  --warn-bg: light-dark(#fff7e0, #352a12);
-  --warn-border: light-dark(#f0c360, #7a5a1c);
-  --sec-servers: light-dark(#5c6370, #9aa3b2);
-  --sec-operations: light-dark(#0a5bd6, #6ea8ff);
-  --sec-messages: light-dark(#7a3fc4, #b994ff);
-  --sec-schemas: light-dark(#0e7a8a, #4fd1e0);
+  --bg: #ffffff;
+  --bg-soft: #f6f7f9;
+  --bg-code: #f1f3f6;
+  --fg: #1d2129;
+  --fg-muted: #5c6370;
+  --border: #dde1e7;
+  --accent: #0a5bd6;
+  --accent-soft: #e6effc;
+  --send: #9a4d00;
+  --send-bg: #fff1e0;
+  --receive: #0b6b47;
+  --receive-bg: #e3f6ed;
+  --req: #b4232c;
+  --shadow: 0 1px 2px rgba(16, 24, 40, 0.06);
+  --warn: #8a5300;
+  --warn-bg: #fff7e0;
+  --warn-border: #f0c360;
+  --sec-servers: #5c6370;
+  --sec-operations: #0a5bd6;
+  --sec-messages: #7a3fc4;
+  --sec-schemas: #0e7a8a;
   --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
   --sans: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --sidebar-width: 18rem;
   --topbar-h: 3.1rem;
 }
-
-/* The theme switch only picks the color scheme; every token follows it. */
 :root[data-theme="light"] { color-scheme: light; }
 :root[data-theme="dark"] { color-scheme: dark; }
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #15171c;
+    --bg-soft: #1c1f26;
+    --bg-code: #232731;
+    --fg: #e4e7ec;
+    --fg-muted: #9aa3b2;
+    --border: #2f3542;
+    --accent: #6ea8ff;
+    --accent-soft: #1b2a44;
+    --send: #ffb46b;
+    --send-bg: #3a2610;
+    --receive: #5fd3a2;
+    --receive-bg: #11342a;
+    --req: #ff8a8f;
+    --shadow: none;
+    --warn: #ffd27a;
+    --warn-bg: #352a12;
+    --warn-border: #7a5a1c;
+    --sec-servers: #9aa3b2;
+    --sec-operations: #6ea8ff;
+    --sec-messages: #b994ff;
+    --sec-schemas: #4fd1e0;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #15171c;
+  --bg-soft: #1c1f26;
+  --bg-code: #232731;
+  --fg: #e4e7ec;
+  --fg-muted: #9aa3b2;
+  --border: #2f3542;
+  --accent: #6ea8ff;
+  --accent-soft: #1b2a44;
+  --send: #ffb46b;
+  --send-bg: #3a2610;
+  --receive: #5fd3a2;
+  --receive-bg: #11342a;
+  --req: #ff8a8f;
+  --shadow: none;
+  --warn: #ffd27a;
+  --warn-bg: #352a12;
+  --warn-border: #7a5a1c;
+  --sec-servers: #9aa3b2;
+  --sec-operations: #6ea8ff;
+  --sec-messages: #b994ff;
+  --sec-schemas: #4fd1e0;
+}
 
 * { box-sizing: border-box; }
 

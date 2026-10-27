@@ -338,6 +338,8 @@ class _SampleBuilder:
             return None
         while "$ref" in schema:
             target_file, _, target = self._specs.resolve(file_name, schema["$ref"])
+            if not isinstance(target, dict):
+                raise SpecError(f"{file_name}: $ref {schema['$ref']!r} is not a schema")
             depth += 1
             if depth > _MAX_DEPTH:
                 return None
@@ -453,6 +455,8 @@ def build_doc_model(spec_path, specs=None):
 
     operations = []
     for op_id, op in operations_doc.items():
+        if not isinstance(op, dict):
+            raise SpecError(f"operation '{op_id}' is not a mapping")
         action = op.get("action")
         if action not in ("send", "receive"):
             raise SpecError(f"operation '{op_id}' has invalid action {action!r}")

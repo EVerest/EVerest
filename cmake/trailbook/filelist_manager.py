@@ -122,15 +122,19 @@ def sync_filelist(args):
     """Mirror the source directory into the root directory. Only files whose
     content differs are copied, keeping their modification time, so a file
     that did not change keeps the time Sphinx last saw. Files of the previous
-    sync that vanished from the source are removed, then the list is written.
+    sync that vanished from the source are removed, as are their directories
+    once empty, then the list is written.
     """
     if not args.source_dir.is_dir():
         raise ValueError("Source directory must be a directory")
 
     previous_files = []
+    previous_directories = []
     if args.data_file.exists():
         with args.data_file.open('r') as f:
-            previous_files = (yaml.safe_load(f) or {}).get('files', [])
+            previous = yaml.safe_load(f) or {}
+        previous_files = previous.get('files', [])
+        previous_directories = previous.get('directories', [])
 
     file_paths = []
     directory_paths = []
@@ -150,6 +154,15 @@ def sync_filelist(args):
         stale = args.root_dir / relative_path
         if relative_path not in file_paths and stale.is_file():
             stale.unlink()
+    # deepest first, so a vanished tree is removed from the leaves up; a
+    # directory something else wrote into is not empty and stays
+    for relative_path in sorted(previous_directories, key=lambda p: p.count('/'), reverse=True):
+        stale = args.root_dir / relative_path
+        if relative_path not in directory_paths and stale.is_dir():
+            try:
+                stale.rmdir()
+            except OSError:
+                pass
 
     args.data_file.parent.mkdir(parents=True, exist_ok=True)
     with args.data_file.open('w') as f:
