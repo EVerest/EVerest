@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright chargebyte GmbH and Contributors to EVerest
 
+#include <chrono>
 #include <everest/logging.hpp>
 #include <gtest/gtest.h>
 #include <set>
@@ -41,6 +42,12 @@ public:
 
 class WebSocketServerTest : public ::testing::Test {
 protected:
+    static constexpr std::chrono::seconds CLIENT_HANDSHAKE_TIMEOUT{2};
+    static constexpr std::chrono::seconds CLIENT_REGISTRATION_TIMEOUT{2};
+    static constexpr std::chrono::seconds CLIENT_DISCONNECTION_TIMEOUT{2};
+    static constexpr std::chrono::seconds MESSAGE_RECEIVE_TIMEOUT{2};
+    static constexpr std::chrono::seconds LARGE_MESSAGE_RECEIVE_TIMEOUT{5};
+
     std::unique_ptr<WebSocketServer> ws_server;
     int test_port = 8080;
 
@@ -110,8 +117,9 @@ protected:
     }
 
     bool wait_for_service_pause() {
+        constexpr std::chrono::seconds SERVICE_PAUSE_TIMEOUT{2};
         std::unique_lock<std::mutex> lock(cv_mutex);
-        return cv.wait_for(lock, std::chrono::seconds(2), [this] { return service_paused; });
+        return cv.wait_for(lock, SERVICE_PAUSE_TIMEOUT, [this] { return service_paused; });
     }
 
     void resume_server() {
@@ -120,18 +128,20 @@ protected:
         cv.notify_all();
     }
 
-    bool wait_for_client_count(std::size_t count) {
+    bool wait_for_client_count(std::size_t count, std::chrono::seconds timeout) {
         std::unique_lock<std::mutex> lock(cv_mutex);
-        return cv.wait_for(lock, std::chrono::seconds(2), [this, count] { return connected_clients.size() == count; });
+        return cv.wait_for(lock, timeout, [this, count] { return connected_clients.size() == count; });
     }
 
-    template <typename Predicate> bool wait_until(Predicate predicate) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+    template <typename Predicate> bool wait_for_queue_progress(Predicate predicate) {
+        constexpr std::chrono::seconds QUEUE_PROGRESS_TIMEOUT{2};
+        constexpr std::chrono::milliseconds QUEUE_POLL_INTERVAL{1};
+        const auto deadline = std::chrono::steady_clock::now() + QUEUE_PROGRESS_TIMEOUT;
         while (!predicate()) {
             if (std::chrono::steady_clock::now() >= deadline) {
                 return false;
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+            std::this_thread::sleep_for(QUEUE_POLL_INTERVAL);
         }
         return true;
     }
@@ -233,7 +243,7 @@ TEST_F(WebSocketServerTest, ConcurrentSendersDeliverEveryQueuedMessage) {
 
     std::set<std::string> received;
     for (int i = 0; i < sender_count * messages_per_sender; ++i) {
-        const auto message = client.wait_for_data(std::chrono::seconds(2), false);
+        const auto message = client.wait_for_data(MESSAGE_RECEIVE_TIMEOUT, false);
         ASSERT_FALSE(message.empty()) << "Timed out waiting for queued message " << i;
         received.insert(message);
     }
@@ -265,7 +275,7 @@ class WebSocketServerQueueTest : public WebSocketServerTest, public ::testing::W
 protected:
     bool connect_paused(WebSocketTestClient& client) {
         pause_server_on_connect();
-        return client.connect() && wait_for_service_pause() && client.wait_until_connected(std::chrono::seconds(2));
+        return client.connect() && wait_for_service_pause() && client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT);
     }
 
     void enqueue(const TransportInterface::ClientId& id, const TransportInterface::Data& data) {
@@ -287,7 +297,7 @@ TEST_P(WebSocketServerQueueTest, AcceptsMessageCountBoundaryAndPreservesOrder) {
     }
     resume_server();
     for (std::size_t i = 0; i < WebSocketServerTestAccess::message_limit(); ++i) {
-        ASSERT_EQ(client.wait_for_data(std::chrono::seconds(2), false), std::to_string(i));
+        ASSERT_EQ(client.wait_for_data(MESSAGE_RECEIVE_TIMEOUT, false), std::to_string(i));
     }
     ASSERT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
 }
@@ -299,10 +309,10 @@ TEST_P(WebSocketServerQueueTest, AcceptsPayloadByteBoundaryAndReleasesAccounting
     const TransportInterface::Data payload(WebSocketServerTestAccess::payload_limit(), 'a');
     enqueue(id, payload);
     resume_server();
-    ASSERT_EQ(client.wait_for_data(std::chrono::seconds(5), false), std::string(payload.begin(), payload.end()));
+    ASSERT_EQ(client.wait_for_data(LARGE_MESSAGE_RECEIVE_TIMEOUT, false), std::string(payload.begin(), payload.end()));
     ASSERT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
     enqueue(id, payload);
-    ASSERT_EQ(client.wait_for_data(std::chrono::seconds(5), false), std::string(payload.begin(), payload.end()));
+    ASSERT_EQ(client.wait_for_data(LARGE_MESSAGE_RECEIVE_TIMEOUT, false), std::string(payload.begin(), payload.end()));
 }
 
 TEST_P(WebSocketServerQueueTest, ClosesOnMessageCountOverflowIncludingEmptyMessages) {
@@ -317,7 +327,7 @@ TEST_P(WebSocketServerQueueTest, ClosesOnMessageCountOverflowIncludingEmptyMessa
     enqueue(id, {'x'});
     ASSERT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
     resume_server();
-    ASSERT_TRUE(wait_for_client_count(0));
+    ASSERT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
     EXPECT_EQ(ws_server->connections_count(), 0);
 }
 
@@ -331,7 +341,7 @@ TEST_P(WebSocketServerQueueTest, ClosesOnPayloadByteOverflow) {
     enqueue(id, {'x'});
     ASSERT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
     resume_server();
-    ASSERT_TRUE(wait_for_client_count(0));
+    ASSERT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
 }
 
 TEST_P(WebSocketServerQueueTest, RejectsOversizedMessageAndAllowsFreshConnection) {
@@ -341,15 +351,16 @@ TEST_P(WebSocketServerQueueTest, RejectsOversizedMessageAndAllowsFreshConnection
     enqueue(id, TransportInterface::Data(WebSocketServerTestAccess::payload_limit() + 1, 'a'));
     ASSERT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
     resume_server();
-    ASSERT_TRUE(wait_for_client_count(0));
+    ASSERT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
 
     WebSocketTestClient replacement("localhost", test_port);
     ASSERT_TRUE(replacement.connect());
-    ASSERT_TRUE(wait_for_client_count(1));
-    ASSERT_TRUE(replacement.wait_until_connected(std::chrono::seconds(2)));
+    ASSERT_TRUE(wait_for_client_count(1, CLIENT_REGISTRATION_TIMEOUT));
+    ASSERT_TRUE(replacement.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
     const TransportInterface::Data payload(WebSocketServerTestAccess::payload_limit(), 'b');
     enqueue(get_connected_clients().back(), payload);
-    ASSERT_EQ(replacement.wait_for_data(std::chrono::seconds(5), false), std::string(payload.begin(), payload.end()));
+    ASSERT_EQ(replacement.wait_for_data(LARGE_MESSAGE_RECEIVE_TIMEOUT, false),
+              std::string(payload.begin(), payload.end()));
 }
 
 INSTANTIATE_TEST_SUITE_P(SendPaths, WebSocketServerQueueTest, ::testing::Bool(),
@@ -360,8 +371,8 @@ INSTANTIATE_TEST_SUITE_P(SendPaths, WebSocketServerQueueTest, ::testing::Bool(),
 TEST_F(WebSocketServerTest, BroadcastOverflowClosesOnlyTheOverloadedClient) {
     WebSocketTestClient healthy("localhost", test_port);
     ASSERT_TRUE(healthy.connect());
-    ASSERT_TRUE(wait_for_client_count(1));
-    ASSERT_TRUE(healthy.wait_until_connected(std::chrono::seconds(2)));
+    ASSERT_TRUE(wait_for_client_count(1, CLIENT_REGISTRATION_TIMEOUT));
+    ASSERT_TRUE(healthy.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
 
     pause_server_on_connect();
     WebSocketTestClient overloaded("localhost", test_port);
@@ -373,17 +384,18 @@ TEST_F(WebSocketServerTest, BroadcastOverflowClosesOnlyTheOverloadedClient) {
     }
     ws_server->send_data(TransportInterface::Data{'h'});
     resume_server();
-    ASSERT_TRUE(wait_for_client_count(1));
-    ASSERT_EQ(healthy.wait_for_data(std::chrono::seconds(2), false), "h");
+    ASSERT_TRUE(wait_for_client_count(1, CLIENT_DISCONNECTION_TIMEOUT));
+    ASSERT_EQ(healthy.wait_for_data(MESSAGE_RECEIVE_TIMEOUT, false), "h");
     EXPECT_EQ(ws_server->connections_count(), 1);
 }
 
 TEST_F(WebSocketServerTest, PausedReaderReceivesBufferedMessagesExactlyOnce) {
+    constexpr std::chrono::milliseconds EXTRA_MESSAGE_OBSERVATION_TIMEOUT{50};
     pause_server_on_connect();
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
     ASSERT_TRUE(wait_for_service_pause());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::seconds(2)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
     const auto id = get_connected_clients().back();
     constexpr int SOCKET_SEND_BUFFER_BYTES = 4096;
     ASSERT_TRUE(WebSocketServerTestAccess::set_send_buffer_size(*ws_server, id, SOCKET_SEND_BUFFER_BYTES));
@@ -393,12 +405,13 @@ TEST_F(WebSocketServerTest, PausedReaderReceivesBufferedMessagesExactlyOnce) {
     ws_server->send_data(id, first);
     ws_server->send_data(id, second);
     resume_server();
-    ASSERT_TRUE(wait_until([&] { return WebSocketServerTestAccess::queued_message_count(*ws_server, id) == 1; }));
+    ASSERT_TRUE(
+        wait_for_queue_progress([&] { return WebSocketServerTestAccess::queued_message_count(*ws_server, id) == 1; }));
     client.start_lws_service_thread();
-    ASSERT_EQ(client.wait_for_data(std::chrono::seconds(5), false), std::string(first.begin(), first.end()));
-    ASSERT_EQ(client.wait_for_data(std::chrono::seconds(5), false), std::string(second.begin(), second.end()));
+    ASSERT_EQ(client.wait_for_data(LARGE_MESSAGE_RECEIVE_TIMEOUT, false), std::string(first.begin(), first.end()));
+    ASSERT_EQ(client.wait_for_data(LARGE_MESSAGE_RECEIVE_TIMEOUT, false), std::string(second.begin(), second.end()));
     EXPECT_TRUE(WebSocketServerTestAccess::queue_empty(*ws_server, id));
-    EXPECT_FALSE(client.wait_for_response(std::chrono::milliseconds(50)));
+    EXPECT_FALSE(client.wait_for_response(EXTRA_MESSAGE_OBSERVATION_TIMEOUT));
 }
 
 TEST_F(WebSocketServerTest, ForcedCloseDoesNotWaitForPausedReader) {
@@ -406,16 +419,16 @@ TEST_F(WebSocketServerTest, ForcedCloseDoesNotWaitForPausedReader) {
     WebSocketTestClient client("localhost", test_port);
     ASSERT_TRUE(client.connect());
     ASSERT_TRUE(wait_for_service_pause());
-    ASSERT_TRUE(client.wait_until_connected(std::chrono::seconds(2)));
+    ASSERT_TRUE(client.wait_until_connected(CLIENT_HANDSHAKE_TIMEOUT));
     const auto id = get_connected_clients().back();
     constexpr int SOCKET_SEND_BUFFER_BYTES = 4096;
     ASSERT_TRUE(WebSocketServerTestAccess::set_send_buffer_size(*ws_server, id, SOCKET_SEND_BUFFER_BYTES));
     client.stop_lws_service_thread();
     ws_server->send_data(id, TransportInterface::Data(WebSocketServerTestAccess::payload_limit(), 'a'));
     resume_server();
-    ASSERT_TRUE(wait_until([&] { return WebSocketServerTestAccess::queue_empty(*ws_server, id); }));
+    ASSERT_TRUE(wait_for_queue_progress([&] { return WebSocketServerTestAccess::queue_empty(*ws_server, id); }));
     ws_server->kill_client_connection(id, "Non-reading client");
-    ASSERT_TRUE(wait_for_client_count(0));
+    ASSERT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
     EXPECT_EQ(ws_server->connections_count(), 0);
 }
 
@@ -430,11 +443,11 @@ TEST_F(WebSocketServerTest, ShutdownClearsQueuedMessagesAndPendingCloses) {
     resume_server();
     ASSERT_TRUE(ws_server->stop_server());
     EXPECT_EQ(ws_server->connections_count(), 0);
-    EXPECT_TRUE(wait_for_client_count(0));
+    EXPECT_TRUE(wait_for_client_count(0, CLIENT_DISCONNECTION_TIMEOUT));
     ASSERT_TRUE(ws_server->start_server());
     WebSocketTestClient replacement("localhost", test_port);
     ASSERT_TRUE(replacement.connect());
-    ASSERT_TRUE(wait_for_client_count(1));
+    ASSERT_TRUE(wait_for_client_count(1, CLIENT_REGISTRATION_TIMEOUT));
     ws_server->send_data(get_connected_clients().back(), {'x'});
-    EXPECT_EQ(replacement.wait_for_data(std::chrono::seconds(2), false), "x");
+    EXPECT_EQ(replacement.wait_for_data(MESSAGE_RECEIVE_TIMEOUT, false), "x");
 }
