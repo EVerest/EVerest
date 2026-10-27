@@ -91,13 +91,18 @@ Boot Sources and the Configuration Database
 *******************************************
 
 Which configuration the manager boots from is resolved from the command line
-options. There are three cases.
+options. There are three cases. They only decide where module configurations
+come from; manager settings (installation paths, MQTT broker and prefixes,
+telemetry, schema validation) come from ``--settings`` in all of them, see
+:ref:`exp_config_service_settings`.
 
 **No** ``--db`` **(with** ``--config`` **or the default config lookup)**
-  The YAML config is authoritative. It is parsed, including the
-  ``user-config/<config-name>.yaml`` merge, and seeded into a process-private
-  **in-memory** database on every start. Nothing is persisted to disk except
-  runtime configuration writes, which go to the user-config YAML.
+  The YAML config is authoritative. It is parsed, including the user-config
+  merge, and seeded into a process-private **in-memory** database on every
+  start. Nothing is persisted to disk except runtime configuration writes,
+  which go to the user-config YAML. The user-config is
+  ``user-config/<config-name>.yaml`` in the directory of the config file, or
+  the file given with ``--user-config``.
   The default config file ``<prefix>/etc/everest/default.yaml`` is optional: if
   neither ``--config`` is given nor that file exists, the manager starts with an
   empty configuration on built-in defaults (and exits with no modules unless
@@ -106,22 +111,15 @@ options. There are three cases.
 
 ``--db`` **only**
   The database file is the only configuration source for module
-  configurations. The database never holds the manager ``settings:`` block, so
-  the settings come from built-in defaults: installation paths (``prefix``,
-  ``modules_dir``, ``interfaces_dir``, ``types_dir``, ``errors_dir``,
-  ``schemas_dir``, ``configs_dir``, ``logging_config_file``), MQTT broker and
-  prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
-  ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
-  ``mqtt_external_prefix``), ``run_as_user`` (deprecated), ``telemetry_enabled``,
-  ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
-  Deployments that need any non-default setting pass ``--config`` alongside
-  ``--db``.
+  configurations. The database never holds manager settings, so they come from
+  ``--settings``, or from built-in defaults without it. Deployments that need
+  any non-default setting pass ``--settings`` alongside ``--db``.
 
   Databases created before the multi-configuration schema stored these
   settings in a ``SETTING`` table. Schema migration 4 drops that table without
   carrying the values over; a database upgraded from such a release therefore
-  needs ``--config`` alongside ``--db`` to keep a non-default broker, prefix or
-  user.
+  needs ``--settings`` alongside ``--db`` to keep a non-default broker or
+  prefix.
 
 ``--config`` **and** ``--db``
   The database wins when its boot slot holds at least one module, and the YAML
@@ -148,11 +146,6 @@ Related options:
 - ``--conf`` is a deprecated alias for ``--config``. Passing both at once is
   rejected as ambiguous.
 
-The ``settings:`` keys ``www_dir``, ``controller_port`` and
-``controller_rpc_timeout_ms`` belonged to the removed admin panel backend. They
-are deprecated: a config that still sets them is accepted, the values are
-ignored and the manager logs a warning for each of them at startup.
-
 .. note::
 
    Without ``--db``, the in-memory database is still a complete multi-slot
@@ -163,6 +156,47 @@ ignored and the manager logs a warning for each of them at startup.
    restart, and only active-slot parameter writes are persisted, through the
    user-config mirror. The ``everest-config-tool`` cannot inspect an in-memory
    database.
+
+.. _exp_config_service_settings:
+
+Manager Settings
+================
+
+Manager settings are read from a YAML file passed with ``--settings``,
+validated against the schema ``<prefix>/share/everest/schemas/settings.yaml``.
+Relative paths are resolved against the installation prefix:
+
+.. code-block:: yaml
+
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
+   telemetry_enabled: true
+
+Example settings files are installed next to the example configs in
+``<prefix>/etc/everest``:
+
+``settings-all-options.yaml``
+  Every available setting with its built-in default and a short explanation.
+``settings-mqtt-tcp.yaml``
+  An MQTT broker reachable over TCP.
+``settings-mqtt-uds.yaml``
+  An MQTT broker reachable over a Unix domain socket.
+
+The keys are ``configs_dir``, ``schemas_dir``, ``modules_dir``,
+``interfaces_dir``, ``types_dir``, ``errors_dir``, ``logging_config_file``,
+``mqtt_broker_socket_path``, ``mqtt_broker_host``, ``mqtt_broker_port``,
+``mqtt_everest_prefix``, ``mqtt_external_prefix``, ``telemetry_prefix``,
+``telemetry_enabled``, ``validate_schema`` and ``forward_exceptions``. Unknown
+keys, including the deprecated ones below, are rejected. There is no default
+settings file: without ``--settings``, the deprecated ``settings:`` block of
+the config file applies, and built-in defaults fill in what it does not set.
+
+The ``settings:`` block of the config file is deprecated. Without
+``--settings`` it is still applied, and the manager logs a deprecation warning.
+With ``--settings`` it is ignored, with a warning. Its keys ``www_dir``,
+``controller_port`` and ``controller_rpc_timeout_ms`` belonged to the removed
+admin panel backend: a config that still sets them is accepted, the values are
+ignored and the manager logs a warning for each of them at startup. The
+deprecated ``run_as_user`` is only accepted in the config's ``settings:`` block.
 
 *******************
 Communication Paths

@@ -85,6 +85,7 @@ public:
         int switch_3ph1ph_delay_s{0};
         std::string switch_3ph1ph_cp_state{};
         int soft_over_current_timeout_ms{0};
+        int soft_over_current_stale_data_warning_ms{0};
         int state_F_after_fault_ms{0};
         int reinit_duration_ms{0};
         std::string reinit_method{};
@@ -198,6 +199,8 @@ public:
     void run();
 
     void request_error_sequence();
+    // request_error_sequence() without taking the state machine mutex: for the main loop itself.
+    void request_error_sequence_internal();
 
     void set_matching_started(bool m);
     void set_slac_matched(bool matched);
@@ -218,6 +221,9 @@ public:
     types::iso15118::DcEvseMinimumLimits get_evse_min_hlc_limits();
 
     void dlink_pause();
+    // AC HLC session authorized by PnC whose EV never started the charging loop: the data link ending is
+    // the EV asking for basic charging.
+    bool pnc_without_charging_loop() const;
     void dlink_error();
     // Returns true if the terminate was a data link loss during session setup and was handled as a D-LINK_ERROR;
     // the caller then forwards a D-LINK_ERROR rather than a D-LINK_TERMINATE to the data link layer.
@@ -416,11 +422,15 @@ private:
         std::optional<types::evse_manager::StopTransactionReason> last_stop_transaction_reason;
         types::evse_manager::StartSessionReason last_start_session_reason;
         float current_drawn_by_vehicle[3];
+        // Diagnostics for stale power meter data: when current_drawn_by_vehicle was last updated
+        // (default-constructed until the first powermeter publication). Only used for warnings,
+        // the values are still used as-is.
+        std::chrono::time_point<std::chrono::steady_clock> current_drawn_by_vehicle_last_update{};
         ShutdownType shutdown_type{ShutdownType::None};
         ShutdownType last_shutdown_type{ShutdownType::None};
-        int ac_with_soc_timer;
+        int ac_with_soc_timer{3600000};
         // non standard compliant option: time out after a while and switch back to DC to get SoC update
-        bool ac_with_soc_timeout;
+        bool ac_with_soc_timeout{false};
         bool contactor_welded{false};
         bool switch_3ph1ph_threephase{false};
         bool switch_3ph1ph_threephase_ongoing{false};
@@ -454,6 +464,8 @@ private:
         std::string switch_3ph1ph_cp_state{"X1"};
         // Tolerate soft over current for given time
         int soft_over_current_timeout_ms{7000};
+        // Warn if power meter data used for soft over current checking is older than given time (0 = disabled)
+        int soft_over_current_stale_data_warning_ms{5000};
         // Switch to F for configured ms after a fatal error
         int state_F_after_fault_ms{300};
         // Duration in milliseconds of the reinit state before returning to normal operation
@@ -494,6 +506,9 @@ private:
         int hlc_ev_pause_bcb_count{0};
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb;
         std::chrono::time_point<std::chrono::steady_clock> hlc_ev_pause_start_of_bcb_sequence;
+        // [V2G3-M07-27]: armed on a wake-up from an EV pause; the PLC link has to be (re-)detected
+        // before it expires, else the error sequence (E/F for T_step_EF, new matching) runs.
+        std::optional<std::chrono::time_point<std::chrono::steady_clock>> wakeup_link_deadline;
         float update_pwm_last_duty_cycle;
         std::chrono::time_point<std::chrono::steady_clock> last_pwm_update;
 
@@ -509,6 +524,8 @@ private:
         bool t_step_X1_until_unmatched{false};
         std::chrono::time_point<std::chrono::steady_clock> last_over_current_event;
         bool over_current{false};
+        // Rate limit for the stale powermeter data warning in check_soft_over_current
+        std::chrono::time_point<std::chrono::steady_clock> last_stale_powermeter_warning{};
 
         ShutdownType last_shutdown_type{ShutdownType::None};
         std::chrono::system_clock::time_point current_state_started;
@@ -615,6 +632,9 @@ private:
     static constexpr int TP_MATCH_LEAVE_MS = 1000;
     // 4 seconds according to table 3 of ISO15118-3
     static constexpr int T_STEP_EF = 4000;
+    // T_conn_max_comm, 8 s according to table 3 of ISO15118-3: after a wake-up the PLC link has to be detected
+    // within it, else [V2G3-M07-27] requires state E for at least T_step_EF and a new matching process.
+    static constexpr auto T_CONN_MAX_COMM = std::chrono::milliseconds(8000);
     // C_sequ_retry according to table 3 of ISO15118-3
     static constexpr int C_SEQU_RETRY = 2;
     static constexpr int IEC_PWM_MAX_UPDATE_INTERVAL = 5000;
@@ -626,6 +646,8 @@ private:
     // after the wake-up sequence.
     static constexpr int STAY_IN_X1_AFTER_TSTEP_EF_MS = 750;
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
+    // EIM after plug-in with matching already started: time given to the HLC session to reach the charging loop
+    // before the switch to nominal PWM. A PnC authorization waits for the end of the data link instead.
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
     // An ISO 15118-20 pause grants the EV NotificationMaxDelay, fixed at 60 s [V2G20-3308], to react before the

@@ -540,6 +540,12 @@ public:
         MessageQueue(send_callback, config, {}, databaseHandler) {
     }
 
+    ~MessageQueue() {
+        if (this->worker_thread.joinable()) {
+            this->stop();
+        }
+    }
+
     void start() {
         this->worker_thread = std::thread([this]() {
             while (this->running) {

@@ -54,15 +54,59 @@ struct ConfigParseSettings {
     fs::path modules_dir;        ///< Directory that contains EVerest modules
     fs::path configs_dir;        ///< Directory that contains EVerest configs
     fs::path config_file;        ///< Path to the loaded config file
+    fs::path user_config_file;   ///< Path to the user-config merged into the config, empty for none
     nlohmann::json config;       ///< Parsed json of the config_file
     bool validate_schema{false}; ///< If schema validation is enabled
 };
+
+/// \brief How the manager sources its configuration, resolved from the command line options.
+enum class BootMode {
+    /// No --db given (--config or the default config lookup): the YAML config is authoritative and
+    /// seeds a process-private in-memory database on every start; runtime configuration writes are
+    /// persisted to the user-config YAML. If no --config is given and the default config file does
+    /// not exist, the manager runs with an empty config on built-in defaults and nothing is persisted.
+    YamlWithInMemoryDb,
+    /// --db only: the database file is the only source of module configurations; settings come from
+    /// --settings or the compiled-in defaults.
+    DatabaseOnly,
+    /// --config and --db: the database wins when its boot slot holds at least one module, otherwise
+    /// the boot slot is (re-)seeded from the YAML config (use --reset-from-yaml to force re-seeding).
+    DatabaseWithYamlSeed,
+};
+
+/// \brief Resolved configuration boot source, see resolve_boot_source().
+struct BootSource {
+    BootMode mode = BootMode::YamlWithInMemoryDb;
+    /// Config file option as given; empty in DatabaseOnly mode, or to request the (optional) default config lookup.
+    std::string config_path;
+    /// Database path as given; empty means "use an in-memory database" (only in YamlWithInMemoryDb mode).
+    std::string db_path;
+    /// Settings file option as given; empty means the settings come from the config's deprecated settings block
+    /// or the compiled-in defaults.
+    std::string settings_path;
+    /// User-config file option as given; empty means user-config/<config filename> next to the config file.
+    std::string user_config_path;
+    bool reset_from_yaml = false;
+};
+
+/// \brief Resolves the configuration boot source from the command line options (empty string = option
+/// not given). Logs a deprecation warning for \p db_init (and ignores it unless both \p config_path
+/// and \p db_path are given). Throws BootException for invalid combinations
+/// (--reset-from-yaml or --user-config without --config).
+BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
+                               bool db_init, const std::string& settings_path = "",
+                               const std::string& user_config_path = "");
 
 /// \brief Settings needed by the manager to load and validate a config
 struct ManagerSettings : public ConfigParseSettings {
     fs::path db_dir; ///< Directory that contains the database
 
+    fs::path settings_file; ///< Path to the loaded settings file, empty if none was given
+
     std::vector<std::string> deprecated_settings; ///< Deprecated settings keys present in the config, ignored
+
+    bool deprecated_settings_block{false}; ///< Settings were taken from the config's deprecated settings block
+    bool settings_block_ignored{false};    ///< The config has a settings block, ignored in favor of settings_file
 
     std::string run_as_user; ///< Username under which EVerest should run
 
@@ -88,52 +132,32 @@ struct ManagerSettings : public ConfigParseSettings {
     /// database.
     ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path);
 
+    /// \brief Constructor that initializes the ManagerSettings from a resolved \p boot_source: DatabaseOnly
+    /// behaves like the WithoutConfig constructor, the other modes resolve the config file. Settings are read
+    /// from the boot source's settings file if given. A given user-config file may be absent, but its
+    /// directory must exist.
+    ManagerSettings(const std::string& prefix, const BootSource& boot_source);
+
     /// \brief Initializes the ManagerSettings with the given settings and prefix.
     void init_settings(const everest::config::Settings& settings);
+
+    /// \brief Reads the settings from \p settings_file and validates them against the settings schema. With an
+    /// empty \p settings_file they are taken from the config's deprecated settings block, if any.
+    void apply_settings(const std::string& settings_file);
 
     /// \brief Initializes the ManagerSettings based on the user provided \p config file or fallback options.
     /// A user provided \p config (full path or short name) must exist. With an empty \p config the default
     /// config file is looked up; if it is absent this is not an error and init_no_config() is used instead.
     void init_config_file(const std::string& config);
 
-    /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", config = empty object.
+    /// \brief Initializes the ManagerSettings for the no-config case: config_file = "", user_config_file = "",
+    /// config = empty object.
     void init_no_config();
 
     /// \brief Initializes the ManagerSettings prefix and data_dir base on user provided \p prefix or the default
     /// prefix.
     void init_prefix_and_data_dir(const std::string& prefix);
 };
-
-/// \brief How the manager sources its configuration, resolved from the command line options.
-enum class BootMode {
-    /// No --db given (--config or the default config lookup): the YAML config is authoritative and
-    /// seeds a process-private in-memory database on every start; runtime configuration writes are
-    /// persisted to the user-config YAML. If no --config is given and the default config file does
-    /// not exist, the manager runs with an empty config on built-in defaults and nothing is persisted.
-    YamlWithInMemoryDb,
-    /// --db only: the database file is the only configuration source.
-    DatabaseOnly,
-    /// --config and --db: the database wins when its boot slot holds at least one module, otherwise
-    /// the boot slot is (re-)seeded from the YAML config (use --reset-from-yaml to force re-seeding).
-    DatabaseWithYamlSeed,
-};
-
-/// \brief Resolved configuration boot source, see resolve_boot_source().
-struct BootSource {
-    BootMode mode = BootMode::YamlWithInMemoryDb;
-    /// Config file option as given; empty in DatabaseOnly mode, or to request the (optional) default config lookup.
-    std::string config_path;
-    /// Database path as given; empty means "use an in-memory database" (only in YamlWithInMemoryDb mode).
-    std::string db_path;
-    bool reset_from_yaml = false;
-};
-
-/// \brief Resolves the configuration boot source from the command line options (empty string = option
-/// not given). Logs a deprecation warning for \p db_init (and ignores it unless both \p config_path
-/// and \p db_path are given). Throws BootException for invalid combinations
-/// (--reset-from-yaml without --config).
-BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
-                               bool db_init);
 
 /// \brief Result of a database bootstrap operation
 struct DatabaseBootstrap {

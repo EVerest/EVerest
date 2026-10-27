@@ -3,6 +3,8 @@
 
 #include "SerializationTestHelpers.hpp"
 #include "everest_api_types/generic/codec.hpp"
+#include "everest_api_types/utilities/codec.hpp"
+#include "everest_api_types/utilities/constants.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 #include <string_view>
@@ -113,4 +115,23 @@ TEST(generic, deserialize_accepts_string_view_subrange) {
     bool result = false;
     EXPECT_TRUE(everest::lib::API::deserialize(json_data, result));
     EXPECT_TRUE(result);
+}
+
+namespace {
+std::string request_with_nested_payload(std::size_t depth) {
+    return R"({"headers":{"replyTo":"reply/topic"},"payload":)" + std::string(depth, '[') + std::string(depth, ']') +
+           "}";
+}
+} // namespace
+
+TEST(RequestReplyDecoding, rejects_payload_nested_deeper_than_limit) {
+    using everest::lib::API::max_json_nesting_depth;
+    RequestReply msg;
+
+    // The envelope adds one level around the payload.
+    EXPECT_TRUE(everest::lib::API::deserialize(request_with_nested_payload(max_json_nesting_depth - 1), msg));
+    EXPECT_EQ(msg.replyTo, "reply/topic");
+    EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(max_json_nesting_depth), msg));
+    // Deep enough to overflow the stack when serializing the decoded payload.
+    EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(100000), msg));
 }

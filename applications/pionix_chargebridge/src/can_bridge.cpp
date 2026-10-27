@@ -193,10 +193,29 @@ can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event:
         if (not last and current) {
             if (m_udp) {
                 m_udp->reset();
+                notify_endpoint_changed();
             }
         }
         handle_ready();
     });
+}
+
+std::uint16_t can_bridge::local_port() {
+    if (not m_udp) {
+        return 0;
+    }
+    auto const& socket = m_udp->get_raw_handler();
+    return socket ? socket->local_port() : 0;
+}
+
+void can_bridge::set_endpoint_changed_handler(std::function<void()> handler) {
+    m_endpoint_changed = std::move(handler);
+}
+
+void can_bridge::notify_endpoint_changed() {
+    if (m_endpoint_changed) {
+        m_endpoint_changed();
+    }
 }
 
 void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_port) {
@@ -226,6 +245,7 @@ void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_po
         // The reconnect runs from handle_heartbeat_timer, paced by can_udp_reconnect_delay.
         handle_ready();
     });
+    notify_endpoint_changed();
 }
 
 void can_bridge::disconnect_cb_endpoint() {
@@ -240,6 +260,7 @@ void can_bridge::disconnect_cb_endpoint() {
         m_udp->reset();
     }
     m_udp.reset();
+    notify_endpoint_changed();
     handle_ready();
 }
 
@@ -443,6 +464,7 @@ void can_bridge::handle_heartbeat_timer() {
         if (m_udp and now - m_udp_reconnect_at >= can_udp_reconnect_delay) {
             m_udp_reconnect_at = now;
             m_udp->reset();
+            notify_endpoint_changed();
         }
         return;
     } else {

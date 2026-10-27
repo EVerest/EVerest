@@ -528,7 +528,7 @@ void ChargePointV16::configure_data_model(const config_info_t& config) {
         config.device_model_database_path,           // DeviceModelDatabasePath
         config.device_model_database_migration_path, // DeviceModelDatabaseMigrationPath
         config.device_model_config_path,             // DeviceModelConfigPath
-        config.device_model_config_mappings,         // DeviceModelConfigMappings
+        config.ocpp16_key_mappings_path,             // Ocpp16KeyMappingsPath
         config.ocpp16_network_config_slot,           // Ocpp16NetworkConfigSlot
         config.enable_legacy_config_migration,       // EnableLegacyConfigMigration
         config.chargepoint_config_path,              // ChargePointConfigPath
@@ -594,7 +594,7 @@ void ChargePointV16::init(init_args_t& args) {
         args.v2_device_model_database_path.string(),
         args.v2_device_model_database_migration_path.string(),
         args.v2_device_model_config_path.string(),
-        args.v16_device_model_config_mappings,
+        args.v16_ocpp16_key_mappings_path,
         args.v16_ocpp16_network_config_slot,
         args.v16_enable_legacy_config_migration,
         args.everest_device_model,
@@ -1013,8 +1013,8 @@ void ChargePointV16::register_variable_listener(const ocpp::v2::Component& compo
             reverse.key.value(), [this](auto&&... args) { cb_variable_listener(args...); });
     } else if (reverse.ambiguous) {
         // writes to ambiguous CVs are rejected, so this monitor can never fire
-        EVLOG_warning << "register_variable_listener: ambiguous custom config mapping for " << component.name << '/'
-                      << variable.name << "; fix DeviceModelConfigMappings";
+        EVLOG_warning << "register_variable_listener: ambiguous custom key mapping for " << component.name << '/'
+                      << variable.name << "; fix Ocpp16KeyMappingsPath";
     }
     // no 1.6 key: nothing to hook; direct writes are covered by synthesized monitor events
 }

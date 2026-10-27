@@ -82,14 +82,6 @@ def cc_everest_module(
             "generated/modules/" + name,
         ] + includes,
         visibility = ["//visibility:public"],
-        # See https://github.com/HowardHinnant/date/issues/324
-        local_defines = [
-            "BUILD_TZ_LIB=ON",
-            "USE_SYSTEM_TZ_DB=ON",
-            "USE_OS_TZDB=1",
-            "USE_AUTOLOAD=0",
-            "HAS_REMOTE_API=0",
-        ],
         **cc_binary_kwargs,
     )
 

@@ -126,6 +126,12 @@ Have a look at this categorized list of all guides:
 
       How to change the codes, texts and device model components OCPP reports for EVerest errors.
 
+   .. grid-item-card:: Migrate from EvseV2G and IsoMux to Evse15118D20
+      :link: iso15118-stack-migration
+      :link-type: doc
+
+      How to move a deployment from the deprecated EvseV2G and IsoMux modules to Evse15118D20.
+
 .. toctree::
     :maxdepth: 1
     :hidden:
@@ -149,3 +155,4 @@ Have a look at this categorized list of all guides:
     c++-coding-guidelines
     ocpp-storage-migration
     ocpp-custom-error-mapping
+    iso15118-stack-migration

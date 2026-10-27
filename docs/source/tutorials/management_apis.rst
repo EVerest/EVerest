@@ -26,8 +26,8 @@ These settings are required to start the manager process. They include paths to 
 (e.g. where the configuration database should be stored, where the module executables are stored, ...),
 the MQTT settings (e.g. host and port or socket, etc.) and similar settings.
 
-Starting the manager process can be done using defaults, or requires a YAML file which contains custom
-settings.
+Starting the manager process can be done using defaults, or with a settings file which contains custom
+settings, passed with ``--settings``.
 
 Module Configuration
 ********************
@@ -38,7 +38,7 @@ which is maintained by the manager process. Multiple sets of module configuratio
 and stored in the database alongside each other. Only one of them can be active at a time.
 Switching between these so-called *slots* requires the modules to be stopped and started again (no
 hot-swapping or dynamic loading of additional modules possible). To bootstrap the database the
-*module configuration* can be provided in the same YAML file as the manager settings.
+*module configuration* can be provided in a YAML config file passed with ``--config``.
 
 While switching *slots* (i.e. which modules are loaded and how they are connected) requires restarting
 the modules, changes to configuration parameters of individual modules can be done anytime. If the
@@ -181,7 +181,7 @@ The full configuration stored in a slot can be retrieved:
 
     Only the module configuration is stored and retrievable. Thus, in general it's not
     possible to reconstruct the yaml file which may have been used to initially load this
-    module configuration into the database, as it also contains the manager settings.
+    module configuration into the database, as it may also contain a (deprecated) ``settings:`` block.
 
 In read-only mode every modifying request is answered, but refused:
 

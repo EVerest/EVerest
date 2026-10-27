@@ -53,7 +53,8 @@ private keys and password files inside ``config/certs/client``.
   As the shell script uses the Java ``keytool``, it is required for this
   procedure to have Java installed.
 
-The script for setting up PKI can also be used with the EvseV2G module.
+The script for setting up PKI can also be used with the Evse15118D20 module
+(and the deprecated EvseV2G module).
 
 .. _plug_and_charge_process:
 

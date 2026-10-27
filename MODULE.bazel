@@ -26,7 +26,7 @@ bazel_dep(name = "googletest", version = "1.18.0.bcr.1")
 bazel_dep(name = "nlohmann_json", version = "3.12.0.bcr.1", repo_name = "com_github_nlohmann_json")
 bazel_dep(name = "libcap", version = "2.27.bcr.1")
 bazel_dep(name = "libevent", version = "2.1.12-stable.bcr.0")
-bazel_dep(name = "openssl", version = "3.3.1.bcr.9")
+bazel_dep(name = "openssl", version = "3.5.8.bcr.0")
 bazel_dep(name = "platforms", version = "0.0.11")
 bazel_dep(name = "pugixml", version = "1.15")
 bazel_dep(name = "rules_cc", version = "0.2.14")
@@ -120,6 +120,8 @@ use_repo(pip_deps, "everest-testing_pip_deps")
 
 RUST_EDITION = "2021"
 
+# Keep in sync with RUST_VERSION in .ci/build-kit/docker/Dockerfile and
+# .devcontainer/general-devcontainer/Dockerfile.
 RUST_VERSION = "1.86.0"
 
 RUST_EXTRA_TARGET_TRIPLES = {

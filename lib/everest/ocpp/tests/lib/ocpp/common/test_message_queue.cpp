@@ -159,6 +159,8 @@ public:
 class MessageQueueTest : public ::testing::Test {
     int internal_message_count{0};
     int call_count{0};
+    int responses_scheduled{0};
+    int responses_delivered{0};
 
 protected:
     MessageQueueConfig<TestMessageType> config{};
@@ -185,15 +187,22 @@ protected:
     template <typename R> auto MarkAndReturn(R value, bool respond = false) {
         return testing::Invoke([this, value, respond](const json::array_t& s) -> R {
             if (respond) {
+                {
+                    std::lock_guard<std::mutex> lock(call_marker_mutex);
+                    this->responses_scheduled++;
+                }
                 reception_timer.timeout(
                     [this, s]() {
                         this->message_queue->receive(json{3, s[1], json::object()}.dump());
+                        std::lock_guard<std::mutex> lock(call_marker_mutex);
+                        this->responses_delivered++;
+                        this->call_marker_cond_var.notify_all();
                     },
                     std::chrono::milliseconds(0));
             }
             std::lock_guard<std::mutex> lock(call_marker_mutex);
             this->call_count++;
-            this->call_marker_cond_var.notify_one();
+            this->call_marker_cond_var.notify_all();
             return value;
         });
     }
@@ -246,6 +255,13 @@ protected:
     }
 
     void TearDown() override {
+        // Let reception_timer deliver all pending CallResults before the queue stops
+        {
+            std::unique_lock<std::mutex> lock(call_marker_mutex);
+            std::ignore = call_marker_cond_var.wait_for(lock, std::chrono::seconds(3), [this] {
+                return this->responses_delivered == this->responses_scheduled;
+            });
+        }
         message_queue->stop();
     };
 };
@@ -1261,6 +1277,21 @@ TEST_F(MessageQueueTest, test_stop_waits_for_running_action) {
     EXPECT_EQ(stopped_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
     stopper.join();
     EXPECT_TRUE(stopped_future.get());
+}
+
+TEST_F(MessageQueueTest, test_destruction_without_stop_joins_worker) {
+    auto queue = std::make_unique<MessageQueue<TestMessageType>>(send_callback_mock.AsStdFunction(), config, db);
+    queue->start();
+    queue->resume(std::chrono::seconds(0));
+
+    // Destroyed on a detached thread, so a destructor that does not return fails the test instead of hanging it.
+    std::promise<void> destroyed;
+    auto destroyed_future = destroyed.get_future();
+    std::thread([queue = std::move(queue), destroyed = std::move(destroyed)]() mutable {
+        queue.reset();
+        destroyed.set_value();
+    }).detach();
+    EXPECT_EQ(destroyed_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
 }
 
 } // namespace ocpp

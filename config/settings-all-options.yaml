@@ -1,0 +1,54 @@
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# Example manager settings file listing every setting with its built-in
+# default. Pass a settings file to the manager with --settings, e.g.
+#
+#   manager --config config-sil.yaml --settings settings-all-options.yaml
+#
+# Copy it and keep only what you change: settings left out use their default.
+# The file is validated against schemas/settings.yaml, unknown keys are
+# rejected. Relative paths are resolved against the installation prefix.
+
+# Directories, they must exist.
+schemas_dir: 'share/everest/schemas'
+interfaces_dir: 'share/everest/interfaces'
+types_dir: 'share/everest/types'
+errors_dir: 'share/everest/errors'
+modules_dir: 'libexec/everest/modules'
+
+# configs_dir and logging_config_file default to <prefix>/etc/everest, or to
+# /etc/everest for the prefix /usr. A relative path is always resolved against
+# the prefix, so set them only to change them, preferably as absolute paths.
+# configs_dir: '/etc/everest'
+# logging_config_file: '/etc/everest/default_logging.cfg'
+
+# MQTT broker over TCP. The environment variables MQTT_SERVER_ADDRESS and
+# MQTT_SERVER_PORT take precedence over these two settings.
+# The MQTT client only tries the first address a host name resolves to, and
+# localhost usually resolves to ::1 first. Use '127.0.0.1' when the broker
+# listens on IPv4 only.
+mqtt_broker_host: 'localhost'
+mqtt_broker_port: 1883
+
+# MQTT broker over a Unix domain socket instead of TCP, see
+# settings-mqtt-uds.yaml. Mutually exclusive with mqtt_broker_host.
+# mqtt_broker_socket_path: '/run/mosquitto/mosquitto.sock'
+
+# Topic prefix of the EVerest internal communication between modules.
+mqtt_everest_prefix: 'everest'
+# Topic prefix of external MQTT topics used by modules, for example the
+# EVerest API modules. Must differ from mqtt_everest_prefix.
+mqtt_external_prefix: ''
+
+# Telemetry data published by modules.
+telemetry_enabled: false
+telemetry_prefix: 'everest-telemetry'
+
+# Validate every variable publish and command call against its schema. This
+# costs performance and is meant for development.
+validate_schema: false
+
+# Catch exceptions thrown in command handlers and forward them to the caller
+# instead of rethrowing them inside the module.
+forward_exceptions: false

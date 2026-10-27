@@ -153,6 +153,17 @@ protected:
         });
     }
 
+    std::size_t status_notification_count() {
+        const std::lock_guard<std::mutex> lock(this->mtx);
+        return this->status_infos.size();
+    }
+
+    /// \brief Wait until at least \p count StatusNotification.req have been sent for \p CONNECTOR .
+    bool wait_for_status_notification_count(const std::size_t count, std::chrono::milliseconds timeout) {
+        std::unique_lock<std::mutex> lock(this->mtx);
+        return this->cv.wait_for(lock, timeout, [this, count]() { return this->status_infos.size() >= count; });
+    }
+
     /// \brief Bring a charge point up to an accepted BootNotification with \p CONNECTOR available.
     std::unique_ptr<ChargePointImpl> make_booted_charge_point() {
         auto charge_point = std::make_unique<ChargePointImpl>(
@@ -216,6 +227,26 @@ TEST_F(ChargePointStatusNotificationTest, ConfiguredMinimumStatusDurationDelaysT
 
     EXPECT_FALSE(wait_for_info("debounced", SETTLE_TIMEOUT)) << "the notification was not debounced at all";
     EXPECT_TRUE(wait_for_info("debounced", WAIT_TIMEOUT)) << "the debounced notification was never released";
+
+    charge_point->stop();
+}
+
+// A reconnect keeps the charge point Booted, so instead of a BootNotification.req it reports every connector status
+// again. A paused message queue drops a StatusNotification.req unless QueueAllMessages is set, so these have to be
+// pushed after the queue resumed.
+TEST_F(ChargePointStatusNotificationTest, ReconnectWhileBootedReportsConnectorStatus) {
+    ASSERT_FALSE(this->configuration->getQueueAllMessages().value_or(false))
+        << "this test covers a queue that drops messages while paused";
+
+    auto charge_point = make_booted_charge_point();
+    ASSERT_TRUE(wait_for_info("", WAIT_TIMEOUT)) << "boot handshake did not produce the initial StatusNotification.req";
+    const auto reported_before_reconnect = status_notification_count();
+
+    charge_point->on_websocket_disconnected(0, ocpp::v2::NetworkConnectionProfile{});
+    charge_point->on_websocket_connected(0, ocpp::v2::NetworkConnectionProfile{}, ocpp::OcppProtocolVersion::v16);
+
+    EXPECT_TRUE(wait_for_status_notification_count(reported_before_reconnect + 1, WAIT_TIMEOUT))
+        << "the reconnect did not report the connector status";
 
     charge_point->stop();
 }

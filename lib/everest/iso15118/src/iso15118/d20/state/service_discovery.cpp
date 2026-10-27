@@ -80,9 +80,26 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     std::vector<dt::Service> energy_services_list;
     std::vector<dt::VasService> vas_services_list;
 
+    // ServiceIDs in ServiceDiscoveryRes must be unique, while several configured modes can map to one
+    // category (AC_single_phase_core and AC_three_phase_core are both AC).
+    const auto offer_energy_service = [&](dt::ServiceCategory service) {
+        const auto offered = std::any_of(energy_services_list.begin(), energy_services_list.end(),
+                                         [service](const dt::Service& s) { return s.service_id == service; });
+        if (not offered) {
+            energy_services_list.push_back({service, false});
+        }
+    };
+    const auto offer_vas_service = [&](uint16_t service) {
+        const auto offered = std::any_of(vas_services_list.begin(), vas_services_list.end(),
+                                         [service](const dt::VasService& s) { return s.service_id == service; });
+        if (not offered) {
+            vas_services_list.push_back({service, false});
+        }
+    };
+
     const auto offer_all_energy_services = [&]() {
         for (auto& energy_service : energy_services) {
-            energy_services_list.push_back({energy_service, false});
+            offer_energy_service(energy_service);
         }
     };
 
@@ -90,12 +107,12 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     if (req.supported_service_ids.has_value() == true) {
         for (auto& energy_service : energy_services) {
             if (find_service_id(req.supported_service_ids.value(), message_20::to_underlying_value(energy_service))) {
-                energy_services_list.push_back({energy_service, false});
+                offer_energy_service(energy_service);
             }
         }
         for (auto& vas_service : vas_services) {
             if (find_service_id(req.supported_service_ids.value(), vas_service)) {
-                vas_services_list.push_back({vas_service, false});
+                offer_vas_service(vas_service);
             }
         }
         ev_energy_services.reserve(req.supported_service_ids->size());
@@ -116,7 +133,7 @@ handle_request(const message_20::ServiceDiscoveryRequest& req, d20::Session& ses
     } else {
         offer_all_energy_services();
         for (auto& vas_service : vas_services) {
-            vas_services_list.push_back({vas_service, false});
+            offer_vas_service(vas_service);
         }
     }
 

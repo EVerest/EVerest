@@ -17,14 +17,32 @@ In Mosquitto, config file add the line:
 
 .. code-block::
 
-   listener 0 /tmp/mosquitto.socket
+   listener 0 /run/mosquitto/mosquitto.sock
 
-In the EVerest config file, add the following to the settings section:
+In the EVerest settings file passed to the manager with ``--settings``, add:
 
 .. code-block:: yaml
 
-   settings:
-    mqtt_broker_socket_path: /tmp/mosquitto.socket
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
+
+Access to the socket is controlled by the permissions of its directory and of
+the socket itself, which Mosquitto creates with mode ``0770`` after dropping
+privileges to the broker user. Use a directory that only the broker and the
+user running EVerest can access, for example ``/run/mosquitto`` owned by the
+broker user and its group, mode ``0750``, with the user running EVerest as a
+member of that group. The systemd unit of Mosquitto 2.0 creates
+``/run/mosquitto`` with mode ``0740``, which keeps the group out. Do not place
+the socket in a world-writable directory such as ``/tmp``: any local user could
+connect to it, or create a socket there before the broker does.
+
+Files that restrict access to the broker, such as its ``acl_file`` or
+``password_file``, should be owned by the broker user. Mosquitto 2.1 warns
+about files with other owners and announces refusing them in a future version.
+
+The installed example ``etc/everest/settings-mqtt-uds.yaml`` is a complete
+settings file for this setup. The meta-everest Yocto layers configure
+Mosquitto and ``everest.service`` this way, see
+:ref:`exp_linux_yocto_building_yocto`.
 
 - If a part of an MQTT API should be exposed, e.g. to a mobile app on
   the same wireless LAN, use mutually authenticated TLS for the MQTT
@@ -157,10 +175,12 @@ module, run with the same capabilities.
    -A OUTPUT -o seth0 -p tcp -m tcp --sport 64109 -j ACCEPT
 
 According to the standard, port 15118 is used for SDP messages.
-:ref:`EvseV2G <everest_modules_EvseV2G>` uses the configurable ``tcp_port`` and ``tls_port``
-values (defaults: TCP ``61341``, TLS ``64109``).
 :ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 and uses the configured
 ``tcp_port`` value for TCP and TLS1.2/1.3. The default is ``50000``.
+The deprecated :ref:`EvseV2G <everest_modules_EvseV2G>` module uses the configurable ``tcp_port`` and
+``tls_port`` values (defaults: TCP ``61341``, TLS ``64109``); the rules for 61341 and 64109 above are only
+needed while it is still in use. The deprecated :ref:`IsoMux <everest_modules_IsoMux>` module listens on
+TCP ``61342`` and TLS ``64110`` and forwards to the local EvseV2G and Evse15118D20 instances.
 When changing these values, update the firewall rules accordingly.
 
 General (non-EVerest-related) security aspects

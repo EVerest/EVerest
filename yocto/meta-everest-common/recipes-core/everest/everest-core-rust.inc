@@ -4,8 +4,8 @@
 
 inherit everest_rust cargo_common
 
-# modules/Cargo.lock pins the crates of the Bazel build and of the cargo workspace
-# CMake generates. `bitbake -c update_crates everest-core` turns it into
+# modules/Cargo.lock pins the crates of the modules/ cargo workspace, which both the
+# Bazel and the CMake build use. `bitbake -c update_crates everest-core` turns it into
 # everest-core-crates.inc.
 CARGO_LOCK_SRC_DIR = "${S}/modules"
 require everest-core-crates.inc
@@ -19,13 +19,12 @@ SRCREV = "c784c20401764978fd6287a55e50bc65d083d68c"
 EXTRA_OECMAKE += " \
     -DEVEREST_RS_TARGET_TRIPLE=${RUST_HOST_SYS} \
     -DEVEREST_RS_LINKER=${RUST_TARGET_CCLD} \
+    -DEVEREST_RS_CARGO_LOCKED=OFF \
 "
 
 # cargo runs under CMake, so what cargo_common only prepares as variables is exported here.
 export RUSTFLAGS
 export CARGO_NET_OFFLINE = "true"
-# cargo_common points cargo at ${B}/target; CMake installs from its own workspace.
-export CARGO_TARGET_DIR = "${B}/rust_workspace/target"
 
 # Size over speed for the module binaries, matching the Bazel release configuration.
 # panic=abort ends a panicking module process without unwinding, so Drop code does not run.
@@ -46,8 +45,4 @@ zvt_feig_terminal = { path = "${UNPACKDIR}/zvt/zvt_feig_terminal" }
 CARGO_CONFIG
 
     cmake_do_configure
-
-    # CMake writes the cargo workspace to ${B}/rust_workspace while building; the lock
-    # file makes cargo resolve to the crate versions that were fetched.
-    install -D -m 0644 ${S}/modules/Cargo.lock ${B}/rust_workspace/Cargo.lock
 }

@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:isolation_monitor_API'
 info:
   title: 'EVerest API definition for isolation monitors'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API for EVerest API clients implementing isolation monitoring.
 

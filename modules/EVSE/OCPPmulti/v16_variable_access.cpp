@@ -16,7 +16,7 @@
 namespace {
 
 constexpr auto READ_ONLY_DERIVED_INFO = "Managed by the OCPP1.6 stack; read-only via this API";
-constexpr auto AMBIGUOUS_MAPPING_INFO = "Ambiguous custom config mapping; fix DeviceModelConfigMappings";
+constexpr auto AMBIGUOUS_MAPPING_INFO = "Ambiguous custom key mapping; fix Ocpp16KeyMappingsPath";
 
 std::string cv_to_string(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
     const auto instance = [](const auto& opt) { return opt.has_value() ? fmt::format("({})", opt->get()) : ""; };
@@ -45,8 +45,8 @@ ocpp::v2::StatusInfo reason_code_status_info(const std::string& reason_code) {
 }
 
 void log_ambiguous(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
-    EVLOG_error << "Ambiguous custom config mapping for " << cv_to_string(component, variable)
-                << "; fix DeviceModelConfigMappings";
+    EVLOG_error << "Ambiguous custom key mapping for " << cv_to_string(component, variable)
+                << "; fix Ocpp16KeyMappingsPath";
 }
 
 // mirrors ChargePointV16::set_variables' ConfigurationStatus mapping
@@ -75,7 +75,7 @@ bool is_actual(const std::optional<ocpp::v2::AttributeEnum>& attribute_type) {
 namespace ocpp_multi {
 
 V16VariableAccess::V16VariableAccess(const ocpp::v16::VariableResolver& resolver,
-                                     ocpp::v2::DeviceModelInterface& device_model, get_keys_fn get_keys,
+                                     ocpp::v2::DeviceModelVariablesInterface& device_model, get_keys_fn get_keys,
                                      set_key_fn set_key, on_connection_config_changed_fn on_connection_config_changed) :
     m_resolver(resolver),
     m_device_model(device_model),

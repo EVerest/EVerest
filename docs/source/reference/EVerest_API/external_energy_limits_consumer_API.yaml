@@ -3,7 +3,7 @@ asyncapi: 3.0.0
 id: 'pionix:de:everest:external_energy_limits_consumer_API'
 info:
   title: 'EVerest API definition for external energy limits'
-  version: 1.0.0
+  version: 1.1.0
   description: >-
     API to allow EVerest API clients to set energy limits.
 

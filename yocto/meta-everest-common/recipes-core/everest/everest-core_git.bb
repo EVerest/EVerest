@@ -35,7 +35,9 @@ DEPENDS = " \
     json-rpc-cxx \
 "
 
-RDEPENDS:${PN} += "libevent openssl"
+RDEPENDS:${PN} += "libevent openssl tzdata"
+# MQTT setup matching everest.service, opt out with BAD_RECOMMENDATIONS
+RRECOMMENDS:${PN} += "${@bb.utils.contains('DISTRO_FEATURES', 'systemd', 'everest-mosquitto-config', '', d)}"
 
 INSANE_SKIP:${PN} = "already-stripped useless-rpaths arch file-rdeps"
 INSANE_SKIP:chargebridge = "already-stripped useless-rpaths arch file-rdeps"

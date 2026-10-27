@@ -216,6 +216,54 @@ SCENARIO("Service discovery state handling") {
         }
     }
 
+    GIVEN("Good Case - Duplicate configured services are offered once") {
+
+        d20::Session session = d20::Session();
+
+        message_20::ServiceDiscoveryRequest req;
+        req.header.session_id = session.get_id();
+        req.header.timestamp = 1691411798;
+
+        // AC_single_phase_core and AC_three_phase_core both map to the AC service category.
+        std::vector<dt::ServiceCategory> supported_energy_transfer_services = {
+            dt::ServiceCategory::AC, dt::ServiceCategory::AC, dt::ServiceCategory::AC_BPT};
+        std::vector<uint16_t> vas_services = {message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus),
+                                              message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+        std::vector<dt::ServiceCategory> ev_energy_services{};
+
+        WHEN("The EV does not filter") {
+            const auto res = d20::state::handle_request(req, session, supported_energy_transfer_services, vas_services,
+                                                        ev_energy_services);
+
+            THEN("Every ServiceID is unique") {
+                REQUIRE(res.response_code == dt::ResponseCode::OK);
+                REQUIRE(res.energy_transfer_service_list.size() == 2);
+                REQUIRE(res.energy_transfer_service_list[0].service_id == dt::ServiceCategory::AC);
+                REQUIRE(res.energy_transfer_service_list[1].service_id == dt::ServiceCategory::AC_BPT);
+                REQUIRE(res.vas_list.has_value());
+                REQUIRE(res.vas_list->size() == 1);
+                REQUIRE(session.offered_services.energy_services.size() == 2);
+                REQUIRE(session.offered_services.vas_services.size() == 1);
+            }
+        }
+
+        WHEN("The EV filters by supported service IDs") {
+            req.supported_service_ids = {message_20::to_underlying_value(dt::ServiceCategory::AC),
+                                         message_20::to_underlying_value(dt::ServiceCategory::ParkingStatus)};
+
+            const auto res = d20::state::handle_request(req, session, supported_energy_transfer_services, vas_services,
+                                                        ev_energy_services);
+
+            THEN("Every ServiceID is unique") {
+                REQUIRE(res.response_code == dt::ResponseCode::OK);
+                REQUIRE(res.energy_transfer_service_list.size() == 1);
+                REQUIRE(res.energy_transfer_service_list[0].service_id == dt::ServiceCategory::AC);
+                REQUIRE(res.vas_list.has_value());
+                REQUIRE(res.vas_list->size() == 1);
+            }
+        }
+    }
+
     // [V2G20-1644]
     GIVEN("Good case - Resuming secc shall provide the same service ids and parameter set ids "
           "(ServiceRenegotiationSupported: false)") {

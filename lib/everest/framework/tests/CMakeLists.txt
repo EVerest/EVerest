@@ -16,6 +16,8 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
     test_config_userconfig.cpp
     test_conversions.cpp
     test_database_migration_files.cpp
+    test_everest_external_mqtt.cpp
+    test_everest_incoming_data.cpp
     test_filesystem_helpers.cpp
     test_helpers.cpp
     test_message_handler.cpp
@@ -54,6 +56,13 @@ setup_test_directory(empty_config)
 setup_test_directory(valid_config)
 setup_test_directory(valid_config_custom_errors_dir)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/valid_config_custom_errors_dir/custom_errors)
+setup_test_directory(settings_file
+    SETTINGS_FILES
+        valid_settings.yaml
+        settings_deprecated_key.yaml
+        settings_unknown_key.yaml
+        settings_wrong_type.yaml
+)
 setup_test_directory(valid_config_custom_prefix)
 file(RENAME ${CMAKE_CURRENT_BINARY_DIR}/valid_config_custom_prefix ${CMAKE_CURRENT_BINARY_DIR}/valid_config_custom_prefix_tmp)
 file(MAKE_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/valid_config_custom_prefix)

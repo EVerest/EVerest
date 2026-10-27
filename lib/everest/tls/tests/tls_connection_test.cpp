@@ -81,6 +81,19 @@ TEST_F(TlsTest, BoundPortReportsEphemeralPort) {
     EXPECT_NE(server.bound_port(), 0);
 }
 
+TEST_F(TlsTest, StopBeforeServeIsIgnored) {
+    // EvseV2G and IsoMux stop an initialised server before every serve(), which must not end that serve()
+    using state_t = tls::Server::state_t;
+    const auto res = server.init(server_config, nullptr);
+    ASSERT_TRUE((res == state_t::init_complete) || (res == state_t::init_socket));
+    server.stop();
+    server_thread = std::thread(&run_server, std::ref(server));
+    server.wait_running();
+
+    connect();
+    EXPECT_TRUE(is_set(flags_t::connected));
+}
+
 TEST_F(TlsTest, StartConnectDisconnect) {
     // test shouldn't hang
     start();
@@ -948,8 +961,11 @@ TEST_F(TlsTest, SuspendToRunning) {
     EXPECT_EQ(server.state(), state_t::init_socket);
     EXPECT_TRUE(server.update(server_config));
     EXPECT_EQ(server.state(), state_t::init_complete);
-    // should switch to running after a timeout
-    std::this_thread::sleep_for(std::chrono::milliseconds(tls::c_serve_timeout_ms + 100));
+    // should switch to running once the accept poll() times out, so allow for a slow server thread
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3 * tls::c_serve_timeout_ms);
+    while ((server.state() != state_t::running) && (std::chrono::steady_clock::now() < deadline)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     EXPECT_EQ(server.state(), state_t::running);
 }
 

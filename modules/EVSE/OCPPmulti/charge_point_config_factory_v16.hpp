@@ -12,7 +12,7 @@
 
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v2/device_model_storage_interface.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 namespace module::config_factory_v16 {
 
@@ -30,7 +30,7 @@ struct Ocpp16DeviceModelParams {
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
     std::string DeviceModelConfigPath;
-    std::string DeviceModelConfigMappings;
+    std::string Ocpp16KeyMappingsPath;
     std::int32_t Ocpp16NetworkConfigSlot;
     bool EnableLegacyConfigMigration;
     std::string ChargePointConfigPath;
@@ -41,7 +41,7 @@ struct Ocpp16DeviceModelParams {
 /// constructed with (shared mapping source for the variable resolver).
 struct config_factory_result_t {
     std::unique_ptr<ocpp::v16::ChargePointConfigurationDeviceModel> configuration;
-    ocpp::v2::Ocpp16CustomConfigMappings custom_mappings;
+    ocpp::v2::Ocpp16KeyMappings custom_mappings;
 };
 
 /// \brief Factory function to create the device-model-backed configuration.
@@ -57,7 +57,7 @@ struct config_factory_result_t {
 /// \param n_evse The number of EVSEs, used for the device model integrity check.
 /// \param everest_device_model Registered as source "EVEREST" in the composed device model storage; must be
 ///        fully constructed (components/variables created) before this call.
-/// \return The configuration and the custom config mappings it uses.
+/// \return The configuration and the custom key mappings it uses.
 config_factory_result_t
 create_charge_point_configuration(const std::filesystem::path& ocpp_share_path, const Ocpp16DeviceModelParams& config,
                                   std::int32_t n_evse,

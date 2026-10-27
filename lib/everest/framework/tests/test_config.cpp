@@ -1,5 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <algorithm>
+#include <fstream>
+
 #include <catch2/catch_all.hpp>
 
 #include <framework/runtime.hpp>
@@ -36,6 +39,7 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
             const auto ms = Everest::ManagerSettings(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml");
             CHECK(ms.deprecated_settings ==
                   std::vector<std::string>{"www_dir", "controller_port", "controller_rpc_timeout_ms"});
+            CHECK(ms.deprecated_settings_block);
         }
     }
     GIVEN("A valid prefix and a valid config file with a custom prefix") {
@@ -78,6 +82,55 @@ SCENARIO("Check ManagerSettings Constructor", "[!throws]") {
             Everest::ManagerSettings ms(bin_dir + "valid_config/", bin_dir + "valid_config/config.yaml",
                                         bin_dir + "valid_config/non_existing.db");
             CHECK_NOTHROW(Everest::init_database_bootstrap(ms));
+        }
+    }
+}
+
+SCENARIO("Check ManagerSettings with a settings file", "[!throws]") {
+    const auto dir = Everest::tests::get_bin_dir().string() + "/settings_file/";
+    const auto boot_with = [&dir](const std::string& config, const std::string& db, const std::string& settings) {
+        return Everest::ManagerSettings(dir, Everest::resolve_boot_source(config, db, false, false, settings));
+    };
+
+    GIVEN("Only --db and a settings file") {
+        const auto ms = boot_with("", dir + "unused.db", dir + "valid_settings.yaml");
+        THEN("The settings come from the settings file") {
+            CHECK(ms.config_file.empty());
+            CHECK(ms.settings_file == fs::canonical(dir + "valid_settings.yaml"));
+            CHECK(ms.mqtt_settings.everest_prefix == "settings-file-prefix/");
+            CHECK(ms.runtime_settings.telemetry_enabled);
+            CHECK_FALSE(ms.settings_block_ignored);
+            CHECK_FALSE(ms.deprecated_settings_block);
+        }
+    }
+    GIVEN("A config with a settings block and a settings file") {
+        const auto ms = boot_with(dir + "config.yaml", "", dir + "valid_settings.yaml");
+        THEN("The settings file wins and the settings block is reported as ignored") {
+            CHECK(ms.mqtt_settings.everest_prefix == "settings-file-prefix/");
+            CHECK(ms.runtime_settings.telemetry_enabled);
+            CHECK(ms.settings_block_ignored);
+            CHECK_FALSE(ms.deprecated_settings_block);
+        }
+    }
+    GIVEN("A config with a settings block and no settings file") {
+        const auto ms = boot_with(dir + "config.yaml", "", "");
+        THEN("The settings block is applied and reported as deprecated") {
+            CHECK(ms.settings_file.empty());
+            CHECK(ms.mqtt_settings.everest_prefix == "block-prefix/");
+            CHECK_FALSE(ms.runtime_settings.telemetry_enabled);
+            CHECK(ms.deprecated_settings_block);
+            CHECK_FALSE(ms.settings_block_ignored);
+        }
+    }
+    GIVEN("An unusable settings file") {
+        THEN("It throws BootException naming the settings file") {
+            for (const auto* file : {"non_existing.yaml", "settings_deprecated_key.yaml", "settings_unknown_key.yaml",
+                                     "settings_wrong_type.yaml"}) {
+                CAPTURE(file);
+                CHECK_THROWS_AS(boot_with("", dir + "unused.db", dir + file), Everest::BootException);
+                CHECK_THROWS_WITH(boot_with("", dir + "unused.db", dir + file),
+                                  Catch::Matchers::ContainsSubstring(file));
+            }
         }
     }
 }
@@ -286,6 +339,27 @@ SCENARIO("Check resolve_boot_source", "[!throws]") {
             CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", true, false).reset_from_yaml);
         }
     }
+    GIVEN("--user-config") {
+        THEN("Without --config it throws BootException") {
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "", false, false, "", "uc.yaml"), Everest::BootException);
+            CHECK_THROWS_AS(Everest::resolve_boot_source("", "everest.db", false, false, "", "uc.yaml"),
+                            Everest::BootException);
+        }
+        THEN("With --config it is passed through") {
+            CHECK(Everest::resolve_boot_source("config.yaml", "", false, false, "", "uc.yaml").user_config_path ==
+                  "uc.yaml");
+            CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", false, false, "", "uc.yaml")
+                      .user_config_path == "uc.yaml");
+        }
+    }
+    GIVEN("--settings") {
+        THEN("It is passed through in every mode") {
+            CHECK(Everest::resolve_boot_source("", "", false, false, "s.yaml").settings_path == "s.yaml");
+            CHECK(Everest::resolve_boot_source("", "everest.db", false, false, "s.yaml").settings_path == "s.yaml");
+            CHECK(Everest::resolve_boot_source("config.yaml", "everest.db", false, false, "s.yaml").settings_path ==
+                  "s.yaml");
+        }
+    }
 }
 
 SCENARIO("Check database bootstrap with an in-memory database", "[!throws]") {
@@ -435,6 +509,51 @@ SCENARIO("Check ManagerConfig Constructor", "[!throws]") {
                 }
             }());
         }
+    }
+    GIVEN("A valid config with a valid module and an explicit user-config path") {
+        const auto dir = bin_dir + "valid_module_config_userconfig/";
+        const auto tmp_dir = fs::temp_directory_path() / "everest_test_config_explicit_user_config";
+        fs::remove_all(tmp_dir);
+        fs::create_directories(tmp_dir);
+        const auto explicit_user_config = tmp_dir / "explicit.yaml";
+        std::ofstream(explicit_user_config)
+            << "active_modules:\n  valid_module:\n    config_module:\n      valid_config_entry: \"explicit\"\n";
+
+        const auto boot_with_user_config = [&dir](const fs::path& user_config) {
+            return Everest::ManagerSettings(
+                dir, Everest::resolve_boot_source(dir + "config.yaml", "", false, false, "", user_config.string()));
+        };
+        const auto valid_config_entry = [](const Everest::ManagerSettings& ms) {
+            auto mc = Everest::ManagerConfig(ms);
+            const auto config_params =
+                mc.get_module_configurations().at("valid_module").configuration_parameters.at("!module");
+            const auto it = std::find_if(config_params.begin(), config_params.end(),
+                                         [](const auto& param) { return param.name == "valid_config_entry"; });
+            REQUIRE(it != config_params.end());
+            return std::get<std::string>(it->value);
+        };
+
+        THEN("Without --user-config the default location next to the config is used") {
+            const Everest::ManagerSettings ms(dir, Everest::resolve_boot_source(dir + "config.yaml", "", false, false));
+            CHECK(ms.user_config_file == fs::canonical(dir + "config.yaml").parent_path() / "user-config/config.yaml");
+            CHECK(valid_config_entry(ms) == "hi");
+        }
+        THEN("The explicit user-config is merged instead of the default one") {
+            const auto ms = boot_with_user_config(explicit_user_config);
+            CHECK(ms.user_config_file == explicit_user_config);
+            CHECK(valid_config_entry(ms) == "explicit");
+        }
+        THEN("A missing explicit user-config is not an error and nothing is merged") {
+            const auto ms = boot_with_user_config(tmp_dir / "missing.yaml");
+            CHECK(valid_config_entry(ms) == "hello there");
+        }
+        THEN("A user-config in a missing directory throws BootException") {
+            CHECK_THROWS_AS(boot_with_user_config(tmp_dir / "missing_dir" / "uc.yaml"), Everest::BootException);
+        }
+        THEN("A user-config path that is a directory throws BootException") {
+            CHECK_THROWS_AS(boot_with_user_config(tmp_dir), Everest::BootException);
+        }
+        fs::remove_all(tmp_dir);
     }
     GIVEN("A valid config with a valid module and enabled schema validation") {
         auto ms = Everest::ManagerSettings(bin_dir + "valid_module_config_validate/",

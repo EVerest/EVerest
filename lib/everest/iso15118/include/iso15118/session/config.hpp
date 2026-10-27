@@ -37,7 +37,7 @@ struct EvseSetupConfig {
     std::vector<message_20::datatypes::ServiceCategory> supported_energy_services;
     std::vector<message_20::datatypes::Authorization> authorization_services;
     std::vector<uint16_t> supported_vas_services;
-    bool enable_certificate_install_service;
+    bool enable_certificate_install_service{false};
     d20::DcTransferLimits dc_limits;
     d20::AcTransferLimits ac_limits;
     std::optional<d20::IecDerTransferLimits> der_iec_limits;

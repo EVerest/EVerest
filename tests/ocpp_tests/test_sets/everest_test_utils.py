@@ -166,6 +166,11 @@ class OCPPMultiConfigurationStrategy(EverestConfigAdjustmentStrategy):
         module_config["config_module"]["Mode"] = OCPP_VERSION_TO_MULTI_MODE[self._ocpp_version]
         if self._ocpp_version == OCPPVersion.ocpp16:
             module_config["config_module"]["EnableLegacyConfigMigration"] = True
+            # Set an individual device model db for the test, otherwise this will create race conditions
+            config_module = module_config["config_module"]
+            device_model_database = Path(config_module["DeviceModelDatabasePath"])
+            config_module.setdefault("EverestDeviceModelDatabasePath",
+                                     str(device_model_database.with_name("everest_device_model_storage.db")))
         return adjusted
 
 

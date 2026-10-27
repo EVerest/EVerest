@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright chargebyte GmbH and Contributors to EVerest
  */
 
 /*****************************************************
@@ -27898,70 +27897,6 @@ int encode_iso20_ac_der_iec_exiDocument(exi_bitstream_t* stream, struct iso20_ac
 
     return error;
 }
-
-// Element fragment: name={urn:iso:std:iso:15118:-20:AC-DER-IEC}IntentionalDelayPowerControl
-// EXI 1.0, 8.5.3: declared with more than one type ({http://www.w3.org/2001/XMLSchema}unsignedInt, {http://www.w3.org/2001/XMLSchema}unsignedShort), so inside a
-//          fragment its content uses the element fragment grammar, whose event codes are
-//          numbered over the 7 attribute and 238 element qnames of the schema.
-static int encode_iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment(exi_bitstream_t* stream, const struct iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment* IntentionalDelayPowerControlElementFragment) {
-    int grammar_id = 0;
-    int done = 0;
-    int error = 0;
-    // ElementFragment_0 returns to itself after every attribute, so the
-    // remaining events are tracked here instead of in the caller's struct.
-    int CONTENT_pending = IntentionalDelayPowerControlElementFragment->CONTENT_isUsed;
-
-    while (!done)
-    {
-        switch (grammar_id)
-        {
-        case 0:
-            // Grammar: ElementFragment_0; read/write bits=8
-            if (CONTENT_pending)
-            {
-                // Event: CH [untyped value]; event code 248; next=ElementFragment_1
-                CONTENT_pending = 0;
-                error = exi_basetypes_encoder_nbit_uint(stream, 8, 248);
-                if (error == EXI_ERROR__NO_ERROR)
-                {
-                    // string should not be found in table, so add 2
-                    error = exi_basetypes_encoder_uint_16(stream, (uint16_t)(IntentionalDelayPowerControlElementFragment->CONTENT.charactersLen + 2));
-                    if (error == EXI_ERROR__NO_ERROR)
-                    {
-                        error = exi_basetypes_encoder_characters(stream, IntentionalDelayPowerControlElementFragment->CONTENT.charactersLen, IntentionalDelayPowerControlElementFragment->CONTENT.characters, iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment_CONTENT_CHARACTER_SIZE);
-                    }
-                }
-                grammar_id = 1;
-            }
-            else
-            {
-                // Event: END Element; event code 247
-                error = exi_basetypes_encoder_nbit_uint(stream, 8, 247);
-                done = 1;
-            }
-            break;
-        case 1:
-            // Grammar: ElementFragment_1; read/write bits=8
-            // A second CH would need a second character member, so only the
-            // end of the element is reachable here.
-            // Event: END Element; event code 239
-            error = exi_basetypes_encoder_nbit_uint(stream, 8, 239);
-            done = 1;
-            break;
-        default:
-            error = EXI_ERROR__UNKNOWN_GRAMMAR_ID;
-            break;
-        }
-
-        if (error)
-        {
-            done = 1;
-        }
-    }
-
-    return error;
-}
-
 
 // main function for encoding fragment
 int encode_iso20_ac_der_iec_exiFragment(exi_bitstream_t* stream, struct iso20_ac_der_iec_exiFragment* exiFrag)

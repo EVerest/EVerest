@@ -36,6 +36,12 @@ Project & Community
 
       Explanation of the EVerest versioning scheme and release process.
 
+   .. grid-item-card:: Release Notes
+      :link: releases/release-notes
+      :link-type: doc
+
+      Release notes and upgrade guides of every EVerest release.
+
    .. grid-item-card:: Breaking Changes in EVerest
       :link: releases/breaking-changes
       :link-type: doc
@@ -84,6 +90,8 @@ Project & Community
     governance/security
     governance/tsc/index
     releases/releases-and-versioning
+    releases/release-notes
+    releases/upgrading-to-2026.10
     releases/breaking-changes
     releases/deprecation-policy
     releases/deprecation-index

@@ -400,6 +400,24 @@ void to_json(json& j, Connector_type const& k) noexcept {
     case Connector_type::IEC62196Type2Socket:
         j = "IEC62196Type2Socket";
         return;
+    case Connector_type::cCCS1:
+        j = "cCCS1";
+        return;
+    case Connector_type::cCCS2:
+        j = "cCCS2";
+        return;
+    case Connector_type::cTesla:
+        j = "cTesla";
+        return;
+    case Connector_type::cNACS:
+        j = "cNACS";
+        return;
+    case Connector_type::cG105:
+        j = "cG105";
+        return;
+    case Connector_type::cMCS:
+        j = "cMCS";
+        return;
     }
 
     j = "INVALID_VALUE__everest::lib::API::V1_0::types::evse_board_support::Connector_type";
@@ -413,6 +431,30 @@ void from_json(json const& j, Connector_type& k) {
     }
     if (s == "IEC62196Type2Socket") {
         k = Connector_type::IEC62196Type2Socket;
+        return;
+    }
+    if (s == "cCCS1") {
+        k = Connector_type::cCCS1;
+        return;
+    }
+    if (s == "cCCS2") {
+        k = Connector_type::cCCS2;
+        return;
+    }
+    if (s == "cTesla") {
+        k = Connector_type::cTesla;
+        return;
+    }
+    if (s == "cNACS") {
+        k = Connector_type::cNACS;
+        return;
+    }
+    if (s == "cG105") {
+        k = Connector_type::cG105;
+        return;
+    }
+    if (s == "cMCS") {
+        k = Connector_type::cMCS;
         return;
     }
 

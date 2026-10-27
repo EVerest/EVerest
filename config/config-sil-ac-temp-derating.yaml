@@ -11,10 +11,11 @@
 #   everest_api/temp_sensor_sim/cmd/start_publishing
 active_modules:
   iso15118_charger:
-    module: EvseV2G
+    module: Evse15118D20
     config_module:
       device: auto
-      tls_security: allow
+      supported_DIN70121: false
+      supported_ISO15118_2: true
     connections:
       security:
         - module_id: evse_security
