@@ -173,67 +173,9 @@ target_sources(iso15118
         tbd_controller.cpp
 )
 
-# EV state machines and the DIN/-2 response decoders are opt-in.
-# The SECC also needs the -20 response decoder for received-message feedback.
+# The EV side is its own target, everest::iso15118_ev.
 if(ISO15118_BUILD_EV_SIDE)
-    target_sources(iso15118
-        PRIVATE
-        message_din/response_variant.cpp
-        message_2/response_variant.cpp
-        message/ac_der_sae_names.cpp
-
-        ev/crypto.cpp
-        ev/session/fsm.cpp
-        ev/session/sap_offer.cpp
-        ev/session/stop_reason.cpp
-        ev/feedback.cpp
-
-        ev/d20/context.cpp
-        ev/d20/context_helper.cpp
-        ev/d20/engine.cpp
-        ev/d20/secc_clock.cpp
-        ev/d20/timeouts.cpp
-        ev/d20/state/supported_app_protocol.cpp
-        ev/d20/state/session_setup.cpp
-        ev/d20/state/authorization_setup.cpp
-        ev/d20/state/authorization.cpp
-        ev/d20/state/service_discovery.cpp
-        ev/d20/state/service_detail.cpp
-        ev/d20/state/service_selection.cpp
-        ev/d20/state/schedule_exchange.cpp
-        ev/d20/state/dc_charge_parameter_discovery.cpp
-        ev/d20/state/dc_cable_check.cpp
-        ev/d20/state/dc_pre_charge.cpp
-        ev/d20/state/dc_charge_loop.cpp
-        ev/d20/state/dc_welding_detection.cpp
-        ev/d20/state/power_delivery.cpp
-        ev/d20/state/session_stop.cpp
-        ev/d20/state/ac_charge_parameter_discovery.cpp
-        ev/d20/state/ac_charge_loop.cpp
-        ev/d20/state/ac_der_iec_charge_parameter_discovery.cpp
-        ev/d20/state/ac_der_iec_charge_loop.cpp
-        ev/d20/state/ac_der_sae_charge_parameter_discovery.cpp
-        ev/d20/state/ac_der_sae_charge_loop.cpp
-        ev/d20/ac_phase_split.cpp
-        ev/d20/der/sae_validation.cpp
-        ev/d20/der/sae_requests.cpp
-    )
-
-    add_subdirectory(ev/d2)
-    add_subdirectory(ev/din)
-
-    target_sources(iso15118
-        PRIVATE
-        ev/detail/session/session.cpp
-        ev/controller.cpp
-        ev/session_deleter.cpp
-        ev/config/validation.cpp
-        ev/transport/sdp_client.cpp
-        ev/transport/connection.cpp
-    )
-
-    # Only the EV side uses everest::io.
-    target_link_libraries(iso15118 PUBLIC everest::io)
+    add_subdirectory(ev)
 endif()
 
 target_link_libraries(iso15118

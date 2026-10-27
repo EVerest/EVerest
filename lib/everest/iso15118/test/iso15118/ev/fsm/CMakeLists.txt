@@ -39,7 +39,7 @@ add_executable(test_ev_fsm
 )
 target_link_libraries(test_ev_fsm
     PRIVATE
-        iso15118
+        iso15118_ev
         Catch2::Catch2WithMain
 )
 catch_discover_tests(test_ev_fsm DISCOVERY_MODE PRE_TEST)

@@ -1,5 +1,5 @@
 # ISO 15118-2 EV engine
-target_sources(iso15118
+target_sources(iso15118_ev
     PRIVATE
         context.cpp
         engine.cpp

@@ -9,9 +9,9 @@
 #include <iso15118/ev/detail/context_helper.hpp>
 #include <iso15118/ev/din/context.hpp>
 #include <iso15118/ev/din/state/session_stop.hpp>
+#include <iso15118/ev/message_din/response_variant.hpp>
 #include <iso15118/ev/session/stop_reason.hpp>
 #include <iso15118/message_din/common_types.hpp>
-#include <iso15118/message_din/response_variant.hpp>
 
 namespace iso15118::ev::din {
 

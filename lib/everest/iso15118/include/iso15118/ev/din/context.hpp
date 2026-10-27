@@ -12,8 +12,8 @@
 
 #include <everest/util/async/monitor.hpp>
 
+#include <iso15118/ev/message_din/response_variant.hpp>
 #include <iso15118/message_din/common_types.hpp>
-#include <iso15118/message_din/response_variant.hpp>
 #include <iso15118/message_din/type.hpp>
 
 #include <iso15118/ev/d20/control_event.hpp>

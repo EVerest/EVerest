@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
+#include <iso15118/ev/message_2/response_variant.hpp>
 #include <iso15118/message_2/authorization.hpp>
 #include <iso15118/message_2/cable_check.hpp>
 #include <iso15118/message_2/certificate_installation.hpp>
@@ -14,7 +15,6 @@
 #include <iso15118/message_2/payment_service_selection.hpp>
 #include <iso15118/message_2/power_delivery.hpp>
 #include <iso15118/message_2/pre_charge.hpp>
-#include <iso15118/message_2/response_variant.hpp>
 #include <iso15118/message_2/service_detail.hpp>
 #include <iso15118/message_2/service_discovery.hpp>
 #include <iso15118/message_2/session_setup.hpp>

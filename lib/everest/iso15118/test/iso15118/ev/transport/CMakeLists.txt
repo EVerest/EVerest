@@ -12,7 +12,7 @@ add_executable(test_ev_transport
 )
 target_link_libraries(test_ev_transport
     PRIVATE
-        iso15118
+        iso15118_ev
         Catch2::Catch2WithMain
         # libtls is a private dependency of iso15118, so the headers the libio TLS listener config
         # pulls in need naming here.

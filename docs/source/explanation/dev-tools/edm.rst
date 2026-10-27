@@ -314,7 +314,8 @@ the same prefix:
     -DCMAKE_PREFIX_PATH=/opt/everest -DCMAKE_INSTALL_PREFIX=/opt/everest
 
 When b4 builds the Ev15118 module, b2 needs ``-DISO15118_BUILD_EV_SIDE=ON``: without core or
-runtime in the same build, libiso15118 is built without its EV side.
+runtime in the same build, libiso15118 does not build its EV side, the ``everest::iso15118_ev``
+target.
 
 With EDM, ``cmake --install`` installs what is needed to run EVerest (the manager, modules,
 libraries and configurations) but no CMake packages and no development files such as the generated

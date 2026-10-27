@@ -8,7 +8,7 @@
 
 #include <iso15118/io/stream_view.hpp>
 
-#include "type.hpp"
+#include <iso15118/message_din/type.hpp>
 
 namespace iso15118::message_din {
 

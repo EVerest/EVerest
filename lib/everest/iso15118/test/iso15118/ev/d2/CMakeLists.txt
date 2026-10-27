@@ -22,7 +22,7 @@ add_executable(test_ev_d2
 )
 target_link_libraries(test_ev_d2
     PRIVATE
-        iso15118
+        iso15118_ev
         Catch2::Catch2WithMain
         OpenSSL::Crypto
         everest::tls
