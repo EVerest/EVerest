@@ -174,7 +174,14 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive. Without
+        it EVerest raises a CommunicationFault error on the API module, with sub_type "Initial communication check"
+        when no true arrived within the first period after start and "Bridge to implementation connection lost"
+        after a later silence; the next true clears the fault. Send false to stop the check for the rest of the
+        module's run: it clears an active CommunicationFault, no further fault is raised, and a later true does not
+        start the check again; restart the module to re-enable it. Payloads other than a JSON boolean are ignored
+        with a log warning and do not count as a check.
 
     HeartBeatId:
       type: integer
