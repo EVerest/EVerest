@@ -636,7 +636,14 @@ TEST(ComponentConfigNameKeyTest, invalid_custom_config_is_not_skipped) {
     unsupported_monitor["monitors"] = {
         {{"type", "UpperThreshold"}, {"severity", 3}, {"value", 10}, {"config_type", "CustomMonitor"}}};
     const auto monitor_directory = write_configs_with_custom_variable(unsupported_monitor);
-    EXPECT_THROW(get_all_component_configs(monitor_directory), InitDeviceModelDbError);
+    try {
+        get_all_component_configs(monitor_directory);
+        ADD_FAILURE() << "the unsupported monitor was accepted";
+    } catch (const ComponentConfigNameKeyError& e) {
+        ADD_FAILURE() << "the unsupported monitor was rejected as a name key error: " << e.what();
+    } catch (const InitDeviceModelDbError& e) {
+        EXPECT_NE(std::string(e.what()).find("does not support monitoring"), std::string::npos) << e.what();
+    }
     std::filesystem::remove_all(monitor_directory);
 }
 
