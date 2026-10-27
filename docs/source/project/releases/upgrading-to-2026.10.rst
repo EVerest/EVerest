@@ -221,6 +221,12 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
+- ``evse_board_support`` (all BSP drivers, ``evse_board_support_API`` included):
+  EvseManager requests state X1 only with ``cp_state_X1``. Until 2026.10 most
+  paths already did, but a duty cycle of 100 % (for example a current limit
+  below 6 A in basic AC charging) was sent as ``pwm_on(100)``. ``pwm_on`` is
+  only called with a duty cycle strictly between 0 and 100 %.
+
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
 
