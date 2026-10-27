@@ -222,7 +222,9 @@ components:
     receive_heartbeat:
       name: receive_heartbeat
       title: 'Receive heartbeat'
-      summary: Heartbeat produced by EVerest as configured via cfg_heartbeat_interval_ms in the EVerest configuration
+      summary: >-
+        Heartbeat produced by EVerest every cfg_heartbeat_interval_ms from the moment the module is ready; the
+        id starts at 0 and increases by 1 per message.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HeartBeatId'
@@ -487,4 +489,9 @@ components:
         with a log warning and do not count as a check.
     HeartBeatId:
       type: integer
-      description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"
+      description: >-
+        64-bit unsigned integer. EVerest publishes the heartbeat every cfg_heartbeat_interval_ms (values <= 0
+        disable it) from the moment the module is ready, which is also when the first communication check
+        period starts. The first id is 0, every further heartbeat increases it by 1, and it wraps to 0 when the
+        maximum representable value is reached. A client that connected later sees an arbitrary first id and
+        should only rely on the increment and the period.
