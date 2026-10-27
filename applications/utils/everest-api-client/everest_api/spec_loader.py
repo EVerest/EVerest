@@ -6,13 +6,17 @@ generator need.
 Local refs (``#/...``) resolve within one spec. Refs into a sibling spec
 (``other_API.yaml#/...``) resolve through a SpecSet, which loads the specs of
 one directory on demand. Anything unexpected raises so a malformed spec fails
-the build loudly rather than producing silently wrong output.
+the build loudly rather than producing silently wrong output. validate_spec
+checks a whole spec against the AsyncAPI 3.0 schema.
 """
 
+import json
 import re
 from pathlib import Path
 
 import yaml
+
+ASYNCAPI_SCHEMA = Path(__file__).parent / "schemas" / "asyncapi-3.0.0.json"
 
 
 class SpecError(Exception):
@@ -43,6 +47,37 @@ def load_spec(path):
     if not isinstance(doc, dict):
         raise SpecError(f"{path}: top-level YAML is not a mapping")
     return doc
+
+
+_validator = None
+
+
+def _asyncapi_validator():
+    global _validator
+    if _validator is None:
+        import jsonschema
+        schema = json.loads(ASYNCAPI_SCHEMA.read_text(encoding="utf-8"))
+        jsonschema.Draft7Validator.check_schema(schema)
+        _validator = jsonschema.Draft7Validator(schema)
+    return _validator
+
+
+def validate_spec(doc, name, max_errors=5):
+    """Raise SpecError when *doc* violates the AsyncAPI 3.0 schema. *name*
+    prefixes the message. The document is checked as the JSON the client
+    sends (timestamps as strings, 230.0 as 230)."""
+    instance = json.loads(json.dumps(json_compatible(doc), default=str))
+    errors = sorted(_asyncapi_validator().iter_errors(instance),
+                    key=lambda e: list(e.absolute_path))
+    if not errors:
+        return
+    lines = []
+    for error in errors[:max_errors]:
+        where = "/".join(str(part) for part in error.absolute_path) or "(document)"
+        lines.append(f"  {where}: {error.message}")
+    if len(errors) > max_errors:
+        lines.append(f"  ... and {len(errors) - max_errors} more")
+    raise SpecError(f"{name} is not a valid AsyncAPI 3.0 document:\n" + "\n".join(lines))
 
 
 def json_compatible(value):
@@ -132,6 +167,8 @@ def find_request_operation(operations, reply_channel_id):
     """Return ``(op_id, op)`` of the operation whose ``reply.channel`` points
     at *reply_channel_id*, or ``(None, None)``."""
     for op_id, op in operations.items():
+        if not isinstance(op, dict):
+            continue
         reply = op.get("reply")
         if not isinstance(reply, dict):
             continue

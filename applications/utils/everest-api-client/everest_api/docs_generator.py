@@ -15,7 +15,7 @@ import jinja2 as j2
 from markupsafe import Markup, escape
 
 from everest_api.doc_model import build_doc_model, schema_anchor
-from everest_api.spec_loader import SpecError, SpecSet
+from everest_api.spec_loader import SpecError, SpecSet, validate_spec
 
 _TEMPLATES_DIR = Path(__file__).parent / "templates" / "html"
 _ASSETS_DIR = _TEMPLATES_DIR / "assets"
@@ -118,15 +118,18 @@ def _is_generated_page(directory):
 def generate_reference(spec_files, html_dir, index_rst):
     """Render the whole reference: ``<html_dir>/<name>/index.html`` per spec,
     the shared assets in ``<html_dir>/_assets`` and the RST index page at
-    *index_rst*. Pages of specs that are no longer listed are deleted; other
-    content of *html_dir* is left alone. The specs must share one directory,
-    since they refer to each other by file name."""
+    *index_rst*. Every spec is validated against the AsyncAPI 3.0 schema
+    before anything is rendered. Pages of specs that are no longer listed are
+    deleted; other content of *html_dir* is left alone. The specs must share
+    one directory, since they refer to each other by file name."""
     spec_files = [Path(p) for p in spec_files]
     directories = {p.resolve().parent for p in spec_files}
     if len(directories) != 1:
         raise SpecError("the specs of one reference must be in one directory")
     html_dir = Path(html_dir)
     specs = SpecSet(directories.pop())
+    for spec in spec_files:
+        validate_spec(specs.get(spec.name), spec.name)
     env = _make_env()
     models = []
     for spec in spec_files:

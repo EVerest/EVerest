@@ -164,12 +164,6 @@ macro(_add_trailbook_copy_stem_command)
         "${args_STEM_DIRECTORY}/*"
     )
 
-    set(STEM_FILES_BUILD_DIR "")
-    foreach(file_path IN LISTS STEM_FILES_SOURCE_DIR)
-        file(RELATIVE_PATH rel_path "${args_STEM_DIRECTORY}" "${file_path}")
-        list(APPEND STEM_FILES_BUILD_DIR "${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}/${rel_path}")
-    endforeach()
-
     # The file list is an input of its own, rewritten only when it changes:
     # a deleted page leaves nothing newer behind, yet its copy has to go and
     # the site has to be rebuilt.
@@ -179,9 +173,14 @@ macro(_add_trailbook_copy_stem_command)
     configure_file("${STEM_FILE_LIST}.tmp" "${STEM_FILE_LIST}" COPYONLY)
     file(REMOVE "${STEM_FILE_LIST}.tmp")
 
+    # The copies keep the modification time of their sources, so they cannot
+    # be the outputs: they would always be older than the file list. A stamp
+    # touched after each sync is what the later stages depend on.
+    set(STEM_FILES_COPIED_STAMP "${CMAKE_CURRENT_BINARY_DIR}/copy_stem.stamp")
+
     add_custom_command(
         OUTPUT
-            ${STEM_FILES_BUILD_DIR}
+            ${STEM_FILES_COPIED_STAMP}
         DEPENDS
             ${STEM_FILES_SOURCE_DIR}
             ${STEM_FILE_LIST}
@@ -199,6 +198,8 @@ macro(_add_trailbook_copy_stem_command)
             --data-file ${CMAKE_CURRENT_BINARY_DIR}/copy_stem_filelist.yaml
             --source-directory ${args_STEM_DIRECTORY}
             --root-directory ${TRAILBOOK_INSTANCE_SOURCE_DIRECTORY}
+        COMMAND
+            ${CMAKE_COMMAND} -E touch ${STEM_FILES_COPIED_STAMP}
     )
 endmacro()
 
@@ -265,7 +266,7 @@ macro(_add_trailbook_create_metadata_file_command)
             ${METADATA_JSON_FILE}
         DEPENDS
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/create_metadata_file.py
-            ${STEM_FILES_BUILD_DIR}
+            ${STEM_FILES_COPIED_STAMP}
             ${CHECK_DONE_FILE_REPLACE_LATEST}
             ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
             trailbook_${args_NAME}_stage_postprocess_sphinx_before
@@ -304,7 +305,7 @@ macro(_add_trailbook_sphinx_build_command)
         DEPENDS
             trailbook_${args_NAME}_stage_build_sphinx_before
             $<TARGET_PROPERTY:trailbook_${args_NAME},ADDITIONAL_DEPS_STAGE_BUILD_SPHINX_BEFORE>
-            ${STEM_FILES_BUILD_DIR}
+            ${STEM_FILES_COPIED_STAMP}
             ${STEM_FILE_LIST}
             ${CMAKE_CURRENT_FUNCTION_LIST_DIR}/filelist_manager.py
         COMMENT
@@ -737,7 +738,7 @@ function(add_trailbook)
     set(DEPS_STAGE_PREPARE_SPHINX_SOURCE_AFTER
         trailbook_${args_NAME}_stage_prepare_sphinx_source_before
         ${CHECK_DONE_FILE_SETUP_BUILD_DIRECTORY}
-        ${STEM_FILES_BUILD_DIR}
+        ${STEM_FILES_COPIED_STAMP}
         trailbook_${args_NAME}_create_instance_info_file
     )
     add_custom_target(

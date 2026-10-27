@@ -9,6 +9,9 @@ The following additional features are provided:
 * cmake function: `trailbook_ev_add_module_explanation()`
 * cmake function: `trailbook_ev_create_snapshot()`
 * cmake function: `trailbook_ev_generate_api_doc()`
+* cmake function: `trailbook_ev_generate_api_doc_stub()`, the stand-in when the
+  API reference is left out (`EVEREST_SKIP_BUILD_API_DOC`): it writes the index
+  page the reference toctree names, saying the reference is not part of the build
 * cmake function: `trailbook_ev_generate_rst_from_manifest()`
 * cmake function: `trailbook_ev_generate_rst_from_interface()`
 * cmake function: `trailbook_ev_generate_rst_from_types()`
