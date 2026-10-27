@@ -43,25 +43,70 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
 
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
                              session::EvseSetupConfig setup_, ConnectionFactory connection_factory_) :
+    TbdController(std::move(config_), std::move(callbacks_), std::move(setup_), std::move(connection_factory_),
+                  io::resolve_interface_index) {
+}
+
+TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
+                             session::EvseSetupConfig setup_, ConnectionFactory connection_factory_,
+                             InterfaceIndexLookup interface_index_lookup_) :
     config(std::move(config_)),
     callbacks(std::move(callbacks_)),
     evse_setup(std::move(setup_)),
     interface_name(config.interface_name),
+    interface_index_lookup(std::move(interface_index_lookup_)),
     connection_factory(std::move(connection_factory_)),
     m_ssl_config(config.ssl) {
+    check_interface();
+}
 
-    const auto result_interface_check = io::check_and_update_interface(interface_name);
-    if (result_interface_check) {
-        logf_info("Using ethernet interface: %s", interface_name.c_str());
-    } else {
-        throw std::runtime_error("Ethernet interface was not found!");
+TbdController::~TbdController() {
+    if (sdp_server) {
+        poll_manager.unregister_fd(sdp_server->get_fd());
+        sdp_server->close();
+    }
+}
+
+void TbdController::check_interface() {
+    interface_check_timeout = Timeout{config.interface_check_interval_ms};
+
+    // Once bound, follow the bound interface by name so "auto" cannot wander to another interface.
+    auto name = interface_index != 0 ? interface_name : config.interface_name;
+    const auto index = interface_index_lookup(name);
+    if (index == interface_index) {
+        return;
     }
 
+    if (interface_index != 0) {
+        logf_warning("Ethernet interface %s (index %u) is gone", interface_name.c_str(), interface_index);
+        release_interface();
+    }
+
+    if (index == 0) {
+        if (not interface_missing_logged) {
+            logf_warning("Ethernet interface %s not found; checking every %u ms", config.interface_name.c_str(),
+                         config.interface_check_interval_ms);
+            interface_missing_logged = true;
+        }
+        return;
+    }
+
+    try {
+        bind_interface(name, index);
+    } catch (const std::exception& e) {
+        logf_error("Could not start on ethernet interface %s: %s; retrying in %u ms", name.c_str(), e.what(),
+                   config.interface_check_interval_ms);
+    }
+}
+
+void TbdController::bind_interface(const std::string& name, unsigned int index) {
     if (config.enable_sdp_server) {
-        sdp_server = std::make_unique<io::SdpServer>(interface_name);
-        // The SDP fd is registered once and never re-registered, so the poll manager's throw-containment,
+        std::lock_guard<std::mutex> lock(sdp_server_mutex);
+        sdp_server = std::make_unique<io::SdpServer>(name);
+        sdp_server->set_dlink_ready(dlink_ready_requested.load());
+        // The SDP fd stays registered until the interface is released, so the poll manager's throw-containment,
         // which unregisters the offending fd, must never see an exception from here -- it would silently
-        // kill SDP discovery until a process restart. get_peer_request() has already consumed the datagram.
+        // kill SDP discovery until the interface changes. get_peer_request() has already consumed the datagram.
         poll_manager.register_fd(sdp_server->get_fd(), [this]() {
             try {
                 handle_sdp_server_input();
@@ -70,13 +115,52 @@ TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks cal
             }
         });
     }
+
+    interface_name = name;
+    interface_index = index;
+    interface_missing_logged = false;
+    logf_info("Using ethernet interface: %s (index %u)", interface_name.c_str(), interface_index);
 }
 
-TbdController::~TbdController() {
-    if (config.enable_sdp_server) {
-        poll_manager.unregister_fd(sdp_server->get_fd());
-        sdp_server->close();
+void TbdController::release_interface() {
+    {
+        std::lock_guard<std::mutex> lock(sdp_server_mutex);
+        if (sdp_server) {
+            poll_manager.unregister_fd(sdp_server->get_fd());
+            sdp_server->close();
+            sdp_server.reset();
+        }
+        // The data link went with the interface: a server bound to the replacement starts not ready and
+        // waits for the next dlink_ready(true) rather than answering SDP before SLAC matched there.
+        dlink_ready_requested.store(false);
     }
+    sdp_offer.reset();
+    interface_index = 0;
+    connection_retry_timeout.reset();
+    connection_retry_logged = false;
+
+    // Reaped by service_active_session once finished, like a data-link loss.
+    if (session) {
+        logf_info("Terminating the V2G session; its ethernet interface is gone");
+        session->close();
+    } else if (communication_setup_timeout) {
+        logf_warning("V2G communication setup aborted; the ethernet interface is gone");
+        callbacks.signal(session::feedback::Signal::DLINK_ERROR);
+    }
+    // The link loss is reported above; left armed, the timeout would report it a second time up to 18 s later.
+    communication_setup_timeout.reset();
+    communication_setup_dlink_deadline.reset();
+    communication_setup_uses_tcp_anchor = false;
+}
+
+void TbdController::clear_dlink_ready() {
+    std::lock_guard<std::mutex> lock(sdp_server_mutex);
+    if (sdp_server) {
+        sdp_server->set_dlink_ready(false);
+    }
+    // Withdrawn under the same mutex set_dlink_ready() publishes it with, so a later bind_interface()
+    // cannot resurrect a readiness the loop already revoked.
+    dlink_ready_requested.store(false);
 }
 
 bool TbdController::poll_once() {
@@ -250,12 +334,14 @@ StartSessionResult TbdController::start_session(int connected_fd, const StartSes
 }
 
 void TbdController::tick() {
+    if (interface_check_timeout.is_reached()) {
+        check_interface();
+    }
+
     if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
         logf_warning("V2G communication setup timeout (18s) expired before session was established");
         communication_setup_timeout.reset();
-        if (sdp_server) {
-            sdp_server->set_dlink_ready(false);
-        }
+        clear_dlink_ready();
         callbacks.signal(session::feedback::Signal::DLINK_ERROR);
     }
 
@@ -272,9 +358,7 @@ void TbdController::tick() {
     if (communication_setup_timeout && communication_setup_timeout->is_reached()) {
         logf_warning("V2G communication setup timeout (18s) expired before the V2G session was established");
         communication_setup_timeout.reset();
-        if (sdp_server) {
-            sdp_server->set_dlink_ready(false);
-        }
+        clear_dlink_ready();
         {
             // The timeout is cancelled on establishment above, so any session still here has NOT established:
             // the EV never connected (resetting closes the still-listening socket, so a late connect is refused
@@ -287,12 +371,37 @@ void TbdController::tick() {
         callbacks.signal(session::feedback::Signal::DLINK_ERROR);
     }
 
-    if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
-        std::lock_guard<std::mutex> lock(session_mutex);
-        session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
-                                            session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx,
-                                            d2_pause_ctx, false, config.throttle_same_type_only);
+    if (not session and not shutdown_active.load() and not config.enable_sdp_server and interface_index != 0) {
+        create_session_without_sdp();
     }
+}
+
+void TbdController::create_session_without_sdp() {
+    if (connection_retry_timeout and not connection_retry_timeout->is_reached()) {
+        return;
+    }
+
+    std::unique_ptr<io::IConnection> connection;
+    try {
+        connection = connection_factory(poll_manager, interface_name);
+    } catch (const std::runtime_error& e) {
+        if (not connection_retry_logged) {
+            logf_warning("Could not open the listening endpoint on %s: %s; retrying every %u ms",
+                         interface_name.c_str(), e.what(), config.interface_check_interval_ms);
+            connection_retry_logged = true;
+        }
+        connection_retry_timeout.emplace(config.interface_check_interval_ms);
+        return;
+    }
+    if (connection_retry_logged) {
+        logf_info("Listening endpoint on %s opened", interface_name.c_str());
+        connection_retry_logged = false;
+    }
+    connection_retry_timeout.reset();
+
+    std::lock_guard<std::mutex> lock(session_mutex);
+    session = std::make_unique<Session>(std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks,
+                                        pause_ctx, d2_pause_ctx, false, config.throttle_same_type_only);
 }
 
 void TbdController::shutdown() {
@@ -492,12 +601,15 @@ void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransfe
 }
 
 void TbdController::set_dlink_ready(bool ready) {
-    if (sdp_server) {
-        sdp_server->set_dlink_ready(ready);
+    {
+        std::lock_guard<std::mutex> lock(sdp_server_mutex);
+        if (sdp_server) {
+            sdp_server->set_dlink_ready(ready);
+        }
+        dlink_ready_requested.store(ready);
     }
 
     // Called from a module command thread, so the timeout object itself must not be touched here.
-    dlink_ready_requested.store(ready);
     dlink_ready_generation.fetch_add(1);
 
     if (not ready) {
