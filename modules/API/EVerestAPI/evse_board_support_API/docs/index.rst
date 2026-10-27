@@ -22,6 +22,42 @@ changes at runtime, for example when the maximum current drops because the
 hardware gets too hot; a changed current limit reaches the PWM within a few
 seconds, also during charging.
 
+Error mapping
+=============
+
+The module provides the ``evse_board_support``, ``connector_lock`` and
+``ac_rcd`` interfaces but takes one flat error type list over the API. It picks
+the implementation to raise or clear an error on by the error name:
+
+.. list-table::
+   :header-rows: 1
+
+   * - EVerest error type
+     - API error names
+   * - ``evse_board_support/<name>``
+     - DiodeFault, VentilationNotAvailable, BrownOut, EnergyManagement,
+       PermanentFault, MREC2GroundFailure, MREC3HighTemperature,
+       MREC4OverCurrentFailure, MREC5OverVoltage, MREC6UnderVoltage,
+       MREC8EmergencyStop, MREC10InvalidVehicleMode, MREC14PilotFault,
+       MREC15PowerLoss, MREC17EVSEContactorFault, MREC18CableOverTempDerate,
+       MREC19CableOverTempStop, MREC20PartialInsertion, MREC23ProximityFault,
+       MREC24ConnectorVoltageHigh, MREC25BrokenLatch, MREC26CutCable,
+       TiltDetected, WaterIngressDetected, EnclosureOpen, VendorError,
+       VendorWarning, CommunicationFault
+   * - ``connector_lock/<name>``
+     - ConnectorLockCapNotCharged, ConnectorLockUnexpectedOpen,
+       ConnectorLockUnexpectedClose, ConnectorLockFailedLock,
+       ConnectorLockFailedUnlock, MREC1ConnectorLockFailure
+   * - ``ac_rcd/<name>``
+     - Selftest, DC, AC
+
+The ``connector_lock`` and ``ac_rcd`` interfaces also define VendorError and
+VendorWarning, and ``ac_rcd`` defines MREC2GroundFailure; through this API those
+names always address the ``evse_board_support`` implementation. EvseManager
+keeps charging only through MREC3HighTemperature, MREC18CableOverTempDerate and
+VendorWarning; every other error makes the EVSE inoperative until it is cleared.
+``clear_error`` must repeat the sub type of the ``raise_error``.
+
 ``tests/async_api_tests/test_evse_board_support_api.py`` exercises the module in the AC
 software-in-the-loop against this specification: a fake board implements the ``m2e`` side
 and plays the car while EVerest runs basic charging sessions, faults and communication loss.
