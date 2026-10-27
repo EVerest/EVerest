@@ -177,6 +177,13 @@ messages) and on the other hand requires the clients to send
 (*cfg_communication_check_to_s* - with negative values disabling the
 requirement for these messages).
 
+When no *communication_check* arrives in time, the API module raises a
+*CommunicationFault* error (sub type *Initial communication check* for the
+first period after start, *Bridge to implementation connection lost*
+afterwards) which the next *true* clears. Sending *false* stops the check for
+the rest of the run: it clears an active fault, and a later *true* does not
+start the check again; restart the module to re-enable it.
+
 In situations where a request/reply pattern is implemented, the timeout
 for a response can be configured (*cfg_request_reply_to_s* - these timeouts
 cannot be disabled since internal EVerest timeouts apply) . In general it
