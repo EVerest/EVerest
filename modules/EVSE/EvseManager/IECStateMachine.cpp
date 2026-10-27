@@ -399,15 +399,20 @@ std::queue<CPEvent> IECStateMachine::state_machine(std::optional<RawCPState> con
     return events;
 }
 
-// High level state machine sets PWM duty cycle
+// High level state machine sets PWM duty cycle. The BSP only ever gets a duty cycle strictly between 0 and 1:
+// 1 is state X1 and 0 is state F, each requested with its own command.
 void IECStateMachine::set_pwm(double value) {
+    if (value >= 1.) {
+        set_cp_state_X1();
+        return;
+    }
+    if (value <= 0.) {
+        set_cp_state_F();
+        return;
+    }
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::IEC_set_pwm);
-        if (value > 0 && value < 1) {
-            pwm_running = true;
-        } else {
-            pwm_running = false;
-        }
+        pwm_running = true;
         cp_state_f_requested = false;
     }
 
