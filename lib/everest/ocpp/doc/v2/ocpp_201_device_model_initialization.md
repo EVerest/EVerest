@@ -79,7 +79,7 @@ The component tables `COMPONENT`, `VARIABLE`, `VARIABLE_CHARACTERISTICS` and `VA
 from the component config and the values of its variables. They are linked by foreign keys, and removing a component
 or variable removes its characteristics and attributes with it.
 
-Two tables are keyed by the identity of a component and variable instead of a foreign key, so they can hold data of
+Two tables are keyed by the identity of a component and variable instead of a foreign key, so they can hold data on
 variables that have no row in the component tables:
 
 | Table | Holds |
