@@ -19,7 +19,7 @@ add_executable(test_ev_session
 )
 target_link_libraries(test_ev_session
     PRIVATE
-        iso15118
+        iso15118_ev
         Catch2::Catch2WithMain
         OpenSSL::Crypto
         ${CMAKE_DL_LIBS}

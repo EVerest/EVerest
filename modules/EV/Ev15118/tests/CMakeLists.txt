@@ -2,6 +2,13 @@ set(TEST_TARGET_NAME ${PROJECT_NAME}_Ev15118_tests)
 
 find_package(OpenSSL 3 REQUIRED)
 
+# FakeController.cpp defines iso15118::ev::Controller in place of the library's, which only works
+# while the linker pulls library objects on demand, that is from a static archive.
+get_target_property(ISO15118_EV_TYPE everest::iso15118_ev TYPE)
+if(NOT ISO15118_EV_TYPE STREQUAL "STATIC_LIBRARY")
+    message(FATAL_ERROR "${TEST_TARGET_NAME} needs everest::iso15118_ev as a static library, not ${ISO15118_EV_TYPE}")
+endif()
+
 add_executable(${TEST_TARGET_NAME})
 
 add_dependencies(${TEST_TARGET_NAME} ${MODULE_NAME})
@@ -39,7 +46,7 @@ target_link_libraries(${TEST_TARGET_NAME} PRIVATE
     everest::framework
     everest::iso15118_conversions
     everest::util
-    everest::iso15118
+    everest::iso15118_ev
     OpenSSL::Crypto
 )
 

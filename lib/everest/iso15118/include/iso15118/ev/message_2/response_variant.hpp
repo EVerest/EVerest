@@ -10,7 +10,7 @@
 
 #include <iso15118/io/stream_view.hpp>
 
-#include "type.hpp"
+#include <iso15118/message_2/type.hpp>
 
 namespace iso15118::message_2 {
 

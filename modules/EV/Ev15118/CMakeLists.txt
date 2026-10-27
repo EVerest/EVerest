@@ -10,7 +10,7 @@ ev_setup_cpp_module()
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1
 target_link_libraries(${MODULE_NAME}
     PRIVATE
-        everest::iso15118
+        everest::iso15118_ev
         everest::util
         everest::iso15118_conversions
 )

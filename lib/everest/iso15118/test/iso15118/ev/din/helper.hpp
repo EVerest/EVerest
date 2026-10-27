@@ -16,11 +16,11 @@
 
 #include <iso15118/ev/din/context.hpp>
 #include <iso15118/ev/din/states.hpp>
+#include <iso15118/ev/message_din/response_variant.hpp>
 #include <iso15118/ev/params/dc.hpp>
 #include <iso15118/ev/params/iso2_ac.hpp>
 #include <iso15118/ev/session/latches.hpp>
 #include <iso15118/message_din/power_delivery.hpp>
-#include <iso15118/message_din/response_variant.hpp>
 #include <iso15118/message_din/session_stop.hpp>
 #include <iso15118/message_din/type.hpp>
 #include <iso15118/message_din/variant.hpp>

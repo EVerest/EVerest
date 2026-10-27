@@ -29,4 +29,18 @@ install(
 install(
     DIRECTORY include/
     TYPE INCLUDE
+    REGEX "/include/iso15118/ev$" EXCLUDE
 )
+
+if(ISO15118_BUILD_EV_SIDE)
+    install(
+        TARGETS
+            iso15118_ev
+        EXPORT everest-iso15118-targets
+    )
+
+    install(
+        DIRECTORY include/iso15118/ev
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/iso15118
+    )
+endif()

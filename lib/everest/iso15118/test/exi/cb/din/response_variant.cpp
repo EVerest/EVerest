@@ -5,13 +5,13 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/detail/cb_exi.hpp>
+#include <iso15118/ev/message_din/response_variant.hpp>
 #include <iso15118/message_din/cable_check.hpp>
 #include <iso15118/message_din/charge_parameter_discovery.hpp>
 #include <iso15118/message_din/contract_authentication.hpp>
 #include <iso15118/message_din/current_demand.hpp>
 #include <iso15118/message_din/power_delivery.hpp>
 #include <iso15118/message_din/pre_charge.hpp>
-#include <iso15118/message_din/response_variant.hpp>
 #include <iso15118/message_din/service_discovery.hpp>
 #include <iso15118/message_din/service_payment_selection.hpp>
 #include <iso15118/message_din/session_setup.hpp>

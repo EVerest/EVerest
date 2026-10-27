@@ -26,5 +26,6 @@ create_din_exi_test_target(session_stop)
 # The EV direction: decoding responses, and the physical values its requests carry.
 if(ISO15118_BUILD_EV_SIDE)
     create_din_exi_test_target(response_variant)
+    target_link_libraries(test_din_exi_response_variant PRIVATE iso15118_ev)
     create_din_exi_test_target(physical_value)
 endif()

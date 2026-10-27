@@ -9,9 +9,9 @@
 #include <iso15118/ev/d2/context.hpp>
 #include <iso15118/ev/d2/state/session_stop.hpp>
 #include <iso15118/ev/detail/context_helper.hpp>
+#include <iso15118/ev/message_2/response_variant.hpp>
 #include <iso15118/ev/session/stop_reason.hpp>
 #include <iso15118/message_2/common_types.hpp>
-#include <iso15118/message_2/response_variant.hpp>
 
 namespace iso15118::ev::d2 {
 
