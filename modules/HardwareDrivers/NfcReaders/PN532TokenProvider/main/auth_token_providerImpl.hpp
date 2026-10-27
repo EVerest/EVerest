@@ -26,7 +26,7 @@ struct Conf {
     std::string serial_port;
     int baud_rate;
     int read_timeout;
-    int debounce_timeout;
+    int token_debounce_interval_ms;
     bool debug;
 };
 

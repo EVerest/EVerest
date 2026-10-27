@@ -90,7 +90,7 @@ void auth_token_providerImpl::shutdown() {
 bool auth_token_providerImpl::is_bounce(const std::string& id) {
     const auto now = std::chrono::steady_clock::now();
     const bool bounce = last_seen.has_value() && id == last_id &&
-                        now - last_seen.value() < std::chrono::seconds(config.debounce_timeout);
+                        now - last_seen.value() < std::chrono::milliseconds(config.token_debounce_interval_ms);
     last_id = id;
     last_seen = now;
     if (bounce && config.debug) {
