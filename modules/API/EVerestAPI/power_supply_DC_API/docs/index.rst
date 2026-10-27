@@ -21,6 +21,16 @@ hardware cannot regulate to 0 A, switch its output off, keep the mode, and switc
 it on again when a current at or above the minimum is requested.
 During cable check and precharge, EVerest never sends less than the minimum.
 
+Measurement rate
+================
+
+Publish ``voltage_current`` at regular intervals, at least once per second and
+ideally at 4 Hz, also when the values did not change. EVerest waits for fresh
+values: before it switches the supply on for the cable check it needs a new
+measurement below 60 V, and it follows the voltage ramp during cable check and
+precharge on these values. A supply that publishes only when a value changes
+cannot start a session.
+
 ``tests/async_api_tests/test_power_supply_dc_api.py`` exercises the module in the DC
 software-in-the-loop against this specification: an external fake supply implements the
 ``m2e`` side while EVerest runs charging sessions, faults, derating and communication loss.
