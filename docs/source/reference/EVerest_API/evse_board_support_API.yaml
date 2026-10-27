@@ -417,12 +417,13 @@ components:
     send_capabilities:
       name: send_capabilities
       title: 'Send hardware capabilities'
-      summary:  >-
-        Hardware capabilities/limits. Initially EvseManager will call get_hw_capabilities once to fetch the
-        limits and caches the limits internally. The BSP module does not have to publish this variable at all,
-        then the initially fetched capabilities will be used. The BSP may publish this variable to update
-        limits in case they change during runtime, e.g. if the maximum current changes because the hardware
-        gets too hot.
+      summary: >-
+        Hardware capabilities/limits. Publish them once as soon as they are known after start, before the
+        first charging session: EVerest offers no current until it received them (it requests a PWM duty
+        cycle of 100 %, state X1, on a plug-in), and the phase count of the energy management is initialised
+        from max_phase_count_import. Publish again whenever a limit changes at runtime, e.g. when the maximum
+        current drops because the hardware gets too hot; a changed current limit reaches the PWM within a few
+        seconds, also during charging.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HardwareCapabilities'
