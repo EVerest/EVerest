@@ -34,24 +34,37 @@ changed a value, it will not be updated to the value from the component config f
 
 ## Values in memory
 
-`DeviceModel` reads the whole device model, including the values of all attributes, from the database when it is
-created, and serves every read from memory. A write goes to the database first and to memory only after the database
-accepted it; if the database rejects the write, the request is rejected and memory keeps the old value. Attributes that
-are not persistent are held in memory only: a write to such an attribute is not stored, and the attribute starts with
-the value the database holds at the next start. That is the value of the component config, unless another source wrote
-the attribute while it was persistent: such a value is kept, because the component config only replaces values whose
-source is `default`.
+When `DeviceModel` is created, it loads the device model from its storage, including the values of all attributes.
+Not every variable comes from the database: variables held by another storage, such as the EVerest storage, are
+described below. After loading, every read is answered from memory.
 
-As a consequence, the database must only be edited while the charging station software is stopped. Changes made to the
-database while it runs are not seen until the next start.
+A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
+rejects it, the request is rejected and memory keeps the old value.
 
-The exception is a variable whose `VariableMetaData::owner` is set to something other than `OCPP`: it is held by the
-storage of that owner, which changes its value without `DeviceModel`, so its values are read from the storage and every
-write goes to the storage. A variable without an `owner`, or with the owner `OCPP`, belongs to the OCPP storage and is
-held in memory. The component tables do not record the owner; migration 4 drops `VARIABLE.SOURCE`. The EVerest device
-model storage of the OCPP modules reports every variable it holds with the owner `EVEREST`, and the composed storage of
-those modules routes the reads and writes of such a variable to it. Monitors are the exception to this routing: the
-composed storage keeps all of them in the OCPP storage.
+Attributes that are not persistent are the exception. A write to such an attribute only changes the value in memory
+and is lost on restart. At the next start, the attribute gets the value stored in the database again. That is usually
+the value from the component config. If something else wrote the value while the attribute was still persistent, that
+value is kept, because the component config only overwrites values whose source is `default`. An attribute counts as
+persistent unless its `persistent` flag is set to false.
+
+Because values are loaded only once, edit the database only while the charging station software is stopped. Changes
+made while it runs are not seen until the next start.
+
+### Variables held by another storage
+
+Variables whose `VariableMetaData::owner` is something other than `OCPP` are not held in memory. They belong to the
+storage of that owner, which can change their values without going through `DeviceModel`. For these variables,
+`DeviceModel` reads every value from that storage and sends every write to it. Variables without an owner, or with the
+owner `OCPP`, belong to the OCPP storage and are held in memory as described above.
+
+In the OCPP modules:
+
+- The EVerest device model storage reports all of its variables with the owner `EVEREST`.
+- The composed storage sends reads and writes of those variables to the EVerest storage.
+- Monitors are handled differently: the composed storage keeps all monitors in the OCPP storage, whichever storage
+  owns the variable.
+
+The database does not record a variable's owner. Migration 4 removed the `VARIABLE.SOURCE` column.
 
 ## Update component config
 
