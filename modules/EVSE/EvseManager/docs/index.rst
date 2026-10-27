@@ -166,6 +166,11 @@ minimum.
 Outside current demand, currents below the power supply minimum are raised to
 that minimum.
 
+Power supply capabilities, external derating and power meter capabilities
+published during current demand are sent to the EV as updated limits and
+applied to the power supply setpoint within the next charger state machine
+iteration, whether or not the EV lowers its request to the new limits.
+
 
 Charging State Machine
 ======================

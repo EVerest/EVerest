@@ -2515,6 +2515,10 @@ void Charger::reset_dc_enforce_target_limits_timer() {
     last_dc_enforce_target_limits = std::chrono::steady_clock::now();
 }
 
+void Charger::request_dc_enforce_target_limits() {
+    last_dc_enforce_target_limits = std::chrono::steady_clock::time_point{};
+}
+
 void Charger::notify_currentdemand_started() {
     Everest::scoped_lock_timeout lock(state_machine_mutex,
                                       Everest::MutexDescription::Charger_notify_currentdemand_started);

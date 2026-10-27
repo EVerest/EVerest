@@ -2549,13 +2549,20 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
     // first target the EV sent in current demand arrives, the precharge target is still in effect. Derived from
     // the target itself, not from current_demand_started, so the delivery order of the two does not matter.
     const bool current_demand = current_demand_target_received.load();
+    const auto caps = get_powersupply_capabilities();
+    // The offered minimum only applies during current demand, see dc_export_setpoint_current().
+    const auto hlc_caps = current_demand ? apply_powermeter_limits(caps) : caps;
     const DcSetpointInputs inputs{_voltage,
                                   _current,
                                   raw_ev_target_current.load(),
                                   latest_evse_max_current.load(),
                                   latest_evse_max_discharge_current.load(),
                                   current_demand,
-                                  power_supply_DC_charging_phase.load()};
+                                  demand_active,
+                                  is_actually_exporting_to_grid,
+                                  power_supply_DC_charging_phase.load(),
+                                  caps,
+                                  hlc_caps};
     if (last_dc_setpoint_inputs == inputs) {
         return true;
     }
@@ -2594,10 +2601,6 @@ bool EvseManager::powersupply_DC_set(double _voltage, double _current) {
         current < PRECHARGE_MIN_CURRENT_A) {
         current = PRECHARGE_MIN_CURRENT_A;
     }
-
-    const auto caps = get_powersupply_capabilities();
-    // The offered minimum only applies during current demand, see dc_export_setpoint_current().
-    const auto hlc_caps = current_demand ? apply_powermeter_limits(caps) : caps;
 
     if (((config.hack_allow_bpt_with_iso2 or sae_bidi_active or session_is_iso_d20_dc_bpt()) and demand_active) and
         is_actually_exporting_to_grid) {
@@ -3079,6 +3082,11 @@ void EvseManager::push_powersupply_capabilities_to_hlc() {
 
     if (not last_hlc_capabilities.has_value() or caps != last_hlc_capabilities.value()) {
         r_hlc[0]->call_set_powersupply_capabilities(caps);
+        // During current demand the changed limits reach the power supply through the next enforcement pass,
+        // not only once the EV follows them.
+        if (charger) {
+            charger->request_dc_enforce_target_limits();
+        }
     }
     last_hlc_capabilities = caps;
 
