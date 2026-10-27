@@ -67,7 +67,9 @@ class DcConfigAdjustmentStrategy(EverestConfigAdjustmentStrategy):
     Adjustment strategy to disable DIN SPEC 70121 module
     """
 
-    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300, ev_d20_only = False, payment_enable_contract = True, force_payment_option = False, fail_cable_check=False, cable_check_measurements: int = 1, unmated_enable_imd: bool = False):
+    def __init__(self, zero_power_ignore_pause: bool = False, hlc_charge_loop_without_energy_timeout_s: int = 300,
+                 ev_d20_only = False, payment_enable_contract = True, force_payment_option = False,
+                 fail_cable_check=False, cable_check_measurements: int = 1, unmated_enable_imd: bool = False):
         self.zero_power_ignore_pause = zero_power_ignore_pause
         self.hlc_charge_loop_without_energy_timeout_s = hlc_charge_loop_without_energy_timeout_s
         self.ev_d20_only = ev_d20_only
