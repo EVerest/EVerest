@@ -3,19 +3,44 @@
 
 #include "InfyCanDevice.hpp"
 #include "CanPackets.hpp"
+#include <algorithm>
+#include <chrono>
 #include <iostream>
-#include <unistd.h>
 
 #include <everest/logging.hpp>
 
-InfyCanDevice::InfyCanDevice() {
-    // spawn thread that requests some data periodically to keep the connection alive
-    exitTxThread = false;
-    txThreadHandle = std::thread(&InfyCanDevice::txThread, this);
+namespace {
+using namespace std::chrono_literals;
+// InfyPower protocol: space controller commands 50-200 ms apart.
+constexpr auto TICK_INTERVAL = 50ms;
+constexpr auto RX_TIMEOUT = 1000ms;
+constexpr unsigned RX_TIMEOUT_TICKS = RX_TIMEOUT / TICK_INTERVAL;
+constexpr std::size_t MAX_QUEUED_FRAMES = 256;
+constexpr float MIN_SETPOINT_VOLTAGE = 150.;
+} // namespace
+
+InfyCanDevice::InfyCanDevice() : can_device::CanDevice(TICK_INTERVAL) {
+    using namespace can_packet_acdc;
+    // One frame per tick. Requests are answered on the rx handler, setpoints are refreshed cyclically, which also
+    // keeps the module from timing out.
+    tx_cycle = {
+        {CycleStep::Read, [this] { return send(read_frame(ADDR_BROADCAST, SystemDCVoltage())); }},
+        {CycleStep::Read, [this] { return send(read_frame(ADDR_BROADCAST, SystemDCCurrent())); }},
+        {CycleStep::Read, [this] { return send(read_frame(ADDR_MODULE, PowerModuleStatus())); }},
+        {CycleStep::Read, [this] { return send(read_frame(ADDR_MODULE, InverterStatus())); }},
+        {CycleStep::Write, [this] { return send(write_frame(ADDR_BROADCAST, OnOff(on))); }},
+        {CycleStep::Write,
+         [this] { return setpoint_valid() and send(write_frame(ADDR_BROADCAST, SystemDCVoltage(setpoint_voltage))); }},
+        {CycleStep::Write,
+         [this] { return setpoint_valid() and send(write_frame(ADDR_BROADCAST, SystemDCCurrent(setpoint_current))); }},
+        {CycleStep::Write, [this] { return send(write_frame(ADDR_BROADCAST, WalkInEnable(walkin_enable))); }},
+        {CycleStep::Write, [this] { return send(write_frame(ADDR_BROADCAST, WorkingMode(inverter_mode))); }},
+    };
 }
 
 InfyCanDevice::~InfyCanDevice() {
-    exitTxThread = true;
+    // Stop the CAN thread before the handlers it calls are destroyed.
+    close_device();
 }
 
 void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payload) {
@@ -26,6 +51,14 @@ void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payl
         EVLOG_debug << "Infy: Ignoring, not extended protocol.";
         return;
     }
+
+    // is it for us?
+    if (can_packet_acdc::destination_address_from_can_id(can_id) != can_packet_acdc::ADDR_CONTROLLER) {
+        return;
+    }
+
+    // Write acks count as the module answering too.
+    ticks_since_rx = 0;
 
     if (can_packet_acdc::command_number_from_can_id(can_id) == can_packet_acdc::CMD_WRITE) {
         switch (can_packet_acdc::error_code_from_can_id(can_id)) {
@@ -47,8 +80,17 @@ void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payl
         return;
     }
 
-    // is it for us?
-    if (can_packet_acdc::destination_address_from_can_id(can_id) != 0xF0) {
+    if (not reported_connection.value_or(false)) {
+        if (settings_restored) {
+            settings_restored = false;
+            report_connection(true);
+        } else if (resync_steps.empty()) {
+            start_resync();
+        }
+    }
+
+    if (payload.size() < 8) {
+        EVLOG_warning << "Infy: Ignoring short CAN frame (" << payload.size() << " bytes)";
         return;
     }
 
@@ -234,43 +276,158 @@ void InfyCanDevice::rx_handler(uint32_t can_id, const std::vector<uint8_t>& payl
     }
 }
 
-void InfyCanDevice::txThread() {
-
-    while (!exitTxThread) {
-        const int delay_us = 50000;
-
-        // request current system DC voltage. Answer will be processed by RX thread.
-        request_rx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::SystemDCVoltage());
-        usleep(delay_us);
-
-        // request current system DC current. Answer will be processed by RX thread.
-        request_rx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::SystemDCCurrent());
-        usleep(delay_us);
-
-        // request state. Answer will be processed by RX thread.
-        request_rx(can_packet_acdc::ADDR_MODULE, can_packet_acdc::PowerModuleStatus());
-        usleep(delay_us);
-
-        // request inverter state. Answer will be processed by RX thread.
-        request_rx(can_packet_acdc::ADDR_MODULE, can_packet_acdc::InverterStatus());
-        usleep(delay_us);
-
-        tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::OnOff(on));
-        usleep(delay_us);
-
-        if (setpoint_voltage > 150.) {
-            tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::SystemDCVoltage(setpoint_voltage));
-            usleep(delay_us);
-            tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::SystemDCCurrent(setpoint_current));
-            usleep(delay_us);
-        }
-
-        tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::WalkInEnable(walkin_enable));
-        usleep(delay_us);
-
-        tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::WorkingMode(inverter_mode));
-        usleep(delay_us);
+void InfyCanDevice::tick_handler() {
+    if (not link) {
+        return;
     }
+
+    // The module is not polled while the resync steps go out, so they have their own deadline instead of the
+    // receive timeout. Frames keep being dropped when the module stops acknowledging in the middle of them.
+    if (not resync_steps.empty()) {
+        if (resync_ticks_left > 0) {
+            --resync_ticks_left;
+            if (send_resync_step()) {
+                last_tick_was_cycle = false;
+                return;
+            }
+        } else {
+            EVLOG_warning << "Infy: module stopped answering while its settings were being restored";
+            abort_resync();
+            ticks_since_rx = RX_TIMEOUT_TICKS;
+        }
+    }
+
+    if (ticks_since_rx < RX_TIMEOUT_TICKS) {
+        ++ticks_since_rx;
+    } else {
+        abort_resync();
+        report_connection(false);
+    }
+
+    if (reported_connection.value_or(false) and last_tick_was_cycle) {
+        if (auto frame = pop_queued()) {
+            if (not send(*frame)) {
+                requeue_front(std::move(*frame));
+            }
+            last_tick_was_cycle = false;
+            return;
+        }
+    }
+    send_cycle_step();
+    last_tick_was_cycle = true;
+}
+
+// Writes wait until the resync has restored the module. Frames that were already queued in the socket or the CAN
+// controller when the module went silent still reach it before the resync does; CommunicationFault is raised by
+// then, so the contactors are open.
+void InfyCanDevice::send_cycle_step() {
+    bool const writes_allowed = reported_connection.value_or(false);
+    for (std::size_t i = 0; i < tx_cycle.size(); ++i) {
+        auto const& step = tx_cycle[tx_cycle_step];
+        tx_cycle_step = (tx_cycle_step + 1) % tx_cycle.size();
+        if (step.kind == CycleStep::Write and not writes_allowed) {
+            continue;
+        }
+        if (step.send()) {
+            return;
+        }
+    }
+}
+
+void InfyCanDevice::link_handler(bool up) {
+    link = up;
+    ticks_since_rx = 0;
+    if (not up) {
+        abort_resync();
+        report_connection(false);
+    }
+}
+
+// Restores everything the module needs before it is reported as connected: errors/power_supply_DC.yaml requires mode
+// and setpoints to be set before CommunicationFault is cleared. Mode, setpoints and output state are read when their
+// frame is sent, so a command given while the module is being restored is not overridden. The output is switched on
+// last, although the module may already have executed commands that sat in the socket or CAN controller queue while
+// it was silent.
+void InfyCanDevice::start_resync() {
+    using namespace can_packet_acdc;
+    EVLOG_info << "Infy: module answering, restoring settings and setpoints";
+    std::scoped_lock lock(settings_mutex, queue_mutex);
+    // Queued writes are settings the resync sends from their stored values; only the reads are kept.
+    queued.erase(
+        std::remove_if(queued.begin(), queued.end(),
+                       [](Frame const& frame) { return command_number_from_can_id(frame.can_id) == CMD_WRITE; }),
+        queued.end());
+    resync_steps.clear();
+    settings_restored = false;
+    if (power_factor.has_value()) {
+        resync_steps.push_back([this, pf = power_factor.value()] {
+            return as_resync_step(send(write_frame(ADDR_MODULE, PowerFactorAdjust(pf))));
+        });
+    }
+    for (auto const& setting : generic_settings) {
+        auto const address = setting.first;
+        auto const value = setting.second;
+        resync_steps.push_back([this, address, value] {
+            return as_resync_step(
+                send(write_frame(ADDR_BROADCAST, GenericSetting(address.first, address.second, value))));
+        });
+    }
+    resync_steps.push_back(
+        [this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, WorkingMode(inverter_mode)))); });
+    resync_steps.push_back(
+        [this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, WalkInEnable(walkin_enable)))); });
+    resync_steps.push_back([this] {
+        return setpoint_valid() ? as_resync_step(send(write_frame(ADDR_BROADCAST, SystemDCVoltage(setpoint_voltage))))
+                                : ResyncStep::Skipped;
+    });
+    resync_steps.push_back([this] {
+        return setpoint_valid() ? as_resync_step(send(write_frame(ADDR_BROADCAST, SystemDCCurrent(setpoint_current))))
+                                : ResyncStep::Skipped;
+    });
+    resync_steps.push_back([this] { return as_resync_step(send(write_frame(ADDR_BROADCAST, OnOff(on)))); });
+    resync_ticks_left = static_cast<unsigned>(resync_steps.size()) + RX_TIMEOUT_TICKS;
+}
+
+InfyCanDevice::ResyncStep InfyCanDevice::as_resync_step(bool sent) {
+    return sent ? ResyncStep::Sent : ResyncStep::Dropped;
+}
+
+// One frame per tick; steps with nothing to send do not cost a tick. Returns whether a frame went out.
+bool InfyCanDevice::send_resync_step() {
+    auto result = ResyncStep::Skipped;
+    while (result == ResyncStep::Skipped and not resync_steps.empty()) {
+        result = resync_steps.front()();
+        if (result != ResyncStep::Dropped) {
+            resync_steps.pop_front();
+        }
+    }
+    if (resync_steps.empty()) {
+        settings_restored = true;
+        ticks_since_rx = 0;
+    }
+    return result == ResyncStep::Sent;
+}
+
+void InfyCanDevice::abort_resync() {
+    resync_steps.clear();
+    settings_restored = false;
+}
+
+void InfyCanDevice::report_connection(bool connected) {
+    if (reported_connection == connected) {
+        return;
+    }
+    reported_connection = connected;
+    if (connected) {
+        EVLOG_info << "Infy: module connected";
+    } else {
+        EVLOG_error << "Infy: module not answering";
+    }
+    signal_connection(connected);
+}
+
+bool InfyCanDevice::setpoint_valid() const {
+    return setpoint_voltage > MIN_SETPOINT_VOLTAGE;
 }
 
 bool InfyCanDevice::switch_on_off(bool _on) {
@@ -289,7 +446,12 @@ bool InfyCanDevice::set_inverter_mode(bool i) {
 }
 
 bool InfyCanDevice::adjust_power_factor(float pf) {
-    return tx(can_packet_acdc::ADDR_MODULE, can_packet_acdc::PowerFactorAdjust(pf));
+    {
+        std::scoped_lock lock(settings_mutex);
+        power_factor = pf;
+    }
+    queue(write_frame(can_packet_acdc::ADDR_MODULE, can_packet_acdc::PowerFactorAdjust(pf)));
+    return true;
 }
 
 bool InfyCanDevice::set_voltage_current(float voltage, float current) {
@@ -299,23 +461,61 @@ bool InfyCanDevice::set_voltage_current(float voltage, float current) {
 }
 
 bool InfyCanDevice::set_generic_setting(uint8_t byte0, uint8_t byte1, uint32_t value) {
-    return tx(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::GenericSetting(byte0, byte1, value));
+    {
+        std::scoped_lock lock(settings_mutex);
+        generic_settings[{byte0, byte1}] = value;
+    }
+    queue(write_frame(can_packet_acdc::ADDR_BROADCAST, can_packet_acdc::GenericSetting(byte0, byte1, value)));
+    return true;
 }
 
 bool InfyCanDevice::set_output_mode(OutputMode mode) {
     return set_generic_setting(0x11, 0x26, static_cast<std::underlying_type<OutputMode>::type>(mode));
 }
 
-bool InfyCanDevice::tx(const uint8_t destination_address, const std::vector<uint8_t>& payload) {
-    uint32_t can_id = can_packet_acdc::encode_can_id(destination_address, can_packet_acdc::CMD_WRITE);
-    can_id |= 0x80000000U; // Extended frame format
-    return _tx(can_id, payload);
+bool InfyCanDevice::request_rx(const uint8_t destination_address, const std::vector<uint8_t>& payload) {
+    queue(read_frame(destination_address, payload));
+    return true;
 }
 
-bool InfyCanDevice::request_rx(const uint8_t destination_address, const std::vector<uint8_t>& payload) {
+InfyCanDevice::Frame InfyCanDevice::write_frame(uint8_t destination_address, const std::vector<uint8_t>& payload) {
+    uint32_t can_id = can_packet_acdc::encode_can_id(destination_address, can_packet_acdc::CMD_WRITE);
+    can_id |= CAN_EFF_FLAG;
+    return {can_id, payload};
+}
+
+InfyCanDevice::Frame InfyCanDevice::read_frame(uint8_t destination_address, const std::vector<uint8_t>& payload) {
     uint32_t can_id = can_packet_acdc::encode_can_id(destination_address, can_packet_acdc::CMD_READ);
-    can_id |= 0x80000000U; // Extended frame format
-    return _tx(can_id, payload);
+    can_id |= CAN_EFF_FLAG;
+    return {can_id, payload};
+}
+
+bool InfyCanDevice::send(const Frame& frame) {
+    return tx_frame(frame.can_id, frame.payload);
+}
+
+// Settings are restored from their stored values on every resync, so the oldest entries are the ones to lose.
+void InfyCanDevice::queue(Frame frame) {
+    std::scoped_lock lock(queue_mutex);
+    if (queued.size() >= MAX_QUEUED_FRAMES) {
+        queued.pop_front();
+    }
+    queued.push_back(std::move(frame));
+}
+
+void InfyCanDevice::requeue_front(Frame frame) {
+    std::scoped_lock lock(queue_mutex);
+    queued.push_front(std::move(frame));
+}
+
+std::optional<InfyCanDevice::Frame> InfyCanDevice::pop_queued() {
+    std::scoped_lock lock(queue_mutex);
+    if (queued.empty()) {
+        return std::nullopt;
+    }
+    auto frame = std::move(queued.front());
+    queued.pop_front();
+    return frame;
 }
 
 std::ostream& operator<<(std::ostream& out, const InfyCanDevice::Telemetry& self) {

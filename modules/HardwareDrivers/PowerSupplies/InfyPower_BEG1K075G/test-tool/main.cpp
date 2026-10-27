@@ -68,7 +68,8 @@ int main(int argc, char** argv) {
         can.request_rx(can_packet_acdc::ADDR_MODULE, can_packet_acdc::GenericSetting(0x41, 0x01, 0x00));
         can.request_rx(can_packet_acdc::ADDR_MODULE, can_packet_acdc::GenericSetting(0x41, 0x02, 0x00));
 
-        usleep(50000);
+        // Requests leave one per tick behind the cyclic traffic.
+        sleep(4);
 
         EVLOG_debug << can.telemetry;
     }

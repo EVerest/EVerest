@@ -59,6 +59,7 @@ const uint8_t CMD_READ = 0x23;
 const uint8_t CMD_WRITE = 0x24;
 
 // Addresses
+const uint8_t ADDR_CONTROLLER = 0xF0;
 const uint8_t ADDR_BROADCAST = 0x3F;
 const uint8_t ADDR_MODULE = 0x00;
 
