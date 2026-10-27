@@ -602,6 +602,28 @@ TEST(ComponentConfigNameKeyTest, custom_config_with_invalid_name_key_is_not_skip
     std::filesystem::remove_all(directory);
 }
 
+/// Monitors and stored values compare names and instances case-insensitively, so components or variables that differ
+/// only in case would share them
+TEST_F(InitDeviceModelDbMonitorTest, components_and_variables_that_differ_only_in_case_are_rejected) {
+    const auto configs = get_all_component_configs(CONFIG_PATH);
+
+    auto with_lower_case_component = configs;
+    auto lower_case_key = heartbeat_component_key;
+    lower_case_key.name = "ocppcommctrlr";
+    with_lower_case_component[lower_case_key] = configs.at(heartbeat_component_key);
+    EXPECT_THROW(initialize(with_lower_case_component), ComponentConfigNameKeyError);
+
+    auto with_lower_case_variable = configs;
+    auto& variables = with_lower_case_variable.at(heartbeat_component_key);
+    auto heartbeat = *std::find_if(variables.begin(), variables.end(),
+                                   [](const DeviceModelVariable& v) { return v.name == "HeartbeatInterval"; });
+    heartbeat.name = "heartbeatinterval";
+    variables.push_back(heartbeat);
+    EXPECT_THROW(initialize(with_lower_case_variable), ComponentConfigNameKeyError);
+
+    EXPECT_NO_THROW(initialize(configs));
+}
+
 TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_regardless_of_case) {
     auto configs = get_all_component_configs(CONFIG_PATH);
     initialize(configs);

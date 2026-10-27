@@ -3,11 +3,14 @@
 
 #include <ocpp/v2/init_device_model_db.hpp>
 
+#include <algorithm>
+#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <map>
 #include <sstream>
 #include <string>
+#include <tuple>
 
 #include <everest/logging.hpp>
 #include <ocpp/v2/enums.hpp>
@@ -38,6 +41,7 @@ namespace ocpp::v2 {
 namespace {
 // Forward declarations.
 void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
+void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
 std::vector<std::string> check_integrity_value_type(const DeviceModelVariable& variable);
 bool value_is_of_type(const std::string& value, const DataEnum& type);
 bool is_same_component_key(const ComponentKey& component_key1, const ComponentKey& component_key2);
@@ -165,6 +169,7 @@ void InitDeviceModelDb::initialize_database(
     }
 
     // Check if the config is consistent.
+    check_name_keys_are_unique(configs);
     check_integrity(configs);
 
     // Starting a transaction makes this a lot faster (inserting all components takes a few seconds without it and a
@@ -1446,6 +1451,50 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
 
     if (has_error) {
         EVLOG_AND_THROW(InitDeviceModelDbError(final_error_message));
+    }
+}
+
+std::string lower_case(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    return text;
+}
+
+/// \brief Name key of a component as monitors and stored values compare it: case-insensitive names and instances
+auto case_insensitive_name_key(const ComponentKey& component) {
+    return std::make_tuple(lower_case(component.name), lower_case(component.instance.value_or("")),
+                           component.evse_id.value_or(0), component.connector_id.value_or(0));
+}
+
+///
+/// \brief Check that no two components, and no two variables of one component, share a name key.
+///
+/// Monitors and stored values compare names and instances case-insensitively, so components or variables that
+/// differ only in case would share them.
+///
+/// \throws ComponentConfigNameKeyError for the first pair that shares a name key.
+///
+void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
+    std::map<decltype(case_insensitive_name_key(ComponentKey{})), ComponentKey> components;
+    for (const auto& [component_key, variables] : component_configs) {
+        const auto [component_it, inserted] =
+            components.emplace(case_insensitive_name_key(component_key), component_key);
+        if (!inserted) {
+            throw ComponentConfigNameKeyError("Components " + get_component_name_for_logging(component_it->second) +
+                                              " and " + get_component_name_for_logging(component_key) +
+                                              " share a name key");
+        }
+
+        std::map<std::pair<std::string, std::string>, std::string> variable_names;
+        for (const DeviceModelVariable& variable : variables) {
+            const auto [variable_it, variable_inserted] = variable_names.emplace(
+                std::make_pair(lower_case(variable.name), lower_case(variable.instance.value_or(""))),
+                get_variable_name_for_logging(variable));
+            if (!variable_inserted) {
+                throw ComponentConfigNameKeyError("Variables " + variable_it->second + " and " +
+                                                  get_variable_name_for_logging(variable) + " of component " +
+                                                  get_component_name_for_logging(component_key) + " share a name key");
+            }
+        }
     }
 }
 

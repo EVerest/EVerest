@@ -68,7 +68,8 @@ component with the old key, including its monitors, stays in the database and is
 
 Note: OCPP requires EVSE and Connector numbering starting from 1 counting upwards.
 
-Note: There should be no duplicate components or variables in the component config files.
+Note: There should be no duplicate components or variables in the component config files. Duplicates that differ
+only in case are rejected.
 
 ## Database schema
 
@@ -90,8 +91,10 @@ The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EV
 `VARIABLE_NAME` and `VARIABLE_INSTANCE`. Names and instances compare case-insensitively, like OCPP identifiers. SQLite
 treats NULLs as distinct in keys, so an absent instance is stored as `''` and an absent EVSE or connector id as `0`. A
 component config with an empty component or variable instance, or with an EVSE or connector id of `0`, therefore stops
-the initialization with an error that names the file. Other invalid component configs are skipped with a warning; a
-skipped custom config is then replaced by the standardized config of the same component, if there is one.
+the initialization with an error that names the file. Two components, or two variables of one component, whose names
+or instances differ only in case would share monitors and stored values, so they stop the initialization as well.
+Other invalid component configs are skipped with a warning; a skipped custom config is then replaced by the
+standardized config of the same component, if there is one.
 
 Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
 configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept

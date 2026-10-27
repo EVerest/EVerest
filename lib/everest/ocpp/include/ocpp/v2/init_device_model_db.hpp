@@ -122,9 +122,10 @@ private:
 
 ///
 /// \brief A component config uses a name key that monitors and stored values cannot represent: an empty component
-/// or variable instance, or an EVSE or connector id of 0. Unlike other errors in a component config, it is not
-/// skipped, because the standardized config of the same component would replace a skipped custom config and its
-/// variables would be removed with their monitors.
+/// or variable instance, or an EVSE or connector id of 0, and when two components or two variables of one component
+/// share a name key, which compares names and instances case-insensitively. Unlike other errors in a component config,
+/// it is not skipped, because the standardized config of the same component would replace a skipped custom config and
+/// its variables would be removed with their monitors.
 ///
 class ComponentConfigNameKeyError : public InitDeviceModelDbError {
 public:
@@ -197,6 +198,7 @@ public:
     /// \throws InitDeviceModelDbError  - When database could not be initialized or
     ///                                 - Foreign keys could not be turned on or
     ///                                 - Something could not be added to, retrieved or removed from the database
+    /// \throws ComponentConfigNameKeyError When two components, or two variables of one component, share a name key
     /// \throws MigrationException  If something went wrong during migration
     /// \throws ConnectionException If the database could not be opened
     ///
