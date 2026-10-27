@@ -314,6 +314,28 @@ TEST_F(DeviceModelSchemaMigrationTest, down_migration_restores_foreign_key_monit
     EXPECT_EQ(monitor_sequence(), 5);
 }
 
+/// A database can hold component and variable rows that differ only in case; a monitor matches both
+TEST_F(DeviceModelSchemaMigrationTest, down_migration_with_rows_that_differ_only_in_case) {
+    create_schema_3_database(OCPP_DATABASE_SCHEMA_3);
+    ASSERT_TRUE(database->execute_statement(R"(
+INSERT INTO COMPONENT (ID, NAME, INSTANCE, EVSE_ID, CONNECTOR_ID) VALUES (5, 'ocppcommctrlr', NULL, NULL, NULL);
+INSERT INTO VARIABLE (ID, NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES (5, 'heartbeatinterval', NULL, 5, NULL),
+  (6, 'HEARTBEATINTERVAL', NULL, 1, NULL);
+INSERT INTO VARIABLE_CHARACTERISTICS (DATATYPE_ID, VARIABLE_ID, SUPPORTS_MONITORING) VALUES (2, 5, 1), (2, 6, 1);
+)"));
+    migrate_to(SCHEMA_WITH_NAME_KEYED_MONITORS);
+
+    migrate_to(SCHEMA_WITH_FOREIGN_KEY_MONITORS);
+
+    auto statement = database->new_statement("SELECT ID, VARIABLE_ID FROM VARIABLE_MONITORING ORDER BY ID");
+    std::vector<std::pair<int, int>> monitors;
+    while (statement->step() == SQLITE_ROW) {
+        monitors.emplace_back(statement->column_int(0), statement->column_int(1));
+    }
+    const std::vector<std::pair<int, int>> expected{{1, 2}, {2, 1}, {4, 4}};
+    EXPECT_EQ(monitors, expected);
+}
+
 class DeviceModelStorageSqliteNameKeyTest : public ::testing::Test {
 protected:
     DeviceModelTestHelper device_model_test_helper;
