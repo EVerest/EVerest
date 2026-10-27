@@ -1835,7 +1835,8 @@ bool EvseManager::update_max_current_limit(types::energy::ExternalLimits& limits
     return true;
 }
 
-bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
+bool EvseManager::reserve(const types::evse_manager::ReserveRequest& request, const bool signal_reservation_event) {
+    const auto id = request.reservation_id;
     EVLOG_debug << "Reserve called for reservation id " << id
                 << ", signal reservation event: " << signal_reservation_event;
 
@@ -1860,6 +1861,7 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
     Everest::scoped_lock_timeout lock(reservation_mutex, Everest::MutexDescription::EVSE_reserve);
 
     const bool overwrite_reservation = (this->reservation_id == id);
+    const bool details_changed = id >= 0 && this->reservation_details != request.reservation;
 
     if (reserved && this->reservation_id != -1) {
         EVLOG_info << "Rejecting reservation because evse is already reserved for reservation id "
@@ -1872,13 +1874,15 @@ bool EvseManager::reserve(int32_t id, const bool signal_reservation_event) {
         reserved = true;
         if (id >= 0) {
             this->reservation_id = id;
+            this->reservation_details = request.reservation;
         }
 
-        // When overwriting the reservation, don't signal.
-        if ((not overwrite_reservation || this->reservation_id == -1) && signal_reservation_event) {
+        // When overwriting the reservation, only signal changed details (H01.FR.01 replaces by reservation id).
+        if ((not overwrite_reservation || this->reservation_id == -1 || details_changed) && signal_reservation_event) {
             // publish event to other modules
             types::evse_manager::SessionEvent se;
             se.event = types::evse_manager::SessionEventEnum::ReservationStart;
+            se.reservation = this->reservation_details;
 
             // Normally we should signal for each connector when an evse is reserved, but since in this implementation
             // each evse only has one connector, this is sufficient for now.
@@ -1919,6 +1923,7 @@ void EvseManager::cancel_reservation(bool signal_event) {
         EVLOG_debug << "Reservation cancelled";
         reserved = false;
         this->reservation_id = -1;
+        this->reservation_details.reset();
 
         // publish event to other modules
         if (signal_event) {

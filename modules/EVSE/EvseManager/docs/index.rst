@@ -347,7 +347,9 @@ check reservation id against the token id when it should start charging, this
 must be handled in Auth module. EvseManager only needs to know whether it is
 reserved or not to emit an ReservatonStart/ReservationEnd event to notify other
 modules such as OCPP and API or e.g. switch on a specific LED signal on the
-charging port.
+charging port. For a reservation made for this specific EVSE, Auth passes the
+reservation details (id, id token, parent id token and expiry time) with the
+reserve command, and the ReservationStart event carries them.
 
 Energy Management
 =================

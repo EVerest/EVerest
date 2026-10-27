@@ -25,12 +25,23 @@ protected:
         send(SessionEventEnum::Enabled);
     }
 
-    void send(SessionEventEnum event) {
+    void send(SessionEventEnum event,
+              const std::optional<types::evse_manager::ReservationDetails>& reservation = std::nullopt) {
         types::evse_manager::SessionEvent session_event;
         session_event.uuid = "session";
         session_event.timestamp = Everest::Date::to_rfc3339(date::utc_clock::now());
         session_event.event = event;
+        session_event.reservation = reservation;
         session_info.update_state(session_event);
+    }
+
+    static types::evse_manager::ReservationDetails reservation_details() {
+        types::evse_manager::ReservationDetails details;
+        details.reservation_id = 7;
+        details.id_token = "RFID1";
+        details.parent_id_token = "PARENT1";
+        details.expiry_time = "2026-10-06T09:00:00.000Z";
+        return details;
     }
 
     const ApiSessionInfo& published() const {
@@ -87,6 +98,48 @@ TEST_F(SessionInfoReservationTest, repeated_reservation_end_is_harmless) {
     send(SessionEventEnum::ReservationStart);
     send(SessionEventEnum::ReservationStart);
     EXPECT_TRUE(published().reserved);
+}
+
+TEST_F(SessionInfoReservationTest, not_reserved_initially_has_no_reservation) {
+    EXPECT_FALSE(published().reservation.has_value());
+}
+
+TEST_F(SessionInfoReservationTest, reservation_start_carries_reservation_details) {
+    send(SessionEventEnum::ReservationStart, reservation_details());
+
+    EXPECT_TRUE(published().reserved);
+    ASSERT_TRUE(published().reservation.has_value());
+    EXPECT_EQ(published().reservation->id, 7);
+    EXPECT_EQ(published().reservation->id_token, "RFID1");
+    EXPECT_EQ(published().reservation->parent_id_token, "PARENT1");
+    EXPECT_EQ(published().reservation->expiry_time, "2026-10-06T09:00:00.000Z");
+}
+
+TEST_F(SessionInfoReservationTest, reservation_start_without_details_is_reserved_without_reservation) {
+    send(SessionEventEnum::ReservationStart, reservation_details());
+    send(SessionEventEnum::ReservationStart);
+
+    EXPECT_TRUE(published().reserved);
+    EXPECT_FALSE(published().reservation.has_value());
+}
+
+TEST_F(SessionInfoReservationTest, reservation_end_clears_reservation) {
+    send(SessionEventEnum::ReservationStart, reservation_details());
+    send(SessionEventEnum::ReservationEnd);
+
+    EXPECT_FALSE(published().reserved);
+    EXPECT_FALSE(published().reservation.has_value());
+}
+
+TEST_F(SessionInfoReservationTest, reservation_kept_until_transaction_started) {
+    send(SessionEventEnum::ReservationStart, reservation_details());
+    send(SessionEventEnum::Authorized);
+    send(SessionEventEnum::SessionStarted);
+    EXPECT_TRUE(published().reservation.has_value());
+
+    send(SessionEventEnum::TransactionStarted);
+    EXPECT_FALSE(published().reserved);
+    EXPECT_FALSE(published().reservation.has_value());
 }
 
 } // namespace

@@ -9,6 +9,17 @@
 
 namespace module {
 
+namespace {
+ReservationDetails to_reservation_details(const Reservation& reservation) {
+    ReservationDetails details;
+    details.reservation_id = reservation.reservation_id;
+    details.id_token = reservation.id_token;
+    details.parent_id_token = reservation.parent_id_token;
+    details.expiry_time = reservation.expiry_time;
+    return details;
+}
+} // namespace
+
 void Auth::init() {
     invoke_init(*p_main);
     invoke_init(*p_reservation);
@@ -150,7 +161,8 @@ void Auth::ready() {
             this->r_evse_manager.at(evse_index)->call_stop_transaction(request);
         });
     this->auth_handler->register_reserved_callback([this](const std::optional<int32_t> evse_id,
-                                                          const int32_t& reservation_id) {
+                                                          const int32_t& reservation_id,
+                                                          const std::optional<Reservation>& reservation) {
         // Only call the evse manager to store the reservation if it is done for a specific evse.
         if (evse_id.has_value()) {
             EVLOG_info << "Call reserved callback for evse id " << evse_id.value();
@@ -161,7 +173,12 @@ void Auth::ready() {
                 return false;
             }
 
-            if (!evse_manager->call_reserve(reservation_id)) {
+            ReserveRequest request;
+            request.reservation_id = reservation_id;
+            if (reservation.has_value()) {
+                request.reservation = to_reservation_details(reservation.value());
+            }
+            if (!evse_manager->call_reserve(request)) {
                 EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id " << evse_id.value();
                 return false;
             }
