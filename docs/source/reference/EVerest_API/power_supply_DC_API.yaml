@@ -187,6 +187,11 @@ components:
       name: send_voltage_current
       title: 'Send voltage / current'
       summary: 'Current value of voltage (V) and current (A).'
+      description: >-
+        Publish at regular intervals, at least once per second, 4 Hz recommended, also when the values did not
+        change. EVerest waits for fresh values: before switching the supply on for the cable check it needs a
+        new measurement below 60 V, and it follows the voltage ramp during cable check and precharge on these
+        values. A supply that publishes only on change cannot start a session.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'

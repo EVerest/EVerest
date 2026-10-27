@@ -20,3 +20,13 @@ to the EV, EVerest sends a current below ``min_export_current_A`` or
 hardware cannot regulate to 0 A, switch its output off, keep the mode, and switch
 it on again when a current at or above the minimum is requested.
 During cable check and precharge, EVerest never sends less than the minimum.
+
+Measurement rate
+================
+
+Publish ``voltage_current`` at regular intervals, at least once per second and
+ideally at 4 Hz, also when the values did not change. EVerest waits for fresh
+values: before it switches the supply on for the cable check it needs a new
+measurement below 60 V, and it follows the voltage ramp during cable check and
+precharge on these values. A supply that publishes only when a value changes
+cannot start a session.
