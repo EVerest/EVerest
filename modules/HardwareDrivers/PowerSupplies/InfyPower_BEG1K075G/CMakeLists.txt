@@ -12,7 +12,6 @@ ev_setup_cpp_module()
 add_subdirectory(test-tool)
 target_sources(${MODULE_NAME}
     PRIVATE
-    "can_driver_acdc/CanDevice.cpp"
     "can_driver_acdc/InfyCanDevice.cpp"
     "can_driver_acdc/CanPackets.cpp"
 )
@@ -20,6 +19,7 @@ target_sources(${MODULE_NAME}
 target_link_libraries(${MODULE_NAME}
     PRIVATE
         Pal::Sigslot
+        can_device
         everest::log
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1

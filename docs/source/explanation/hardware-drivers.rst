@@ -170,6 +170,12 @@ Infypower BEG1K075G
 Supported by EVerest with the "InfyPower_BEG1K075G" module. Stacking of
 multiple modules is not yet supported by the driver.
 
+The CAN interface may be missing at startup or disappear at runtime, and the
+module may stop answering: the driver raises
+``power_supply_DC/CommunicationFault``, reopens the interface every second and
+clears the error once the module answers again and its settings, mode and
+setpoints have been sent to it.
+
 Most important specs:
 
 -  22 kW bidirectional AC/DC
