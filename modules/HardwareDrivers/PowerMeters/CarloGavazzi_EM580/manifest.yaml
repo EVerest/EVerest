@@ -77,6 +77,19 @@ provides:
           the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
         type: boolean
         default: false
+      startup_transaction_state_timeout_s:
+        description: >-
+          Maximum time in seconds a start or stop transaction request waits at start up until the
+          device is configured and its transaction state (a running or closed transaction and its id)
+          is known. EvseManager stops the transaction of the previous session at start up, possibly
+          before that; without the wait such a stop does not find the transaction and its OCMF file
+          is not returned. Waited for once only. The default of 30 s covers a device that answers but
+          is slow to configure, including a few retries; a device that does not answer is not
+          configured within any reasonable wait. 0 disables the wait.
+        type: integer
+        minimum: 0
+        maximum: 100
+        default: 30
   temperature_sensor:
     description: Internal temperature readings from the EM580 device
     interface: temperature_sensor

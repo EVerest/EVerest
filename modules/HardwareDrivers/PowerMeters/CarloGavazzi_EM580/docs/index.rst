@@ -185,6 +185,11 @@ All parameters are defined in ``manifest.yaml``:
      - boolean
      - ``false``
      - While a transaction is active, read OCMF state at ``device_state_read_interval_ms`` and raise ``powermeter/VendorError`` if the device reports READY (e.g. after a brief power loss). Useful when ``fail_on_powermeter_errors`` is enabled in EvseManager.
+   * - ``startup_transaction_state_timeout_s``
+     - integer
+     - ``30``
+     - Maximum wait of the first transaction request for the device to be configured at start up (0 to 100 s, 0
+       disables it), see `Start up`_.
 
 Parameter tuning notes
 ----------------------
@@ -220,9 +225,15 @@ Start transaction
 
 High-level flow:
 
-1. Read OCMF state. If it is not ``NOT_READY`` (e.g. ``READY`` with an unread OCMF file after a communication outage),
-   log a warning, run cleanup via ``clear_transaction_states()`` (for ``READY``: read and confirm the file on the
-   device), then continue with the new transaction below.
+1. Read OCMF state. If it is not ``NOT_READY``, log a warning, run cleanup via ``clear_transaction_states()``, then
+   continue with the new transaction below. The cleanup handles two states:
+
+   - ``RUNNING``: a transaction was left open on the device, e.g. because EVerest restarted during a session (crash,
+     service restart, power loss of the host only). Write the end command (``'E'``) and wait for ``READY``. The start
+     fails if the device does not reach ``READY``.
+   - ``READY``: an unread OCMF file, e.g. after a communication outage. Read the file and confirm it on the device. The
+     file is lost; a warning names its transaction id.
+
 2. Write OCMF transaction registers:
 
    - Identification status/level/flags/type
@@ -248,6 +259,23 @@ High-level flow:
 3. Read OCMF file (size + content).
 4. Confirm file read by writing ``NOT_READY`` to OCMF state.
 5. Return OCMF report in ``signed_meter_value`` (with ``public_key`` attached).
+
+Start up
+--------
+
+At start up EvseManager stops the transaction of its previous session with the last known transaction id, if it
+has one, then requests a cleanup with an empty transaction id. The driver learns the transaction state of the device (a ``RUNNING``
+transaction with its id taken from the tariff text, or a closed one with an unread OCMF file) only once the device
+is configured, which can take longer than EvseManager waits for the first meter value. The first ``start_transaction``
+or ``stop_transaction`` request therefore waits up to ``startup_transaction_state_timeout_s`` (default 30 s) for the
+device to be configured, so that a stop with the previous session id finds that transaction and returns its OCMF
+file. The wait happens once only: once the device has been configured, or the wait has timed out, requests are
+handled immediately, also during a later communication outage.
+
+The cleanup with an empty transaction id runs ``clear_transaction_states()`` based on the OCMF state read from the
+device. A transaction still ``RUNNING`` at that point could not be matched to a session, e.g. without a persistent
+store in EvseManager: it is ended and its OCMF file is confirmed instead of being returned. The file is lost; a
+warning names its transaction id.
 
 Device identification code (register ``300012`` / ``000Bh``)
 ------------------------------------------------------------
