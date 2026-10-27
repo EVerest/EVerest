@@ -221,6 +221,12 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
+- All EVerest API modules: the initial ``CommunicationFault`` (sub type
+  ``Initial communication check``) and EvseManager's ``Inoperative`` are raised
+  only when no ``communication_check`` arrived within
+  ``cfg_communication_check_to_s`` after the module became ready. Earlier
+  releases raised them right after the module became ready and cleared them
+  with the first ``true``.
 - ``power_supply_DC_API``: EVerest now sends currents below
   ``min_export_current_A`` and ``min_import_current_A``, including 0 A, when
   the EV asks for less than the offered minimum. Earlier releases raised them

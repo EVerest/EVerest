@@ -31,6 +31,26 @@ measurement below 60 V, and it follows the voltage ramp during cable check and
 precharge on these values. A supply that publishes only when a value changes
 cannot start a session.
 
+Sequence of a DC session
+========================
+
+EVerest requests ``Export`` with charging phase ``CableCheck``, then
+``PreCharge``, then ``Charging``; ``Off`` ends every phase and carries the phase
+that was active. Each setpoint on ``export_voltage_current`` arrives shortly
+before the matching mode request, so keep the last setpoint while ``Off`` and
+apply it when ``Export`` is requested. The cable check uses the maximum voltage
+the EV reported with at least 2 A; precharge uses the EV target voltage with at
+least 2 A and not below ``min_export_current_A``; the reported voltage must reach
+the setpoint within 10 s, otherwise the cable check fails with
+``MREC11CableCheckFault`` and the EVSE becomes inoperative. From the first
+current-demand target of the EV on, the EV target applies, including the 0 A
+rule. At the end of a session EVerest requests ``Off`` before it opens the output
+contactors. The ``mode`` the supply reports is informational only.
+
+Errors are identified by type and sub type: ``clear_error`` must repeat the sub
+type of the ``raise_error``, a second raise of an active error and a clear of an
+inactive error are ignored without reply.
+
 ``tests/async_api_tests/test_power_supply_dc_api.py`` exercises the module in the DC
 software-in-the-loop against this specification: an external fake supply implements the
 ``m2e`` side while EVerest runs charging sessions, faults, derating and communication loss.
