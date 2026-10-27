@@ -458,9 +458,11 @@ private:
     std::atomic<double> latest_evse_max_current{0.};
     std::atomic<double> latest_evse_max_discharge_current{0.};
 
-    // Inputs of the last setpoint sent to the power supply; a repeated request is not sent again. The charging
-    // phase is an input as well: a phase change with an unchanged setpoint (precharge and current demand target
-    // identical) must still reach the power supply as setMode(Export, <phase>).
+    // Inputs of the last setpoint sent to the power supply; a repeated request is not sent again. Every value the
+    // setpoint is derived from is an input, including the capabilities: a derated power supply limit must reach
+    // the power supply while the EV keeps requesting the same current. The charging phase is an input as well: a
+    // phase change with an unchanged setpoint (precharge and current demand target identical) must still reach
+    // the power supply as setMode(Export, <phase>).
     struct DcSetpointInputs {
         double voltage{0.};
         double current{0.};
@@ -469,12 +471,18 @@ private:
         double evse_max_current{0.};
         double evse_max_discharge_current{0.};
         bool current_demand{false};
+        bool demand_active{false};
+        bool exporting_to_grid{false};
         types::power_supply_DC::ChargingPhase phase{types::power_supply_DC::ChargingPhase::Other};
+        types::power_supply_DC::Capabilities caps;
+        types::power_supply_DC::Capabilities hlc_caps;
         bool operator==(const DcSetpointInputs& other) const {
             return voltage == other.voltage and current == other.current and
                    ev_target_current == other.ev_target_current and evse_max_current == other.evse_max_current and
                    evse_max_discharge_current == other.evse_max_discharge_current and
-                   current_demand == other.current_demand and phase == other.phase;
+                   current_demand == other.current_demand and demand_active == other.demand_active and
+                   exporting_to_grid == other.exporting_to_grid and phase == other.phase and caps == other.caps and
+                   hlc_caps == other.hlc_caps;
         }
     };
     std::optional<DcSetpointInputs> last_dc_setpoint_inputs;
