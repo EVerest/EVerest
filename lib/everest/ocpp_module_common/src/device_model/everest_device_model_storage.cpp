@@ -256,14 +256,18 @@ std::vector<DeviceModelVariable> build_connected_ev_variables() {
                       ConnectedEVDefinitions::Characteristics::VehicleId, ""),
         make_variable(ocpp::v2::ConnectedEvComponentVariables::ProtocolAgreed.name,
                       ConnectedEVDefinitions::Characteristics::ProtocolAgreed, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateLeaf, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa1, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa2, ""),
-        make_variable(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
-                      ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateLeaf.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateLeaf, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa1.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa1, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateSubCa2.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateSubCa2, ""),
+        make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
+                                    ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.instance->get(),
+                                    ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
     const int number_of_variables = NUMBER_OF_CONNECTED_EV_PROTOCOLS + connected_ev_variables.size();
     connected_ev_variables.resize(number_of_variables);
 
