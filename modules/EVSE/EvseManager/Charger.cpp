@@ -1476,11 +1476,17 @@ void Charger::update_pwm_max_every_5seconds_ampere(float ampere) {
 }
 
 void Charger::update_pwm_now(float duty_cycle) {
-    auto start = std::chrono::steady_clock::now();
     if (duty_cycle >= 1.) {
-        // 100 % duty cycle is state X1 (no current available)
-        note_pwm_switched_off();
+        // 100 % duty cycle is state X1 (no current available): the BSP gets the X1 command, not a PWM
+        cp_state_X1();
+        return;
     }
+    if (duty_cycle <= 0.) {
+        // 0 % duty cycle is a constant negative signal: state F
+        cp_state_F();
+        return;
+    }
+    auto start = std::chrono::steady_clock::now();
     internal_context.update_pwm_last_duty_cycle = duty_cycle;
     shared_context.pwm_running = true;
 
