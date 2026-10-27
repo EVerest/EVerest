@@ -357,7 +357,10 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
         EVLOG_error << this->db->get_error_message();
         return SetVariableStatusEnum::Rejected;
     }
-    if (insert_stmt->changes() != 1) {
+    if (insert_stmt->changes() == 0) {
+        EVLOG_warning << "Variable " << variable_id.name.get() << " of component " << component_id.name.get()
+                      << " has no attribute of type " << conversions::attribute_enum_to_string(attribute_enum)
+                      << ", the write is rejected";
         return SetVariableStatusEnum::Rejected;
     }
 
