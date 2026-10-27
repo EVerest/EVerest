@@ -5,6 +5,7 @@
 #include "everest/logging.hpp"
 #include <chrono>
 #include <fmt/format.h>
+#include <optional>
 #include <thread>
 #include <utils/date.hpp>
 
@@ -70,26 +71,39 @@ void isolation_monitorImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
         if (successful) {
-            EVLOG_info << "IMD Device: " << read_device_name() << " (" << read_firmware_version() << ")";
-            faster_cable_check_supported = check_for_faster_cablecheck();
-
-            if (faster_cable_check_supported) {
-                EVLOG_info << "Supports faster cable check method";
-                enable_faster_cable_check_mode();
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            } else {
-                EVLOG_info << "Does not support faster cable check method, falling "
-                              "back to long self test. This may create "
-                              "timeouts with certain cars in CableCheck. Consider "
-                              "upgrading to at least firmware 5.00";
-                disable_faster_cable_check_mode();
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-        } else {
+            successful = read_device_identity();
+        }
+        if (not successful) {
             // allow the system to recover and don't hog the MODBUS
             std::this_thread::sleep_for(std::chrono::seconds(10));
         }
     } while (not successful);
+    clear_deviceFault();
+}
+
+bool isolation_monitorImpl::read_device_identity() {
+    const auto device_name = read_device_name();
+    const auto firmware_version = read_firmware_version();
+    const auto faster_cable_check = check_for_faster_cablecheck();
+    if (not device_name or not firmware_version or not faster_cable_check) {
+        return false;
+    }
+    EVLOG_info << "IMD Device: " << *device_name << " (" << *firmware_version << ")";
+    faster_cable_check_supported = *faster_cable_check;
+
+    bool successful = false;
+    if (faster_cable_check_supported) {
+        EVLOG_info << "Supports faster cable check method";
+        successful = enable_faster_cable_check_mode();
+    } else {
+        EVLOG_info << "Does not support faster cable check method, falling "
+                      "back to long self test. This may create "
+                      "timeouts with certain cars in CableCheck. Consider "
+                      "upgrading to at least firmware 5.00";
+        successful = disable_faster_cable_check_mode();
+    }
+    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    return successful;
 }
 
 void isolation_monitorImpl::start_self_test() {
@@ -197,7 +211,7 @@ void isolation_monitorImpl::ready() {
                     // aka we are in a measuring cycle (start called)
                     if (not enable_publishing && config.disable_device_on_stop) {
                         if (not send_to_imd(3026, 0)) {
-                            EVLOG_error << "Can't disable the device: " << read_device_name();
+                            EVLOG_error << "Can't disable the device: " << read_device_name().value_or("");
                         } else {
                             EVLOG_info << "Device disabled after self test since we didn't start measuring cycle "
                                           "(timeout 10s)";
@@ -215,7 +229,7 @@ void isolation_monitorImpl::handle_start() {
     enable_publishing = true;
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 1)) {
-            EVLOG_error << "Can't enable the device: " << read_device_name();
+            EVLOG_error << "Can't enable the device: " << read_device_name().value_or("");
         } else {
             EVLOG_info << "Device enabled for measurements";
         }
@@ -226,7 +240,7 @@ void isolation_monitorImpl::handle_stop() {
     enable_publishing = false;
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 0)) {
-            EVLOG_error << "Can't disable the device: " << read_device_name();
+            EVLOG_error << "Can't disable the device: " << read_device_name().value_or("");
         } else {
             EVLOG_info << "Device disabled after measurements";
         }
@@ -238,7 +252,7 @@ void isolation_monitorImpl::handle_start_self_test(double& test_voltage_V) {
     // make sure that the device is on
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 1)) {
-            EVLOG_error << "Can't enable the device: " << read_device_name();
+            EVLOG_error << "Can't enable the device: " << read_device_name().value_or("");
         } else {
             EVLOG_info << "Device enabled for self test";
         }
@@ -338,57 +352,49 @@ void isolation_monitorImpl::read_imd_values() {
     // let at least one round of values unpublished not to use unstable ones
     if (last_alarm not_eq AlarmType::DeviceError and valid_readings and
         error_state_monitor->is_error_active("isolation_monitor/DeviceFault", "")) {
-        clear_deviceFault();
         configure_device();
     }
 }
 
-std::string isolation_monitorImpl::read_device_name() {
+std::optional<std::string> isolation_monitorImpl::read_device_name() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id, static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_NAME), 10);
-    std::string device_name;
-    if (result.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Success) {
-        for (int character : result.value.value()) {
-            device_name.push_back(static_cast<char>(character >> 8));
-            device_name.push_back(static_cast<char>(character & 0xFF));
-        }
-    } else {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
         set_deviceFault("Can't read device name");
+        return std::nullopt;
     }
-
+    std::string device_name;
+    for (int character : result.value.value()) {
+        device_name.push_back(static_cast<char>(character >> 8));
+        device_name.push_back(static_cast<char>(character & 0xFF));
+    }
     // Strip and new lines that may be present in device name
     std::replace(device_name.begin(), device_name.end(), '\n', ' ');
     return device_name;
 }
 
-std::string isolation_monitorImpl::read_firmware_version() {
+std::optional<std::string> isolation_monitorImpl::read_firmware_version() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id, static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_FIRMWARE_VERSION),
         6);
-    std::string firmware_version;
-    if (result.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Success) {
-        firmware_version = fmt::format("Ident: {} | Version {}, Date: {}-{}-{} | Modbus Driver: {}",
-                                       result.value.value()[0], result.value.value()[1], result.value.value()[2],
-                                       result.value.value()[3], result.value.value()[4], result.value.value()[5]);
-    } else {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
         set_deviceFault("Can't read the firmware version");
+        return std::nullopt;
     }
-    return firmware_version;
+    return fmt::format("Ident: {} | Version {}, Date: {}-{}-{} | Modbus Driver: {}", result.value.value()[0],
+                       result.value.value()[1], result.value.value()[2], result.value.value()[3],
+                       result.value.value()[4], result.value.value()[5]);
 }
 
-bool isolation_monitorImpl::check_for_faster_cablecheck() {
+std::optional<bool> isolation_monitorImpl::check_for_faster_cablecheck() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id,
         static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_FIRMWARE_VERSION) + 1, 1);
-    std::string firmware_version;
-    if (result.status_code == types::serial_comm_hub_requests::StatusCodeEnum::Success) {
-        if (result.value.value()[0] > 500) {
-            return true;
-        }
-    } else {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
         set_deviceFault("Could not check if the device supports fast cable check");
+        return std::nullopt;
     }
-    return false;
+    return result.value.value()[0] > 500;
 }
 
 isolation_monitorImpl::MeasurementValue isolation_monitorImpl::read_register(const ImdRegisters start_register) {
