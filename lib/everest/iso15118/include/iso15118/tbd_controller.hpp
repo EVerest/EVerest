@@ -51,19 +51,31 @@ struct TbdConfig {
     uint16_t tcp_port{50000};
     // Apply the 100 ms response gap only when the full protocol and response type repeats.
     bool throttle_same_type_only{false};
+    // How often the loop looks up interface_name while it is absent, and checks that a bound interface
+    // still has the same index.
+    uint32_t interface_check_interval_ms{1000};
 };
 
 // TbdController is single-threaded. Exactly one driver may run at a time: either loop() or start_session(), driven from
 // a single thread. They must never run concurrently - they share the poll manager and session state, which are not
 // thread-safe. Sequential reuse (one driver returns, then the other is called) is allowed.
+//
+// The network interface may be absent at construction and may disappear while the loop runs: the loop
+// re-resolves it every interface_check_interval_ms, opens the SDP server once it exists and, when its index
+// changes (the device was removed or replaced), closes the session and the SDP server and starts over on the
+// new device.
 class TbdController {
 public:
     // Creates the connection for sessions when the SDP server is disabled.
     using ConnectionFactory =
         std::function<std::unique_ptr<io::IConnection>(io::PollManager&, const std::string& interface_name)>;
+    // Resolves an interface name ("auto" included) to its index, 0 when it does not exist; may rewrite the name.
+    using InterfaceIndexLookup = std::function<unsigned int(std::string& interface_name)>;
 
     TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig);
     TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig, ConnectionFactory);
+    TbdController(TbdConfig, session::feedback::Callbacks, session::EvseSetupConfig, ConnectionFactory,
+                  InterfaceIndexLookup);
     ~TbdController();
 
     // Mutually exclusive with the other driver; see the class note. Refuses (logs and returns) if the other driver is
@@ -139,6 +151,9 @@ public:
 
 private:
     io::PollManager poll_manager;
+    // The loop thread opens and closes the SDP server as the interface comes and goes; module command
+    // threads reach it through set_dlink_ready(), so both hold this mutex around the pointer.
+    std::mutex sdp_server_mutex;
     std::unique_ptr<io::SdpServer> sdp_server;
 
     // Guards the session pointer. Only the controller loop thread creates, resets and closes the
@@ -159,6 +174,16 @@ private:
 
     // callbacks for sdp server
     void handle_sdp_server_input();
+
+    // Re-resolves the interface and binds or releases it when its index changed.
+    void check_interface();
+    // Opens the SDP server on the interface; throws when the socket cannot be set up.
+    void bind_interface(const std::string& name, unsigned int index);
+    // Closes the SDP server and the session; the interface is gone or was replaced.
+    void release_interface();
+    // Revokes the data-link readiness on the loop thread, both on the SDP server and the pending request.
+    void clear_dlink_ready();
+    void create_session_without_sdp();
 
     // The endpoint announced for the current session, so a repeated SDP request can be answered again
     // until the EV connects. The response is unicast: if the EV does not answer neighbour discovery in
@@ -185,7 +210,16 @@ private:
 
     everest::lib::util::monitor<session::EvseSetupConfig> evse_setup;
 
+    // The interface the SDP server is bound to; interface_index is 0 while none is.
     std::string interface_name;
+    unsigned int interface_index{0};
+    Timeout interface_check_timeout{0};
+    bool interface_missing_logged{false};
+    // Backoff after the listening endpoint could not be opened without an SDP server, e.g. while the
+    // link-local address is still tentative after the interface appeared.
+    std::optional<Timeout> connection_retry_timeout;
+    bool connection_retry_logged{false}; // the failure is logged once per outage
+    InterfaceIndexLookup interface_index_lookup;
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     // ISO 15118-2 pause context, owned here so it outlives the per-session D2SeccEngine (mirrors pause_ctx).

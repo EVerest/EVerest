@@ -73,20 +73,15 @@ private:
 
 } // namespace
 
-bool check_and_update_interface(std::string& interface_name) {
-
+unsigned int resolve_interface_index(std::string& interface_name) {
     if (interface_name == "auto") {
-        logf_info("Search for the first available ipv6 interface");
         interface_name = choose_first_ipv6_interface();
+        if (interface_name.empty()) {
+            return 0;
+        }
     }
 
-    struct ipv6_mreq mreq {};
-    mreq.ipv6mr_interface = if_nametoindex(interface_name.c_str());
-    if (!mreq.ipv6mr_interface) {
-        logf_error("No such interface: %s", interface_name.c_str());
-        return false;
-    }
-    return not interface_name.empty();
+    return if_nametoindex(interface_name.c_str());
 }
 
 bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, sockaddr_in6& address) {

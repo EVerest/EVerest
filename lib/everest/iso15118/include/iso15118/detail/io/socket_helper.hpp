@@ -14,7 +14,9 @@ namespace iso15118::io {
 
 constexpr auto DEFAULT_SOCKET_BACKLOG = 4;
 
-bool check_and_update_interface(std::string& interface_name);
+// Resolves interface_name ("auto" picks the first interface with an IPv6 link-local address and
+// rewrites interface_name to it) to its interface index; 0 when no such interface exists.
+unsigned int resolve_interface_index(std::string& interface_name);
 
 bool get_first_sockaddr_in6_for_interface(const std::string& interface_name, sockaddr_in6& address);
 
