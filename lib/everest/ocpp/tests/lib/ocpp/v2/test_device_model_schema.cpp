@@ -687,5 +687,32 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_re
     EXPECT_TRUE(storage.get_all_monitors().empty());
 }
 
+/// Two files of one directory that define the same component would silently replace each other
+TEST(ComponentConfigNameKeyTest, two_configs_of_the_same_component_are_rejected) {
+    const auto directory = libocpp_test::unique_temp_directory("libocpp_test_component_config_duplicate");
+    std::filesystem::create_directories(directory / "standardized");
+    std::ofstream(directory / "standardized" / "NameKeyCtrlr.json") << name_key_component_config().dump();
+    auto other_case = name_key_component_config();
+    other_case["name"] = "namekeyctrlr";
+    std::ofstream(directory / "standardized" / "NameKeyCtrlr_copy.json") << other_case.dump();
+    try {
+        get_all_component_configs(directory);
+        ADD_FAILURE() << "the second config was accepted";
+    } catch (const ComponentConfigNameKeyError& e) {
+        EXPECT_NE(std::string(e.what()).find("NameKeyCtrlr.json"), std::string::npos) << e.what();
+        EXPECT_NE(std::string(e.what()).find("NameKeyCtrlr_copy.json"), std::string::npos) << e.what();
+    }
+    std::filesystem::remove_all(directory);
+
+    // A custom config of a standardized component replaces it
+    auto custom_variable = name_key_component_config()["properties"]["Value"];
+    custom_variable["variable_name"] = "Custom";
+    const auto override_directory = write_configs_with_custom_variable(custom_variable);
+    const auto configs = get_all_component_configs(override_directory);
+    ASSERT_EQ(configs.size(), 1);
+    EXPECT_EQ(configs.begin()->second.size(), 2);
+    std::filesystem::remove_all(override_directory);
+}
+
 } // namespace v2
 } // namespace ocpp

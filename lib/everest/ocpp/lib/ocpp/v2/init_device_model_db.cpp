@@ -258,13 +258,14 @@ void warn_about_source_keys(const std::filesystem::path& path, const json& data)
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 read_component_config(const std::vector<std::filesystem::path>& components_config_path) {
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
+    std::map<ComponentKey, std::filesystem::path> component_paths;
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
+        std::pair<ComponentKey, std::vector<DeviceModelVariable>> parsed;
         try {
             const auto data = json::parse(config_file);
             warn_about_source_keys(path, data);
-            auto parsed = parse_component_config_from_json(data);
-            components.insert({parsed.first, std::move(parsed.second)});
+            parsed = parse_component_config_from_json(data);
         } catch (const json::parse_error& e) {
             EVLOG_error << "Error while parsing config file: " << path;
             throw;
@@ -273,6 +274,13 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
         } catch (const InitDeviceModelDbError& e) {
             throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
+        const auto [path_it, inserted] = component_paths.emplace(parsed.first, path);
+        if (!inserted) {
+            throw ComponentConfigNameKeyError("Component configs " + path_it->second.string() + " and " +
+                                              path.string() + " both define component " +
+                                              get_component_name_for_logging(parsed.first));
+        }
+        components.emplace(std::move(parsed));
     }
 
     return components;
