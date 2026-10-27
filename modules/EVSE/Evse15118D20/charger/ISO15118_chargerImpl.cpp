@@ -134,13 +134,6 @@ types::iso15118::EnergyTransferMode convert_energy_transfer_mode(iso15118::share
     return Out::DC_extended;
 }
 
-// The EV reports remaining times and its departure time as seconds from now; the EVerest vars carry
-// absolute RFC3339 UTC timestamps (EvseV2G publish_dc_ev_remaining_time / publish_departure_time).
-std::string seconds_from_now_to_rfc3339(double seconds) {
-    const auto offset = std::chrono::duration_cast<date::utc_clock::duration>(std::chrono::duration<double>(seconds));
-    return Everest::Date::to_rfc3339(date::utc_clock::now() + offset);
-}
-
 types::iso15118::DCChargingParameters
 convert_dc_charging_parameters(const iso15118::session::feedback::DcEvChargeParameters& in) {
     types::iso15118::DCChargingParameters out;
@@ -1010,7 +1003,9 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
 
         // Optional in Scheduled mode, mandatory in Dynamic mode
         if (departure_time.has_value()) {
-            publish_departure_time(seconds_from_now_to_rfc3339(departure_time.value()));
+            const auto departure_time_rfc3339 = Everest::Date::seconds_from_now_to_rfc3339(departure_time.value());
+            publish_departure_time(departure_time_rfc3339);
+            charging_needs.departure_time = departure_time_rfc3339;
         }
 
         // Publish charging needs through the extensions
@@ -1085,7 +1080,7 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
         // The EV gives its departure time as seconds from now; both consumers get the same absolute
         // timestamp rather than two computed moments apart.
         if (parameters.departure_time.has_value()) {
-            const auto departure_time = seconds_from_now_to_rfc3339(parameters.departure_time.value());
+            const auto departure_time = Everest::Date::seconds_from_now_to_rfc3339(parameters.departure_time.value());
             publish_departure_time(departure_time);
             charging_needs.departure_time = departure_time;
         }
@@ -1127,11 +1122,11 @@ iso15118::session::feedback::Callbacks ISO15118_chargerImpl::create_callbacks() 
             types::iso15118::DcEvRemainingTime remaining_time;
             if (progress.remaining_time_to_full_soc.has_value()) {
                 remaining_time.ev_remaining_time_to_full_soc =
-                    seconds_from_now_to_rfc3339(progress.remaining_time_to_full_soc.value());
+                    Everest::Date::seconds_from_now_to_rfc3339(progress.remaining_time_to_full_soc.value());
             }
             if (progress.remaining_time_to_bulk_soc.has_value()) {
                 remaining_time.ev_remaining_time_to_full_bulk_soc =
-                    seconds_from_now_to_rfc3339(progress.remaining_time_to_bulk_soc.value());
+                    Everest::Date::seconds_from_now_to_rfc3339(progress.remaining_time_to_bulk_soc.value());
             }
             publish_dc_ev_remaining_time(remaining_time);
         }

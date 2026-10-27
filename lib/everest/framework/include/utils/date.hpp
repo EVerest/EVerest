@@ -20,6 +20,10 @@ void preload_tzdb();
 
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t);
 
+/// \brief Convert a relative time in seconds from now, as reported by ISO 15118 and DIN SPEC 70121, into an
+/// absolute RFC3339 UTC timestamp
+std::string seconds_from_now_to_rfc3339(double seconds);
+
 std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t);
 
 std::chrono::time_point<date::utc_clock> from_rfc3339(const std::string& t);

@@ -516,6 +516,11 @@ types:
         type: number
         minimum: 0
         maximum: 100
+      target_soc:
+        description: SoC the vehicle needs after charging, e.g. as set by the user [%]
+        type: number
+        minimum: 0
+        maximum: 100
       target_energy_request:
         description: Energy request to fulfil the target SoC from the EV [Wh]
         type: number

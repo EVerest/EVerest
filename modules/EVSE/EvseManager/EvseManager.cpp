@@ -36,12 +36,6 @@ types::power_supply_DC::Capabilities get_sane_default_power_supply_capabilities(
     return psu_caps;
 }
 
-// ISO 15118 gives times as seconds from now; ev_info carries absolute RFC3339 timestamps
-std::string seconds_from_now_to_rfc3339(double seconds) {
-    const auto offset = std::chrono::duration_cast<date::utc_clock::duration>(std::chrono::duration<double>(seconds));
-    return Everest::Date::to_rfc3339(date::utc_clock::now() + offset);
-}
-
 void trim_colons_from_string(std::string& text) {
     text.erase(remove(text.begin(), text.end(), ':'), text.end());
 }
@@ -519,6 +513,28 @@ void EvseManager::ready() {
             p_evse->publish_ev_info(ev_info);
         });
 
+        r_hlc[0]->subscribe_display_parameters([this](types::iso15118::DisplayParameters const& p) {
+            Everest::scoped_lock_timeout lock(ev_info_mutex,
+                                              Everest::MutexDescription::EVSE_subscribe_display_parameters);
+            if (p.present_soc.has_value()) {
+                ev_info.soc = p.present_soc.value();
+            }
+            if (p.maximum_soc.has_value()) {
+                ev_info.battery_full_soc = p.maximum_soc.value();
+            }
+            if (p.target_soc.has_value()) {
+                ev_info.target_soc = p.target_soc.value();
+            }
+            if (p.remaining_time_to_maximum_soc.has_value()) {
+                ev_info.estimated_time_full =
+                    Everest::Date::seconds_from_now_to_rfc3339(p.remaining_time_to_maximum_soc.value());
+            }
+            if (p.battery_energy_capacity.has_value()) {
+                ev_info.battery_capacity = p.battery_energy_capacity.value();
+            }
+            p_evse->publish_ev_info(ev_info);
+        });
+
         if (config.charge_mode == "AC") {
             types::iso15118::SetupPhysicalValues setup_physical_values;
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
@@ -583,39 +599,17 @@ void EvseManager::ready() {
                 p_evse->publish_ev_info(ev_info);
             });
 
-            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode(
-                [this](types::iso15118::AcEvDynamicModeValues const& values) {
-                    Everest::scoped_lock_timeout lock(
-                        ev_info_mutex, Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
-                    ev_info.target_energy_request = values.target_energy_request;
-                    ev_info.max_energy_request = values.max_energy_request;
-                    ev_info.min_energy_request = values.min_energy_request;
-                    if (values.departure_time.has_value()) {
-                        ev_info.departure_time = seconds_from_now_to_rfc3339(values.departure_time.value());
-                    }
-                    // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
-                    p_evse->publish_ev_info(ev_info);
-                });
-
-            r_hlc[0]->subscribe_display_parameters([this](types::iso15118::DisplayParameters const& p) {
+            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode([this](
+                                                               types::iso15118::AcEvDynamicModeValues const& values) {
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                  Everest::MutexDescription::EVSE_subscribe_display_parameters);
-                if (p.present_soc.has_value()) {
-                    ev_info.soc = p.present_soc.value();
+                                                  Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
+                ev_info.target_energy_request = values.target_energy_request;
+                ev_info.max_energy_request = values.max_energy_request;
+                ev_info.min_energy_request = values.min_energy_request;
+                if (values.departure_time.has_value()) {
+                    ev_info.departure_time = Everest::Date::seconds_from_now_to_rfc3339(values.departure_time.value());
                 }
-                if (p.maximum_soc.has_value()) {
-                    ev_info.battery_full_soc = p.maximum_soc.value();
-                } else if (p.target_soc.has_value()) {
-                    ev_info.battery_full_soc = p.target_soc.value();
-                }
-                if (p.remaining_time_to_maximum_soc.has_value()) {
-                    ev_info.estimated_time_full = seconds_from_now_to_rfc3339(p.remaining_time_to_maximum_soc.value());
-                } else if (p.remaining_time_to_target_soc.has_value()) {
-                    ev_info.estimated_time_full = seconds_from_now_to_rfc3339(p.remaining_time_to_target_soc.value());
-                }
-                if (p.battery_energy_capacity.has_value()) {
-                    ev_info.battery_capacity = p.battery_energy_capacity.value();
-                }
+                // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
                 p_evse->publish_ev_info(ev_info);
             });
 

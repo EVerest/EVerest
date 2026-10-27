@@ -77,6 +77,20 @@ SCENARIO("Check conversions", "[!throws]") {
     }
 }
 
+SCENARIO("Relative seconds are converted to an absolute rfc3339 timestamp", "[!throws]") {
+    GIVEN("An offset of one hour from now") {
+        const auto before = date::utc_clock::now();
+        const auto timestamp = Everest::Date::seconds_from_now_to_rfc3339(3600);
+        const auto after = date::utc_clock::now();
+
+        THEN("The timestamp is one hour ahead") {
+            const auto tp = Everest::Date::from_rfc3339(timestamp);
+            CHECK(tp >= std::chrono::time_point_cast<std::chrono::milliseconds>(before + std::chrono::hours(1)));
+            CHECK(tp <= after + std::chrono::hours(1));
+        }
+    }
+}
+
 SCENARIO("tzdb preload makes concurrent utc_clock::now() safe", "[!throws]") {
     GIVEN("A single-threaded tzdb preload before any worker thread") {
         Everest::Date::preload_tzdb();
