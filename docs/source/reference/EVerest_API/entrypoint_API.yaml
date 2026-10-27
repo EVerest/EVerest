@@ -10,6 +10,8 @@ info:
     the deprecation period; channels, operations and message payloads may change
     without further notice until it is promoted to stable.
 
+  x-experimental:
+    since: 2026.10.0
   license:
     name: Apache-2.0
     url: https://opensource.org/licenses/Apache-2.0

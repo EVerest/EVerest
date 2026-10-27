@@ -1,0 +1,161 @@
+{# SPDX-License-Identifier: Apache-2.0 #}
+{# Copyright Pionix GmbH and Contributors to EVerest #}
+{# HTML fragments of an API page, embedded as raw blocks by api_page.rst.j2. #}
+{% import '_schema.html.j2' as schema with context %}
+{% macro badge(action) %}
+{% if action == 'send' %}
+<span class="badge send" title="Published by the client, consumed by EVerest">send</span>
+{% else %}
+<span class="badge receive" title="Published by EVerest, consumed by the client">receive</span>
+{% endif %}
+{% endmacro %}
+{% macro experimental_tag() %}<span class="badge experimental" title="Exempt from the stability guarantees">experimental</span>{% endmacro %}
+{% macro anchor(id) %}<a class="anchor" href="#{{ id }}" aria-label="Link to this definition">¶</a>{% endmacro %}
+{% macro op_link(op_id) %}<a href="#{{ op_anchor(model.name, op_id) }}">{{ op_id }}</a>{% endmacro %}
+
+{% macro overview_facts() %}
+<div class="facts">
+{% if model.experimental %}{{ experimental_tag() }}{% endif %}
+{% if model.version %}<span class="chip"><span class="s-label">version</span> {{ model.version }}</span>{% endif %}
+<span class="chip"><span class="s-label">AsyncAPI</span> {{ model.asyncapi_version }}</span>
+{% if model.default_content_type %}<span class="chip"><span class="s-label">content type</span> {{ model.default_content_type }}</span>{% endif %}
+{% if model.license_name %}<span class="chip"><span class="s-label">license</span> {% if model.license_url %}<a href="{{ model.license_url }}">{{ model.license_name }}</a>{% else %}{{ model.license_name }}{% endif %}</span>{% endif %}
+{% for tag in model.tags %}<span class="chip tag">{{ tag }}</span>{% endfor %}
+</div>
+{% endmacro %}
+
+{% macro overview_footer() %}
+<p class="spec-file">Specification: <code>{{ model.name }}.yaml</code>{% if model.spec_id %} · <code>{{ model.spec_id }}</code>{% endif %}</p>
+<div class="legend">
+<span>{{ badge('send') }} the client publishes, EVerest consumes ({{ model.send_operations | length }})</span>
+<span>{{ badge('receive') }} EVerest publishes, the client consumes ({{ model.receive_operations | length }})</span>
+</div>
+{% endmacro %}
+
+{% macro servers() %}
+{% for srv in model.servers %}
+<div class="card server" id="server-{{ srv.name }}">
+<p class="card-title"><strong>{{ srv.name }}</strong> {% if srv.protocol %}<span class="chip">{{ srv.protocol }}</span>{% endif %}</p>
+{% if srv.description %}<div>{{ srv.description | md }}</div>{% endif %}
+<dl class="op-facts">
+{% if srv.host %}<dt>Host</dt><dd><code>{{ srv.host }}</code></dd>{% endif %}
+<dt>Topic prefix</dt><dd><code class="topic" data-copy="{{ srv.pathname }}">{{ srv.pathname }}</code></dd>
+{% for var, desc in srv.variables %}
+<dt><code>{{ '{' ~ var ~ '}' }}</code></dt><dd>{{ desc | md }}</dd>
+{% endfor %}
+</dl>
+</div>
+{% else %}
+<p class="s-note">No servers defined.</p>
+{% endfor %}
+{% endmacro %}
+
+{% macro toolbar() %}
+<div class="js-only toolbar">
+<button type="button" data-expand="all">Expand all</button>
+<button type="button" data-expand="none">Collapse all</button>
+</div>
+{% endmacro %}
+
+{% macro op_head(op) %}
+<div class="op-head">
+{{ badge(op.action) }}
+{% if op.experimental %}{{ experimental_tag() }}{% endif %}
+{% if op.title %}<span class="op-title">{{ op.title }}</span>{% endif %}
+</div>
+{% if op.experimental and not model.experimental %}
+<p class="callout-inline">Experimental{% if op.experimental.since %} since {{ op.experimental.since }}{% endif %}: may change or be removed in any release without deprecation.{% if op.experimental.note %} {{ op.experimental.note }}{% endif %}</p>
+{% endif %}
+<dl class="op-facts">
+{% if op.topic %}
+<dt>Topic</dt>
+<dd><code class="topic" data-copy="{{ op.topic }}">{{ op.topic }}</code></dd>
+{% else %}
+<dt>Topic</dt>
+<dd>Dynamic: the <code>replyTo</code> address from the request's headers.
+{% if op.request_op_id %}Answers {{ op_link(op.request_op_id) }}.{% endif %}</dd>
+{% endif %}
+{% if op.reply_location %}
+<dt>Reply</dt>
+<dd>Sent to <code>{{ op.reply_location }}</code>{% if op.reply_op_id %} as {{ op_link(op.reply_op_id) }}{% endif %}.</dd>
+{% endif %}
+</dl>
+{% endmacro %}
+
+{% macro op_messages(op) %}
+{% for msg_id in op.message_ids %}
+{% set msg = model.message(msg_id) %}
+<details class="msg">
+<summary><span class="msg-label">Message</span> <span class="msg-name">{{ msg.title or msg.name }}</span> <code class="ctype">{{ msg.content_type }}</code></summary>
+<div class="msg-body">
+{{ message_body(msg) }}
+</div>
+</details>
+{% endfor %}
+{% endmacro %}
+
+{% macro message_body(msg) %}
+<p class="msg-ref">Message <a href="#msg-{{ msg.msg_id }}"><code>{{ msg.name }}</code></a></p>
+{% if msg.summary %}<div class="msg-summary">{{ msg.summary | md }}</div>{% endif %}
+{% if msg.description %}<div class="msg-desc">{{ msg.description | md }}</div>{% endif %}
+<div class="msg-grid">
+<div>
+<p class="msg-section">Payload</p>
+{% if msg.payload %}
+{{ schema.root(msg.payload) }}
+{% else %}
+<p class="s-note">No payload.</p>
+{% endif %}
+</div>
+<div>
+<p class="msg-section">Example{% if msg.examples | length > 1 %}s{% endif %}</p>
+{% for ex in msg.examples %}
+<figure class="example">
+<figcaption>{{ ex.title }}{% if ex.generated %} <span class="tag">generated</span>{% endif %}</figcaption>
+<pre data-copy-block><code>{{ ex.payload_json }}</code></pre>
+</figure>
+{% endfor %}
+</div>
+</div>
+{% endmacro %}
+
+{% macro messages() %}
+<div class="table-wrap">
+<table class="messages">
+<thead><tr><th>Message</th><th>Summary</th><th>Used by</th></tr></thead>
+<tbody>
+{% for msg in model.messages %}
+<tr id="msg-{{ msg.msg_id }}">
+<td><code>{{ msg.name }}</code>{% if msg.title %}<br><span class="muted">{{ msg.title }}</span>{% endif %}</td>
+<td>{{ msg.summary | md }}</td>
+<td>{% for op_id in msg.used_by %}{{ op_link(op_id) }}{% if not loop.last %}<br>{% endif %}{% else %}<span class="muted">not used by an operation</span>{% endfor %}</td>
+</tr>
+{% endfor %}
+</tbody>
+</table>
+</div>
+{% for msg in model.messages if not msg.used_by %}
+<details class="msg" id="msg-detail-{{ msg.msg_id }}">
+<summary><span class="msg-label">Message</span> <span class="msg-name">{{ msg.title or msg.name }}</span> <code class="ctype">{{ msg.content_type }}</code></summary>
+<div class="msg-body">{{ message_body(msg) }}</div>
+</details>
+{% endfor %}
+{% endmacro %}
+
+{% macro schemas() %}
+{% for node in model.schemas %}
+<details class="schema" id="{{ schema_anchor(node.name) }}">
+<summary><span class="s-name">{{ node.name }}</span> <span class="s-type">{{ node.type }}</span>{{ anchor(schema_anchor(node.name)) }}</summary>
+{{ schema.root(node) }}
+</details>
+{% endfor %}
+{% endmacro %}
+
+{% macro imported_schemas() %}
+{% for ref, node in model.imported_schemas %}
+<details class="schema" id="{{ ref.anchor }}">
+<summary><span class="s-name">{{ ref.name }}</span> <span class="s-type">{{ node.type }}</span> <a class="s-ref" {{ schema.ref_href(ref) }}>defined in {{ ref.file_name }} ↗</a>{{ anchor(ref.anchor) }}</summary>
+{{ schema.root(node) }}
+</details>
+{% endfor %}
+{% endmacro %}

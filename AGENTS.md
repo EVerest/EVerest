@@ -32,6 +32,14 @@ that behavior, and fix what went stale. Libraries document themselves in
 libocpp); internal library changes count too when they touch documented behavior. A
 change to build, run, test or codegen mechanics means updating this file as well.
 
+Building the manual: configure with `-DEVEREST_BUILD_DOCS=ON` and build the target
+`trailbook_everest`; the site lands in `build/docs/trailbook_everest_build/<instance>/`.
+Rebuilds are incremental: Sphinx keeps its environment in `build/docs/sphinx_doctrees/`
+(delete it to force a full read), reference pages regenerate only when their own inputs
+change, and generated pages whose input disappeared are removed at configure time.
+`-DEVEREST_SKIP_BUILD_API_DOC=ON` leaves out the EVerest API reference; a stub page takes
+the place of its index so the toctree and links still resolve.
+
 ## Build
 
 `make build`, `make test` and `make lint` do not exist here.
@@ -227,6 +235,24 @@ Traps:
 
 `ev-cli --help` lists the available actions; `--only which` lists the files an action
 would touch.
+
+## EVerest API specs (AsyncAPI)
+
+`docs/source/reference/EVerest_API/*.yaml` feed the EVerest API client in
+`applications/utils/everest-api-client/` and, through its `everest_api.docs_cli` entry
+point, the API reference of the manual: a Sphinx page `reference/EVerestAPI/<name>.rst`
+per spec, the index page listing them, and a stylesheet and script in
+`_static/everest-api/` that `docs/conf.py.in` adds to those pages only. The docs build
+runs that generator once for all specs into the trailbook instance source directory.
+The generator validates every spec against the AsyncAPI 3.0 schema vendored in
+`everest_api/schemas/`, so a malformed spec fails the docs build. After editing a spec,
+the client or the generator, run the client's tests, which validate, load and render
+every spec, build the pages with Sphinx (`-W`, skipped without Sphinx) and check links,
+anchors and that nothing from a spec is dropped:
+
+```bash
+python3 -m pytest applications/utils/everest-api-client/tests
+```
 
 ## Code style
 

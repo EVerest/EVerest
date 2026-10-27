@@ -131,7 +131,16 @@ set_property(
 With the `get_target_property()` call the file-level dependencies
 from the previous stage are retrieved and added to the custom command
 and the custom target. This ensures that the custom command is executed
-after the previous stage is completed.
+after the previous stage is completed. Do this only when the command
+reads files the prepare stage produces, such as copied stem files. A
+command that reads its own inputs should depend on those alone, or every
+edit of a page reruns it.
+
+The stem copy only removes stem files. Files an extension writes into the
+instance source directory stay until the extension removes them, so an
+extension has to delete what it generated for inputs that no longer
+exist. `trailbook-ext-everest` records its generated files for that; see
+its README.
 
 With the `set_property()` call the custom target and the output files
 are added to the target-level dependencies of the build stage.

@@ -114,6 +114,9 @@ def test_every_spec_is_loaded(models):
     "servers: [1]\n",                                             # servers not a mapping
     "servers: {default: {pathname: x}}\noperations: {op: }\n",    # null operation
     "servers: {default: {pathname: x}}\noperations: [1]\n",       # operations not a mapping
+    # null operation after a reply operation, met while looking for its request
+    "servers: {default: {pathname: x}}\nchannels: {reply: {address: null}}\n"
+    "operations: {rep: {action: receive, channel: {$ref: '#/channels/reply'}}, old: }\n",
 ])
 def test_a_broken_spec_is_skipped(tmp_path, content):
     (tmp_path / "broken_API.yaml").write_text(content)
