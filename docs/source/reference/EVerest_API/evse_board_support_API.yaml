@@ -794,6 +794,23 @@ components:
         - EnclosureOpen: 'The EVSE enclosure is open, e.g. a door or panel is not properly closed.'
         - VendorError: 'Vendor specific error code. Will stop charging session.'
         - VendorWarning: 'Vendor specific error code. Charging may continue.'
+        - CommunicationFault: 'The communication to the hardware or underlying driver is lost or has errors. Also raised by EVerest itself when the communication check fails.'
+
+        Mapping to EVerest error types. The module provides three interfaces and chooses the implementation
+        by the error name:
+        - evse_board_support/<name> for DiodeFault, VentilationNotAvailable, BrownOut, EnergyManagement, PermanentFault,
+          MREC2GroundFailure, MREC3HighTemperature, MREC4OverCurrentFailure, MREC5OverVoltage, MREC6UnderVoltage,
+          MREC8EmergencyStop, MREC10InvalidVehicleMode, MREC14PilotFault, MREC15PowerLoss, MREC17EVSEContactorFault,
+          MREC18CableOverTempDerate, MREC19CableOverTempStop, MREC20PartialInsertion, MREC23ProximityFault,
+          MREC24ConnectorVoltageHigh, MREC25BrokenLatch, MREC26CutCable, TiltDetected, WaterIngressDetected, EnclosureOpen,
+          VendorError, VendorWarning, CommunicationFault
+        - connector_lock/<name> for ConnectorLockCapNotCharged, ConnectorLockUnexpectedOpen, ConnectorLockUnexpectedClose,
+          ConnectorLockFailedLock, ConnectorLockFailedUnlock, MREC1ConnectorLockFailure
+        - ac_rcd/<name> for Selftest, DC, AC
+        The connector_lock and ac_rcd interfaces also define VendorError and VendorWarning, and ac_rcd defines
+        MREC2GroundFailure; through this API those names always address the evse_board_support implementation.
+        EvseManager keeps charging only through MREC3HighTemperature, MREC18CableOverTempDerate and VendorWarning;
+        every other error makes the EVSE inoperative until it is cleared.
 
       type: string
       enum:
@@ -833,6 +850,7 @@ components:
         - EnclosureOpen
         - VendorError
         - VendorWarning
+        - CommunicationFault
     Error:
       description: >-
         Errors for the evse_board_support interface.
