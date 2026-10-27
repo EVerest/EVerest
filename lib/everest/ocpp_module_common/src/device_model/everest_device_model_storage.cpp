@@ -268,8 +268,7 @@ std::vector<DeviceModelVariable> build_connected_ev_variables() {
         make_variable_with_instance(ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.name,
                                     ocpp::v2::ConnectedEvComponentVariables::VehicleCertificateRoot.instance->get(),
                                     ConnectedEVDefinitions::Characteristics::VehicleCertificateRoot, "")};
-    const int number_of_variables = NUMBER_OF_CONNECTED_EV_PROTOCOLS + connected_ev_variables.size();
-    connected_ev_variables.resize(number_of_variables);
+    connected_ev_variables.reserve(connected_ev_variables.size() + NUMBER_OF_CONNECTED_EV_PROTOCOLS);
 
     std::string variable_name = ocpp::v2::ConnectedEvComponentVariables::get_protocol_supported_by_ev(1).name;
     for (int i = 1; i <= NUMBER_OF_CONNECTED_EV_PROTOCOLS; ++i) {
