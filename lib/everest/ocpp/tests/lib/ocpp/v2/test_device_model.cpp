@@ -893,8 +893,9 @@ TEST_F(DeviceModelTest, test_pending_monitor_event_reports_a_value_that_cannot_b
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
-/// A pending Delta event reports a value that cannot be evaluated, but the reference moves to the last value that could
-TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_is_never_a_value_that_cannot_be_evaluated) {
+/// N07.FR.18: the reference is the value when the last event notice was sent. An empty value reported by a pending
+/// Delta event leaves the monitor without a reference, so the next value that can be evaluated is reported
+TEST_F(DeviceModelTest, test_numeric_delta_monitor_triggers_on_the_first_value_after_an_empty_value_was_reported) {
     const auto& interval = ControllerComponentVariables::AlignedDataInterval;
     const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
     clear_all_monitors(*dm, interval.component, interval.variable.value());
@@ -933,21 +934,21 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_is_never_a_value_th
     updater.process_triggered_monitors();
     ASSERT_EQ(sent().size(), 1);
     EXPECT_EQ(sent()[0].actualValue, "");
-    EXPECT_EQ(reference(), "960");
+    EXPECT_EQ(reference(), "");
 
-    // 1000 deviates only 40 from 960: no trigger
+    // The CSMS was told of an empty value: 1000 is reported and becomes the reference
     ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1000", "test"),
               SetVariableStatusEnum::Accepted);
     updater.process_triggered_monitors();
-    EXPECT_EQ(sent().size(), 1);
+    ASSERT_EQ(sent().size(), 2);
+    EXPECT_EQ(sent()[1].actualValue, "1000");
+    EXPECT_EQ(reference(), "1000");
 
-    // 1020 deviates 60 from 960: triggers
+    // 1020 deviates only 20 from 1000: no trigger
     ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1020", "test"),
               SetVariableStatusEnum::Accepted);
     updater.process_triggered_monitors();
-    ASSERT_EQ(sent().size(), 2);
-    EXPECT_EQ(sent()[1].actualValue, "1020");
-    EXPECT_EQ(reference(), "1020");
+    EXPECT_EQ(sent().size(), 2);
 
     updater.stop_monitoring();
     clear_all_monitors(*dm, interval.component, interval.variable.value());
