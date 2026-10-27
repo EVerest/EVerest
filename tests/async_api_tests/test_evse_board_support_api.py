@@ -92,8 +92,9 @@ def test_payload_validation(lab: Lab):
     for connector in ['IEC62196Type2Socket', 'cCCS2', 'cMCS', 'cNACS']:
         assert forwarded(lab, 'capabilities', 'capabilities', dict(caps, connector_type=connector))['connector_type'] == connector
     for bad in [{k: v for k, v in caps.items() if k != 'max_current_A_import'}, dict(caps, connector_type='Schuko'),
-                dict(caps, max_current_A_import='16')]:
-        assert forwarded(lab, 'capabilities', 'capabilities', bad) is None
+                dict(caps, max_current_A_import='16'), dict(caps, max_phase_count_import=4),
+                dict(caps, min_phase_count_export=0), dict(caps, min_phase_count_import=3, max_phase_count_import=1)]:
+        assert forwarded(lab, 'capabilities', 'capabilities', bad) is None, bad
     lab.board.publish_capabilities()
 
     for ampacity in ['None', 'A_13', 'A_20', 'A_32', 'A_63_3ph_70_1ph']:
@@ -101,7 +102,8 @@ def test_payload_validation(lab: Lab):
     assert forwarded(lab, 'ac_pp_ampacity', 'ac_pp_ampacity', {'ampacity': 'A_16'}) is None
     for n in (1, 2, 3):
         assert forwarded(lab, 'ac_nr_of_phases_available', 'ac_nr_of_phases', n) == n
-    assert forwarded(lab, 'ac_nr_of_phases_available', 'ac_nr_of_phases', '"3"') is None
+    for bad in (0, 4, '"3"'):
+        assert forwarded(lab, 'ac_nr_of_phases_available', 'ac_nr_of_phases', bad) is None, bad
     for reason in STOP_REASONS:
         assert forwarded(lab, 'request_stop_transaction', 'request_stop_transaction', {'reason': reason}) == {'reason': reason}
     assert forwarded(lab, 'request_stop_transaction', 'request_stop_transaction', {'reason': 'Nonsense'}) is None
