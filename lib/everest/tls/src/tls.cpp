@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cassert>
+#include <cerrno>
 #include <charconv>
 #include <csignal>
 #include <cstddef>
@@ -388,7 +389,14 @@ ssl_op_result process_result(SSL* ctx, operation_t operation, const int res) {
                     if (error.empty()) {
                         error = "SSL_ERROR_SYSCALL " + std::to_string(errno);
                     }
-                    log_error(operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno));
+                    const auto msg =
+                        operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno);
+                    if (errno == ECONNRESET) {
+                        // Many peers end the connection with an RST instead of a FIN
+                        log_info(msg);
+                    } else {
+                        log_error(msg);
+                    }
                 }
                 break;
             case ssl_error_t::error_ssl:
