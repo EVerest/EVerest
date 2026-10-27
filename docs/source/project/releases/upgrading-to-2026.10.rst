@@ -221,6 +221,12 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
+- ``evse_board_support`` (all BSP drivers, ``evse_board_support_API`` included):
+  EvseManager no longer calls ``pwm_on`` with a duty cycle of 100 % to signal
+  that no current is available; it calls ``cp_state_X1``. A duty cycle of 0 %
+  is never requested either (it would be ``cp_state_F``). Drivers that
+  translated ``pwm_on(100)`` into X1 themselves keep working; drivers that
+  counted on it see ``cp_state_X1`` instead.
 - All EVerest API modules: the initial ``CommunicationFault`` (sub type
   ``Initial communication check``) and EvseManager's ``Inoperative`` are raised
   only when no ``communication_check`` arrived within

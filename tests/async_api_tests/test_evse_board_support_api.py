@@ -228,15 +228,14 @@ def test_charging_starts_without_power_on_confirmation(lab: Lab):
 
 
 def test_capabilities_gate_the_pwm(lab: Lab):
-    """Without capabilities EVerest offers no current (100 % duty cycle, state X1); a runtime update changes the PWM."""
+    """Without capabilities EVerest offers no current (state X1, no PWM request); a runtime update changes the PWM."""
     lab.board.nr_of_phases(3)
     lab.board.event('A')
     time.sleep(0.5)
     t0 = lab.rec.now()
     lab.board.event('B')
-    first = lab.wait_request('pwm_on', since=t0, timeout=8)
-    assert first is not None and first.json() == 100.0
-    assert lab.rec.absent(E2M + 'pwm_on', timeout=5, since=t0, pred=lambda r: r.json() < 100)
+    assert lab.wait_request('cp_state_X1', since=t0, timeout=8) is not None
+    assert lab.rec.absent(E2M + 'pwm_on', timeout=5, since=t0), 'no PWM request without capabilities'
     t = lab.rec.now()
     lab.board.publish_capabilities()
     pwm = lab.wait_request('pwm_on', since=t, timeout=8, pred=lambda r: r.json() < 100)
