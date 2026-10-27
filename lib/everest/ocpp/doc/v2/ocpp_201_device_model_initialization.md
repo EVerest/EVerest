@@ -105,7 +105,8 @@ The name key consists of the columns `COMPONENT_NAME`, `COMPONENT_INSTANCE`, `EV
 treats NULLs as distinct in keys, so an absent instance is stored as `''` and an absent EVSE or connector id as `0`. A
 component config with an empty component or variable instance, or with an EVSE or connector id of `0`, therefore stops
 the initialization with an error that names the file. Two components, or two variables of one component, whose names
-or instances differ only in case would share monitors and stored values, so they stop the initialization as well.
+or instances differ only in case would share monitors and stored values, so they stop the initialization as well, as do
+two files of one directory that define the same component.
 Any other invalid component config, for example a monitor on a variable without `supportsMonitoring`, stops the
 initialization too. No file is skipped: the standardized config of the same component would replace a skipped custom
 config, and the variables only the custom config defines would be removed with their monitors.
