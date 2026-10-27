@@ -23,6 +23,36 @@ def remove_last(input_string: str, search: str) -> str:
     return input_string
 
 
+json_number_conversions = {
+    'std::int32_t': 'ocpp::integer_from_json',
+    'float': 'ocpp::decimal_from_json',
+}
+
+
+def element_type(prop_type: str) -> str:
+    """Returns the element type of a std::vector type"""
+    return prop_type[len('std::vector<'):-1]
+
+
+def number_from_json(expression: str, prop_type: str) -> str:
+    """Wraps expression in a range checked conversion if prop_type is an OCPP integer or decimal"""
+    conversion = json_number_conversions.get(prop_type)
+    if conversion:
+        return f'{conversion}({expression})'
+    return expression
+
+
+def needs_json_number(types):
+    for t in types:
+        for property in t['properties']:
+            prop_type = property['type']
+            if prop_type.startswith('std::vector<'):
+                prop_type = element_type(prop_type)
+            if prop_type in json_number_conversions:
+                return True
+    return False
+
+
 def uses_optional(types):
     for t in types:
         for property in t['properties']:
@@ -59,6 +89,8 @@ env = Environment(
 )
 env.filters['snake_case'] = snake_case
 env.filters['remove_last'] = remove_last
+env.filters['element_type'] = element_type
+env.filters['number_from_json'] = number_from_json
 env.globals['timestamp'] = datetime.utcnow
 message_hpp_template = env.get_template('message.hpp.jinja')
 message_cpp_template = env.get_template('message.cpp.jinja')
@@ -451,6 +483,7 @@ def parse_schemas(version: str, schema_dir: Path = Path('schemas/json/'),
         message_needs_enums = False
         message_needs_types = False
         message_needs_constants = False
+        message_needs_json_number = False
 
         for (type_name, type_key) in (('Request', 'req'), ('Response', 'res'), ('', 'send')):
             if not type_key in type_of_action:
@@ -493,6 +526,8 @@ def parse_schemas(version: str, schema_dir: Path = Path('schemas/json/'),
                 message_needs_enums = needs_enums(sorted_types)
             if not message_needs_types:
                 message_needs_types = needs_types(sorted_types)
+            if not message_needs_json_number:
+                message_needs_json_number = needs_json_number(sorted_types)
             if action == 'Get15118EVCertificate':
                 message_needs_constants = True
 
@@ -575,6 +610,7 @@ def parse_schemas(version: str, schema_dir: Path = Path('schemas/json/'),
                     'uses_optional': message_uses_optional,
                     'needs_enums': message_needs_enums,
                     'needs_types': message_needs_types,
+                    'needs_json_number': message_needs_json_number,
                     'conversions_namespace_prefix': conversions_namespace_prefix,
                     'action': {
                         'name': action,
