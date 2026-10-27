@@ -20,7 +20,8 @@ import re
 from dataclasses import dataclass, field
 from typing import List, Optional
 
-from everest_api.spec_loader import SpecError, channel_ref_id, resolve_channel
+from everest_api.spec_loader import (
+    SpecError, channel_ref_id, find_request_operation, json_compatible, resolve_channel)
 
 # A channel parameter in an address, e.g. {api_type} in query-modules/{api_type}.
 _CHANNEL_PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
@@ -36,24 +37,10 @@ def _channel_params(address: Optional[str]) -> List[str]:
     return _CHANNEL_PARAM.findall(address) if address else []
 
 
-def _normalize_numbers(value):
-    """Print integral floats like 230.0 as 230, as the spec examples intend.
-    bool must be handled before the numeric branch since bool is a subclass of int."""
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, float) and value.is_integer():
-        return int(value)
-    if isinstance(value, dict):
-        return {k: _normalize_numbers(v) for k, v in value.items()}
-    if isinstance(value, list):
-        return [_normalize_numbers(v) for v in value]
-    return value
-
-
 def compact_json(payload) -> str:
     """Compact JSON without spaces, keys in source order, non-ASCII kept verbatim."""
     # default=str: YAML turns unquoted dates and timestamps into datetime objects
-    return json.dumps(_normalize_numbers(payload), separators=(",", ":"),
+    return json.dumps(json_compatible(payload), separators=(",", ":"),
                       ensure_ascii=False, default=str)
 
 
@@ -117,18 +104,10 @@ def api_name_from_file(stem: str) -> str:
 def _find_referencing_address(doc, operations, target_channel_id):
     """Find the operation whose reply.channel points at *target_channel_id* and
     return that operation's own channel address."""
-    for other in operations.values():
-        if not isinstance(other, dict):
-            continue
-        reply = other.get("reply")
-        if not isinstance(reply, dict):
-            continue
-        reply_channel = reply.get("channel")
-        if not isinstance(reply_channel, dict) or "$ref" not in reply_channel:
-            continue
-        if channel_ref_id(reply_channel) == target_channel_id:
-            return _mapping(resolve_channel(doc, other.get("channel")), "channel").get("address")
-    return None
+    _, request_op = find_request_operation(operations, target_channel_id)
+    if request_op is None:
+        return None
+    return _mapping(resolve_channel(doc, request_op.get("channel")), "channel").get("address")
 
 
 def _mapping(node, what):

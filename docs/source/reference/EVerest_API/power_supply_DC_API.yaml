@@ -414,7 +414,7 @@ components:
         - Fault: Power supply is in error state
       type: string
       enum:
-        - Off
+        - 'Off'
         - Export
         - Import
         - Fault

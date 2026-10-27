@@ -734,7 +734,6 @@ components:
             running session are not final and can change.
             Only after the session is finished, the session cost can be committed
             to bank and/or backend.
-          type: object
           $ref: '#/components/schemas/SessionStatus'
         message:
           description: >-
