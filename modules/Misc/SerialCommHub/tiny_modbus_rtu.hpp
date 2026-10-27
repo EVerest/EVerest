@@ -11,6 +11,7 @@
 #include <ostream>
 #include <stdexcept>
 #include <stdint.h>
+#include <string>
 #include <termios.h>
 
 #include <everest/gpio/gpio.hpp>
@@ -90,9 +91,14 @@ class TinyModbusRTU {
 public:
     ~TinyModbusRTU();
 
+    // Opens the serial device and keeps the settings for reopen_device(). Returns false with errno set if the
+    // device cannot be opened or configured.
     bool open_device(const std::string& device, int baud, bool ignore_echo,
                      const Everest::GpioSettings& rxtx_gpio_settings, const Parity parity, bool rtscts,
                      std::chrono::milliseconds initial_timeout, std::chrono::milliseconds within_message_timeout);
+    bool reopen_device();
+    void close_device();
+    bool is_open() const;
 
     std::vector<uint16_t> txrx(uint8_t device_address, FunctionCode function, uint16_t first_register_address,
                                uint16_t register_quantity, uint16_t chunk_size, bool wait_for_reply = true,
@@ -102,6 +108,10 @@ private:
     // Serial interface
     int fd{-1};
     bool ignore_echo{false};
+    std::string device;
+    int baud{0};
+    Parity parity{Parity::NONE};
+    bool rtscts{false};
 
     std::vector<uint16_t> txrx_impl(uint8_t device_address, FunctionCode function, uint16_t first_register_address,
                                     uint16_t register_quantity, bool wait_for_reply = true,
