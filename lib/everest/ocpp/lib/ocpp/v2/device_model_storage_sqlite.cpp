@@ -357,6 +357,9 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_variable_attribute_value(con
         EVLOG_error << this->db->get_error_message();
         return SetVariableStatusEnum::Rejected;
     }
+    if (insert_stmt->changes() != 1) {
+        return SetVariableStatusEnum::Rejected;
+    }
 
     transaction->commit();
     return SetVariableStatusEnum::Accepted;

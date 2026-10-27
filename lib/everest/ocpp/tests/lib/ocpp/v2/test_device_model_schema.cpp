@@ -348,6 +348,18 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_on_a_variable_without_row) {
     EXPECT_TRUE(storage.get_all_monitors().empty());
 }
 
+/// An attribute type the variable does not have updates no row; the value must not be accepted and held in memory only
+TEST_F(DeviceModelStorageSqliteNameKeyTest, writing_an_attribute_the_variable_does_not_have_is_rejected) {
+    EXPECT_EQ(storage.set_variable_attribute_value(heartbeat_component, heartbeat_variable, AttributeEnum::Target, "10",
+                                                   "test"),
+              SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(storage.set_variable_attribute_value(heartbeat_component, heartbeat_variable, AttributeEnum::Actual, "10",
+                                                   "test"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(storage.get_variable_attribute(heartbeat_component, heartbeat_variable, AttributeEnum::Actual)->value,
+              "10");
+}
+
 TEST_F(DeviceModelStorageSqliteNameKeyTest, monitor_of_an_unknown_variable_is_stored_but_not_attached) {
     const Variable misspelled = make_variable("HeartbeatIntervall");
     const auto monitor = storage.set_monitoring_data(
