@@ -66,6 +66,10 @@ struct UpdaterMonitorMeta {
     std::string value_previous;
     std::string value_current;
 
+    /// \brief Last value that could be evaluated: the reference of a Delta monitor once its event is sent, so that
+    /// an empty or unparsable value never becomes the reference
+    std::string delta_reference;
+
     /// \brief Write-only values will not have the value reported
     std::uint32_t is_writeonly : 1;
 
