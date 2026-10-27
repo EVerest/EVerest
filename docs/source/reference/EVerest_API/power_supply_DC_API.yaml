@@ -162,6 +162,11 @@ components:
       name: receive_export_voltage_current
       title: 'Receive export voltage / current'
       summary: 'Receive the requested voltage and current when exporting energy to the car.'
+      description: >-
+        A current below min_export_current_A, including 0 A, means: deliver no current (0 A, +/- 0.15 A,
+        IEC 61851-23:2023 CC.5.5.2). Do not raise it to the minimum. If the hardware cannot regulate to 0 A,
+        switch its output off, keep the mode, and switch it on again when a current at or above the minimum is
+        requested.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -169,6 +174,11 @@ components:
       name: receive_import_voltage_current
       title: 'Receive import voltage / current'
       summary: 'Receive the requested voltage and current when importing energy from the car.'
+      description: >-
+        A current below min_import_current_A, including 0 A, means: deliver no current (0 A, +/- 0.15 A,
+        IEC 61851-23:2023 CC.5.5.2). Do not raise it to the minimum. If the hardware cannot regulate to 0 A,
+        switch its output off, keep the mode, and switch it on again when a current at or above the minimum is
+        requested.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -330,7 +340,9 @@ components:
           description: Nominal maximum current that the power supply can output in Ampere.
           type: number
         min_export_current_A:
-          description: Minimum current limit on the DC side that the power supply can set. Measured in Ampere.
+          description: >-
+            Minimum current limit on the DC side that the power supply can set. Measured in Ampere.
+            EVerest may request currents below it, including 0 A, see receive_export_voltage_current.
           type: number
         nominal_min_export_current_A:
           description: Nominal minimum current limit that the power supply can set in Ampere.
@@ -365,6 +377,7 @@ components:
           description: >
             Minimum limit for sinking current on the DC side that the power supply can set.
             Measured in Ampere.
+            EVerest may request currents below it, including 0 A, see receive_import_voltage_current.
           type: number
         nominal_min_import_current_A:
           description: Nominal minimum current limit that the power supply can set in Ampere.

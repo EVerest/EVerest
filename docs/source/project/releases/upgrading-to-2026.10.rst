@@ -221,6 +221,13 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
+- ``power_supply_DC_API``: EVerest now sends currents below
+  ``min_export_current_A`` and ``min_import_current_A``, including 0 A, when
+  the EV asks for less than the offered minimum. Earlier releases raised them
+  to the minimum. A client must then deliver no current and must not raise the
+  request to the minimum, see
+  :ref:`everest_modules_handwritten_power_supply_DC_API`.
+
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
 
