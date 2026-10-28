@@ -11,7 +11,7 @@ sigslot:
     - "SIGSLOT_COMPILE_TESTS OFF"
 pugixml:
   git: https://github.com/zeux/pugixml
-  git_tag: v1.15
+  git_tag: v1.16
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_PUGIXML"
 
 # RpcApi module
@@ -58,7 +58,7 @@ json-rpc-cxx:
 # LEM DCBM 400/600, IsabellenhuetteIemDcr modules
 libcurl:
   git: https://github.com/curl/curl.git
-  git_tag: curl-8_22_0
+  git_tag: curl-8_23_0
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_LIBCURL"
   options:
     [
@@ -87,7 +87,7 @@ libnfc-nci:
 # UI library for BringUp modules
 ftxui:
   git: https://github.com/ArthurSonzogni/ftxui
-  git_tag: v6.1.9
+  git_tag: v7.0.3
   cmake_condition: "EVEREST_DEPENDENCY_ENABLED_FTXUI"
 # Linux_Systemd_Rauc module
 sdbus-cpp:
@@ -153,7 +153,7 @@ nlohmann_json:
   options: ["JSON_BuildTests OFF", "JSON_MultipleHeaders ON"]
 nlohmann_json_schema_validator:
   git: https://github.com/pboettch/json-schema-validator
-  git_tag: 2.4.0
+  git_tag: 2.4.1
   cmake_condition: "EVEREST_BUILD_CORE OR EVEREST_BUILD_OCPP"
   options:
     [
@@ -165,7 +165,7 @@ nlohmann_json_schema_validator:
     ]
 date:
   git: https://github.com/HowardHinnant/date.git
-  git_tag: v3.0.4
+  git_tag: v3.0.5
   cmake_condition: "EVEREST_BUILD_BASE OR EVEREST_BUILD_OCPP OR EVEREST_BUILD_CORE"
   options:
     [
@@ -189,7 +189,7 @@ libfmt:
     ]
 pybind11:
   git: https://github.com/pybind/pybind11.git
-  git_tag: v3.0.2
+  git_tag: v3.1.0
   cmake_condition: "EVEREST_BUILD_CORE"
   options: ["PYBIND11_TEST OFF", "PYBIND11_USE_CROSSCOMPILING ON"]
 pybind11_json:

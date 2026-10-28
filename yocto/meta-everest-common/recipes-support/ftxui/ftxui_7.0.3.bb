@@ -5,7 +5,7 @@ LICENSE = "MIT"
 LIC_FILES_CHKSUM = "file://LICENSE;md5=602507f167b627b30ce2cd7a24d50ea3"
 
 SRC_URI = "git://github.com/ArthurSonzogni/FTXUI.git;branch=main;protocol=https;destsuffix=${BP}"
-SRCREV = "5cfed50702f52d51c1b189b5f97f8beaf5eaa2a6"
+SRCREV = "f921fad208912747c17d129a8ef75ec7624b6eec"
 
 inherit cmake
 

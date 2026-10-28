@@ -10,9 +10,9 @@ SRC_URI = "git://github.com/HowardHinnant/date.git;branch=master;protocol=https;
 
 inherit cmake
 
-PV = "3.0.4"
+PV = "3.0.5"
 
-SRCREV = "f94b8f36c6180be0021876c4a397a054fe50c6f2"
+SRCREV = "179a6b921ccd6179b5b04dce812a89f71a51b4df"
 
 EXTRA_OECMAKE += " \
 	-DBUILD_TZ_LIB=ON \
