@@ -261,12 +261,12 @@ public:
 
     ///
     /// \brief Reserve this evse.
-    /// \param id                       The reservation id.
+    /// \param request                  The reservation id and, for a specific reservation, its details.
     /// \param signal_reservation_event True when other modules must be signalled about a new reservation (session
     ///                                 event).
     /// \return True on success.
     ///
-    bool reserve(int32_t id, const bool signal_reservation_event = true);
+    bool reserve(const types::evse_manager::ReserveRequest& request, const bool signal_reservation_event = true);
     ///
     /// \brief Record the reservation that authorization matched to this session, whatever the session state.
     ///        Signals no reservation event.
@@ -456,6 +456,7 @@ private:
     // Reservations
     bool reserved;
     int32_t reservation_id;
+    std::optional<types::evse_manager::ReservationDetails> reservation_details;
     Everest::timed_mutex_traceable reservation_mutex;
 
     // Voltage plausibility monitor

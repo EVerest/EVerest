@@ -36,7 +36,7 @@ struct evse_managerImplStub : public evse_managerImplBase {
     }
     virtual void handle_withdraw_authorization() {
     }
-    virtual bool handle_reserve(int& reservation_id) {
+    virtual bool handle_reserve(types::evse_manager::ReserveRequest& request) {
         return true;
     }
     virtual void handle_cancel_reservation() {

@@ -52,7 +52,7 @@ void evse_managerImpl::handle_withdraw_authorization() {
     // your code for cmd withdraw_authorization goes here
 }
 
-bool evse_managerImpl::handle_reserve(int& reservation_id) {
+bool evse_managerImpl::handle_reserve(types::evse_manager::ReserveRequest& request) {
     // your code for cmd reserve goes here
     return true;
 }

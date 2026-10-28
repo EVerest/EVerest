@@ -128,6 +128,10 @@ std::string serialize(EvseStateEnum const& val) noexcept {
     return utilities::dump_json(val);
 }
 
+std::string serialize(Reservation const& val) noexcept {
+    return utilities::dump_json(val);
+}
+
 std::string serialize(SessionInfo const& val) noexcept {
     return utilities::dump_json(val);
 }
@@ -292,6 +296,11 @@ std::ostream& operator<<(std::ostream& os, EvseStateEnum const& val) {
     return os;
 }
 
+std::ostream& operator<<(std::ostream& os, Reservation const& val) {
+    os << serialize(val);
+    return os;
+}
+
 std::ostream& operator<<(std::ostream& os, SessionInfo const& val) {
     os << serialize(val);
     return os;
@@ -431,6 +440,10 @@ template <> PlugAndChargeConfiguration deserialize(std::string_view val) {
 
 template <> EvseStateEnum deserialize(std::string_view val) {
     return utilities::parse_json<EvseStateEnum>(val);
+}
+
+template <> Reservation deserialize(std::string_view val) {
+    return utilities::parse_json<Reservation>(val);
 }
 
 template <> SessionInfo deserialize(std::string_view val) {

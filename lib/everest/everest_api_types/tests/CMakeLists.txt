@@ -134,6 +134,6 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${SERIALIZATION_TEST_HELPERS_HPP}
 )
 
-add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv)
+add_dependencies(${TEST_TARGET_NAME} generate_actual_hash_csv generate_actual_ifc_hash_csv)
 
 add_subdirectory(${GENERATED_TESTS_LOCATION} ${GENERATED_TESTS_LOCATION})

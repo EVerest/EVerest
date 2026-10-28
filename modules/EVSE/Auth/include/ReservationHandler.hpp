@@ -104,6 +104,23 @@ public:
     bool is_evse_reserved(const uint32_t evse_id, const int32_t reservation_id);
 
     ///
+    /// \brief Get the EVSE specific reservation with a specific reservation id.
+    /// \param evse_id          The evse id.
+    /// \param reservation_id   The reservation id.
+    /// \return The reservation, or nullopt if the EVSE specific reservation of \p evse_id does not have
+    ///         \p reservation_id.
+    ///
+    std::optional<types::reservation::Reservation> get_evse_reservation(const uint32_t evse_id,
+                                                                        const int32_t reservation_id);
+
+    ///
+    /// \brief Get the evse of the EVSE specific reservation with a specific reservation id.
+    /// \param reservation_id   The reservation id.
+    /// \return The evse id, or nullopt if there is no EVSE specific reservation with \p reservation_id.
+    ///
+    std::optional<uint32_t> get_evse_id_of_reservation(const int32_t reservation_id);
+
+    ///
     /// \brief Change a specific connector state.
     ///
     /// This is important for the reservation handler, to know which connector is in which state, to know if a

@@ -166,7 +166,7 @@ types:
         ChargingFinished: Charging is finished. Essentially the same as TransactionFinished, but emitted for clarity
         TransactionFinished: Signaled when the transaction finished. Transaction finishes at the point where one of the preconditions for charging irrevocably becomes false: When a user swipes to stop the transaction and the stop is authorized.
         SessionFinished: Session finishes at the point that the EVSE is available again (no cable plugged)
-        ReservationStart: Signaled when a reservation starts
+        ReservationStart: Signaled when a reservation starts, and again when it is replaced by one with other details
         ReservationEnd: Signaled when a reservation ends
         PluginTimeout: Signaled when an EV has been plugged in but no authorization is present within specified ConnectionTimeout
         SwitchingPhases: Signaled when the EVSE Manager starts switching phases
@@ -343,6 +343,28 @@ types:
         type: integer
         minimum: 0
         maximum: 10000
+  ReservationDetails:
+    description: Details of a reservation placed on an EVSE
+    type: object
+    additionalProperties: false
+    required:
+      - reservation_id
+      - id_token
+      - expiry_time
+    properties:
+      reservation_id:
+        description: Id of the reservation
+        type: integer
+      id_token:
+        description: Id token the reservation is made for
+        type: string
+      parent_id_token:
+        description: Parent id token the reservation is made for
+        type: string
+      expiry_time:
+        description: Absolute UTC time point when the reservation expires in RFC3339 format
+        type: string
+        format: date-time
   SessionEvent:
     description: Emits all events related to sessions
     type: object
@@ -412,6 +434,31 @@ types:
           Additional data for Enabled/Disabled events. Specifies the source of the command that changed the state.
         type: object
         $ref: /evse_manager#/EnableDisableSource
+      reservation:
+        description: >-
+          Data for the ReservationStart event. Absent if the EVSE is reserved without a specific reservation, e.g.
+          because of global reservations.
+        type: object
+        $ref: /evse_manager#/ReservationDetails
+  ReserveRequest:
+    description: Request to reserve an EVSE
+    type: object
+    additionalProperties: false
+    required:
+      - reservation_id
+    properties:
+      reservation_id:
+        description: >-
+          The reservation id (should be added to the TransactionStarted event). Set this to a negative value if there is
+          no specific reservation id for this evse but the evse should still move to a Reserved state because of total
+          global reservations.
+        type: integer
+      reservation:
+        description: >-
+          Details of the reservation. Absent if reservation_id is negative, and possibly when the reservation ended
+          while it was being placed.
+        type: object
+        $ref: /evse_manager#/ReservationDetails
   HlcSessionFailedEvent:
     description: >-
       Published whenever an HLC session failure occurs.
