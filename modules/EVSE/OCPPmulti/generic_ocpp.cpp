@@ -1385,7 +1385,8 @@ ocpp::ReservationCheckStatus
 GenericOcpp::cb_is_reservation_for_token(std::int32_t ocpp_evse_id, const ocpp::CiString<255>& idToken,
                                          const std::optional<ocpp::CiString<255>>& groupIdToken) {
 
-    // for v1.6 the incoming id is the OCPP1.6 connector id, which maps 1:1 to the EVerest evse_id
+    // for v1.6 the incoming id is the OCPP1.6 connector id, then it gets translated to the EVerest evse id for the
+    // reservation module
     auto reservation_status = types::reservation::ReservationCheckStatus::NotReserved;
 
     if (!mv_requires.reservation.empty() && mv_requires.reservation.at(0) != nullptr) {
