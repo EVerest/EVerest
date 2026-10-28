@@ -1061,25 +1061,28 @@ void Charger::run_state_machine() {
         case EvseState::Finished:
 
             if (initialize_state) {
-                // Transaction may already be stopped when it was cancelled earlier.
-                // In that case, do not sent a second transactionFinished event.
-                if (shared_context.flag_transaction_active) {
-                    // We only ever reach Finished with an active transaction after StoppingCharging has
-                    // confirmed shared_context.contactor_open, so the relais/contactor is safely open (power
-                    // off) at this point and the transaction is really ending (not resumable). Signal this
-                    // before writing the stop to the power meter: StoppingTransaction is not Eichrecht-relevant
-                    // by itself, but it is the checkpoint at which consumers can verify the relay/contactor
-                    // state before the final (calibrated) meter reading is taken, enabling Eichrecht-compliant
-                    // switch/measurement coordination ("Schaltmesskoordination").
-                    signal_simple_event(types::evse_manager::SessionEventEnum::StoppingTransaction);
-                    stop_transaction();
-                }
-
                 // Everything should already be off, just do it here again as a backup.
                 if (config_context.charge_mode == ChargeMode::DC) {
                     signal_dc_supply_off();
                 }
                 bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
+            }
+
+            // Transaction may already be stopped when it was cancelled earlier.
+            // In that case, do not sent a second transactionFinished event.
+            if (shared_context.flag_transaction_active) {
+                // Not every path into Finished passes StoppingCharging, so wait for the BSP to report the
+                // contactor open before the final meter value is taken.
+                if (not shared_context.contactor_open) {
+                    if (time_in_current_state < FINISHED_CONTACTOR_OPEN_TIMEOUT_MS) {
+                        break;
+                    }
+                    EVLOG_error << "Finished: contactor not reported open within timeout, stopping transaction anyway.";
+                }
+                // Switch/measurement coordination ("Schaltmesskoordination", German calibration law): last point
+                // at which consumers can verify the actual relay state before the final meter value is taken.
+                signal_simple_event(types::evse_manager::SessionEventEnum::StoppingTransaction);
+                stop_transaction();
             }
 
             // If unplugged or a disable is pending, end the session.

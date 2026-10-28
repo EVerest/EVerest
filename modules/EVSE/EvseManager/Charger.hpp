@@ -484,6 +484,7 @@ private:
     static constexpr int WAIT_FOR_ENERGY_IN_AUTHLOOP_TIMEOUT_MS = 5000;
     static constexpr int AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS = 10000;
     static constexpr int STOPPING_CHARGING_TIMEOUT_MS = 20000;
+    static constexpr int FINISHED_CONTACTOR_OPEN_TIMEOUT_MS = 5000;
     // Ensures apply_new_target_voltage_current() is called at least every DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
@@ -502,6 +503,9 @@ protected:
     void run_state_machine();
     constexpr auto& get_shared_context() {
         return shared_context;
+    }
+    constexpr auto& get_internal_context() {
+        return internal_context;
     }
     constexpr const auto& get_enable_disable_source_table() const {
         return enable_disable_source_table;

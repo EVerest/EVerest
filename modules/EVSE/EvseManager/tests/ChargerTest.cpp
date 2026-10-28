@@ -19,6 +19,7 @@ using namespace types::evse_manager;
 struct ChargerDerived : public Charger {
     using Charger::Charger;
     using Charger::get_enable_disable_source_table;
+    using Charger::get_internal_context;
     using Charger::get_shared_context;
     using Charger::run_state_machine;
 
@@ -759,6 +760,113 @@ TEST_F(ChargerTest, DisableDuringIdle) {
     // Must immediately transition to Disabled
     EXPECT_EQ(ctx.current_state, Charger::EvseState::Disabled);
     EXPECT_EQ(last_event, SessionEventEnum::Disabled);
+}
+
+// ----------------------------------------------------------------------------
+// StoppingTransaction is signaled on entering Finished with an active transaction, right before the
+// transaction is stopped, and only once the contactor is reported open (or the wait timed out).
+
+struct ChargerFinishedTest : public ChargerTest {
+    // never dereferenced: the IECStateMachine and PersistentStore used here are the no-op stubs below
+    std::unique_ptr<evse_board_supportIntf> bsp_if;
+    std::vector<std::unique_ptr<kvsIntf>> store_if;
+    std::vector<SessionEventEnum> events;
+    int transactions_finished{0};
+
+    void SetUp() override {
+        charger_bsp = std::make_unique<IECStateMachine>(bsp_if, true, false);
+        charger_store = std::make_unique<PersistentStore>(store_if, "EVSETEST");
+        ChargerTest::SetUp();
+        charger->signal_simple_event.connect([this](SessionEventEnum event) { events.push_back(event); });
+        charger->signal_transaction_finished_event.connect(
+            [this](StopTransactionReason, std::optional<types::authorization::ProvidedIdToken>) {
+                ++transactions_finished;
+            });
+        auto& ctx = charger->get_shared_context();
+        ctx.flag_transaction_active = true;
+        ctx.flag_ev_plugged_in = true;
+    }
+
+    void backdate_state_start(std::chrono::milliseconds ago) {
+        charger->get_internal_context().current_state_started = std::chrono::system_clock::now() - ago;
+    }
+};
+
+TEST_F(ChargerFinishedTest, StoppingTransactionBeforeTransactionStop) {
+    charger->get_shared_context().contactor_open = true;
+    charger->current_state(Charger::EvseState::Finished);
+    charger->run_state_machine();
+
+    EXPECT_EQ(events, (std::vector<SessionEventEnum>{SessionEventEnum::StoppingTransaction,
+                                                     SessionEventEnum::ChargingFinished}));
+    EXPECT_EQ(transactions_finished, 1);
+    EXPECT_FALSE(charger->get_shared_context().flag_transaction_active);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+}
+
+TEST_F(ChargerFinishedTest, StoppingTransactionAfterStoppingCharging) {
+    auto& ctx = charger->get_shared_context();
+    ctx.contactor_open = true;
+    ctx.flag_authorized = false;
+    charger->current_state(Charger::EvseState::StoppingCharging);
+    charger->run_state_machine();
+
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+    EXPECT_EQ(events,
+              (std::vector<SessionEventEnum>{SessionEventEnum::StoppingCharging, SessionEventEnum::StoppingTransaction,
+                                             SessionEventEnum::ChargingFinished}));
+    EXPECT_EQ(transactions_finished, 1);
+}
+
+TEST_F(ChargerFinishedTest, NoStoppingTransactionWithoutActiveTransaction) {
+    auto& ctx = charger->get_shared_context();
+    ctx.contactor_open = true;
+    ctx.flag_transaction_active = false;
+    charger->current_state(Charger::EvseState::Finished);
+    charger->run_state_machine();
+
+    EXPECT_TRUE(events.empty());
+}
+
+TEST_F(ChargerFinishedTest, WaitsForContactorOpen) {
+    auto& ctx = charger->get_shared_context();
+    ctx.contactor_open = false;
+    charger->current_state(Charger::EvseState::Finished);
+    charger->run_state_machine();
+
+    EXPECT_TRUE(events.empty());
+    EXPECT_TRUE(ctx.flag_transaction_active);
+
+    // An unplug must not end the session before the transaction is stopped
+    ctx.flag_ev_plugged_in = false;
+    charger->run_state_machine();
+    EXPECT_TRUE(events.empty());
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Finished);
+
+    ctx.contactor_open = true;
+    charger->run_state_machine();
+
+    ASSERT_FALSE(events.empty());
+    EXPECT_EQ(events.front(), SessionEventEnum::StoppingTransaction);
+    EXPECT_EQ(transactions_finished, 1);
+    EXPECT_FALSE(ctx.flag_transaction_active);
+    EXPECT_EQ(charger->current_state(), Charger::EvseState::Idle);
+}
+
+TEST_F(ChargerFinishedTest, StopsTransactionWhenContactorOpenTimesOut) {
+    auto& ctx = charger->get_shared_context();
+    ctx.contactor_open = false;
+    charger->current_state(Charger::EvseState::Finished);
+    charger->run_state_machine();
+    EXPECT_TRUE(events.empty());
+
+    backdate_state_start(std::chrono::seconds(60));
+    charger->run_state_machine();
+
+    EXPECT_EQ(events, (std::vector<SessionEventEnum>{SessionEventEnum::StoppingTransaction,
+                                                     SessionEventEnum::ChargingFinished}));
+    EXPECT_EQ(transactions_finished, 1);
+    EXPECT_FALSE(ctx.flag_transaction_active);
 }
 
 } // namespace

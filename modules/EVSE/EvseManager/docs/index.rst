@@ -145,6 +145,12 @@ State Transitions
 * ``StoppingCharging`` -> ``Finished``: No transaction, EV unplugged, or not authorized.
 * ``Finished`` -> ``Idle``: EV unplugged.
 
+On entering ``Finished`` with an active transaction, power is switched off and the transaction
+is stopped once the BSP reports the contactor open (``PowerOff``), or after 5 s without that
+report. The ``StoppingTransaction`` session event is signaled right before the transaction is
+stopped in the power meter, so consumers can verify the actual relay state before the final
+meter value is taken (switch/measurement coordination, "Schaltmesskoordination").
+
 **Pause & Resume**
 
 * ``ChargingPausedEV`` -> ``PrepareCharging``: BCB toggle or ``CarRequestedPower``.

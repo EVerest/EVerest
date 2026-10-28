@@ -918,6 +918,8 @@ void AuthHandler::handle_session_event(const int evse_id, const SessionEvent& ev
         [[fallthrough]];
     case SessionEventEnum::StoppingCharging:
         [[fallthrough]];
+    case SessionEventEnum::StoppingTransaction:
+        [[fallthrough]];
     case SessionEventEnum::ChargingFinished:
         [[fallthrough]];
     case SessionEventEnum::PluginTimeout:
