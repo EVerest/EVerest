@@ -232,6 +232,15 @@ EVerest APIs
   ``self_test``, ``allow_firmware_installation``) carry an empty JSON object
   ``{}`` as payload, like the other APIs, instead of an empty payload. Clients
   that tested for an empty payload must accept ``{}``.
+- All EVerest API modules and the configuration and lifecycle APIs: a request
+  without ``headers.replyTo`` is executed and its reply discarded, as before,
+  but without a warning. A ``replyTo`` that is present but empty, not a string,
+  or contains ``+`` or ``#`` now rejects the request; before, the request was
+  executed and its reply dropped. In ``everest_api_types``,
+  ``generic::RequestReply::replyTo`` and the ``reply_to`` argument of
+  ``deserialize_request`` are ``std::optional<std::string>``; replies are sent
+  with ``MqttProviderInterface::publish_reply``, which publishes nothing when
+  there is no ``replyTo``.
 - All EVerest API modules: the initial ``CommunicationFault`` (sub type
   ``Initial communication check``) and EvseManager's ``Inoperative`` are raised
   only when no ``communication_check`` arrived within

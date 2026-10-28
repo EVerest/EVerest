@@ -3,11 +3,10 @@
 
 #include <everest_api_module_helpers/ValidatingMqttProxy.hpp>
 
-#include <cstddef>
-#include <string_view>
 #include <utility>
 
 #include <everest/logging.hpp>
+#include <everest_api_types/utilities/Topics.hpp>
 
 namespace everest::lib::API::Mqtt {
 
@@ -15,7 +14,7 @@ ValidatingMqttProxy::ValidatingMqttProxy(Everest::MqttProvider& provider_) : pro
 }
 
 void ValidatingMqttProxy::publish(const std::string& topic, const std::string& data) {
-    if (is_topic_valid(topic)) {
+    if (Topics::is_publishable(topic)) {
         provider.publish(topic, data);
     } else {
         EVLOG_warning << "ValidatingMqttProxy: Dropped data as topic '" << topic << "' is invalid";
@@ -23,7 +22,7 @@ void ValidatingMqttProxy::publish(const std::string& topic, const std::string& d
 }
 
 void ValidatingMqttProxy::publish(const std::string& topic, bool data) {
-    if (is_topic_valid(topic)) {
+    if (Topics::is_publishable(topic)) {
         provider.publish(topic, data);
     } else {
         EVLOG_warning << "ValidatingMqttProxy: Dropped data as topic '" << topic << "' is invalid";
@@ -33,17 +32,6 @@ void ValidatingMqttProxy::publish(const std::string& topic, bool data) {
 Everest::UnsubscribeToken ValidatingMqttProxy::subscribe(const std::string& topic,
                                                          std::function<void(std::string)> handler) const {
     return provider.subscribe(topic, std::move(handler));
-}
-
-bool ValidatingMqttProxy::is_topic_valid(std::string_view topic) {
-    static constexpr std::size_t max_topic_length = 65535;
-    if (topic.empty() || topic.length() > max_topic_length) {
-        return false;
-    }
-    if (topic.find('\0') != std::string_view::npos || topic.find_first_of("+#") != std::string_view::npos) {
-        return false;
-    }
-    return true;
 }
 
 } // namespace everest::lib::API::Mqtt

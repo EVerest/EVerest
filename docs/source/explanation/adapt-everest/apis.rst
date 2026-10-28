@@ -286,13 +286,17 @@ reply channel and a dynamic reply address.
 If the client receives a request, it has to reply to the topic provided
 in the header's *replyTo* property within *cfg_communication_check_to_s*
 seconds. If it does not, a default response is given by the API to
-EVerest and an error is raised.
+EVerest and an error is raised. Requests sent by EVerest always carry
+*replyTo*.
 
-If the client sends a request, it has to specify the reply topic, where
-it expects the answer. This information is communicated via the
-*replyTo* property of the headers object. It is the client's
-responsibility to ensure that the topic is unique in order to relate
-replies to requests.
+If the client sends a request, it specifies the reply topic, where it
+expects the answer, in the *replyTo* property of the headers object. It
+is the client's responsibility to ensure that the topic is unique in
+order to relate replies to requests. A client that is not interested in
+the reply omits *replyTo*: EVerest executes the request and discards the
+reply. A *replyTo* that is present but not a valid MQTT topic for
+publishing (empty, or containing the wildcards ``+`` or ``#``) makes
+EVerest reject the request without executing it.
 
 Using the EVerest API
 ======================

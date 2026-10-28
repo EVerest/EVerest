@@ -119,19 +119,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
+                minLength: 1
                 description: >-
-                  Address to send the response to. A request without it is parsed but not answered; EVerest
-                  only logs a warning.
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
       examples:
         - summary: "requesting available APIs"
           payload:
@@ -160,19 +157,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
+                minLength: 1
                 description: >-
-                  Address to send the response to. A request without it is parsed but not answered; EVerest
-                  only logs a warning.
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
       examples:
         - summary: "requesting available APIs of type {api_type}"
           payload:

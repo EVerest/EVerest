@@ -209,7 +209,10 @@ components:
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
           payload:
             $ref: '#/components/schemas/FilterArguments'
     receive_reply_get_errors:
@@ -231,7 +234,10 @@ components:
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
       examples:
         - summary: "Request active errors"
           payload:
@@ -258,17 +264,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
       examples:
         - summary: ""
           payload:
@@ -298,17 +303,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
       examples:
         - summary: ""
           payload:

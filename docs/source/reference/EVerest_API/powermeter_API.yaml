@@ -167,10 +167,13 @@ components:
         type: object
         additionalProperties: true
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
@@ -200,10 +203,13 @@ components:
         type: object
         additionalProperties: true
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string

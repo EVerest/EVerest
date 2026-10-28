@@ -26,6 +26,9 @@ public:
     std::string extern_to_everest(const std::string& var) const;
     std::string reply_to_everest(const std::string& reply) const;
 
+    // not empty, within the MQTT length limit, no NUL and no wildcards
+    [[nodiscard]] static bool is_publishable(std::string_view topic);
+
     static const std::string api_base;
     static const std::string api_out;
     static const std::string api_in;
