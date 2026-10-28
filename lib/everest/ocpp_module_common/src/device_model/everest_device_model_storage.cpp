@@ -717,12 +717,12 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
     std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client) :
     r_evse_manager(r_evse_manager),
     r_extensions_15118(r_extensions_15118),
-    config_service_client(config_service_client) {
+    config_service_client(config_service_client),
+    ocpp_evse_id_by_everest_evse_id(get_ocpp_evse_ids_by_everest_evse_ids(r_evse_manager)) {
     this->module_configs = config_service_client->get_module_configs();
     this->mappings = config_service_client->get_mappings();
     std::map<ComponentKey, std::vector<DeviceModelVariable>> component_configs;
     std::vector<types::evse_manager::Evse> evses;
-    const auto ocpp_evse_id_by_everest_evse_id = get_ocpp_evse_ids_by_everest_evse_ids(r_evse_manager);
 
     for (const auto& evse_manager : r_evse_manager) {
         auto evse_info = evse_manager->call_get_evse();
@@ -833,8 +833,6 @@ EverestDeviceModelStorage::EverestDeviceModelStorage(
 void EverestDeviceModelStorage::init_evse_components_and_variables(
     const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
     const std::map<int32_t, std::vector<types::iso15118::EnergyTransferMode>>& evse_supported_energy_transfers) {
-    const auto ocpp_evse_id_by_everest_evse_id = get_ocpp_evse_ids_by_everest_evse_ids(r_evse_manager);
-
     for (const auto& evse_manager : r_evse_manager) {
         auto evse_info = evse_manager->call_get_evse();
         evse_info.id = ocpp_evse_id_by_everest_evse_id.at(evse_info.id);
