@@ -84,6 +84,7 @@ cc_library(
         "//third-party/bazel/openssl:ssl",
         "@com_github_nlohmann_json//:json",
         "@com_github_HowardHinnant_date//:date",
+        "//lib/everest/date",
         "//lib/everest/framework:framework",
         "//lib/everest/timer:libtimer",
         "//lib/everest/evse_security:libevse-security",

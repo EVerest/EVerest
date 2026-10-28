@@ -63,14 +63,19 @@ public:
     /// \brief Creates a new DateTimeImpl object from the given \p timepoint
     explicit DateTimeImpl(std::chrono::time_point<date::utc_clock> timepoint);
 
-    /// \brief Creates a new DateTimeImpl object from the given \p timepoint_str
+    /// \brief Creates a new DateTimeImpl object from the given \p timepoint_str, see from_rfc3339()
     explicit DateTimeImpl(const std::string& timepoint_str);
 
     /// \brief Converts this DateTimeImpl to a RFC 3339 compatible string
-    /// \returns a RFC 3339 compatible string representation of the stored DateTime
+    /// \returns a RFC 3339 compatible string representation of the stored DateTime in UTC with milliseconds
     std::string to_rfc3339() const;
 
     /// \brief Sets the timepoint of this DateTimeImpl to the given \p timepoint_str
+    ///
+    /// Accepts RFC 3339 date-times and the deviations listed in everest::lib::datetime::parse_rfc3339_lenient().
+    /// Date-times outside the range of utc_clock (1677-09-21T00:12:43.145224192Z to 2262-04-11T23:46:49.854775807Z)
+    /// are clamped to its limits.
+    /// \throws TimePointParseException if \p timepoint_str is no valid date-time
     void from_rfc3339(const std::string& timepoint_str);
 
     /// \brief Converts this DateTimeImpl to a std::chrono::time_point
