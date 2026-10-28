@@ -261,6 +261,10 @@ content in the form of payload and possibly headers.
 Commands without arguments, in either direction, carry an empty JSON object
 (``{}``) as payload, never an empty payload.
 
+A payload whose schema is a plain number or integer has to be a JSON number of that
+kind: booleans, strings and ``null`` are rejected with a log warning, and an integer
+channel rejects a fraction.
+
 The content type for EVerest API is always JSON. The content is
 individual for each message and defined in *components:schemas* within
 the same file or sometimes in a referenced file.
