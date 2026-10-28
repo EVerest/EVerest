@@ -464,13 +464,20 @@ struct Harness {
         for (std::size_t i = 0; i < run_id.size(); ++i) {
             run_id[i] = static_cast<std::uint8_t>(0x11 + i);
         }
-        auto* link = io.instance.load();
         if (not runtime->enter_bcd() or not wait_for_listening()) {
             return false;
         }
-        if (not link->inject(create_cm_slac_parm_req(ev_mac, run_id)) or not wait_for_frames(SLAC_PARM_CNF, 1)) {
+        return run_matching_session(ev_mac, run_id);
+    }
+    // Armed in Matching -> one full matching session with a fake EV -> Matched, link up.
+    bool run_matching_session(EvMac const& ev_mac, RunId const& run_id) {
+        auto* link = io.instance.load();
+        auto const parm_cnfs_before = io.count(SLAC_PARM_CNF);
+        if (not link->inject(create_cm_slac_parm_req(ev_mac, run_id)) or
+            not wait_for_frames(SLAC_PARM_CNF, parm_cnfs_before + 1)) {
             return false;
         }
+        auto const atten_char_inds_before = io.count(ATTEN_CHAR_IND);
         if (not link->inject(create_cm_start_atten_char_ind(ev_mac, run_id))) {
             return false;
         }
@@ -480,7 +487,7 @@ struct Harness {
             }
         }
         // Sounding may run to its TT_EVSE_match_MNBC timeout on the wall clock before the IND goes out.
-        if (not wait_for_frames(ATTEN_CHAR_IND, 1, 3000ms)) {
+        if (not wait_for_frames(ATTEN_CHAR_IND, atten_char_inds_before + 1, 3000ms)) {
             return false;
         }
         if (not link->inject(create_cm_atten_char_rsp(ev_mac, run_id)) or
@@ -884,6 +891,37 @@ TEST(SlacRuntime, MatchingIsPublishedOnTheFirstParmReqNotOnEnterBcd) {
     ASSERT_TRUE(h.wait_for_frames(SLAC_PARM_CNF, 1));
     EXPECT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_state(D3State::Matching); }));
     EXPECT_EQ(h.sink.count_state(D3State::Matching), 1U);
+}
+
+// A failed matching process ends the published MATCHING: with reset_instead_of_fail the sessions are
+// dropped, UNMATCHED goes out while the EVSE keeps listening, and the EV's retry starts MATCHING again.
+TEST(SlacRuntime, AFailedMatchingPublishesUnmatchedAndTheRetryMatches) {
+    Harness h;
+    h.config.slac.reset_instead_of_fail = true;
+    h.create();
+    h.runtime->init();
+    h.start_ready_thread();
+    ASSERT_TRUE(h.reach_idle());
+    std::size_t states_before{0};
+    {
+        std::lock_guard<std::mutex> guard(h.sink.mutex);
+        states_before = h.sink.states.size();
+    }
+    ASSERT_TRUE(h.reach_matching());
+    // No CM_START_ATTEN_CHAR.IND: the session fails after TT_match_sequence and the sub-machine resets.
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.last_state() == D3State::Unmatched; }))
+        << "the failed matching did not publish UNMATCHED";
+    EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
+    RunId run_id{};
+    for (std::size_t i = 0; i < run_id.size(); ++i) {
+        run_id[i] = static_cast<std::uint8_t>(0x41 + i);
+    }
+    ASSERT_TRUE(h.run_matching_session(ev_mac, run_id)) << "the retry did not reach Matched";
+    std::lock_guard<std::mutex> guard(h.sink.mutex);
+    std::vector<D3State> const published(h.sink.states.begin() + static_cast<std::ptrdiff_t>(states_before),
+                                         h.sink.states.end());
+    EXPECT_EQ(published,
+              (std::vector<D3State>{D3State::Matching, D3State::Unmatched, D3State::Matching, D3State::Matched}));
 }
 
 } // namespace
