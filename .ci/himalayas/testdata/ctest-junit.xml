@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright Pionix GmbH and Contributors to EVerest
+-->
+<testsuite name="Linux-c++"
+	tests="3"
+	failures="1"
+	disabled="0"
+	skipped="1"
+	hostname=""
+	time="2"
+	timestamp="2026-10-28T15:41:07"
+	>
+	<testcase name="everest-core_EvseManager_tests" classname="everest-core_EvseManager_tests"
+		time="0.0716" status="run">
+		<system-out>[==========] 12 tests from 3 test suites ran. (5 ms total)</system-out>
+	</testcase>
+	<testcase name="libocpp_unit_tests" classname="libocpp_unit_tests"
+		time="1.5004" status="fail">
+		<failure message="Failed">ChargePointTest.Reset: Value of: result
+  Actual: false
+Expected: true</failure>
+		<system-out>[  FAILED  ] 1 test, listed below</system-out>
+	</testcase>
+	<testcase name="everest-core_OCPPmulti_tests" classname="everest-core_OCPPmulti_tests"
+		time="0" status="notrun">
+		<skipped message="Disabled"/>
+		<system-out>Disabled</system-out>
+	</testcase>
+</testsuite>
