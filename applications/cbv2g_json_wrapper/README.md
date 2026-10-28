@@ -46,13 +46,16 @@ ISO 15118-20 support is planned as a follow-up PR.
 
 ### ISO 15118-2
 
-The JSON follows the shape Josev exchanges with its Java codec. Elements and
-attributes keep their XSD names, enumerations their XSD literals, repeated
-elements are arrays, hexBinary values are hex strings (decoded in upper case)
-and base64Binary values padded base64. Simple content that carries an `Id`
-attribute is an object with `Id` and `value`, as in `SignatureValue`, `eMAID`,
-`DHpublickey` and `ContractSignatureEncryptedPrivateKey`. A substitution group
-appears as its concrete member, e.g. `AC_EVSEStatus` or `DC_EVChargeParameter`.
+The JSON mirrors the ISO 15118-2 XSD. Elements and attributes keep their XSD
+names, enumerations their XSD literals, repeated elements are arrays, hexBinary
+values are hex strings (decoded in upper case) and base64Binary values padded
+base64. Simple content that carries an `Id` attribute is an object with `Id`
+and `value`, as in `SignatureValue`, `eMAID`, `DHpublickey` and
+`ContractSignatureEncryptedPrivateKey`. A substitution group appears as its
+concrete member, e.g. `AC_EVSEStatus` or `DC_EVChargeParameter`.
+
+This is the shape Josev used with its Java codec, so JSON written for Josev
+still decodes.
 
 With the `MsgDef` namespace, a JSON object whose single key is `V2G_Message`
 is a complete message. Any other single key encodes that element as an

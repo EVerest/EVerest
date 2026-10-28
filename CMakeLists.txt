@@ -274,9 +274,31 @@ if(EVEREST_BUILD_CORE AND DISABLE_EDM)
 endif()
 
 if(EVEREST_BUILD_RUNTIME)
-    # create MF_ROOT_CA if not available
     if (ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES)
+        # the ISO 15118 modules load this PKI for TLS and Plug and Charge
+        get_property(EVEREST_BUILT_MODULES GLOBAL PROPERTY EVEREST_MODULES)
+        set(ISO15118_PKI_MODULES Ev15118 EvseV2G Evse15118D20)
+        set(ISO15118_PKI_NEEDED OFF)
+        foreach(module IN LISTS ISO15118_PKI_MODULES)
+            if(module IN_LIST EVEREST_BUILT_MODULES)
+                set(ISO15118_PKI_NEEDED ON)
+            endif()
+        endforeach()
+        # packaging builds (Yocto) set DISABLE_EDM and must not ship the development private keys
+        if(NOT DISABLE_EDM AND ISO15118_PKI_NEEDED)
+            # Run a build-tree copy so CSRs and other intermediate files stay out of the source tree.
+            set(DEV_PKI_WORKING_DIR "${CMAKE_CURRENT_BINARY_DIR}/iso15118-pki")
+            set(DEV_PKI_INSTALL_DIR "${PROJECT_SOURCE_DIR}")
+            include("${PROJECT_SOURCE_DIR}/cmake/iso15118-dev-pki.cmake")
+        elseif(DISABLE_EDM)
+            message(STATUS "ISO 15118-2 development certificates not generated: DISABLE_EDM is set (packaging build)")
+        else()
+            list(JOIN ISO15118_PKI_MODULES ", " ISO15118_PKI_MODULE_NAMES)
+            message(STATUS "ISO 15118-2 development certificates not generated: none of ${ISO15118_PKI_MODULE_NAMES} is built")
+        endif()
         file(TOUCH config/certs/ca/mf/MF_ROOT_CA.pem)
+    else()
+        message(STATUS "ISO 15118-2 development certificates not generated: ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES is OFF")
     endif()
 
     # config

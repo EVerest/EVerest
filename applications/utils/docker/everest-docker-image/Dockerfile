@@ -21,8 +21,6 @@ RUN apt-get update \
     clang-tidy \
     cppcheck \
     libboost-all-dev \
-    maven \
-    openjdk-17-jdk \
     nodejs \
     npm \
     libsqlite3-dev \
@@ -82,7 +80,6 @@ FROM debian:12-slim
 
 RUN apt-get update \
     && apt-get install --no-install-recommends -y \
-    openjdk-17-jre \
     nodejs \
     npm \
     curl \
