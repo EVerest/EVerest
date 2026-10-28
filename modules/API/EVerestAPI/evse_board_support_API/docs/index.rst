@@ -57,3 +57,7 @@ names always address the ``evse_board_support`` implementation. EvseManager
 keeps charging only through MREC3HighTemperature, MREC18CableOverTempDerate and
 VendorWarning; every other error makes the EVSE inoperative until it is cleared.
 ``clear_error`` must repeat the sub type of the ``raise_error``.
+
+``tests/async_api_tests/test_evse_board_support_api.py`` exercises the module in the AC
+software-in-the-loop against this specification: a fake board implements the ``m2e`` side
+and plays the car while EVerest runs basic charging sessions, faults and communication loss.

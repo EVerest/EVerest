@@ -50,3 +50,7 @@ contactors. The ``mode`` the supply reports is informational only.
 Errors are identified by type and sub type: ``clear_error`` must repeat the sub
 type of the ``raise_error``, a second raise of an active error and a clear of an
 inactive error are ignored without reply.
+
+``tests/async_api_tests/test_power_supply_dc_api.py`` exercises the module in the DC
+software-in-the-loop against this specification: an external fake supply implements the
+``m2e`` side while EVerest runs charging sessions, faults, derating and communication loss.
