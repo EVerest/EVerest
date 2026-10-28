@@ -24,33 +24,47 @@ ASSET_FILES = ("everest-api.css", "everest-api.js")
 GENERATOR_MARK = '<meta name="generator" content="everest_api.docs_cli">'
 
 _LIST_ITEM = re.compile(r"^\s*[-*]\s+(.*)$")
-_CODE = re.compile(r"`([^`]+)`")
-_BOLD = re.compile(r"\*\*([^*]+)\*\*")
+_INLINE = re.compile(r"`([^`]+)`|\*\*([^*]+)\*\*")
+
+# The HTML is assembled from these literals only; ``Markup.format`` and
+# ``Markup.join`` escape every plain string they are given, so no text from
+# the specs is ever wrapped in ``Markup`` unescaped.
+_EMPTY = Markup("")
+_PARAGRAPH = Markup("<p>{}</p>")
+_LIST = Markup("<ul>{}</ul>")
+_ITEM = Markup("<li>{}</li>")
+_CODE = Markup("<code>{}</code>")
+_BOLD = Markup("<strong>{}</strong>")
 
 
 def _inline(text):
-    html = str(escape(text))
-    html = _CODE.sub(r"<code>\1</code>", html)
-    return _BOLD.sub(r"<strong>\1</strong>", html)
+    """Render inline code and bold; code keeps its content literal, bold may
+    contain code."""
+    parts = _INLINE.split(text)  # text, (code, bold, text)...
+    out = [escape(parts[0])]
+    for code, bold, tail in zip(parts[1::3], parts[2::3], parts[3::3]):
+        out.append(_CODE.format(code) if code is not None else _BOLD.format(_inline(bold)))
+        out.append(escape(tail))
+    return _EMPTY.join(out)
 
 
 def render_description(text):
     """Render the markdown subset the specs use: paragraphs, ``- `` lists,
     inline code and bold. Everything else is escaped text."""
     if not text:
-        return Markup("")
+        return _EMPTY
     out = []
     for block in re.split(r"\n\s*\n", text.strip()):
         paragraph, items = [], []
 
         def flush_paragraph():
             if paragraph:
-                out.append("<p>" + _inline(" ".join(paragraph)) + "</p>")
+                out.append(_PARAGRAPH.format(_inline(" ".join(paragraph))))
                 paragraph.clear()
 
         def flush_items():
             if items:
-                out.append("<ul>" + "".join(f"<li>{_inline(i)}</li>" for i in items) + "</ul>")
+                out.append(_LIST.format(_EMPTY.join(_ITEM.format(_inline(i)) for i in items)))
                 items.clear()
 
         for line in block.splitlines():
@@ -66,7 +80,7 @@ def render_description(text):
                     paragraph.append(line.strip())
         flush_paragraph()
         flush_items()
-    return Markup("".join(out))
+    return _EMPTY.join(out)
 
 
 def _word_breaks(name):

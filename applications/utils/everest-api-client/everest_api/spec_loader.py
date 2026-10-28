@@ -43,7 +43,13 @@ def load_spec(path):
     """Parse the YAML spec at *path*. Mapping order is preserved (PyYAML), which
     the client and the docs generator rely on to keep operations in source order."""
     text = Path(path).read_text(encoding="utf-8")
-    doc = yaml.load(text, Loader=_SpecLoader)
+    # What yaml.safe_load does, with our SafeLoader subclass (no constructors
+    # added, so no arbitrary object instantiation).
+    loader = _SpecLoader(text)
+    try:
+        doc = loader.get_single_data()
+    finally:
+        loader.dispose()
     if not isinstance(doc, dict):
         raise SpecError(f"{path}: top-level YAML is not a mapping")
     return doc
