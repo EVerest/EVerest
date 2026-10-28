@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients implementing evse board support, AC RCD and connector lock.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
   license:
     name: Apache-2.0
@@ -342,14 +343,20 @@ components:
       name: receive_cp_state_X1
       title: 'Receive CP state X1'
       summary: Turn PWM off and set CP to constant high voltage (state X1)
+      contentType: application/json
+      payload: {}
     receive_cp_state_F:
       name: receive_cp_state_F
       title: 'Receive CP state F'
       summary: Turn PWM off with error F (constant negative voltage)
+      contentType: application/json
+      payload: {}
     receive_cp_state_E:
       name: receive_cp_state_E
       title: 'Receive CP state E'
       summary: Set CP to 0 V (state E)
+      contentType: application/json
+      payload: {}
     receive_allow_power_on:
       name: receive_allow_power_on
       title: 'Receive permission to switch relays on'
@@ -482,6 +489,8 @@ components:
       title: 'Receive signal for selftest'
       summary: >-
         Executes a self test of the RCD. If it fails, an error of type Selftest should be raised.
+      contentType: application/json
+      payload: {}
     receive_request_reset:
       name: receive_request_reset
       title: 'Request to reset RCD'
@@ -528,11 +537,15 @@ components:
       title: 'Receive signal to lock'
       summary: >-
         Lock connector lock
+      contentType: application/json
+      payload: {}
     receive_unlock:
       name: receive_unlock
       title: 'Receive signal to unlock'
       summary: >-
         Unlock connector lock. (e.g. normal unlock or enforced by OCPP)
+      contentType: application/json
+      payload: {}
 
 
     send_raise_error:

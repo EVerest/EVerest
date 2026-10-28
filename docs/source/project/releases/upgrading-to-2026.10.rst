@@ -227,6 +227,11 @@ EVerest APIs
   is never requested either (it would be ``cp_state_F``). Drivers that
   translated ``pwm_on(100)`` into X1 themselves keep working; drivers that
   counted on it see ``cp_state_X1`` instead.
+- ``evse_board_support_API`` and ``system_API``: commands without arguments
+  (``cp_state_X1``, ``cp_state_F``, ``cp_state_E``, ``lock``, ``unlock``,
+  ``self_test``, ``allow_firmware_installation``) carry an empty JSON object
+  ``{}`` as payload, like the other APIs, instead of an empty payload. Clients
+  that tested for an empty payload must accept ``{}``.
 - All EVerest API modules: the initial ``CommunicationFault`` (sub type
   ``Initial communication check``) and EvseManager's ``Inoperative`` are raised
   only when no ``communication_check`` arrived within
