@@ -29,16 +29,6 @@ on:
         required: false
         default: '.ci/build-kit/scripts'
         type: string
-      ctest_report_path:
-        description: 'The path to the ctest report, relative to the github workspace'
-        required: false
-        default: 'build/Testing/Temporary/LastTest.log'
-        type: string
-      ctest_junit_path:
-        description: 'The path to the ctest JUnit report, relative to the github workspace'
-        required: false
-        default: 'build/Testing/ctest-junit.xml'
-        type: string
       coverage_report_path:
         description: 'The path to the coverage report, relative to the github workspace'
         required: false
@@ -66,12 +56,6 @@ on:
         description: 'The ssh key to use for git operations'
         required: false
     outputs:
-      ctest_report_artifact_name:
-        description: 'The name of the ctest report artifact uploaded'
-        value: ${{ jobs.build-cmake-gcc.outputs.ctest_report_artifact_name }}
-      ctest_junit_artifact_name:
-        description: 'The name of the ctest JUnit report artifact uploaded'
-        value: ${{ jobs.build-cmake-gcc.outputs.ctest_junit_artifact_name }}
       coverage_report_artifact_name:
         description: 'The name of the coverage report artifact uploaded'
         value: ${{ jobs.build-cmake-gcc.outputs.coverage_report_artifact_name }}
@@ -84,27 +68,28 @@ on:
       wheels_artifact_name:
         description: 'The name of the wheels artifact uploaded'
         value: ${{ jobs.build-cmake-gcc.outputs.wheels_artifact_name }}
+      build_tree_artifact_name:
+        description: 'The name of the build tree artifact uploaded'
+        value: ${{ jobs.build-cmake-gcc.outputs.build_tree_artifact_name }}
 
 jobs:
   build-cmake-gcc:
-    name: build + unit tests
+    name: build
     runs-on: ${{ inputs.runner }}
     env:
-      CTEST_REPORT_ARTIFACT_NAME: ctest-report
-      CTEST_JUNIT_ARTIFACT_NAME: ctest-junit
       COVERAGE_REPORT_ARTIFACT_NAME: coverage-report
       COVERAGE_XML_ARTIFACT_NAME: coverage-xml
       DIST_ARTIFACT_NAME: dist
       WHEELS_ARTIFACT_NAME: wheels
+      BUILD_TREE_ARTIFACT_NAME: build-tree
       BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
-      ctest_report_artifact_name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
-      ctest_junit_artifact_name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
       coverage_report_artifact_name: ${{ env.COVERAGE_REPORT_ARTIFACT_NAME }}
       coverage_xml_artifact_name: ${{ env.COVERAGE_XML_ARTIFACT_NAME }}
       dist_artifact_name: ${{ env.DIST_ARTIFACT_NAME }}
       wheels_artifact_name: ${{ env.WHEELS_ARTIFACT_NAME }}
+      build_tree_artifact_name: ${{ env.BUILD_TREE_ARTIFACT_NAME }}
     steps:
       - name: Setup SSH Agent, optional with SSH key
         env:
@@ -227,29 +212,20 @@ jobs:
           name: ${{ env.WHEELS_ARTIFACT_NAME }}
           # Wheels are zip archives already
           compression-level: 0
-      - name: Run unit tests
-        id: run_unit_tests
+      - name: Tar build tree
+        id: tar_build_tree
         run: |
-          docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
-          --env SSH_AUTH_SOCK=/ssh-agent \
-          --volume "${{ github.workspace }}:/ext" \
-          --name unit-test-container \
-          build-kit run-script run_unit_tests
-      - name: Archive test results
-        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
+          sudo tar -I 'zstd -T0 -3' --exclude='*.o' --exclude='*.a.tmp' -cf build-tree.tar.zst build
+          sudo chown "$(id -u):$(id -g)" build-tree.tar.zst
+      - name: Upload build tree
         uses: actions/upload-artifact@v7.0.1
         with:
           if-no-files-found: error
-          name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
-          path: ${{ inputs.ctest_report_path }}
-      - name: Archive test results as JUnit
-        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          if-no-files-found: error
-          name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
-          path: ${{ inputs.ctest_junit_path }}
+          name: ${{ env.BUILD_TREE_ARTIFACT_NAME }}
+          path: build-tree.tar.zst
+          # Already zstd-compressed
+          compression-level: 0
+          retention-days: 3
       # - name: Run coverage
       #   id: run_coverage
       #   run: |
