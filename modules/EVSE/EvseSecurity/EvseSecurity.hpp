@@ -33,6 +33,7 @@ struct Conf {
     int max_fs_certificate_store_entries;
     int csr_expiry_s;
     int garbage_collect_time_s;
+    std::string csms_leaf_key_type;
 };
 
 class EvseSecurity : public Everest::ModuleBase {
