@@ -153,7 +153,10 @@ config:
   internal_over_voltage_duration_ms:
     description: >-
       Time in milliseconds the internal software over voltage monitor waits before raising MREC5 once the measured
-      voltage exceeds the negotiated limit.
+      voltage exceeds the negotiated limit. The internal monitor is a backup to the over voltage monitor hardware
+      (interface over_voltage_monitor), which is responsible for the shutdown timings of IEC 61851-23:2023,
+      6.3.1.106; the internal monitor works at the rate the hardware publishes its voltage and is armed by a single
+      sample.
     type: integer
     minimum: 0
     default: 400
