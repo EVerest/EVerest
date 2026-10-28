@@ -151,8 +151,36 @@ TEST(RequestReplyDecoding, rejects_reply_to_that_is_not_a_publishable_topic) {
 
     for (const auto* request :
          {R"({"headers":{"replyTo":""}})", R"({"headers":{"replyTo":"reply/+/topic"}})",
-          R"({"headers":{"replyTo":"reply/#"}})", R"({"headers":{"replyTo":42}})", R"({"headers":"reply/topic"})"}) {
+          R"({"headers":{"replyTo":"reply/#"}})", R"({"headers":{"replyTo":42}})", R"({"headers":"reply/topic"})",
+          R"({"headers":null})", R"({"headers":{"replyTo":"$SYS/broker/load"}})"}) {
         EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << request;
+    }
+}
+
+TEST(RequestReplyDecoding, rejects_request_that_is_not_an_object) {
+    RequestReply msg;
+
+    for (const auto* request : {"true", "42", "[]", "null", R"("text")"}) {
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << request;
+    }
+}
+
+TEST(RequestReplyDecoding, rejects_reply_to_on_a_topic_everest_subscribes_to) {
+    RequestReply msg;
+
+    for (const auto* reply_to :
+         {"everest_api/1/session_storage_consumer/storage/m2e/clear_sessions",
+          "everest_api/1/configuration/m2e/mark_active_slot", "everest_api/discover",
+          "everest_api/query-modules/evse_manager_consumer", "everest_api/1/evse_board_support/bsp/m2e/reply/0815"}) {
+        auto request = nlohmann::json{{"headers", {{"replyTo", reply_to}}}}.dump();
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << reply_to;
+    }
+
+    for (const auto* reply_to : {"everest_api/1/evse_manager_consumer/evse/e2m/get_evse/0815", "client/reply/m2e",
+                                 "everest_api_other/m2e/reply"}) {
+        auto request = nlohmann::json{{"headers", {{"replyTo", reply_to}}}}.dump();
+        EXPECT_TRUE(everest::lib::API::deserialize(request, msg)) << reply_to;
+        EXPECT_EQ(msg.replyTo, reply_to);
     }
 }
 
@@ -180,6 +208,9 @@ TEST(DeserializeRequest, reply_to_is_optional_but_must_be_publishable_when_prese
 
     EXPECT_TRUE(deserialize_request(R"({})", reply_to));
     EXPECT_FALSE(reply_to.has_value());
+
+    EXPECT_FALSE(deserialize_request("true", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":"everest_api/discover"}})", reply_to));
 
     EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":""},"payload":7})", reply_to, payload));
     EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":"reply/#"}})", reply_to));

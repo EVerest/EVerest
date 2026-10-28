@@ -363,8 +363,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request all configuration slots"
           payload:
@@ -404,8 +404,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request active slot"
           payload:
@@ -441,8 +441,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/MarkActiveSlotRequest'
       examples:
@@ -481,8 +481,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/DeleteSlotRequest'
       examples:
@@ -521,8 +521,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/DuplicateSlotRequest'
       examples:
@@ -563,8 +563,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/LoadFromYamlRequest'
       examples:
@@ -626,8 +626,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/SetDescriptionRequest'
       examples:
@@ -667,8 +667,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/ConfigurationParameterUpdateRequest'
       examples:
@@ -719,8 +719,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/GetConfigurationParameterRequest'
       examples:
@@ -775,8 +775,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/GetConfigurationRequest'
       examples:

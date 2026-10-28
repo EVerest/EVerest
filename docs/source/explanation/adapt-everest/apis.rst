@@ -294,9 +294,19 @@ expects the answer, in the *replyTo* property of the headers object. It
 is the client's responsibility to ensure that the topic is unique in
 order to relate replies to requests. A client that is not interested in
 the reply omits *replyTo*: EVerest executes the request and discards the
-reply. A *replyTo* that is present but not a valid MQTT topic for
-publishing (empty, or containing the wildcards ``+`` or ``#``) makes
-EVerest reject the request without executing it.
+reply.
+
+EVerest rejects a request without executing it if
+
+- the request is not a JSON object, or its *headers* is present but not
+  an object (``null`` included),
+- *replyTo* is present but not a string,
+- *replyTo* is not a topic a reply can be published to: empty, longer
+  than 65535 bytes, containing a NUL character or the wildcards ``+`` or
+  ``#``, or starting with ``$``, which is reserved for the broker,
+- *replyTo* is a topic EVerest subscribes to itself: ``everest_api/discover``,
+  ``everest_api/query-modules/...`` or any ``everest_api/...`` topic with an
+  ``m2e`` level. Otherwise a reply could be taken for another request.
 
 Using the EVerest API
 ======================

@@ -234,9 +234,13 @@ EVerest APIs
   that tested for an empty payload must accept ``{}``.
 - All EVerest API modules and the configuration and lifecycle APIs: a request
   without ``headers.replyTo`` is executed and its reply discarded, as before,
-  but without a warning. A ``replyTo`` that is present but empty, not a string,
-  or contains ``+`` or ``#`` now rejects the request; before, the request was
-  executed and its reply dropped. In ``everest_api_types``,
+  but without a warning. A request is now rejected without being executed if it
+  is not a JSON object, if ``headers`` is not an object (``null`` included), or
+  if ``replyTo`` is not a string, not publishable (empty, ``+``, ``#``, NUL,
+  leading ``$``) or a topic EVerest subscribes to itself (``everest_api/discover``,
+  ``everest_api/query-modules/...``, ``m2e`` topics). Before, such requests were
+  executed and their reply was dropped or delivered as another request. See
+  :ref:`everest_apis`. In ``everest_api_types``,
   ``generic::RequestReply::replyTo`` and the ``reply_to`` argument of
   ``deserialize_request`` are ``std::optional<std::string>``; replies are sent
   with ``MqttProviderInterface::publish_reply``, which publishes nothing when

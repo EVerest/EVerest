@@ -127,8 +127,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "requesting available APIs"
           payload:
@@ -165,8 +165,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "requesting available APIs of type {api_type}"
           payload:

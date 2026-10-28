@@ -211,8 +211,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/FilterArguments'
     receive_reply_get_errors:
@@ -236,8 +236,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: "Request active errors"
           payload:
@@ -272,8 +272,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -311,8 +311,8 @@ components:
                 type: string
                 minLength: 1
                 description: >-
-                  Address to send the response to. Omit it to discard the response; if present, it must be a
-                  valid MQTT topic without wildcards.
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:

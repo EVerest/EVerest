@@ -13,9 +13,13 @@
 namespace everest::lib::API {
 
 namespace detail {
-// headers.replyTo is optional; without it the request is executed and its reply discarded. A replyTo that is
-// present but not a publishable topic throws, so the request is rejected before it is executed.
+// headers.replyTo is optional; without it the request is executed and its reply discarded. A request that is not
+// a JSON object, or a replyTo that Topics::is_valid_reply_to refuses, throws, so the request is rejected before it
+// is executed.
 inline std::optional<std::string> request_reply_to(nlohmann::json const& msg) {
+    if (not msg.is_object()) {
+        throw std::invalid_argument("request is not a JSON object");
+    }
     auto headers = msg.find("headers");
     if (headers == msg.end()) {
         return std::nullopt;
@@ -28,8 +32,8 @@ inline std::optional<std::string> request_reply_to(nlohmann::json const& msg) {
         return std::nullopt;
     }
     auto topic = reply_to->get<std::string>();
-    if (not Topics::is_publishable(topic)) {
-        throw std::invalid_argument("replyTo is not a publishable topic: '" + topic + "'");
+    if (not Topics::is_valid_reply_to(topic)) {
+        throw std::invalid_argument("replyTo is not a valid reply topic: '" + topic + "'");
     }
     return topic;
 }

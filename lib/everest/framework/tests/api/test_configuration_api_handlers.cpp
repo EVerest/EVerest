@@ -517,7 +517,8 @@ TEST_CASE("ConfigurationAPI failure and no-replyTo paths", "[configuration_api]"
     }
 
     SECTION("a replyTo that is not a publishable topic -> command is rejected") {
-        for (const auto& reply_to : {"", "test/+/reply", "test/#"}) {
+        for (const auto& reply_to :
+             {"", "test/+/reply", "test/#", "everest_api/1/configuration/m2e/mark_active_slot"}) {
             REQUIRE_NOTHROW(invoke_command(mock, "mark_active_slot", make_request(json{{"slot_id", 1}}, reply_to)));
         }
 
