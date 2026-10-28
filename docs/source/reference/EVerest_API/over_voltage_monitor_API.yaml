@@ -8,32 +8,49 @@ info:
     API for EVerest for over voltage monitoring.
     Commands without arguments carry an empty JSON object ({}) as payload.
 
-    This EVerest API defines a fast over voltage monitoring device according
-    to IEC61851-23:2023 6.3.1.106.2 and 6.3.1.106.3 for DC charging.
+    This EVerest API defines a fast over voltage monitoring device (OVM) for DC charging
+    according to IEC 61851-23:2023, 6.3.1.106: the EVSE shall detect an over voltage at side B
+    between DC+ and DC- and perform an emergency shutdown or an error shutdown.
 
+    The OVM hardware is responsible for the protection. It compares the voltage at side B with
+    the limits received through set_limits and triggers the shutdowns itself, without EVerest,
+    within the timings of the standard:
 
-    6.3.1.106.2
-    An emergency shutdown needs to be triggered if the DC output voltage is above the limit of Table 103 for 9ms.
-    The actual shutdown needs to be handled in a lower layer outside of EVerest, but this interface sets the
-    correct voltage limit during the power transfer and stops monitoring at the end of the session.
-    After the actual emergency shutdown was already performed, report an MREC5OverVoltage error with severity set to high.
+    - Emergency shutdown (6.3.1.106.2, Table 103): if the voltage is above emergency_limit_V
+      for more than 9 consecutive ms, the emergency shutdown shall be triggered within 1 ms.
+      The actual switch-off has to happen in the OVM or a lower layer outside of EVerest.
+      Afterwards, report the error MREC5OverVoltage with severity High so that EVerest knows
+      the nature of the shutdown.
+    - Error shutdown (6.3.1.106.3, Table 104): if the voltage is above error_limit_V (the
+      negotiated maximum voltage) for more than 400 consecutive ms, the error shutdown shall
+      be triggered within 50 ms; between 200 ms and 400 ms the device may either allow the
+      energy transfer or trigger the error shutdown; up to 200 ms the energy transfer
+      continues. To trigger an error shutdown, raise the error MREC5OverVoltage with severity
+      Medium or Low. EVerest then stops the energy transfer, opens the contactors and turns
+      the CP oscillator off (state X1). According to CC.3.4.2 (Table CC.11, t203) the OVM shall
+      verify that the CP oscillator is off within 2.5 s after it detected the error and
+      trigger an emergency shutdown otherwise.
 
-    6.3.1.106.3
-    An error shutdown needs to be triggered if the DC output voltage is above the limits of Table 104:
-      - Present voltage > negotiated maximum for >400ms: Trigger error shutdown in <50ms.
-      - Present voltage > negotiated maximum for <400ms and >200ms: Allow energy transfer or error shutdown
-      - Present voltage > negotiated maximum for <200ms: Allow energy transfer
-    To trigger an error shutdown, raise the error MREC5OverVoltage with severity set to medium or low.
-    After raising the error, wait for 2.5s according to CC.3.4.2 and verify the CP signal has been switched to state X1 or F.
-    If not, trigger an emergency shutdown.
+    EVerest also compares voltage_measurement_V with the limits it sent, as a backup only: a
+    value at or above emergency_limit_V raises evse_manager/MREC5OverVoltage with severity High
+    at once, a value above error_limit_V raises it with severity Medium after
+    internal_over_voltage_duration_ms (EvseManager configuration, 400 ms by default) unless a
+    later value was below the limit again. This backup works at the rate the device publishes,
+    is armed by a single sample and does not meet the timings of the standard. It is not a
+    replacement for the detection in the device.
 
-    Once an MREC5OverVoltage error was raised, it shall only be cleared when the reset_over_voltage_error command is called.
-    All other errors shall be raised/cleared when they occur/are no longer active immediately.
+    Once an MREC5OverVoltage error was raised, it shall only be cleared when the
+    reset_over_voltage_error command is called. All other errors shall be raised/cleared when
+    they occur/are no longer active immediately.
 
-    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. It is not
-    used to compare it with the overvoltage threshold setting in EVerest, that has to be done in the OVM device itself.
-    It will only be used to validate that the OVM and the IMD see the same voltage to ensure they are correctly wired to the same
-    charging port. If it is not available in hardware, do not publish the voltage_measurement_V at all.
+    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. Besides
+    the backup check above, EVerest uses it to validate that all voltage sources of the
+    charging port (power supply, powermeter, isolation monitor, OVM) see the same voltage, so
+    that they are wired to the same port: a spread above
+    voltage_plausibility_max_spread_threshold_V (50 V by default) for
+    voltage_plausibility_fault_duration_ms (30 s by default) raises
+    evse_manager/VoltagePlausibilityFault and stops charging. If a measurement is not available
+    in hardware, do not publish voltage_measurement_V at all; EVerest then runs neither check.
 
   license:
     name: Apache-2.0
@@ -301,12 +318,11 @@ components:
           type: number
     VoltageMeasurementV:
       description: >-
-        The voltage measurement should be published in regular intervals,
-        e.g. 1 second. It is not  used to compare it with the overvoltage threshold
-        setting in EVerest, that has to be done in the OVM device itself.
-        It will only used to validate that the OVM and the IMD see the same voltage
-        to ensure they are correctly wired to the same charging port.
-        If it is not available in hardware, do not publish the voltage_measurement_V at all.
+        The voltage at side B measured by the OVM, published in regular intervals, e.g. 1 second.
+        The protection itself runs in the device; EVerest only uses this value for its backup
+        check against the limits and for the plausibility check across all voltage sources (see
+        the API description). If it is not available in hardware, do not publish
+        voltage_measurement_V at all.
       type: number
 
     Error:
