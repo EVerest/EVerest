@@ -116,6 +116,17 @@ public:
     types::reservation::ReservationResult handle_reservation(const Reservation& reservation);
 
     /**
+     * @brief Places the \p reservation and signals it to the EvseManager of its evse. A reservation with an existing
+     * reservation id replaces the existing one (H01.FR.01); when that takes the reservation id off the evse of the
+     * replaced reservation, the EvseManager of that evse is told that the reservation is cancelled, before the
+     * EvseManager of the new evse is reserved.
+     *
+     * @param reservation
+     * @return Accepted if the reservation is placed and the EvseManager accepted it, else the reason it is not placed.
+     */
+    types::reservation::ReservationResult place_reservation(const Reservation& reservation);
+
+    /**
      * @brief Handler for incoming cancel reservation request for the given \p reservation_id .
      *
      * @param reservation_id
@@ -245,7 +256,8 @@ public:
      * @param callback
      */
     void register_reserved_callback(
-        const std::function<bool(const std::optional<int>& evse_id, const int& reservation_id)>& callback);
+        const std::function<bool(const std::optional<int>& evse_id, const int& reservation_id,
+                                 const std::optional<types::reservation::Reservation>& reservation)>& callback);
 
     /**
      * @brief Registers the given \p callback to signal a reservation has been cancelled to the EvseManager.
@@ -306,7 +318,9 @@ private:
     std::function<std::vector<ValidationResult>(const ProvidedIdToken& provided_token)> validate_token_callback;
     std::function<void(const int evse_index, const StopTransactionRequest& request)> stop_transaction_callback;
     std::function<void(const Array& reservations)> reservation_update_callback;
-    std::function<bool(const std::optional<int>& evse_index, const int& reservation_id)> reserved_callback;
+    std::function<bool(const std::optional<int>& evse_index, const int& reservation_id,
+                       const std::optional<types::reservation::Reservation>& reservation)>
+        reserved_callback;
     std::function<void(const std::optional<int>& evse_index, const int32_t reservation_id,
                        const types::reservation::ReservationEndReason reason, const bool send_reservation_update)>
         reservation_cancelled_callback;

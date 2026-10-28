@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -41,7 +43,7 @@ void to_json(json& j, const ReserveNowRequest& k) {
 
 void from_json(const json& j, ReserveNowRequest& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
     k.expiryDateTime = ocpp::DateTime(std::string(j.at("expiryDateTime")));
     k.idToken = j.at("idToken");
 
@@ -50,7 +52,7 @@ void from_json(const json& j, ReserveNowRequest& k) {
         k.connectorType.emplace(j.at("connectorType"));
     }
     if (j.contains("evseId")) {
-        k.evseId.emplace(j.at("evseId"));
+        k.evseId.emplace(ocpp::integer_from_json(j.at("evseId")));
     }
     if (j.contains("groupIdToken")) {
         k.groupIdToken.emplace(j.at("groupIdToken"));

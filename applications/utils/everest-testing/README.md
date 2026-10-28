@@ -27,7 +27,7 @@ The core_utils basically provide two fixtures that you can require in your test 
 
 #### Configuration Fixtures:
 
-- **core_config** Core configuration, which is the EVerest path and the configuration path (utilizes the `everest_core_config` marker.)
+- **core_config** Core configuration, which is the EVerest path, the configuration path and the settings path (utilizes the `everest_core_config` and `everest_core_settings` markers.)
 - **probe_module_config** Used to provide the probe module configuration. In particular can be overriden if the probe module should require module connections.
 - **ocpp_config**  Used to provide the configuration, i.e. the JSON device model,  to set up the OCPP (1.6 or 2.0.1) module.
 - **evse_security_config** Used to provide the configuration to set up the EvseSecurity module.
@@ -38,6 +38,7 @@ The core_utils basically provide two fixtures that you can require in your test 
 
 Some OCPP fixtures will parse pytest markers of test cases. The following markers can be used:
 - **everest_core_config**: Can be used to specify the everest configuration file to be used in this test case
+- **everest_core_settings**: Can be used to specify the manager settings file to start from in this test case, e.g. `@pytest.mark.everest_core_settings("settings-mqtt-tcp.yaml")`. It is looked up like the configuration file. `EverestCore` always passes the manager a copy of it with `--settings`, with the MQTT prefixes of the EverestCore instance; without the marker, that copy holds only the prefixes. A `settings` block in the configuration file is removed.
 - **standalone_module**: Define one or several modules as standalone (multiple modules via `@pytest.mark.standalone_module("mod1","mod2")`)
 - **probe_module**: If set, the ProbeModule will be injected into the config (used by the `probe_module_config` fixture). This marker accepts optional keyword arguments `connections` and `module_id` to configure the probe module. 
 - **source_certs_dir**: If set and the  default `evse_security_config` fixture is used, this will cause the  `EvseSecurity` module configuration to use a  temporary certificates folder into which the source certificate folder trees are copied.
@@ -131,18 +132,3 @@ Install this package using
 ```bash
 python3 -m pip install .
 ```
-
-## Examples
-
-Have a look at [example_tests.py](examples/tests.py). In this file you can find and run one OCPP1.6 and one OCPP2.0.1 test case. These test cases will help you to get familiar with the fixtures provided in this package. You need a successful build of [EVerest](https://github.com/EVerest/EVerest) on your development machine in order to run the tests.
-
-You can run these tests using
-
-```bash
-cd examples
-python3 -m pytest tests.py --everest-prefix <path-to-EVerest>/build/dist/ --libocpp <path-to-libocpp> --log-cli-level=DEBUG
-```
-
-
-
-

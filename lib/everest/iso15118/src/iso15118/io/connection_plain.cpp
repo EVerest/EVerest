@@ -111,7 +111,12 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
         return {true, 0, false};
     }
 
-    logf_warning("ConnectionPlain::read failed with error code: %d", errno);
+    if (errno == ECONNRESET) {
+        // Many EVs end the session with an RST instead of a FIN
+        logf_info("TCP connection reset by the peer");
+    } else {
+        logf_warning("ConnectionPlain::read failed: %s", strerror(errno));
+    }
     return {false, 0, true};
 }
 
@@ -227,8 +232,9 @@ void ConnectionPlain::close() {
         // this call; close() itself must never stall the shared poll loop.
         const auto shutdown_result = shutdown(fd, SHUT_RDWR);
 
-        if (shutdown_result == -1) {
-            logf_error("shutdown() failed");
+        // ENOTCONN: the peer already reset the connection
+        if (shutdown_result == -1 and errno != ENOTCONN) {
+            logf_error("shutdown() failed: %s", strerror(errno));
         }
     }
 

@@ -9,6 +9,17 @@
 
 namespace module {
 
+namespace {
+ReservationDetails to_reservation_details(const Reservation& reservation) {
+    ReservationDetails details;
+    details.reservation_id = reservation.reservation_id;
+    details.id_token = reservation.id_token;
+    details.parent_id_token = reservation.parent_id_token;
+    details.expiry_time = reservation.expiry_time;
+    return details;
+}
+} // namespace
+
 void Auth::init() {
     invoke_init(*p_main);
     invoke_init(*p_reservation);
@@ -111,6 +122,7 @@ void Auth::ready() {
         }
 
         this->auth_handler->init_evse(evse_id, evse_index, connectors);
+        this->m_evse_index_by_id[evse_id] = evse_index;
 
         evse_index++;
     }
@@ -149,12 +161,24 @@ void Auth::ready() {
             this->r_evse_manager.at(evse_index)->call_stop_transaction(request);
         });
     this->auth_handler->register_reserved_callback([this](const std::optional<int32_t> evse_id,
-                                                          const int32_t& reservation_id) {
+                                                          const int32_t& reservation_id,
+                                                          const std::optional<Reservation>& reservation) {
         // Only call the evse manager to store the reservation if it is done for a specific evse.
         if (evse_id.has_value()) {
             EVLOG_info << "Call reserved callback for evse id " << evse_id.value();
 
-            if (!this->r_evse_manager.at(evse_id.value() - 1)->call_reserve(reservation_id)) {
+            auto* evse_manager = this->evse_manager_by_id(evse_id.value());
+            if (evse_manager == nullptr) {
+                EVLOG_warning << "Can not place a reservation for unknown evse id " << evse_id.value();
+                return false;
+            }
+
+            ReserveRequest request;
+            request.reservation_id = reservation_id;
+            if (reservation.has_value()) {
+                request.reservation = to_reservation_details(reservation.value());
+            }
+            if (!evse_manager->call_reserve(request)) {
                 EVLOG_warning << "EVSE manager does not allow placing a reservation for evse id " << evse_id.value();
                 return false;
             }
@@ -172,7 +196,12 @@ void Auth::ready() {
             // Only call the evse manager to cancel the reservation if it was for a specific evse
             if (evse_id.has_value() && evse_id.value() > 0) {
                 EVLOG_debug << "Call evse manager to cancel the reservation with evse id " << evse_id.value();
-                this->r_evse_manager.at(evse_id.value() - 1)->call_cancel_reservation();
+                auto* evse_manager = this->evse_manager_by_id(evse_id.value());
+                if (evse_manager == nullptr) {
+                    EVLOG_warning << "Can not cancel the reservation for unknown evse id " << evse_id.value();
+                } else {
+                    evse_manager->call_cancel_reservation();
+                }
             }
 
             if (send_reservation_update) {
@@ -228,6 +257,14 @@ void Auth::set_master_pass_group_id(const std::string& master_pass_group_id) {
 
 WithdrawAuthorizationResult Auth::handle_withdraw_authorization(const WithdrawAuthorizationRequest& request) {
     return this->auth_handler->handle_withdraw_authorization(request);
+}
+
+evse_managerIntf* Auth::evse_manager_by_id(const int32_t evse_id) const {
+    const auto entry = this->m_evse_index_by_id.find(evse_id);
+    if (entry == this->m_evse_index_by_id.end()) {
+        return nullptr;
+    }
+    return this->r_evse_manager.at(entry->second).get();
 }
 
 } // namespace module

@@ -25,15 +25,24 @@ In the EVerest settings file passed to the manager with ``--settings``, add:
 
    mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
 
-Access to the socket is controlled by the permissions of its directory. Use a
-directory that only the broker and the user running EVerest can access, for
-example ``/run/mosquitto`` owned by the broker user and a group shared with
-EVerest, mode ``0750``. Do not place the socket in a world-writable directory
-such as ``/tmp``: any local user could connect to it, or create a socket there
-before the broker does.
+Access to the socket is controlled by the permissions of its directory and of
+the socket itself, which Mosquitto creates with mode ``0770`` after dropping
+privileges to the broker user. Use a directory that only the broker and the
+user running EVerest can access, for example ``/run/mosquitto`` owned by the
+broker user and its group, mode ``0750``, with the user running EVerest as a
+member of that group. The systemd unit of Mosquitto 2.0 creates
+``/run/mosquitto`` with mode ``0740``, which keeps the group out. Do not place
+the socket in a world-writable directory such as ``/tmp``: any local user could
+connect to it, or create a socket there before the broker does.
+
+Files that restrict access to the broker, such as its ``acl_file`` or
+``password_file``, should be owned by the broker user. Mosquitto 2.1 warns
+about files with other owners and announces refusing them in a future version.
 
 The installed example ``etc/everest/settings-mqtt-uds.yaml`` is a complete
-settings file for this setup.
+settings file for this setup. The meta-everest Yocto layers configure
+Mosquitto and ``everest.service`` this way, see
+:ref:`exp_linux_yocto_building_yocto`.
 
 - If a part of an MQTT API should be exposed, e.g. to a mobile app on
   the same wireless LAN, use mutually authenticated TLS for the MQTT

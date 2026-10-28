@@ -49,6 +49,8 @@ private:
     std::chrono::time_point<date::utc_clock> transaction_start_time_point; ///< Start of the transaction
     std::chrono::time_point<date::utc_clock> transaction_end_time_point;   ///< End of the transaction
 
+    void handle_reservation_start(const types::evse_manager::SessionEvent& session_event);
+    void clear_reservation();
     void handle_session_started(const types::evse_manager::SessionEvent& session_event);
     void handle_session_finished(const types::evse_manager::SessionEvent& session_event);
     void handle_transaction_started(const types::evse_manager::SessionEvent& session_event);

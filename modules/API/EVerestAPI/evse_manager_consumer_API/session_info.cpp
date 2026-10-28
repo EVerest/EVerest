@@ -3,6 +3,7 @@
 
 #include "session_info.hpp"
 #include <everest/logging.hpp>
+#include <everest_api_types/evse_manager/wrapper.hpp>
 #include <utils/date.hpp>
 namespace module {
 
@@ -50,7 +51,7 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             break;
         case Event::TransactionStarted:
             // EvseManager consumes the reservation at transaction start without sending ReservationEnd
-            this->ext.reserved = false;
+            this->clear_reservation();
             this->handle_transaction_started(session_event);
             break;
         case Event::ChargingStarted:
@@ -79,10 +80,10 @@ void SessionInfo::update_state(const types::evse_manager::SessionEvent& session_
             this->handle_session_finished(session_event);
             break;
         case Event::ReservationStart:
-            this->ext.reserved = true;
+            this->handle_reservation_start(session_event);
             break;
         case Event::ReservationEnd:
-            this->ext.reserved = false;
+            this->clear_reservation();
             break;
         default:
             break;
@@ -121,6 +122,19 @@ void SessionInfo::update_selected_protocol(const std::string& protocol) {
     } catch (const std::exception& e) {
         EVLOG_warning << "Selected protocol update handling failed with -> " << e.what();
     }
+}
+
+void SessionInfo::handle_reservation_start(const types::evse_manager::SessionEvent& session_event) {
+    this->ext.reserved = true;
+    this->ext.reservation.reset();
+    if (session_event.reservation.has_value()) {
+        this->ext.reservation = to_external_api(session_event.reservation.value());
+    }
+}
+
+void SessionInfo::clear_reservation() {
+    this->ext.reserved = false;
+    this->ext.reservation.reset();
 }
 
 void SessionInfo::handle_session_started(const types::evse_manager::SessionEvent& session_event) {

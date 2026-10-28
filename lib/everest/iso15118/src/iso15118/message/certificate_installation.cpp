@@ -130,12 +130,13 @@ template <> void convert(const struct iso20_CertificateInstallationReqType& in, 
     convert_chain(in.OEMProvisioningCertificateChain, out.oem_provisioning_certificate_chain);
     convert_root_ids(in.ListOfRootCertificateIDs, out.list_of_root_certificate_ids);
     out.maximum_contract_certificate_chains = in.MaximumContractCertificateChains;
-    out.prioritized_emaids.reset();
     if (in.PrioritizedEMAIDs_isUsed) {
         auto& emaids = out.prioritized_emaids.emplace();
         for (uint16_t i = 0; i < in.PrioritizedEMAIDs.EMAID.arrayLen and i < emaids.capacity(); ++i) {
             emaids.emplace_back(CB2CPP_STRING(in.PrioritizedEMAIDs.EMAID.array[i]));
         }
+    } else {
+        out.prioritized_emaids.reset();
     }
 }
 

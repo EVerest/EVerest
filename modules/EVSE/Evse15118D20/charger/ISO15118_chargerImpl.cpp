@@ -2054,6 +2054,16 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         }
     }
 
+    // Several modes collapse to one -20 service category (AC_single_phase_core and AC_three_phase_core are both
+    // AC); the phase choice is offered per ServiceDetail parameter set from the AC connectors instead.
+    std::vector<dt::ServiceCategory> unique_services;
+    for (const auto service : services) {
+        if (std::find(unique_services.begin(), unique_services.end(), service) == unique_services.end()) {
+            unique_services.push_back(service);
+        }
+    }
+    services = std::move(unique_services);
+
     setup_config.supported_energy_services = services;
 
     // The ISO 15118-2 / DIN SPEC 70121 engines advertise the configured modes verbatim, so they keep the

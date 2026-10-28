@@ -58,4 +58,21 @@ TEST(SessionLogTest, StartSessionReturnsNulloptWhenDirectoryCannotBeCreated) {
     EXPECT_FALSE(logpath.has_value());
 }
 
+TEST(SessionLogTest, InvalidV2gJsonIsLoggedWithoutThrowing) {
+    TemporaryDirectory temp("everest-session-log-test-");
+
+    SessionLog log;
+    log.setPath(temp.path.string());
+    log.setMqtt([](const nlohmann::json&) {});
+    log.enable();
+    log.xmlOutput(true);
+    ASSERT_TRUE(log.startSession("session").has_value());
+
+    const std::string deeply_nested = std::string(100000, '[') + std::string(100000, ']');
+    EXPECT_NO_THROW(log.car(true, "V2G SessionSetupReq", "", "", "", R"({"V2G_Message":)"));
+    EXPECT_NO_THROW(log.evse(true, "V2G SessionSetupRes", "", "", "", deeply_nested));
+
+    log.stopSession();
+}
+
 } // namespace module

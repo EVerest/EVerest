@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
-#include <charconv>
+#include <cstdint>
 #include <exception>
 #include <string_view>
 
@@ -34,82 +34,101 @@ std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t)
     return tp;
 }
 
-constexpr std::size_t typical_len = 24;
+namespace {
+
+bool is_digit(char c) {
+    return c >= '0' and c <= '9';
+}
+
+bool has_char_at(std::string_view input, std::size_t pos, char c) {
+    return pos < input.size() and input[pos] == c;
+}
+
+std::optional<int> parse_fixed_digits(std::string_view input, std::size_t pos, std::size_t count) {
+    if (pos + count > input.size()) {
+        return std::nullopt;
+    }
+    int value = 0;
+    for (std::size_t i = pos; i < pos + count; ++i) {
+        if (not is_digit(input[i])) {
+            return std::nullopt;
+        }
+        value = value * 10 + (input[i] - '0');
+    }
+    return value;
+}
+
+} // namespace
+
+std::optional<std::chrono::time_point<date::utc_clock>> try_from_rfc3339(const std::string& t) {
+    using namespace std::chrono;
+    const std::string_view input(t);
+
+    const auto y = parse_fixed_digits(input, 0, 4);
+    const auto m = parse_fixed_digits(input, 5, 2);
+    const auto d = parse_fixed_digits(input, 8, 2);
+    const auto h = parse_fixed_digits(input, 11, 2);
+    const auto M = parse_fixed_digits(input, 14, 2);
+    const auto s = parse_fixed_digits(input, 17, 2);
+    if (not(y and m and d and h and M and s) or not has_char_at(input, 4, '-') or not has_char_at(input, 7, '-') or
+        not(has_char_at(input, 10, 'T') or has_char_at(input, 10, 't')) or not has_char_at(input, 13, ':') or
+        not has_char_at(input, 16, ':')) {
+        return std::nullopt;
+    }
+
+    const date::year_month_day ymd{date::year{*y}, date::month{static_cast<unsigned>(*m)},
+                                   date::day{static_cast<unsigned>(*d)}};
+    // RFC 3339 5.7: second 60 is a leap second
+    if (not ymd.ok() or *h > 23 or *M > 59 or *s > 60) {
+        return std::nullopt;
+    }
+
+    std::size_t pos = 19;
+    nanoseconds fraction{0};
+    if (has_char_at(input, pos, '.')) {
+        const auto first_digit = ++pos;
+        std::int64_t scale = 100'000'000;
+        for (; pos < input.size() and is_digit(input[pos]); ++pos) {
+            fraction += nanoseconds{(input[pos] - '0') * scale};
+            scale /= 10;
+        }
+        if (pos == first_digit) {
+            return std::nullopt;
+        }
+    }
+
+    minutes offset{0};
+    if (has_char_at(input, pos, 'Z') or has_char_at(input, pos, 'z')) {
+        ++pos;
+    } else if (has_char_at(input, pos, '+') or has_char_at(input, pos, '-')) {
+        const auto offset_h = parse_fixed_digits(input, pos + 1, 2);
+        const auto offset_m = parse_fixed_digits(input, pos + 4, 2);
+        if (not offset_h or not offset_m or not has_char_at(input, pos + 3, ':') or *offset_h > 23 or *offset_m > 59) {
+            return std::nullopt;
+        }
+        offset = hours{*offset_h} + minutes{*offset_m};
+        if (input[pos] == '-') {
+            offset = -offset;
+        }
+        pos += 6;
+    } else {
+        return std::nullopt;
+    }
+
+    if (pos != input.size()) {
+        return std::nullopt;
+    }
+
+    const seconds leap{*s == 60 ? 1 : 0};
+    const auto sys_time = date::sys_days{ymd} + hours{*h} + minutes{*M} + seconds{*s} - leap + fraction - offset;
+    return time_point_cast<date::utc_clock::duration>(date::utc_clock::from_sys(sys_time) + leap);
+}
 
 std::chrono::time_point<date::utc_clock> from_rfc3339(const std::string& t) {
-    std::string_view input(t);
-    // attempt a slow parse if input size doesn't match our expectations
-    if (input.size() < typical_len) {
-        return from_rfc3339_slow(t);
+    if (const auto tp = try_from_rfc3339(t)) {
+        return *tp;
     }
-    std::string_view y_str = input.substr(0, 4);
-    std::string_view m_str = input.substr(5, 2);
-    std::string_view d_str = input.substr(8, 2);
-    std::string_view h_str = input.substr(11, 2);
-    std::string_view M_str = input.substr(14, 2);
-    std::string_view s_str = input.substr(17, 2);
-    std::string_view ms_str = input.substr(20, 3);
-
-    int y;
-    {
-        auto [ptr, ec] = std::from_chars(y_str.data(), y_str.data() + y_str.size(), y);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int m;
-    {
-        auto [ptr, ec] = std::from_chars(m_str.data(), m_str.data() + m_str.size(), m);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int d;
-    {
-        auto [ptr, ec] = std::from_chars(d_str.data(), d_str.data() + d_str.size(), d);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int h;
-
-    {
-        auto [ptr, ec] = std::from_chars(h_str.data(), h_str.data() + h_str.size(), h);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int M;
-    {
-        auto [ptr, ec] = std::from_chars(M_str.data(), M_str.data() + M_str.size(), M);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int s;
-    {
-        auto [ptr, ec] = std::from_chars(s_str.data(), s_str.data() + s_str.size(), s);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    int ms;
-    {
-        auto [ptr, ec] = std::from_chars(ms_str.data(), ms_str.data() + ms_str.size(), ms);
-        if (ec != std::errc{}) {
-            return from_rfc3339_slow(t);
-        }
-    }
-
-    using namespace date;
-    using namespace std::chrono;
-    return utc_clock::from_sys(sys_days{year{y} / m / d} + hours{h} + minutes{M} + seconds{s} + milliseconds{ms});
+    return from_rfc3339_slow(t);
 }
 
 } // namespace Date

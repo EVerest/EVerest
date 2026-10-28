@@ -34,6 +34,7 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `MeterValuesSampledDataMaxLength` | VariableCharacteristics | `SampledDataCtrlr` | `TxUpdatedMeasurands` | `maxLimit` |
 | `MeterValueSampleInterval` | VariableAttribute | `SampledDataCtrlr` | `TxUpdatedInterval` | `Actual` |
 | `ResetRetries` | VariableAttribute | `OCPPCommCtrlr` | `ResetRetries` | `Actual` |
+| `StopTransactionOnEVSideDisconnect` | VariableAttribute | `TxCtrlr` | `StopTxOnEVSideDisconnect` | `Actual` |
 | `StopTransactionOnInvalidId` | VariableAttribute | `TxCtrlr` | `StopTxOnInvalidId` | `Actual` |
 | `StopTxnAlignedData` | VariableAttribute | `AlignedDataCtrlr` | `TxEndedMeasurands` | `Actual` |
 | `StopTxnAlignedDataMaxLength` | VariableCharacteristics | `AlignedDataCtrlr` | `TxEndedMeasurands` | `maxLimit` |
@@ -41,6 +42,7 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `StopTxnSampledDataMaxLength` | VariableCharacteristics | `SampledDataCtrlr` | `TxEndedMeasurands` | `maxLimit` |
 | `TransactionMessageAttempts` | VariableAttribute | `OCPPCommCtrlr` | `MessageAttempts[TransactionEvent]` | `Actual` |
 | `TransactionMessageRetryInterval` | VariableAttribute | `OCPPCommCtrlr` | `MessageAttemptInterval[TransactionEvent]` | `Actual` |
+| `UnlockConnectorOnEVSideDisconnect` | VariableAttribute | `OCPPCommCtrlr` | `UnlockOnEVSideDisconnect` | `Actual` |
 | `WebSocketPingInterval` | VariableAttribute | `OCPPCommCtrlr` | `WebSocketPingInterval` | `Actual` |
 | `LocalAuthListEnabled` | VariableAttribute | `LocalAuthListCtrlr` | `Enabled` | `Actual` |
 | `ChargeProfileMaxStackLevel` | VariableAttribute | `SmartChargingCtrlr` | `ProfileStackLevel` | `Actual` |
@@ -139,6 +141,8 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | OCPP1.6 key | Mapping type | Component | Variable | Target field |
 | --- | --- | --- | --- | --- |
 | `NumberOfDecimalsForCostValues` | VariableAttribute | `TariffCostCtrlr` | `NumberOfDecimalsForCostValues` | `Actual` |
+| `CustomDisplayCostAndPrice` | VariableAttribute | `CustomizationCtrlr` | `CustomImplementationEnabled[org.openchargealliance.costmsg]` | `Actual` |
+| `CustomMultiLanguageMessages` | VariableAttribute | `CustomizationCtrlr` | `CustomImplementationEnabled[org.openchargealliance.multilanguage]` | `Actual` |
 | `TimeOffset` | VariableAttribute | `ClockCtrlr` | `TimeOffset` | `Actual` |
 | `NextTimeOffsetTransitionDateTime` | VariableAttribute | `ClockCtrlr` | `NextTimeOffsetTransitionDateTime` | `Actual` |
 | `TimeOffsetNextTransition` | VariableAttribute | `ClockCtrlr` | `TimeOffset[NextTransition]` | `Actual` |
@@ -153,10 +157,8 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `GetConfigurationMaxKeys` | VariableAttribute | `OCPP16LegacyCtrlr` | `GetConfigurationMaxKeys` | `Actual` |
 | `LightIntensity` | VariableAttribute | `OCPP16LegacyCtrlr` | `LightIntensity` | `Actual` |
 | `MinimumStatusDuration` | VariableAttribute | `OCPP16LegacyCtrlr` | `MinimumStatusDuration` | `Actual` |
-| `StopTransactionOnEVSideDisconnect` | VariableAttribute | `OCPP16LegacyCtrlr` | `StopTransactionOnEVSideDisconnect` | `Actual` |
 | `SupportedFeatureProfiles` | VariableAttribute | `OCPP16LegacyCtrlr` | `SupportedFeatureProfiles` | `Actual` |
 | `SupportedFeatureProfilesMaxLength` | VariableAttribute | `OCPP16LegacyCtrlr` | `SupportedFeatureProfilesMaxLength` | `Actual` |
-| `UnlockConnectorOnEVSideDisconnect` | VariableAttribute | `OCPP16LegacyCtrlr` | `UnlockConnectorOnEVSideDisconnect` | `Actual` |
 | `ReserveConnectorZeroSupported` | VariableAttribute | `OCPP16LegacyCtrlr` | `ReserveConnectorZeroSupported` | `Actual` |
 | `AllowChargingProfileWithoutStartSchedule` | VariableAttribute | `OCPP16LegacyCtrlr` | `AllowChargingProfileWithoutStartSchedule` | `Actual` |
 | `WaitForStopTransactionsOnResetTimeout` | VariableAttribute | `OCPP16LegacyCtrlr` | `WaitForStopTransactionsOnResetTimeout` | `Actual` |
@@ -164,12 +166,10 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `MeterPublicKeys` | VariableAttribute | `OCPP16LegacyCtrlr` | `MeterPublicKeys` | `Actual` |
 | `DisableSecurityEventNotifications` | VariableAttribute | `OCPP16LegacyCtrlr` | `DisableSecurityEventNotifications` | `Actual` |
 | `ISO15118CertificateManagementEnabled` | VariableAttribute | `OCPP16LegacyCtrlr` | `ISO15118CertificateManagementEnabled` | `Actual` |
-| `CustomDisplayCostAndPrice` | VariableAttribute | `OCPP16LegacyCtrlr` | `CustomDisplayCostAndPrice` | `Actual` |
 | `DefaultPrice` | VariableAttribute | `OCPP16LegacyCtrlr` | `DefaultPrice` | `Actual` |
 | `DefaultPriceText` | VariableAttribute | `OCPP16LegacyCtrlr` | `DefaultPriceText` | `Actual` |
 | `CustomIdleFeeAfterStop` | VariableAttribute | `OCPP16LegacyCtrlr` | `CustomIdleFeeAfterStop` | `Actual` |
 | `SupportedLanguages` | VariableAttribute | `OCPP16LegacyCtrlr` | `SupportedLanguages` | `Actual` |
-| `CustomMultiLanguageMessages` | VariableAttribute | `OCPP16LegacyCtrlr` | `CustomMultiLanguageMessages` | `Actual` |
 | `Language` | VariableAttribute | `OCPP16LegacyCtrlr` | `Language` | `Actual` |
 | `WaitForSetUserPriceTimeout` | VariableAttribute | `OCPP16LegacyCtrlr` | `WaitForSetUserPriceTimeout` | `Actual` |
 | `NumberOfConnectors` | VariableAttribute | `OCPP16LegacyCtrlr` | `NumberOfConnectors` | `Actual` |

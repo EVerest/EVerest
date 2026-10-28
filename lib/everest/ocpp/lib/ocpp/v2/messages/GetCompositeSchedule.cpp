@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -34,8 +36,8 @@ void to_json(json& j, const GetCompositeScheduleRequest& k) {
 
 void from_json(const json& j, GetCompositeScheduleRequest& k) {
     // the required parts of the message
-    k.duration = j.at("duration");
-    k.evseId = j.at("evseId");
+    k.duration = ocpp::integer_from_json(j.at("duration"));
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
 
     // the optional parts of the message
     if (j.contains("chargingRateUnit")) {

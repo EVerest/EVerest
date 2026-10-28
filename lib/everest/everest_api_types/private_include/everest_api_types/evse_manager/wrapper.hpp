@@ -53,6 +53,12 @@ using HlcSessionFailedReasonEnum_External = HlcSessionFailedReasonEnum;
 HlcSessionFailedReasonEnum_Internal to_internal_api(HlcSessionFailedReasonEnum_External const& val);
 HlcSessionFailedReasonEnum_External to_external_api(HlcSessionFailedReasonEnum_Internal const& val);
 
+using Reservation_Internal = ::types::evse_manager::ReservationDetails;
+using Reservation_External = Reservation;
+
+Reservation_Internal to_internal_api(Reservation_External const& val);
+Reservation_External to_external_api(Reservation_Internal const& val);
+
 using SessionEvent_Internal = ::types::evse_manager::SessionEvent;
 using SessionEvent_External = SessionEvent;
 

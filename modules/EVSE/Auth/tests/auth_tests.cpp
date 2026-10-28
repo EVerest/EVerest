@@ -18,9 +18,12 @@
 #include <generated/interfaces/kvs/Interface.hpp>
 
 using ::testing::_;
+using ::testing::AllOf;
+using ::testing::Eq;
 using ::testing::Field;
 using ::testing::Invoke;
 using ::testing::MockFunction;
+using ::testing::Optional;
 using ::testing::Return;
 using ::testing::StrictMock;
 
@@ -1275,6 +1278,143 @@ TEST_F(AuthTest, test_reservation) {
     const auto reservation_result = this->auth_handler->handle_reservation(reservation);
 
     ASSERT_EQ(reservation_result, ReservationResult::Accepted);
+}
+
+class AuthReservationTest : public AuthTest {
+protected:
+    StrictMock<MockFunction<bool(const std::optional<int>& evse_id, const int& reservation_id,
+                                 const std::optional<Reservation>& reservation)>>
+        mock_reserved_callback;
+    StrictMock<MockFunction<void(const std::optional<int32_t>& evse_id, const int32_t reservation_id,
+                                 const ReservationEndReason reason, const bool send_reservation_update)>>
+        mock_reservation_cancelled_callback;
+
+    void SetUp() override {
+        AuthTest::SetUp();
+        this->auth_handler->register_reserved_callback(this->mock_reserved_callback.AsStdFunction());
+        this->auth_handler->register_reservation_cancelled_callback(
+            this->mock_reservation_cancelled_callback.AsStdFunction());
+    }
+
+    static Reservation make_reservation(const std::optional<int32_t> evse_id, const std::string& id_token,
+                                        const int32_t reservation_id = 1) {
+        Reservation reservation;
+        reservation.evse_id = evse_id;
+        reservation.id_token = id_token;
+        reservation.reservation_id = reservation_id;
+        reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+        reservation.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() + std::chrono::hours(1)));
+        return reservation;
+    }
+};
+
+/// \brief Test that placing an evse specific reservation passes its details to the reserved callback
+TEST_F(AuthReservationTest, place_reservation_passes_details) {
+    auto reservation = make_reservation(1, VALID_TOKEN_1);
+    reservation.parent_id_token = PARENT_ID_TOKEN;
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, Optional(reservation)))
+        .WillOnce(Return(true));
+    EXPECT_EQ(this->auth_handler->place_reservation(reservation), ReservationResult::Accepted);
+}
+
+/// \brief Test that a reservation not bound to an evse passes no details to the reserved callback
+TEST_F(AuthReservationTest, place_global_reservation_passes_no_details) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(), 1, Eq(std::nullopt))).WillOnce(Return(true));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(std::nullopt, VALID_TOKEN_1)),
+              ReservationResult::Accepted);
+}
+
+/// \brief Test that replacing a reservation on the same evse passes the new details and cancels nothing
+TEST_F(AuthReservationTest, place_reservation_replacing_on_same_evse) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+
+    const auto replacing = make_reservation(1, VALID_TOKEN_2);
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, Optional(replacing)))
+        .WillOnce(Return(true));
+    EXPECT_EQ(this->auth_handler->place_reservation(replacing), ReservationResult::Accepted);
+}
+
+/// \brief Test that replacing a reservation on another evse cancels it on the evse it was on
+TEST_F(AuthReservationTest, place_reservation_replacing_on_other_evse_cancels_replaced) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(2), 1, _)).WillOnce(Return(true));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), 1, ReservationEndReason::Cancelled, false));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(2, VALID_TOKEN_2)), ReservationResult::Accepted);
+}
+
+/// \brief Test that a replacing reservation refused by the EvseManager cancels the replaced one there
+TEST_F(AuthReservationTest, place_reservation_replacing_refused_cancels_replaced) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(false));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), 1, ReservationEndReason::Cancelled, false));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_2)), ReservationResult::Rejected);
+}
+
+/// \brief Test that a replacing reservation that can not be placed cancels the replaced one at its evse
+TEST_F(AuthReservationTest, place_reservation_replacing_not_placed_cancels_replaced) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(2), 2, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(2, VALID_TOKEN_2, 2)),
+              ReservationResult::Accepted);
+
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), 1, ReservationEndReason::Cancelled, false));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(2, VALID_TOKEN_3)), ReservationResult::Occupied);
+}
+
+/// \brief Test that a reservation moved to another evse releases its evse before the new one is reserved, so a global
+/// reservation that needs the released evse can claim it
+TEST_F(AuthReservationTest, place_reservation_moved_releases_evse_for_global_reservation) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(), 9, Eq(std::nullopt))).WillOnce(Return(true));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(2), -1, Eq(std::nullopt))).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(std::nullopt, VALID_TOKEN_2, 9)),
+              ReservationResult::Accepted);
+
+    testing::InSequence sequence;
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), 1, ReservationEndReason::Cancelled, false));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), -1, Eq(std::nullopt))).WillOnce(Return(true));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(2), 1, _)).WillOnce(Return(true));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(2, VALID_TOKEN_1)), ReservationResult::Accepted);
+}
+
+/// \brief Test that a reservation cancelled while the EvseManager is being reserved is cancelled there afterwards
+TEST_F(AuthReservationTest, place_reservation_cancelled_while_reserving_is_cancelled_at_evse_manager) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _))
+        .WillOnce(
+            Invoke([this](const std::optional<int>&, const int& reservation_id, const std::optional<Reservation>&) {
+                this->auth_handler->handle_cancel_reservation(reservation_id);
+                return true;
+            }));
+    EXPECT_CALL(this->mock_reservation_cancelled_callback,
+                Call(std::optional<int32_t>(1), 1, ReservationEndReason::Cancelled, false));
+    EXPECT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+}
+
+/// \brief Test that a replacing reservation rejected before the replaced one is dropped leaves it in place
+TEST_F(AuthReservationTest, place_reservation_rejected_keeps_replaced) {
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), 1, _)).WillOnce(Return(true));
+    ASSERT_EQ(this->auth_handler->place_reservation(make_reservation(1, VALID_TOKEN_1)), ReservationResult::Accepted);
+
+    auto expired = make_reservation(1, VALID_TOKEN_2);
+    expired.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() - std::chrono::hours(1)));
+    EXPECT_EQ(this->auth_handler->place_reservation(expired), ReservationResult::Rejected);
+
+    std::string id_token = VALID_TOKEN_1;
+    std::optional<std::string> no_group_id_token;
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(id_token, 1, no_group_id_token),
+              ReservationCheckStatus::ReservedForToken);
 }
 
 /// \brief Test that reservation_exists checks the requested evse and not evse 1
@@ -2677,7 +2817,9 @@ protected:
 
     kvsIntf kvs;
     std::unique_ptr<AuthHandler> auth_handler;
-    StrictMock<MockFunction<bool(const std::optional<int>& evse_id, const int& reservation_id)>> mock_reserved_callback;
+    StrictMock<MockFunction<bool(const std::optional<int>& evse_id, const int& reservation_id,
+                                 const std::optional<Reservation>& reservation)>>
+        mock_reserved_callback;
     StrictMock<MockFunction<void(const std::optional<int32_t>& evse_id, const int32_t reservation_id,
                                  const ReservationEndReason reason, const bool send_reservation_update)>>
         mock_reservation_cancelled_callback;
@@ -2717,16 +2859,26 @@ TEST_F(AuthRestoredReservationTest, applied_once_on_enabled) {
     // No Enabled reported yet, so nothing is applied at load.
     this->auth_handler->initialize();
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(true));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _)).WillOnce(Return(true));
     this->submit(1, SessionEventEnum::Enabled);
     this->submit(1, SessionEventEnum::Enabled);
     this->submit(2, SessionEventEnum::Enabled);
 }
 
+TEST_F(AuthRestoredReservationTest, applied_with_reservation_details) {
+    this->auth_handler->initialize();
+
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID,
+                                                   Optional(AllOf(Field(&Reservation::reservation_id, RESERVATION_ID),
+                                                                  Field(&Reservation::id_token, VALID_TOKEN_1)))))
+        .WillOnce(Return(true));
+    this->submit(1, SessionEventEnum::Enabled);
+}
+
 TEST_F(AuthRestoredReservationTest, applied_at_load_when_already_enabled) {
     this->submit(1, SessionEventEnum::Enabled);
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(true));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _)).WillOnce(Return(true));
     this->auth_handler->initialize();
     this->submit(1, SessionEventEnum::Enabled);
 }
@@ -2734,7 +2886,7 @@ TEST_F(AuthRestoredReservationTest, applied_at_load_when_already_enabled) {
 TEST_F(AuthRestoredReservationTest, refused_by_evse_manager_is_cancelled) {
     this->auth_handler->initialize();
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(false));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _)).WillOnce(Return(false));
     this->submit(1, SessionEventEnum::Enabled);
 
     EXPECT_FALSE(this->auth_handler->handle_cancel_reservation(RESERVATION_ID).first);
@@ -2744,7 +2896,7 @@ TEST_F(AuthRestoredReservationTest, refused_by_evse_manager_is_announced) {
     this->watch_reservation_cancelled();
     this->auth_handler->initialize();
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID)).WillOnce(Return(false));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _)).WillOnce(Return(false));
     EXPECT_CALL(this->mock_reservation_cancelled_callback,
                 Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, true));
     this->submit(1, SessionEventEnum::Enabled);
@@ -2754,14 +2906,15 @@ TEST_F(AuthRestoredReservationTest, refused_after_cancel_is_not_announced_again)
     this->watch_reservation_cancelled();
     this->auth_handler->initialize();
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID))
-        .WillOnce(Invoke([this](const std::optional<int>&, const int& reservation_id) {
-            // Cancelled by the CSMS while the EvseManager is being called, as reservationImpl does.
-            const auto cancelled = this->auth_handler->handle_cancel_reservation(reservation_id);
-            this->auth_handler->call_reservation_cancelled(reservation_id, ReservationEndReason::Cancelled,
-                                                           cancelled.second, false);
-            return false;
-        }));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _))
+        .WillOnce(
+            Invoke([this](const std::optional<int>&, const int& reservation_id, const std::optional<Reservation>&) {
+                // Cancelled by the CSMS while the EvseManager is being called, as reservationImpl does.
+                const auto cancelled = this->auth_handler->handle_cancel_reservation(reservation_id);
+                this->auth_handler->call_reservation_cancelled(reservation_id, ReservationEndReason::Cancelled,
+                                                               cancelled.second, false);
+                return false;
+            }));
     EXPECT_CALL(this->mock_reservation_cancelled_callback,
                 Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, false));
     this->submit(1, SessionEventEnum::Enabled);
@@ -2771,11 +2924,12 @@ TEST_F(AuthRestoredReservationTest, cancelled_while_applying_is_cancelled_at_evs
     this->watch_reservation_cancelled();
     this->auth_handler->initialize();
 
-    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID))
-        .WillOnce(Invoke([this](const std::optional<int>&, const int& reservation_id) {
-            this->auth_handler->handle_cancel_reservation(reservation_id);
-            return true;
-        }));
+    EXPECT_CALL(this->mock_reserved_callback, Call(std::optional<int>(1), RESERVATION_ID, _))
+        .WillOnce(
+            Invoke([this](const std::optional<int>&, const int& reservation_id, const std::optional<Reservation>&) {
+                this->auth_handler->handle_cancel_reservation(reservation_id);
+                return true;
+            }));
     EXPECT_CALL(this->mock_reservation_cancelled_callback,
                 Call(std::optional<int32_t>(1), RESERVATION_ID, ReservationEndReason::Cancelled, false));
     this->submit(1, SessionEventEnum::Enabled);

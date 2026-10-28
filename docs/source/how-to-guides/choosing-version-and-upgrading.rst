@@ -53,7 +53,8 @@ Across Major Releases
 
 Upgrading to a new stable release line (e.g., ``2026.01.x`` to ``2026.07.0``) requires more careful planning:
 
-- Review the release notes and potential migration documentation
+- Review the :ref:`release notes <project-release-notes>` and the upgrade guide of the
+  target release, for example :ref:`project-upgrading-to-2026-10`
 - Identify any breaking changes affecting your integration
 - Update configurations and integrations as needed
 - Thoroughly test in a non-production environment

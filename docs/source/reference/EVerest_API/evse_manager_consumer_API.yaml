@@ -2150,6 +2150,40 @@ components:
             Treated as false when omitted.
           type: boolean
           default: false
+        reservation:
+          description: >-
+            Details of the reservation holding this EVSE. Normally present while reserved is true
+            for a reservation made for this specific EVSE, also after a token matching it has been
+            authorised and until it is used to start a transaction. Absent when the EVSE is held
+            by reservations that are not for a specific EVSE, and possibly briefly when a
+            reservation ends while it is being placed. To find out whether a presented
+            token matches the reservation, compare token.id_token.value of the auth_consumer_API
+            token_validation_status with id_token, or with parent_id_token when set.
+          type: object
+          $ref: '#/components/schemas/Reservation'
+    Reservation:
+      description: >-
+        Reservation placed on an EVSE
+      type: object
+      additionalProperties: true
+      required:
+        - id
+        - id_token
+        - expiry_time
+      properties:
+        id:
+          description: Id of the reservation
+          type: integer
+        id_token:
+          description: Id token the reservation is made for
+          type: string
+        parent_id_token:
+          description: Parent (group) id token the reservation is made for
+          type: string
+        expiry_time:
+          description: Absolute UTC time point when the reservation expires
+          type: string
+          format: date-time
     HlcSessionFailedReasonEnum:
       description: |
         Reason for a higher-level-communication (HLC) session failure event.
@@ -2617,6 +2651,12 @@ components:
             Additional data for Enabled/Disabled events. Specifies the source of the command that changed the state.
           type: object
           $ref: '#/components/schemas/EnableDisableSource'
+        reservation:
+          description: >-
+            Data for the ReservationStart event. Absent if the EVSE is reserved without a specific
+            reservation, e.g. because of global reservations.
+          type: object
+          $ref: '#/components/schemas/Reservation'
     SessionEventEnum:
       description: |
         Session Event enum
@@ -2635,7 +2675,7 @@ components:
         - ChargingFinished: Charging is finished. Essentially the same as TransactionFinished, but emitted for clarity
         - TransactionFinished: Signaled when the transaction finished. Transaction finishes at the point where one of the preconditions for charging irrevocably becomes false: When a user swipes to stop the transaction and the stop is authorized.
         - SessionFinished: Session finishes at the point that the EVSE is available again (no cable plugged)
-        - ReservationStart: Signaled when a reservation starts
+        - ReservationStart: Signaled when a reservation starts, and again when it is replaced by one with other details
         - ReservationEnd: Signaled when a reservation ends
         - PluginTimeout: Signaled when an EV has been Plugged in but no authorization is present within specified ConnectionTimeout
         - SwitchingPhases: Signals that 1ph/3ph switching was started on AC charging
