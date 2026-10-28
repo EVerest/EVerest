@@ -11,8 +11,8 @@
 #ifndef CBV2G_JSON_WRAPPER_H
 #define CBV2G_JSON_WRAPPER_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {

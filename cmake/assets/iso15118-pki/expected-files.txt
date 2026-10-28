@@ -1,0 +1,19 @@
+# Files the ISO 15118 configurations load, relative to the installed certs directory
+# EvseSecurity: V2G and MO roots, SECC leaf in client/cso
+ca/v2g/V2G_ROOT_CA.pem
+ca/mo/MO_ROOT_CA.pem
+client/cso/CPO_CERT_CHAIN.pem
+client/cso/SECC_LEAF.pem
+client/cso/SECC_LEAF.key
+client/cso/SECC_LEAF_PASSWORD.txt
+# Ev15118: vehicle TLS client, PnC contract and OEM provisioning credentials
+client/vehicle/VEHICLE_CERT_CHAIN.pem
+client/vehicle/VEHICLE_LEAF.key
+client/vehicle/VEHICLE_LEAF_PASSWORD.txt
+client/mo/MO_LEAF.pem
+client/mo/MO_LEAF.key
+client/mo/MO_LEAF_PASSWORD.txt
+ca/mo/INTERMEDIATE_MO_CA_CERTS.pem
+client/oem/OEM_LEAF.pem
+client/oem/OEM_LEAF.key
+client/oem/OEM_LEAF_PASSWORD.txt

@@ -25,16 +25,20 @@ and the :doc:`Plug&Charge Configuration Howto </how-to-guides/configure-pnc>`
 Certificates for ISO 15118 communication
 ----------------------------------------
 
-The ISO 15118-2 development PKI is generated when Josev is fetched, which a
-build does when it includes one of the ISO 15118 modules ``Ev15118``,
-``EvseV2G`` or ``Evse15118D20``, as a build with default options does. Keep
-``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` enabled and do not set
-``-DEVEREST_DEPENDENCY_ENABLED_JOSEV=OFF``.
-The EVerest install then ships this test PKI under ``etc/everest/certs`` of the install
+The EVerest install ships a test PKI under ``etc/everest/certs`` of the install
 prefix (sources in ``config/certs``): CA certificates in ``certs/ca`` and client
 certificates, private keys and password files in ``certs/client``. The EV
-simulation (``Ev15118``) and the charger (``Evse15118D20``) both use it, so no extra
-setup is needed for Plug&Charge in the software in the loop.
+simulation (``Ev15118``) and the charger (``EvseV2G``, ``Evse15118D20``) use it,
+so no extra setup is needed for Plug&Charge in the software in the loop.
+
+CMake generates this PKI at configure time when all of these hold:
+
+- ``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` is ``ON``, the default;
+- edm is enabled; packaging builds with ``DISABLE_EDM=ON``, such as Yocto, get no
+  development keys;
+- at least one of ``Ev15118``, ``EvseV2G`` and ``Evse15118D20`` is built.
+
+Configure fails if the generation fails, and says why when it skips it.
 
 To check that an install holds every file the TLS and Plug&Charge configurations
 load, run ``tests/dev_pki/test_installed_dev_pki.sh <prefix>`` after
@@ -70,7 +74,8 @@ Let's get started step by step
 ------------------------------
 
 1. Prerequisites must be fullfilled: EVerest must be installed on your system.
-   Enable the test PKI as described above when configuring the build.
+   A default build includes a complete and automatic installation of a test PKI,
+   under the conditions listed in `Certificates for ISO 15118 communication`_.
    The certificates and keys are located under ``dist/etc/everest/certs``.
 
 2. Let's prepare the central system that we are going to use. Follow the

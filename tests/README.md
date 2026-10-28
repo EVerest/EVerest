@@ -15,8 +15,6 @@ cmake --build build --target install --parallel -j$(nproc)
 . build/venv/bin/activate
 cmake --build build --target everestpy_pip_install_dist # install everestpy
 cmake --build build --target everest-testing_pip_install_dist # install everest-testing
-python3 -m pip install "aiofile>=3.7.4"
-python3 -m pip install "netifaces>=0.11.0"
 ```
 
 The OCPP Plug and Charge tests load the installed `libcbv2g_json_wrapper.so`,
