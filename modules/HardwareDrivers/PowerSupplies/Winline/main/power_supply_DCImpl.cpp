@@ -211,7 +211,11 @@ void power_supply_DCImpl::set_below_minimum(bool below) {
     }
     const bool enabled = output_enabled(mode.load());
     EVLOG_info << " Current " << (below ? "below" : "at or above") << " minimum, output " << (enabled ? "on" : "off");
-    mod->acdc->handle_power_transition(enabled);
+    if (not mod->acdc->handle_power_transition(enabled)) {
+        // Not switched: the next setpoint tries again
+        below_minimum = not below;
+        EVLOG_error << " Switching the output " << (enabled ? "on" : "off") << " failed";
+    }
 }
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {

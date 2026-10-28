@@ -23,8 +23,9 @@ double evse_max_current_at(double evse_max_current, double evse_max_power, doubl
 /// \brief Charging current to set on the power supply for the ramped \p current towards \p ev_target_current.
 ///        \p evse_max_current is the EVSE maximum current limit from energy management, \p caps are the power
 ///        supply capabilities, \p hlc_caps the capabilities offered to the EV.
-///        During current demand: 0 A if \p ev_target_current or \p evse_max_current is below the offered minimum
-///        (IEC 61851-23:2023 CC.5.5.7), otherwise at least the offered minimum and the power supply minimum.
+///        During current demand: 0 A if \p ev_target_current is more than 0.1 A (the HLC encoding resolution) or
+///        \p evse_max_current is at all below the offered minimum (IEC 61851-23:2023 CC.5.5.7), otherwise at least
+///        the offered minimum and the power supply minimum.
 ///        Otherwise: at least the power supply minimum.
 double dc_export_setpoint_current(double current, double ev_target_current, double evse_max_current,
                                   bool current_demand_active, const types::power_supply_DC::Capabilities& caps,

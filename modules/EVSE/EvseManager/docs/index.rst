@@ -150,6 +150,8 @@ During current demand, an EV target current below the minimum current offered
 to the EV in ChargeParameterDiscovery (the nominal power supply minimum if
 reported, else the power supply minimum, raised to the power meter minimum) is
 set to 0 A on the power supply, as required by IEC 61851-23:2023 CC.5.5.7. The
+EV sees that minimum truncated to the resolution of the HLC encoding, so a
+target up to 0.1 A below it counts as the minimum and gets it. The
 EV target is compared before EVSE-side maximum limits are applied to it, and
 only from the first target the EV sends during current demand on: the precharge
 target is not compared. The HLC module marks each target with its origin

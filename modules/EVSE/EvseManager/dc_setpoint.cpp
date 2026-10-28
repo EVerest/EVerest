@@ -8,12 +8,17 @@
 namespace module {
 
 namespace {
+// The EV sees the offered minimum truncated by the HLC encoding (EvseV2G: 0.1 A): a target that much below it is
+// the minimum, not a request below it.
+constexpr double OFFERED_MINIMUM_ENCODING_RESOLUTION_A = 0.1;
+
 double current_demand_current(double current, double ev_target_current, double evse_max_current,
                               std::optional<float> offered_minimum, std::optional<float> psu_minimum) {
     if (not offered_minimum.has_value()) {
         return current;
     }
-    if (ev_target_current < offered_minimum.value() or evse_max_current < offered_minimum.value()) {
+    if (ev_target_current < offered_minimum.value() - OFFERED_MINIMUM_ENCODING_RESOLUTION_A or
+        evse_max_current < offered_minimum.value()) {
         return 0.0;
     }
     const double minimum = std::max(offered_minimum.value(), psu_minimum.value_or(0.0f));

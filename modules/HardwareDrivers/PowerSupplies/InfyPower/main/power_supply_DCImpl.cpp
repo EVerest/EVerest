@@ -204,7 +204,11 @@ void power_supply_DCImpl::set_below_minimum(bool below) {
     const bool enabled = output_enabled(mode.load());
     EVLOG_info << "Infy: current " << (below ? "below" : "at or above") << " minimum, output "
                << (enabled ? "on" : "off");
-    mod->acdc->switch_on_off(enabled);
+    if (not mod->acdc->switch_on_off(enabled)) {
+        // Not switched: the next setpoint tries again
+        below_minimum = not below;
+        EVLOG_error << "Infy: switching the output " << (enabled ? "on" : "off") << " failed";
+    }
 }
 
 void power_supply_DCImpl::handle_setImportVoltageCurrent(double& voltage, double& current) {
