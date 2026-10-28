@@ -297,3 +297,10 @@ Commit subjects and pull request titles follow Conventional Commits and name the
 module, for example `fix(EvseManager): handle unplug during timed charging`. Changes land
 as GitHub squash merges, so the pull request title becomes the commit subject and the
 description becomes its body.
+
+## Pull request descriptions
+
+Pull request descriptions follow `.github/pull_request_template.md`: keep its `Why`,
+`What`, `How was this tested` and `Checklist` sections, in that order, and drop the HTML
+comments once filled in. Leave the checklist boxes unticked; ticking them is the human
+submitter's statement, not the agent's.
