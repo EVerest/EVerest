@@ -335,7 +335,7 @@ components:
             Energy import/limits time series. The first entry is special as it will be active already now
             even if the timestamp is in the future, so it is good practice to set the
             first entry to current time. The time series can have arbitrary time difference
-            between entries and all timestamps are absolute UTC time.
+            between entries and all timestamps are absolute points in time.
             The last entry is valid for any time after the schedule ends.
           type: array
           items:
@@ -347,7 +347,7 @@ components:
             Energy export/limits time series. The first entry is special as it will be active already now
             even if the timestamp is in the future, so it is good practice to set the
             first entry to current time. The time series can have arbitrary time difference
-            between entries and all timestamps are absolute UTC time.
+            between entries and all timestamps are absolute points in time.
             The last entry is valid for any time after the schedule ends.
           type: array
           items:
@@ -360,7 +360,7 @@ components:
             as it will be active already now even if the timestamp is in the future,
             so it is good practice to set the first entry to current time. The time
             series can have arbitrary time difference between entries and all timestamps
-            are absolute UTC time.
+            are absolute points in time.
           type: array
           items:
             description: One entry for the time series.
@@ -477,7 +477,7 @@ components:
         - currency
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         value:
@@ -498,7 +498,7 @@ components:
         - limits_to_leaves
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         limits_to_root:
@@ -527,7 +527,7 @@ components:
         - limits_to_root
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         limits_to_root:
@@ -546,7 +546,7 @@ components:
         - timestamp
       properties:
         timestamp:
-          description: Absolute timestamp for this sample in RFC3339 UTC format
+          description: Absolute timestamp for this sample in RFC3339 format
           type: string
           format: date-time
         setpoint:

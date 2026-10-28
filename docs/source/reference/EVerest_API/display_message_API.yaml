@@ -319,13 +319,13 @@ components:
           $ref: '#/components/schemas/MessageStateEnum'
         timestamp_from:
           description: >-
-            From what date-time should this message be shown. If omitted: directly.
+            From what date-time should this message be shown, in RFC3339 format. If omitted: directly.
           type: string
           format: date-time
         timestamp_to:
           description: >-
-            Until what date-time should this message be shown, after this date/time this message SHALL be removed. If
-            omitted, message can be shown 'forever' (until it is specifically removed).
+            Until what date-time should this message be shown, in RFC3339 format. After this date/time this message SHALL
+            be removed. If omitted, message can be shown 'forever' (until it is specifically removed).
           type: string
           format: date-time
         identifier_id:

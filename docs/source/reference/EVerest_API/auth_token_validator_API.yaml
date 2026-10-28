@@ -257,7 +257,7 @@ components:
             type: object
             $ref: 'display_message_API.yaml#/components/schemas/MessageContent'
         expiry_time:
-          description: Absolute UTC time point when reservation expires in RFC3339 format
+          description: Absolute time point when reservation expires in RFC3339 format
           type: string
           format: date-time
         parent_id_token:
