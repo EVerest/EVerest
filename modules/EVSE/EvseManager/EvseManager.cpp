@@ -239,6 +239,12 @@ void EvseManager::init() {
     r_bsp->subscribe_request_stop_transaction(
         [this](types::evse_manager::StopTransactionRequest r) { charger->cancel_transaction(r); });
 
+    r_bsp->subscribe_telemetry([this](types::evse_board_support::Telemetry const& telemetry) {
+        if (telemetry.plug_temperature_C.has_value()) {
+            p_dc_external_derate->publish_plug_temperature_C(telemetry.plug_temperature_C.value());
+        }
+    });
+
     r_bsp->subscribe_capabilities([this](types::evse_board_support::HardwareCapabilities const& c) {
         hw_capabilities.apply_when_allowed(c);
         {
