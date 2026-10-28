@@ -223,6 +223,17 @@ void InitDeviceModelDb::execute_init_sql(const bool delete_db_if_exists) {
 
 namespace {
 
+std::string lower_case(std::string text) {
+    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
+    return text;
+}
+
+/// \brief Name key of a component as monitors and stored values compare it: case-insensitive names and instances
+auto case_insensitive_name_key(const ComponentKey& component) {
+    return std::make_tuple(lower_case(component.name), lower_case(component.instance.value_or("")),
+                           component.evse_id.value_or(0), component.connector_id.value_or(0));
+}
+
 std::vector<std::filesystem::path> get_component_config_from_directory(const std::filesystem::path& directory) {
     std::vector<std::filesystem::path> component_config_files;
     for (const auto& p : std::filesystem::directory_iterator(directory)) {
@@ -258,7 +269,7 @@ void warn_about_source_keys(const std::filesystem::path& path, const json& data)
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 read_component_config(const std::vector<std::filesystem::path>& components_config_path) {
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
-    std::map<ComponentKey, std::filesystem::path> component_paths;
+    std::map<decltype(case_insensitive_name_key(ComponentKey{})), std::filesystem::path> component_paths;
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
         std::pair<ComponentKey, std::vector<DeviceModelVariable>> parsed;
@@ -274,7 +285,7 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
         } catch (const InitDeviceModelDbError& e) {
             throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
-        const auto [path_it, inserted] = component_paths.emplace(parsed.first, path);
+        const auto [path_it, inserted] = component_paths.emplace(case_insensitive_name_key(parsed.first), path);
         if (!inserted) {
             throw ComponentConfigNameKeyError("Component configs " + path_it->second.string() + " and " +
                                               path.string() + " both define component " +
@@ -1459,17 +1470,6 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
     if (has_error) {
         EVLOG_AND_THROW(InitDeviceModelDbError(final_error_message));
     }
-}
-
-std::string lower_case(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
-    return text;
-}
-
-/// \brief Name key of a component as monitors and stored values compare it: case-insensitive names and instances
-auto case_insensitive_name_key(const ComponentKey& component) {
-    return std::make_tuple(lower_case(component.name), lower_case(component.instance.value_or("")),
-                           component.evse_id.value_or(0), component.connector_id.value_or(0));
 }
 
 ///
