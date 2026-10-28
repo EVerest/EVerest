@@ -263,6 +263,10 @@ never an empty payload. Request/reply messages without arguments consist of
 the ``headers`` object only; the ``payload`` property is omitted. EVerest
 ignores a ``payload`` sent with such a request.
 
+A payload whose schema is a plain number or integer has to be a JSON number of that
+kind: booleans, strings and ``null`` are rejected with a log warning, and an integer
+channel rejects a fraction.
+
 The content type for EVerest API is always JSON. The content is
 individual for each message and defined in *components:schemas* within
 the same file or sometimes in a referenced file.

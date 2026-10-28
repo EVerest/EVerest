@@ -186,3 +186,34 @@ TEST(DeserializeRequest, reply_to_is_optional_but_must_be_publishable_when_prese
     EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":42}})", reply_to));
     EXPECT_FALSE(deserialize_request(R"({"headers":[]})", reply_to));
 }
+
+TEST(generic, scalar_numbers_reject_other_json_types) {
+    float f = 0.0f;
+    EXPECT_TRUE(everest::lib::API::deserialize("1.5", f));
+    EXPECT_FLOAT_EQ(f, 1.5f);
+    EXPECT_TRUE(everest::lib::API::deserialize("2", f));
+    EXPECT_FLOAT_EQ(f, 2.0f);
+    EXPECT_FALSE(everest::lib::API::deserialize("true", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("false", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("\"1\"", f));
+    EXPECT_FALSE(everest::lib::API::deserialize("null", f));
+
+    double d = 0.0;
+    EXPECT_TRUE(everest::lib::API::deserialize("-3.25", d));
+    EXPECT_FALSE(everest::lib::API::deserialize("true", d));
+
+    int i = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("-7", i));
+    EXPECT_EQ(i, -7);
+    EXPECT_FALSE(everest::lib::API::deserialize("true", i));
+    EXPECT_FALSE(everest::lib::API::deserialize("7.5", i));
+
+    size_t u = 0;
+    EXPECT_TRUE(everest::lib::API::deserialize("42", u));
+    EXPECT_EQ(u, 42u);
+    EXPECT_FALSE(everest::lib::API::deserialize("-1", u));
+    EXPECT_FALSE(everest::lib::API::deserialize("true", u));
+
+    bool b = false;
+    EXPECT_FALSE(everest::lib::API::deserialize("1", b));
+}
