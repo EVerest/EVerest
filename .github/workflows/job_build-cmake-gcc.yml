@@ -186,6 +186,23 @@ jobs:
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
+      - name: Measure build tree tar
+        run: |
+          start=$(date +%s%N)
+          tar -I 'zstd -T0 -3' --exclude='*.o' --exclude='*.a.tmp' -cf build-tree.tar.zst build
+          end=$(date +%s%N)
+          bytes=$(stat -c %s build-tree.tar.zst)
+          echo "::notice title=build-tree tar::bytes=${bytes} tar_ms=$(( (end - start) / 1000000 ))"
+      - name: Upload build tree
+        id: upload_build_tree
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: build-tree-measure
+          path: build-tree.tar.zst
+          compression-level: 0
+          retention-days: 1
+      - name: Remove build tree tar
+        run: rm -f build-tree.tar.zst
       - name: Create dist
         id: create_dist
         run: |
@@ -286,3 +303,23 @@ jobs:
       #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
       #   run: |
       #     echo "Coverage report deployed to: [everest.github.io](https://everest.github.io/${{ steps.deploy_coverage_report.outputs.deployed_path }})" >> $GITHUB_STEP_SUMMARY
+
+  measure-build-tree-download:
+    name: measure build tree download
+    needs: build-cmake-gcc
+    runs-on: ${{ inputs.runner }}
+    steps:
+      - name: Download build tree
+        id: download
+        run: echo "start=$(date +%s%N)" >> "$GITHUB_OUTPUT"
+      - uses: actions/download-artifact@v8
+        with:
+          name: build-tree-measure
+      - name: Extract build tree
+        env:
+          DOWNLOAD_START: ${{ steps.download.outputs.start }}
+        run: |
+          downloaded=$(date +%s%N)
+          tar -I zstd -xf build-tree.tar.zst
+          end=$(date +%s%N)
+          echo "::notice title=build-tree download::download_ms=$(( (downloaded - DOWNLOAD_START) / 1000000 )) extract_ms=$(( (end - downloaded) / 1000000 )) files=$(find build -type f | wc -l)"
