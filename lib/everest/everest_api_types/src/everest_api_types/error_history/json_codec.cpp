@@ -5,6 +5,7 @@
 #include "error_history/API.hpp"
 #include "error_history/codec.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/date_time.hpp"
 
 namespace everest::lib::API::V1_0::types::error_history {
 
@@ -133,8 +134,8 @@ void to_json(json& j, TimeperiodFilter const& k) noexcept {
 }
 
 void from_json(const json& j, TimeperiodFilter& k) {
-    k.timestamp_from = j.at("timestamp_from");
-    k.timestamp_to = j.at("timestamp_to");
+    k.timestamp_from = date_time_from_json(j.at("timestamp_from"));
+    k.timestamp_to = date_time_from_json(j.at("timestamp_to"));
 }
 
 void to_json(json& j, FilterArguments const& k) noexcept {

@@ -348,7 +348,8 @@ components:
             Only records whose session started strictly after this point in
             time, in RFC3339 format. Compared as an instant, so any UTC offset
             may be used. Fractional seconds are compared at millisecond
-            precision. A value that is not a timestamp is ignored.
+            precision. A request with a value that is not a date-time is
+            discarded without a reply.
           type: string
           format: date-time
     GetSessionsRequest:

@@ -5,6 +5,7 @@
 #include "nlohmann/json.hpp"
 #include "ocpp/API.hpp"
 #include "ocpp/codec.hpp"
+#include "utilities/date_time.hpp"
 
 namespace everest::lib::API::V1_0::types::ocpp {
 
@@ -402,7 +403,9 @@ void from_json(const json& j, SecurityEvent& k) {
     set_obj(type);
     set_obj_optional(info);
     set_obj_optional(critical);
-    set_obj_optional(timestamp);
+    if (j.contains("timestamp")) {
+        k.timestamp.emplace(date_time_from_json(j.at("timestamp")));
+    }
 }
 
 void to_json(json& j, StatusInfoType const& k) noexcept {

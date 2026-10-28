@@ -8,6 +8,7 @@
 #include "iso15118_charger/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "text_message/json_codec.hpp"
+#include "utilities/date_time.hpp"
 
 namespace everest::lib::API::V1_0::types::auth {
 
@@ -627,7 +628,7 @@ void from_json(const json& j, ValidationResult& k) {
         k.tariff_messages.push_back(val);
     }
     if (j.contains("expiry_time")) {
-        k.expiry_time.emplace(j.at("expiry_time"));
+        k.expiry_time.emplace(date_time_from_json(j.at("expiry_time")));
     }
     if (j.contains("parent_id_token")) {
         k.parent_id_token.emplace(j.at("parent_id_token"));
