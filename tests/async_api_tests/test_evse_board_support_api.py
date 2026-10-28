@@ -141,7 +141,8 @@ def test_errors_raise_and_clear(lab: Lab):
 def test_commands_evsemanager_never_sends(lab: Lab):
     t = lab.rec.now()
     lab.call('rcd', 'self_test')
-    assert lab.wait_request('self_test', since=t, timeout=2) is not None
+    self_test = lab.wait_request('self_test', since=t, timeout=2)
+    assert self_test is not None and self_test.payload == '{}', 'commands without arguments carry {}'
     for reply in (True, False):
         lab.board.reset_reply = reply
         t = lab.rec.now()
@@ -154,9 +155,9 @@ def test_commands_evsemanager_never_sends(lab: Lab):
     assert result is False and 1.8 < took < 3.5, 'default response after cfg_request_reply_to_s'
     lab.board.reset_reply = True
     for impl, command, args, channel, expected in [
-        ('connector_lock', 'lock', {}, 'lock', ''), ('connector_lock', 'unlock', {}, 'unlock', ''),
-        ('main', 'cp_state_E', {}, 'cp_state_E', ''), ('main', 'cp_state_F', {}, 'cp_state_F', ''),
-        ('main', 'cp_state_X1', {}, 'cp_state_X1', ''),
+        ('connector_lock', 'lock', {}, 'lock', {}), ('connector_lock', 'unlock', {}, 'unlock', {}),
+        ('main', 'cp_state_E', {}, 'cp_state_E', {}), ('main', 'cp_state_F', {}, 'cp_state_F', {}),
+        ('main', 'cp_state_X1', {}, 'cp_state_X1', {}),
         ('main', 'ac_switch_three_phases_while_charging', {'value': True}, 'ac_switch_three_phases_while_charging', 'ThreePhases'),
         ('main', 'ac_switch_three_phases_while_charging', {'value': False}, 'ac_switch_three_phases_while_charging', 'SinglePhase'),
         ('main', 'ac_set_overcurrent_limit_A', {'value': 15.5}, 'ac_overcurrent_limit', 15.5),

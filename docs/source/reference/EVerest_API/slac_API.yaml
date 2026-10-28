@@ -22,6 +22,7 @@ servers:
       module_id:
         description: The ID of the module as defined in the EVerest config file.
 defaultContentType: application/json
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
 channels:
   ############ slac
@@ -217,10 +218,14 @@ components:
       name: receive_enter_bcd
       title: 'Enter B/C/D'
       summary: Signal pilot state change to B/C/D from A/E/F.
+      contentType: application/json
+      payload: {}
     receive_leave_bcd:
       name: receive_leave_bcd
       title: 'Leave B/C/D'
       summary: Signal pilot state change to A/E/F from B/C/D.
+      contentType: application/json
+      payload: {}
     receive_count_bc:
       name: receive_count_bc
       title: 'B/C transition count'
@@ -238,14 +243,20 @@ components:
       name: receive_dlink_terminate
       title: 'Dlink terminate'
       summary: Terminate the data link and become UNMATCHED.
+      contentType: application/json
+      payload: {}
     receive_dlink_error:
       name: receive_dlink_error
       title: 'Dlink error'
       summary: Terminate the data link and restart the matching process.
+      contentType: application/json
+      payload: {}
     receive_dlink_pause:
       name: receive_dlink_pause
       title: 'Dlink pause'
       summary: Request power saving mode, while staying MATCHED.
+      contentType: application/json
+      payload: {}
     
     send_state:
       name: send_state

@@ -258,6 +258,9 @@ carry multiple messages, but concerning EVerest API, there is a
 one-to-one mapping between a message and a channel. A message carries
 content in the form of payload and possibly headers.
 
+Commands without arguments, in either direction, carry an empty JSON object
+(``{}``) as payload, never an empty payload.
+
 The content type for EVerest API is always JSON. The content is
 individual for each message and defined in *components:schemas* within
 the same file or sometimes in a referenced file.
