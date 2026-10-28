@@ -24,6 +24,7 @@ All paths relative to `lib/everest/framework/`.
 | `ConfigServiceCore` | `include/utils/config/config_service_core.hpp`, `lib/config/config_service_core.cpp` |
 | `MqttConfigServiceHandler`, `ConfigServiceClient` (EVerest Internal API) | `include/utils/mqtt_config_service.hpp`, `lib/mqtt_config_service.cpp` |
 | Config value types, `Mutability`, `Access`, `validate_config_value()` | `include/utils/config/types.hpp` |
+| Manifest schema check for a single parameter, `validate_config_parameter_value()` | `include/utils/config.hpp`, `lib/config.cpp` |
 | Boot source and database bootstrap | `include/utils/config/settings.hpp`, `lib/runtime.cpp` |
 | User-config YAML persistence mirror (`UserConfigStorage`) | `include/utils/config.hpp`, `include/utils/config/storage_userconfig.hpp` |
 | Manager wiring | `src/manager.cpp` |
@@ -86,10 +87,12 @@ runs before the core is constructed. `resolve_boot_source()` is unit-tested in
 | `reinitialize_from_db(force_reload)` | reloads the marked slot; **not** part of `ConfigServiceInterface` |
 | `set_modules_at_rest()` | settles a transitional status while deliberately preserving a recorded `FailedToStart` |
 | `register_set_runtime_parameter_handler(cb)` | installs the runtime-parameter forwarder |
-| `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above |
+| `register_active_slot_update_handler(cb)`, `register_config_update_handler(cb)` | push-event subscriptions; see the threading rules above. `register_config_update_handler` returns a function that unregisters `cb` |
 
 Manager wiring, in `src/manager.cpp`: the `UserConfigStorage` persistence mirror is created for
-`BootMode::YamlWithInMemoryDb`, then `ConfigServiceCore`, then
+`BootMode::YamlWithInMemoryDb` on `ManagerSettings::user_config_file` (the `--user-config` path, by
+default `user-config/<config-name>.yaml` next to the config file), the same file the config parser
+merges, then `ConfigServiceCore`, then
 `MqttConfigServiceHandler`, then `register_set_runtime_parameter_handler()` mapping
 `SetResponseStatus::Accepted` to `ModuleReplied_Applied`, `RebootRequired` to
 `ModuleReplied_RequiresRestart`, anything else to `ModuleReplied_Rejected`, and `SetCallFailed`
@@ -101,8 +104,12 @@ when the round trip returns nothing. Lifecycle status is pushed in via
 `GetRequest` / `GetResponse` and `SetRequest` / `SetResponse` on the shared request topic
 `{everest_prefix}config/request`; the manager forwards a runtime change to the target module on
 `{everest_prefix}modules/{module_id}/config/set_request` and reads the verdict from
-`{everest_prefix}modules/{module_id}/config/set_response`. All at QOS2. Payload structures are in
-[MQTT Communication](MQTTCommunication.md).
+`{everest_prefix}modules/{module_id}/config/set_response`. Accepted changes of the active slot are announced
+on `{everest_prefix}modules/{module_id}/config/updates` to every module that may read the changed module, except the
+module that requested the change (`publish_config_update_notifications()` in `lib/mqtt_config_service.cpp`;
+`ConfigServiceClient::register_config_update_handler()` on the receiving side, which refuses modules the access
+rules do not allow reading). All at QOS2. Payload structures are
+in [MQTT Communication](MQTTCommunication.md).
 
 Modules reach this through `ConfigServiceClient`; read requests are answered by
 `MqttConfigServiceHandler` from the `ConfigServiceCore` snapshot, writes are forwarded to
@@ -112,10 +119,13 @@ Modules reach this through `ConfigServiceClient`; read requests are answered by
 
 These orderings are load-bearing and cheap to break; each has test coverage.
 
-1. **Validate before persisting.** `validate_config_value()` runs first, so a value that would
-   fail to parse on the next boot never reaches the database
-   (`config_service_core.cpp`). Datatype only — no min/max range check at
-   this layer.
+1. **Validate before persisting.** `ConfigServiceCore::validate_update()` runs first: the datatype
+   check `validate_config_value()`, then `validate_config_parameter_value()` against the
+   parameter's manifest entry (`enum`, `minimum`, `maximum`, `pattern`, ...), the same schema check
+   a configuration file gets. A value that would fail to parse, or that the manifest forbids, never
+   reaches the database (`config_service_core.cpp`). Manifests are cached in `m_manifests` from
+   every configuration validation; a module only referenced by an inactive slot has its manifest
+   loaded from `modules_dir` on first use.
 2. **Mirror before database.** Without `--db` the user-config YAML mirror is written *before* the
    in-memory database, and a failed mirror write rejects the update, because the mirror is the
    only persistence that survives a restart (`config_service_core.cpp`). The mirror exists only

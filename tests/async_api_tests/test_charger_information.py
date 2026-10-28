@@ -67,7 +67,7 @@ async def test_get_charger_information_cmd(everest_core: EverestCore, async_api_
         response_topic = request['headers']['replyTo']
         await async_api_mqtt_handler.publish(f"{mqtt_prefix}{response_topic}", json.dumps(CHARGER_INFORMATION))
 
-    async_api_mqtt_handler.register_handler(f"{mqtt_prefix}{REQUEST_TOPIC}", on_get_charger_information)
+    await async_api_mqtt_handler.register_handler(f"{mqtt_prefix}{REQUEST_TOPIC}", on_get_charger_information)
 
     result = await probe_module.call_command('charger_information', 'get_charger_information', {})
 
@@ -87,7 +87,7 @@ async def test_get_charger_information_cmd_required_fields_only(everest_core: Ev
         request = json.loads(payload)
         await async_api_mqtt_handler.publish(f"{mqtt_prefix}{request['headers']['replyTo']}", json.dumps(minimal))
 
-    async_api_mqtt_handler.register_handler(f"{mqtt_prefix}{REQUEST_TOPIC}", on_get_charger_information)
+    await async_api_mqtt_handler.register_handler(f"{mqtt_prefix}{REQUEST_TOPIC}", on_get_charger_information)
 
     result = await probe_module.call_command('charger_information', 'get_charger_information', {})
 

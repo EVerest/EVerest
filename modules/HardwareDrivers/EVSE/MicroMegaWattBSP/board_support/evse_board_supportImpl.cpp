@@ -3,6 +3,8 @@
 
 #include "evse_board_supportImpl.hpp"
 
+#include <fmt/format.h>
+
 namespace module {
 namespace board_support {
 static types::board_support_common::BspEvent cast_event_type(CpState cp_state) {
@@ -50,7 +52,8 @@ void evse_board_supportImpl::init() {
         caps.max_phase_count_import = 3;
         caps.supports_changing_phases_during_charging = false;
         caps.supports_cp_state_E = false;
-        caps.connector_type = types::evse_board_support::Connector_type::IEC62196Type2Cable;
+        // DC charging tester — announce CCS Combo 2 rather than the AC Type 2 placeholder
+        caps.connector_type = types::evse_board_support::Connector_type::cCCS2;
 
         caps.min_current_A_export = 0;
         caps.max_current_A_export = 100;

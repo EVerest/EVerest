@@ -115,6 +115,18 @@ config:
       This mode is not ISO15118-2/-3 compliant. Do not use for public charging stations.
     type: boolean
     default: false
+  ac_limit_slac_init_retries:
+    description: >-
+      Limit the SLAC matching retries as required by ISO15118-3. With 5% PWM ([V2G3-M06-07], Figure 9): if no SLAC
+      request arrives within TT_EVSE_SLAC_init, the EVSE signals E/F for T_step_EF and returns to 5% PWM at most
+      C_sequ_retry (2) times per plug-in. At the next timeout it signals E/F once more and keeps 5% off for the rest
+      of the session: X1 while waiting for authorization (an EIM can still start basic charging), nominal PWM once
+      authorized, also with ac_enforce_hlc. A running HLC session is not affected. Each retry is one error routine
+      request from the SLAC module; with its reset_instead_of_fail option one request spans two TT_EVSE_SLAC_init.
+      With nominal PWM or X1 ([V2G3-A09-13]), a failed matching is not retried and the PWM stays as it is.
+      If false, every failed matching is retried with E/F until the EV is unplugged, also with nominal PWM.
+    type: boolean
+    default: true
   ac_with_soc:
     description: >-
       Special mode that switches between AC and DC charging to get SoC percentage with AC charging
@@ -315,6 +327,7 @@ config:
       "Start up value for the maximum duration of a random delay."
       "Can be modified during runtime on the random_delay implementation."
     type: integer
+    minimum: 0
     default: 600
   uk_smartcharging_random_delay_at_any_change:
     description: >-
@@ -351,6 +364,15 @@ config:
     type: integer
     minimum: 6000
     default: 7000
+  soft_over_current_stale_data_warning_ms:
+    description: >-
+      Diagnostics only: warn if the current measurements used for soft over current checking during AC charging
+      have not been updated for more than N ms, which may indicate a frozen power meter or a broken communication
+      link. The measurements are still used as-is. Increase this value for power meters with slow update intervals.
+      Set to 0 to disable the warning.
+    type: integer
+    minimum: 0
+    default: 5000
   lock_connector_in_state_b:
     description: >-
       Indicates if the connector lock should be locked in state B. If set to false, connector will remain unlocked in CP state B

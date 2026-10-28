@@ -583,7 +583,7 @@ std::optional<json> ModuleAdapter::evse_manager_call_update_allowed_energy_trans
 std::optional<json> ModuleAdapter::external_energy_limits_call_set_external_limits(const Requirement& req,
                                                                                    const json& args) {
     EVLOG_debug << "Call call_set_external_limits: " << args.dump();
-    publish_fn("external_energy_limits", "call_set_external_limits", args);
+    publish_fn("external_energy_limits", "call_set_external_limits", static_cast<int>(req.index), args);
     return {};
 }
 
@@ -1006,8 +1006,8 @@ ModuleAdapter::ModuleAdapter() : m_error_type_map(std::make_shared<Everest::erro
         m_error_type_map, m_error_database, [this](auto&&... args) {});
 
     m_mqtt_abstraction = std::make_shared<MqttStub>();
-    m_config_client =
-        std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names);
+    m_config_client = std::make_shared<Everest::config::ConfigServiceClient>(m_mqtt_abstraction, "ocpp", m_module_names,
+                                                                             everest::config::Access{});
 
     m_call_implementations.insert(
         {"allow_firmware_installation", &ModuleAdapter::system_call_allow_firmware_installation});

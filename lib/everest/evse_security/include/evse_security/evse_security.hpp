@@ -120,6 +120,7 @@ public:
 
     /// @brief Verifies the given \p certificate_chain against the respective CA
     /// trust anchors (indicated by the given \p certificate_type) for the leaf.
+    /// Every certificate in the chain, including the leaf, must be valid at the current time.
     /// @param certificate_chain PEM formatted certificate or certificate chain
     /// @param certificate_type type of the root certificate for which the chain is verified
     /// @return result of the operation
@@ -128,6 +129,7 @@ public:
 
     /// @brief Verifies the given \p certificate_chain against the respective CA
     /// trust anchors (indicated by the given \p certificate_types) for the leaf.
+    /// Every certificate in the chain, including the leaf, must be valid at the current time.
     /// @param certificate_chain PEM formatted certificate or certificate chain
     /// @param certificate_types types of the root certificates for which the chain is verified
     /// @return result of the operation
@@ -319,8 +321,11 @@ public:
 
 private:
     // Internal versions of the functions do not lock the mutex
+    /// @param allow_future_leaf accept a leaf whose validity starts in the future, as long as the rest of the chain is
+    /// valid at that time
     CertificateValidationResult verify_certificate_internal(const std::string& certificate_chain,
-                                                            const std::vector<LeafCertificateType>& certificate_types);
+                                                            const std::vector<LeafCertificateType>& certificate_types,
+                                                            bool allow_future_leaf);
 
     GetCertificateInfoResult get_leaf_certificate_info_internal(LeafCertificateType certificate_type,
                                                                 EncodingFormat encoding, bool include_ocsp = false);

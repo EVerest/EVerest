@@ -11,7 +11,11 @@ ev_register_library_target(ocpp_module_common)
 target_sources(ocpp_module_common
     PRIVATE
         src/conversions.cpp
+        src/custom_error_mapping.cpp
+        src/custom_error_mapping_validation.cpp
         src/error_handling.cpp
+        src/error_mapping.cpp
+        src/error_placeholders.cpp
         src/transaction_handler.cpp
         src/v16/conversions.cpp
         src/device_model/composed_device_model_storage.cpp
@@ -33,36 +37,31 @@ target_compile_options(ocpp_module_common
 
 add_dependencies(ocpp_module_common generate_cpp_files)
 
+# Embed the custom error mapping schema as a build-time C++ string, so validation needs no installed file.
+set(CUSTOM_ERROR_MAPPING_SCHEMA_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/schemas/custom_error_mapping.schema.json")
+file(READ "${CUSTOM_ERROR_MAPPING_SCHEMA_SOURCE}" CUSTOM_ERROR_MAPPING_SCHEMA_JSON)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CUSTOM_ERROR_MAPPING_SCHEMA_SOURCE}")
+set(CUSTOM_ERROR_MAPPING_SCHEMA_GENERATED "${CMAKE_CURRENT_BINARY_DIR}/generated/custom_error_mapping_schema.cpp")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/custom_error_mapping_schema.cpp.in"
+    "${CUSTOM_ERROR_MAPPING_SCHEMA_GENERATED}"
+    @ONLY
+)
+target_sources(ocpp_module_common PRIVATE "${CUSTOM_ERROR_MAPPING_SCHEMA_GENERATED}")
+
+if(DISABLE_EDM)
+    find_package(nlohmann_json_schema_validator REQUIRED)
+endif()
+
 target_link_libraries(ocpp_module_common
     PUBLIC
         everest::ocpp
         everest::framework
     PRIVATE
         everest::ocpp_conversions
+        nlohmann_json_schema_validator::validator
 )
 
-if (DISABLE_EDM)
-    install(
-        TARGETS ocpp_module_common
-        EXPORT everest-core-targets
-        ARCHIVE DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
-        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
-        INCLUDES DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/everest
-    )
-    evc_setup_package_no_export(
-        NAME everest-ocpp-module-common
-        LIBRARY_NAME ocpp_module_common
-        NAMESPACE everest
-        TYPE STATIC
-    )
-endif()
-
-install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-    DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
-    FILES_MATCHING PATTERN "*.hpp"
-)
-
-if(EVEREST_CORE_BUILD_TESTING)
+if(BUILD_TESTING)
     add_subdirectory(tests)
 endif()

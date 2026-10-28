@@ -49,6 +49,8 @@ The delay may be adjusted by the following config option:
 
    uk_smartcharging_random_delay_max_duration: 600
 
+A maximum duration of 0 adds no delay.
+
 While it is compliant, it is quite annoying to use. The regulation
 basically states that a random delay needs to be added if the underlying
 reason for the power change is not sufficiently randomized already.

@@ -3,7 +3,7 @@
 #include "OCPP201.hpp"
 #include <set>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fstream>
 
 #include <websocketpp_utils/uri.hpp>
@@ -570,18 +570,17 @@ void OCPP201::ready() {
 
     callbacks.connector_effective_operative_status_changed_callback =
         [this](const int32_t evse_id, const int32_t connector_id, const ocpp::v2::OperationalStatusEnum new_status) {
-            if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Enable, 5000})) {
-                    this->charge_point->on_enabled(evse_id, connector_id);
-                }
+            const auto enable_state = (new_status == ocpp::v2::OperationalStatusEnum::Operative)
+                                          ? types::evse_manager::Enable_state::Enable
+                                          : types::evse_manager::Enable_state::Disable;
+            // returns the effective enabled state across all sources, not a success flag
+            const bool is_enabled =
+                this->r_evse_manager.at(evse_id - 1)
+                    ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+            if (is_enabled) {
+                this->charge_point->on_enabled(evse_id, connector_id);
             } else {
-                if (this->r_evse_manager.at(evse_id - 1)
-                        ->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                             types::evse_manager::Enable_state::Disable, 5000})) {
-                    this->charge_point->on_unavailable(evse_id, connector_id);
-                }
+                this->charge_point->on_unavailable(evse_id, connector_id);
             }
         };
 
@@ -1325,7 +1324,7 @@ void OCPP201::init_evse_subscriptions() {
                 }
                 auto ocpp_response = this->charge_point->on_get_15118_ev_certificate_request(
                     conversions::to_ocpp_get_15118_certificate_request(certificate_request));
-                EVLOG_debug << "Received response from get_15118_ev_certificate_request: " << ocpp_response;
+                EVLOG_debug << "Received response from get_15118_ev_certificate_request";
                 // transform response, inject action, send to associated EvseManager
                 types::iso15118::ResponseExiStreamStatus everest_response;
                 everest_response.status = conversions::to_everest_iso15118_status(ocpp_response.status);

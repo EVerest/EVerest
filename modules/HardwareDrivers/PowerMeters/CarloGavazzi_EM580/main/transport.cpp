@@ -3,7 +3,7 @@
 
 #include "transport.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <utils/exceptions.hpp>
 
 #include <string>

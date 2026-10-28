@@ -1,0 +1,26 @@
+# SPDX-License-Identifier: Apache-2.0
+# based on the rapidyaml 0.15.2 and c4core 0.5.0 recipes in the bazel-central-registry, licensed Apache-2.0
+# https://github.com/bazelbuild/bazel-central-registry/tree/main/modules/rapidyaml/0.15.2/overlay
+# https://github.com/bazelbuild/bazel-central-registry/tree/main/modules/c4core/0.5.0/overlay
+# rapidyaml 0.16 vendors c4core (including fast_float) in ext/c4core.src instead of a separate c4core module
+load("@rules_cc//cc:cc_library.bzl", "cc_library")
+
+cc_library(
+    name = "rapidyaml",
+    srcs = glob([
+        "src/**/*.cpp",
+        "ext/c4core.src/c4/*.cpp",
+    ]),
+    hdrs = glob([
+        "src/**/*.hpp",
+        "ext/c4core.src/c4/**/*.hpp",
+        "ext/c4core.src/c4/**/*.h",
+    ]),
+    # keep in sync with the ryml options in dependencies.yaml
+    defines = ["RYML_WITH_LEGACY_OPERATORS"],
+    includes = [
+        "ext/c4core.src",
+        "src",
+    ],
+    visibility = ["//visibility:public"],
+)

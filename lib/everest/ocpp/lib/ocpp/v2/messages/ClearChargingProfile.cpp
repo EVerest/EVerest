@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -37,7 +39,7 @@ void from_json(const json& j, ClearChargingProfileRequest& k) {
 
     // the optional parts of the message
     if (j.contains("chargingProfileId")) {
-        k.chargingProfileId.emplace(j.at("chargingProfileId"));
+        k.chargingProfileId.emplace(ocpp::integer_from_json(j.at("chargingProfileId")));
     }
     if (j.contains("chargingProfileCriteria")) {
         k.chargingProfileCriteria.emplace(j.at("chargingProfileCriteria"));

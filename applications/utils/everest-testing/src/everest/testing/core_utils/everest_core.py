@@ -20,8 +20,6 @@ from everest.framework import RuntimeSession
 from everest.testing.core_utils.common import Requirement
 from ._configuration.everest_configuration_strategies.everest_configuration_strategy import \
     EverestConfigAdjustmentStrategy
-from ._configuration.everest_configuration_strategies.mqtt_configuration_strategy import \
-    EverestMqttConfigurationAdjustmentStrategy
 from ._configuration.everest_configuration_strategies.probe_module_configuration_strategy import \
     ProbeModuleConfigurationStrategy
 
@@ -37,7 +35,6 @@ class ManagerStatusFifo:
     MANAGER_INITIALIZING = "MANAGER_INITIALIZING"
     MANAGER_STARTING_MODULES = "MANAGER_STARTING_MODULES"
     MANAGER_RUNNING = "MANAGER_RUNNING"
-    MANAGER_RESTART_REQUESTED = "MANAGER_RESTART_REQUESTED"
     MANAGER_CRASH_SHUTDOWN_IN_PROGRESS = "MANAGER_CRASH_SHUTDOWN_IN_PROGRESS"
     MANAGER_SHUTDOWN_REQUESTED = "MANAGER_SHUTDOWN_REQUESTED"
     MANAGER_FORCE_TERMINATING = "MANAGER_FORCE_TERMINATING"
@@ -181,12 +178,15 @@ class EverestCore:
                  manager_extra_args: Optional[List[str]] = None,
                  everest_configuration_adjustment_strategies: Optional[
                      List[EverestConfigAdjustmentStrategy]] = None,
-                 tmp_path: Optional[Path] = None) -> None:
+                 tmp_path: Optional[Path] = None,
+                 settings_path: Optional[Path] = None) -> None:
         """Initialize EVerest using everest_core_path and everest_config_path
 
         Args:
             everest_prefix (Path): location of installed everest distribution".
             standalone_module (str): Standalone module parameter provided to EVerest manager app (can be overwritten in startup)
+            settings_path (Path, optional): manager settings file to start from. A copy with the MQTT prefixes of
+             this instance is passed to the manager with --settings.
         """
 
         self.process = None
@@ -200,6 +200,7 @@ class EverestCore:
             self.everest_core_user_config_path = Path(
                 temp_everest_config_file.name).parent / 'user-config'
             self.everest_core_user_config_path.mkdir(parents=True, exist_ok=True)
+            self.everest_settings_path = temp_dir / "everest_settings.yaml"
             self._status_fifo_path = temp_dir / "status.fifo"
             self._db_path = temp_dir / "everest.db"
         else:
@@ -208,6 +209,7 @@ class EverestCore:
             self.everest_core_user_config_path = config_dir / "user-config"
             self.everest_core_user_config_path.mkdir()
             self.everest_config_path = config_dir / "everest_config.yaml"
+            self.everest_settings_path = config_dir / "everest_settings.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
             self._db_path = tmp_path / "everest.db"
 
@@ -219,9 +221,11 @@ class EverestCore:
 
         self.mqtt_external_prefix = f"external_{self.everest_uuid}"
 
+        self._write_temporary_settings(settings_path)
         self._write_temporary_config(config_path, everest_configuration_adjustment_strategies)
 
         logging.info(f"everest uuid: {self.everest_uuid}")
+        logging.info(f"temp everest settings: {self.everest_settings_path} based on {settings_path}")
         logging.info(f"temp everest config: {self.everest_config_path} based on {config_path}")
 
         self.test_control_modules = None
@@ -254,16 +258,29 @@ class EverestCore:
             return yaml.safe_load(f)
 
     @property
+    def everest_settings(self) -> Dict:
+        with self.everest_settings_path.open("r") as f:
+            return yaml.safe_load(f)
+
+    @property
     def db_path(self) -> Path:
         """Path of the manager's configuration database (passed via --db)."""
         return self._db_path
 
+    def _write_temporary_settings(self, template_settings_path: Optional[Path]):
+        everest_settings = {}
+        if template_settings_path is not None:
+            everest_settings = yaml.safe_load(template_settings_path.read_text()) or {}
+        # Per-instance prefixes keep EVerest instances sharing a broker apart, e.g. parallel test workers.
+        everest_settings["mqtt_everest_prefix"] = f"everest_{self.everest_uuid}"
+        everest_settings["mqtt_external_prefix"] = self.mqtt_external_prefix
+        everest_settings["telemetry_prefix"] = f"telemetry_{self.everest_uuid}"
+        with self.everest_settings_path.open("w") as f:
+            yaml.dump(everest_settings, f)
+
     def _write_temporary_config(self, template_config_path: Path, everest_configuration_adjustment_strategies: Optional[
         List[EverestConfigAdjustmentStrategy]]):
         everest_configuration_adjustment_strategies = everest_configuration_adjustment_strategies if everest_configuration_adjustment_strategies else []
-        everest_configuration_adjustment_strategies.append(
-            EverestMqttConfigurationAdjustmentStrategy(everest_uuid=self.everest_uuid,
-                                                       mqtt_external_prefix=self.mqtt_external_prefix))
         # An empty config file (or one that is only comments/whitespace) parses to None; normalize
         # to a mapping with an empty active_modules so the adjustment strategies below (which assume
         # that key exists) can operate on it.
@@ -271,6 +288,8 @@ class EverestCore:
         everest_config.setdefault("active_modules", {})
         for strategy in everest_configuration_adjustment_strategies:
             everest_config = strategy.adjust_everest_configuration(everest_config)
+        # The manager settings are passed in the settings file; the manager would ignore this block.
+        everest_config.pop("settings", None)
         with self.everest_config_path.open("w") as f:
             yaml.dump(everest_config, f)
 
@@ -310,7 +329,8 @@ class EverestCore:
         # wins on later starts of the same instance, so runtime config writes (e.g. OCPP SetVariables
         # answered RebootRequired) survive restarts. Tests that instead need strict "YAML wins on
         # every start" semantics opt in via @pytest.mark.everest_manager_args("--reset-from-yaml").
-        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path), '--db', str(self._db_path),
+        args = [str(manager_path.resolve()), '--config', str(self.everest_config_path),
+                '--settings', str(self.everest_settings_path), '--db', str(self._db_path),
                 '--status-fifo', str(self._status_fifo_path), '--prefix', str(self.prefix_path.resolve())]
 
         if standalone_module:
@@ -448,5 +468,5 @@ class EverestCore:
         file.write_text(yaml.dump(user_config))
 
     def get_runtime_session(self):
-        return RuntimeSession(str(self.prefix_path), str(self.everest_config_path))
+        return RuntimeSession(str(self.prefix_path), str(self.everest_config_path), str(self.everest_settings_path))
 

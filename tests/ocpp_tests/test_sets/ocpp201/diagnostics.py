@@ -30,6 +30,7 @@ async def test_N01_get_log_cancels_running_upload(
     """N01.FR.20: a second GetLog cancels the running upload, which then reports only AcceptedCanceled."""
     logging.info("######### test_N01_get_log_cancels_running_upload #########")
 
+    first_upload_connected = asyncio.Event()
     release_first_upload = asyncio.Event()
     connections = 0
 
@@ -39,6 +40,7 @@ async def test_N01_get_log_cancels_running_upload(
         is_first = connections == 1
         await reader.read(65536)
         if is_first:
+            first_upload_connected.set()
             await release_first_upload.wait()
         writer.write(UPLOAD_OK)
         await writer.drain()
@@ -54,15 +56,14 @@ async def test_N01_get_log_cancels_running_upload(
         assert await wait_for_and_validate(
             test_utility, charge_point_v201, "LogStatusNotification", {"status": "Uploading", "requestId": 1}
         )
+        # Uploading is reported before the uploader's curl connects. Cancel only once it holds the first
+        # connection, otherwise the second upload would take it and be held instead.
+        await asyncio.wait_for(first_upload_connected.wait(), timeout=STATUS_TIMEOUT_S)
 
         history = charge_point_v201.message_history.messages
         cancel_index = len(history)
         r = await charge_point_v201.get_log_req(log=log, log_type=LogEnumType.diagnostics_log, request_id=2)
         assert LogStatusEnumType(r.status) == LogStatusEnumType.accepted_canceled
-
-        # The cancel stops the uploader script, but its curl keeps the output pipe open until the held
-        # upload ends, so release it.
-        release_first_upload.set()
 
         assert await wait_for_and_validate(
             test_utility,
@@ -100,3 +101,22 @@ async def test_N01_get_log_cancels_running_upload(
         release_first_upload.set()
         server.close()
         await server.wait_closed()
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.everest_core_config("everest-config-ocpp201.yaml")
+async def test_N01_get_log_rejects_option_like_location(
+    charge_point_v201: ChargePoint201,
+    test_utility: TestUtility,
+):
+    """A remote location starting with '-' would be parsed as an option by the uploader, so it is rejected."""
+    logging.info("######### test_N01_get_log_rejects_option_like_location #########")
+
+    log = LogParametersType(remote_location="-K/dev/null")
+    r = await charge_point_v201.get_log_req(log=log, log_type=LogEnumType.diagnostics_log, request_id=1)
+    assert LogStatusEnumType(r.status) == LogStatusEnumType.rejected
+
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "LogStatusNotification", {"requestId": 1}, timeout=5
+    )

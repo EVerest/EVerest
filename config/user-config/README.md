@@ -7,10 +7,15 @@ specific to your own naming you can achieve this by adding a
 *config-sil.yaml* file in this user-config folder with the following content:
 
 ```yaml
-connector_1:
-  config_module:
-    evse_id: "DE*YOURCOMPANY*E12345*1"
+active_modules:
+  connector_1:
+    config_module:
+      evse_id: "DE*YOURCOMPANY*E12345*1"
 ```
 
 This *user-config* does not have to be a *valid* configuration file; it just
-needs to include the keys you want to set/overwrite in the respective config.
+needs to include the keys you want to set/overwrite in the respective config,
+nested the same way as in the config.
+
+To keep the user-config somewhere else, pass its path to the manager with
+`--user-config <path>`; this folder is then not used.

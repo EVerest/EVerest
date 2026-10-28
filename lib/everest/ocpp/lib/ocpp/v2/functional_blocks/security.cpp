@@ -39,9 +39,11 @@ StatusInfo make_status_info(const CiString<20>& reason_code, const std::string& 
 }
 } // namespace
 
-Security::Security(const FunctionalBlockContext& functional_block_context, MessageLogging& logging,
-                   OcspUpdaterInterface& ocsp_updater, SecurityEventCallback security_event_callback) :
+Security::Security(const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
+                   MessageLogging& logging, OcspUpdaterInterface& ocsp_updater,
+                   SecurityEventCallback security_event_callback) :
     context(functional_block_context),
+    message_queue(message_queue),
     logging(logging),
     ocsp_updater(ocsp_updater),
     security_event_callback(security_event_callback),
@@ -96,7 +98,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
         return response;
     }
 
-    EVLOG_debug << "Received Get15118EVCertificateRequest " << request;
+    EVLOG_debug << "Received Get15118EVCertificateRequest";
     auto future_res =
         this->context.message_dispatcher.dispatch_call_async(ocpp::Call<Get15118EVCertificateRequest>(request));
 
@@ -107,7 +109,7 @@ Security::on_get_15118_ev_certificate_request(const Get15118EVCertificateRequest
     }
 
     const auto response_message = future_res.get();
-    EVLOG_debug << "Received Get15118EVCertificateResponse " << response_message.message;
+    EVLOG_debug << "Received Get15118EVCertificateResponse";
     if (response_message.messageType != MessageType::Get15118EVCertificateResponse) {
         response.status = Iso15118EVCertificateStatusEnum::Failed;
         return response;
@@ -413,7 +415,10 @@ void Security::handle_certificate_signed_req(Call<CertificateSignedRequest> call
     if (response.status == CertificateSignedStatusEnum::Accepted and
         cert_signing_use == ocpp::CertificateSigningUseEnum::ChargingStationCertificate and
         this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile) == 3) {
-        this->context.connectivity_manager.on_charging_station_certificate_changed();
+        this->message_queue.run_when_idle([this]() {
+            this->context.connectivity_manager.on_charging_station_certificate_changed();
+            return this->context.connectivity_manager.is_websocket_connected();
+        });
 
         const auto& security_event = ocpp::security_events::RECONFIGURATIONOFSECURITYPARAMETERS;
         const std::string tech_info = "Changed charging station certificate";
@@ -545,7 +550,7 @@ void Security::stop_awaiting_certificate_signed() {
 }
 
 void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertificateIdsRequest> call) {
-    EVLOG_debug << "Received GetInstalledCertificateIdsRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetInstalledCertificateIdsRequest with messageId: " << call.uniqueId;
     GetInstalledCertificateIdsResponse response;
 
     const auto msg = call.msg;
@@ -585,7 +590,7 @@ void Security::handle_get_installed_certificate_ids_req(Call<GetInstalledCertifi
 }
 
 void Security::handle_install_certificate_req(Call<InstallCertificateRequest> call) {
-    EVLOG_debug << "Received InstallCertificateRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received InstallCertificateRequest with messageId: " << call.uniqueId;
 
     const auto msg = call.msg;
     InstallCertificateResponse response;
@@ -610,7 +615,7 @@ void Security::handle_install_certificate_req(Call<InstallCertificateRequest> ca
 }
 
 void Security::handle_delete_certificate_req(Call<DeleteCertificateRequest> call) {
-    EVLOG_debug << "Received DeleteCertificateRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received DeleteCertificateRequest with messageId: " << call.uniqueId;
 
     const auto msg = call.msg;
     DeleteCertificateResponse response;

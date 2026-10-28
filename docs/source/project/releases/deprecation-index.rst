@@ -57,6 +57,15 @@ to the corresponding migration guide.
      - Drop the flag. Seeding the database from the YAML config when it holds no
        valid configuration is the default with ``--config --db``. Use the
        experimental ``--reset-from-yaml`` to force re-seeding.
+   * - ``settings:`` block in the EVerest config file
+       (see :ref:`exp_config_service_settings`)
+     - 2026.10.0
+     - 2027.04.0
+     - Move the keys of the block into a settings file and pass it with
+       ``manager --settings <path>``. Drop ``www_dir``, ``controller_port``,
+       ``controller_rpc_timeout_ms`` and ``prefix``/``config_file``, which have
+       no effect; ``run_as_user`` has no settings file equivalent, see its own
+       entry. The manager logs a warning at startup while the block is used.
    * - ``ocpp_consumer_API``: ``is_connected`` variable and its
        ``get_is_connected`` request/reply (operations ``receive_is_connected``,
        ``send_request_get_is_connected``, ``receive_reply_get_is_connected``,
@@ -111,3 +120,56 @@ to the corresponding migration guide.
      - 2026.10.0
      - 2027.04.0
      - No replacement. The module logs a deprecation warning at startup.
+   * - ``error_history_consumer_API``: ``severity`` property of ``ErrorObject``
+       (all messages carrying errors: ``get_errors``, ``active_errors``,
+       ``error_raised``, ``error_cleared``), the ``severity_filter`` argument of
+       ``get_errors``, and the ``Severity`` and ``SeverityFilter`` schemas
+     - 2026.10.0
+     - 2027.04.0
+     - No replacement: EVerest defines no clear semantics for error severity.
+       Stop reading ``severity`` from error objects and do not treat it as
+       required; drop ``severity_filter`` from ``get_errors`` requests and
+       filter by ``type_filter``, ``origin_filter`` or ``state_filter`` instead.
+   * - ``settings.run_as_user`` in the EVerest config file
+     - 2026.10.0
+     - 2027.04.0
+     - Start the manager as the unprivileged user from the service manager
+       instead, e.g. ``User=everest`` in the systemd unit, and grant
+       privileged modules file capabilities (see
+       :doc:`/how-to-guides/security-best-practices`). The manager logs a
+       warning at startup when the setting is used.
+   * - ``capabilities`` key of a module entry in the EVerest config file
+       (``active_modules.<id>.capabilities``)
+     - 2026.10.0
+     - 2027.04.0
+     - Remove the key. Modules declare their capabilities in their
+       ``manifest.yaml``, and the deployment grants them as file capabilities:
+       the ``everest_file_capabilities`` class in meta-everest, or
+       ``applications/utils/scripts/set_module_capabilities.py`` elsewhere (see
+       :doc:`/how-to-guides/security-best-practices`). The key is already
+       ignored, and the manager logs a warning at startup.
+   * - :ref:`EvseV2G module <everest_modules_EvseV2G>` (DIN SPEC 70121 and
+       ISO 15118-2 on the C implementation), superseded by
+       :ref:`Evse15118D20 <everest_modules_Evse15118D20>`, which runs DIN SPEC
+       70121, ISO 15118-2 and ISO 15118-20 on the C++ ISO 15118 stack
+     - 2026.10.0
+     - 2027.04.0
+     - :ref:`Migrate from EvseV2G and IsoMux to Evse15118D20
+       <howto-iso15118-stack-migration>`. The module logs a deprecation warning
+       at startup. SAE J2847/2 bidirectional power transfer is only available in
+       EvseV2G until the C++ stack provides it.
+   * - :ref:`IsoMux module <everest_modules_IsoMux>` (multiplexer between EvseV2G
+       and Evse15118D20), superseded by
+       :ref:`Evse15118D20 <everest_modules_Evse15118D20>` alone
+     - 2026.10.0
+     - 2027.04.0
+     - :ref:`Migrate from EvseV2G and IsoMux to Evse15118D20
+       <howto-iso15118-stack-migration>`. The module logs a deprecation warning
+       at startup.
+   * - :ref:`Evse15118D20 <everest_modules_Evse15118D20>` configuration option
+       ``logging_path``
+     - 2026.10.0
+     - 2027.04.0
+     - Remove the option. The built-in session logger is removed and the
+       option has no effect; capture sessions with PacketSniffer, tcpdump or
+       Wireshark instead.

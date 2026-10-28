@@ -17,11 +17,15 @@ namespace iso15118::d20 {
 // ([V2G20-2115]). PAUSE_NOTIFIED is signalled once per request, when the notification first goes out.
 class PauseNotification {
 public:
-    // Whether the response being built carries EVSENotification=Pause.
-    bool update(bool pause_requested, const Session& session, const session::Feedback& feedback) {
+    // Whether the response being built carries EVSENotification=Pause. A stop request takes the pause's place in
+    // the response without withdrawing it: a pause the EV was already told about stays allowed ([V2G20-1195]).
+    bool update(bool pause_requested, bool stop_requested, Session& session, const session::Feedback& feedback) {
         if (not pause_requested) {
-            m_notified = false;
             m_held_back_logged = false;
+            session.secc_pause_notified = false;
+            return false;
+        }
+        if (stop_requested) {
             return false;
         }
         const bool scheduled = session.get_selected_services().selected_control_mode == dt::ControlMode::Scheduled;
@@ -37,15 +41,14 @@ public:
             }
             return false;
         }
-        if (not m_notified) {
-            m_notified = true;
+        if (not session.secc_pause_notified) {
+            session.secc_pause_notified = true;
             feedback.signal(session::feedback::Signal::PAUSE_NOTIFIED);
         }
         return true;
     }
 
 private:
-    bool m_notified{false};
     bool m_held_back_logged{false};
 };
 

@@ -96,9 +96,22 @@ void v2g_ctx_init_charging_session(struct v2g_context* const ctx, bool is_connec
     v2g_ctx_init_charging_values(ctx);                          // Loads the internal default config
 }
 
+void v2g_ctx_init_dc_evse_status_codes(struct v2g_context* const ctx) {
+    ctx->evse_v2g_data.evse_status_code[PHASE_INIT] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_AUTH] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_PARAMETER] = iso2_DC_EVSEStatusCodeType_EVSE_Ready; // [V2G-DC-453]
+    ctx->evse_v2g_data.evse_status_code[PHASE_ISOLATION] = iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive;
+    ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
+    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    ctx->evse_v2g_data.evse_status_code[PHASE_STOP] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+}
+
 void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connection_terminated) {
     ctx->stop_hlc = false;
     ctx->intl_emergency_shutdown = false;
+    ctx->error_shutdown = false;
+    ctx->error_shutdown_reported = false;
     ctx->is_connection_terminated = is_connection_terminated;
     ctx->last_v2g_msg = V2G_UNKNOWN_MSG;
     ctx->current_v2g_msg = V2G_UNKNOWN_MSG;
@@ -107,6 +120,9 @@ void v2g_ctx_init_charging_state(struct v2g_context* const ctx, bool is_connecti
     ctx->session.renegotiation_required = false;
     ctx->session.is_charging = false;
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
+    /* A stopped DC session writes EVSE_Shutdown into every phase [IEC 61851-23:2023 CC.7.5.19]. It must not outlive
+     * the connection, or the next PowerDeliveryRes is refused with FAILED_PowerDeliveryNotApplied [V2G2-480]. */
+    v2g_ctx_init_dc_evse_status_codes(ctx);
 }
 
 void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
@@ -120,14 +136,7 @@ void v2g_ctx_init_charging_values(struct v2g_context* const ctx) {
     ctx->evse_v2g_data.evse_isolation_status = (uint8_t)iso2_isolationLevelType_Invalid;
     ctx->evse_v2g_data.evse_isolation_status_is_used = (unsigned int)1; // Shall be used in DIN
     ctx->evse_v2g_data.evse_notification = (uint8_t)0;
-    ctx->evse_v2g_data.evse_status_code[PHASE_INIT] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    ctx->evse_v2g_data.evse_status_code[PHASE_AUTH] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    ctx->evse_v2g_data.evse_status_code[PHASE_PARAMETER] = iso2_DC_EVSEStatusCodeType_EVSE_Ready; // [V2G-DC-453]
-    ctx->evse_v2g_data.evse_status_code[PHASE_ISOLATION] = iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive;
-    ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE] = iso2_DC_EVSEStatusCodeType_EVSE_Ready;
-    ctx->evse_v2g_data.evse_status_code[PHASE_WELDING] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
-    ctx->evse_v2g_data.evse_status_code[PHASE_STOP] = iso2_DC_EVSEStatusCodeType_EVSE_NotReady;
+    v2g_ctx_init_dc_evse_status_codes(ctx);
     memset(ctx->evse_v2g_data.evse_processing, iso2_EVSEProcessingType_Ongoing, PHASE_LENGTH);
     ctx->evse_v2g_data.evse_processing[PHASE_PARAMETER] = iso2_EVSEProcessingType_Finished; // Skip parameter phase
 
@@ -295,6 +304,8 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     /* interface from config file or options */
     ctx->if_name = "eth1";
 
+    ctx->tcp_port = 61341;
+    ctx->tls_port = 64109;
     ctx->network_read_timeout = 1000;
     ctx->network_read_timeout_tls = 5000;
 

@@ -260,10 +260,15 @@ impl ffi::JsonBlob {
 
     fn deserialize<T: DeserializeOwned>(self) -> T {
         // TODO(hrapp): Error handling
-        serde_json::from_slice(self.as_bytes()).expect(&format!(
-            "Failed to deserialize {:?}",
-            String::from_utf8_lossy(self.as_bytes())
-        ))
+        serde_json::from_slice(self.as_bytes()).unwrap_or_else(|err| {
+            panic!(
+                "Failed to deserialize {} bytes: {:?} error at line {} column {}",
+                self.data.len(),
+                err.classify(),
+                err.line(),
+                err.column()
+            )
+        })
     }
 
     fn from_vec(data: Vec<u8>) -> Self {
@@ -528,7 +533,10 @@ impl Runtime {
     }
 
     fn handle_command(&self, impl_id: &str, name: &str, json: ffi::JsonBlob) -> ffi::JsonBlob {
-        debug!("handle_command: {impl_id}, {name}, '{:?}'", json.as_bytes());
+        debug!(
+            "handle_command: {impl_id}, {name}, {} bytes",
+            json.as_bytes().len()
+        );
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let parameters: Option<HashMap<String, serde_json::Value>> = json.deserialize();
             let retval = self.sub_impl.get().unwrap().handle_command(
@@ -557,8 +565,8 @@ impl Runtime {
 
     fn handle_variable(&self, impl_id: &str, index: usize, name: &str, json: ffi::JsonBlob) {
         debug!(
-            "handle_variable: {impl_id}, {name}, '{:?}'",
-            json.as_bytes()
+            "handle_variable: {impl_id}, {name}, {} bytes",
+            json.as_bytes().len()
         );
         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             if let Err(err) = self.sub_impl.get().unwrap().handle_variable(

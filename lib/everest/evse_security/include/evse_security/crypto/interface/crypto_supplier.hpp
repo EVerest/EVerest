@@ -58,6 +58,9 @@ public:
     /// @brief Verifies the provided target against the certificate chain
     /// @param target       Target to verify
     /// @param parents      Parents chain, until the root
+    /// @param untrusted_subcas Intermediate certificates that may be used to build the chain
+    /// @param allow_future_certificates If the target is not yet valid, verify the whole chain at the target's
+    /// notBefore instead of the current time
     /// @param dir_path     Optional directory path that can be used for certificate store lookup
     /// @param file_path    Optional certificate file path that can be used for certificate store lookup
     /// @return

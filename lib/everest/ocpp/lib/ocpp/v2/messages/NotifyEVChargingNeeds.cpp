@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -37,12 +39,12 @@ void to_json(json& j, const NotifyEVChargingNeedsRequest& k) {
 
 void from_json(const json& j, NotifyEVChargingNeedsRequest& k) {
     // the required parts of the message
-    k.evseId = j.at("evseId");
+    k.evseId = ocpp::integer_from_json(j.at("evseId"));
     k.chargingNeeds = j.at("chargingNeeds");
 
     // the optional parts of the message
     if (j.contains("maxScheduleTuples")) {
-        k.maxScheduleTuples.emplace(j.at("maxScheduleTuples"));
+        k.maxScheduleTuples.emplace(ocpp::integer_from_json(j.at("maxScheduleTuples")));
     }
     if (j.contains("timestamp")) {
         k.timestamp.emplace(ocpp::DateTime(std::string(j.at("timestamp"))));

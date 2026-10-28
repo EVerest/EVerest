@@ -15,7 +15,8 @@ Two independent pieces of information drive the lifecycle:
   machine below transitions between, and what the manager reports to the
   outside world.
 - The **shutdown reason** — why a shutdown or drain was started: a normal stop,
-  an administrative restart, or crash recovery. It is remembered for the whole
+  a restart requested via the Lifecycle API, or crash recovery. It is
+  remembered for the whole
   duration of the drain, so that once all modules are gone the manager knows
   whether to exit, to go back to idle, or to start the modules again.
 
@@ -55,14 +56,11 @@ States
   All non-ignored modules are ready and the system is operational.
 
 ``ShutdownRequested``
-  A normal stop was requested (``SIGINT``/``SIGTERM``) and the modules are
-  being drained.
+  A stop or restart was requested (``SIGINT``/``SIGTERM`` or the Lifecycle
+  API) and the modules are being drained.
 
 ``CrashShutdownInProgress``
   A module exited unexpectedly and the remaining modules are being drained.
-
-``RestartRequested``
-  An administrative restart was requested and the modules are being drained.
 
 ``ForceTerminating``
   Modules did not exit within the drain deadline and are being terminated by
@@ -78,10 +76,11 @@ States
 Every state transition is reported to the
 :ref:`Configuration API <exp-configuration-service>` as a module status, derived
 from the destination state alone: ``StartingModules`` reports *Starting*,
-``Running`` reports *Running*, the three drain states and ``ForceTerminating``
-report *Stopping*, ``RestartRequested`` reports *RestartTriggered*,
-``ShutdownFinalizing`` reports *Stopped*, and ``Initializing``, ``Idle`` and
-``Exiting`` report *AtRest*.
+``Running`` reports *Running*, the two drain states and ``ForceTerminating``
+report *Stopping*, ``ShutdownFinalizing`` reports *Stopped*, and
+``Initializing``, ``Idle`` and ``Exiting`` report *AtRest*. A restart request
+accepted via the Lifecycle API additionally reports *RestartTriggered* before
+the drain starts.
 
 *********************
 State Machine Diagram
@@ -126,7 +125,8 @@ Graceful Shutdown Is Opt-In (``--graceful-shutdown``)
 
 By default the manager does **not** publish the MQTT shutdown signal and does
 not wait for modules to exit on their own: whenever the shutdown flow starts
-(``SIGINT``/``SIGTERM``, unexpected module exit, admin restart), remaining
+(``SIGINT``/``SIGTERM``, unexpected module exit, Lifecycle API stop or
+restart), remaining
 module processes are terminated immediately via ``ForceTerminating``
 (``SIGTERM``, escalating to ``SIGKILL`` after a grace period). This matches the
 pre-lifecycle manager behavior and keeps teardown fast while most modules do not
@@ -196,8 +196,8 @@ Startup Failure
 Normal Shutdown (SIGINT or SIGTERM)
 ***********************************
 
-- First signal with no modules running (for example in ``Idle``): controller
-  shutdown, MQTT disconnect and → ``Exiting`` with success — no drain.
+- First signal with no modules running (for example in ``Idle``): MQTT
+  disconnect and → ``Exiting`` with success — no drain.
 - First signal with modules running: the shutdown reason becomes *normal stop*,
   the manager goes to ``ShutdownRequested`` and publishes the MQTT shutdown
   signal; modules run their shutdown handlers and exit (see
@@ -217,11 +217,10 @@ Normal Shutdown (SIGINT or SIGTERM)
 
 .. note::
 
-   ``ShutdownFinalizing`` can also settle back into ``Idle`` for a *normal stop*
-   that did not come from a signal: modules are down, the manager loop keeps
-   running, and another ``SIGINT``/``SIGTERM`` is needed to exit the process.
-   No caller triggers this today; it exists for a future explicit "stop modules"
-   command.
+   ``ShutdownFinalizing`` can also settle back into ``Idle`` for a stop that did
+   not come from a signal, that is a ``stop_modules`` request via the Lifecycle
+   API: modules are down, the manager loop keeps running, and another
+   ``SIGINT``/``SIGTERM`` is needed to exit the process.
 
 .. _exp-manager-lifecycle-crash:
 
@@ -249,28 +248,30 @@ Unexpected Module Exit (Crash Path)
 Administrative Module Restart
 *****************************
 
-- A restart requested over the controller IPC (only available with the admin
-  panel enabled and while the controller process runs) while modules are
-  running sets the shutdown reason to *restart* and goes to
-  ``RestartRequested``. The modules are drained; when they are all gone, the
-  manager reloads the configuration in ``ShutdownFinalizing`` and returns to
-  ``StartingModules``.
-- A restart can also be requested while the manager is ``Idle`` (no modules
-  running, for example after ``--into-idle`` or a previously failed start).
-  There is nothing to drain, so ``Idle`` → ``RestartRequested`` →
-  ``ShutdownFinalizing`` → ``StartingModules`` happens without an actual drain.
-  This is the :ref:`Configuration API <exp-configuration-service>` workflow:
-  load a configuration, then request a restart.
-- A reload that fails or yields a configuration with **no modules** is a failed
-  restart: the manager goes to ``Exiting`` with a failure exit code, unless
-  ``--idle-on-failure`` was passed, in which case it settles into ``Idle`` and
-  reports *FailedToStart* (load a corrected configuration and request another
-  restart).
-- Exception: a restart requested via the Lifecycle API while the manager is
+- A ``start_modules`` request via the Lifecycle API while the manager is
+  ``Running`` sets the shutdown reason to *restart*, reports *RestartTriggered*
+  and goes to ``ShutdownRequested``. The modules are drained; when they are all
+  gone, the manager reloads the configuration in ``ShutdownFinalizing`` and
+  returns to ``StartingModules``.
+- The same request while the manager is ``Idle`` (no modules running, for
+  example after ``--into-idle`` or a previously failed start) has nothing to
+  drain: the manager reloads the configuration and goes straight from ``Idle``
+  to ``StartingModules``. This is the
+  :ref:`Configuration API <exp-configuration-service>` workflow: load a
+  configuration, then request a restart.
+- A reload after a drain that fails or yields a configuration with **no
+  modules** is a failed restart: the manager goes to ``Exiting`` with a failure
+  exit code, unless ``--idle-on-failure`` was passed, in which case it settles
+  into ``Idle`` and reports *FailedToStart* (load a corrected configuration and
+  request another restart).
+- Exception: a failed reload for a restart requested while the manager is
   already ``Idle`` settles back into ``Idle`` and reports *FailedToStart*
   **regardless of** ``--idle-on-failure`` — nothing was running, and exiting
   would take the API away from the very client that must push a corrected
   configuration.
+- A request that arrives while the manager is in any other state (for example
+  during a crash drain) is dropped; the running shutdown or recovery flow
+  reports the actual outcome.
 
 .. _exp-manager-lifecycle-force-kill:
 
@@ -278,8 +279,8 @@ Administrative Module Restart
 Shutdown Timeout and Forced Kill
 ********************************
 
-If a drain — from ``ShutdownRequested``, ``CrashShutdownInProgress`` or
-``RestartRequested`` — lasts longer than the graceful shutdown timeout, the
+If a drain — from ``ShutdownRequested`` or ``CrashShutdownInProgress`` — lasts
+longer than the graceful shutdown timeout, the
 manager goes to ``ForceTerminating``, sends ``SIGTERM`` to the remaining module
 processes and, after a short grace period, ``SIGKILL`` to whatever is still
 alive. Once all module processes are gone the flow continues to
@@ -327,7 +328,7 @@ so no duplicate line is written for them.
 **State notifications** (one per state transition):
 
 - ``MANAGER_INITIALIZING``, ``MANAGER_STARTING_MODULES``, ``MANAGER_RUNNING``,
-  ``MANAGER_RESTART_REQUESTED``, ``MANAGER_CRASH_SHUTDOWN_IN_PROGRESS``,
+  ``MANAGER_CRASH_SHUTDOWN_IN_PROGRESS``,
   ``MANAGER_SHUTDOWN_REQUESTED``, ``MANAGER_FORCE_TERMINATING``,
   ``MANAGER_SHUTDOWN_FINALIZING``, ``MANAGER_IDLE``, ``MANAGER_EXITING``
 

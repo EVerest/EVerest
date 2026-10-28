@@ -12,7 +12,7 @@
 /.github/labeler.yml @andistorm @nzbr @pietfried @corneliusclaussen
 
 # applications
-/applications/pionix_chargebridge @djchhp @corneliusclaussen
+/applications/pionix_chargebridge @djchhp @corneliusclaussen @pietfried
 
 # cmake
 /cmake/ @hikinggrass @a-w50 @corneliusclaussen @andistorm
@@ -54,6 +54,7 @@
 /modules/HardwareDrivers/EVSE/MicroMegaWattBSP/ @corneliusclaussen @hikinggrass @a-w50
 /modules/HardwareDrivers/EVSE/PhyVersoBSP/ @pietfried @hikinggrass @corneliusclaussen @dorezyuk @rckstrh
 /modules/HardwareDrivers/EVSE/YetiDriver/ @corneliusclaussen @hikinggrass @a-w50
+/modules/HardwareDrivers/NfcReaders/PN532TokenProvider/ @mhei @pietfried @hikinggrass @corneliusclaussen @florinmihut @cburandt @djchhp @a-w50
 /modules/Misc/ErrorHistory/ @corneliusclaussen @hikinggrass @pietfried @andistorm
 /modules/Misc/PacketSniffer/ @corneliusclaussen @SebaLukas @hikinggrass @a-w50
 /modules/Misc/Setup/ @hikinggrass @corneliusclaussen @pietfried @a-w50

@@ -17,7 +17,7 @@ public:
     v2g_message();
     bool from_xml(const std::string& xml);
     std::string to_xml();
-    void from_json(const std::string& json_str);
+    bool from_json(const std::string& json_str);
     std::string to_json();
 
 private:

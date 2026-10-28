@@ -79,16 +79,14 @@ target_link_libraries(framework
     PUBLIC
         date::date-tz
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         fmt::fmt
 
         everest::log
         everest::sqlite
         everest::yaml
-        $<BUILD_INTERFACE:everest_helpers>
-        $<INSTALL_INTERFACE:everest::helpers>
-        $<BUILD_INTERFACE:everest_util>
-        $<INSTALL_INTERFACE:everest::util>
+        everest::helpers
+        everest::util
         ${STD_FILESYSTEM_COMPAT_LIB}
     PRIVATE
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}
@@ -97,6 +95,11 @@ target_link_libraries(framework
         everest::io
         ${ATOMIC_LIBS}
 )
+
+# hide symbols of statically linked dependencies
+# this prevents consumers from resolving them through libframework.so
+# and forces them to link those libraries themselves.
+target_link_options(framework PRIVATE "LINKER:--exclude-libs,ALL")
 
 collect_migration_files(
      LOCATION ${PROJECT_SOURCE_DIR}/schemas/migrations

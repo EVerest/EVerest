@@ -11,6 +11,8 @@
 
 #include <filesystem>
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 namespace {
 using namespace ocpp_multi;
 
@@ -80,39 +82,58 @@ protected:
     }
 
     ocpp::v2::SetVariableResult set_variable(const std::string& component, const std::string& variable,
-                                             const std::string& value) {
+                                             const std::string& value,
+                                             const std::optional<std::string>& instance = std::nullopt) {
         ocpp::v2::SetVariableData data;
         data.component.name = component;
+        if (instance.has_value()) {
+            data.component.instance = instance.value();
+        }
         data.variable.name = variable;
         data.attributeValue = value;
         const auto outcomes = m_chargepoint.set_variables({data}, "test");
         EXPECT_EQ(outcomes.size(), 1u);
         return outcomes.empty() ? ocpp::v2::SetVariableResult{} : outcomes.front().result;
     }
+
+    std::optional<std::string> get_variable(const std::string& component, const std::string& variable,
+                                            const std::optional<std::string>& instance = std::nullopt) {
+        ocpp::v2::GetVariableData data;
+        data.component.name = component;
+        if (instance.has_value()) {
+            data.component.instance = instance.value();
+        }
+        data.variable.name = variable;
+        const auto values = m_chargepoint.get_variables({data});
+        if (values.size() != 1 || !values.front().attributeValue.has_value()) {
+            return std::nullopt;
+        }
+        return values.front().attributeValue->get();
+    }
 };
 
 TEST(ChargePointV16, defaultIsFault) {
     Everest::error::Error error;
-    EXPECT_FALSE(ChargePointV16::default_is_fault(error));
+    EXPECT_FALSE(ocpp_module_common::DefaultErrorMappingV16::is_fault(error));
 }
 
 TEST(ChargePointV16, defaultVendorErrorCode) {
     Everest::error::Error error;
     error.type = "";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/");
     error.sub_type = "12345";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "/";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "abcd/";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "/12345");
     error.type = "abcd/def";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/12345");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/12345");
     error.sub_type = "";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/");
     error.type = "abcd/def/ghi";
     error.sub_type = "apples";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/ghi/apples");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/ghi/apples");
 }
 
 TEST(ChargePointV16, defaultVendorErrorCodeOriginal) {
@@ -131,7 +152,7 @@ TEST(ChargePointV16, defaultVendorErrorCodeOriginal) {
     EXPECT_EQ(vendor_error_code_orig(error), "def/");
     error.type = "abcd/def/ghi";
     error.sub_type = "apples";
-    EXPECT_EQ(ChargePointV16::default_vendor_error_code(error), "def/ghi/apples");
+    EXPECT_EQ(ocpp_module_common::DefaultErrorMappingV16::vendor_error_code(error), "def/ghi/apples");
 }
 
 TEST(ChargePointV16, encodePauseReasonsEmpty) {
@@ -214,6 +235,48 @@ TEST_F(ChargePointV16ConfigurationTest, monitoredKeyChangeStillReachesVariableSe
     const auto result = set_variable("ISO15118Ctrlr", "PnCEnabled", "false");
     ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
     EXPECT_EQ(monitored_value, "false");
+}
+
+TEST_F(ChargePointV16ConfigurationTest, readOnlyKeyBackedVariableIsWritable) {
+    std::optional<std::string> monitored_value;
+    m_chargepoint.register_variable_listener({"InternalCtrlr"}, {"ChargePointModel"},
+                                             [&monitored_value](const ocpp::v2::Component&, const ocpp::v2::Variable&,
+                                                                const std::string& value) { monitored_value = value; });
+
+    const auto result = set_variable("InternalCtrlr", "ChargePointModel", "Model-X");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(monitored_value, "Model-X");
+    EXPECT_EQ(get_variable("InternalCtrlr", "ChargePointModel"), "Model-X");
+}
+
+TEST_F(ChargePointV16ConfigurationTest, stackDerivedReadOnlyKeyStaysRejected) {
+    const auto result = set_variable("OCPP16LegacyCtrlr", "NumberOfConnectors", "5");
+    EXPECT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+}
+
+TEST_F(ChargePointV16ConfigurationTest, keyOnlyFormWritesReadOnlyKey) {
+    const auto result = set_variable("", "ChargePointModel", "Model-Y");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get_variable("", "ChargePointModel"), "Model-Y");
+}
+
+TEST_F(ChargePointV16ConfigurationTest, centralSystemUriIsChangedThroughNetworkConfiguration) {
+    const std::string new_url = "ws://csms.example.com:9000/ocpp";
+    const auto active_url = get_variable("NetworkConfiguration", "OcppCsmsUrl", "1");
+    ASSERT_TRUE(active_url.has_value());
+    ASSERT_NE(active_url, new_url);
+
+    // the key would overwrite the active slot 1
+    EXPECT_EQ(set_variable("", "CentralSystemURI", new_url).attributeStatus, ocpp::v2::SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(set_variable("NetworkConfiguration", "OcppCsmsUrl", new_url, "1").attributeStatus,
+              ocpp::v2::SetVariableStatusEnum::Rejected);
+    EXPECT_EQ(get_variable("NetworkConfiguration", "OcppCsmsUrl", "1"), active_url);
+
+    // slot 2 is neither active nor in NetworkConfigurationPriority; 1.6 reports connection-config writes as
+    // RebootRequired because it reads network profiles on (re)connect only
+    EXPECT_EQ(set_variable("NetworkConfiguration", "OcppCsmsUrl", new_url, "2").attributeStatus,
+              ocpp::v2::SetVariableStatusEnum::RebootRequired);
+    EXPECT_EQ(get_variable("NetworkConfiguration", "OcppCsmsUrl", "2"), new_url);
 }
 
 TEST_F(ChargePointV16ConfigurationTest, evConnectionTimeoutIsReadFromConnectionTimeOutKey) {

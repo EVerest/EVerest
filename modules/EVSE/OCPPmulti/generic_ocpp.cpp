@@ -10,10 +10,13 @@
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
 #include <everest/external_energy_limits/external_energy_limits.hpp>
 #include <everest/ocpp_module_common/conversions.hpp>
+#include <everest/ocpp_module_common/custom_error_mapping_validation.hpp>
 #include <ld-ev.hpp>
 #include <ocpp/v2/component_state_manager.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <utils/exceptions.hpp>
 
+#include <cmath>
 #include <thread>
 
 namespace fs = std::filesystem;
@@ -57,6 +60,38 @@ std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manag
     }
 
     return result;
+}
+
+// a misconfigured custom error mapping must not stop the charger: its offending entries are reported and left out,
+// so the built-in mapping applies to their errors
+void report_findings(const fs::path& file, const std::vector<module::custom_error_mapping::Finding>& findings) {
+    using module::custom_error_mapping::Finding;
+    for (const auto& finding : findings) {
+        const auto ignored = finding.level == Finding::Level::Error && !finding.entry.empty();
+        EVLOG_warning << file.string() << ": " << finding.to_string() << (ignored ? "; the entry is ignored" : "");
+    }
+}
+
+std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping>
+without_reported(const fs::path& file, const module::custom_error_mapping::CustomFileErrorMapping& mapping,
+                 const std::vector<module::custom_error_mapping::Finding>& findings) {
+    report_findings(file, findings);
+    return mapping.without(findings);
+}
+
+module::custom_error_mapping::DeviceModelLookup to_device_model_lookup(const ocpp::v2::GetVariableStatusEnum status) {
+    using module::custom_error_mapping::DeviceModelLookup;
+    switch (status) {
+    case ocpp::v2::GetVariableStatusEnum::UnknownComponent:
+        return DeviceModelLookup::UnknownComponent;
+    case ocpp::v2::GetVariableStatusEnum::UnknownVariable:
+        return DeviceModelLookup::UnknownVariable;
+    case ocpp::v2::GetVariableStatusEnum::Accepted:
+    case ocpp::v2::GetVariableStatusEnum::Rejected:
+    case ocpp::v2::GetVariableStatusEnum::NotSupportedAttributeType:
+        break;
+    }
+    return DeviceModelLookup::Known;
 }
 
 std::int32_t get_connector_id_from_error(const Everest::error::Error& error) {
@@ -458,7 +493,69 @@ void GenericOcpp::report_inoperative(std::int32_t evse_id, const EventInfo& even
     }
 }
 
+void GenericOcpp::init_custom_error_mapping() {
+    const auto configured = mv_config.getCustomErrorMappingPath();
+    if (configured.empty()) {
+        return;
+    }
+
+    EVLOG_warning << "CustomErrorMappingPath is currently experimental! The custom error mapping file format and its "
+                     "behavior may change without further notice";
+
+    // relative paths resolve against the module share directory, like the other configured paths
+    const auto resolved = update_path_multi(remove_dir(mv_info.paths.share), configured);
+    if (!fs::exists(resolved)) {
+        EVLOG_warning << "CustomErrorMappingPath '" << configured << "' not found at " << resolved.string()
+                      << " (relative paths resolve against the OCPPmulti share directory), the built-in error mapping "
+                         "applies";
+        return;
+    }
+
+    auto result = module::custom_error_mapping::load_error_mapping(resolved);
+    report_findings(resolved, result.findings);
+    if (result.error_mapping == nullptr) {
+        EVLOG_warning << resolved.string() << ": not usable, the built-in error mapping applies";
+        return;
+    }
+
+    using namespace module::custom_error_mapping;
+    auto mapping = std::move(result.error_mapping);
+    if (const auto declared = read_declared_error_types(mv_info.paths.errors); declared.has_value()) {
+        mapping = without_reported(resolved, *mapping, validate_error_types(*mapping, declared.value()));
+    } else {
+        EVLOG_warning << resolved.string() << ": error types not checked, errors directory "
+                      << mv_info.paths.errors.string() << " not found";
+    }
+    mapping = without_reported(resolved, *mapping, validate_values(*mapping));
+
+    for (const auto& key : replaced_builtin_entries(*mapping, builtin_error_types())) {
+        EVLOG_info << resolved.string() << ": entry '" << key << "' overrides fields of the built-in MREC mapping";
+    }
+    mv_custom_error_mapping = std::move(mapping);
+    mv_custom_error_mapping_path = resolved;
+}
+
+void GenericOcpp::ready_custom_error_mapping(
+    const GenericChargePointInterface::ConnectorStructure& evse_connector_structure) {
+    if (mv_custom_error_mapping == nullptr || !ocpp_2_selected()) {
+        return;
+    }
+
+    using namespace module::custom_error_mapping;
+    const auto lookup = [this](const ocpp::v2::Component& component, const ocpp::v2::Variable& variable) {
+        const auto results = mv_charge_point.get_variables({{component, variable, ocpp::v2::AttributeEnum::Actual}});
+        return results.empty() ? DeviceModelLookup::UnknownComponent
+                               : to_device_model_lookup(results.front().attributeStatus);
+    };
+    report_findings(mv_custom_error_mapping_path, validate_device_model(*mv_custom_error_mapping, lookup,
+                                                                        evse_connector_structure, /*strict=*/false));
+}
+
 void GenericOcpp::init() {
+    // loaded before the error subscriptions and before the charge point starts,
+    // so the first converted error already sees it
+    init_custom_error_mapping();
+
     // was originally in ready()
     const auto log_path = mv_config.getMessageLogPath();
     if (!fs::exists(log_path)) {
@@ -480,6 +577,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
 
     wait_all_ready();
     auto [evse_connector_structure, connector_mapping] = get_connector_structure();
+    const auto connector_structure_for_validation = evse_connector_structure;
 
     const auto share_path = remove_dir(mv_info.paths.share);
 
@@ -544,7 +642,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
         std::move(evse_connector_structure),
         std::move(connector_mapping),
         m_everest_device_model_storage,
-        mv_config.getDeviceModelConfigMappings(),
+        mv_config.getOcpp16KeyMappingsPath(),
         static_cast<std::int32_t>(mv_config.getOcpp16NetworkConfigSlot()),
         mv_config.getEnableLegacyConfigMigration(),
     };
@@ -557,6 +655,7 @@ void GenericOcpp::ready(const ConfigServiceClient& client) {
     }
 
     mv_charge_point.init(args);
+    ready_custom_error_mapping(connector_structure_for_validation);
 
     // publish charging schedules at least once on startup
     cb_set_charging_profiles();
@@ -1083,20 +1182,21 @@ bool GenericOcpp::cb_connector_effective_operative_status(std::int32_t evse_id, 
 
     if (evse_id > 0) {
         auto& evse = mv_requires.evse_manager.at(evse_id - 1);
+        const bool enable_requested = new_status == ocpp::v2::OperationalStatusEnum::Operative;
+        const auto enable_state =
+            enable_requested ? types::evse_manager::Enable_state::Enable : types::evse_manager::Enable_state::Disable;
 
-        if (new_status == ocpp::v2::OperationalStatusEnum::Operative) {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Enable, 5000})) {
-                mv_charge_point.on_enabled(evse_id, connector_id);
-                result = true;
-            }
+        // returns the effective enabled state across all sources, not a success flag
+        const bool is_enabled =
+            evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS, enable_state, 5000});
+
+        if (is_enabled) {
+            mv_charge_point.on_enabled(evse_id, connector_id);
         } else {
-            if (evse->call_enable_disable(connector_id, {types::evse_manager::Enable_source::CSMS,
-                                                         types::evse_manager::Enable_state::Disable, 5000})) {
-                mv_charge_point.on_unavailable(evse_id, connector_id);
-                result = true;
-            }
+            mv_charge_point.on_unavailable(evse_id, connector_id);
         }
+
+        result = is_enabled == enable_requested;
     } else {
         EVLOG_warning << "cb_connector_effective_operative_status: invalid evse_id: " << evse_id;
     }
@@ -1224,7 +1324,7 @@ void GenericOcpp::cb_get_15118_ev_certificate_response(std::int32_t connector_id
                                                        ocpp::v2::CertificateActionEnum certificate_action) {
     using namespace module::conversions;
 
-    EVLOG_debug << "Received response from get_15118_ev_certificate_request: " << response;
+    EVLOG_debug << "Received response from get_15118_ev_certificate_request";
     // transform response, inject action, send to associated EvseManager
     types::iso15118::ResponseExiStreamStatus everest_response;
     everest_response.status = to_everest_iso15118_status(response.status);
@@ -1523,10 +1623,38 @@ void GenericOcpp::cb_reset(const std::optional<const std::int32_t>& evse_id, Res
         }
 
         if (do_reset) {
-            // small delay before stopping the charge point to make sure all responses are received
-            std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
-            mv_charge_point.stop();
-            mv_requires.system.call_reset(r_type, scheduled);
+            auto reset = m_reset.handle();
+            if (mv_shutting_down.load()) {
+                EVLOG_warning << "Reset ignored: module is shutting down";
+                return;
+            }
+            // joining a running reset here could block libocpp's receive thread on its own join
+            if (reset->running) {
+                EVLOG_warning << "Reset ignored: a reset is already in progress";
+                return;
+            }
+            // not running, so the finished thread no longer needs m_reset
+            if (reset->thread.joinable()) {
+                reset->thread.join();
+            }
+            reset->running = true;
+            reset->thread = std::thread([this, r_type, scheduled]() {
+                try {
+                    // small delay before stopping the charge point to make sure all responses are received
+                    std::this_thread::sleep_for(std::chrono::seconds(mv_config.getResetStopDelay()));
+                    mv_charge_point.stop();
+                    try {
+                        mv_requires.system.call_reset(r_type, scheduled);
+                    } catch (const Everest::Shutdown& e) {
+                        EVLOG_warning << "System reset request interrupted by module shutdown: " << e.what();
+                    } catch (const std::exception& e) {
+                        EVLOG_error << "System reset request failed: " << e.what();
+                    }
+                } catch (const std::exception& e) {
+                    EVLOG_error << "Reset failed, no system reset requested: " << e.what();
+                }
+                m_reset.handle()->running = false;
+            });
         }
     }
 }
@@ -1895,15 +2023,8 @@ void GenericOcpp::cb_waiting_for_external_ready(std::int32_t evse_id, bool ready
     }
 }
 
-bool GenericOcpp::map_error(const std::string& error, std::string& updated_error) {
-    bool result{false};
-    if (const auto it = mv_mrec_error_map.find(error); it != mv_mrec_error_map.end()) {
-        updated_error = it->second;
-        result = true;
-    } else {
-        updated_error = error;
-    }
-    return result;
+std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> GenericOcpp::custom_error_mapping() const {
+    return mv_custom_error_mapping;
 }
 
 void GenericOcpp::transaction_add(std::int32_t evse_id,
@@ -1992,6 +2113,20 @@ void GenericOcpp::shutdown() {
 
     // Unblock any ConnectivityManager thread waiting on a pending configure_network future.
     drain_pending_network_config_requests();
+
+    // the reset work uses the charge point, which the owner tears down after this
+    join_reset_thread();
+}
+
+GenericOcpp::~GenericOcpp() {
+    join_reset_thread();
+}
+
+void GenericOcpp::join_reset_thread() {
+    auto reset_thread = std::move(m_reset.handle()->thread);
+    if (reset_thread.joinable()) {
+        reset_thread.join();
+    }
 }
 
 bool GenericOcpp::ocpp_2_selected() const {
@@ -2139,7 +2274,7 @@ std::optional<bool> GenericOcpp::read_persisted_der_enabled(std::int32_t evse_id
         data.attributeType = ocpp::v2::AttributeEnum::Actual;
         const auto results = mv_charge_point.get_variables({data});
         if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
-            results.front().attributeValue.has_value()) {
+            results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
             return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
         }
     }
@@ -2321,6 +2456,37 @@ GenericOcpp::create_limits_entry(const std::string& timestamp, const ocpp::v2::E
 
     return result;
 };
+
+std::optional<types::energy::ScheduleReqEntry>
+GenericOcpp::create_export_limits_entry(const std::string& timestamp,
+                                        const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                                        ocpp::v2::ChargingRateUnitEnum unit) {
+    std::optional<types::energy::ScheduleReqEntry> result;
+
+    // dischargeLimit_L2/_L3 are not representable in LimitsReq
+    if (period.dischargeLimit.has_value()) {
+        types::energy::ScheduleReqEntry entry;
+        entry.timestamp = timestamp;
+
+        const auto source_ext_limit = mv_info.id + "/OCPP_set_external_limits";
+        const auto discharge_limit = std::abs(period.dischargeLimit.value());
+
+        types::energy::LimitsReq limits_req;
+        if (unit == ocpp::v2::ChargingRateUnitEnum::A) {
+            limits_req.ac_max_current_A = {discharge_limit, source_ext_limit};
+            if (period.numberPhases.has_value()) {
+                limits_req.ac_max_phase_count = {period.numberPhases.value(), source_ext_limit};
+            }
+        } else {
+            limits_req.total_power_W = {discharge_limit, source_ext_limit};
+        }
+
+        entry.limits_to_leaves = limits_req;
+        result = std::move(entry);
+    }
+
+    return result;
+}
 
 std::optional<types::energy::ScheduleSetpointEntry>
 GenericOcpp::create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
@@ -2553,6 +2719,8 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
         types::energy::ExternalLimits limits;
         std::vector<types::energy::ScheduleReqEntry> schedule_import;
         std::vector<types::energy::ScheduleSetpointEntry> schedule_setpoints;
+        std::vector<types::energy::ScheduleReqEntry> schedule_export;
+        bool has_export_limit{false};
 
         const auto& unit = composite_schedule.chargingRateUnit;
 
@@ -2566,10 +2734,23 @@ void GenericOcpp::set_external_limits(const std::vector<ocpp::v2::EnhancedCompos
             if (auto limits_entry = create_limits_entry(timestamp, period, unit)) {
                 schedule_import.push_back(*limits_entry);
             }
+
+            // a period without a discharge limit gets an empty entry so a previous limit does not carry over
+            auto export_entry = create_export_limits_entry(timestamp, period, unit);
+            if (export_entry.has_value()) {
+                has_export_limit = true;
+            } else {
+                export_entry.emplace();
+                export_entry->timestamp = timestamp;
+            }
+            schedule_export.push_back(*export_entry);
         }
 
         limits.schedule_import = std::move(schedule_import);
         limits.schedule_setpoints = std::move(schedule_setpoints);
+        if (has_export_limit) {
+            limits.schedule_export = std::move(schedule_export);
+        }
 
         auto& evse_sink = external_energy_limits::get_evse_sink_by_evse_id(mv_requires.evse_energy_sink, evse_id);
         evse_sink.call_set_external_limits(limits);

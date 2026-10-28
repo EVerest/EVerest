@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <atomic>
 #include <memory>
+#include <thread>
 
 #include <catch2/catch_test_macros.hpp>
 
@@ -192,6 +194,41 @@ SCENARIO("A terminate racing session creation wins over the fresh session") {
                     }
                 }
             }
+        }
+    }
+}
+
+SCENARIO("SAE DER setup updates from another thread race session teardown safely") {
+    iso15118::session::feedback::Callbacks callbacks;
+    callbacks.signal = [](auto) {};
+
+    MockConnectionFactory factory;
+    auto controller = make_controller(callbacks, factory);
+
+    controller.tick();
+    REQUIRE(factory.calls == 1);
+
+    WHEN("SAE DER setup configs are pushed while sessions are reaped and recreated") {
+        constexpr int session_cycles = 200;
+        std::atomic<bool> done{false};
+
+        std::thread updater([&] {
+            const auto setup_config = iso15118::d20::make_inert_default_sae_setup_config(230.0F);
+            while (not done.load()) {
+                controller.update_der_sae_limits(iso15118::d20::SaeDerTransferLimits{}, setup_config);
+            }
+        });
+
+        for (int i = 0; i < session_cycles; i++) {
+            controller.set_dlink_ready(false);
+            controller.tick();
+        }
+
+        done.store(true);
+        updater.join();
+
+        THEN("every cycle replaced the session") {
+            REQUIRE(factory.calls == session_cycles + 1);
         }
     }
 }

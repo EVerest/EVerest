@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "ISO15118_chargerImpl.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <fmt/ranges.h>
 
 #include "der_setup.hpp"
@@ -683,6 +683,7 @@ void ISO15118_chargerImpl::ready() {
         mod->config.device,
         tls_strategy,
         mod->config.enable_sdp_server,
+        static_cast<uint16_t>(mod->config.tcp_port),
     };
     auto callbacks = create_callbacks();
 
@@ -2050,6 +2051,16 @@ void ISO15118_chargerImpl::handle_update_energy_transfer_modes(
         }
     }
 
+    // Several modes collapse to one -20 service category (AC_single_phase_core and AC_three_phase_core are both
+    // AC); the phase choice is offered per ServiceDetail parameter set from the AC connectors instead.
+    std::vector<dt::ServiceCategory> unique_services;
+    for (const auto service : services) {
+        if (std::find(unique_services.begin(), unique_services.end(), service) == unique_services.end()) {
+            unique_services.push_back(service);
+        }
+    }
+    services = std::move(unique_services);
+
     setup_config.supported_energy_services = services;
 
     // The ISO 15118-2 / DIN SPEC 70121 engines advertise the configured modes verbatim, so they keep the
@@ -2376,6 +2387,8 @@ void ISO15118_chargerImpl::handle_send_error(types::iso15118::EvseError& error) 
         code = iso15118::d20::EvseErrorCode::Malfunction;
         break;
     case types::iso15118::EvseError::Error_EmergencyShutdown:
+    case types::iso15118::EvseError::Error_ErrorShutdown:
+        // The C++ stack has no keep-alive error shutdown (see EvseV2G); treat it as an emergency shutdown.
         code = iso15118::d20::EvseErrorCode::EmergencyShutdown;
         break;
     }

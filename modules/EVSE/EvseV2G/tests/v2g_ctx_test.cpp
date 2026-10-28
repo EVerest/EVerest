@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
+#include <cstring>
 #include <memory>
 #include <v2g_ctx.hpp>
 
@@ -47,6 +48,8 @@ protected:
 
         EXPECT_EQ(ctx->selected_protocol, V2G_UNKNOWN_PROTOCOL);
         EXPECT_FALSE(ctx->intl_emergency_shutdown);
+        EXPECT_FALSE(ctx->error_shutdown);
+        EXPECT_FALSE(ctx->error_shutdown_reported);
         EXPECT_FALSE(ctx->stop_hlc);
 
         // ctx->is_connection_terminated is updated rather than cleared
@@ -58,6 +61,23 @@ protected:
         // many items in session not reset
         EXPECT_FALSE(ctx->session.renegotiation_required);
         EXPECT_FALSE(ctx->session.is_charging);
+
+        // a stopped DC session must not leak EVSE_Shutdown into the next one
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_INIT], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_AUTH], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_PARAMETER], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_ISOLATION],
+                  iso2_DC_EVSEStatusCodeType_EVSE_IsolationMonitoringActive);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_PRECHARGE], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_CHARGE], iso2_DC_EVSEStatusCodeType_EVSE_Ready);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_WELDING], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
+        EXPECT_EQ(ctx->evse_v2g_data.evse_status_code[PHASE_STOP], iso2_DC_EVSEStatusCodeType_EVSE_NotReady);
+    }
+
+    void set_dc_status_codes_shutdown() {
+        // what handle_stop_charging() and a PowerDeliveryReq(Stop) leave behind
+        memset(ctx->evse_v2g_data.evse_status_code, iso2_DC_EVSEStatusCodeType_EVSE_Shutdown,
+               sizeof(ctx->evse_v2g_data.evse_status_code));
     }
 
     void SetUp() override {
@@ -101,9 +121,12 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateTrue) {
     ctx->state = 10;
     ctx->selected_protocol = V2G_PROTO_DIN70121;
     ctx->intl_emergency_shutdown = true;
+    ctx->error_shutdown = true;
+    ctx->error_shutdown_reported = true;
     ctx->stop_hlc = true;
     ctx->session.renegotiation_required = true;
     ctx->session.is_charging = true;
+    set_dc_status_codes_shutdown();
 
     v2g_ctx_init_charging_state(ctx.get(), true);
 
@@ -119,14 +142,22 @@ TEST_F(V2gCtxTest, v2g_ctx_init_charging_stateFalse) {
     ctx->state = 10;
     ctx->selected_protocol = V2G_PROTO_DIN70121;
     ctx->intl_emergency_shutdown = true;
+    ctx->error_shutdown = true;
+    ctx->error_shutdown_reported = true;
     ctx->stop_hlc = true;
     ctx->session.renegotiation_required = true;
     ctx->session.is_charging = true;
+    set_dc_status_codes_shutdown();
 
     v2g_ctx_init_charging_state(ctx.get(), false);
 
     v2g_ctx_init_charging_state_cleared();
     EXPECT_FALSE(ctx->is_connection_terminated);
+}
+
+TEST_F(V2gCtxTest, v2g_ctx_create_initializes_default_ports) {
+    EXPECT_EQ(ctx->tcp_port, 61341);
+    EXPECT_EQ(ctx->tls_port, 64109);
 }
 
 #if 0

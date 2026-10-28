@@ -267,7 +267,7 @@ device model, so there are two ways to configure OCPP 1.6:
    configuration keys to device model variables via built-in mappings
    (documented in
    `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_).
-   Custom mappings can be provided using the ``DeviceModelConfigMappings``
+   Custom mappings can be provided using the ``Ocpp16KeyMappingsPath``
    configuration parameter.
 
 2. **Legacy JSON with a one-time migration**: For existing OCPP 1.6
@@ -334,6 +334,13 @@ appropriate slot's JSON file:
 Together with ``OcppCsmsUrl`` and ``SecurityProfile``, the last three are
 mandatory for a usable profile; a slot missing any of them is silently
 skipped by the failover.
+
+At runtime, a 2.x CSMS can change a slot with ``SetNetworkProfile``. A 1.6
+CSMS cannot: OCPP 1.6 has no ``SetNetworkProfile``, and
+``ChangeConfiguration.req`` rejects ``CentralSystemURI`` because it is
+``ReadOnly``. In OCPP 1.6 mode, the CSMS URL changes only through this
+component config or a local ``set_variables`` on a slot that is not in use (see
+the :ref:`OCPPmulti module documentation <everest_modules_OCPPmulti>`).
 
 Each slot can optionally override the charging station's identity and
 authentication credentials:

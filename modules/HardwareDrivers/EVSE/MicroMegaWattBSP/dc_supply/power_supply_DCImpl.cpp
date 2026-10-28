@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "power_supply_DCImpl.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace module {
 namespace dc_supply {

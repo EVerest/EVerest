@@ -11,6 +11,7 @@
 #include <arpa/inet.h>
 #include <array>
 #include <cassert>
+#include <cerrno>
 #include <charconv>
 #include <csignal>
 #include <cstddef>
@@ -388,7 +389,14 @@ ssl_op_result process_result(SSL* ctx, operation_t operation, const int res) {
                     if (error.empty()) {
                         error = "SSL_ERROR_SYSCALL " + std::to_string(errno);
                     }
-                    log_error(operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno));
+                    const auto msg =
+                        operation_str(operation) + std::string("SSL_ERROR_SYSCALL ") + std::to_string(errno);
+                    if (errno == ECONNRESET) {
+                        // Many peers end the connection with an RST instead of a FIN
+                        log_info(msg);
+                    } else {
+                        log_error(msg);
+                    }
                 }
                 break;
             case ssl_error_t::error_ssl:
@@ -843,7 +851,7 @@ void keylog_callback(const SSL* ssl, const char* line) {
         // ex_data is only set for a server that came up, so there is nothing to re-check here.
         const auto port = std::to_string(keylog_server->get_port());
         if (keylog_server->send(line)) {
-            log_info("TLS handshake keys sent to port " + port + ": " + std::string(line));
+            log_info("TLS handshake keys sent to port " + port);
         } else {
             log_error("key-log send to port " + port + " failed");
         }
@@ -1061,6 +1069,27 @@ bool Server::init_socket(const config_t& cfg) {
     }
 
     return result;
+}
+
+std::uint16_t Server::bound_port() const {
+    if (m_socket == INVALID_SOCKET) {
+        return 0;
+    }
+
+    sockaddr_storage addr{};
+    socklen_t addr_len = sizeof(addr);
+    if (::getsockname(m_socket, reinterpret_cast<sockaddr*>(&addr), &addr_len) != 0) {
+        return 0;
+    }
+
+    switch (addr.ss_family) {
+    case AF_INET:
+        return ntohs(reinterpret_cast<const sockaddr_in*>(&addr)->sin_port);
+    case AF_INET6:
+        return ntohs(reinterpret_cast<const sockaddr_in6*>(&addr)->sin6_port);
+    default:
+        return 0;
+    }
 }
 
 int Server::handle_tls_1_3_verify_upgrade(SSL* ssl, int* /*alert*/) {
@@ -1467,18 +1496,17 @@ Server::state_t Server::serve(const ConnectionHandler& handler) {
         break;
     }
 
-    // set before publishing m_running so stop() never reads a stale (zero) id
-    m_server_thread = pthread_self(); // for use by stop()
-
-    // wakeup wait_running()
+    // wakeup wait_running(); under the same lock as stop(), so a stop() either finds the server
+    // not running yet (no-op) or finds m_exit already cleared and the thread ID set
     {
-        std::lock_guard lock(m_cv_mutex);
-        m_running = true;
+        auto serve_state = m_serve_state.handle();
+        m_exit = false;
+        serve_state->thread = pthread_self();
+        serve_state->running = true;
     }
-    m_cv.notify_all();
+    m_serve_state.notify_all();
 
     if (result) {
-        m_exit = false;
         m_state = (m_state == state_t::init_complete) ? state_t::running : state_t::init_socket;
         while (!m_exit) {
             wait_for_connection(handler);
@@ -1492,12 +1520,9 @@ Server::state_t Server::serve(const ConnectionHandler& handler) {
         m_state = state_t::init_needed;
     }
 
-    // wakeup wait_stopped()
-    {
-        std::lock_guard lock(m_cv_mutex);
-        m_running = false;
-    }
-    m_cv.notify_all();
+    // wakeup wait_stopped(), after this stop() no longer signals this thread
+    m_serve_state.handle()->running = false;
+    m_serve_state.notify_all();
     return m_state;
 }
 
@@ -1523,21 +1548,25 @@ bool Server::suspend() {
 }
 
 void Server::stop() {
-    m_exit = true;
-    // raise a signal if a hander was installed
-    if (m_running && (s_sig_int != -1)) {
-        pthread_kill(m_server_thread, s_sig_int);
+    // held while signalling: serve() cannot return, so its thread is still alive
+    auto serve_state = m_serve_state.handle();
+    if (serve_state->running) {
+        m_exit = true;
+        // raise a signal if a hander was installed
+        if (s_sig_int != -1) {
+            pthread_kill(serve_state->thread, s_sig_int);
+        }
     }
 }
 
 void Server::wait_running() {
-    std::unique_lock lock(m_cv_mutex);
-    m_cv.wait(lock, [this]() { return this->m_running; });
+    auto serve_state = m_serve_state.handle();
+    serve_state.wait([&serve_state]() { return serve_state->running; });
 }
 
 void Server::wait_stopped() {
-    std::unique_lock lock(m_cv_mutex);
-    m_cv.wait(lock, [this]() { return !this->m_running; });
+    auto serve_state = m_serve_state.handle();
+    serve_state.wait([&serve_state]() { return !serve_state->running; });
 }
 
 // ----------------------------------------------------------------------------

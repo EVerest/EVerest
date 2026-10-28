@@ -49,11 +49,11 @@ public:
     [[nodiscard]] std::string getChargePointConfigPath() const override;
     [[nodiscard]] int getCompositeScheduleIntervalS() const override;
     [[nodiscard]] std::string getCoreDatabasePath() const override;
-    [[nodiscard]] std::string getCustomMrecErrorMapPath() const override;
+    [[nodiscard]] std::string getCustomErrorMappingPath() const override;
     [[nodiscard]] std::string getDatabasePath() const override;
     [[nodiscard]] int getDelayOcppStart() const override;
     [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override;
-    [[nodiscard]] std::string getDeviceModelConfigMappings() const override;
+    [[nodiscard]] std::string getOcpp16KeyMappingsPath() const override;
     [[nodiscard]] std::string getDeviceModelConfigPath() const override;
     [[nodiscard]] std::string getDeviceModelDatabasePath() const override;
     [[nodiscard]] std::string getDeviceModelDatabaseMigrationPath() const override;
@@ -79,7 +79,7 @@ struct Conf {
     std::string ChargePointConfigPath;
     int CompositeScheduleIntervalS;
     std::string CoreDatabasePath;
-    std::string CustomMrecErrorMapPath;
+    std::string CustomErrorMappingPath;
     std::string DatabasePath;
     int DelayOcppStart;
     bool DelegateNetworkConfigurationToSystem;
@@ -87,7 +87,7 @@ struct Conf {
     std::string DeviceModelDatabasePath;
     std::string DeviceModelDatabaseMigrationPath;
     bool EnableLegacyConfigMigration;
-    std::string DeviceModelConfigMappings;
+    std::string Ocpp16KeyMappingsPath;
     bool EnableExternalWebsocketControl;
     std::string EverestDeviceModelDatabasePath;
     int GridSupportHeartbeatS;

@@ -20,7 +20,7 @@
 #include <type_traits>
 #include <utility>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "everest/logging.hpp"
 #include "scoped_lock_timeout.hpp"
@@ -259,10 +259,16 @@ void Charger::run_state_machine() {
                 internal_context.d20_pause_requested = false;
                 internal_context.d20_pause_confirmed = false;
                 cp_state_X1();
+                // The next PWM enable follows a plug-in (IEC 61851-1 Table A.6 seq. 1/2), not seq. 9.2: the EV has been
+                // in state A and no minimum time in X1 applies.
+                internal_context.pwm_switched_off_at.reset();
                 deauthorize_internal();
                 shared_context.flag_transaction_active = false;
                 clear_errors_on_unplug();
                 internal_context.dc_statistics_printed = false;
+                internal_context.slac_retries = 0;
+                internal_context.slac_retries_exhausted = false;
+                internal_context.wakeup_link_deadline.reset();
                 hlc_failed = false;
             }
 
@@ -309,7 +315,9 @@ void Charger::run_state_machine() {
                 if (config_context.charge_mode == ChargeMode::AC) {
                     ac_hlc_enabled_current_session = config_context.ac_hlc_enabled and not hlc_failed;
                     if (ac_hlc_enabled_current_session) {
-                        hlc_use_5percent_current_session = config_context.ac_hlc_use_5percent;
+                        // After the last matching retry ([V2G3-M06-07]) the EVSE stays in X1
+                        hlc_use_5percent_current_session =
+                            config_context.ac_hlc_use_5percent and not internal_context.slac_retries_exhausted;
                     }
                 } else if (config_context.charge_mode == ChargeMode::DC) {
                     hlc_use_5percent_current_session = true;
@@ -432,8 +440,9 @@ void Charger::run_state_machine() {
                 // PWM. This is a complete waste of 4 precious seconds.
                 if (config_context.charge_mode == ChargeMode::AC) {
                     if (ac_hlc_enabled_current_session) {
-                        if (config_context.ac_enforce_hlc) {
-                            // non standard compliant mode: we just keep 5 percent running all the time like in DC
+                        if (config_context.ac_enforce_hlc and not internal_context.slac_retries_exhausted) {
+                            // non standard compliant mode: we just keep 5 percent running all the time like in DC.
+                            // Exhausted matching retries end in nominal PWM here as well ([V2G3-M06-07]).
                             session_log.evse(
                                 false, "AC mode, HLC enabled(ac_enforce_hlc), keeping 5 percent on until a dlink error "
                                        "is signalled.");
@@ -506,6 +515,7 @@ void Charger::run_state_machine() {
                                                 internal_context.t_step_X1_return_state = target_state;
                                                 internal_context.t_step_X1_return_pwm = 0.;
                                                 internal_context.t_step_EF_return_ampere = 0.;
+                                                internal_context.t_step_X1_until_unmatched = false;
                                                 hlc_use_5percent_current_session = false;
                                                 shared_context.current_state = EvseState::T_step_X1;
                                             }
@@ -569,9 +579,8 @@ void Charger::run_state_machine() {
                     // t_step_X1. Some EVs implement a non-standard way for PnC with AC: They perform ISO until Auth
                     // loop, and once authorization is provided, they close TCP (or send SessionStop). The intention is
                     // to use only the PnC part of ISO (which is the same as DC to that point) and then do normal BC
-                    // instead of ISO charging loop. To support this we wait a short timeout to see if the chargeloop is
-                    // entered, and if not, we switch back to nominal. To get a similar behaviour for PnC and EIM we
-                    // still perform a T_step_EF here even if the standard says differently.
+                    // instead of ISO charging loop. To support this we keep 5 percent or X1 until the data link ends
+                    // and switch to nominal then, see pnc_without_charging_loop() in dlink_error() / dlink_terminate().
                     if (shared_context.hlc_charging_active) {
                         // AC HLC charging loop started
                         session_log.evse(false, "AC mode, HLC, PnC auth received. We will continue with 5percent as "
@@ -579,27 +588,17 @@ void Charger::run_state_machine() {
                         hlc_use_5percent_current_session = true;
                         shared_context.current_state = target_state;
 
+                    } else if (not hlc_use_5percent_current_session and not shared_context.dlink_established) {
+                        // X1 without a data link (matching retries exhausted, HLC given up after a lost link): no
+                        // data link end follows to switch to nominal PWM.
+                        session_log.evse(false, "AC mode, PnC auth received, X1 without data link. Go directly to "
+                                                "nominal PWM.");
+                        shared_context.current_state = target_state;
                     } else {
-                        // AC HLC charging loop not yet started
-                        if (internal_context.ac_x1_fallback_nominal_timeout_running) {
-                            if (std::chrono::duration_cast<std::chrono::milliseconds>(
-                                    std::chrono::steady_clock::now() -
-                                    internal_context.ac_x1_fallback_nominal_timeout_started)
-                                    .count() > AC_X1_FALLBACK_TO_NOMINAL_TIMEOUT_MS) {
-                                session_log.evse(
-                                    false,
-                                    "AC mode, HLC enabled, PnC authorized, but charging loop did not start. Go through "
-                                    "t_step_EF and disable 5 percent.");
-                                internal_context.t_step_EF_return_state = target_state;
-                                internal_context.t_step_EF_return_pwm = 0.;
-                                internal_context.t_step_EF_return_ampere = 0.;
-                                hlc_use_5percent_current_session = false;
-                                shared_context.current_state = EvseState::T_step_EF;
-                            }
-                        } else {
-                            internal_context.ac_x1_fallback_nominal_timeout_running = true;
-                            internal_context.ac_x1_fallback_nominal_timeout_started = std::chrono::steady_clock::now();
-                        }
+                        // AC HLC charging loop not yet started: keep 5 percent or X1 and the session alive until V2G
+                        // setup finished (Figures 3-6 of ISO15118-3, branch a). The HLC stack bounds the wait with
+                        // V2G_SECC_Sequence_Timeout; the end of the data link (dlink_error(), dlink_terminate())
+                        // switches to nominal PWM for basic charging with the PnC authorization.
                     }
 
                 } else if (config_context.charge_mode == ChargeMode::DC) {
@@ -687,6 +686,10 @@ void Charger::run_state_machine() {
             if (initialize_state) {
                 session_log.evse(false, "Enter T_step_X1");
                 cp_state_X1();
+                if (internal_context.t_step_X1_until_unmatched) {
+                    // [V2G3-M07-06]: the node leaves the logical network within X1.
+                    signal_slac_reset();
+                }
             }
             {
                 const bool fatal_error = stop_charging_on_fatal_error_internal();
@@ -695,11 +698,24 @@ void Charger::run_state_machine() {
                     // X1, do not restore PWM: go back to the return state, its checks will
                     // tear down the session.
                     session_log.evse(false, fmt::format("Exit T_step_X1: {}", stop_reason_flags(fatal_error)));
-                    shared_context.current_state = internal_context.t_step_X1_return_state;
+                    shared_context.current_state = internal_context.t_step_X1_until_unmatched
+                                                       ? internal_context.t_step_EF_return_state
+                                                       : internal_context.t_step_X1_return_state;
+                    internal_context.t_step_X1_until_unmatched = false;
                     break;
                 }
             }
-            if (time_in_current_state >= T_STEP_X1) {
+            if (internal_context.t_step_X1_until_unmatched) {
+                // [V2G3-M07-07]: E/F once the matching state is "Unmatched". X1 is held at least TP_match_leave,
+                // the time the node has to leave the network; T_STEP_X1 bounds the wait.
+                const bool unmatched = not shared_context.matching_started and not shared_context.slac_matched;
+                if ((unmatched and time_in_current_state >= TP_MATCH_LEAVE_MS) or time_in_current_state >= T_STEP_X1) {
+                    session_log.evse(false, unmatched ? "Exit T_step_X1: unmatched, go to E/F"
+                                                      : "Exit T_step_X1: still not unmatched, go to E/F");
+                    internal_context.t_step_X1_until_unmatched = false;
+                    shared_context.current_state = EvseState::T_step_EF;
+                }
+            } else if (time_in_current_state >= T_STEP_X1) {
                 session_log.evse(false, "Exit T_step_X1");
                 if (internal_context.t_step_X1_return_pwm == 0.) {
                     cp_state_X1();
@@ -788,10 +804,34 @@ void Charger::run_state_machine() {
                 }
             }
 
+            // [V2G3-M07-27]: the wake-up link watchdog. The link lost during the sleep (the matched-state link
+            // polling reported it, which clears dlink_established) or a link that never came back after the
+            // wake-up both end here: state E/F for T_step_EF, then 5 percent again for a new matching process.
+            if (internal_context.wakeup_link_deadline.has_value()) {
+                if (shared_context.dlink_established) {
+                    internal_context.wakeup_link_deadline.reset();
+                } else if (std::chrono::steady_clock::now() >= internal_context.wakeup_link_deadline.value()) {
+                    internal_context.wakeup_link_deadline.reset();
+                    session_log.evse(false, "No PLC link within T_conn_max_comm after the wake-up: E/F for "
+                                            "T_step_EF, then a new matching process [V2G3-M07-27]");
+                    request_error_sequence_internal();
+                    break;
+                }
+            }
+
             // make sure we are enabling PWM
             if (config_context.charge_mode == ChargeMode::AC and (not hlc_use_5percent_current_session or hlc_failed)) {
-                update_pwm_now_if_changed_ampere(get_max_current_internal());
+                const auto max_current = get_max_current_internal();
+                // Below 6 A the duty cycle maps to 100 % (X1). Enabling PWM again afterwards has to respect the
+                // minimum time in X1 (IEC 61851-1 Table A.6 seq. 9.2).
+                if (ampere_to_duty_cycle(max_current) < 1. and must_wait_in_x1_before_pwm()) {
+                    break;
+                }
+                update_pwm_now_if_changed_ampere(max_current);
             } else {
+                if (must_wait_in_x1_before_pwm()) {
+                    break;
+                }
                 update_pwm_now_if_changed(PWM_5_PERCENT);
             }
 
@@ -1025,6 +1065,14 @@ void Charger::run_state_machine() {
                     // issue it. After a dlink_pause the provider is still Matched and ignores enter_bcd,
                     // so the call is harmless there - same as the ChargingPausedEVSE resume path below.
                     signal_slac_start();
+                    // [V2G3-M07-27]: without a PLC link within T_conn_max_comm after the wake-up, E/F and a
+                    // new matching (checked in PrepareCharging). Anchored at the first toggle pulse: the
+                    // toggle only counts as complete up to TT_EVSE_VALD_TOGGLE after it, and that wait is
+                    // part of the wake-up, not extra link budget.
+                    internal_context.wakeup_link_deadline =
+                        (restarted_by_ev ? std::chrono::steady_clock::now()
+                                         : internal_context.hlc_ev_pause_start_of_bcb_sequence) +
+                        T_CONN_MAX_COMM;
                     shared_context.current_state = EvseState::PrepareCharging;
                 }
 
@@ -1048,6 +1096,12 @@ void Charger::run_state_machine() {
                 // This is for BASIC charging only
                 if (not power_available()) {
                     shared_context.current_state = EvseState::ChargingPausedEVSE;
+                    break;
+                }
+
+                // The EV pause switched PWM off in StoppingCharging: stay in X1 for at least 3 s before PWM is
+                // enabled again (IEC 61851-1 Table A.6 seq. 9.2 followed by 3.1).
+                if (must_wait_in_x1_before_pwm()) {
                     break;
                 }
 
@@ -1117,6 +1171,11 @@ void Charger::run_state_machine() {
                         // pause to resume from. Park in ChargingPausedEV (no SLAC restart, no PWM
                         // re-enable); the EV comes back via BCB toggle or unplug.
                         shared_context.current_state = EvseState::ChargingPausedEV;
+                        break;
+                    }
+                    // Basic charging switched PWM off when the pause started: stay in X1 for at least 3 s before
+                    // PWM is enabled again (IEC 61851-1 Table A.6 seq. 9.2 followed by 3.1).
+                    if (must_wait_in_x1_before_pwm()) {
                         break;
                     }
                     // resume charging
@@ -1415,6 +1474,10 @@ void Charger::update_pwm_max_every_5seconds_ampere(float ampere) {
 
 void Charger::update_pwm_now(float duty_cycle) {
     auto start = std::chrono::steady_clock::now();
+    if (duty_cycle >= 1.) {
+        // 100 % duty cycle is state X1 (no current available)
+        note_pwm_switched_off();
+    }
     internal_context.update_pwm_last_duty_cycle = duty_cycle;
     shared_context.pwm_running = true;
 
@@ -1442,7 +1505,41 @@ void Charger::update_pwm_now_if_changed_ampere(float ampere) {
     }
 }
 
+bool Charger::pwm_signal_off() const {
+    return not shared_context.pwm_running or internal_context.update_pwm_last_duty_cycle >= 1.;
+}
+
+// Remember when a running PWM is switched off. Repeated X1 while already off keeps the original time.
+void Charger::note_pwm_switched_off() {
+    if (not pwm_signal_off()) {
+        internal_context.pwm_switched_off_at = std::chrono::steady_clock::now();
+        internal_context.min_x1_wait_logged = false;
+    }
+}
+
+// IEC 61851-1:2017 Table A.6 sequence 9.2: the EVSE may switch PWM off at any time, but when it enables PWM again
+// (sequence 3.1) it shall have stayed in X1 for at least 3 s. Returns true while PWM must stay off.
+bool Charger::must_wait_in_x1_before_pwm() {
+    if (not pwm_signal_off() or not internal_context.pwm_switched_off_at.has_value()) {
+        return false;
+    }
+    const auto in_x1_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                              std::chrono::steady_clock::now() - internal_context.pwm_switched_off_at.value())
+                              .count();
+    if (in_x1_ms >= IEC_MIN_X1_BEFORE_PWM_MS) {
+        return false;
+    }
+    if (not internal_context.min_x1_wait_logged) {
+        internal_context.min_x1_wait_logged = true;
+        session_log.evse(false, fmt::format("Stay in X1 for another {} ms before enabling PWM again (IEC 61851-1 "
+                                            "Table A.6 seq. 9.2)",
+                                            IEC_MIN_X1_BEFORE_PWM_MS - in_x1_ms));
+    }
+    return true;
+}
+
 void Charger::cp_state_X1() {
+    note_pwm_switched_off();
     session_log.evse(false, "Set PWM Off");
     shared_context.pwm_running = false;
     internal_context.update_pwm_last_duty_cycle = 1.;
@@ -1452,6 +1549,8 @@ void Charger::cp_state_X1() {
 }
 
 void Charger::cp_state_F() {
+    // PWM is off in state F as well: time spent here counts towards the minimum time in X1
+    note_pwm_switched_off();
     session_log.evse(false, "Set PWM F");
     shared_context.pwm_running = false;
     internal_context.update_pwm_last_duty_cycle = 0.;
@@ -1461,6 +1560,8 @@ void Charger::cp_state_F() {
 }
 
 void Charger::cp_state_E() {
+    // PWM is off in state E as well: time spent here counts towards the minimum time in X1
+    note_pwm_switched_off();
     if (!supports_cp_state_E) {
         EVLOG_warning << "CP state E requested but not supported by hardware. Falling back to CP state X1.";
         cp_state_X1();
@@ -1625,6 +1726,7 @@ bool Charger::cancel_transaction(const types::evse_manager::StopTransactionReque
 
 void Charger::start_session(bool authfirst) {
     shared_context.session_active = true;
+    shared_context.dlink_established = false;
     shared_context.flag_authorized = false;
     shared_context.authorized_pnc = false;
     shared_context.flag_externally_cancelled = false;
@@ -1838,6 +1940,8 @@ void Charger::process_pending_reinit_request() {
 
     shared_context.reinit_requested = false;
     shared_context.reinit_running = true;
+    // Replaces T_step_X1 without running its exit.
+    internal_context.t_step_X1_until_unmatched = false;
     shared_context.current_state = EvseState::Reinit;
 }
 
@@ -1851,7 +1955,9 @@ void Charger::setup(const SetupConfig& config) {
     ac_hlc_enabled_current_session = config_context.ac_hlc_enabled = config.ac_hlc_enabled;
     config_context.ac_hlc_use_5percent = config.ac_hlc_use_5percent;
     config_context.ac_enforce_hlc = config.ac_enforce_hlc;
+    config_context.ac_limit_slac_init_retries = config.ac_limit_slac_init_retries;
     config_context.soft_over_current_timeout_ms = config.soft_over_current_timeout_ms;
+    config_context.soft_over_current_stale_data_warning_ms = config.soft_over_current_stale_data_warning_ms;
     shared_context.ac_with_soc_timeout = config.ac_with_soc_timeout;
     shared_context.ac_with_soc_timer = 3600000;
     soft_over_current_tolerance_percent = config.soft_over_current_tolerance_percent;
@@ -2250,6 +2356,7 @@ void Charger::set_current_drawn_by_vehicle(float l1, float l2, float l3) {
     shared_context.current_drawn_by_vehicle[0] = l1;
     shared_context.current_drawn_by_vehicle[1] = l2;
     shared_context.current_drawn_by_vehicle[2] = l3;
+    shared_context.current_drawn_by_vehicle_last_update = std::chrono::steady_clock::now();
 }
 
 void Charger::check_soft_over_current() {
@@ -2258,31 +2365,54 @@ void Charger::check_soft_over_current() {
     float limit = (get_max_current_signalled_to_ev_internal() + soft_over_current_measurement_noise_A) *
                   (1. + soft_over_current_tolerance_percent / 100.);
 
+    const auto now = std::chrono::steady_clock::now();
+
+    // Diagnose stale power meter data: values that have not been updated for a while indicate a
+    // frozen meter or a broken communication link.
+    // This is for debugging purposes only, the values are still used as-is.
+    constexpr int64_t stale_data_warning_interval_ms = 5000;
+
+    std::string stale_info;
+    if (config_context.soft_over_current_stale_data_warning_ms > 0 and
+        shared_context.current_drawn_by_vehicle_last_update.time_since_epoch().count() != 0) {
+        const auto data_age_ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                     now - shared_context.current_drawn_by_vehicle_last_update)
+                                     .count();
+        if (data_age_ms > config_context.soft_over_current_stale_data_warning_ms) {
+            stale_info = fmt::format(" [power meter data may be stale: last update {}ms ago]", data_age_ms);
+            if (std::chrono::duration_cast<std::chrono::milliseconds>(now -
+                                                                      internal_context.last_stale_powermeter_warning)
+                    .count() >= stale_data_warning_interval_ms) {
+                internal_context.last_stale_powermeter_warning = now;
+                EVLOG_warning << "Soft over current check:" << stale_info;
+            }
+        }
+    }
+
     if (std::fabs(shared_context.current_drawn_by_vehicle[0]) > limit or
         std::fabs(shared_context.current_drawn_by_vehicle[1]) > limit or
         std::fabs(shared_context.current_drawn_by_vehicle[2]) > limit) {
         if (not internal_context.over_current) {
             internal_context.over_current = true;
             // timestamp when over current happend first
-            internal_context.last_over_current_event = std::chrono::steady_clock::now();
+            internal_context.last_over_current_event = now;
             session_log.evse(false,
-                             fmt::format("Soft overcurrent event (L1:{}, L2:{}, L3:{}, limit {}), starting timer.",
+                             fmt::format("Soft overcurrent event (L1:{}, L2:{}, L3:{}, limit {}), starting timer.{}",
                                          shared_context.current_drawn_by_vehicle[0],
                                          shared_context.current_drawn_by_vehicle[1],
-                                         shared_context.current_drawn_by_vehicle[2], limit));
+                                         shared_context.current_drawn_by_vehicle[2], limit, stale_info));
         }
     } else {
         internal_context.over_current = false;
     }
-    auto now = std::chrono::steady_clock::now();
     auto time_since_over_current_started =
         std::chrono::duration_cast<std::chrono::milliseconds>(now - internal_context.last_over_current_event).count();
     if (internal_context.over_current and
         time_since_over_current_started >= config_context.soft_over_current_timeout_ms) {
         auto errstr =
-            fmt::format("Soft overcurrent event (L1:{}, L2:{}, L3:{}, limit {}) triggered",
+            fmt::format("Soft overcurrent event (L1:{}, L2:{}, L3:{}, limit {}) triggered{}",
                         shared_context.current_drawn_by_vehicle[0], shared_context.current_drawn_by_vehicle[1],
-                        shared_context.current_drawn_by_vehicle[2], limit);
+                        shared_context.current_drawn_by_vehicle[2], limit, stale_info);
         session_log.evse(false, errstr);
         // raise the OC error
         error_handling->raise_overcurrent_error(errstr);
@@ -2311,17 +2441,59 @@ bool Charger::power_available() {
 
 void Charger::request_error_sequence() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_request_error_sequence);
+    request_error_sequence_internal();
+}
+
+void Charger::request_error_sequence_internal() {
     if (shared_context.current_state == EvseState::WaitingForAuthentication or
         shared_context.current_state == EvseState::PrepareCharging) {
+        const bool limit_retries =
+            config_context.ac_limit_slac_init_retries and config_context.charge_mode == ChargeMode::AC;
+        if (limit_retries and not hlc_use_5percent_current_session) {
+            // [V2G3-A09-13]: without 5 percent (nominal PWM or X1), no SLAC will be performed. Keep the PWM as it is.
+            // This also holds after the last 5 percent retry ended in X1.
+            session_log.evse(false, "No SLAC retry without 5 percent PWM");
+            shared_context.dlink_established = false;
+            return;
+        }
         internal_context.t_step_EF_return_state = shared_context.current_state;
         internal_context.t_step_EF_return_ampere = 0.;
-        shared_context.current_state = EvseState::T_step_EF;
-        signal_slac_reset();
-        if (hlc_use_5percent_current_session) {
+        if (limit_retries and internal_context.slac_retries >= C_SEQU_RETRY) {
+            // [V2G3-M06-07], Figure 9 of ISO15118-3: after C_sequ_retry retries, the next timeout ends 5 percent for
+            // the session: X1 while waiting for authorization, nominal PWM once authorized
+            session_log.evse(false, fmt::format("Matching retried {} times, 5 percent stays off after T_step_EF",
+                                                internal_context.slac_retries));
+            internal_context.slac_retries_exhausted = true;
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_pwm = 0.;
+        } else if (hlc_use_5percent_current_session) {
+            if (limit_retries) {
+                internal_context.slac_retries++;
+            }
             internal_context.t_step_EF_return_pwm = PWM_5_PERCENT;
         } else {
             internal_context.t_step_EF_return_pwm = 0.;
         }
+        if (shared_context.dlink_established) {
+            // A lost data link ([V2G3-M07-03]): X2 -> X1 -> E/F -> X1/X2 ([V2G3-M07-05], option A for a nominal
+            // duty cycle [V2G3-M07-11]). T_step_X1 resets SLAC once X1 is applied.
+            internal_context.t_step_X1_until_unmatched = true;
+            shared_context.current_state = EvseState::T_step_X1;
+        } else {
+            // No data link was established, e.g. TT_EVSE_SLAC_init expired: E/F directly ([V2G3-M06-07]).
+            shared_context.current_state = EvseState::T_step_EF;
+            signal_slac_reset();
+        }
+    }
+    // SLAC has given the link up whichever state the error routine met; the next one is a new matching failure.
+    shared_context.dlink_established = false;
+}
+
+void Charger::set_dlink_ready(bool ready) {
+    Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_dlink_ready);
+    // Only the establishment is latched: D-LINK_READY(no link) arrives right before the error routine it triggers.
+    if (ready) {
+        shared_context.dlink_established = true;
     }
 }
 
@@ -2333,6 +2505,9 @@ void Charger::set_matching_started(bool m) {
 void Charger::set_slac_matched(bool matched) {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_set_matching_started);
     shared_context.slac_matched = matched;
+    if (matched) {
+        internal_context.slac_retries = 0;
+    }
     shared_context.matching_started = matched or shared_context.matching_started;
 }
 
@@ -2397,6 +2572,7 @@ void Charger::dlink_pause() {
 bool Charger::dlink_terminate() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_terminate);
+        shared_context.dlink_established = false;
         if (shared_context.current_state == EvseState::Idle) {
             // Late teardown signal of an already-unplugged session: see dlink_pause().
             return false;
@@ -2411,6 +2587,21 @@ bool Charger::dlink_terminate() {
             shared_context.current_state == EvseState::PrepareCharging and shared_context.flag_ev_plugged_in and
             shared_context.hlc_charging_terminate_pause == HlcTerminatePause::Unknown and
             not internal_context.session_stop_pwm_off_deadline.has_value();
+        if (pnc_without_charging_loop()) {
+            // The EV used PnC for the authorization only and ended the session with a SessionStop(Terminate): basic
+            // charging with the authorization kept. Before the charging loop the EV may charge in basic charging mode
+            // on a nominal duty cycle (ISO 15118-3 6.4).
+            session_log.evse(false, "AC mode, HLC enabled, PnC authorized, SessionStop(Terminate) before the charging "
+                                    "loop. Go through t_step_EF and disable 5 percent.");
+            internal_context.session_stop_pwm_off_deadline.reset();
+            shared_context.hlc_allow_close_contactor = false;
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_state = EvseState::PrepareCharging;
+            internal_context.t_step_EF_return_pwm = 0.;
+            internal_context.t_step_EF_return_ampere = 0.;
+            shared_context.current_state = EvseState::T_step_EF;
+            return false;
+        }
         if (not link_lost_during_setup) {
             shared_context.hlc_allow_close_contactor = false;
             if (not internal_context.session_stop_pwm_off_deadline.has_value()) {
@@ -2464,9 +2655,17 @@ void Charger::notify_hlc_session_started_by_ev() {
     }
 }
 
+bool Charger::pnc_without_charging_loop() const {
+    return config_context.charge_mode == ChargeMode::AC and
+           shared_context.current_state == EvseState::WaitingForAuthentication and shared_context.flag_authorized and
+           shared_context.authorized_pnc and not shared_context.hlc_charging_active;
+}
+
 void Charger::dlink_error() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_error);
+        // HLC handled the lost link; a later SLAC error routine is a new matching failure ([V2G3-M06-07]).
+        shared_context.dlink_established = false;
 
         if (shared_context.reinit_requested or shared_context.reinit_running) {
             EVLOG_debug << "Ignoring D-LINK_ERROR.req because reinit is active";
@@ -2508,22 +2707,45 @@ void Charger::dlink_error() {
             return;
         }
 
+        if (pnc_without_charging_loop()) {
+            // The EV used PnC for the authorization only and the data link ended without a charging loop (TCP
+            // closed, V2G_SECC_Sequence_Timeout): basic charging with the authorization kept. [V2G3-M07-05]:
+            // X2 -> X1 -> E/F -> X2, [V2G3-M07-04]: X1 -> E/F -> X2, with nominal PWM afterwards.
+            session_log.evse(false, "AC mode, HLC enabled, PnC authorized, but the data link ended before the "
+                                    "charging loop. Go through t_step_X1 and t_step_EF and disable 5 percent.");
+            hlc_use_5percent_current_session = false;
+            internal_context.t_step_EF_return_state = EvseState::PrepareCharging;
+            internal_context.t_step_EF_return_pwm = 0.;
+            internal_context.t_step_EF_return_ampere = 0.;
+            internal_context.t_step_X1_until_unmatched = true;
+            shared_context.current_state = EvseState::T_step_X1;
+            return;
+        }
+
         if (config_context.charge_mode == ChargeMode::AC) {
             shared_context.hlc_charging_active = false;
         }
 
         if (hlc_use_5percent_current_session) {
-            // [V2G3-M07-06] Within the control pilot state X1, the communication node shall leave the
-            // logical network and change the matching state to "Unmatched". [V2G3-M07-07] With reaching the
-            // state "Unmatched", the EVSE shall switch to state E/F.
-
-            // FIXME: We don't wait for SLAC to go to UNMATCHED in X1 for now but just do a normal 3 seconds
-            // t_step_X1 instead. This should be more then sufficient for the SLAC module to reset.
-
-            // Do t_step_X1 with a t_step_EF afterwards
-            // [V2G3-M07-08] The state E/F shall be applied at least T_step_EF: This is already handled in
-            // the t_step_EF state.
+            // 5 percent PWM: [V2G3-M07-05] X2 -> X1 -> E/F -> X1/X2. The oscillator goes off right away.
             cp_state_X1();
+
+            const bool session_setup = shared_context.current_state == EvseState::WaitingForAuthentication or
+                                       shared_context.current_state == EvseState::PrepareCharging;
+            if (session_setup) {
+                // Before the charging loop (the HLC session ended with a FAILED response, a sequence timeout or a
+                // TCP close): the -3 sequence with its timers. T_step_X1 resets SLAC and holds X1 until the node
+                // left the logical network ([V2G3-M07-06], TP_match_leave), T_step_EF applies E/F for at least
+                // T_step_EF ([V2G3-M07-07], [V2G3-M07-08]) and returns to WaitingForAuthentication, which
+                // re-decides the duty cycle with HLC failed for this session (nominal PWM once authorized).
+                session_log.evse(false, "D-LINK_ERROR with 5 percent PWM: X1, E/F for T_step_EF, then X1/nominal");
+                internal_context.t_step_EF_return_state = EvseState::WaitingForAuthentication;
+                internal_context.t_step_EF_return_pwm = 0.;
+                internal_context.t_step_EF_return_ampere = 0.;
+                internal_context.t_step_X1_until_unmatched = true;
+                shared_context.current_state = EvseState::T_step_X1;
+                return;
+            }
         }
     }
 
@@ -2532,12 +2754,8 @@ void Charger::dlink_error() {
     // don't do anything here, SLAC will be notified anyway to reset
     // [V2G3-M07-04]: With receiving a D-LINK_ERROR.request from HLE in X1 state, the EVSE's
     // communication node shall perform a state X1 to state E/F to state X1 or X2 transition.
-    // [V2G3-M07-05]: With receiving a D-LINK_ERROR.request in X2 state from HLC, the EVSE's
-    // communication node shall perform a state X2 to X1 to state E/F to state X1 or X2 transition.
-    // [V2G3-M07-06] Within the control pilot state X1, the communication node shall leave the
-    // logical network and change the matching state to "Unmatched". [V2G3-M07-07] With reaching the
-    // state "Unmatched", the EVSE shall switch to state E/F.
     if (hlc_use_5percent_current_session) {
+        // In the charging loop or while stopping: the reinit sequence stops the energy transfer first.
         start_reinit();
     }
 }
@@ -2757,7 +2975,7 @@ void Charger::error_shutdown() {
 
     // open contactors
     bsp->allow_power_on(false, types::evse_board_support::Reason::PowerOff);
-    this->signal_hlc_error(types::iso15118::EvseError::Error_EmergencyShutdown);
+    this->signal_hlc_error(types::iso15118::EvseError::Error_ErrorShutdown);
 }
 
 void Charger::clear_errors_on_unplug() {

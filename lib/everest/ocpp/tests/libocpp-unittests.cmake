@@ -33,6 +33,7 @@ set(LIBOCPP_3RDPARTY_PATH ${PROJECT_SOURCE_DIR}/3rd_party)
 # If the test is not linked against the ocpp library, those default sources can be linked against, they will often
 # be needed to link against.
 set(LIBOCPP_TEST_INCLUDE_COMMON_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/types.cpp
+                                        ${LIBOCPP_LIB_PATH}/ocpp/common/json_number.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/ocpp_logging.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp
                                         ${LIBOCPP_LIB_PATH}/ocpp/common/call_types.cpp
@@ -83,7 +84,7 @@ function(add_libocpp_unittest)
     target_link_libraries(${arg_NAME} PRIVATE
         SQLite3::SQLite3
         nlohmann_json::nlohmann_json
-        nlohmann_json_schema_validator
+        nlohmann_json_schema_validator::validator
         date::date-tz
         everest::log
         everest::util

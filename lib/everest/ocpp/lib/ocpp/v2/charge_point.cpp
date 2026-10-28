@@ -149,10 +149,7 @@ void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
         this->security->security_event_notification_req(CiString<50>(ocpp::security_events::STARTUP_OF_THE_DEVICE),
                                                         std::optional<CiString<255>>(startup_message), true, true);
     } else if (this->bootreason == BootReasonEnum::FirmwareUpdate) {
-        std::string startup_message =
-            "Charging station reboot after firmware update. Firmware version: " + firmware_version;
-        this->security->security_event_notification_req(CiString<50>(ocpp::security_events::FIRMWARE_UPDATED),
-                                                        std::optional<CiString<255>>(startup_message), true, true);
+        // FirmwareUpdated is sent with Installed (L01.FR.31).
     } else {
         std::string startup_message = "Charging station reset or reboot. Firmware version: " + firmware_version;
         this->security->security_event_notification_req(CiString<50>(ocpp::security_events::RESET_OR_REBOOT),
@@ -164,17 +161,20 @@ void ChargePoint::stop() {
     this->ocsp_updater.stop();
     this->availability->stop_heartbeat_timer();
     this->provisioning->stop_bootnotification_timer();
+    this->security->stop_certificate_expiration_check_timers();
+    this->diagnostics->stop_monitoring();
+    this->security->stop_certificate_signed_timer();
+    this->message_queue->stop();
     // Callbacks stay armed: this only queues the disconnected notification the owner waits for.
     // ~ChargePoint() disarms.
     this->connectivity_manager->disconnect();
-    this->security->stop_certificate_expiration_check_timers();
-    this->diagnostics->stop_monitoring();
-    this->message_queue->stop();
-    this->security->stop_certificate_signed_timer();
 }
 
 void ChargePoint::disconnect_websocket() {
-    this->connectivity_manager->disconnect();
+    this->message_queue->run_when_idle([this]() {
+        this->connectivity_manager->disconnect();
+        return false;
+    });
 }
 
 void ChargePoint::on_network_disconnected(OCPPInterfaceEnum ocpp_interface) {
@@ -208,7 +208,10 @@ void ChargePoint::on_der_republish_active_directives() {
 }
 
 void ChargePoint::connect_websocket(std::optional<std::int32_t> network_profile_slot) {
-    this->connectivity_manager->connect(network_profile_slot);
+    this->message_queue->run_when_idle([this, network_profile_slot]() {
+        this->connectivity_manager->connect(network_profile_slot);
+        return this->connectivity_manager->is_websocket_connected();
+    });
 }
 void ChargePoint::on_session_started(const std::int32_t evse_id, const std::int32_t connector_id) {
     this->evse_manager->get_evse(evse_id).submit_event(connector_id, ConnectorEvent::PlugIn);
@@ -459,6 +462,9 @@ void ChargePoint::on_reservation_status(const std::int32_t reservation_id, const
 }
 
 void ChargePoint::on_ev_charging_needs(const NotifyEVChargingNeedsRequest& request) {
+    if (this->smart_charging == nullptr) {
+        return;
+    }
     this->smart_charging->notify_ev_charging_needs_req(request);
 }
 
@@ -614,8 +620,8 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->data_transfer = std::make_unique<DataTransfer>(
         *this->functional_block_context, this->callbacks.data_transfer_callback, DEFAULT_WAIT_FOR_FUTURE_TIMEOUT);
-    this->security = std::make_unique<Security>(*this->functional_block_context, *this->logging, this->ocsp_updater,
-                                                this->callbacks.security_event_callback);
+    this->security = std::make_unique<Security>(*this->functional_block_context, *this->message_queue, *this->logging,
+                                                this->ocsp_updater, this->callbacks.security_event_callback);
 
     if (device_model->get_optional_value<bool>(ControllerComponentVariables::ReservationCtrlrAvailable)
             .value_or(false)) {
@@ -676,11 +682,12 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     this->firmware_update = std::make_unique<FirmwareUpdate>(
         *this->functional_block_context, *this->availability, *this->security,
-        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback);
+        this->callbacks.update_firmware_request_callback, this->callbacks.all_connectors_unavailable_callback,
+        this->registration_status);
 
     this->transaction = std::make_unique<TransactionBlock>(
         *this->functional_block_context, *this->message_queue, *this->authorization, *this->availability,
-        *this->smart_charging, *this->tariff_and_cost, this->callbacks.stop_transaction_callback,
+        this->smart_charging.get(), *this->tariff_and_cost, this->callbacks.stop_transaction_callback,
         this->callbacks.pause_charging_callback, this->callbacks.transaction_event_callback,
         this->callbacks.transaction_event_response_callback, this->callbacks.reset_callback);
 
@@ -690,10 +697,11 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
         this->callbacks.time_sync_callback, this->callbacks.boot_notification_callback,
         this->callbacks.validate_network_profile_callback, this->callbacks.is_reset_allowed_callback,
         this->callbacks.reset_callback, this->callbacks.stop_transaction_callback,
-        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status);
+        this->callbacks.variable_changed_callback, *this->tariff_and_cost, this->registration_status,
+        *this->firmware_update);
 
     this->remote_transaction_control = std::make_unique<RemoteTransactionControl>(
-        *this->functional_block_context, *this->transaction, *this->smart_charging, *this->meter_values,
+        *this->functional_block_context, *this->transaction, this->smart_charging.get(), *this->meter_values,
         *this->availability, *this->firmware_update, *this->security, this->reservation.get(), *this->provisioning,
         this->callbacks.unlock_connector_callback, this->callbacks.remote_start_transaction_callback,
         this->callbacks.stop_transaction_callback, this->registration_status, this->upload_log_status,
@@ -1232,6 +1240,8 @@ void ChargePoint::on_websocket_connected(const int configuration_slot,
                                          const NetworkConnectionProfile& network_connection_profile,
                                          const OcppProtocolVersion ocpp_version) {
     this->message_queue->update_message_timeout(network_connection_profile.messageTimeout);
+    this->device_model->set_active_message_timeout(network_connection_profile.messageTimeout,
+                                                   VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
     this->message_queue->resume(this->message_queue_resume_delay);
     this->ocpp_version = ocpp_version;
     const auto time_disconnected = this->connectivity_manager->get_time_disconnected();

@@ -57,6 +57,11 @@ constexpr std::size_t can_udp_batch_max = 12;
 // of up to 20 s and tripped that timeout.)
 constexpr auto can_keepalive_idle = std::chrono::seconds(4);
 constexpr auto can_keepalive_poll = std::chrono::seconds(1);
+// A failed UDP connection is reopened from the heartbeat timer, at most this often. Reopening
+// from the error handler reconnects at once, and a bridge whose port answers ICMP unreachable
+// then fails every reconnect the moment the queued frames go out: a report every few
+// milliseconds and a loop at full speed until the heartbeat gives the bridge up.
+constexpr auto can_udp_reconnect_delay = std::chrono::seconds(1);
 // A keep-alive after a gap this long means the poll itself was late: worth a line.
 constexpr auto can_keepalive_gap_warn = std::chrono::seconds(10);
 // Bus emulation on the vcan: a tbf qdisc meters producers' writes so they feel the bus as on a
@@ -188,10 +193,29 @@ can_bridge::can_bridge(can_bridge_config const& config, everest::lib::io::event:
         if (not last and current) {
             if (m_udp) {
                 m_udp->reset();
+                notify_endpoint_changed();
             }
         }
         handle_ready();
     });
+}
+
+std::uint16_t can_bridge::local_port() {
+    if (not m_udp) {
+        return 0;
+    }
+    auto const& socket = m_udp->get_raw_handler();
+    return socket ? socket->local_port() : 0;
+}
+
+void can_bridge::set_endpoint_changed_handler(std::function<void()> handler) {
+    m_endpoint_changed = std::move(handler);
+}
+
+void can_bridge::notify_endpoint_changed() {
+    if (m_endpoint_changed) {
+        m_endpoint_changed();
+    }
 }
 
 void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_port) {
@@ -218,13 +242,10 @@ void can_bridge::create_udp_client(std::string const& remote, uint16_t remote_po
     m_udp->set_error_handler([this](auto id, auto const& msg) {
         utilities::print_error(m_identifier, "CAN/UDP", id) << msg << std::endl;
         m_udp_ready = id == 0;
-        if (not m_udp_ready) {
-            if (m_udp) {
-                m_udp->reset();
-            }
-        }
+        // The reconnect runs from handle_heartbeat_timer, paced by can_udp_reconnect_delay.
         handle_ready();
     });
+    notify_endpoint_changed();
 }
 
 void can_bridge::disconnect_cb_endpoint() {
@@ -239,6 +260,7 @@ void can_bridge::disconnect_cb_endpoint() {
         m_udp->reset();
     }
     m_udp.reset();
+    notify_endpoint_changed();
     handle_ready();
 }
 
@@ -438,6 +460,12 @@ void can_bridge::handle_heartbeat_timer() {
         // If the connection is not available, retry soon and invalidate last hearbeat
         m_heartbeat_timer.set_timeout(250ms);
         m_last_msg_to_cb = std::chrono::steady_clock::time_point();
+        auto const now = std::chrono::steady_clock::now();
+        if (m_udp and now - m_udp_reconnect_at >= can_udp_reconnect_delay) {
+            m_udp_reconnect_at = now;
+            m_udp->reset();
+            notify_endpoint_changed();
+        }
         return;
     } else {
         // otherwise go back to regular interval

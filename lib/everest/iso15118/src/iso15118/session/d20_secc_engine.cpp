@@ -29,13 +29,22 @@ D20SeccEngine::D20SeccEngine(io::StreamOutputView output_view, session::SessionC
     ctx.set_new_vehicle_cert_hash(vehicle_cert_hash);
 }
 
-void D20SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
-    message_exchange.set_request(std::make_unique<message_20::Variant>(payload_type, view));
+bool D20SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+    auto request = std::make_unique<message_20::Variant>(payload_type, view);
+    if (request->is_undecodable()) {
+        // [V2G20-800]: a frame that does not decode, e.g. after a wrong V2GTP payload length, is ignored. The
+        // session and its timers carry on as if it never arrived. A decoded message of an unhandled type is
+        // passed on and answered with a sequence error.
+        logf_warning("Ignoring an ISO 15118-20 message that could not be decoded [V2G20-800]");
+        return false;
+    }
+    message_exchange.set_request(std::move(request));
 
     const auto request_msg_type = ctx.peek_request_type();
     ctx.feedback.v2g_message(request_msg_type);
 
     fsm.feed(d20::Event::V2GTP_MESSAGE);
+    return true;
 }
 
 void D20SeccEngine::on_control_event(const d20::ControlEvent& event) {

@@ -17,14 +17,32 @@ In Mosquitto, config file add the line:
 
 .. code-block::
 
-   listener 0 /tmp/mosquitto.socket
+   listener 0 /run/mosquitto/mosquitto.sock
 
-In the EVerest config file, add the following to the settings section:
+In the EVerest settings file passed to the manager with ``--settings``, add:
 
 .. code-block:: yaml
 
-   settings:
-    mqtt_broker_socket_path: /tmp/mosquitto.socket
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
+
+Access to the socket is controlled by the permissions of its directory and of
+the socket itself, which Mosquitto creates with mode ``0770`` after dropping
+privileges to the broker user. Use a directory that only the broker and the
+user running EVerest can access, for example ``/run/mosquitto`` owned by the
+broker user and its group, mode ``0750``, with the user running EVerest as a
+member of that group. The systemd unit of Mosquitto 2.0 creates
+``/run/mosquitto`` with mode ``0740``, which keeps the group out. Do not place
+the socket in a world-writable directory such as ``/tmp``: any local user could
+connect to it, or create a socket there before the broker does.
+
+Files that restrict access to the broker, such as its ``acl_file`` or
+``password_file``, should be owned by the broker user. Mosquitto 2.1 warns
+about files with other owners and announces refusing them in a future version.
+
+The installed example ``etc/everest/settings-mqtt-uds.yaml`` is a complete
+settings file for this setup. The meta-everest Yocto layers configure
+Mosquitto and ``everest.service`` this way, see
+:ref:`exp_linux_yocto_building_yocto`.
 
 - If a part of an MQTT API should be exposed, e.g. to a mobile app on
   the same wireless LAN, use mutually authenticated TLS for the MQTT
@@ -35,10 +53,6 @@ In the EVerest config file, add the following to the settings section:
 - Use OCPP security level 3 for the CSMS connection.
 - Use a hardware security module, e.g. TPM2 for generating and
   securing private keys.
-- Don't use the *admin-panel* on the product and ensure EVerest does
-  not listen on port 8849. In the Yocto recipes, this is disabled by
-  default. Take special care if you use another build system. Set
-  "EVEREST_ENABLE_ADMIN_PANEL_BACKEND=OFF" in cmake.
 - Do not run EVerest modules as root user. Create a low privilege
   user, that has access only to what is needed (via filesystem
   permissions, group memberships, ...). In Yocto, you can do this in your
@@ -56,17 +70,31 @@ In the EVerest config file, add the following to the settings section:
 
    Make sure to use the correct groups and settings for your system.
 
-Specify this user in the EVerest config file in the settings section:
+Start the manager as this user, the modules it forks then run as the same
+user. With systemd, set ``User=`` and ``Group=`` in the unit, e.g. with a
+drop-in for ``everest.service``:
 
-.. code-block:: yaml
+.. code-block:: ini
 
-   settings:
-    run_as_user: everest
+   # /etc/systemd/system/everest.service.d/10-user.conf
+   [Service]
+   User=everest
+   Group=everest
 
-The systemd service should start the manager process as root. It will
-then change the user for the child processes it forks (the modules).
-Alternatively the manager process can be started with the appropriate
-Linux capability to allow user changes.
+The ``everest.service`` of the meta-everest layers starts the manager as
+root, so add such a drop-in in a bbappend of your layer.
+
+Do not set ``NoNewPrivileges=yes`` in the unit, and do not limit
+``CapabilityBoundingSet=`` below the capabilities the modules need,
+otherwise the file capabilities described below have no effect.
+
+.. note::
+
+   The ``run_as_user`` setting in the ``settings`` section of the EVerest
+   config file, with which a manager started as root switches itself and
+   the modules to another user, is deprecated (see
+   :ref:`project-deprecation-index`). It still works, and the manager logs
+   a warning at startup when it is set.
 
 Some modules need elevated privileges, e.g. SLAC module. Those modules
 should be given individual Linux capabilities via file based capabilities.
@@ -125,6 +153,8 @@ module, run with the same capabilities.
    Setting Linux capabilities for a module with the ``capabilities`` key
    in the EVerest config file is no longer supported. The key is still
    accepted, but the manager ignores it and logs a warning at startup.
+   The key is deprecated and will be removed (see
+   :ref:`project-deprecation-index`).
 
 - To ensure that internal services cannot be accessed via the powerline connection,
   iptables can be used with the following rules. In this example the powerline module
@@ -145,8 +175,13 @@ module, run with the same capabilities.
    -A OUTPUT -o seth0 -p tcp -m tcp --sport 64109 -j ACCEPT
 
 According to the standard, port 15118 is used for SDP messages.
-:ref:`EvseV2G <everest_modules_EvseV2G>`  uses the following ports: TCP (61341), TLS (64109).
-:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 which uses port 50000 for TCP and TLS1.2/1.3.
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>` integrates libiso15118 and uses the configured
+``tcp_port`` value for TCP and TLS1.2/1.3. The default is ``50000``.
+The deprecated :ref:`EvseV2G <everest_modules_EvseV2G>` module uses the configurable ``tcp_port`` and
+``tls_port`` values (defaults: TCP ``61341``, TLS ``64109``); the rules for 61341 and 64109 above are only
+needed while it is still in use. The deprecated :ref:`IsoMux <everest_modules_IsoMux>` module listens on
+TCP ``61342`` and TLS ``64110`` and forwards to the local EvseV2G and Evse15118D20 instances.
+When changing these values, update the firewall rules accordingly.
 
 General (non-EVerest-related) security aspects
 ====================================================================

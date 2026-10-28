@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "powermeterImpl.hpp"
-#include <fmt/core.h>
+#include <fmt/format.h>
 #include <thread>
 #include <utils/date.hpp>
 

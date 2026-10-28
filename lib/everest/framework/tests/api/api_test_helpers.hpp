@@ -36,6 +36,11 @@ inline nlohmann::json make_request_without_reply_to(const nlohmann::json& payloa
     return nlohmann::json(envelope.dump());
 }
 
+/// \brief A raw payload that is not valid UTF-8, wrapped as a JSON string value like make_request().
+inline nlohmann::json make_invalid_utf8_request() {
+    return nlohmann::json(std::string("{\"payload\": \"\xff\xfe\"}"));
+}
+
 /// \brief Invokes the handler the API registered on \p topic.
 inline void invoke(MockMQTTAbstraction& mock, const std::string& topic, const nlohmann::json& request) {
     REQUIRE(mock.registered_handlers().count(topic) == 1);

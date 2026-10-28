@@ -78,6 +78,9 @@ public:
 
     /// \brief Persist the identity on the SecurityCtrlr component after a successful connect.
     virtual void set_security_ctrl_identity(const std::string& identity, const std::string& source) = 0;
+
+    /// \brief Persist the message timeout of the active network-profile slot.
+    virtual void set_active_message_timeout(std::int32_t message_timeout_s, const std::string& source) = 0;
 };
 
 } // namespace ocpp

@@ -70,3 +70,23 @@ target_link_libraries(test_ev_power_profile
 )
 
 catch_discover_tests(test_ev_power_profile)
+
+add_executable(test_rational_number rational_number.cpp)
+
+target_link_libraries(test_rational_number
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_rational_number)
+
+add_executable(test_pause_notification pause_notification.cpp)
+
+target_link_libraries(test_pause_notification
+    PRIVATE
+        iso15118
+        Catch2::Catch2WithMain
+)
+
+catch_discover_tests(test_pause_notification)

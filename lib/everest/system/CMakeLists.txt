@@ -1,6 +1,9 @@
 if(NOT DEFINED sdbus-c++_VERSION_MAJOR AND NOT DISABLE_EDM)
-    string(REPLACE "." ";" SDBUS_CPP_VERSION_SPLIT ${CPM_PACKAGE_sdbus-cpp_VERSION})
-    list(GET SDBUS_CPP_VERSION_SPLIT 0 sdbus-c++_VERSION_MAJOR)
+    get_target_property(SDBUS_CPP_VERSION sdbus-c++ VERSION)
+    string(REGEX MATCH "^[0-9]+" sdbus-c++_VERSION_MAJOR "${SDBUS_CPP_VERSION}")
+endif()
+if(NOT "${sdbus-c++_VERSION_MAJOR}" MATCHES "^[0-9]+$")
+    message(FATAL_ERROR "Could not determine the sdbus-c++ major version")
 endif()
 message("Found sdbus-c++ major version: " ${sdbus-c++_VERSION_MAJOR})
 
@@ -35,24 +38,14 @@ target_compile_definitions(everest_system
 
 set_target_properties(everest_system PROPERTIES EXPORT_NAME system)
 
-if (DISABLE_EDM)
-    install(
-        TARGETS everest_system
-        EXPORT everest_system-targets
-    )
+install(
+    TARGETS everest_system
+    EXPORT everest-core-targets
+)
 
-    install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
-        TYPE INCLUDE
-    )
-
-    evc_setup_package(
-        NAME everest-everest_system
-        NAMESPACE everest
-        EXPORT everest_system-targets
-        ADDITIONAL_CONTENT
-            "find_dependency(sdbus-c++)"
-    )
-endif()
+install(DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}/include/everest
+    TYPE INCLUDE
+)
 
 if (BUILD_TESTING)
     target_compile_definitions(everest_system PUBLIC EVEREST_COVERAGE_ENABLED)

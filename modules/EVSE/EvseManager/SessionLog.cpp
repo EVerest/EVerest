@@ -10,11 +10,11 @@
 #include <date/tz.h>
 #include <everest/helpers/helpers.hpp>
 #include <filesystem>
+#include <fmt/format.h>
 #include <optional>
 #include <utils/date.hpp>
 
 #include <boost/algorithm/string.hpp>
-#include <fmt/core.h>
 
 namespace module {
 
@@ -203,8 +203,11 @@ void SessionLog::output(unsigned int typ, bool iso15118, const std::string& msg,
             v2g.from_xml(xml);
             xml_pretty = v2g.to_xml();
         } else if (!json_str.empty()) {
-            v2g.from_json(json_str);
-            xml_pretty = v2g.to_json();
+            if (v2g.from_json(json_str)) {
+                xml_pretty = v2g.to_json();
+            } else {
+                EVLOG_warning << "Session log: V2G message '" << msg << "' carries malformed or too deeply nested JSON";
+            }
         }
 
         // output to EVerest log

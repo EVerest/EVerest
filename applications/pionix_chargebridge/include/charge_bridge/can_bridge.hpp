@@ -37,8 +37,14 @@ public:
     void connect_cb_endpoint(std::string const& remote);
     bool available() const;
     void set_cb_connection_status(bool connected);
+    // cb-host-ports-v1: the UDP source port of the socket toward the CB's CAN service, 0 without
+    // one. Announced to the MCU in the heartbeat (see heartbeat_service::set_host_ports_provider).
+    std::uint16_t local_port();
+    // Called after every (re)open or close of that socket, i.e. whenever local_port() changed.
+    void set_endpoint_changed_handler(std::function<void()> handler);
 
 private:
+    void notify_endpoint_changed();
     void handle_heartbeat_timer();
     void handle_ready();
     void create_udp_client(std::string const& remote, uint16_t remote_port);
@@ -53,6 +59,7 @@ private:
     std::uint64_t vcan_rate_for(double avg_wire_bits) const;
     std::unique_ptr<everest::lib::io::can::socket_can> m_can;
     std::unique_ptr<everest::lib::io::udp::udp_client> m_udp;
+    std::function<void()> m_endpoint_changed;
     uint16_t m_cb_port{0};
     std::string m_cb_remote;
     std::string m_can_device;
@@ -76,6 +83,7 @@ private:
     std::chrono::steady_clock::time_point m_vcan_rate_logged{};
     double m_avg_wire_bits{0.0}; // EWMA of real wire bits per forwarded frame
     std::chrono::steady_clock::time_point m_last_msg_to_cb;
+    std::chrono::steady_clock::time_point m_udp_reconnect_at{}; // last reopen of a failed UDP connection
     bool m_udp_ready{false};
     bool m_can_ready{false};
     everest::lib::util::observable<bool> m_ready{false};

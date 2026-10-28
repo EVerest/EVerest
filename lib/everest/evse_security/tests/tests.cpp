@@ -501,6 +501,7 @@ TEST_F(EvseSecurityTests, verify_secc_csr_profiles) {
     ASSERT_EQ(this->evse_security->managed_csr.size(), 1);
     const auto key_path = this->evse_security->managed_csr.begin()->first;
     ASSERT_TRUE(fs::exists(key_path));
+    ASSERT_EQ(fs::status(key_path).permissions(), fs::perms::owner_read | fs::perms::owner_write);
     ASSERT_NE(key_path.filename().string().find("SECC_LEAF_20_"), std::string::npos);
 
     // The plain -2 CSR still yields prime256v1
@@ -562,6 +563,47 @@ TEST_F(EvseSecurityTests, verify_normal_keygen) {
 
     bool gen = CryptoSupplier::generate_key(info, key);
     ASSERT_TRUE(gen);
+}
+
+TEST_F(EvseSecurityTests, private_key_file_is_owner_only) {
+    const fs::path private_key_file("key/perm_privkey.key");
+    // a key file left world-readable by an earlier run is tightened on rewrite
+    ASSERT_TRUE(filesystem_utils::write_to_file(private_key_file, "stale", std::ios::trunc));
+    fs::permissions(private_key_file, fs::perms::all, fs::perm_options::replace);
+
+    KeyGenerationInfo info;
+    KeyHandle_ptr key;
+    info.key_type = CryptoKeyType::EC_prime256v1;
+    info.generate_on_custom = false;
+    info.private_key_file = private_key_file;
+
+    ASSERT_TRUE(CryptoSupplier::generate_key(info, key));
+    ASSERT_EQ(fs::status(private_key_file).permissions(), fs::perms::owner_read | fs::perms::owner_write);
+    ASSERT_NE(read_file_to_string(private_key_file).find("PRIVATE KEY"), std::string::npos);
+}
+
+TEST_F(EvseSecurityTests, private_key_file_does_not_follow_symlink) {
+    const fs::path target("key/symlink_target.txt");
+    const fs::path private_key_file("key/symlink_privkey.key");
+    fs::remove(private_key_file);
+    ASSERT_TRUE(filesystem_utils::write_to_file(target, "untouched", std::ios::trunc));
+    fs::create_symlink(fs::absolute(target), private_key_file);
+
+    KeyGenerationInfo info;
+    KeyHandle_ptr key;
+    info.key_type = CryptoKeyType::EC_prime256v1;
+    info.generate_on_custom = false;
+    info.private_key_file = private_key_file;
+
+    ASSERT_FALSE(CryptoSupplier::generate_key(info, key));
+    ASSERT_EQ(read_file_to_string(target), "untouched");
+    fs::remove(private_key_file);
+    fs::remove(target);
+}
+
+TEST_F(EvseSecurityTests, leaf_key_directories_are_owner_only) {
+    ASSERT_EQ(fs::status("certs/client/csms/").permissions(), fs::perms::owner_all);
+    ASSERT_EQ(fs::status("certs/client/cso/").permissions(), fs::perms::owner_all);
 }
 
 TEST_F(EvseSecurityTests, verify_keygen_csr) {
@@ -1149,6 +1191,16 @@ TEST_F(EvseSecurityTests, leaf_cert_starts_in_future_accepted) {
     ASSERT_EQ(v2g_keypair_after.info.value().password, v2g_keypair_before.info.value().password);
 }
 
+TEST_F(EvseSecurityTests, verify_certificate_rejects_leaf_that_starts_in_future) {
+    const auto new_root_ca = read_file_to_string(std::filesystem::path("future_leaf/V2G_ROOT_CA.pem"));
+    const auto result_ca = this->evse_security->install_ca_certificate(new_root_ca, CaCertificateType::V2G);
+    ASSERT_EQ(result_ca, InstallCertificateResult::Accepted);
+
+    const auto client_certificate = read_file_to_string(fs::path("future_leaf/SECC_LEAF_FUTURE.pem"));
+    ASSERT_NE(this->evse_security->verify_certificate(client_certificate, LeafCertificateType::V2G),
+              CertificateValidationResult::Valid);
+}
+
 TEST_F(EvseSecurityTests, expired_leaf_cert_rejected) {
     const auto new_root_ca = read_file_to_string(std::filesystem::path("expired_leaf/V2G_ROOT_CA.pem"));
     const auto result_ca = this->evse_security->install_ca_certificate(new_root_ca, CaCertificateType::V2G);
@@ -1627,6 +1679,36 @@ TEST_F(EvseSecurityTests, verify_base64) {
     out_encoded.erase(std::remove(out_encoded.begin(), out_encoded.end(), '\n'), out_encoded.cend());
 
     ASSERT_EQ(test_string1, out_encoded);
+}
+
+TEST(EvseSecurityBase64, encode_inputs_spanning_many_lines) {
+    // EVP_EncodeUpdate inserts a newline after every 64 characters, inputs of 3073 bytes and more used to overflow
+    for (const std::size_t size : {0, 1, 2, 47, 48, 49, 3071, 3072, 3073, 3074, 100000}) {
+        std::vector<std::uint8_t> bytes(size);
+        for (std::size_t i = 0; i < size; ++i) {
+            bytes[i] = static_cast<std::uint8_t>(i * 7);
+        }
+
+        std::string expected(EVP_ENCODE_LENGTH(size), '\0');
+        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+        const auto expected_length =
+            EVP_EncodeBlock(reinterpret_cast<unsigned char*>(expected.data()), bytes.data(), static_cast<int>(size));
+        expected.resize(expected_length);
+
+        std::string encoded = EvseSecurity::base64_encode_from_bytes(bytes);
+        encoded.erase(std::remove(encoded.begin(), encoded.end(), '\n'), encoded.end());
+        EXPECT_EQ(encoded, expected) << "input size " << size;
+        EXPECT_EQ(EvseSecurity::base64_decode_to_bytes(encoded), bytes) << "input size " << size;
+    }
+}
+
+TEST(EvseSecurityBase64, decode) {
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QQ=="), "A");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QUJD\nQUI=\n"), "ABCAB");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string(""), "");
+    // incomplete final block
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("QUJDR"), "");
+    EXPECT_EQ(EvseSecurity::base64_decode_to_string("not base64!"), "");
 }
 
 TEST_F(EvseSecurityTestsMulti, verify_with_multiple_leaf_types_accepts_valid_cert) {

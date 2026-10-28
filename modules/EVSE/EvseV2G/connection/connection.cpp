@@ -33,8 +33,6 @@
 #include <everest/util/misc/change_tracker.hpp>
 
 #define DEFAULT_SOCKET_BACKLOG        3
-#define DEFAULT_TCP_PORT              61341
-#define DEFAULT_TLS_PORT              64109
 #define ERROR_SESSION_ALREADY_STARTED 2
 #define CLIENT_FIN_TIMEOUT            3000
 
@@ -257,7 +255,7 @@ int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
          * hand out a port which is not "range compatible".
          * To fulfill the ISO15118 standard, we simply try to bind to static port numbers.
          */
-        v2g_ctx->local_tcp_addr->sin6_port = htons(DEFAULT_TCP_PORT);
+        v2g_ctx->local_tcp_addr->sin6_port = htons(v2g_ctx->tcp_port);
         v2g_ctx->tcp_socket = connection_create_socket(v2g_ctx->local_tcp_addr);
         if (v2g_ctx->tcp_socket < 0) {
             set_failure_detail(failure_detail,
@@ -291,7 +289,7 @@ int connection_init(struct v2g_context* v2g_ctx, std::string* failure_detail) {
         char buffer[INET6_ADDRSTRLEN];
 
         /* see comment above for reason */
-        v2g_ctx->local_tls_addr->sin6_port = htons(DEFAULT_TLS_PORT);
+        v2g_ctx->local_tls_addr->sin6_port = htons(v2g_ctx->tls_port);
 
         v2g_ctx->tls_socket.fd = connection_create_socket(v2g_ctx->local_tls_addr);
         if (v2g_ctx->tls_socket.fd < 0) {
@@ -515,7 +513,8 @@ void connection_teardown(struct v2g_connection* conn) {
     }
 
     const V2gMsgTypeId last_msg = conn->last_v2g_msg_at_disconnect;
-    const bool evse_initiated_stop = conn->ctx->stop_hlc || conn->ctx->intl_emergency_shutdown;
+    const bool evse_initiated_stop =
+        conn->ctx->stop_hlc || conn->ctx->intl_emergency_shutdown || conn->ctx->error_shutdown;
 
     /* init charging session */
     v2g_ctx_init_charging_session(conn->ctx, true);
@@ -680,17 +679,17 @@ static void* connection_server(void* data) {
                  strerror(errno));
         }
 
+        if (ctx->connection_initiated) {
+            // The shared session context belongs to the active connection, so only this socket is closed.
+            dlog(DLOG_LEVEL_ERROR, "Incoming connection on %s, but there is already an active connection.",
+                 ctx->if_name);
+            close(conn->conn.socket_fd);
+            continue;
+        }
+
         // store the port to create a udp socket
         conn->ctx->udp_port = ntohs(addr.sin6_port);
 
-        if (ctx->connection_initiated) {
-            dlog(DLOG_LEVEL_ERROR, "Incoming connection on %s, but there is already an active connection.",
-                 ctx->if_name);
-            connection_teardown(conn);
-            free(conn);
-            conn = NULL;
-            continue;
-        }
         ctx->connection_initiated = true;
         if (ctx->telemetry_publisher) {
             ctx->telemetry_publisher->update_transport([&](V2gTransportTracker& transport) {

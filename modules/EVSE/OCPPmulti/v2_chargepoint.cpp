@@ -3,6 +3,8 @@
 
 #include "v2_chargepoint.hpp"
 
+#include <everest/ocpp_module_common/error_mapping.hpp>
+
 #include <algorithm>
 
 #include <everest/conversions/ocpp/ocpp_conversions.hpp>
@@ -213,7 +215,8 @@ ocpp::v2::TriggerReasonEnum stop_reason_to_trigger_reason_enum(const ocpp::v2::R
     }
 }
 
-// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>)
+// device model read via the virtual get_variables (same underlying read as ChargePoint::request_value<T>);
+// GetVariables reports a variable without a value as an empty string, which reads as absent here
 template <typename T>
 std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_point,
                                         const ocpp::v2::Component& component_id, const ocpp::v2::Variable& variable_id,
@@ -225,7 +228,7 @@ std::optional<T> get_device_model_value(ocpp::v2::ChargePointInterface& charge_p
     const auto results = charge_point.get_variables({data});
     std::optional<T> res;
     if (!results.empty() && results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted &&
-        results.front().attributeValue.has_value()) {
+        results.front().attributeValue.has_value() && !results.front().attributeValue->get().empty()) {
         try {
             res = ocpp::v2::to_specific_type<T>(results.front().attributeValue.value().get());
         } catch (const std::exception&) {
@@ -590,14 +593,19 @@ void ChargePointV2::on_ev_charging_needs(const ocpp::v2::NotifyEVChargingNeedsRe
 }
 void ChargePointV2::on_event(const EventInfo& event) {
     check_configured("on_event");
-    if (event.error) {
-        // TODO(james-ctc): needs tidying up. MREC error map is in generic_ocpp
-        auto event_data = module::get_event_data(event.error.value(), event.event_cleared, event.event_id, {});
-        std::string updated;
-        m_callbacks_ptr->map_error(event.error->type, updated);
-        event_data.techCode = std::move(updated);
-        m_charge_point->on_event({event_data});
+    if (!event.error) {
+        return;
     }
+
+    m_charge_point->on_event({convert_error(event)});
+}
+
+ocpp::v2::EventData ChargePointV2::convert_error(const EventInfo& event) {
+    const auto& error = event.error.value();
+    auto event_data = ocpp_module_common::to_v2_event_data(error, event.event_cleared, event.event_id);
+    // the configured mapping file only overrides single fields of the built-in result
+    const auto custom = m_callbacks_ptr->custom_error_mapping();
+    return custom != nullptr ? custom->overlay(error, std::move(event_data)) : event_data;
 }
 void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
                                         const types::evse_manager::SessionEvent& session_event) {

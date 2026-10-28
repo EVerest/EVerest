@@ -23,10 +23,12 @@ config:
       about the database and its structure.
     type: string
     default: /tmp/ocpp201
-  CustomMrecErrorMapPath:
+  CustomErrorMappingPath:
     description: >-
-      Optional path to a JSON file mapping EVerest error types to OCPP techCodes. Entries overwrite the
-      built-in defaults. Leave empty to use only the defaults.
+      Experimental: Optional path to a JSON file describing how EVerest errors are reported over OCPP, following
+      lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json. The fields an entry sets
+      override those of the built-in mapping; all other fields and errors keep it. Leave empty to use
+      only the built-in mapping. A relative path is resolved against the module's share directory.
     type: string
     default: ''
   DatabasePath:
@@ -85,10 +87,10 @@ config:
       If false (default), the device model is initialized only from the component configs (DeviceModelConfigPath).
     type: boolean
     default: false
-  DeviceModelConfigMappings:
+  Ocpp16KeyMappingsPath:
     description: >-
       OCPP 1.6
-      Optional path to a YAML file with custom OCPP1.6 to device model component-config mappings.
+      Optional path to a YAML file that maps further OCPP 1.6 configuration keys to device model variables.
       Relative paths are resolved against this module's share path.
       Applied both when migrating the legacy OCPP 1.6 JSON config into the device model and when
       serving the device-model-backed configuration at runtime.

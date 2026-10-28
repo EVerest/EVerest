@@ -11,16 +11,6 @@ using everest::helpers::is_equal_case_insensitive;
 
 namespace module {
 
-/// \brief helper method to intersect referenced_connectors (from ProvidedIdToken) with evses that are listed
-/// within ValidationResult
-std::vector<int> intersect(std::vector<int>& a, std::vector<int>& b) {
-    std::vector<int> result;
-    std::sort(a.begin(), a.end());
-    std::sort(b.begin(), b.end());
-    std::set_intersection(a.begin(), a.end(), b.begin(), b.end(), std::back_inserter(result));
-    return result;
-}
-
 namespace conversions {
 std::string token_handling_result_to_string(const TokenHandlingResult& result) {
     switch (result) {
@@ -118,8 +108,9 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
     // check if token is already currently processed
     EVLOG_info << "Received new token: " << everest::helpers::redact(provided_token);
     const auto referenced_evses = this->get_referenced_evses(provided_token);
+    const bool already_in_process = this->is_token_already_in_process(provided_token, referenced_evses);
 
-    if (!this->is_token_already_in_process(provided_token, referenced_evses)) {
+    if (!already_in_process) {
         // process token if not already in process
         this->tokens_in_process.insert(provided_token);
         this->publish_token_validation_status(provided_token, TokenValidationStatus::Processing);
@@ -155,7 +146,7 @@ TokenHandlingResult AuthHandler::on_token(const ProvidedIdToken& provided_token)
         break;
     }
 
-    if (result != TokenHandlingResult::ALREADY_IN_PROCESS) {
+    if (!already_in_process) {
         this->tokens_in_process.erase(provided_token);
     }
 
@@ -414,8 +405,9 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                     provided_token.id_token.value, static_cast<uint32_t>(evse_id), parent_id_token);
 
                 if (validation_result.evse_ids.has_value() and
-                    intersect(referenced_evses, validation_result.evse_ids.value()).empty()) {
-                    EVLOG_debug << "Empty intersection between referenced evses and evses that are authorized";
+                    std::find(validation_result.evse_ids->begin(), validation_result.evse_ids->end(), evse_id) ==
+                        validation_result.evse_ids->end()) {
+                    EVLOG_debug << "Selected evse#" << evse_id << " is not authorized by the validation result";
                     validation_result.authorization_status = AuthorizationStatus::NotAtThisLocation;
                 } else if (reservation_id == std::nullopt &&
                            !this->reservation_handler.is_charging_possible(static_cast<uint32_t>(evse_id))) {
@@ -454,7 +446,9 @@ TokenHandlingResult AuthHandler::handle_token(ProvidedIdToken& provided_token, s
                 const auto connectors = provided_token.connectors.value();
                 std::for_each(connectors.begin(), connectors.end(),
                               [this, provided_token, validation_result, &lk](int32_t connector) {
-                                  this->notify_evse(connector, provided_token, validation_result, lk);
+                                  if (this->evses.find(connector) != this->evses.end()) {
+                                      this->notify_evse(connector, provided_token, validation_result, lk);
+                                  }
                               });
             }
             return TokenHandlingResult::REJECTED;
@@ -756,7 +750,7 @@ ReservationCheckStatus AuthHandler::handle_reservation_exists(std::string& id_to
     }
 
     // Evse id has a value.
-    if (!this->reservation_handler.is_evse_reserved(evse_id.has_value())) {
+    if (!this->reservation_handler.is_evse_reserved(static_cast<uint32_t>(evse_id.value()))) {
         // There is an evse id, but the evse is not reserved.
         return ReservationCheckStatus::NotReserved;
     }
@@ -1084,6 +1078,9 @@ WithdrawAuthorizationResult AuthHandler::handle_withdraw_authorization(const Wit
 
         result = WithdrawAuthorizationResult::Accepted;
     }
+
+    // All tokens in process targeted by this request have finished
+    this->withdraw_request.reset();
 
     // It might still be the case that the withdraw request is also targeting already granted authorization so we
     // continue checking for this

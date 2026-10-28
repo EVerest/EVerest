@@ -5,6 +5,9 @@
 #include "everest_api_types/utilities/codec.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace everest::lib::API::V1_0::types::evse_board_support;
 

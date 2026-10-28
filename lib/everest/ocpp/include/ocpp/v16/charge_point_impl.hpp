@@ -15,6 +15,7 @@
 #include <set>
 
 #include <everest/timer.hpp>
+#include <everest/util/async/monitor.hpp>
 
 #include <ocpp/common/aligned_timer.hpp>
 #include <ocpp/common/charging_station_base.hpp>
@@ -94,10 +95,16 @@ private:
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
     bool initialized{false};
     bool InvalidCSMSCertificate_logged{false};
-    ChargePointConnectionState connection_state{ChargePointConnectionState::Disconnected};
+    std::atomic<ChargePointConnectionState> connection_state{ChargePointConnectionState::Disconnected};
     std::atomic<RegistrationStatus> registration_status{RegistrationStatus::Pending};
     DiagnosticsStatus diagnostics_status{DiagnosticsStatus::Idle};
     FirmwareStatus firmware_status{FirmwareStatus::Idle};
+    struct PendingFirmwareStatus {
+        std::int32_t request_id;
+        FirmwareStatusNotification status;
+        bool disable_connectors_during_install;
+    };
+    everest::lib::util::monitor<std::optional<PendingFirmwareStatus>> pending_firmware_status;
     UploadLogStatusEnumType log_status{UploadLogStatusEnumType::Idle};
 
     std::string message_log_path;
@@ -264,6 +271,8 @@ private:
                                       bool disable_connectors_during_install = true);
     void log_status_notification(UploadLogStatusEnumType status, int requestId,
                                  bool initiated_by_trigger_message = false);
+    void send_firmware_update_status_notification(const PendingFirmwareStatus& status);
+    void reset_firmware_status_if_finished(std::int32_t request_id, FirmwareStatusNotification status);
     void signed_firmware_update_status_notification(FirmwareStatusEnumType status, int requestId,
                                                     bool initiated_by_trigger_message = false,
                                                     bool disable_connectors_during_install = true);
@@ -281,7 +290,6 @@ private:
     void try_resume_transactions(const std::set<std::string>& resuming_session_ids);
     void stop_all_transactions();
     void stop_all_transactions(Reason reason);
-    bool validate_against_cache_entries(CiString<20> id_tag);
 
     // new transaction handling:
     void start_transaction(std::shared_ptr<Transaction> transaction);
@@ -1010,7 +1018,9 @@ public:
     /// \return a response containing the requested key(s) including the values and unkown keys if present
     GetConfigurationResponse get_configuration_key(const GetConfigurationRequest& request);
 
-    /// \brief Sets a configuration key
+    /// \brief Sets a configuration key on behalf of a local caller
+    /// \note Unlike a ChangeConfiguration.req from the CSMS, this also writes ReadOnly keys. Keys whose value the
+    /// stack derives itself are still rejected.
     /// \param key
     /// \param value
     /// \return Indicates the result of the operation

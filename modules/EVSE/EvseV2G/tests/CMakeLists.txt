@@ -48,9 +48,9 @@ target_sources(${TLS_GTEST_NAME} PRIVATE
 
 target_link_libraries(${TLS_GTEST_NAME} PRIVATE
     GTest::gtest
-    cbv2g::din
-    cbv2g::iso2
-    cbv2g::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::framework
     everest::evse_security
     everest::tls
@@ -84,9 +84,9 @@ target_sources(${V2G_MAIN_NAME} PRIVATE
 )
 
 target_link_libraries(${V2G_MAIN_NAME} PRIVATE
-    cbv2g::din
-    cbv2g::iso2
-    cbv2g::tp
+    everest::cbv2g::din
+    everest::cbv2g::iso2
+    everest::cbv2g::tp
     everest::log
     everest::framework
     everest::evse_security
@@ -128,9 +128,9 @@ target_link_libraries(${DIN_SERVER_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -164,7 +164,7 @@ target_sources(${SDP_NAME} PRIVATE
 target_link_libraries(${SDP_NAME}
     PRIVATE
         GTest::gtest_main
-        cbv2g::tp
+        everest::cbv2g::tp
         everest::framework
         everest::tls
         everest::everest_api_types
@@ -202,9 +202,9 @@ target_link_libraries(${V2GCTX_NAME}
         GTest::gtest_main
         OpenSSL::SSL
         OpenSSL::Crypto
-        cbv2g::din
-        cbv2g::iso2
-        cbv2g::tp
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
         everest::framework
         everest::evse_security
         everest::tls
@@ -214,3 +214,46 @@ target_link_libraries(${V2GCTX_NAME}
 
 add_test(${V2GCTX_NAME} ${V2GCTX_NAME})
 ev_register_test_target(${V2GCTX_NAME})
+
+set(ISO_SERVER_NAME iso_server_test)
+add_executable(${ISO_SERVER_NAME})
+
+target_include_directories(${ISO_SERVER_NAME} PRIVATE
+    .. ../connection ../crypto ${TESTS_INCLUDE_DIR}
+    ${GENERATED_INCLUDE_DIR}
+    ${CMAKE_BINARY_DIR}/generated/modules/${MODULE_NAME}
+    ${CMAKE_BINARY_DIR}/generated/include
+)
+add_dependencies(${ISO_SERVER_NAME} generate_cpp_files)
+
+target_compile_definitions(${ISO_SERVER_NAME} PRIVATE
+    -DUNIT_TEST
+    -DLIBEVSE_CRYPTO_SUPPLIER_OPENSSL
+)
+
+target_sources(${ISO_SERVER_NAME} PRIVATE
+    iso_server_test.cpp
+    log.cpp
+    ../iso_server.cpp
+    ../v2g_ctx.cpp
+    ../tools.cpp
+    ../crypto/crypto_openssl.cpp
+)
+
+target_link_libraries(${ISO_SERVER_NAME}
+    PRIVATE
+        GTest::gtest_main
+        OpenSSL::SSL
+        OpenSSL::Crypto
+        everest::cbv2g::din
+        everest::cbv2g::iso2
+        everest::cbv2g::tp
+        everest::framework
+        everest::evse_security
+        everest::tls
+        everest::everest_api_types
+        -levent -lpthread -levent_pthreads
+)
+
+add_test(${ISO_SERVER_NAME} ${ISO_SERVER_NAME})
+ev_register_test_target(${ISO_SERVER_NAME})

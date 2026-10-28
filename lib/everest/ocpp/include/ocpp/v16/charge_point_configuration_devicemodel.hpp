@@ -8,14 +8,14 @@
 #include <ocpp/v16/charge_point_configuration_connectivity.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/types.hpp>
-#include <ocpp/v2/ocpp16_custom_config_mappings.hpp>
+#include <ocpp/v2/ocpp16_key_mappings.hpp>
 
 #include <set>
 #include <vector>
 
 namespace ocpp {
 namespace v2 {
-class DeviceModelInterface;
+class DeviceModelVariablesInterface;
 }
 namespace v16 {
 namespace utils {
@@ -29,8 +29,8 @@ public:
     using SetResult = v2::SetVariableStatusEnum;
 
 protected:
-    std::unique_ptr<v2::DeviceModelInterface> storage;
-    ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings;
+    std::unique_ptr<v2::DeviceModelVariablesInterface> storage;
+    ocpp::v2::Ocpp16KeyMappings custom_key_mappings;
 
     SetResult setInternalAllowChargingProfileWithoutStartSchedule(const std::string& value);
     SetResult setInternalCentralSystemURI(const std::string& value);
@@ -107,13 +107,14 @@ protected:
     std::string calculateSupportedMeasurands();
 
 public:
-    explicit ChargePointConfigurationDeviceModel(const std::string_view& ocpp_main_path,
-                                                 std::unique_ptr<v2::DeviceModelInterface> device_model_interface,
-                                                 ocpp::v2::Ocpp16CustomConfigMappings custom_config_mappings = {});
+    explicit ChargePointConfigurationDeviceModel(
+        const std::string_view& ocpp_main_path,
+        std::unique_ptr<v2::DeviceModelVariablesInterface> device_model_interface,
+        ocpp::v2::Ocpp16KeyMappings custom_key_mappings = {});
     virtual ~ChargePointConfigurationDeviceModel() = default;
 
     /// \brief The device model backing this configuration.
-    v2::DeviceModelInterface& get_device_model() {
+    v2::DeviceModelVariablesInterface& get_device_model() {
         return *storage;
     }
 

@@ -12,7 +12,7 @@
 #include <sys/syscall.h>
 #include <unistd.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace Everest {
 

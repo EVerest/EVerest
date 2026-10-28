@@ -837,6 +837,10 @@ async def test_c15(
     # tx_stop_point = json.loads(get_variables_result.attribute_value)
     # log.debug(" TxStop Point: %s " %(tx_stop_point))
 
+    # C15 requires an IdToken that is not in the Authorization Cache
+    r: call_result201.ClearCache = await charge_point_v201.clear_cache_req()
+    assert r.status == ClearCacheStatusEnumType.accepted
+
     # Disconnect CS
     log.debug(" Disconnect the CS from the CSMS")
     test_controller.disconnect_websocket()
@@ -904,6 +908,57 @@ async def test_c15(
     test_utility.messages.clear()
     test_utility.forbidden_actions.clear()
 
+    log.debug(
+        "The Charging Station rejects an IdToken found in the Authorization Cache with status Unknown "
+        "even if OfflineTxForUnknownIdEnabled is set True "
+    )
+    # The CSMS answered Unknown in C15.FR.04, which put the IdToken in the Authorization Cache
+
+    # Disconnect CS
+    log.debug(" Disconnect the CS from the CSMS")
+    test_controller.disconnect_websocket()
+
+    await asyncio.sleep(2)
+
+    # the cached IdToken is not unknown, so OfflineTxForUnknownIdEnabled must not allow a transaction
+    test_utility.forbidden_actions.append("TransactionEvent")
+
+    # start charging session
+    test_controller.plug_in()
+
+    # swipe id tag to authorize
+    log.debug("Attempt to Authorize")
+    test_controller.swipe(id_tokenC15.id_token)
+
+    await asyncio.sleep(3)
+
+    # Connect CS
+    log.debug(" Connect the CS to the CSMS")
+    test_controller.connect_websocket()
+
+    # wait for reconnect
+    charge_point_v201 = await central_system_v201.wait_for_chargepoint(
+        wait_for_bootnotification=False
+    )
+
+    test_controller.plug_out()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "StatusNotification",
+        call201.StatusNotification(
+            datetime.now().isoformat(),
+            ConnectorStatusEnumType.available,
+            evse_id,
+            connector_id,
+        ),
+        validate_status_notification_201,
+    )
+
+    test_utility.messages.clear()
+    test_utility.forbidden_actions.clear()
+
     # C15.FR.06
     log.debug(
         "==============================================C15.FR.06 ===================================="
@@ -929,6 +984,10 @@ async def test_c15(
     )
     assert get_variables_result.attribute_status == GetVariableStatusEnumType.accepted
     stop_tx_on_invalid_id = json.loads(get_variables_result.attribute_value)
+
+    # C15 requires an IdToken that is not in the Authorization Cache
+    r: call_result201.ClearCache = await charge_point_v201.clear_cache_req()
+    assert r.status == ClearCacheStatusEnumType.accepted
 
     # Disconnect CS
     log.debug("Disconnect the CS from the CSMS")

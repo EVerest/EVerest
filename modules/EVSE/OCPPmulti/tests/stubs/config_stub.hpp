@@ -11,11 +11,11 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     std::string ChargePointConfigPath{"config"};
     int CompositeScheduleIntervalS{500};
     std::string CoreDatabasePath{"core.db"};
-    std::string CustomMrecErrorMapPath{};
+    std::string CustomErrorMappingPath{};
     std::string DatabasePath{};
     int DelayOcppStart{1};
     bool DelegateNetworkConfigurationToSystem{false};
-    std::string DeviceModelConfigMappings{};
+    std::string Ocpp16KeyMappingsPath{};
     std::string DeviceModelConfigPath{"dm_config"};
     std::string DeviceModelDatabasePath{"dm.db"};
     std::string DeviceModelDatabaseMigrationPath{"device_model_migrations"};
@@ -40,8 +40,8 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] std::string getCoreDatabasePath() const override {
         return CoreDatabasePath;
     }
-    [[nodiscard]] std::string getCustomMrecErrorMapPath() const override {
-        return CustomMrecErrorMapPath;
+    [[nodiscard]] std::string getCustomErrorMappingPath() const override {
+        return CustomErrorMappingPath;
     }
     [[nodiscard]] int getDelayOcppStart() const override {
         return DelayOcppStart;
@@ -52,8 +52,8 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     [[nodiscard]] bool getDelegateNetworkConfigurationToSystem() const override {
         return DelegateNetworkConfigurationToSystem;
     }
-    [[nodiscard]] std::string getDeviceModelConfigMappings() const override {
-        return DeviceModelConfigMappings;
+    [[nodiscard]] std::string getOcpp16KeyMappingsPath() const override {
+        return Ocpp16KeyMappingsPath;
     }
     [[nodiscard]] std::string getDeviceModelConfigPath() const override {
         return DeviceModelConfigPath;

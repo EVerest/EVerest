@@ -91,13 +91,18 @@ Boot Sources and the Configuration Database
 *******************************************
 
 Which configuration the manager boots from is resolved from the command line
-options. There are three cases.
+options. There are three cases. They only decide where module configurations
+come from; manager settings (installation paths, MQTT broker and prefixes,
+telemetry, schema validation) come from ``--settings`` in all of them, see
+:ref:`exp_config_service_settings`.
 
 **No** ``--db`` **(with** ``--config`` **or the default config lookup)**
-  The YAML config is authoritative. It is parsed, including the
-  ``user-config/<config-name>.yaml`` merge, and seeded into a process-private
-  **in-memory** database on every start. Nothing is persisted to disk except
-  runtime configuration writes, which go to the user-config YAML.
+  The YAML config is authoritative. It is parsed, including the user-config
+  merge, and seeded into a process-private **in-memory** database on every
+  start. Nothing is persisted to disk except runtime configuration writes,
+  which go to the user-config YAML. The user-config is
+  ``user-config/<config-name>.yaml`` in the directory of the config file, or
+  the file given with ``--user-config``.
   The default config file ``<prefix>/etc/everest/default.yaml`` is optional: if
   neither ``--config`` is given nor that file exists, the manager starts with an
   empty configuration on built-in defaults (and exits with no modules unless
@@ -106,23 +111,15 @@ options. There are three cases.
 
 ``--db`` **only**
   The database file is the only configuration source for module
-  configurations. The database never holds the manager ``settings:`` block, so
-  the settings come from built-in defaults: installation paths (``prefix``,
-  ``modules_dir``, ``interfaces_dir``, ``types_dir``, ``errors_dir``,
-  ``schemas_dir``, ``configs_dir``, ``www_dir``, ``logging_config_file``), MQTT
-  broker and prefixes (``mqtt_broker_host``, ``mqtt_broker_port``,
-  ``mqtt_broker_socket_path``, ``mqtt_everest_prefix``,
-  ``mqtt_external_prefix``), ``controller_port``,
-  ``controller_rpc_timeout_ms``, ``run_as_user``, ``telemetry_enabled``,
-  ``telemetry_prefix``, ``validate_schema`` and ``forward_exceptions``.
-  Deployments that need any non-default setting pass ``--config`` alongside
-  ``--db``.
+  configurations. The database never holds manager settings, so they come from
+  ``--settings``, or from built-in defaults without it. Deployments that need
+  any non-default setting pass ``--settings`` alongside ``--db``.
 
   Databases created before the multi-configuration schema stored these
   settings in a ``SETTING`` table. Schema migration 4 drops that table without
   carrying the values over; a database upgraded from such a release therefore
-  needs ``--config`` alongside ``--db`` to keep a non-default broker, prefix or
-  user.
+  needs ``--settings`` alongside ``--db`` to keep a non-default broker or
+  prefix.
 
 ``--config`` **and** ``--db``
   The database wins when its boot slot holds at least one module, and the YAML
@@ -159,6 +156,47 @@ Related options:
    restart, and only active-slot parameter writes are persisted, through the
    user-config mirror. The ``everest-config-tool`` cannot inspect an in-memory
    database.
+
+.. _exp_config_service_settings:
+
+Manager Settings
+================
+
+Manager settings are read from a YAML file passed with ``--settings``,
+validated against the schema ``<prefix>/share/everest/schemas/settings.yaml``.
+Relative paths are resolved against the installation prefix:
+
+.. code-block:: yaml
+
+   mqtt_broker_socket_path: /run/mosquitto/mosquitto.sock
+   telemetry_enabled: true
+
+Example settings files are installed next to the example configs in
+``<prefix>/etc/everest``:
+
+``settings-all-options.yaml``
+  Every available setting with its built-in default and a short explanation.
+``settings-mqtt-tcp.yaml``
+  An MQTT broker reachable over TCP.
+``settings-mqtt-uds.yaml``
+  An MQTT broker reachable over a Unix domain socket.
+
+The keys are ``configs_dir``, ``schemas_dir``, ``modules_dir``,
+``interfaces_dir``, ``types_dir``, ``errors_dir``, ``logging_config_file``,
+``mqtt_broker_socket_path``, ``mqtt_broker_host``, ``mqtt_broker_port``,
+``mqtt_everest_prefix``, ``mqtt_external_prefix``, ``telemetry_prefix``,
+``telemetry_enabled``, ``validate_schema`` and ``forward_exceptions``. Unknown
+keys, including the deprecated ones below, are rejected. There is no default
+settings file: without ``--settings``, the deprecated ``settings:`` block of
+the config file applies, and built-in defaults fill in what it does not set.
+
+The ``settings:`` block of the config file is deprecated. Without
+``--settings`` it is still applied, and the manager logs a deprecation warning.
+With ``--settings`` it is ignored, with a warning. Its keys ``www_dir``,
+``controller_port`` and ``controller_rpc_timeout_ms`` belonged to the removed
+admin panel backend: a config that still sets them is accepted, the values are
+ignored and the manager logs a warning for each of them at startup. The
+deprecated ``run_as_user`` is only accepted in the config's ``settings:`` block.
 
 *******************
 Communication Paths
@@ -329,11 +367,12 @@ Two independent mechanisms gate every write:
   for that caller ``ReadOnly`` parameters are treated as writable, so the write
   is accepted and persisted, but it typically only takes effect after a reboot.
 
-Values are validated against the parameter's **datatype** before anything is
-persisted, so a value that would fail to parse on the next boot is rejected up
-front. This is a datatype check only — no range (min/max) validation happens at
-this layer, so a badly chosen but well-typed value is accepted here and can
-still be refused by the module.
+Values are validated before anything is persisted, first against the
+parameter's **datatype** and then against its entry in the module **manifest**
+(``enum``, ``minimum``, ``maximum`` and the other schema keywords), the same
+check a configuration file gets. A value that fails either check is rejected
+with the reason, so a slot never stores a value it could not boot with. A value
+that passes can still be refused by the module at runtime.
 
 By a Configuration API Client
 =============================
@@ -388,3 +427,54 @@ returned to the calling module, with an explanation carrying the reason, for
 example the module's runtime veto.
 
 .. mermaid:: images/config_service_write_module.mmd
+
+.. _exp-configuration-service-change-notifications:
+
+**************************************
+Change Notifications for Other Modules
+**************************************
+
+A module can follow the configuration of another module, for example to mirror
+some of its parameters. It registers a handler for that module with the
+framework's configuration service client:
+
+.. code-block:: cpp
+
+    get_config_service_client()->register_config_update_handler(
+        "auth", [](const Everest::config::ConfigUpdateNotification& notification) {
+            // notification.identifier, notification.value, notification.status, notification.origin
+        });
+
+The manager sends a notification for every parameter change of the active slot
+that the ConfigServiceCore accepted, whether it came from a Configuration API
+Client or from an EVerest module. ``status`` is ``Accepted`` if the target
+module applied the value at runtime, and ``RebootRequired`` if it applies on the
+next start. ``origin`` names the module that requested the change and is empty
+for changes from outside EVerest. Changes that were not persisted, and changes of
+inactive slots, are not sent.
+
+A notification reaches a module only if its access rules allow it to read the
+configuration of the changed module, through ``allow_read`` for that module or
+``allow_global_read``. The changed module itself is notified as well, so it can
+follow changes that others make to its own configuration:
+
+.. code-block:: yaml
+
+    active_modules:
+      ocpp:
+        module: OCPPmulti
+        access:
+          config:
+            modules:
+              auth:
+                allow_read: true
+
+Registering a handler for an unknown module, or for one the access rules do not
+allow reading, fails: ``register_config_update_handler`` logs a warning and
+returns ``std::nullopt`` instead of the function that unregisters the handler.
+
+The module that requested a change is not notified about it; it receives the
+result as the reply to its write request. Notifications are not retained, so a
+module reads the current values after registering its handler. The handler runs
+on the module's MQTT dispatch thread, and notifications for one module arrive in
+the order the changes were accepted.

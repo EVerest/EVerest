@@ -47,7 +47,7 @@ Module configuration
 
 All configuration parameters of this module, including their defaults and descriptions, are listed in the generated
 reference section of this page (taken from the module's ``manifest.yaml``). The OCPP 1.6-only parameters
-(``ChargePointConfigPath``, ``UserConfigPath``, ``EnableLegacyConfigMigration``, ``DeviceModelConfigMappings``,
+(``ChargePointConfigPath``, ``UserConfigPath``, ``EnableLegacyConfigMigration``, ``Ocpp16KeyMappingsPath``,
 ``Ocpp16NetworkConfigSlot``) are described in context in the OCPP 1.6 configuration section below.
 
 Renamed configuration keys
@@ -58,6 +58,11 @@ Compared to the deprecated :ref:`OCPP <everest_modules_OCPP>` (1.6) module, two 
 
 * ``PublishChargingScheduleIntervalS`` is now ``CompositeScheduleIntervalS``
 * ``PublishChargingScheduleDurationS`` is now ``RequestCompositeScheduleDurationS``
+
+Compared to the :ref:`OCPP201 <everest_modules_OCPP201>` module, ``CustomMrecErrorMapPath`` is replaced by
+the experimental ``CustomErrorMappingPath``, which takes a file in a different format (see
+:ref:`error reporting <handwritten_ocppmulti_error-reporting>`). An override ``"<error type>": "<techCode>"`` of the
+old file becomes ``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
 
 External websocket control via MQTT
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
@@ -143,7 +148,7 @@ served from the device model at runtime.
 In both paths, the built-in mappings from OCPP 1.6 configuration keys to device model component/variable
 combinations are documented in
 `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
-``DeviceModelConfigMappings`` can point to a YAML file with custom mappings on top; it is applied both when migrating
+``Ocpp16KeyMappingsPath`` can point to a YAML file with custom mappings on top; it is applied both when migrating
 the legacy JSON into the device model and when serving the device-model-backed configuration at runtime. Custom
 mappings must not target the connection configuration (the ``NetworkConfiguration`` slots, the ``OCPPCommCtrlr``
 network profile selectors, or the ``SecurityCtrlr`` connection fallbacks ``Identity`` and ``BasicAuthPassword``):
@@ -227,7 +232,7 @@ sources are therefore visible and settable through the EVerest ``ocpp`` interfac
 ``set_variables``, e.g. via the ``ocpp_consumer_API`` module) regardless of the active protocol version. Note that
 an OCPP 1.6 **CSMS** still cannot address EVerest device model variables directly: ``GetConfiguration`` /
 ``ChangeConfiguration`` are key-based, and only keys with a device model mapping (built-in or via
-``DeviceModelConfigMappings``) reach the device model. Also note that variables of source ``EVEREST`` are updated
+``Ocpp16KeyMappingsPath``) reach the device model. Also note that variables of source ``EVEREST`` are updated
 by the module at runtime directly in the ``EverestDeviceModelStorage``; such updates do not trigger
 ``monitor_variables`` events on the ``ocpp`` interface (in either protocol version) — only writes performed through
 the OCPP stack or the ``ocpp`` interface do. If a component/variable is defined in both storages, the EVerest
@@ -535,6 +540,8 @@ The **log_status** and **firmware_update_status** variables are received to repo
 notifications to the CSMS, and **configure_network_status** (subscribed only when ``DelegateNetworkConfigurationToSystem``
 is ``true``) reports the asynchronous outcome of **configure_network** requests.
 
+.. _handwritten_ocppmulti_error-reporting:
+
 Error reporting
 ===============
 
@@ -542,15 +549,35 @@ The ``enable_global_errors`` flag of this module is set in its manifest, so the 
 errors reported by other modules in the same EVerest configuration.
 
 Error reporting follows the Minimum Required Error Codes (MRECs, https://inl.gov/chargex/mrec/). The module maps
-EVerest error types to MREC techCodes using a built-in mapping table. ``CustomMrecErrorMapPath`` can point to a JSON
-file whose entries overwrite the built-in defaults; note that this override is currently only applied on the OCPP 2.x
-error path. OCPP 1.6 uses a separate built-in MREC table that ``CustomMrecErrorMapPath`` does not affect.
+EVerest error types to MREC codes using a built-in mapping table shared by OCPP 1.6 and 2.x.
+
+.. warning::
+
+   ``CustomErrorMappingPath`` and the custom error mapping file format are currently **experimental**: the keys,
+   fields, placeholders and overlay behavior may change without further notice. They are exempt from the stability
+   guarantees and the deprecation period of the EVerest public API until promoted to stable (see
+   :ref:`project-experimental-components`).
+
+``CustomErrorMappingPath`` can point to a custom error mapping file, following
+``lib/everest/ocpp_module_common/schemas/custom_error_mapping.schema.json``. Its keys are EVerest error types,
+optionally refined by a sub type as ``<type>#<sub_type>``. The file is an overlay on the built-in mapping: every
+error is first converted as described below, then the fields its entry sets replace the converted ones. The ``v16``
+section overrides OCPP 1.6 fields and the ``v2`` section OCPP 2.x fields; every field an entry leaves out keeps its
+built-in value, so without a file errors are reported exactly as described below. **evse_manager/Inoperative**
+cannot be mapped. How to write, configure and check such a file is described in
+:ref:`Customize How Errors Reach the CSMS <howto-ocpp-custom-error-mapping>`.
+
+A misconfigured file never stops the module. An entry that breaks the schema or uses an undeclared error type is
+logged as a warning and ignored, so the built-in mapping applies to its errors. Unknown placeholders, text longer than
+the OCPP field and, for OCPP 2.x, components or variables the device model does not contain are only warned about. A
+missing or malformed file is ignored as a whole.
 
 For both protocol generations, only errors of the special type **evse_manager/Inoperative** are reported as faults
 (i.e. lead to a **StatusNotification.req** with status **Faulted**); this type indicates that the EVSE is not
 available for energy transfer. The EVSE/connector an error is reported for is derived from the EVerest mapping of the
-error's origin; without a mapping, or with EVSE 0, it is reported for the whole charging station (connector 0). All
-other errors are reported without changing the connector status, in a version-specific way.
+error's origin; without a mapping, or with EVSE 0, it is reported for the whole charging station (connector 0). The
+custom error mapping file cannot change this. All other errors are reported without changing the connector status, in
+a version-specific way.
 
 OCPP 1.6
 ^^^^^^^^
@@ -558,15 +585,18 @@ OCPP 1.6
 Errors are reported via the error fields of additional **StatusNotification.req** messages. Each error is converted
 as follows:
 
-* If the EVerest error type has a (built-in) MREC mapping, ``errorCode`` is taken from that mapping, ``vendorId`` is
-  set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. (The OCPP 1.6 path uses a fixed
-  built-in table; ``CustomMrecErrorMapPath`` is not applied here.) The error message is written to ``info`` instead
-  of ``vendorId``, truncated to 50 characters; if the error was raised without a message, ``info`` is omitted.
+* If the EVerest error type has a built-in MREC mapping, ``errorCode`` is taken from that mapping,
+  ``vendorId`` is set to the MREC vendor id, and ``vendorErrorCode`` carries the MREC techCode. The error message is
+  written to ``info`` instead of ``vendorId``, truncated to 50 characters; if the error was raised without a message,
+  ``info`` is omitted.
 * Otherwise, if it maps to a standard OCPP 1.6 error code, ``errorCode`` is set accordingly and ``vendorId`` carries
   the error message (up to 255 characters).
 * Otherwise, ``errorCode`` is ``OtherError``, ``info`` carries the error origin, ``vendorId`` the error message
   (up to 255 characters, the largest field), and ``vendorErrorCode`` a code derived from the EVerest error type
   (``info`` and ``vendorErrorCode`` are limited to 50 characters).
+
+The ``v16`` section of the error's custom error mapping entry then replaces each of ``errorCode``, ``vendorId``,
+``vendorErrorCode`` and ``info`` that it sets.
 
 OCPP 1.6 limitations: individual errors cannot be cleared selectively via **StatusNotification.req**, and, deviating
 from MREC, simultaneous errors are reported in one message per error instead of a single semicolon-separated
@@ -586,8 +616,11 @@ status **Faulted** for the Inoperative case above). All other errors are reporte
 * **EVSE** otherwise; when a connector is also mapped, its id is carried in the component's ``connectorId`` (the
   component name stays **EVSE**, a dedicated **Connector** component is not used yet)
 
-The variable is constantly set to **Problem** for now; a more fine-grained mapping of errors to component-variable
-combinations may be added in the future.
+The variable is set to **Problem**. A ``v2`` section of a custom error mapping entry can name another component and
+variable, but the component's ``evse`` (EVSE id and ``connectorId``) always follows the EVerest mapping of the error's
+origin. The only exception is the **ChargingStation** component, which is reported without an EVSE even when the
+raising module is mapped to one. A component that needs an EVSE or connector, such as **EVSE** or **Connector**, is
+only reported completely for errors of modules whose mapping provides them.
 
 The remaining **eventData** properties are filled as follows:
 
@@ -595,8 +628,65 @@ The remaining **eventData** properties are filled as follows:
   type itself otherwise.
 * ``techInfo`` is set to the message of the EVerest error, truncated to 500 characters. If the error was raised
   without a message, the description of the error type is sent instead.
+* ``severity`` is only reported when the ``v2`` section of the error's custom error mapping entry sets it, and only
+  over OCPP 2.1. It is a static value per entry, unrelated to the severity the EVerest error is raised with.
 * ``actualValue`` is ``"true"`` when the error is raised and ``"false"`` when it is cleared. The ``cleared``
   property is set accordingly.
+
+The ``v2`` section of the error's custom error mapping entry then replaces each of ``techCode``, ``techInfo``,
+``severity`` and the component and variable names and instances that it sets. Since ``actualValue`` is always ``"true"`` or
+``"false"``, an entry should name a boolean variable.
+
+.. _handwritten_ocppmulti_error-placeholders:
+
+Placeholders in custom error mapping texts
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+The ``vendor_id``, ``vendor_error_code`` and ``info`` (OCPP 1.6) and ``tech_code`` and ``tech_info`` (OCPP 2.x) fields of
+a custom error mapping entry may contain ``${name}`` placeholders, which are replaced by fields of the reported EVerest
+error:
+
+.. list-table::
+   :header-rows: 1
+
+   * - Placeholder
+     - Replaced by
+   * - ``${type}``
+     - Error type, for example ``evse_board_support/MREC3HighTemperature``
+   * - ``${sub_type}``
+     - Error sub type
+   * - ``${message}``
+     - Message the error was raised with
+   * - ``${description}``
+     - Description the error was raised with
+   * - ``${vendor_id}``
+     - Vendor id of the error
+   * - ``${origin}``
+     - Module id, implementation id and mapping of the raising module, as one string
+   * - ``${origin_module}``
+     - Module id of the raising module
+   * - ``${origin_implementation}``
+     - Implementation id of the raising module
+   * - ``${evse}``
+     - EVSE id of the raising module's mapping; empty without a mapping
+   * - ``${connector}``
+     - Connector id of the raising module's mapping; empty without a mapping or connector
+   * - ``${severity}``
+     - Severity the EVerest error was raised with: ``Low``, ``Medium`` or ``High``. Unrelated to the ``severity``
+       field of the entry
+   * - ``${state}``
+     - ``Active``, ``ClearedByModule`` or ``ClearedByReboot``
+   * - ``${timestamp}``
+     - Time the error was raised, RFC 3339
+   * - ``${uuid}``
+     - Unique id of the error instance
+
+Any other name, and a ``${`` without a closing ``}``, is warned about and sent as written. Substituted values are not
+scanned for placeholders again. The character limits of the OCPP fields, 255 for ``vendorId``, 500 for ``techInfo`` and
+50 for the others, apply after substitution, so the text around the placeholders should leave room for the values.
+
+For example, ``"tech_info": "${severity} ${type} on EVSE ${evse}: ${message}"`` is reported as
+``High evse_board_support/MREC3HighTemperature on EVSE 1: Temperature above limit``.
 
 .. _handwritten_ocppmulti_suspend-reason-reporting:
 
@@ -761,11 +851,33 @@ Results echo the requested ``component_variable`` and carry a status:
 (re)connect or reboot), ``Rejected``, ``UnknownComponent`` / ``UnknownVariable``,
 or ``NotSupportedAttributeType``.
 
+A variable that exists but has no value reads as ``Accepted`` with an empty
+``value`` (OCPP 2.x B06.FR.13) and can be written, in both protocol modes. In
+OCPP 1.6 mode, a custom-mapped key without a value appears in
+``GetConfiguration.conf`` without a ``value``, and ``ChangeConfiguration`` can set it.
+``NotSupportedAttributeType`` is reserved for an attribute type the variable does
+not have. A write-only variable reads as ``Rejected`` (B06.FR.09), whether or not
+it has a value.
+
 The status is the whole answer: the reason codes the stack computes internally
 (``PriorityNetworkConf``, ``NoSecurityDowngrade``, ``InvalidNetworkConf``, ...)
 are **currently not** carried on this interface; its result has no ``statusInfo`` field,
 in either protocol mode. A rejected write therefore has to be diagnosed from the
 module log, which names the reason code and the offending component/variable.
+
+``ReadOnly`` mutability constrains the CSMS, not these channels: ``set_variables``
+also writes ``ReadOnly`` variables, e.g. ``InternalCtrlr``/``ChargePointModel``,
+in both protocol modes. In OCPP 1.6 mode, keys whose value the stack computes stay
+``Rejected``, e.g. ``NumberOfConnectors``, ``SupportedFeatureProfiles`` or
+``SupportedMeasurands``. ``CentralSystemURI`` is one of them: change the CSMS URL
+through ``NetworkConfiguration``/``OcppCsmsUrl`` of a slot that is not in use, as in
+OCPP 2.x. Most ``ReadOnly`` values are only read at boot or on (re)connect, so an
+accepted write takes effect then.
+
+The CSMS remains bound by ``ReadOnly``: a ``ChangeConfiguration.req`` for a
+``ReadOnly`` key is ``Rejected``. ``CentralSystemURI`` is always ``ReadOnly`` in
+OCPP 1.6 mode, and OCPP 1.6 has no ``SetNetworkProfile``, so a 1.6 CSMS cannot
+change the CSMS URL.
 
 Addressing rules:
 

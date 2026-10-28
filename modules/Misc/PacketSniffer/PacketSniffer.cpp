@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include "PacketSniffer.hpp"
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include <fmt/chrono.h>
 

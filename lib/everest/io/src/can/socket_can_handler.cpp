@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <algorithm>
+#include <cerrno>
 #include <cstdint>
 #include <everest/io/can/can_recv_filter.hpp>
 #include <everest/io/can/socket_can_handler.hpp>
@@ -98,14 +99,21 @@ int socket_can_handler::rx(uint32_t& can_id, uint8_t& len8_dlc, can_payload& pay
 }
 
 bool socket_can_handler::tx(can_dataset const& data) {
+    if (not data_valid(data.payload)) {
+        // A frame that can never go out is dropped here; failing the bus connection for it would
+        // lose every frame queued behind it.
+        return true;
+    }
     auto can_id = data.get_can_id_with_flags();
     auto status = tx(can_id, data.len8_dlc, data.payload);
+    m_error.note(status);
     return status == 0;
 }
 
 bool socket_can_handler::rx(can_dataset& data) {
     uint32_t can_id = 0;
     auto status = rx(can_id, data.len8_dlc, data.payload);
+    m_error.note(status);
     if (status == 0)
         data.set_can_id_with_flags(can_id);
     return status == 0;
@@ -113,6 +121,7 @@ bool socket_can_handler::rx(can_dataset& data) {
 
 bool socket_can_handler::open(std::string const& can_device, std::vector<can_recv_filter> const& recv_filters,
                               socket_can_options const& options) {
+    m_error.clear();
     // IFNAMSIZ is the size of the buffer to write the name to.
     // This situation is special concerning null termination,
     // The name can occupy the fill buffer. If it does not, nulltermination is necessary
@@ -220,7 +229,7 @@ int socket_can_handler::get_fd() const {
 }
 
 int socket_can_handler::get_error() const {
-    return socket::get_pending_error(m_owned_can_fd);
+    return m_error.report(m_owned_can_fd);
 }
 
 } // namespace everest::lib::io::can

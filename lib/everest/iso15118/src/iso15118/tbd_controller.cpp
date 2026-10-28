@@ -36,8 +36,8 @@ struct DriverRunningGuard {
 TbdController::TbdController(TbdConfig config_, session::feedback::Callbacks callbacks_,
                              session::EvseSetupConfig setup_) :
     TbdController(std::move(config_), std::move(callbacks_), std::move(setup_),
-                  [](io::PollManager& poll_manager_, const std::string& interface_name_) {
-                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_);
+                  [tcp_port = config_.tcp_port](io::PollManager& poll_manager_, const std::string& interface_name_) {
+                      return std::make_unique<io::ConnectionPlain>(poll_manager_, interface_name_, tcp_port);
                   }) {
 }
 
@@ -225,9 +225,9 @@ StartSessionResult TbdController::start_session(int connected_fd, const StartSes
         std::make_unique<io::ConnectionPlain>(poll_manager, connected_fd, start_options.vehicle_cert_hash);
     {
         std::lock_guard<std::mutex> lock(session_mutex);
-        session =
-            std::make_unique<Session>(std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks,
-                                      pause_ctx, d2_pause_ctx, start_options.skip_app_protocol_negotiation);
+        session = std::make_unique<Session>(
+            std::move(connection), session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx,
+            start_options.skip_app_protocol_negotiation, config.throttle_same_type_only);
     }
     shutdown_active.store(false);
     shutdown_signaled = false;
@@ -289,9 +289,9 @@ void TbdController::tick() {
 
     if (not session and not shutdown_active.load() and not config.enable_sdp_server) {
         std::lock_guard<std::mutex> lock(session_mutex);
-        session =
-            std::make_unique<Session>(connection_factory(poll_manager, interface_name),
-                                      session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx, d2_pause_ctx);
+        session = std::make_unique<Session>(connection_factory(poll_manager, interface_name),
+                                            session::SessionConfig(*evse_setup.handle()), callbacks, pause_ctx,
+                                            d2_pause_ctx, false, config.throttle_same_type_only);
     }
 }
 
@@ -483,6 +483,7 @@ void TbdController::update_der_sae_limits(const std::optional<d20::SaeDerTransfe
         s->der_sae_setup_config = setup_config;
     }
 
+    std::lock_guard<std::mutex> lock(session_mutex);
     if (session and setup_config.has_value()) {
         session->push_control_event(setup_config.value());
     } else if (session and withdrawn) {
@@ -574,9 +575,10 @@ void TbdController::handle_sdp_server_input() {
     auto make_connection = [this](bool secure_connection) -> std::unique_ptr<io::IConnection> {
         try {
             if (secure_connection) {
-                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config());
+                return std::make_unique<io::ConnectionSSL>(poll_manager, interface_name, connection_ssl_config(),
+                                                           config.tcp_port);
             }
-            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name);
+            return std::make_unique<io::ConnectionPlain>(poll_manager, interface_name, config.tcp_port);
         } catch (const std::runtime_error& e) {
             logf_error("%s", e.what());
             return nullptr;
@@ -616,7 +618,7 @@ void TbdController::handle_sdp_server_input() {
     {
         std::lock_guard<std::mutex> lock(session_mutex);
         session = std::make_unique<Session>(std::move(connection), std::move(session_config), callbacks, pause_ctx,
-                                            d2_pause_ctx);
+                                            d2_pause_ctx, false, config.throttle_same_type_only);
     }
     // Deliberately NOT cancelled here: sending the SDP response does not end the communication-setup
     // phase, since the EV has not yet opened TCP. Leaving it running is what tears the session down in

@@ -239,10 +239,10 @@ void LifecycleAPI::subscribe_api_topic(std::string const& var, ParseAndPublishFt
         HandlerType::ExternalMQTT, std::make_shared<Handler>([=](std::string const& topic, nlohmann::json data) {
             try {
                 if (not parse_and_publish(data)) {
-                    EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << data;
+                    EVLOG_warning << "Invalid data: Deserialization failed.\n" << topic << "\n" << printable(data);
                 }
             } catch (const std::exception& e) {
-                EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << data;
+                EVLOG_warning << "Topic: '" << topic << "' failed with -> " << e.what() << "\n => " << printable(data);
             } catch (...) {
                 EVLOG_warning << "Invalid data: Failed to parse JSON or to get data from it.\n" << topic;
             }

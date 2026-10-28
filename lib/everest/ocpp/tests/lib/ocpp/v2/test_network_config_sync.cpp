@@ -13,6 +13,7 @@
 #include <device_model_test_helper.hpp>
 #include <evse_manager_fake.hpp>
 #include <evse_security_mock.hpp>
+#include <firmware_update_mock.hpp>
 #include <message_dispatcher_mock.hpp>
 #include <mocks/database_handler_mock.hpp>
 #include <ocpp/common/connectivity_manager.hpp>
@@ -1022,6 +1023,27 @@ TEST_F(ConnectivityManagerCacheTest, ConfirmSuccessfulConnectionPersistsActiveSl
     EXPECT_EQ(persisted.value(), 1) << "confirm_successful_connection() must persist the active slot";
 }
 
+static void set_stored_message_timeout(DeviceModel& dm, const std::string& value) {
+    ASSERT_EQ(dm.set_read_only_value(ControllerComponentVariables::MessageTimeout.component,
+                                     ControllerComponentVariables::MessageTimeout.variable.value(),
+                                     AttributeEnum::Actual, value, "test"),
+              SetVariableStatusEnum::Accepted);
+}
+
+TEST(ConnectivityManagerConstruction, MirrorsFirstPrioritySlotMessageTimeout) {
+    DeviceModelTestHelper dm_helper;
+    DeviceModel* dm = dm_helper.get_device_model();
+    auto profile = make_basic_profile(1, "wss://ocpp.example.com");
+    profile.messageTimeout = 45;
+    ASSERT_TRUE(NetworkConfigurationComponentVariables::write_profile_to_device_model(*dm, 1, profile, "test"));
+    set_stored_message_timeout(*dm, "999");
+    auto evse_security = std::make_shared<ocpp::EvseSecurityMock>();
+
+    ConnectivityManager cm(*dm, evse_security, "");
+
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), 45);
+}
+
 // ---------------------------------------------------------------------------
 // Provisioning block — reject active slot modification (B09.FR.21/22)
 // Verifies that validate_set_variable() rejects SetVariables targeting the
@@ -1144,6 +1166,7 @@ protected:
     ::testing::NiceMock<SecurityMock> security;
     ::testing::NiceMock<DiagnosticsMock> diagnostics;
     ::testing::NiceMock<TransactionMock> transaction;
+    ::testing::NiceMock<FirmwareUpdateMock> firmware_update;
     std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Accepted};
 
     // TariffAndCost dependencies — callbacks are taken by non-const reference, must outlive tariff_and_cost
@@ -1158,8 +1181,23 @@ protected:
     std::unique_ptr<Provisioning> provisioning;
 
     ProvisioningActiveSlotTest() : dm_helper() {
-        dm = dm_helper.get_device_model();
         evse_manager = std::make_unique<EvseManagerFake>(1);
+        create_provisioning();
+    }
+
+    // The device model reads its values when it is created: a test that writes the database behind it creates the
+    // device model and the functional blocks on it again
+    void reload_device_model() {
+        provisioning.reset();
+        tariff_and_cost.reset();
+        message_queue.reset();
+        fb_context.reset();
+        dm_helper.reload_device_model();
+        create_provisioning();
+    }
+
+    void create_provisioning() {
+        dm = dm_helper.get_device_model();
 
         fb_context =
             std::make_unique<FunctionalBlockContext>(mock_dispatcher, *dm, connectivity_manager, *evse_manager,
@@ -1181,7 +1219,7 @@ protected:
             [](auto, auto) {},                                               // reset_callback
             [](auto, auto) { return RequestStartStopStatusEnum::Accepted; }, // stop_transaction
             std::nullopt,                                                    // variable_changed_callback
-            *tariff_and_cost, registration_status);
+            *tariff_and_cost, registration_status, firmware_update);
     }
 
     // Set the ActiveNetworkProfile in the DM to simulate an active connection on the given slot
@@ -1470,6 +1508,7 @@ TEST_F(ProvisioningActiveSlotTest, SkipNonIntegerTokenInStoredPriority) {
                   ControllerComponentVariables::NetworkConfigurationPriority.variable.value(), AttributeEnum::Actual,
                   "invalid,1", "test"),
               SetVariableStatusEnum::Accepted);
+    reload_device_model();
     ASSERT_EQ(dm->get_value<std::string>(ControllerComponentVariables::NetworkConfigurationPriority), "invalid,1");
     EXPECT_TRUE(is_rejected_by_active_slot(
         set_single_variable(make_set_variable_data(1, "OcppCsmsUrl", "ws://priority.example.com/ocpp"))));
@@ -1773,6 +1812,29 @@ TEST_F(ProvisioningActiveSlotTest, GetVariablesIdentityReturnsGlobalWhenActiveSl
         << "FR.28: per-slot Identity must not leak when active slot is not in priority";
 }
 
+// A direct write to the active slot's MessageTimeout is mirrored into OCPPCommCtrlr.MessageTimeout[Default].
+TEST_F(ProvisioningActiveSlotTest, OnVariableChangedActiveSlotMessageTimeoutMirrorsDefault) {
+    set_active_slot(1);
+    const auto slot_cv = NetworkConfigurationComponentVariables::get_component_variable(
+        1, NetworkConfigurationComponentVariables::MessageTimeout);
+    ASSERT_EQ(dm->set_value(slot_cv.component, slot_cv.variable.value(), AttributeEnum::Actual, "55", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    provisioning->on_variable_changed(make_set_variable_data(1, "MessageTimeout", "55"));
+
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), 55);
+}
+
+TEST_F(ProvisioningActiveSlotTest, SetVariablesOutsidePriorityLeavesDefaultMessageTimeout) {
+    set_active_slot(1);
+    const auto before = dm->get_value<int>(ControllerComponentVariables::MessageTimeout);
+
+    auto result = set_single_variable(make_set_variable_data(2, "MessageTimeout", "55"));
+
+    EXPECT_EQ(result.attributeStatus, SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(dm->get_value<int>(ControllerComponentVariables::MessageTimeout), before);
+}
+
 // ---------------------------------------------------------------------------
 // handle_set_network_profile_req validation branches.
 // Drives Provisioning::handle_message with SetNetworkProfile to cover the
@@ -1800,6 +1862,7 @@ protected:
     ::testing::NiceMock<SecurityMock> security;
     ::testing::NiceMock<DiagnosticsMock> diagnostics;
     ::testing::NiceMock<TransactionMock> transaction;
+    ::testing::NiceMock<FirmwareUpdateMock> firmware_update;
     std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Accepted};
 
     boost::asio::io_context io_context;
@@ -1831,7 +1894,7 @@ protected:
             *fb_context, *message_queue, ocsp_updater, availability, meter_values, security, diagnostics, transaction,
             std::nullopt, std::nullopt, validate_cb, [](auto, auto) { return true; }, [](auto, auto) {},
             [](auto, auto) { return RequestStartStopStatusEnum::Accepted; }, std::nullopt, *tariff_and_cost,
-            registration_status);
+            registration_status, firmware_update);
     }
 
     static SetNetworkProfileRequest make_request(int32_t slot, const std::string& url, int security_profile) {

@@ -1056,6 +1056,43 @@ TEST_F(AuthTest, test_parent_id_finish) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a token resolved as already in process via its parent_id_token is released afterwards and can stop
+/// the transaction once it has started
+TEST_F(AuthTest, test_parent_id_already_in_process_releases_token) {
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token_1 = get_provided_token(VALID_TOKEN_1, connectors);
+    ProvidedIdToken provided_token_2 = get_provided_token(VALID_TOKEN_3, connectors);
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_1.id_token), TokenValidationStatus::UsedToStart));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::Processing))
+        .Times(2);
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token_2.id_token), TokenValidationStatus::UsedToStop));
+
+    auto result = this->auth_handler->on_token(provided_token_1);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    // VALID_TOKEN_3 shares the parent_id_token of the authorization on evse#1 that has no transaction yet
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_TRUE(result == TokenHandlingResult::ALREADY_IN_PROCESS);
+
+    this->auth_handler->handle_session_event(1, get_transaction_started_event(provided_token_1));
+
+    result = this->auth_handler->on_token(provided_token_2);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_STOP_TRANSACTION);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 /// \brief Test if transaction doesnt finish with parent_id when prioritize_authorization_over_stopping_transaction is
 /// true. Instead: Authorization should be given to connector#2
 TEST_F(AuthTest, test_parent_id_no_finish) {
@@ -1238,6 +1275,40 @@ TEST_F(AuthTest, test_reservation) {
     const auto reservation_result = this->auth_handler->handle_reservation(reservation);
 
     ASSERT_EQ(reservation_result, ReservationResult::Accepted);
+}
+
+/// \brief Test that reservation_exists checks the requested evse and not evse 1
+TEST_F(AuthTest, test_reservation_exists_checks_requested_evse) {
+    Reservation reservation;
+    reservation.evse_id = 2;
+    reservation.id_token = VALID_TOKEN_1;
+    reservation.reservation_id = 1;
+    reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+    reservation.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() + std::chrono::hours(1)));
+    ASSERT_EQ(this->auth_handler->handle_reservation(reservation), ReservationResult::Accepted);
+
+    std::string other_token = VALID_TOKEN_2;
+    std::optional<std::string> no_group_id_token;
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 2, no_group_id_token),
+              ReservationCheckStatus::ReservedForOtherToken);
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 1, no_group_id_token),
+              ReservationCheckStatus::NotReserved);
+}
+
+/// \brief Test that reservation_exists does not report an unreserved evse as reserved when evse 1 is reserved
+TEST_F(AuthTest, test_reservation_exists_unreserved_evse_while_evse_1_reserved) {
+    Reservation reservation;
+    reservation.evse_id = 1;
+    reservation.id_token = VALID_TOKEN_1;
+    reservation.reservation_id = 1;
+    reservation.connector_type = types::evse_manager::ConnectorTypeEnum::cCCS2;
+    reservation.expiry_time = Everest::Date::to_rfc3339((date::utc_clock::now() + std::chrono::hours(1)));
+    ASSERT_EQ(this->auth_handler->handle_reservation(reservation), ReservationResult::Accepted);
+
+    std::string other_token = VALID_TOKEN_2;
+    std::optional<std::string> no_group_id_token;
+    EXPECT_EQ(this->auth_handler->handle_reservation_exists(other_token, 2, no_group_id_token),
+              ReservationCheckStatus::NotReserved);
 }
 
 /// \brief Test if a reservation cannot be placed if expiry_time is in the past
@@ -1767,6 +1838,28 @@ TEST_F(AuthTest, test_plug_and_charge_rejected) {
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
+/// \brief Test that a rejected token referencing an unknown evse only notifies the known evses
+TEST_F(AuthTest, test_rejected_token_with_unknown_evse) {
+    this->auth_receiver->authorize(0);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    const auto provided_token = get_provided_token(INVALID_TOKEN, std::vector<int32_t>{1, 99});
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Rejected));
+
+    TokenHandlingResult result;
+    ASSERT_NO_THROW(result = this->auth_handler->on_token(provided_token));
+    ASSERT_TRUE(result == TokenHandlingResult::REJECTED);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
 /// \brief Test empty intersection of referenced connectors in provided token and in validation result
 TEST_F(AuthTest, test_empty_intersection) {
 
@@ -1815,6 +1908,34 @@ TEST_F(AuthTest, test_empty_intersection) {
     const auto result = this->auth_handler->on_token(provided_token);
     ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
     ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief Test that a token restricted to specific evses by the validation result is rejected on another referenced
+/// evse that has an EV plugged in
+TEST_F(AuthTest, test_validation_result_evse_ids_restrict_selected_evse) {
+    this->auth_handler->register_validate_token_callback([](const ProvidedIdToken& /*provided_token*/) {
+        ValidationResult result;
+        result.authorization_status = AuthorizationStatus::Accepted;
+        result.evse_ids.emplace(std::vector<int32_t>{2});
+        return std::vector<ValidationResult>{result};
+    });
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1, 2});
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Rejected));
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::REJECTED);
+    ASSERT_FALSE(this->auth_receiver->get_authorization(0));
     ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
@@ -2022,6 +2143,32 @@ TEST_F(AuthTest, test_withdraw_authorization) {
 
     withdraw_result = this->auth_handler->handle_withdraw_authorization(withdraw_request);
     ASSERT_EQ(withdraw_result, WithdrawAuthorizationResult::AuthorizationNotFound);
+}
+
+/// \brief Test that a handled withdraw request does not withdraw tokens presented afterwards
+TEST_F(AuthTest, test_withdraw_authorization_does_not_affect_later_tokens) {
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+
+    types::authorization::WithdrawAuthorizationRequest withdraw_request;
+    withdraw_request.evse_id = 1;
+    ASSERT_EQ(this->auth_handler->handle_withdraw_authorization(withdraw_request),
+              WithdrawAuthorizationResult::AuthorizationNotFound);
+
+    std::vector<int32_t> connectors{1, 2};
+    ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_2, connectors);
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Processing));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::Accepted));
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::id_token, provided_token.id_token), TokenValidationStatus::UsedToStart));
+
+    const auto result = this->auth_handler->on_token(provided_token);
+    ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+    ASSERT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
 /// \brief Test if a authorization can be withdrawn while authorization process is still selecting an EVSE

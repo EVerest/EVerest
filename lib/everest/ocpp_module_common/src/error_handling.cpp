@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/error_mapping.hpp>
 
 #include <everest/logging.hpp>
 #include <nlohmann/json.hpp>
@@ -10,31 +11,7 @@
 
 namespace ocpp_module_common {
 
-const MREC_ERROR_MAP_TYPE MREC_ERROR_MAP = {
-    {"connector_lock/MREC1ConnectorLockFailure", "CX001"},
-    {"evse_board_support/MREC2GroundFailure", "CX002"},
-    {"evse_board_support/MREC3HighTemperature", "CX003"},
-    {"evse_board_support/MREC4OverCurrentFailure", "CX004"},
-    {"evse_board_support/MREC5OverVoltage", "CX005"},
-    {"evse_board_support/MREC6UnderVoltage", "CX006"},
-    {"evse_board_support/MREC8EmergencyStop", "CX008"},
-    {"evse_board_support/MREC10InvalidVehicleMode", "CX010"},
-    {"evse_board_support/MREC14PilotFault", "CX014"},
-    {"evse_board_support/MREC15PowerLoss", "CX015"},
-    {"evse_board_support/MREC17EVSEContactorFault", "CX017"},
-    {"evse_board_support/MREC18CableOverTempDerate", "CX018"},
-    {"evse_board_support/MREC19CableOverTempStop", "CX019"},
-    {"evse_board_support/MREC20PartialInsertion", "CX020"},
-    {"evse_board_support/MREC23ProximityFault", "CX023"},
-    {"evse_board_support/MREC24ConnectorVoltageHigh", "CX024"},
-    {"evse_board_support/MREC25BrokenLatch", "CX025"},
-    {"evse_board_support/MREC26CutCable", "CX026"},
-    {"evse_manager/MREC4OverCurrentFailure", "CX004"},
-    {"ac_rcd/MREC2GroundFailure", "CX002"},
-    {"evse_manager/MREC22ResistanceFault", "CX022"},
-    {"evse_manager/MREC11CableCheckFault", "CX011"},
-    {"evse_manager/MREC5OverVoltage", "CX005"},
-};
+const MREC_ERROR_MAP_TYPE MREC_ERROR_MAP = MrecErrorMapping::tech_codes();
 
 const std::string EVSE_MANAGER_INOPERATIVE_ERROR = "evse_manager/Inoperative";
 const std::string CHARGING_STATION_COMPONENT_NAME = "ChargingStation";
@@ -101,33 +78,7 @@ ocpp::v2::Component get_component_from_error(const Everest::error::Error& error)
 
 ocpp::v2::EventData get_event_data(const Everest::error::Error& error, const bool cleared, const int32_t event_id,
                                    const MREC_ERROR_MAP_TYPE& error_map) {
-    ocpp::v2::EventData event_data;
-    event_data.eventId = event_id; // This can theoretically conflict with eventIds generated in libocpp (e.g.
-                                   // for monitoring events), but the spec does not strictly forbid that
-    event_data.timestamp = ocpp::DateTime(error.timestamp);
-    event_data.trigger = ocpp::v2::EventTriggerEnum::Alerting;
-    event_data.cause = std::nullopt; // TODO: use caused_by when available within error object
-    event_data.actualValue = cleared ? "false" : "true";
-
-    if (const auto it = error_map.find(error.type); it != error_map.end()) {
-        event_data.techCode = it->second;
-    } else {
-        event_data.techCode = error.type;
-    }
-
-    if (!error.message.empty()) {
-        event_data.techInfo = ocpp::CiString<500>(error.message, ocpp::StringTooLarge::Truncate);
-    } else {
-        event_data.techInfo = ocpp::CiString<500>(error.description, ocpp::StringTooLarge::Truncate);
-    }
-    event_data.cleared = cleared;
-    event_data.transactionId = std::nullopt;        // TODO: Do we need to set this here?
-    event_data.variableMonitoringId = std::nullopt; // We dont need to set this for HardwiredNotification
-    event_data.eventNotificationType = ocpp::v2::EventNotificationEnum::HardWiredNotification;
-
-    event_data.component = get_component_from_error(error);
-    event_data.variable = {PROBLEM_VARIABLE_NAME}; // TODO: use type of error for mapping to variable?
-    return event_data;
+    return to_v2_event_data(error, cleared, event_id, MrecErrorMapping{error_map});
 }
 
 } // namespace ocpp_module_common

@@ -2,10 +2,13 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <catch2/catch_test_macros.hpp>
 
+#include <algorithm>
 #include <array>
 #include <atomic>
+#include <cerrno>
 #include <chrono>
 #include <cstring>
+#include <everest/tls/tls.hpp>
 #include <filesystem>
 #include <fstream>
 #include <future>
@@ -18,9 +21,11 @@
 #include <netinet/in.h>
 #include <signal.h>
 #include <sys/socket.h>
+#include <sys/time.h>
 #include <unistd.h>
 
 #include <openssl/bio.h>
+#include <openssl/err.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
 #include <openssl/ssl.h>
@@ -31,6 +36,14 @@
 #include <iso15118/io/logging.hpp>
 #include <iso15118/io/poll_manager.hpp>
 #include <iso15118/io/sha_hash.hpp>
+
+namespace iso15118::io {
+struct ConnectionSSLTestAccess {
+    static tls::Connection& get(ConnectionSSL& connection) {
+        return connection.tls_connection();
+    }
+};
+} // namespace iso15118::io
 
 using namespace std::chrono_literals;
 
@@ -109,6 +122,10 @@ struct ClientResult {
     bool tls_1_3{false};
     std::string read_payload;
     std::string server_key_group; //!< EC curve of the server leaf presented in the handshake
+    // Filled in when the client waits for the server to close first.
+    int read_after_server_close{-1};
+    int ssl_error_after_server_close{SSL_ERROR_NONE};
+    ssize_t recv_after_server_close{-1};
 };
 
 struct FdGuard {
@@ -130,7 +147,8 @@ using SslPtr = std::unique_ptr<SSL, decltype(&SSL_free)>;
 // Drive a synthetic OpenSSL client over TCP/IPv6 loopback. Optionally present a client cert.
 ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_recv, bool present_client_cert,
                             bool enforce_tls_1_3, bool force_tls_1_2 = false, const char* client_chain = VEHICLE_CHAIN,
-                            const char* client_key = VEHICLE_LEAF_KEY) {
+                            const char* client_key = VEHICLE_LEAF_KEY, bool await_server_close = false,
+                            std::function<void(SSL*, int)> before_server_close = {}) {
     ClientResult result;
 
     // Resolve [::1] manually
@@ -248,6 +266,19 @@ ClientResult run_tls_client(const std::string& send_payload, std::size_t expect_
         result.read_payload.assign(buf.data(), total);
     }
 
+    if (before_server_close) {
+        before_server_close(ssl.get(), fd);
+    }
+    if (await_server_close) {
+        // Bounded, so a server that never closes fails the test instead of hanging it.
+        timeval receive_timeout{5, 0};
+        ::setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &receive_timeout, sizeof(receive_timeout));
+        std::array<char, 16> buf{};
+        result.read_after_server_close = SSL_read(ssl.get(), buf.data(), static_cast<int>(buf.size()));
+        result.ssl_error_after_server_close = SSL_get_error(ssl.get(), result.read_after_server_close);
+        result.recv_after_server_close = ::recv(fd, buf.data(), buf.size(), 0);
+    }
+
     SSL_shutdown(ssl.get());
     return result;
 }
@@ -275,7 +306,7 @@ SCENARIO("ConnectionSSL completes a TLS handshake against a real client") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         std::atomic<bool> got_new_data{false};
@@ -327,7 +358,7 @@ SCENARIO("ConnectionSSL surfaces a peer close through read()") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         std::atomic<bool> peer_closed{false};
@@ -367,6 +398,63 @@ SCENARIO("ConnectionSSL surfaces a peer close through read()") {
     }
 }
 
+SCENARIO("ConnectionSSL::half_close sends close_notify and a FIN, then reads until the peer closes") {
+    for (const bool enforce_tls_1_3 : {false, true}) {
+        INFO((enforce_tls_1_3 ? "TLS 1.3" : "TLS 1.2"));
+        iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+
+        iso15118::io::PollManager poll_manager;
+        const auto ssl_cfg = make_ssl_config(false, "/tmp", enforce_tls_1_3);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
+
+        std::atomic<bool> handshake_open{false};
+        std::atomic<bool> peer_closed{false};
+        std::atomic<int> closed_count{0};
+        connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
+            if (event == iso15118::io::ConnectionEvent::OPEN) {
+                handshake_open.store(true);
+            } else if (event == iso15118::io::ConnectionEvent::NEW_DATA) {
+                std::array<uint8_t, 64> buf{};
+                if (connection.read(buf.data(), buf.size()).connection_closed) {
+                    peer_closed.store(true);
+                }
+            } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+                closed_count.fetch_add(1);
+            }
+        });
+
+        auto client_future = std::async(std::launch::async, [&]() {
+            return run_tls_client({}, 0, enforce_tls_1_3, enforce_tls_1_3, not enforce_tls_1_3, VEHICLE_CHAIN,
+                                  VEHICLE_LEAF_KEY, true);
+        });
+
+        const bool got_open = poll_until(
+            poll_manager, [&]() { return handshake_open.load(); }, 5s);
+
+        connection.half_close();
+
+        const bool got_close = poll_until(
+            poll_manager, [&]() { return peer_closed.load(); }, 5s);
+
+        const auto client_result = client_future.get();
+
+        REQUIRE(client_result.error.empty());
+        REQUIRE(client_result.handshake_ok);
+        REQUIRE(client_result.tls_1_3 == enforce_tls_1_3);
+        REQUIRE(got_open);
+        REQUIRE(client_result.read_after_server_close == 0);
+        REQUIRE(client_result.ssl_error_after_server_close == SSL_ERROR_ZERO_RETURN);
+        REQUIRE(client_result.recv_after_server_close == 0);
+        REQUIRE(got_close);
+        REQUIRE(closed_count.load() == 0);
+
+        connection.close();
+        REQUIRE(closed_count.load() == 1);
+
+        connection.close();
+    }
+}
+
 SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
 
     GIVEN("A ConnectionSSL configured with a single SECC chain and TLS 1.3 enforced") {
@@ -374,7 +462,7 @@ SCENARIO("ConnectionSSL exposes the peer certificate SHA-512 to callers") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", true);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -425,7 +513,7 @@ SCENARIO("ConnectionSSL accepts a TLS 1.3 client chained to the MO root") {
         // make_ssl_config passes OEM_ROOT as path_certificate_mo_root; the client below
         // presents the OEM provisioning chain, which does NOT verify against the V2G root.
         const auto ssl_cfg = make_ssl_config(false, "/tmp", true);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -465,7 +553,7 @@ SCENARIO("ConnectionSSL tears down when the peer closes during the handshake") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<int> closed_count{0};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -536,7 +624,7 @@ SCENARIO("ConnectionSSL close before connect releases the listener") {
 
         WHEN("close() is called before any client connects, then the connection is destroyed") {
             {
-                iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+                iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
                 connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
                     if (event == iso15118::io::ConnectionEvent::CLOSED) {
                         closed_count.fetch_add(1);
@@ -576,7 +664,7 @@ SCENARIO("ConnectionSSL writes an SSLKEYLOGFILE-format keylog when enabled") {
 
         iso15118::io::PollManager poll_manager;
         const auto ssl_cfg = make_ssl_config(true, keylog_dir, false);
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -654,7 +742,7 @@ SCENARIO("ConnectionSSL presents the SECC leaf matching the negotiated TLS versi
         };
 
         iso15118::io::PollManager poll_manager;
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -723,7 +811,7 @@ SCENARIO("ConnectionSSL presents the SECC leaf matching the negotiated TLS versi
         };
 
         iso15118::io::PollManager poll_manager;
-        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg);
+        iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
 
         std::atomic<bool> handshake_open{false};
         connection.set_event_callback([&](iso15118::io::ConnectionEvent event) {
@@ -750,4 +838,194 @@ SCENARIO("ConnectionSSL presents the SECC leaf matching the negotiated TLS versi
 
         connection.close();
     }
+}
+
+TEST_CASE("ConnectionSSL retries a blocked close_notify before TCP FIN") {
+    iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
+    iso15118::io::PollManager poll_manager;
+    const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
+    iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
+    bool opened = false;
+    int closed_count = 0;
+    connection.set_event_callback([&](auto event) {
+        if (event == iso15118::io::ConnectionEvent::OPEN) {
+            opened = true;
+        } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+            ++closed_count;
+        }
+    });
+    auto client = std::async(std::launch::async, [&] {
+        return run_tls_client({}, 0, false, false, true, VEHICLE_CHAIN, VEHICLE_LEAF_KEY, true);
+    });
+    REQUIRE(poll_until(
+        poll_manager, [&] { return opened; }, 5s));
+    auto& tls_connection = iso15118::io::ConnectionSSLTestAccess::get(connection);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    auto* ssl = tls_connection.ssl_context();
+#pragma GCC diagnostic pop
+    auto* bio = SSL_get_wbio(ssl);
+    int blocked_writes = 0;
+    BIO_set_callback_arg(bio, reinterpret_cast<char*>(&blocked_writes));
+    BIO_set_callback_ex(bio, [](BIO* bio, int operation, const char*, size_t, int, long, int result, size_t*) -> long {
+        if (operation == BIO_CB_WRITE) {
+            ++*reinterpret_cast<int*>(BIO_get_callback_arg(bio));
+            BIO_set_retry_write(bio);
+            return -1;
+        }
+        return result;
+    });
+
+    connection.half_close();
+    CHECK(blocked_writes == 1);
+    CHECK(tls_connection.state() == tls::Connection::state_t::connected);
+    // A zero-length send fails with EPIPE if SHUT_WR already sent FIN.
+    CHECK(::send(tls_connection.socket(), "", 0, MSG_NOSIGNAL) == 0);
+    CHECK(closed_count == 0);
+
+    BIO_set_callback_ex(bio, nullptr);
+    BIO_clear_retry_flags(bio);
+    connection.half_close();
+    connection.half_close();
+    const auto result = client.get();
+    CHECK(result.error.empty());
+    CHECK(result.handshake_ok);
+    CHECK(result.read_after_server_close == 0);
+    CHECK(result.ssl_error_after_server_close == SSL_ERROR_ZERO_RETURN);
+    CHECK(result.recv_after_server_close == 0);
+    connection.close();
+    connection.half_close();
+    connection.close();
+    CHECK(closed_count == 1);
+}
+
+TEST_CASE("ConnectionSSL bounds a pending TLS shutdown without draining ciphertext") {
+    std::vector<std::string> errors;
+    iso15118::io::set_logging_callback(
+        [&](iso15118::LogLevel, const std::string& message) { errors.push_back(message); });
+    iso15118::io::PollManager poll_manager;
+    const auto ssl_cfg = make_ssl_config(false, "/tmp", false);
+    iso15118::io::ConnectionSSL connection(poll_manager, LOOPBACK_IFACE, ssl_cfg, SERVER_PORT);
+    bool opened = false;
+    int closed_count = 0;
+    connection.set_event_callback([&](auto event) {
+        if (event == iso15118::io::ConnectionEvent::OPEN) {
+            opened = true;
+        } else if (event == iso15118::io::ConnectionEvent::CLOSED) {
+            ++closed_count;
+        }
+    });
+    std::promise<void> release_client;
+    auto released = release_client.get_future();
+    std::promise<void> client_sent;
+    auto sent = client_sent.get_future();
+    int client_socket = -1;
+    ssize_t initial_recv = 0;
+    int initial_errno = 0;
+    auto client = std::async(std::launch::async, [&] {
+        return run_tls_client({}, 0, false, false, true, VEHICLE_CHAIN, VEHICLE_LEAF_KEY, true, [&](SSL* ssl, int fd) {
+            if (released.wait_for(5s) != std::future_status::ready) {
+                return;
+            }
+            client_socket = fd;
+            char byte;
+            initial_recv = ::recv(fd, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+            initial_errno = errno;
+            SSL_write(ssl, "late", 4);
+            client_sent.set_value();
+        });
+    });
+    REQUIRE(poll_until(
+        poll_manager, [&] { return opened; }, 5s));
+    auto& tls_connection = iso15118::io::ConnectionSSLTestAccess::get(connection);
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+    auto* bio = SSL_get_wbio(tls_connection.ssl_context());
+#pragma GCC diagnostic pop
+    int blocked_writes = 0;
+    BIO_set_callback_arg(bio, reinterpret_cast<char*>(&blocked_writes));
+    BIO_set_callback_ex(bio, [](BIO* bio, int operation, const char*, size_t, int, long, int result, size_t*) -> long {
+        if (operation == BIO_CB_WRITE) {
+            ++*reinterpret_cast<int*>(BIO_get_callback_arg(bio));
+            BIO_set_retry_read(bio);
+            return -1;
+        }
+        return result;
+    });
+    connection.half_close();
+    CHECK(blocked_writes == 1);
+    CHECK(tls_connection.state() == tls::Connection::state_t::connected);
+    for (int tick = 0; tick < 10; ++tick) {
+        connection.half_close();
+    }
+    CHECK(blocked_writes == 1); // want_read must not retry merely because the socket is writable
+    release_client.set_value();
+    REQUIRE(sent.wait_for(5s) == std::future_status::ready);
+    CHECK(initial_recv == -1);
+    CHECK((initial_errno == EAGAIN or initial_errno == EWOULDBLOCK));
+    REQUIRE(tls_connection.wait_for(tls::Connection::result_t::want_read, 1000) == tls::Connection::result_t::success);
+    std::array<uint8_t, 64> buffer{};
+    const auto queued = ::recv(tls_connection.socket(), buffer.data(), buffer.size(), MSG_PEEK | MSG_DONTWAIT);
+    REQUIRE(queued > 0);
+    const auto read = connection.read(buffer.data(), buffer.size());
+    CHECK(read.would_block);
+    CHECK(read.bytes_read == 0);
+    CHECK_FALSE(read.connection_closed);
+    CHECK(::recv(tls_connection.socket(), buffer.data(), buffer.size(), MSG_PEEK | MSG_DONTWAIT) == queued);
+
+    SECTION("a ready retry delivers close_notify before FIN") {
+        BIO_set_callback_ex(bio, nullptr);
+        BIO_clear_retry_flags(bio);
+        connection.half_close();
+        const auto result = client.get();
+        CHECK(result.ssl_error_after_server_close == SSL_ERROR_ZERO_RETURN);
+        CHECK(result.recv_after_server_close == 0);
+    }
+    SECTION("the final close cancels the pending shutdown") {
+        connection.close();
+        connection.half_close();
+        CHECK(blocked_writes == 1);
+        CHECK(closed_count == 1);
+        const auto result = client.get();
+        CHECK(result.ssl_error_after_server_close != SSL_ERROR_ZERO_RETURN);
+    }
+    SECTION("the peer closes before the pending shutdown completes") {
+        REQUIRE(::shutdown(client_socket, SHUT_RDWR) == 0);
+        client.get();
+        BIO_set_callback_ex(bio, nullptr);
+        BIO_clear_retry_flags(bio);
+        connection.half_close();
+        CHECK(poll_until(
+            poll_manager, [&] { return connection.read(buffer.data(), buffer.size()).connection_closed; }, 500ms));
+        CHECK(closed_count == 0);
+    }
+    SECTION("a terminal TLS error uses the bounded close path") {
+        BIO_set_callback_ex(bio,
+                            [](BIO* bio, int operation, const char*, size_t, int, long, int result, size_t*) -> long {
+                                if (operation == BIO_CB_WRITE) {
+                                    BIO_clear_retry_flags(bio);
+                                    ERR_raise(ERR_LIB_SSL, ERR_R_INTERNAL_ERROR);
+                                    return -1;
+                                }
+                                return result;
+                            });
+        connection.half_close();
+        CHECK(tls_connection.state() == tls::Connection::state_t::fault);
+        const auto last_error = tls_connection.last_error();
+        REQUIRE_FALSE(last_error.empty());
+        CHECK(std::any_of(errors.begin(), errors.end(), [&](const auto& message) {
+            return message.find("TLS shutdown ended with closed: " + last_error) != std::string::npos;
+        }));
+        connection.half_close();
+        const auto result = client.get();
+        CHECK(result.ssl_error_after_server_close != SSL_ERROR_ZERO_RETURN);
+        CHECK(result.recv_after_server_close == 0);
+    }
+    CHECK(closed_count <= 1);
+    connection.close();
+    connection.half_close();
+    connection.close();
+    CHECK(closed_count == 1);
+    poll_manager.poll(0);
+    iso15118::io::set_logging_callback([](iso15118::LogLevel, const std::string&) {});
 }

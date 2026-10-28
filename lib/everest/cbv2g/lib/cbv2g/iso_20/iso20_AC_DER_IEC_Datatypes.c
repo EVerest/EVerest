@@ -1,7 +1,6 @@
 /* SPDX-License-Identifier: Apache-2.0 */
 /*
- * Copyright (C) 2022 - 2023 chargebyte GmbH
- * Copyright (C) 2022 - 2023 Contributors to EVerest
+ * Copyright chargebyte GmbH and Contributors to EVerest
  */
 
 /*****************************************************
@@ -674,10 +673,6 @@ void init_iso20_ac_der_iec_BPT_Dynamic_AC_CLResControlModeType(struct iso20_ac_d
     BPT_Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_isUsed = 0u;
     BPT_Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_L2_isUsed = 0u;
     BPT_Dynamic_AC_CLResControlModeType->EVSEPresentActivePower_L3_isUsed = 0u;
-}
-// init for element fragment IntentionalDelayPowerControl
-void init_iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment(struct iso20_ac_der_iec_IntentionalDelayPowerControlElementFragment* IntentionalDelayPowerControlElementFragment) {
-    IntentionalDelayPowerControlElementFragment->CONTENT_isUsed = 0u;
 }
 
 // init for fragment

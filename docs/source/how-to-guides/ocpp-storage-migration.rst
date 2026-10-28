@@ -27,13 +27,21 @@ the module config keys as described below for the module you are coming from.
 Coming from OCPP201
 -------------------
 
-All ``OCPP201`` config keys exist unchanged in OCPPmulti:
+These ``OCPP201`` config keys exist unchanged in OCPPmulti:
 ``MessageLogPath``, ``CoreDatabasePath``, ``DeviceModelDatabasePath``,
 ``EverestDeviceModelDatabasePath``, ``DeviceModelDatabaseMigrationPath``,
 ``DeviceModelConfigPath``, ``EnableExternalWebsocketControl``,
 ``MessageQueueResumeDelay``, ``CompositeScheduleIntervalS``,
 ``RequestCompositeScheduleDurationS``, ``RequestCompositeScheduleUnit``,
-``DelayOcppStart``, ``ResetStopDelay``, and ``CustomMrecErrorMapPath``.
+``DelayOcppStart``, and ``ResetStopDelay``.
+
+``CustomMrecErrorMapPath`` has no counterpart. OCPPmulti reads a custom error
+mapping file from the :ref:`experimental <project-experimental-components>`
+``CustomErrorMappingPath`` instead, in a different format that covers OCPP 1.6
+and 2.x (see the error reporting section of
+:ref:`OCPPmulti <everest_modules_OCPPmulti>`). An ``OCPP201`` techCode
+override ``"<error type>": "<techCode>"`` becomes the entry
+``"<error type>": {"v2": {"tech_code": "<techCode>"}}``.
 
 One new module config key is relevant: ``Mode`` selects the protocol
 generation. Its default ``Only2`` runs OCPP 2.x, matching the behavior of the
@@ -41,8 +49,8 @@ old ``OCPP201`` module, so no change is needed. Which OCPP 2.x version (2.0.1
 or 2.1) is offered to the CSMS during the websocket handshake is still
 controlled by the device model variable ``SupportedOcppVersions`` of the
 ``InternalCtrlr`` component (a comma-separated preference list, e.g.
-``ocpp2.1,ocpp2.0.1``). Everything else in an existing ``OCPP201``
-configuration carries over without changes.
+``ocpp2.1,ocpp2.0.1``). Apart from the custom error mapping, everything else
+in an existing ``OCPP201`` configuration carries over without changes.
 
 Coming from OCPP (1.6)
 ----------------------
@@ -93,7 +101,7 @@ Since its default is ``Only2``, an OCPP 1.6 deployment must set
 Unchanged keys: ``ChargePointConfigPath``, ``UserConfigPath``,
 ``DatabasePath``, ``DeviceModelDatabasePath``,
 ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``,
-``DeviceModelConfigMappings``, ``Ocpp16NetworkConfigSlot``,
+``Ocpp16KeyMappingsPath``, ``Ocpp16NetworkConfigSlot``,
 ``EnableExternalWebsocketControl``, ``MessageLogPath``,
 ``MessageQueueResumeDelay``, ``RequestCompositeScheduleUnit``,
 ``DelayOcppStart``, and ``ResetStopDelay``.
@@ -193,8 +201,12 @@ Add mappings for custom OCPP 1.6 keys
 Standard OCPP 1.6 keys are migrated through the built-in mapping table. The
 full list of built-in key mappings is documented in
 `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
-in the repository. Custom or vendor-specific keys that are not covered there
-need an explicit YAML mapping file.
+in the repository. A machine-readable list, generated from the code at build
+time, is installed as
+``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``. That file is a
+reference only: do not point ``Ocpp16KeyMappingsPath`` at it. Custom or
+vendor-specific keys that are not covered by the built-in table need an
+explicit YAML mapping file.
 
 Example:
 
@@ -207,7 +219,7 @@ Example:
        variable:
          name: ExampleConfigurationKey
 
-Point ``DeviceModelConfigMappings`` to this file. The mappings are applied
+Point ``Ocpp16KeyMappingsPath`` to this file. The mappings are applied
 both during the one-time migration and when serving the device-model-backed
 configuration at runtime.
 
@@ -290,11 +302,13 @@ What to keep in mind
 
 * Relative paths for ``DeviceModelDatabasePath``,
   ``DeviceModelDatabaseMigrationPath``, ``DeviceModelConfigPath``, and
-  ``DeviceModelConfigMappings`` are resolved against the module share path.
+  ``Ocpp16KeyMappingsPath`` are resolved against the module share path.
 * Only keys with a built-in mapping or an explicit custom mapping entry are
   migrated. Unknown keys produce a warning log at startup and are otherwise
   ignored. The complete built-in mapping table is in
-  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_.
+  `lib/everest/ocpp/config/v16_to_v2_mapping.md <https://github.com/EVerest/everest-core/blob/main/lib/everest/ocpp/config/v16_to_v2_mapping.md>`_
+  and, generated from the code, in the installed
+  ``share/everest/modules/OCPP/default_ocpp-16_mappings.yaml``.
 * Some OCPP 1.6 values are represented differently in the device model than in
   the JSON configuration. For example, ``MeterPublicKeys`` is expanded into
   individual ``MeterPublicKey[N]`` variables, and

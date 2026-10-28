@@ -7,7 +7,7 @@
 #include <cstring>
 
 #include <everest/io/event/fd_event_handler.hpp>
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 #include "everest/logging.hpp"
 

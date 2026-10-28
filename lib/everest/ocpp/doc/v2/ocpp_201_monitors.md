@@ -14,7 +14,24 @@ The monitors are evaluated from time to time in the case of periodic monitors an
 - To filter the verbosity level: set the `ActiveMonitoringLevel` variable to a value of 0-9 with 9 being the most verbose
 - To filter the verbosity level when the charging station is offline: set the `OfflineQueuingSeverity` value to 0-9, with 9 keeping all monitor generated event while being offline
 
-Note: There is a small overhead for the monitoring process interval. The periodic monitors that are triggered will require a database value query. However, based on the count and config of monitors it is unlikely that many of them will trigger at the same time, therefore, the database queries will be limited.
+Note: The periodic monitors read the current values from the device model in memory, so a triggered periodic monitor does not query the database.
+
+## Threading
+
+Two kinds of threads work on monitors:
+
+- Processing runs: the monitoring timer and `process_triggered_monitors`, which is called after a SetVariables request. They generate events for triggered and periodic monitors, update Delta reference values and send the events to the CSMS.
+- Variable changes: any thread calling `DeviceModel::set_value` evaluates the triggered monitors of that variable in the variable listener.
+
+`MonitoringUpdater` uses two locks, always taken in this order, followed by the device model mutex:
+
+| Lock | Held by | Protects |
+| --- | --- | --- |
+| `processing_mutex` | a processing run, until its events are handed to the CSMS callback | the order in which events are sent |
+| `state` | a processing run while collecting events, and the variable listener | monitor metadata, the event id counter |
+| `DeviceModel::mutex` | each device model call | the in-memory device model and its database |
+
+`DeviceModel::set_value` releases its mutex before it calls the listeners, and the listener reads the monitors of the variable, including their reference values, straight from the device model. Writes to a Delta reference value therefore happen while holding `state`, so the listener never evaluates against a half-written or outdated reference. Events are handed to the CSMS callback after `state` is released, so variable changes do not wait for the message dispatch.
 
 ## Hardwired/Preconfigured Monitors
 
@@ -69,8 +86,8 @@ In order to set up pre-existing monitors that are not set up by the CSMS, for th
 }
 ```
 
-In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded the `reference_value` will be updated internally, and a new delta will be calculated based on that.
+In the example for the 'EVSEPower' variable that supports monitoring there were attached three hardwired and preconfigured monitors. The monitors will report (based on the setup, see the `Basic Configuration` section) to the CSMS when the power will exceed '21950' W, when the power will fall below '100' W and when there will be a delta difference of more than `100` W from the `reference_value` in the case of the delta monitor. When the delta is exceeded and the event is sent to the CSMS (or queued while offline), the `reference_value` is updated internally, and a new delta will be calculated based on that. An event that is discarded, for example because its severity is above `OfflineQueuingSeverity`, does not update the `reference_value`.
 
 For more information related to the monitor functionality, please refer to the OCPP201 specification.
 
-Note: for a delta monitor, an initial `reference_value` must be provided or the library will fail to initialize.
+Note: for a delta monitor, an initial `reference_value` must be provided or the library will fail to initialize. It is only used when the monitor is first added to the database; on later starts the stored `reference_value` is kept, also when other properties of the monitor change in the configuration.

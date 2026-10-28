@@ -13,7 +13,7 @@
 namespace ocpp {
 namespace v2 {
 
-class DeviceModelInterface;
+class DeviceModelVariablesInterface;
 
 ///
 /// \brief Required ComponentVariable.
@@ -332,10 +332,8 @@ extern const ComponentVariable ConnectorPhaseRotationMaxLength;
 extern const RequiredComponentVariable GetConfigurationMaxKeys;
 extern const ComponentVariable LightIntensity;
 extern const ComponentVariable MinimumStatusDuration;
-extern const ComponentVariable StopTransactionOnEVSideDisconnect;
 extern const RequiredComponentVariable SupportedFeatureProfiles;
 extern const ComponentVariable SupportedFeatureProfilesMaxLength;
-extern const RequiredComponentVariable UnlockConnectorOnEVSideDisconnect;
 extern const ComponentVariable ReserveConnectorZeroSupported;
 extern const ComponentVariable AllowChargingProfileWithoutStartSchedule;
 extern const ComponentVariable WaitForStopTransactionsOnResetTimeout;
@@ -346,12 +344,10 @@ extern const ComponentVariable RemoteStartTransactionWithoutConnectorIdFindFirst
 extern const ComponentVariable MeterPublicKeys;
 extern const ComponentVariable DisableSecurityEventNotifications;
 extern const ComponentVariable ISO15118CertificateManagementEnabled;
-extern const ComponentVariable CustomDisplayCostAndPrice; // Required only if CaliforniaPricing enabled
 extern const ComponentVariable DefaultPrice;
 extern const ComponentVariable DefaultPriceText;
 extern const ComponentVariable CustomIdleFeeAfterStop;
 extern const ComponentVariable SupportedLanguages;
-extern const ComponentVariable CustomMultiLanguageMessages;
 extern const ComponentVariable Language;
 extern const ComponentVariable WaitForSetUserPriceTimeout;
 extern const ComponentVariable ReportClearedErrors;
@@ -448,11 +444,11 @@ extern const Variable CsmsRootCertificateIssuerNameHash;
 extern const Variable CsmsRootCertificateSerialNumber;
 extern const Variable HostName;
 ComponentVariable get_component_variable(const std::int32_t slot, const Variable& variable);
-std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelInterface& dm, int32_t slot);
-bool write_profile_to_device_model(DeviceModelInterface& dm, int32_t slot, const NetworkConnectionProfile& profile,
-                                   const std::string& source);
-void migrate_from_blob_if_needed(DeviceModelInterface& dm);
-void clear_slot_in_device_model(DeviceModelInterface& dm, int32_t slot);
+std::optional<NetworkConnectionProfile> read_profile_from_device_model(DeviceModelVariablesInterface& dm, int32_t slot);
+bool write_profile_to_device_model(DeviceModelVariablesInterface& dm, int32_t slot,
+                                   const NetworkConnectionProfile& profile, const std::string& source);
+void migrate_from_blob_if_needed(DeviceModelVariablesInterface& dm);
+void clear_slot_in_device_model(DeviceModelVariablesInterface& dm, int32_t slot);
 } // namespace NetworkConfigurationComponentVariables
 
 namespace DERComponentVariables {

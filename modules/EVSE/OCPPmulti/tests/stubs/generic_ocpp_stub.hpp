@@ -75,6 +75,7 @@ struct GenericOcppTester : public ocpp_multi::GenericOcpp {
     using ocpp_multi::GenericOcpp::charging_schedules_timer_stop;
     using ocpp_multi::GenericOcpp::create_limits_entry;
     using ocpp_multi::GenericOcpp::create_setpoint_entry;
+    using ocpp_multi::GenericOcpp::custom_error_mapping;
     using ocpp_multi::GenericOcpp::GenericOcpp;
     using ocpp_multi::GenericOcpp::get_connector_structure;
     using ocpp_multi::GenericOcpp::init_check_energy_sink;
@@ -173,5 +174,57 @@ protected:
 };
 
 struct GenericOcppRequiresTester : public GenericOcppProvidesTester {};
+
+// same setup as GenericOcppProvidesTester, but stops after init(): events raised before start() are
+// queued, and command results added before start() answer the calls made from ready()
+class GenericOcppNotStartedTester : public testing::Test {
+protected:
+    stubs::ChargePointStub chargepoint;
+    stubs::ConfigStub config;
+    std::unique_ptr<stubs::ModuleInterfaces> interfaces;
+    std::unique_ptr<stubs::GenericOcppTester> ocpp;
+
+    // the connector layout handed to the chargepoint implementation in ready()
+    ocpp_multi::GenericChargePointInterface::ConnectorStructure init_evse_connector_structure;
+    ocpp_multi::GenericChargePointInterface::ConnectorStructureV16 init_connector_mapping;
+
+    void SetUp() override {
+        using ::testing::_;
+        interfaces = std::make_unique<stubs::ModuleInterfaces>();
+        ocpp = std::make_unique<stubs::GenericOcppTester>(chargepoint, interfaces->get_module_info(), config,
+                                                          interfaces->get_provides(), interfaces->get_requires());
+        interfaces->add_charger_information("info");
+        interfaces->add_data_transfer("data_transfer");
+        interfaces->add_display_message("display");
+        interfaces->add_evse_energy_sink("energy_node", 1);
+        interfaces->add_evse_manager("evse_manager_1");
+        interfaces->add_evse_manager("evse_manager_2");
+        interfaces->add_extensions_15118("evsev2g");
+        interfaces->add_reservation("reservation");
+        chargepoint.load_store("default_store.json");
+        EXPECT_CALL(chargepoint, init(_)).Times(1).WillOnce([this](const auto& args) {
+            init_evse_connector_structure = args.evse_connector_structure;
+            init_connector_mapping = args.connector_mapping;
+        });
+        EXPECT_CALL(chargepoint, get_all_composite_schedules(600, _)).Times(1);
+        EXPECT_CALL(chargepoint, set_message_queue_resume_delay(std::chrono::seconds(config.MessageQueueResumeDelay)))
+            .Times(1);
+        EXPECT_CALL(chargepoint, start(_, _, false)).Times(1);
+        EXPECT_CALL(chargepoint, connect_websocket()).Times(1);
+        ocpp->init();
+    }
+
+    void TearDown() override {
+        interfaces.reset();
+        ocpp.reset();
+    }
+
+    // runs ready(), which replays the queue
+    void start() {
+        interfaces->publish_ready(0, true);
+        interfaces->publish_ready(1, true);
+        ocpp->ready(interfaces->get_config_service_client());
+    }
+};
 
 } // namespace stubs

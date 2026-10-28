@@ -124,11 +124,15 @@ desired:
 
 Three modules have been added:
 
-:ref:`EvseV2G <everest_modules_EvseV2G>`:
-Implementation of ISO15118-2(AC/DC) and DIN SPEC70121(DC).
-Connects to the *hlc/ISO15118_charger* requirement of EvseV2G. Make sure
-to set the “device” config option to the ethernet device of the PLC
-modem. Leave the other options on default for now.
+:ref:`Evse15118D20 <everest_modules_Evse15118D20>`:
+Implementation of ISO 15118-20 (AC/DC), ISO 15118-2 (AC/DC) and DIN SPEC
+70121 (DC). Connects to the *hlc/ISO15118_charger* requirement of
+EvseManager. Make sure to set the “device” config option to the ethernet
+device of the PLC modem and enable the protocol generations the station
+should offer (``supported_ISO15118_2``, ``supported_DIN70121``,
+``supported_ISO15118_20``). Leave the other options on default for now.
+The former :ref:`EvseV2G <everest_modules_EvseV2G>` module is deprecated,
+see the :ref:`migration guide <howto-iso15118-stack-migration>`.
 
 :ref:`EvseSecurity <everest_modules_EvseSecurity>`: 
 Handles certificates and private keys for TLS/PnC. We
@@ -137,7 +141,7 @@ will connect it here even though PnC is not enabled yet.
 :ref:`EvseSlac <everest_modules_EvseSlac>`:
 Implementation of ISO15118-3 (SLAC) to pair the PLC modems
 of the EV and the EVSE at the start of the session. Make sure to
-configure the same “device” as used for the EvseV2G. The two must point
+configure the same “device” as used for the Evse15118D20. The two must point
 to the same PLC modem.
 
 To actually enable ISO 15118, some settings in the EvseManager module
@@ -172,9 +176,18 @@ accordance with the ISO 15118-3 regulations. Some EVs may cancel ISO
 communication in this case, even though the standard clearly states
 differently.
 
+If no SLAC request arrives within TT_EVSE_SLAC_init, EVerest retries the
+matching with an E/F sequence twice (C_sequ_retry of ISO 15118-3) and
+then switches 5% off for the rest of the session: X1 while waiting for
+authorization, nominal PWM once authorized. The
+*ac_limit_slac_init_retries* option (default true) controls this; with
+false, the retries continue until the EV is unplugged.
+
 For those EVs, you can set the *ac_enforce_hlc* option to “true”. Then,
 the 5% PWM will be used throughout the complete charging session as it
 is done for DC. This is not allowed according to the standard though.
+Only if the matching retries are exhausted before any HLC session was
+set up does the session end in nominal PWM here as well.
 
 For completeness, we’ll also add a
 :ref:`PersistentStore <everest_modules_PersistentStore>` 
@@ -348,7 +361,7 @@ OCPP requires several connections. Let's go through them step by step:
    reserve/cancel reservations of connectors via OCPP from the CSMS.
 -  OCPP also requires a connection to the
    :ref:`EvseSecurity <everest_modules_EvseSecurity>` module, which
-   is now shared between OCPP and EvseV2G. OCPP requires it to load the
+   is now shared between OCPP and Evse15118D20. OCPP requires it to load the
    certificate / keys for TLS to the CSMS. OCPP can also update/install
    certificates for both OCPP and ISO 15118 from the CSMS.
 -  OCPP requires a helper module for system-specific implementations

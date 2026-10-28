@@ -23,11 +23,18 @@ public:
         std::string last_source;
         // when set, a committed set_value returns this status instead of Accepted (e.g. RebootRequired)
         std::optional<ocpp::v2::SetVariableStatusEnum> forced_set_status;
+        bool has_value{true};
     };
 
     void add(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable, const std::string& value,
              ocpp::v2::MutabilityEnum mutability = ocpp::v2::MutabilityEnum::ReadWrite) {
         m_store[{component, variable}] = Entry{value, mutability, {}, std::nullopt};
+        m_components.insert(component);
+    }
+
+    void add_without_value(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable,
+                           ocpp::v2::MutabilityEnum mutability = ocpp::v2::MutabilityEnum::ReadWrite) {
+        m_store[{component, variable}] = Entry{{}, mutability, {}, std::nullopt, false};
         m_components.insert(component);
     }
 
@@ -43,7 +50,8 @@ public:
     ocpp::v2::GetVariableStatusEnum get_variable(const ocpp::v2::Component& component_id,
                                                  const ocpp::v2::Variable& variable_id,
                                                  const ocpp::v2::AttributeEnum& attribute_enum, std::string& value,
-                                                 bool allow_write_only = false) const override {
+                                                 bool allow_write_only,
+                                                 ocpp::v2::UnsetValue unset_value) const override {
         if (m_components.count(component_id) == 0) {
             return ocpp::v2::GetVariableStatusEnum::UnknownComponent;
         }
@@ -56,6 +64,9 @@ public:
         }
         if (!allow_write_only && (it->second.mutability == ocpp::v2::MutabilityEnum::WriteOnly)) {
             return ocpp::v2::GetVariableStatusEnum::Rejected;
+        }
+        if (!it->second.has_value && unset_value == ocpp::v2::UnsetValue::NotSupported) {
+            return ocpp::v2::GetVariableStatusEnum::NotSupportedAttributeType;
         }
         value = it->second.value;
         return ocpp::v2::GetVariableStatusEnum::Accepted;
@@ -79,6 +90,7 @@ public:
             return ocpp::v2::SetVariableStatusEnum::Rejected;
         }
         it->second.value = value;
+        it->second.has_value = true;
         it->second.last_source = source;
         if (it->second.forced_set_status.has_value()) {
             return it->second.forced_set_status.value();

@@ -449,7 +449,9 @@ Device Model Sources
 Device Model variables are defined in JSON component configs. For each variable a property `source` can be used to define
 the source that controls it. This design allows for a single source of truth for each variable and it 
 allows the device model implementation of this module to address the correct source for the requested operation.
-Today `OCPP` is the only supported source for internally managed variables.
+Today `OCPP` is the only supported source for internally managed variables. It is also the source assumed when none
+is set, and libocpp holds the values of such variables in memory (see
+``lib/everest/ocpp/doc/v2/ocpp_201_device_model_initialization.md``).
 
 Sources for externally managed configuration variables like the EVerest config service are under development.
 

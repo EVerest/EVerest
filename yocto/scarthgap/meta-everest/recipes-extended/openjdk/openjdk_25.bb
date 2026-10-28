@@ -9,7 +9,7 @@ SRC_URI = "git://github.com/openjdk/jdk;branch=master;name=target-jdk;protocol=h
            "
 SRC_URI[boot-jdk.sha256sum] = "987387933b64b9833846dee373b640440d3e1fd48a04804ec01a6dbf718e8ab8"
 SRCREV_target-jdk = "176422b885d2d045dd44b61b7fcdcb01be2d00a7"
-PV = "17-ga"
+PV = "25-ga"
 
 S = "${WORKDIR}/git"
 B = "${WORKDIR}/build"

@@ -14,6 +14,15 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.sigslot.bazel",
     )
 
+    # the bazel-central-registry has no catch2 3.16.1 yet, upstream ships its own BUILD.bazel
+    maybe(
+        http_archive,
+        name = "catch2",
+        url = "https://github.com/catchorg/Catch2/archive/refs/tags/v3.16.1.tar.gz",
+        sha256 = "d16bd1b8b2364918bd472cb216394acb93bde6784890df0d91bccfb3f28d777d",
+        strip_prefix = "Catch2-3.16.1",
+    )
+
     maybe(
         http_archive,
         name = "com_github_HowardHinnant_date",
@@ -35,9 +44,9 @@ def _deps_impl(module_ctx):
     maybe(
         http_archive,
         name = "com_github_warmcatt_libwebsockets",
-        url = "https://github.com/warmcat/libwebsockets/archive/85c6f7959fd40d8aaf7a50be3c9b75f08389a01c.tar.gz",
-        sha256 = "eceb5b1efdaf73505ee60c1761ae457f9d663aed06009057f8fed117ed8e91b3",
-        strip_prefix = "libwebsockets-85c6f7959fd40d8aaf7a50be3c9b75f08389a01c",
+        url = "https://github.com/warmcat/libwebsockets/archive/refs/tags/v5.0.0.tar.gz",
+        sha256 = "f853c6582101cfcee3a5a9e28ae92ab19d9735c5f31f0bb2e9794b5106123962",
+        strip_prefix = "libwebsockets-5.0.0",
         build_file = "@everest-core//third-party/bazel:BUILD.libwebsockets.bazel",
     )
 
@@ -51,12 +60,22 @@ def _deps_impl(module_ctx):
         build_file = "@everest-core//third-party/bazel:BUILD.mosquitto.bazel",
     )
 
+    # the bazel-central-registry has no rapidyaml 0.16 yet
+    maybe(
+        http_archive,
+        name = "rapidyaml",
+        url = "https://github.com/biojppm/rapidyaml/archive/refs/tags/v0.16.0.tar.gz",
+        sha256 = "ad4337d468c5f5d8624651bdc2900f7fe601c83fc3cff669dc972bf8634af4e9",
+        strip_prefix = "rapidyaml-0.16.0",
+        build_file = "@everest-core//third-party/bazel:BUILD.rapidyaml.bazel",
+    )
+
     maybe(
         http_archive,
         name = "openssl_source",
-        url = "https://github.com/openssl/openssl/releases/download/openssl-3.3.1/openssl-3.3.1.tar.gz",
-        sha256 = "777cd596284c883375a2a7a11bf5d2786fc5413255efab20c50d6ffe6d020b7e",
-        strip_prefix = "openssl-3.3.1",
+        url = "https://github.com/openssl/openssl/releases/download/openssl-3.5.8/openssl-3.5.8.tar.gz",
+        sha256 = "a8f84a39918ec6415ce765d9b429d313ba97b8143169c172e734b9514464f5b2",
+        strip_prefix = "openssl-3.5.8",
         build_file = "@everest-core//third-party/bazel:BUILD.openssl-foreign-cc.bazel",
     )
 

@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include <catch2/catch_all.hpp>
+#include <set>
 
 #include <everest/database/sqlite/connection.hpp>
 #include <everest/database/sqlite/schema_updater.hpp>
@@ -92,7 +93,8 @@ struct StubConfigService : Everest::config::ConfigServiceInterface {
     }
     void register_active_slot_update_handler(std::function<void(const ActiveSlotUpdate&)>) override {
     }
-    void register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
+    std::function<void()> register_config_update_handler(std::function<void(const ConfigurationUpdate&)>) override {
+        return []() {};
     }
 
     void set_modules_stopped() override {
@@ -139,7 +141,7 @@ TEST_CASE("ConfigServiceClient::get_module_configs", "[config_service]") {
     const std::map<std::string, std::string, std::less<>> module_names = {{"module_a", "TypeA"}};
 
     auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
-    ConfigServiceClient client(mock, module_id, module_names);
+    ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{});
 
     SECTION("sends request to correct topics") {
         mock->set_get_response(make_ok_get_response("All", {{"module_a", nlohmann::json::object()}}));
@@ -180,7 +182,7 @@ TEST_CASE("ConfigServiceClient::get_config_value", "[config_service]") {
     const std::string module_id = "my_module";
 
     auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
-    ConfigServiceClient client(mock, module_id, {});
+    ConfigServiceClient client(mock, module_id, {}, everest::config::Access{});
 
     everest::config::ConfigurationParameterIdentifier id;
     id.module_id = "module_a";
@@ -218,7 +220,7 @@ TEST_CASE("ConfigServiceClient::set_config_value", "[config_service]") {
     const std::string module_id = "my_module";
 
     auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
-    ConfigServiceClient client(mock, module_id, {});
+    ConfigServiceClient client(mock, module_id, {}, everest::config::Access{});
 
     everest::config::ConfigurationParameterIdentifier id;
     id.module_id = "module_a";
@@ -275,7 +277,7 @@ TEST_CASE("ConfigServiceClient::get_mappings", "[config_service]") {
     const std::string module_id = "my_module";
 
     auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
-    ConfigServiceClient client(mock, module_id, {});
+    ConfigServiceClient client(mock, module_id, {}, everest::config::Access{});
 
     SECTION("sends request to correct topics") {
         mock->set_get_response(make_ok_get_response("AllMappings", nlohmann::json::object()));
@@ -691,6 +693,17 @@ active_modules:
          {{"identifier", {{"module_id", "target_module"}, {"configuration_parameter_name", "rw_param"}}},
           {"value", "new_value"}}}};
 
+    // The requesting module's response, without the change notifications sent to other modules
+    const auto published_responses = [&mock, &prefix]() {
+        std::vector<std::pair<std::string, nlohmann::json>> responses;
+        for (const auto& entry : mock.published()) {
+            if (entry.first == prefix + "modules/manager_module/response") {
+                responses.push_back(entry);
+            }
+        }
+        return responses;
+    };
+
     SECTION("Set of a ReadWrite param is forwarded to the running module; its Accepted reply applies at runtime") {
         register_manager_style_forwarder();
         core.set_modules_running();
@@ -706,8 +719,9 @@ active_modules:
         CHECK(mock.last_get_request()->request_topic == prefix + "modules/target_module/config/set_request");
         CHECK(mock.last_get_request()->response_topic == prefix + "modules/target_module/config/set_response");
 
-        REQUIRE(mock.published().size() == 1);
-        const Response resp = parse_published_response(mock.published().front());
+        const auto responses = published_responses();
+        REQUIRE(responses.size() == 1);
+        const Response resp = parse_published_response(responses.front());
         CHECK(resp.status == ResponseStatus::Ok);
         REQUIRE(resp.type.has_value());
         CHECK(resp.type.value() == Type::Set);
@@ -738,8 +752,9 @@ active_modules:
 
         invoke(set_rw_param_request);
 
-        REQUIRE(mock.published().size() == 1);
-        const Response resp = parse_published_response(mock.published().front());
+        const auto responses = published_responses();
+        REQUIRE(responses.size() == 1);
+        const Response resp = parse_published_response(responses.front());
         CHECK(resp.status == ResponseStatus::Ok);
         REQUIRE(resp.type.has_value());
         CHECK(resp.type.value() == Type::Set);
@@ -770,8 +785,9 @@ active_modules:
 
         invoke(set_rw_param_request);
 
-        REQUIRE(mock.published().size() == 1);
-        const Response resp = parse_published_response(mock.published().front());
+        const auto responses = published_responses();
+        REQUIRE(responses.size() == 1);
+        const Response resp = parse_published_response(responses.front());
         CHECK(resp.status == ResponseStatus::Ok);
         const auto& set_resp = std::get<SetResponse>(resp.response);
         CHECK(set_resp.status == SetResponseStatus::RebootRequired);
@@ -830,5 +846,264 @@ active_modules:
         const Response resp = parse_published_response(mock.published().front());
         CHECK(resp.status == ResponseStatus::Error);
         CHECK(resp.status_info.find("not found") != std::string::npos);
+    }
+
+    const auto updates_topic = [&prefix](const std::string& module_id) {
+        return prefix + "modules/" + module_id + "/config/updates";
+    };
+    const auto external = Origin{true, std::nullopt};
+    const ConfigParameterUpdate rw_param_update{{"target_module", "rw_param", std::nullopt}, "external_value"};
+    const auto published_topics = [&mock]() {
+        std::set<std::string> topics;
+        for (const auto& [topic, payload] : mock.published()) {
+            topics.insert(topic);
+        }
+        return topics;
+    };
+
+    SECTION("An accepted change is sent only to modules allowed to read the changed module") {
+        register_manager_style_forwarder();
+        core.set_modules_running();
+        mock.set_get_response(nlohmann::json{{"status", "Ok"},
+                                             {"status_info", ""},
+                                             {"type", "Set"},
+                                             {"response", {{"status", "Accepted"}, {"status_info", ""}}}});
+
+        const auto result =
+            core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {rw_param_update}, external);
+        REQUIRE(result.status == SetConfigParameterStatus::Ok);
+
+        CHECK(published_topics() ==
+              std::set<std::string>{updates_topic("manager_module"), updates_topic("target_module")});
+        const auto& [topic, payload] = mock.published().front();
+        CHECK(payload.at("msg_type") == "ConfigurationRequest");
+        const ConfigUpdateNotification notification = payload.at("data");
+        CHECK(notification.identifier.module_id == "target_module");
+        CHECK(notification.identifier.configuration_parameter_name == "rw_param");
+        CHECK(notification.value == "external_value");
+        CHECK(notification.status == SetResponseStatus::Accepted);
+        CHECK_FALSE(notification.origin.has_value());
+    }
+
+    SECTION("A change applied only on the next start is sent as RebootRequired") {
+        core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {rw_param_update}, external);
+
+        REQUIRE_FALSE(mock.published().empty());
+        for (const auto& [topic, payload] : mock.published()) {
+            const ConfigUpdateNotification notification = payload.at("data");
+            CHECK(notification.status == SetResponseStatus::RebootRequired);
+        }
+    }
+
+    SECTION("The module that requested a change is not notified about it") {
+        register_manager_style_forwarder();
+        core.set_modules_running();
+        mock.set_get_response(nlohmann::json{{"status", "Ok"},
+                                             {"status_info", ""},
+                                             {"type", "Set"},
+                                             {"response", {{"status", "Accepted"}, {"status_info", ""}}}});
+
+        invoke(set_rw_param_request);
+
+        for (const auto& [topic, payload] : mock.published()) {
+            CHECK(topic != updates_topic("manager_module"));
+        }
+    }
+
+    SECTION("The changed module is notified about a change that another module requested") {
+        core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {rw_param_update},
+                                   Origin{false, std::string("restricted_module")});
+
+        CHECK(published_topics().count(updates_topic("target_module")) == 1);
+        CHECK(published_topics().count(updates_topic("restricted_module")) == 0);
+    }
+
+    SECTION("A change requested by another module carries its origin") {
+        const auto result = core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {rw_param_update},
+                                                       Origin{false, std::string("restricted_module")});
+        REQUIRE(result.status == SetConfigParameterStatus::Ok);
+
+        REQUIRE_FALSE(mock.published().empty());
+        for (const auto& [topic, payload] : mock.published()) {
+            const ConfigUpdateNotification notification = payload.at("data");
+            REQUIRE(notification.origin.has_value());
+            CHECK(notification.origin.value() == "restricted_module");
+        }
+    }
+
+    SECTION("A change that is not accepted is not sent") {
+        const ConfigParameterUpdate unknown{{"target_module", "no_such_param", std::nullopt}, "x"};
+
+        core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {unknown}, external);
+
+        CHECK(mock.published().empty());
+    }
+
+    SECTION("A change of a slot that is not active is not sent") {
+        const auto duplicate = core.duplicate_slot(0, std::string("inactive"));
+        REQUIRE(duplicate.success);
+        REQUIRE(duplicate.slot_id.has_value());
+
+        const auto result = core.set_config_parameters(duplicate.slot_id.value(), {rw_param_update}, external);
+        REQUIRE(result.status == SetConfigParameterStatus::Ok);
+
+        CHECK(mock.published().empty());
+    }
+
+    SECTION("Nothing is sent once the handler is destroyed") {
+        { MqttConfigServiceHandler second_service(mock, core); }
+        mock.clear_published();
+
+        core.set_config_parameters(ConfigServiceInterface::ACTIVE_SLOT, {rw_param_update}, external);
+
+        // only the still existing first handler publishes, once per receiving module
+        CHECK(mock.published().size() == published_topics().size());
+    }
+}
+
+TEST_CASE("ConfigServiceClient::register_config_update_handler", "[config_service]") {
+    const std::string prefix = "everest/";
+    const std::string module_id = "my_module";
+    const std::string topic = prefix + "modules/" + module_id + "/config/updates";
+
+    const std::map<std::string, std::string, std::less<>> module_names = {
+        {module_id, "MyModule"}, {"module_a", "TypeA"}, {"module_b", "TypeB"}, {"module_c", "TypeC"}};
+    everest::config::ConfigAccess config_access;
+    config_access.modules["module_a"].allow_read = true;
+    config_access.modules["module_b"].allow_read = true;
+    config_access.modules["module_c"].allow_read = true;
+
+    auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
+    ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{config_access});
+
+    std::vector<ConfigUpdateNotification> received_a;
+    std::vector<ConfigUpdateNotification> received_b;
+    client.register_config_update_handler("module_a", [&received_a](const ConfigUpdateNotification& notification) {
+        received_a.push_back(notification);
+    });
+    client.register_config_update_handler("module_b", [&received_b](const ConfigUpdateNotification& notification) {
+        received_b.push_back(notification);
+    });
+
+    const auto deliver = [&](const nlohmann::json& data) {
+        REQUIRE(mock->registered_handlers().count(topic) == 1);
+        (*mock->registered_handlers().at(topic)->handler)(topic, data);
+    };
+
+    SECTION("subscribes once to the module's own update topic") {
+        CHECK(mock->registered_handlers().size() == 1);
+        CHECK(mock->registered_handlers().at(topic)->type == HandlerType::ConfigurationRequest);
+    }
+
+    SECTION("dispatches a notification to the handlers of the changed module") {
+        deliver(ConfigUpdateNotification{{"module_a", "param", std::string("main")},
+                                         "42",
+                                         SetResponseStatus::RebootRequired,
+                                         std::string("other_module")});
+
+        REQUIRE(received_a.size() == 1);
+        CHECK(received_b.empty());
+        CHECK(received_a.front().identifier.configuration_parameter_name == "param");
+        CHECK(received_a.front().identifier.module_implementation_id == std::optional<std::string>("main"));
+        CHECK(received_a.front().value == "42");
+        CHECK(received_a.front().status == SetResponseStatus::RebootRequired);
+        CHECK(received_a.front().origin == std::optional<std::string>("other_module"));
+    }
+
+    SECTION("ignores notifications of modules without a handler") {
+        deliver(ConfigUpdateNotification{{"module_c", "param", std::nullopt}, "1", SetResponseStatus::Accepted, {}});
+
+        CHECK(received_a.empty());
+        CHECK(received_b.empty());
+    }
+
+    SECTION("ignores malformed notifications") {
+        deliver(nlohmann::json{{"value", "1"}});
+
+        CHECK(received_a.empty());
+        CHECK(received_b.empty());
+    }
+
+    SECTION("calls every handler registered for a module") {
+        int second_calls = 0;
+        client.register_config_update_handler("module_a",
+                                              [&second_calls](const ConfigUpdateNotification&) { ++second_calls; });
+
+        deliver(ConfigUpdateNotification{{"module_a", "param", std::nullopt}, "1", SetResponseStatus::Accepted, {}});
+
+        CHECK(received_a.size() == 1);
+        CHECK(second_calls == 1);
+    }
+
+    SECTION("does not call a handler once it is unregistered") {
+        int calls = 0;
+        const auto unregister =
+            client.register_config_update_handler("module_a", [&calls](const ConfigUpdateNotification&) { ++calls; });
+
+        REQUIRE(unregister.has_value());
+        unregister.value()();
+        deliver(ConfigUpdateNotification{{"module_a", "param", std::nullopt}, "1", SetResponseStatus::Accepted, {}});
+
+        CHECK(calls == 0);
+        CHECK(received_a.size() == 1);
+    }
+
+    SECTION("a handler may unregister a handler that follows it") {
+        int calls = 0;
+        std::optional<std::function<void()>> unregister_second;
+        client.register_config_update_handler(
+            "module_c", [&unregister_second](const ConfigUpdateNotification&) { unregister_second.value()(); });
+        unregister_second =
+            client.register_config_update_handler("module_c", [&calls](const ConfigUpdateNotification&) { ++calls; });
+        REQUIRE(unregister_second.has_value());
+
+        deliver(ConfigUpdateNotification{{"module_c", "param", std::nullopt}, "1", SetResponseStatus::Accepted, {}});
+
+        CHECK(calls == 0);
+    }
+}
+
+TEST_CASE("ConfigServiceClient::register_config_update_handler checks the module and its access", "[config_service]") {
+    const std::string prefix = "everest/";
+    const std::string module_id = "my_module";
+    const std::map<std::string, std::string, std::less<>> module_names = {
+        {module_id, "MyModule"}, {"readable", "TypeA"}, {"unreadable", "TypeB"}};
+    const auto no_op = [](const ConfigUpdateNotification&) {};
+
+    auto mock = std::make_shared<MockMQTTAbstraction>(prefix);
+
+    SECTION("rejects an unknown module") {
+        everest::config::ConfigAccess config_access;
+        config_access.allow_global_read = true;
+        ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{config_access});
+
+        CHECK_FALSE(client.register_config_update_handler("unknown", no_op).has_value());
+        CHECK(mock->registered_handlers().empty());
+    }
+
+    SECTION("rejects a module that may not be read") {
+        everest::config::ConfigAccess config_access;
+        config_access.modules["readable"].allow_read = true;
+        ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{config_access});
+
+        CHECK_FALSE(client.register_config_update_handler("unreadable", no_op).has_value());
+        CHECK(mock->registered_handlers().empty());
+        CHECK(client.register_config_update_handler("readable", no_op).has_value());
+    }
+
+    SECTION("accepts every module with allow_global_read") {
+        everest::config::ConfigAccess config_access;
+        config_access.allow_global_read = true;
+        ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{config_access});
+
+        CHECK(client.register_config_update_handler("readable", no_op).has_value());
+        CHECK(client.register_config_update_handler("unreadable", no_op).has_value());
+    }
+
+    SECTION("accepts the module itself without any access rules") {
+        ConfigServiceClient client(mock, module_id, module_names, everest::config::Access{});
+
+        CHECK(client.register_config_update_handler(module_id, no_op).has_value());
+        CHECK_FALSE(client.register_config_update_handler("readable", no_op).has_value());
     }
 }

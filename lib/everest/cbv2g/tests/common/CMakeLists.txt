@@ -1,0 +1,2 @@
+add_codec_test(bitstream_bounds)
+add_codec_test(integer_codec)

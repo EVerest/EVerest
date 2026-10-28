@@ -235,6 +235,22 @@ bool write_all(int fd, const uint8_t* buf, size_t len, int timeout_ms) {
     return true;
 }
 
+ReadResult drain_until_peer_close(int fd) {
+    // Bound each read so incoming data cannot starve poll-driven deadlines.
+    uint8_t discard[256];
+    const auto read_result = ::read(fd, discard, sizeof(discard));
+    if (read_result > 0) {
+        return {true, 0, false};
+    }
+    if (read_result == 0) {
+        return {false, 0, true};
+    }
+    if (errno == EAGAIN or errno == EWOULDBLOCK or errno == EINTR) {
+        return {true, 0, false};
+    }
+    return {false, 0, true};
+}
+
 int create_tcp_listen_socket(sockaddr_in6 address, uint16_t port, int backlog, const std::string& interface_name) {
     // accept_connection()'s Transient/EAGAIN contract depends on it: a blocking accept4 would stall the
     // shared controller poll loop until the next TCP connect arrives.

@@ -39,8 +39,8 @@ section_end() {
 # remove T from date/time strings
 # 2023-12-18T16:06:03.435Z -> 2023-12-18 16:06:03.435Z
 reformat_date() {
-    pre=$(echo $1 | cut -c1-10)
-    post=$(echo $1 | cut -c12-19)
+    pre=$(echo "$1" | cut -c1-10)
+    post=$(echo "$1" | cut -c12-19)
     if [ -n "$pre" ] && [ -n "$post" ]; then
         echo "$pre $post"
     fi
@@ -170,7 +170,9 @@ until=
 while true
 do
     case "$1" in
-        "--dir"|"--since"|"--until") eval "${1#--}=\"$2\""; shift 2; continue;;
+        "--dir") dir="$2"; shift 2; continue;;
+        "--since") since="$2"; shift 2; continue;;
+        "--until") until="$2"; shift 2; continue;;
         "--") shift; break;;
     esac
 done

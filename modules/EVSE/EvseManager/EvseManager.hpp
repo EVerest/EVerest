@@ -109,6 +109,7 @@ struct Conf {
     bool ac_hlc_enabled;
     bool ac_hlc_use_5percent;
     bool ac_enforce_hlc;
+    bool ac_limit_slac_init_retries;
     bool ac_with_soc;
     int reinit_duration_ms;
     std::string reinit_method;
@@ -144,6 +145,7 @@ struct Conf {
     int switch_3ph1ph_delay_s;
     std::string switch_3ph1ph_cp_state;
     int soft_over_current_timeout_ms;
+    int soft_over_current_stale_data_warning_ms;
     bool lock_connector_in_state_b;
     bool unlock_when_deauthorized;
     int keep_cable_locked_lock_delay_ms;
@@ -434,6 +436,12 @@ private:
     double dc_pause_ramp_from_A{0.};
     std::atomic<double> last_power_supply_voltage{0.};
     std::atomic<double> last_power_supply_current{0.};
+    // Serializes powersupply_DC_set(): the cache check, the setpoint call and the cache update must not interleave
+    // with a concurrent call, or the cache holds a setpoint the power supply never received last
+    std::mutex powersupply_dc_set_mutex;
+    // EVSE maximum current the raw EV target was last clamped with. powersupply_DC_set() must not query the Charger:
+    // signal_dc_enforce_target_limits calls it with the Charger state machine mutex held.
+    std::atomic<double> latest_evse_max_current{0.};
 
     // Raw EV target values as received from ISO15118 stack
     std::atomic<double> raw_ev_target_voltage{0.};

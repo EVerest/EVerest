@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <everest/ocpp_module_common/custom_error_mapping.hpp>
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
@@ -83,6 +84,8 @@ struct GenericChargePointCallbacks {
     virtual std::future<ocpp::ConfigNetworkResult>
     cb_configure_network_connection_profile(std::int32_t configuration_slot,
                                             const ocpp::v2::NetworkConnectionProfile& network_connection_profile) = 0;
+    /// \brief Applies the requested availability and reports the connector's effective state to the CSMS.
+    /// \return true when the effective state matches the requested one.
     virtual bool cb_connector_effective_operative_status(std::int32_t evse_id, std::int32_t connector_id,
                                                          ocpp::v2::OperationalStatusEnum new_status) = 0;
     virtual void cb_connection_state_changed(const types::ocpp::ConnectionStatus& connection_status,
@@ -160,7 +163,10 @@ struct GenericChargePointCallbacks {
     virtual void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) = 0;
     virtual void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) = 0;
 
-    virtual bool map_error(const std::string& error, std::string& updated_error) = 0;
+    /// \returns the mapping loaded from the configured custom error mapping file, or nullptr when no
+    ///          file is configured
+    virtual std::shared_ptr<const ocpp_module_common::custom_error_mapping::CustomFileErrorMapping>
+    custom_error_mapping() const = 0;
     virtual void transaction_add(std::int32_t evse_id,
                                  const std::shared_ptr<ocpp_module_common::TransactionData>& transaction_data) = 0;
     virtual std::shared_ptr<ocpp_module_common::TransactionData> transaction_data(std::int32_t evse_id) = 0;
@@ -226,7 +232,7 @@ struct GenericChargePointInterface {
         ConnectorStructure evse_connector_structure;
         ConnectorStructureV16 connector_mapping;
         std::shared_ptr<ocpp_module_common::device_model::EverestDeviceModelStorage> everest_device_model;
-        std::string v16_device_model_config_mappings;
+        std::string v16_ocpp16_key_mappings_path;
         std::int32_t v16_ocpp16_network_config_slot;
         bool v16_enable_legacy_config_migration;
         std::optional<types::charger_information::ChargerInformation> charger_info;

@@ -55,6 +55,12 @@ bool ConfigurationParameter::validate_type() const {
 Settings parse_settings(const json& settings_json) {
     Settings settings;
 
+    for (const auto* key : {"www_dir", "controller_port", "controller_rpc_timeout_ms"}) {
+        if (settings_json.contains(key)) {
+            settings.deprecated_keys.emplace_back(key);
+        }
+    }
+
     if (auto it = settings_json.find("prefix"); it != settings_json.end()) {
         settings.prefix = it->get<std::string>();
     }
@@ -79,17 +85,8 @@ Settings parse_settings(const json& settings_json) {
     if (auto it = settings_json.find("errors_dir"); it != settings_json.end()) {
         settings.errors_dir = it->get<std::string>();
     }
-    if (auto it = settings_json.find("www_dir"); it != settings_json.end()) {
-        settings.www_dir = it->get<std::string>();
-    }
     if (auto it = settings_json.find("logging_config_file"); it != settings_json.end()) {
         settings.logging_config_file = it->get<std::string>();
-    }
-    if (auto it = settings_json.find("controller_port"); it != settings_json.end()) {
-        settings.controller_port = it->get<int>();
-    }
-    if (auto it = settings_json.find("controller_rpc_timeout_ms"); it != settings_json.end()) {
-        settings.controller_rpc_timeout_ms = it->get<int>();
     }
     if (auto it = settings_json.find("mqtt_broker_socket_path"); it != settings_json.end()) {
         settings.mqtt_broker_socket_path = it->get<std::string>();

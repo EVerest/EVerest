@@ -61,6 +61,9 @@ public:
     void set_raw_response(const uint8_t* data, size_t len, message_2::Type type = message_2::Type::None);
 
     std::tuple<bool, size_t, io::v2gtp::PayloadType, message_2::Type> check_and_clear_response();
+    message_2::Type peek_response_type() const {
+        return response_type;
+    }
     bool has_response() const {
         return response_available;
     }

@@ -8,7 +8,9 @@
 #include <array>
 #include <chrono>
 #include <cstring>
+#include <ctime>
 #include <iterator>
+#include <limits>
 #include <numeric>
 #include <string>
 #include <vector>
@@ -20,6 +22,10 @@
 #include <openssl/pem.h>
 #include <openssl/sha.h>
 #include <openssl/x509v3.h>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <evse_security/crypto/openssl/openssl_iso20.hpp>
 #include <evse_security/crypto/openssl/openssl_provider.hpp>
@@ -64,6 +70,32 @@ CertificateValidationResult to_certificate_error(const int ec) {
         return CertificateValidationResult::Unknown;
     }
 }
+
+// A leaf that is not yet valid is verified at its notBefore, so every other certificate in the chain still has to be
+// valid at that time
+bool set_future_leaf_verification_time(X509_STORE_CTX* ctx, const X509* leaf) {
+    const ASN1_TIME* not_before = X509_get0_notBefore(leaf);
+    const int not_before_vs_now = X509_cmp_current_time(not_before);
+    if (not_before_vs_now == 0) {
+        return false;
+    }
+    if (not_before_vs_now < 0) {
+        return true;
+    }
+
+    std::tm not_before_tm{};
+    if (ASN1_TIME_to_tm(not_before, &not_before_tm) != 1) {
+        return false;
+    }
+    // -1 if not representable, e.g. dates after 2038 with a 32-bit time_t
+    const std::time_t verification_time = timegm(&not_before_tm);
+    if (verification_time == -1) {
+        return false;
+    }
+
+    X509_STORE_CTX_set_time(ctx, 0, verification_time);
+    return true;
+}
 } // namespace
 
 const char* OpenSSLSupplier::get_supplier_name() {
@@ -76,10 +108,29 @@ bool OpenSSLSupplier::supports_tpm_key_creation() {
 }
 
 namespace {
+// Created with owner-only permissions right away, so the key is never readable by others, not even briefly
+BIO_ptr open_private_key_file(const fs::path& path) {
+    constexpr mode_t owner_read_write = S_IRUSR | S_IWUSR;
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_NOFOLLOW | O_CLOEXEC, owner_read_write);
+    if (fd < 0) {
+        return nullptr;
+    }
+    // O_CREAT keeps the mode of a file that already exists
+    if (::fchmod(fd, owner_read_write) != 0) {
+        ::close(fd);
+        return nullptr;
+    }
+    BIO_ptr bio(BIO_new_fd(fd, BIO_CLOSE));
+    if (!bio) {
+        ::close(fd);
+    }
+    return bio;
+}
+
 bool export_key_internal(const KeyGenerationInfo& key_info, const EVP_PKEY_ptr& evp_key) {
     // write private key to file
     if (key_info.private_key_file.has_value()) {
-        const BIO_ptr key_bio(BIO_new_file(key_info.private_key_file.value().c_str(), "w"));
+        const BIO_ptr key_bio = open_private_key_file(key_info.private_key_file.value());
 
         if (!key_bio) {
             EVLOG_error << "Failed to create private key file!";
@@ -589,21 +640,12 @@ CertificateValidationResult OpenSSLSupplier::x509_verify_certificate_chain(
         X509_STORE_CTX_set_verify_cb(store_ctx_ptr.get(), iso20::verify_annex_b_extensions);
     }
 
-    if (allow_future_certificates) {
-        // Manually check if cert is expired
-        int day = 0;
-        int sec = 0;
-        ASN1_TIME_diff(&day, &sec, nullptr, X509_get_notAfter(get(target)));
-        if (day < 0 || sec < 0) {
-            // certificate is expired
-            return CertificateValidationResult::Expired;
-        }
-        // certificate is not expired, but may not be valid yet. Since we allow future certs, disable time checks.
-        X509_STORE_CTX_set_flags(store_ctx_ptr.get(), X509_V_FLAG_NO_CHECK_TIME);
+    if (allow_future_certificates && !set_future_leaf_verification_time(store_ctx_ptr.get(), get(target))) {
+        EVLOG_warning << "X509 could not determine the verification time from the leaf's notBefore!";
+        return CertificateValidationResult::Unknown;
     }
 
-    // verifies the certificate chain based on ctx
-    // verifies the certificate has not expired and is already valid
+    // verifies the certificate chain based on ctx, including the validity period of every certificate in it
     if (X509_verify_cert(store_ctx_ptr.get()) != 1) {
         const int ec = X509_STORE_CTX_get_error(store_ctx_ptr.get());
         return to_certificate_error(ec);
@@ -632,7 +674,7 @@ KeyValidationResult OpenSSLSupplier::x509_check_private_key(X509Handle* handle, 
 
     const bool bResult = true;
     if (!evp_pkey) {
-        EVLOG_warning << "Invalid evp_pkey: " << private_key << " error: " << ERR_error_string(ERR_get_error(), nullptr)
+        EVLOG_warning << "Invalid evp_pkey error: " << ERR_error_string(ERR_get_error(), nullptr)
                       << " Password configured correctly?";
         ERR_print_errors_fp(stderr);
 
@@ -888,6 +930,12 @@ bool OpenSSLSupplier::digest_file_sha256(const fs::path& path, std::vector<std::
 
 namespace {
 template <typename T> bool base64_decode(const std::string& base64_string, T& out_decoded) {
+    // EVP_DecodeUpdate takes the input length and returns the output length as int
+    if (base64_string.size() > static_cast<std::size_t>(std::numeric_limits<int>::max() / 2)) {
+        EVLOG_error << "Input of " << base64_string.size() << " bytes is too large for base64 decoding";
+        return false;
+    }
+
     const EVP_ENCODE_CTX_ptr base64_decode_context_ptr(EVP_ENCODE_CTX_new());
     if (!base64_decode_context_ptr.get()) {
         EVLOG_error << "Error during EVP_ENCODE_CTX_new";
@@ -902,10 +950,9 @@ template <typename T> bool base64_decode(const std::string& base64_string, T& ou
 
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
     const auto* encoded_str = reinterpret_cast<const unsigned char*>(base64_string.data());
-    const int base64_length = base64_string.size();
+    const int base64_length = static_cast<int>(base64_string.size());
 
-    std::vector<std::uint8_t> decoded_out;
-    decoded_out.reserve(base64_length);
+    std::vector<std::uint8_t> decoded_out(EVP_DECODE_LENGTH(base64_string.size()));
 
     int decoded_out_length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
@@ -916,20 +963,27 @@ template <typename T> bool base64_decode(const std::string& base64_string, T& ou
     }
 
     int decode_final_out = 0;
-    // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
-    if (EVP_DecodeFinal(base64_decode_context_ptr.get(), reinterpret_cast<unsigned char*>(decoded_out.data()),
+    if (EVP_DecodeFinal(base64_decode_context_ptr.get(),
+                        // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
+                        std::next(reinterpret_cast<unsigned char*>(decoded_out.data()), decoded_out_length),
                         &decode_final_out) < 0) {
         EVLOG_error << "Error during EVP_DecodeFinal";
         return false;
     }
 
     out_decoded.clear();
-    std::copy_n(decoded_out.begin(), decoded_out_length, std::back_inserter((out_decoded)));
+    std::copy_n(decoded_out.begin(), decoded_out_length + decode_final_out, std::back_inserter((out_decoded)));
 
     return true;
 }
 
-bool base64_encode(const unsigned char* bytes_str, int bytes_size, std::string& out_encoded) {
+bool base64_encode(const unsigned char* bytes_str, std::size_t bytes_size, std::string& out_encoded) {
+    // EVP_EncodeUpdate takes the input length and returns the output length as int
+    if (bytes_size > static_cast<std::size_t>(std::numeric_limits<int>::max() / 2)) {
+        EVLOG_error << "Input of " << bytes_size << " bytes is too large for base64 encoding";
+        return false;
+    }
+
     const EVP_ENCODE_CTX_ptr base64_encode_context_ptr(EVP_ENCODE_CTX_new());
     if (base64_encode_context_ptr.get() == nullptr) {
         EVLOG_error << "Error during EVP_ENCODE_CTX_new";
@@ -945,16 +999,14 @@ bool base64_encode(const unsigned char* bytes_str, int bytes_size, std::string& 
         return false;
     }
 
-    const int base64_length = ((bytes_size / 3) * 4) + 2;
-    // If it causes issues, replace with 'alloca' on different platform
-    std::vector<char> base64_out;
-    base64_out.reserve(base64_length + 66); // + 66 bytes for final block
+    // EVP_ENCODE_LENGTH includes the newline EVP_EncodeUpdate inserts after every 64 characters and the final block
+    std::vector<char> base64_out(EVP_ENCODE_LENGTH(bytes_size));
     int full_len = 0;
 
     int base64_out_length = 0;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-type-reinterpret-cast): needed because of OpenSSL API
     if (EVP_EncodeUpdate(base64_encode_context_ptr.get(), reinterpret_cast<unsigned char*>(base64_out.data()),
-                         &base64_out_length, bytes_str, bytes_size) < 0) {
+                         &base64_out_length, bytes_str, static_cast<int>(bytes_size)) < 0) {
         EVLOG_error << "Error during EVP_EncodeUpdate";
         return false;
     }

@@ -8,6 +8,7 @@
 #include <array>
 #include <cstdint>
 #include <everest/io/event/unique_fd.hpp>
+#include <everest/io/socket/io_error_record.hpp>
 #include <everest/io/udp/endpoint.hpp>
 #include <everest/io/udp/udp_payload.hpp>
 #include <functional>
@@ -80,6 +81,14 @@ public:
      * @return The file descriptor of the socket
      */
     int get_fd() const;
+    /**
+     * @brief The local UDP port of the socket, host byte order.
+     * @details 0 when no socket is owned. A client socket gets its ephemeral port when it is
+     * connected, so for a client this is the source port the peer sees on every datagram, and
+     * it changes with every reopen.
+     * @return The local port, or 0 without a socket.
+     */
+    std::uint16_t local_port() const;
     /**
      * @brief Get pending errors on the socket.
      * @details Implementation for \p ClientPolicy. With no socket owned, the errno
@@ -154,10 +163,14 @@ protected:
      */
     void discard();
 
+    /** Outcome of one send: noted for get_error(), true when the whole payload went out. */
+    bool note_tx_result(ssize_t sent, size_t size);
+
 private:
     event::unique_fd m_owned_udp_fd;
     /** errno of the last failed open or connect, reported while no socket is owned */
     int m_connect_error{0};
+    socket::io_error_record m_error;
 };
 /**
  * A basic <a href="https://man7.org/linux/man-pages/man7/udp.7.html">UDP</a> client.

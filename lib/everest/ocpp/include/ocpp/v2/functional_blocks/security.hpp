@@ -54,8 +54,9 @@ public:
 
 class Security : public SecurityInterface {
 public:
-    Security(const FunctionalBlockContext& functional_block_context, MessageLogging& logging,
-             OcspUpdaterInterface& ocsp_updater, SecurityEventCallback security_event_callback);
+    Security(const FunctionalBlockContext& functional_block_context, MessageQueue<v2::MessageType>& message_queue,
+             MessageLogging& logging, OcspUpdaterInterface& ocsp_updater,
+             SecurityEventCallback security_event_callback);
     ~Security() override;
     void handle_message(const EnhancedMessage<MessageType>& message) override;
     void stop_certificate_signed_timer() override;
@@ -105,6 +106,7 @@ private:
 
     // Members
     const FunctionalBlockContext& context;
+    MessageQueue<v2::MessageType>& message_queue;
     MessageLogging& logging;
     OcspUpdaterInterface& ocsp_updater;
 

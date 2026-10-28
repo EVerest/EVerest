@@ -15,7 +15,7 @@
 
 namespace iso15118::io {
 
-ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name) :
+ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& interface_name, uint16_t tcp_port) :
     poll_manager(poll_manager_) {
     sockaddr_in6 address{};
     if (not get_first_sockaddr_in6_for_interface(interface_name, address)) {
@@ -24,7 +24,7 @@ ConnectionPlain::ConnectionPlain(PollManager& poll_manager_, const std::string& 
     }
 
     // setup end point information
-    end_point.port = 50000;
+    end_point.port = tcp_port;
     memcpy(&end_point.address, &address.sin6_addr, sizeof(address.sin6_addr));
 
     fd = create_tcp_listen_socket(address, end_point.port, DEFAULT_SOCKET_BACKLOG, interface_name);
@@ -86,6 +86,10 @@ void ConnectionPlain::write(const uint8_t* buf, size_t len) {
 ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
     assert(connection_open);
 
+    if (half_closed) {
+        return drain_until_peer_close(fd);
+    }
+
     const auto read_result = ::read(fd, buf, len);
     const auto did_block = (len > 0) and (not cmp_equal(read_result, len));
 
@@ -107,7 +111,12 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
         return {true, 0, false};
     }
 
-    logf_warning("ConnectionPlain::read failed with error code: %d", errno);
+    if (errno == ECONNRESET) {
+        // Many EVs end the session with an RST instead of a FIN
+        logf_info("TCP connection reset by the peer");
+    } else {
+        logf_warning("ConnectionPlain::read failed: %s", strerror(errno));
+    }
     return {false, 0, true};
 }
 
@@ -194,6 +203,20 @@ void ConnectionPlain::handle_bootstrap() {
     poll_manager.register_fd(fd, [this]() { this->handle_data(); });
 }
 
+void ConnectionPlain::half_close() {
+    if (closed or not connection_open or half_closed) {
+        return;
+    }
+    half_closed = true;
+
+    // Not close(): it would drop our receive side, hiding the EV's close.
+    if (shutdown(fd, SHUT_WR) == -1) {
+        logf_error("shutdown(SHUT_WR) failed");
+    }
+
+    logf_info("Sent our TCP close, waiting for the peer's");
+}
+
 void ConnectionPlain::close() {
     if (closed) {
         // keep close() idempotent: the session driver closes on peer-EOF and again during teardown
@@ -209,8 +232,9 @@ void ConnectionPlain::close() {
         // this call; close() itself must never stall the shared poll loop.
         const auto shutdown_result = shutdown(fd, SHUT_RDWR);
 
-        if (shutdown_result == -1) {
-            logf_error("shutdown() failed");
+        // ENOTCONN: the peer already reset the connection
+        if (shutdown_result == -1 and errno != ENOTCONN) {
+            logf_error("shutdown() failed: %s", strerror(errno));
         }
     }
 

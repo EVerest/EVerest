@@ -541,7 +541,7 @@ std::string MemoryStorage::get(const std::string_view& component, const std::str
 
     component_id.name = std::string{component};
     variable_id.name = std::string{variable};
-    (void)get_variable(component_id, variable_id, AttributeEnum::Actual, result, false);
+    (void)get_variable(component_id, variable_id, AttributeEnum::Actual, result, false, UnsetValue::NotSupported);
     return result;
 }
 
@@ -574,7 +574,8 @@ void MemoryStorage::clear(const std::string_view& component, const std::string_v
 MemoryStorage::GetVariableStatusEnum MemoryStorage::get_variable(const Component& component_id,
                                                                  const Variable& variable_id,
                                                                  const AttributeEnum& attribute_enum,
-                                                                 std::string& value, bool allow_write_only) const {
+                                                                 std::string& value, bool allow_write_only,
+                                                                 UnsetValue /*unset_value*/) const {
     auto result = GetVariableStatusEnum::UnknownVariable;
     const auto name = enhanced_convert(component_id, variable_id, attribute_enum);
     std::optional<std::string> retrieved;

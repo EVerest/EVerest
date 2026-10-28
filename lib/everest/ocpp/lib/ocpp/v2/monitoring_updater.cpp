@@ -7,6 +7,7 @@
 #include <everest/logging.hpp>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
+#include <ocpp/v2/device_model_helpers.hpp>
 #include <ocpp/v2/utils.hpp>
 
 namespace ocpp::v2 {
@@ -42,6 +43,18 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
     }
 
     return false;
+}
+
+bool is_write_only(const VariableAttribute& attribute) {
+    return attribute.mutability.value_or(MutabilityEnum::ReadWrite) == MutabilityEnum::WriteOnly;
+}
+
+/// \returns the \p value to log, WriteOnly values (e.g. passwords) are never logged
+std::string_view loggable_value(const VariableAttribute& attribute, const std::string& value) {
+    if (is_write_only(attribute)) {
+        return "[WriteOnly]";
+    }
+    return value;
 }
 
 bool is_monitor_active(MonitoringBaseEnum active_monitoring_base, const VariableMonitoringMeta& monitor_meta) {
@@ -134,13 +147,12 @@ EventData create_notify_event(std::int32_t unique_id, const std::string& reporte
 }
 } // namespace
 
-MonitoringUpdater::MonitoringUpdater(DeviceModelAbstract& device_model, notify_events notify_csms_events,
+MonitoringUpdater::MonitoringUpdater(DeviceModelMonitoringInterface& device_model, notify_events notify_csms_events,
                                      is_offline is_chargepoint_offline) :
     device_model(device_model),
-    monitors_timer([this]() { this->process_monitors_internal(true, true); }),
-    unique_id(0),
     notify_csms_events(std::move(notify_csms_events)),
-    is_chargepoint_offline(std::move(is_chargepoint_offline)) {
+    is_chargepoint_offline(std::move(is_chargepoint_offline)),
+    monitors_timer([this]() { this->process_monitors_internal(true, true); }) {
 }
 
 MonitoringUpdater::~MonitoringUpdater() {
@@ -171,10 +183,10 @@ void MonitoringUpdater::start_monitoring() {
     device_model.register_monitor_listener(std::move(fn_monitor));
 
     // No point in starting the monitor if this variable does not exist. It will never start to exist later on.
-    if (this->device_model.get_optional_value<bool>(ControllerComponentVariables::MonitoringCtrlrEnabled)
+    if (get_optional_value<bool>(this->device_model, ControllerComponentVariables::MonitoringCtrlrEnabled)
             .value_or(false)) {
         const int process_interval_seconds =
-            this->device_model.get_optional_value<int>(ControllerComponentVariables::MonitorsProcessingInterval)
+            get_optional_value<int>(this->device_model, ControllerComponentVariables::MonitorsProcessingInterval)
                 .value_or(1);
 
         EVLOG_info << "Started monitoring timer with interval: " << process_interval_seconds;
@@ -195,10 +207,11 @@ void MonitoringUpdater::process_triggered_monitors() {
 void MonitoringUpdater::on_monitor_updated(const VariableMonitoringMeta& updated_monitor, const Component& component,
                                            const Variable& variable, const VariableCharacteristics& characteristics,
                                            const VariableAttribute& attribute, const std::string& current_value) {
-    auto it = updater_monitors_meta.find(updated_monitor.monitor.id);
+    auto handle = this->state.handle();
+    auto it = handle->updater_monitors_meta.find(updated_monitor.monitor.id);
 
     // Not contained, ignored
-    if (it == std::end(updater_monitors_meta)) {
+    if (it == std::end(handle->updater_monitors_meta)) {
         return;
     }
 
@@ -212,13 +225,14 @@ void MonitoringUpdater::on_monitor_updated(const VariableMonitoringMeta& updated
     if (updated_monitor.monitor.type == MonitorEnum::LowerThreshold ||
         updated_monitor.monitor.type == MonitorEnum::UpperThreshold) {
         // Re-evaluate the monitor
-        evaluate_monitor(updated_monitor, component, variable, characteristics, attribute, current_value,
+        evaluate_monitor(*handle, updated_monitor, component, variable, characteristics, attribute, current_value,
                          current_value);
     }
 }
 
-void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_meta, const Component& component,
-                                         const Variable& variable, const VariableCharacteristics& characteristics,
+void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringMeta& monitor_meta,
+                                         const Component& component, const Variable& variable,
+                                         const VariableCharacteristics& characteristics,
                                          const VariableAttribute& attribute, const std::string& value_previous,
                                          const std::string& value_current) {
     // Don't care about periodic
@@ -228,7 +242,6 @@ void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_m
     }
 
     bool monitor_triggered = false;
-    bool monitor_trivial = false;
 
     // N07.FR.19 - Based on this it seems that OptionList, SequenceList, MemberList will
     // cause a trigger if the value is changed regardless of the content (or monitor delta)
@@ -236,7 +249,6 @@ void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_m
         (characteristics.dataType == DataEnum::dateTime) || (characteristics.dataType == DataEnum::OptionList) ||
         (characteristics.dataType == DataEnum::MemberList) || (characteristics.dataType == DataEnum::SequenceList)) {
         monitor_triggered = triggers_monitor<DataEnum::boolean>(monitor_meta, value_previous, value_current);
-        monitor_trivial = true;
     } else if (characteristics.dataType == DataEnum::decimal) {
         monitor_triggered = triggers_monitor<DataEnum::decimal>(monitor_meta, value_previous, value_current);
     } else if (characteristics.dataType == DataEnum::integer) {
@@ -248,9 +260,11 @@ void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_m
     }
 
     EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
-                << "] with previous value: [" << value_previous << "] and current: [" << value_current << "]";
+                << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
+                << loggable_value(attribute, value_current) << "]";
 
     auto monitor_id = monitor_meta.monitor.id;
+    auto& updater_monitors_meta = state.updater_monitors_meta;
     auto it = updater_monitors_meta.find(monitor_id);
 
     // Always update the current values is the trigger is found
@@ -262,26 +276,6 @@ void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_m
     }
 
     if (monitor_triggered) {
-        if (monitor_meta.monitor.type == MonitorEnum::Delta && monitor_trivial) {
-            // 3.55. MonitorEnumType
-            // As per the spec, in case of a delta monitor that always triggered (bool/dateTime etc...)
-            // we must update the reference value to the new value, so that we don't always trigger
-            // this multiple times when it changes
-
-            // N07.FR.18 - "plus or minus monitorValue since the time that this monitor was set or
-            // since the last time this event notice was sent, whichever was last"
-            // A 'cleared' state has no value for a delta monitor
-            try {
-                EVLOG_debug << "Updated monitor: " << monitor_meta.monitor << " reference to: " << value_current;
-
-                if (!this->device_model.update_monitor_reference(monitor_id, value_current)) {
-                    EVLOG_warning << "Could not update delta monitor: " << monitor_id << " reference!";
-                }
-            } catch (const DeviceModelError& e) {
-                EVLOG_error << "Could not update delta monitor reference with exception: " << e.what();
-            }
-        }
-
         if (it == std::end(updater_monitors_meta)) {
             UpdaterMonitorMeta triggered_meta;
 
@@ -290,8 +284,7 @@ void MonitoringUpdater::evaluate_monitor(const VariableMonitoringMeta& monitor_m
             triggered_meta.component = component;
             triggered_meta.variable = variable;
             triggered_meta.monitor_meta = monitor_meta;
-            triggered_meta.is_writeonly =
-                (attribute.mutability.value_or(MutabilityEnum::ReadWrite) == MutabilityEnum::WriteOnly);
+            triggered_meta.is_writeonly = is_write_only(attribute);
 
             // Update new current values
             triggered_meta.value_previous = value_previous;
@@ -357,31 +350,33 @@ void MonitoringUpdater::on_variable_changed(const std::unordered_map<std::int64_
                                             const VariableCharacteristics& characteristics,
                                             const VariableAttribute& attribute, const std::string& value_previous,
                                             const std::string& value_current) {
-    EVLOG_debug << "Variable: " << variable.name.get() << " changed value from: [" << value_previous << "] to: ["
-                << value_current << "]";
+    EVLOG_debug << "Variable: " << variable.name.get() << " changed value from: ["
+                << loggable_value(attribute, value_previous) << "] to: [" << loggable_value(attribute, value_current)
+                << "]";
 
     // Ignore non-actual values
     if (attribute.type.has_value() && attribute.type.value() != AttributeEnum::Actual) {
         return;
     }
 
-    // Iterate monitors and search for a triggered monitor
+    auto handle = this->state.handle();
     for (const auto& [monitor_id, monitor_meta] : monitors) {
-        // Evaluate the monitor
-        evaluate_monitor(monitor_meta, component, variable, characteristics, attribute, value_previous, value_current);
+        evaluate_monitor(*handle, monitor_meta, component, variable, characteristics, attribute, value_previous,
+                         value_current);
     }
 }
 
-void MonitoringUpdater::update_periodic_monitors_internal() {
+void MonitoringUpdater::update_periodic_monitors_internal(State& state) {
+    auto& updater_monitors_meta = state.updater_monitors_meta;
     // Update the list of periodic monitors
     auto periodic_monitors = this->device_model.get_periodic_monitors();
 
     for (auto& component_variable_monitors : periodic_monitors) {
         for (auto& periodic_monitor_meta : component_variable_monitors.monitors) {
             // See if we already have the local monitor
-            auto it = this->updater_monitors_meta.find(periodic_monitor_meta.monitor.id);
+            auto it = updater_monitors_meta.find(periodic_monitor_meta.monitor.id);
 
-            if (it != std::end(this->updater_monitors_meta)) {
+            if (it != std::end(updater_monitors_meta)) {
                 // If we already contain it inside, skip
                 continue;
             }
@@ -408,8 +403,8 @@ void MonitoringUpdater::update_periodic_monitors_internal() {
                 EVLOG_AND_THROW(std::runtime_error("Invalid type in periodic monitor list, should never happen!"));
             }
 
-            auto res = this->updater_monitors_meta.insert(
-                std::pair{periodic_monitor_meta.monitor.id, std::move(periodic_meta)});
+            auto res =
+                updater_monitors_meta.insert(std::pair{periodic_monitor_meta.monitor.id, std::move(periodic_meta)});
 
             if (!res.second) {
                 EVLOG_warning << "Could not insert periodic monitor to internal monitor map!";
@@ -418,7 +413,7 @@ void MonitoringUpdater::update_periodic_monitors_internal() {
         }
     }
 
-    // Remove the monitors in our list that don't exist any more in the database
+    // Remove the monitors in our list that don't exist any more in the device model
     for (auto it = std::begin(updater_monitors_meta); it != std::end(updater_monitors_meta);) {
         std::int32_t updater_meta_id = it->first;
         auto updater_meta_data = it->second;
@@ -449,7 +444,19 @@ void MonitoringUpdater::update_periodic_monitors_internal() {
     }
 }
 
-void MonitoringUpdater::process_monitor_meta_internal(UpdaterMonitorMeta& updater_meta_data) {
+void MonitoringUpdater::update_delta_reference(std::int32_t monitor_id, const std::string& reference_value) {
+    try {
+        EVLOG_debug << "Updated delta monitor: " << monitor_id << " reference to: " << reference_value;
+
+        if (!this->device_model.update_monitor_reference(monitor_id, reference_value)) {
+            EVLOG_warning << "Could not update delta monitor: " << monitor_id << " reference!";
+        }
+    } catch (const DeviceModelError& e) {
+        EVLOG_error << "Could not update delta monitor reference with exception: " << e.what();
+    }
+}
+
+void MonitoringUpdater::process_monitor_meta_internal(State& state, UpdaterMonitorMeta& updater_meta_data) {
     const auto& monitor_meta = updater_meta_data.monitor_meta;
     const auto& monitor = monitor_meta.monitor;
 
@@ -506,11 +513,10 @@ void MonitoringUpdater::process_monitor_meta_internal(UpdaterMonitorMeta& update
             comp_var.component = updater_meta_data.component;
             comp_var.variable = updater_meta_data.variable;
 
-            // This operation can cause a small stall, but only if this is triggered
-            const auto current_value = this->device_model.get_value<std::string>(comp_var);
+            const auto current_value = get_value<std::string>(this->device_model, comp_var);
 
             EventData notify_event =
-                std::move(create_notify_event(this->unique_id++, current_value, updater_meta_data.component,
+                std::move(create_notify_event(state.unique_id++, current_value, updater_meta_data.component,
                                               updater_meta_data.variable, monitor_meta));
 
             // Generate one event that will either be sent now, or later based on the offline state
@@ -530,12 +536,13 @@ void MonitoringUpdater::process_monitor_meta_internal(UpdaterMonitorMeta& update
             }
 
             EventData notify_event =
-                std::move(create_notify_event(unique_id++, reported_value, updater_meta_data.component,
+                std::move(create_notify_event(state.unique_id++, reported_value, updater_meta_data.component,
                                               updater_meta_data.variable, updater_meta_data.monitor_meta));
 
-            // N07.FR.18 - the cleared attribute does not apply to deltas
-            // N07.FR.19
-            if (monitor.type != MonitorEnum::Delta) {
+            // N07.FR.18, N07.FR.19 - the cleared attribute does not apply to deltas
+            if (monitor.type == MonitorEnum::Delta) {
+                update_delta_reference(monitor.id, updater_meta_data.value_current);
+            } else {
                 // Mark if the event is cleared (returned to normal) if that is the case
                 notify_event.cleared = (updater_meta_data.meta_trigger.is_cleared == 1);
             }
@@ -584,6 +591,8 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
         return;
     }
 
+    const std::lock_guard<std::mutex> processing_lock(this->processing_mutex);
+
     bool is_offline = true;
     int offline_severity = MonitoringLevelSeverity::Danger;
     int active_monitoring_level = MonitoringLevelSeverity::MAX;
@@ -594,98 +603,107 @@ void MonitoringUpdater::process_monitors_internal(bool allow_periodics, bool all
     EVLOG_debug << "Processing internal monitors with periodics: " << allow_periodics
                 << " and triggers: " << allow_trigger;
 
-    if (allow_periodics) {
-        // Rebuild the periodic monitor information
-        update_periodic_monitors_internal();
-    }
+    std::vector<std::vector<EventData>> events_to_send;
+    {
+        auto handle = this->state.handle();
+        auto& updater_monitors_meta = handle->updater_monitors_meta;
 
-    // Iterate all internal monitors and process them
-    for (auto it = std::begin(updater_monitors_meta); it != std::end(updater_monitors_meta);) {
-        auto& updater_monitor_meta = it->second;
-        const auto& meta_monitor_id = it->first;
-        const auto& monitor_meta = updater_monitor_meta.monitor_meta;
-
-        if (((allow_periodics == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::PERIODIC)) ||
-            ((allow_trigger == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER))) {
-            ++it;
-            continue;
+        if (allow_periodics) {
+            // Rebuild the periodic monitor information
+            update_periodic_monitors_internal(*handle);
         }
 
-        bool should_process = true;
+        // Iterate all internal monitors and process them
+        for (auto it = std::begin(updater_monitors_meta); it != std::end(updater_monitors_meta);) {
+            auto& updater_monitor_meta = it->second;
+            const auto& meta_monitor_id = it->first;
+            const auto& monitor_meta = updater_monitor_meta.monitor_meta;
 
-        // Skip non-active monitors
-        if (!is_monitor_active(active_monitoring_base, monitor_meta)) {
-            should_process = false;
-        }
-
-        if (is_offline) {
-            // If we are offline, just discard triggers that have a severity > than 'offline_severity'
-            if (it->second.monitor_meta.monitor.severity > offline_severity) {
-                should_process = false;
-            }
-        } else {
-            // If we are online, discard the triggers that have a severity > than 'active_monitoring_level'
-            if (it->second.monitor_meta.monitor.severity > active_monitoring_level) {
-                should_process = false;
-            }
-        }
-
-        EVLOG_debug << "Monitor: " << updater_monitor_meta.monitor_meta.monitor << " processed: " << should_process;
-
-        if (!should_process) {
-            if (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER) {
-                // The triggers that are not active, should simply pe discarded
-                it = updater_monitors_meta.erase(it);
-            } else {
-                // Just clear the events, since we don't require them cached
-                updater_monitor_meta.generated_monitor_events.clear();
+            if (((allow_periodics == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::PERIODIC)) ||
+                ((allow_trigger == false) && (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER))) {
                 ++it;
+                continue;
             }
 
-            continue;
-        }
+            bool should_process = true;
 
-        // As a result of this function, the meta should have in it all the generated
-        process_monitor_meta_internal(updater_monitor_meta);
+            // Skip non-active monitors
+            if (!is_monitor_active(active_monitoring_base, monitor_meta)) {
+                should_process = false;
+            }
 
-        // If we are not offline, send the queued events generated by this meta
-        if (!is_offline) {
-            if (!updater_monitor_meta.generated_monitor_events.empty()) {
-                EVLOG_debug << "Sent data for monitor: " << updater_monitor_meta.monitor_meta.monitor;
-
-                // Send the events
-                notify_csms_events(updater_monitor_meta.generated_monitor_events);
-                updater_monitor_meta.generated_monitor_events.clear();
-
-                if (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER) {
-                    // If we have a trigger mark the events as being sent
-                    // for the curent state
-                    updater_monitor_meta.meta_trigger.is_csms_sent = true;
-
-                    // If this was a state trigger, them also mark that
-                    // we sent this 'dangerous' state to the CSMS at least once
-                    // since in that case the clear logic changes
-                    if (updater_monitor_meta.meta_trigger.is_cleared == 0) {
-                        updater_monitor_meta.meta_trigger.is_csms_sent_triggered = true;
-                    }
+            if (is_offline) {
+                // If we are offline, just discard triggers that have a severity > than 'offline_severity'
+                if (it->second.monitor_meta.monitor.severity > offline_severity) {
+                    should_process = false;
+                }
+            } else {
+                // If we are online, discard the triggers that have a severity > than 'active_monitoring_level'
+                if (it->second.monitor_meta.monitor.severity > active_monitoring_level) {
+                    should_process = false;
                 }
             }
-        } else {
-            // If we are offline but we passed the 'should_process' test, it means that
-            // we should keep the generated events and send them at a further occasion
-            EVLOG_debug << "We are offline, cached generated events for later!";
-        }
 
-        if (should_remove_monitor_meta_internal(updater_monitor_meta)) {
-            it = updater_monitors_meta.erase(it);
-        } else {
-            ++it;
+            EVLOG_debug << "Monitor: " << updater_monitor_meta.monitor_meta.monitor << " processed: " << should_process;
+
+            if (!should_process) {
+                if (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER) {
+                    // The triggers that are not active, should simply pe discarded
+                    it = updater_monitors_meta.erase(it);
+                } else {
+                    // Just clear the events, since we don't require them cached
+                    updater_monitor_meta.generated_monitor_events.clear();
+                    ++it;
+                }
+
+                continue;
+            }
+
+            // As a result of this function, the meta should have in it all the generated
+            process_monitor_meta_internal(*handle, updater_monitor_meta);
+
+            // If we are not offline, send the queued events generated by this meta
+            if (!is_offline) {
+                if (!updater_monitor_meta.generated_monitor_events.empty()) {
+                    EVLOG_debug << "Sent data for monitor: " << updater_monitor_meta.monitor_meta.monitor;
+
+                    events_to_send.push_back(std::move(updater_monitor_meta.generated_monitor_events));
+                    updater_monitor_meta.generated_monitor_events.clear();
+
+                    if (updater_monitor_meta.type == UpdateMonitorMetaType::TRIGGER) {
+                        // If we have a trigger mark the events as being sent
+                        // for the curent state
+                        updater_monitor_meta.meta_trigger.is_csms_sent = true;
+
+                        // If this was a state trigger, them also mark that
+                        // we sent this 'dangerous' state to the CSMS at least once
+                        // since in that case the clear logic changes
+                        if (updater_monitor_meta.meta_trigger.is_cleared == 0) {
+                            updater_monitor_meta.meta_trigger.is_csms_sent_triggered = true;
+                        }
+                    }
+                }
+            } else {
+                // If we are offline but we passed the 'should_process' test, it means that
+                // we should keep the generated events and send them at a further occasion
+                EVLOG_debug << "We are offline, cached generated events for later!";
+            }
+
+            if (should_remove_monitor_meta_internal(updater_monitor_meta)) {
+                it = updater_monitors_meta.erase(it);
+            } else {
+                ++it;
+            }
         }
+    }
+
+    for (const auto& events : events_to_send) {
+        notify_csms_events(events);
     }
 }
 
 bool MonitoringUpdater::is_monitoring_enabled() {
-    return this->device_model.get_optional_value<bool>(ControllerComponentVariables::MonitoringCtrlrEnabled)
+    return get_optional_value<bool>(this->device_model, ControllerComponentVariables::MonitoringCtrlrEnabled)
         .value_or(false);
 }
 
@@ -697,15 +715,15 @@ void MonitoringUpdater::get_monitoring_info(bool& out_is_offline, int& out_offli
 
     // By default (if the comp is missing we are reporting up to 'Warning')
     out_offline_severity =
-        this->device_model.get_optional_value<int>(ControllerComponentVariables::OfflineQueuingSeverity)
+        get_optional_value<int>(this->device_model, ControllerComponentVariables::OfflineQueuingSeverity)
             .value_or(MonitoringLevelSeverity::Warning);
 
     out_active_monitoring_level =
-        this->device_model.get_optional_value<int>(ControllerComponentVariables::ActiveMonitoringLevel)
+        get_optional_value<int>(this->device_model, ControllerComponentVariables::ActiveMonitoringLevel)
             .value_or(MonitoringLevelSeverity::MAX);
 
     const std::string active_monitoring_base_string =
-        this->device_model.get_optional_value<std::string>(ControllerComponentVariables::ActiveMonitoringBase)
+        get_optional_value<std::string>(this->device_model, ControllerComponentVariables::ActiveMonitoringBase)
             .value_or(conversions::monitoring_base_enum_to_string(MonitoringBaseEnum::All));
 
     out_active_monitoring_base = conversions::string_to_monitoring_base_enum(active_monitoring_base_string);

@@ -144,7 +144,7 @@ protected:
             (work_dir / "device_model_storage.db").string(),            // DeviceModelDatabasePath
             fs::absolute(LIBOCPP_DEVICE_MODEL_MIGRATIONS_DIR).string(), // DeviceModelDatabaseMigrationPath
             fs::absolute(LIBOCPP_COMPONENT_CONFIG_DIR).string(),        // DeviceModelConfigPath
-            "",                                                         // DeviceModelConfigMappings
+            "",                                                         // Ocpp16KeyMappingsPath
             1,                                                          // Ocpp16NetworkConfigSlot
             false,                                                      // EnableLegacyConfigMigration
             "",                                                         // ChargePointConfigPath
@@ -167,8 +167,9 @@ TEST_F(ChargePointConfigFactoryV16Test, EverestSourcedVariableIsReadableAndWrita
     auto& device_model = result.configuration->get_device_model();
 
     std::string value;
-    const auto get_status = device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),
-                                                      ocpp::v2::AttributeEnum::Actual, value);
+    const auto get_status =
+        device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),
+                                  ocpp::v2::AttributeEnum::Actual, value, false, ocpp::v2::UnsetValue::NotSupported);
     EXPECT_EQ(get_status, ocpp::v2::GetVariableStatusEnum::Accepted);
     EXPECT_EQ(value, "everest-value");
 
@@ -189,8 +190,9 @@ TEST_F(ChargePointConfigFactoryV16Test, OcppSourcedVariableStillResolves) {
     const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
     ASSERT_TRUE(heartbeat_interval.variable.has_value());
     std::string value;
-    const auto get_status = device_model.get_variable(heartbeat_interval.component, heartbeat_interval.variable.value(),
-                                                      ocpp::v2::AttributeEnum::Actual, value);
+    const auto get_status =
+        device_model.get_variable(heartbeat_interval.component, heartbeat_interval.variable.value(),
+                                  ocpp::v2::AttributeEnum::Actual, value, false, ocpp::v2::UnsetValue::NotSupported);
     EXPECT_EQ(get_status, ocpp::v2::GetVariableStatusEnum::Accepted);
     EXPECT_FALSE(value.empty());
 
@@ -208,13 +210,15 @@ TEST_F(ChargePointConfigFactoryV16Test, NullEverestStorageDegradesToOcppOnly) {
 
     std::string value;
     EXPECT_EQ(device_model.get_variable(make_component("ConnectedEV"), make_variable("VehicleId"),
-                                        ocpp::v2::AttributeEnum::Actual, value),
+                                        ocpp::v2::AttributeEnum::Actual, value, false,
+                                        ocpp::v2::UnsetValue::NotSupported),
               ocpp::v2::GetVariableStatusEnum::UnknownComponent);
 
     const auto& heartbeat_interval = ocpp::v2::ControllerComponentVariables::HeartbeatInterval;
     ASSERT_TRUE(heartbeat_interval.variable.has_value());
     EXPECT_EQ(device_model.get_variable(heartbeat_interval.component, heartbeat_interval.variable.value(),
-                                        ocpp::v2::AttributeEnum::Actual, value),
+                                        ocpp::v2::AttributeEnum::Actual, value, false,
+                                        ocpp::v2::UnsetValue::NotSupported),
               ocpp::v2::GetVariableStatusEnum::Accepted);
 }
 

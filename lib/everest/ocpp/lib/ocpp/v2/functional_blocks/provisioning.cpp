@@ -17,6 +17,7 @@
 
 #include <ocpp/v2/functional_blocks/availability.hpp>
 #include <ocpp/v2/functional_blocks/diagnostics.hpp>
+#include <ocpp/v2/functional_blocks/firmware_update.hpp>
 #include <ocpp/v2/functional_blocks/meter_values.hpp>
 #include <ocpp/v2/functional_blocks/security.hpp>
 #include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
@@ -57,7 +58,8 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
                            StopTransactionCallback stop_transaction_callback,
                            std::optional<VariableChangedCallback> variable_changed_callback,
                            TariffAndCostInterface& tariff_and_cost,
-                           std::atomic<RegistrationStatusEnum>& registration_status) :
+                           std::atomic<RegistrationStatusEnum>& registration_status,
+                           FirmwareUpdateInterface& firmware_update) :
     context(functional_block_context),
     message_queue(message_queue),
     ocsp_updater(ocsp_updater),
@@ -67,6 +69,7 @@ Provisioning::Provisioning(const FunctionalBlockContext& functional_block_contex
     diagnostics(diagnostics),
     transaction(transaction),
     tariff_and_cost(tariff_and_cost),
+    firmware_update(firmware_update),
     time_sync_callback(time_sync_callback),
     boot_notification_callback(boot_notification_callback),
     validate_network_profile_callback(validate_network_profile_callback),
@@ -150,14 +153,13 @@ Provisioning::get_variables(const std::vector<GetVariableData>& get_variable_dat
         get_variable_result.component = get_variable_data.component;
         get_variable_result.variable = get_variable_data.variable;
         get_variable_result.attributeType = get_variable_data.attributeType.value_or(AttributeEnum::Actual);
-        const auto request_value_response = this->context.device_model.request_value<std::string>(
-            get_variable_data.component, get_variable_data.variable,
-            get_variable_data.attributeType.value_or(AttributeEnum::Actual));
-        if (request_value_response.status == GetVariableStatusEnum::Accepted and
-            request_value_response.value.has_value()) {
-            get_variable_result.attributeValue = request_value_response.value.value();
+        std::string value;
+        get_variable_result.attributeStatus = this->context.device_model.get_variable(
+            get_variable_data.component, get_variable_data.variable, get_variable_result.attributeType.value(), value,
+            false, UnsetValue::EmptyString);
+        if (get_variable_result.attributeStatus == GetVariableStatusEnum::Accepted) {
+            get_variable_result.attributeValue = value;
         }
-        get_variable_result.attributeStatus = request_value_response.status;
 
         this->try_apply_active_slot_identity_override(get_variable_data, get_variable_result);
 
@@ -207,6 +209,7 @@ void Provisioning::handle_boot_notification_response(CallResult<BootNotification
 
     if (this->registration_status == RegistrationStatusEnum::Accepted) {
         this->message_queue.set_registration_status_accepted();
+        this->firmware_update.on_registration_accepted();
         // B01.FR.06 Only use boot timestamp if TimeSource contains Heartbeat
         if (this->time_sync_callback.has_value() and
             this->context.device_model.get_value<std::string>(ControllerComponentVariables::TimeSource)
@@ -481,7 +484,7 @@ void Provisioning::handle_set_network_profile_req(Call<SetNetworkProfileRequest>
 }
 
 void Provisioning::handle_reset_req(Call<ResetRequest> call) {
-    EVLOG_debug << "Received ResetRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ResetRequest with messageId: " << call.uniqueId;
     const auto msg = call.msg;
 
     ResetResponse response;
@@ -581,7 +584,10 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
 
     if (component_variable == ControllerComponentVariables::BasicAuthPassword) {
         if (this->context.device_model.get_value<int>(ControllerComponentVariables::SecurityProfile) < 3) {
-            this->context.connectivity_manager.set_websocket_authorization_key(set_variable_data.attributeValue.get());
+            this->message_queue.run_when_idle([this, key = set_variable_data.attributeValue.get()]() {
+                this->context.connectivity_manager.set_websocket_authorization_key(key);
+                return this->context.connectivity_manager.is_websocket_connected();
+            });
         }
         // A01.FR.11: log the change of BasicAuthPassword via a SecurityEventNotification.
         // The event payload must not contain the new password value.
@@ -650,7 +656,10 @@ void Provisioning::handle_variable_changed(const SetVariableData& set_variable_d
             const auto active_slot_opt =
                 this->context.device_model.get_optional_value<int>(ControllerComponentVariables::ActiveNetworkProfile);
             if (active_slot_opt.has_value() and active_slot_opt.value() == slot) {
-                this->message_queue.update_message_timeout(std::stoi(set_variable_data.attributeValue.get()));
+                const auto message_timeout = std::stoi(set_variable_data.attributeValue.get());
+                this->message_queue.update_message_timeout(message_timeout);
+                this->context.device_model.set_active_message_timeout(message_timeout,
+                                                                      VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL);
                 this->context.connectivity_manager.set_websocket_connection_options_without_reconnect();
             }
         } catch (const std::exception& e) {

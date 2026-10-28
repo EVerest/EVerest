@@ -1462,7 +1462,7 @@ void SmartCharging::notify_ev_charging_needs_req(const NotifyEVChargingNeedsRequ
 }
 
 void SmartCharging::handle_set_charging_profile_req(Call<SetChargingProfileRequest> call) {
-    EVLOG_debug << "Received SetChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received SetChargingProfileRequest with messageId: " << call.uniqueId;
     auto msg = call.msg;
     SetChargingProfileResponse response;
     response.status = ChargingProfileStatusEnum::Rejected;
@@ -1519,7 +1519,7 @@ void SmartCharging::handle_set_charging_profile_req(Call<SetChargingProfileReque
 }
 
 void SmartCharging::handle_clear_charging_profile_req(Call<ClearChargingProfileRequest> call) {
-    EVLOG_debug << "Received ClearChargingProfileRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received ClearChargingProfileRequest with messageId: " << call.uniqueId;
     const auto msg = call.msg;
     ClearChargingProfileResponse response;
     response.status = ClearChargingProfileStatusEnum::Unknown;
@@ -1556,7 +1556,7 @@ void SmartCharging::handle_clear_charging_profile_req(Call<ClearChargingProfileR
 }
 
 void SmartCharging::handle_get_charging_profiles_req(Call<GetChargingProfilesRequest> call) {
-    EVLOG_debug << "Received GetChargingProfilesRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetChargingProfilesRequest with messageId: " << call.uniqueId;
     const auto msg = call.msg;
     GetChargingProfilesResponse response;
 
@@ -1665,7 +1665,7 @@ void SmartCharging::handle_notify_ev_charging_needs_response(const EnhancedMessa
 }
 
 void SmartCharging::handle_get_composite_schedule_req(Call<GetCompositeScheduleRequest> call) {
-    EVLOG_debug << "Received GetCompositeScheduleRequest: " << call.msg << "\nwith messageId: " << call.uniqueId;
+    EVLOG_debug << "Received GetCompositeScheduleRequest with messageId: " << call.uniqueId;
     const auto schedule = this->get_composite_schedule_internal(call.msg);
     const GetCompositeScheduleResponse response = schedule.get();
 

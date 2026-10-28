@@ -13,7 +13,7 @@
 #include <sys/select.h>
 #include <sys/time.h>
 
-#include <fmt/core.h>
+#include <fmt/format.h>
 
 namespace app_layer {
 

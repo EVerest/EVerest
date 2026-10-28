@@ -77,14 +77,31 @@ bool split_key_value(const std::string& key_value, std::string& key, std::string
     return split_ok;
 }
 
+namespace {
+bool is_option_like(const std::string& location) {
+    return !location.empty() && location.front() == '-';
+}
+} // namespace
+
 void systemImpl::init() {
     this->scripts_path = mod->info.paths.libexec;
     this->firmware_installation_running = false;
     this->standard_firmware_update_running = false;
     this->boot_reason_key = "ocpp_boot_reason";
+    this->pending_installed_request_id_key = "ocpp_pending_installed_request_id";
 }
 
 void systemImpl::ready() {
+    if (!this->mod->r_store.empty() && this->mod->r_store.at(0)->call_exists(pending_installed_request_id_key)) {
+        const auto request_id = this->mod->r_store.at(0)->call_load(pending_installed_request_id_key);
+        this->mod->r_store.at(0)->call_delete(pending_installed_request_id_key);
+        if (std::holds_alternative<int>(request_id)) {
+            this->publish_firmware_update_status(
+                {types::system::FirmwareUpdateStatusEnum::Installed, std::get<int>(request_id)});
+        } else {
+            EVLOG_error << "Invalid request ID stored at key " << pending_installed_request_id_key;
+        }
+    }
 }
 
 void systemImpl::standard_firmware_update(const types::system::FirmwareUpdateRequest& firmware_update_request) {
@@ -445,23 +462,26 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
         const auto constants = this->scripts_path / CONSTANTS;
         const std::vector<std::string> install_args = {constants.string(), firmware_update_request.location,
                                                        firmware_file_path.string()};
-        run_application(firmware_installer.string(), install_args,
-                        [this, &firmware_status](const std::string& output_line) {
-                            firmware_status.firmware_update_status =
-                                types::system::string_to_firmware_update_status_enum(output_line);
-                            this->publish_firmware_update_status(firmware_status);
-                            return CmdControl::Continue;
-                        });
+        run_application(
+            firmware_installer.string(), install_args, [this, &firmware_status](const std::string& output_line) {
+                firmware_status.firmware_update_status =
+                    types::system::string_to_firmware_update_status_enum(output_line);
+                if (firmware_status.firmware_update_status != types::system::FirmwareUpdateStatusEnum::Installed ||
+                    !this->mod->config.ResetAfterUpdate || this->mod->r_store.empty()) {
+                    this->publish_firmware_update_status(firmware_status);
+                }
+                return CmdControl::Continue;
+            });
         if (firmware_status.firmware_update_status == types::system::FirmwareUpdateStatusEnum::Installed) {
             if (this->mod->config.ResetAfterUpdate) {
-                firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
-                this->publish_firmware_update_status(firmware_status);
-                std::this_thread::sleep_for(INSTALL_REBOOTING_NOTIFICATION_GRACE);
-
                 if (!this->mod->r_store.empty()) {
                     this->mod->r_store.at(0)->call_store(
                         boot_reason_key, boot_reason_to_string(types::system::BootReason::FirmwareUpdate));
+                    this->mod->r_store.at(0)->call_store(pending_installed_request_id_key, firmware_status.request_id);
+                    firmware_status.firmware_update_status = types::system::FirmwareUpdateStatusEnum::InstallRebooting;
+                    this->publish_firmware_update_status(firmware_status);
                 }
+                std::this_thread::sleep_for(INSTALL_REBOOTING_NOTIFICATION_GRACE);
 
                 auto reset_type = types::system::ResetType::Hard;
                 bool firmware_installation_running_copy = this->firmware_installation_running;
@@ -484,6 +504,10 @@ void systemImpl::install_signed_firmware(const types::system::FirmwareUpdateRequ
 
 types::system::UpdateFirmwareResponse
 systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmware_update_request) {
+    if (is_option_like(firmware_update_request.location)) {
+        EVLOG_warning << "Rejecting firmware update, location must not start with '-'";
+        return types::system::UpdateFirmwareResponse::Rejected;
+    }
     if (firmware_update_request.request_id == -1) {
         return this->handle_standard_firmware_update(firmware_update_request);
     } else {
@@ -499,6 +523,12 @@ types::system::UploadLogsResponse
 systemImpl::handle_upload_logs(types::system::UploadLogsRequest& upload_logs_request) {
 
     types::system::UploadLogsResponse response;
+
+    if (is_option_like(upload_logs_request.location)) {
+        EVLOG_warning << "Rejecting log upload, location must not start with '-'";
+        response.upload_logs_status = types::system::UploadLogsStatus::Rejected;
+        return response;
+    }
 
     {
         auto state = this->log_upload_state.handle();

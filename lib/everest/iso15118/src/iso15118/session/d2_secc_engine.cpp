@@ -229,16 +229,17 @@ D2SeccEngine::D2SeccEngine(io::StreamOutputView output_view, const session::Sess
     fsm(ctx.create_state<d2::state::SessionSetup>()) {
 }
 
-void D2SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
+bool D2SeccEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamInputView& view) {
     // All ISO 15118-2 messages share the single SAP payload type (0x8001); any other V2GTP payload
     // type is ignored (EvseV2G parity).
     if (payload_type != io::v2gtp::PayloadType::SAP) {
-        return;
+        return false;
     }
     message_exchange.set_request(std::make_unique<message_2::Variant>(view));
 
     // The request type is reported by StateBase::feed(), which consumes it.
     fsm.feed(d2::Event::V2GTP_MESSAGE);
+    return true;
 }
 
 void D2SeccEngine::on_control_event(const d20::ControlEvent& event) {

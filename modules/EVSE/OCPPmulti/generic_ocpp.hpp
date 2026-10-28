@@ -49,6 +49,7 @@
 #include <map>
 #include <mutex>
 #include <queue>
+#include <thread>
 #include <utility>
 #include <variant>
 
@@ -118,11 +119,11 @@ struct ConfigInterface {
     [[nodiscard]] virtual std::string getChargePointConfigPath() const = 0;
     [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
     [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
-    [[nodiscard]] virtual std::string getCustomMrecErrorMapPath() const = 0;
+    [[nodiscard]] virtual std::string getCustomErrorMappingPath() const = 0;
     [[nodiscard]] virtual std::string getDatabasePath() const = 0;
     [[nodiscard]] virtual int getDelayOcppStart() const = 0;
     [[nodiscard]] virtual bool getDelegateNetworkConfigurationToSystem() const = 0;
-    [[nodiscard]] virtual std::string getDeviceModelConfigMappings() const = 0;
+    [[nodiscard]] virtual std::string getOcpp16KeyMappingsPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelConfigPath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabasePath() const = 0;
     [[nodiscard]] virtual std::string getDeviceModelDatabaseMigrationPath() const = 0;
@@ -165,7 +166,8 @@ private:
     ConfigInterface& mv_config;
     provides_t mv_provides;
     requires_t mv_requires;
-    module::MREC_ERROR_MAP_TYPE mv_mrec_error_map;
+    std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> mv_custom_error_mapping;
+    std::filesystem::path mv_custom_error_mapping_path;
 
     std::atomic<std::int32_t> mv_event_id_counter{0};
     std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
@@ -232,6 +234,15 @@ private:
     std::mutex recompute_mutex;
     std::atomic_bool recompute_pending{false};
 
+    struct ResetState {
+        std::thread thread;
+        bool running{false};
+    };
+    // Runs the stop and system reset of an accepted Reset off the caller's thread, which on OCPP 2.x is
+    // libocpp's websocket receive thread; stopping the charge point may join that thread.
+    everest::lib::util::monitor<ResetState> m_reset;
+    void join_reset_thread();
+
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
     bool enqueue_if_not_started(std::int32_t evse_id, const Event& event);
 
@@ -241,11 +252,9 @@ public:
     GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
                 const provides_t& provides, const requires_t& requires) :
         mv_charge_point(charge_point), mv_info(info), mv_config(config), mv_provides(provides), mv_requires(requires) {
-        // loaded before the charge point starts so map_error() never sees an empty map
-        const auto map_path = mv_config.getCustomMrecErrorMapPath();
-        mv_mrec_error_map =
-            (map_path.empty()) ? module::MREC_ERROR_MAP : module::load_mrec_error_map_overrides(map_path);
     }
+
+    ~GenericOcpp() override;
 
     void set_mode(GenericChargePointInterface::modes_t new_mode) {
         mv_mode = new_mode;
@@ -340,11 +349,13 @@ protected:
     void report_inoperative(std::int32_t evse_id, const EventInfo& event);
 
     void init_check_energy_sink();
+    void init_custom_error_mapping();
     void init_error_handlers();
     void init_evse_maps();
     void init_subscribe();
     void init_evse_subscribe();
 
+    void ready_custom_error_mapping(const GenericChargePointInterface::ConnectorStructure& evse_connector_structure);
     void ready_event_queue();
     void ready_module_configuration();
     void ready_transaction_handler();
@@ -444,7 +455,7 @@ protected:
     cb_validate_network_profile(const ocpp::v2::NetworkConnectionProfile& network_connection_profile) override;
     void cb_variable_set(const ocpp::v2::SetVariableData& set_variable_data) override;
     void cb_waiting_for_external_ready(std::int32_t evse_id, bool ready) override;
-    bool map_error(const std::string& error, std::string& updated_error) override;
+    std::shared_ptr<const module::custom_error_mapping::CustomFileErrorMapping> custom_error_mapping() const override;
     void transaction_add(std::int32_t evse_id,
                          const std::shared_ptr<module::TransactionData>& transaction_data) override;
     std::shared_ptr<module::TransactionData> transaction_data(std::int32_t evse_id) override;
@@ -525,6 +536,9 @@ protected:
     std::optional<types::energy::ScheduleReqEntry>
     create_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
                         ocpp::v2::ChargingRateUnitEnum unit);
+    std::optional<types::energy::ScheduleReqEntry>
+    create_export_limits_entry(const std::string& timestamp, const ocpp::v2::EnhancedChargingSchedulePeriod& period,
+                               ocpp::v2::ChargingRateUnitEnum unit);
     std::optional<types::energy::ScheduleSetpointEntry>
     create_setpoint_entry(std::int32_t setpoint_priority, const std::string& timestamp,
                           const ocpp::v2::EnhancedChargingSchedulePeriod& period, ocpp::v2::ChargingRateUnitEnum unit);

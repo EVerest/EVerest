@@ -24,7 +24,6 @@ enum class ManagerState {
     Initializing,
     StartingModules,
     Running,
-    RestartRequested,
     CrashShutdownInProgress,
     ShutdownRequested,
     ForceTerminating,
@@ -42,8 +41,7 @@ enum class ModuleStatusAction {
     Running,
     Stopping,
     Stopped,
-    AtRest,
-    RestartTriggered
+    AtRest
 };
 
 /// \brief Total mapping ManagerState -> module status action.
@@ -66,9 +64,6 @@ constexpr ModuleStatusAction module_status_action_for(ManagerState state) {
         return ModuleStatusAction::Starting;
     case ManagerState::Running:
         return ModuleStatusAction::Running;
-    case ManagerState::RestartRequested:
-        // Admin-requested restart: the modules are draining and will be started again afterwards.
-        return ModuleStatusAction::RestartTriggered;
     case ManagerState::ShutdownRequested:
     case ManagerState::CrashShutdownInProgress:
     case ManagerState::ForceTerminating:

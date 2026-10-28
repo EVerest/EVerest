@@ -60,10 +60,11 @@ void populate_module_info_path_from_runtime_settings(ModuleInfo& mi, const Runti
     mi.paths.etc = rs.etc_dir;
     mi.paths.libexec = rs.modules_dir / mi.name;
     mi.paths.share = rs.data_dir / defaults::MODULES_DIR / mi.name;
+    mi.paths.errors = rs.errors_dir;
 }
 
 BootSource resolve_boot_source(const std::string& config_path, const std::string& db_path, bool reset_from_yaml,
-                               bool db_init) {
+                               bool db_init, const std::string& settings_path, const std::string& user_config_path) {
     if (db_init) {
         EVLOG_warning << "--db-init is deprecated and has no effect: the database wins when its boot slot holds at "
                          "least one module, otherwise the boot slot is seeded from the YAML config. Use "
@@ -76,10 +77,15 @@ BootSource resolve_boot_source(const std::string& config_path, const std::string
     if (reset_from_yaml && config_path.empty()) {
         throw BootException("--reset-from-yaml requires --config; there is no YAML to re-seed from.");
     }
+    if (not user_config_path.empty() && config_path.empty()) {
+        throw BootException("--user-config requires --config; there is no YAML to merge it into.");
+    }
 
     BootSource src;
     src.config_path = config_path;
     src.db_path = db_path;
+    src.settings_path = settings_path;
+    src.user_config_path = user_config_path;
     src.reset_from_yaml = reset_from_yaml;
     if (db_path.empty()) {
         // Also covers "neither --config nor --db": init_config_file("") resolves the default config file if
@@ -239,8 +245,7 @@ DatabaseBootstrap init_database_bootstrap(const ManagerSettings& ms, bool reset_
 ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config) {
     init_prefix_and_data_dir(prefix);
     init_config_file(config);
-    const auto settings = everest::config::parse_settings(this->config.value("settings", json::object()));
-    init_settings(settings);
+    apply_settings("");
 }
 
 ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& config, const std::string& db_path) :
@@ -256,14 +261,72 @@ ManagerSettings::ManagerSettings(const std::string& prefix, const std::string& c
 ManagerSettings::ManagerSettings(WithoutConfig, const std::string& prefix, const std::string& db_path) {
     init_prefix_and_data_dir(prefix);
     init_no_config();
-    // parse_settings({}) yields all-nullopt Settings, so init_settings() uses the compiled-in defaults.
-    const auto settings = everest::config::parse_settings(config.value("settings", json::object()));
-    init_settings(settings);
+    // Without a config there is no settings block, so init_settings() uses the compiled-in defaults.
+    apply_settings("");
 
     if (db_path.length() != 0) {
         db_dir = fs::path(db_path);
     } else {
         db_dir = fs::path(defaults::IN_MEMORY_DB_URI);
+    }
+}
+
+ManagerSettings::ManagerSettings(const std::string& prefix, const BootSource& boot_source) {
+    init_prefix_and_data_dir(prefix);
+    if (boot_source.mode == BootMode::DatabaseOnly) {
+        init_no_config();
+    } else {
+        init_config_file(boot_source.config_path);
+    }
+    if (not boot_source.user_config_path.empty()) {
+        const auto path = fs::absolute(boot_source.user_config_path);
+        if (fs::is_directory(path)) {
+            throw BootException(fmt::format("User provided user-config '{}' is a directory", path.string()));
+        }
+        // The file itself is created on the first runtime configuration write.
+        user_config_file =
+            assert_dir(path.parent_path().string(), "User provided user-config directory") / path.filename();
+    }
+    apply_settings(boot_source.settings_path);
+
+    if (boot_source.db_path.length() != 0) {
+        db_dir = fs::path(boot_source.db_path);
+    } else {
+        db_dir = fs::path(defaults::IN_MEMORY_DB_URI);
+    }
+}
+
+void ManagerSettings::apply_settings(const std::string& settings_file_) {
+    const bool has_settings_block = config.contains("settings");
+    if (settings_file_.empty()) {
+        deprecated_settings_block = has_settings_block;
+        init_settings(everest::config::parse_settings(config.value("settings", json::object())));
+        return;
+    }
+
+    settings_file = assert_file(settings_file_, "User provided settings file");
+    json settings_json = load_yaml(settings_file);
+    if (settings_json == nullptr) {
+        settings_json = json::object();
+    } else if (not settings_json.is_object()) {
+        throw BootException(fmt::format("Settings file '{}' is not an object", settings_file.string()));
+    }
+    settings_block_ignored = has_settings_block;
+
+    everest::config::Settings settings;
+    try {
+        settings = everest::config::parse_settings(settings_json);
+    } catch (const json::exception& e) {
+        throw BootException(fmt::format("Settings file '{}' is invalid: {}", settings_file.string(), e.what()));
+    }
+    init_settings(settings);
+
+    // The schema is looked up in the schemas_dir the settings file itself may have set.
+    auto validator = std::get<1>(load_schema(schemas_dir / "settings.yaml"));
+    try {
+        validator.validate(settings_json);
+    } catch (const std::exception& e) {
+        throw BootException(fmt::format("Settings file '{}' is invalid: {}", settings_file.string(), e.what()));
     }
 }
 
@@ -342,14 +405,6 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         errors_dir = assert_dir(default_errors_dir, "Default error directory");
     }
 
-    if (settings.www_dir.has_value()) {
-        const auto settings_www_dir = get_prefixed_path_from_json(settings.www_dir.value().string(), prefix);
-        www_dir = assert_dir(settings_www_dir, "Config provided www directory");
-    } else {
-        const auto default_www_dir = data_dir / defaults::WWW_DIR;
-        www_dir = assert_dir(default_www_dir, "Default www directory");
-    }
-
     fs::path logging_config_file;
     if (settings.logging_config_file.has_value()) {
         const auto settings_logging_config_file =
@@ -367,17 +422,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         logging_config_file = assert_file(default_logging_config_file, "Default logging config");
     }
 
-    if (settings.controller_port.has_value()) {
-        controller_port = settings.controller_port.value();
-    } else {
-        controller_port = defaults::CONTROLLER_PORT;
-    }
-
-    if (settings.controller_rpc_timeout_ms.has_value()) {
-        controller_rpc_timeout_ms = settings.controller_rpc_timeout_ms.value();
-    } else {
-        controller_rpc_timeout_ms = defaults::CONTROLLER_RPC_TIMEOUT_MS;
-    }
+    deprecated_settings = settings.deprecated_keys;
 
     std::string mqtt_broker_socket_path;
     std::string mqtt_broker_host;
@@ -509,7 +554,7 @@ void ManagerSettings::init_settings(const everest::config::Settings& settings) {
         forward_exceptions = defaults::FORWARD_EXCEPTIONS;
     }
 
-    populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, logging_config_file,
+    populate_runtime_settings(runtime_settings, prefix, etc_dir, data_dir, modules_dir, errors_dir, logging_config_file,
                               telemetry_prefix, telemetry_enabled, validate_schema, forward_exceptions);
     this->modules_dir = modules_dir;
     this->validate_schema = validate_schema;
@@ -588,6 +633,8 @@ void ManagerSettings::init_config_file(const std::string& config_) {
         throw std::runtime_error("Assertion for found config file failed");
     }
 
+    user_config_file = config_file.parent_path() / "user-config" / config_file.filename();
+
     config = load_yaml(config_file);
     if (config == nullptr) {
         EVLOG_info << "Config file is null, treating it as empty";
@@ -603,8 +650,9 @@ void ManagerSettings::init_no_config() {
             "Prefix must be set before initializing the config. Please call init_prefix_and_data_dir() first.");
     }
 
-    EVLOG_info << "Booting without config file, using built-in defaults";
+    EVLOG_info << "Booting without config file";
     config_file.clear();
+    user_config_file.clear();
     config = json::object();
 }
 

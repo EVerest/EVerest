@@ -3,6 +3,7 @@ active_modules:
     module: charger_information_API
     config_module:
       cfg_communication_check_to_s: 0
+      cfg_request_reply_to_s: 5
   probe:
     module: ProbeModule
     connections:

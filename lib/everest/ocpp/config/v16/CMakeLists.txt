@@ -6,8 +6,6 @@ set(CERTS_DIR "../certs/")
 set(MIGRATION_FILES_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/core_migrations")
 set(MIGRATION_FILES_DEVICE_MODEL_LOCATION "${CMAKE_CURRENT_SOURCE_DIR}/../common/device_model_migrations")
 
-include(../CollectMigrationFiles.cmake)
-
 collect_migration_files(
      LOCATION ${MIGRATION_FILES_LOCATION}
      INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/everest/modules/OCPP/core_migrations
@@ -50,7 +48,7 @@ list(APPEND CONFIGS
      config-docker.json
      config-full.json
      config-docker-tls.json
-     ocpp16-custom-config-mappings.yaml
+     ocpp16-custom-key-mappings.yaml
      ../logging.ini
 )
 

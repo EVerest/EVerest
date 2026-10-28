@@ -1,0 +1,15 @@
+[Unit]
+Description=EVerest
+Requires=mosquitto.service
+After=mosquitto.service
+ConditionFileNotEmpty=/etc/everest/config.yaml
+
+[Service]
+Type=simple
+Restart=always
+StateDirectory=everest
+StateDirectoryMode=0700
+ExecStart=/usr/bin/manager --config /etc/everest/config.yaml --db /var/lib/everest/everest.db --settings /etc/everest/settings-mqtt-uds.yaml
+
+[Install]
+WantedBy=multi-user.target

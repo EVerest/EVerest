@@ -541,6 +541,76 @@ TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_accepted) {
               AuthorizationStatusEnum::Accepted);
 }
 
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_offline) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_local_authorize_offline(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() - std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_expired_online) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).WillOnce(Return(std::async(std::launch::deferred, [this]() {
+        return create_example_authorize_response(AuthorizeCertificateStatusEnum::Accepted,
+                                                 AuthorizationStatusEnum::Invalid);
+    })));
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() - std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Invalid);
+}
+
+TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_not_expired) {
+    this->set_auth_ctrlr_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    IdTokenInfo id_token_info_result;
+    id_token_info_result.status = AuthorizationStatusEnum::Accepted;
+    id_token_info_result.cacheExpiryDateTime = ocpp::DateTime(date::utc_clock::now() + std::chrono::seconds(100));
+
+    EXPECT_CALL(this->database_handler_mock, get_local_authorization_list_entry(_))
+        .WillOnce(Return(id_token_info_result));
+
+    IdToken id_token;
+    id_token.type = IdTokenEnumStringType::ISO14443;
+    id_token.idToken = "test_token";
+
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Accepted);
+}
+
 TEST_F(AuthorizationTest, validate_token_local_auth_list_enabled_unknown_no_remote_authorization) {
     // Validate token with the local auth list: unknown because remote authorization is not enabled and token info
     // status is not accepted. Set AuthCtrlr::Enabled to true
@@ -1056,6 +1126,88 @@ TEST_F(AuthorizationTest, validate_token_auth_cache_invalid_post_authorize_enabl
 
     EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
               AuthorizationStatusEnum::Invalid);
+}
+
+TEST_F(AuthorizationTest, validate_token_auth_cache_blocked_offline_tx_for_unknown_id_enabled) {
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    this->set_local_authorize_offline(this->device_model, true);
+    this->set_disable_post_authorize(this->device_model, false);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_offline_tx_for_unknown_id_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    // A token the CSMS rejected is known, so OfflineTxForUnknownIdEnabled must not accept it
+    AuthorizationCacheEntry authorization_cache_entry =
+        create_authorization_cache_entry(AuthorizationStatusEnum::Blocked, true, false, false, 5000);
+
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_))
+        .WillOnce(Return(authorization_cache_entry));
+
+    IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Blocked);
+}
+
+TEST_F(AuthorizationTest, validate_token_auth_cache_unknown_offline_tx_for_unknown_id_enabled) {
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_auth_cache_lifetime(this->device_model, 5000);
+    this->set_local_authorize_offline(this->device_model, true);
+    this->set_disable_post_authorize(this->device_model, false);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_offline_tx_for_unknown_id_enabled(this->device_model, true);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    // C13.FR.04: a token in the Authorization Cache is not an unknown id, even with status Unknown
+    AuthorizationCacheEntry authorization_cache_entry =
+        create_authorization_cache_entry(AuthorizationStatusEnum::Unknown, true, false, false, 5000);
+
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_))
+        .WillOnce(Return(authorization_cache_entry));
+
+    IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
+}
+
+TEST_F(AuthorizationTest, validate_token_auth_cache_unknown_offline_not_cached) {
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->set_local_authorize_offline(this->device_model, true);
+    this->disable_remote_authorization(this->device_model, false);
+    this->set_offline_tx_for_unknown_id_enabled(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(false));
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _)).Times(0);
+
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_)).WillOnce(Return(std::nullopt));
+    // The Unknown answered offline does not come from the CSMS
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _)).Times(0);
+
+    IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
+}
+
+TEST_F(AuthorizationTest, validate_token_auth_cache_no_authorize_response_not_cached) {
+    this->set_auth_cache_enabled(this->device_model, true);
+    this->set_local_auth_list_ctrlr_enabled(this->device_model, false);
+    this->disable_remote_authorization(this->device_model, false);
+    EXPECT_CALL(this->connectivity_manager, is_websocket_connected()).WillRepeatedly(Return(true));
+    ocpp::EnhancedMessage<MessageType> enhanced_message;
+    enhanced_message.offline = true;
+    EXPECT_CALL(mock_dispatcher, dispatch_call_async(_, _))
+        .WillOnce(Return(std::async(std::launch::deferred, [enhanced_message]() { return enhanced_message; })));
+
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_get_entry(_)).WillOnce(Return(std::nullopt));
+    EXPECT_CALL(this->database_handler_mock, authorization_cache_insert_entry(_, _)).Times(0);
+
+    IdToken id_token = get_id_token("test_token", IdTokenEnumStringType::ISO14443);
+    EXPECT_EQ(authorization->validate_token(id_token, std::nullopt, std::nullopt).idTokenInfo.status,
+              AuthorizationStatusEnum::Unknown);
 }
 
 TEST_F(AuthorizationTest, validate_token_auth_cache_cache_expired_and_status_invalid) {
@@ -1837,10 +1989,10 @@ TEST_F(AuthorizationTest, handle_get_local_authorization_list_version_exception)
 
 TEST_F(AuthorizationTest, cache_cleanup_handler) {
     // Test cache cleanup handler happy flow.
-    this->authorization->start_auth_cache_cleanup_thread();
     this->delete_expired_entries_count = 0;
     EXPECT_CALL(this->database_handler_mock, authorization_cache_delete_expired_entries(_))
         .WillRepeatedly(update_count_and_notify(this->delete_expired_entries_count));
+    this->authorization->start_auth_cache_cleanup_thread();
     this->authorization->trigger_authorization_cache_cleanup();
     this->wait_for_calls(1, 0, 0);
 }
@@ -1898,11 +2050,11 @@ TEST_F(AuthorizationTest, cache_cleanup_handler_exceeds_max_storage) {
     EXPECT_CALL(this->database_handler_mock, authorization_cache_delete_nr_of_oldest_entries(1))
         .WillRepeatedly(update_count_and_notify(this->delete_nr_of_oldest_entries_count));
 
-    this->authorization->start_auth_cache_cleanup_thread();
-
     this->delete_expired_entries_count = 0;
     this->delete_nr_of_oldest_entries_count = 0;
     this->get_binary_size_count = 0;
+
+    this->authorization->start_auth_cache_cleanup_thread();
 
     this->authorization->trigger_authorization_cache_cleanup();
     this->wait_for_calls(1, 6, 3);

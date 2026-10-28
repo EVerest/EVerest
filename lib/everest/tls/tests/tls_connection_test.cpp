@@ -50,7 +50,8 @@ tls::Server::OptionalConfig ssl_init() {
     ref.trust_anchor_file = "server_root_cert.pem";
     ref.ocsp_response_files = {"ocsp_response.der", "ocsp_response.der"};
     server_config->host = "127.0.0.1";
-    server_config->service = "8444";
+    // update() does not change the listen socket, so this is never bound
+    server_config->service = "0";
     server_config->ipv6_only = false;
     server_config->verify_client = false;
     server_config->io_timeout_ms = 500;
@@ -70,6 +71,27 @@ TEST_F(TlsTest, StartStop) {
     if (server_thread.joinable()) {
         server_thread.join();
     }
+}
+
+TEST_F(TlsTest, BoundPortReportsEphemeralPort) {
+    // Without this the fixture cannot tell the client where to connect, since
+    // the OS picks the port.
+    EXPECT_EQ(server.bound_port(), 0); // nothing bound yet
+    start();
+    EXPECT_NE(server.bound_port(), 0);
+}
+
+TEST_F(TlsTest, StopBeforeServeIsIgnored) {
+    // EvseV2G and IsoMux stop an initialised server before every serve(), which must not end that serve()
+    using state_t = tls::Server::state_t;
+    const auto res = server.init(server_config, nullptr);
+    ASSERT_TRUE((res == state_t::init_complete) || (res == state_t::init_socket));
+    server.stop();
+    server_thread = std::thread(&run_server, std::ref(server));
+    server.wait_running();
+
+    connect();
+    EXPECT_TRUE(is_set(flags_t::connected));
 }
 
 TEST_F(TlsTest, StartConnectDisconnect) {
@@ -896,7 +918,7 @@ TEST_F(TlsTest, TCKeysInvalid) {
     client.reset();
     // localhost works in some cases but not in the CI pipeline for IPv6
     // use ip6-localhost
-    auto connection = client.connect("127.0.0.1", "8444", false, 1000);
+    auto connection = client.connect("127.0.0.1", server_service().c_str(), false, 1000);
     if (connection) {
         if (connection->connect() == result_t::success) {
             set(ClientTest::flags_t::connected);
@@ -939,8 +961,11 @@ TEST_F(TlsTest, SuspendToRunning) {
     EXPECT_EQ(server.state(), state_t::init_socket);
     EXPECT_TRUE(server.update(server_config));
     EXPECT_EQ(server.state(), state_t::init_complete);
-    // should switch to running after a timeout
-    std::this_thread::sleep_for(std::chrono::milliseconds(tls::c_serve_timeout_ms + 100));
+    // should switch to running once the accept poll() times out, so allow for a slow server thread
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(3 * tls::c_serve_timeout_ms);
+    while ((server.state() != state_t::running) && (std::chrono::steady_clock::now() < deadline)) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+    }
     EXPECT_EQ(server.state(), state_t::running);
 }
 

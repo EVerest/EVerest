@@ -40,7 +40,7 @@ struct SimulationData {
     types::slac::State slac_state{types::slac::State::UNMATCHED};
     std::optional<size_t> sleep_ticks_left{};
 
-    bool v2g_finished{false};
+    bool v2g_session_active{false};
     bool iso_stopped{false};
     bool iso_charger_paused{false};
     size_t evse_maxcurrent{0};
@@ -64,6 +64,7 @@ struct SimulationData {
 
     double battery_charge_wh{0};
     double battery_capacity_wh{0};
+    bool full_soc_pause_requested{false};
 
     types::board_support_common::Event actual_bsp_event{types::board_support_common::Event::Disconnected};
 };

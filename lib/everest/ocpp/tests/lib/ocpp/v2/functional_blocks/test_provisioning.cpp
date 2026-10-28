@@ -5,6 +5,7 @@
 #include <gtest/gtest.h>
 
 #include <atomic>
+#include <future>
 #include <optional>
 
 #include <boost/asio/io_context.hpp>
@@ -14,6 +15,7 @@
 #include <device_model_test_helper.hpp>
 #include <evse_manager_fake.hpp>
 #include <evse_security_mock.hpp>
+#include <firmware_update_mock.hpp>
 #include <message_dispatcher_mock.hpp>
 #include <mocks/database_handler_mock.hpp>
 #include <ocsp_updater_mock.hpp>
@@ -29,6 +31,7 @@
 #include <ocpp/v2/functional_blocks/security.hpp>
 #include <ocpp/v2/functional_blocks/tariff_and_cost.hpp>
 #include <ocpp/v2/functional_blocks/transaction.hpp>
+#include <ocpp/v2/messages/BootNotification.hpp>
 #include <ocpp/v2/messages/Get15118EVCertificate.hpp>
 #include <ocpp/v2/messages/Reset.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
@@ -134,6 +137,7 @@ protected:
     ::testing::NiceMock<SecurityMock> security;
     ::testing::NiceMock<DiagnosticsMock> diagnostics;
     ::testing::NiceMock<TransactionMock> transaction;
+    ::testing::NiceMock<FirmwareUpdateMock> firmware_update;
     std::atomic<RegistrationStatusEnum> registration_status{RegistrationStatusEnum::Accepted};
 
     boost::asio::io_context io_context;
@@ -146,11 +150,23 @@ protected:
     std::unique_ptr<TariffAndCost> tariff_and_cost;
     std::unique_ptr<Provisioning> provisioning;
 
+    std::function<bool(json)> send_callback{[](json) { return false; }};
+
     // Controls / observations for the reset path.
     bool allow_reset{true};
     std::optional<std::optional<std::int32_t>> reset_callback_evse_id;
 
     ProvisioningResetTest() : dm_helper() {
+        create_functional_blocks();
+    }
+
+    /// \brief Creates the functional blocks on the device model that dm_helper currently holds. Call again after a
+    ///        dm_helper function that creates the device model anew.
+    void create_functional_blocks() {
+        provisioning.reset();
+        tariff_and_cost.reset();
+        message_queue.reset();
+        fb_context.reset();
         dm = dm_helper.get_device_model();
         evse_manager = std::make_unique<EvseManagerFake>(1);
 
@@ -159,7 +175,8 @@ protected:
                                                      db_handler, evse_security, component_state_manager, ocpp_version);
 
         MessageQueueConfig<MessageType> mq_config;
-        message_queue = std::make_unique<MessageQueue<MessageType>>([](json) { return false; }, mq_config, nullptr);
+        message_queue = std::make_unique<MessageQueue<MessageType>>(
+            [this](json message) { return this->send_callback(message); }, mq_config, nullptr);
 
         tariff_and_cost = std::make_unique<TariffAndCost>(*fb_context, meter_values, tariff_message_cb,
                                                           set_running_cost_cb, default_price_cb, io_context);
@@ -173,7 +190,7 @@ protected:
             [this](std::optional<std::int32_t> evse_id, auto) { this->reset_callback_evse_id = evse_id; },
             [](auto, auto) { return RequestStartStopStatusEnum::Accepted; }, // stop_transaction
             std::nullopt,                                                    // variable_changed_callback
-            *tariff_and_cost, registration_status);
+            *tariff_and_cost, registration_status, firmware_update);
     }
 
     ocpp::EnhancedMessage<MessageType> make_reset_message(ResetEnum type,
@@ -188,6 +205,27 @@ protected:
         return enhanced_message;
     }
 };
+
+class ProvisioningRegistrationTest : public ProvisioningResetTest,
+                                     public ::testing::WithParamInterface<RegistrationStatusEnum> {};
+
+TEST_P(ProvisioningRegistrationTest, FirmwareNotifiedOnlyWhenRegistrationAccepted) {
+    const auto status = GetParam();
+    EXPECT_CALL(firmware_update, on_registration_accepted()).Times(status == RegistrationStatusEnum::Accepted ? 1 : 0);
+    BootNotificationResponse response;
+    response.status = status;
+    response.currentTime = DateTime();
+    response.interval = 86400;
+    ocpp::EnhancedMessage<MessageType> message;
+    message.messageType = MessageType::BootNotificationResponse;
+    message.message = ocpp::CallResult<BootNotificationResponse>(response, MessageId("boot"));
+    provisioning->handle_message(message);
+    EXPECT_EQ(registration_status, status);
+}
+
+INSTANTIATE_TEST_SUITE_P(BootResponses, ProvisioningRegistrationTest,
+                         ::testing::Values(RegistrationStatusEnum::Accepted, RegistrationStatusEnum::Pending,
+                                           RegistrationStatusEnum::Rejected));
 
 // TC_A_10_CS: Reset(Immediate) whole-station accepted with no active transaction. Auto-reconnect must be suppressed
 // (via suppress_reconnect()) so the CSMS-side close after ResetResponse is not redialed before the reboot. The live
@@ -237,6 +275,26 @@ TEST_F(ProvisioningResetTest, RejectedResetDoesNotSuppressReconnect) {
     EXPECT_FALSE(reset_callback_evse_id.has_value()) << "rejected reset must not fire the reset callback";
 }
 
+using ProvisioningGetVariablesTest = ProvisioningResetTest;
+
+// B06.FR.13: a supported attribute without a value is reported as an empty string
+TEST_F(ProvisioningGetVariablesTest, AttributeWithoutValueIsAcceptedWithEmptyValue) {
+    ASSERT_TRUE(dm_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt, std::nullopt,
+                                                            "OrganizationName", std::nullopt, AttributeEnum::Actual));
+    create_functional_blocks();
+    GetVariableData data;
+    data.component = ControllerComponentVariables::OrganizationName.component;
+    data.variable = ControllerComponentVariables::OrganizationName.variable.value();
+
+    const auto results = provisioning->get_variables({data});
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].attributeStatus, GetVariableStatusEnum::Accepted);
+    ASSERT_TRUE(results[0].attributeValue.has_value());
+    EXPECT_EQ(results[0].attributeValue.value().get(), "");
+    EXPECT_EQ(results[0].attributeType, AttributeEnum::Actual);
+}
+
 // Hot reconfiguration of the per-slot MessageTimeout: a write to the active NetworkConfiguration
 // slot must be applied to the live connection immediately (no reconnect), a write to any other
 // slot is only picked up on the next connect.
@@ -271,6 +329,66 @@ TEST_F(ProvisioningVariableChangedTest, MessageTimeoutOnInactiveSlotIsDeferred) 
     set_active_network_profile(*dm, "1");
     EXPECT_CALL(connectivity_manager, set_websocket_connection_options_without_reconnect()).Times(0);
     provisioning->on_variable_changed(make_slot_message_timeout("2", "45"));
+}
+
+// A BasicAuthPassword change on a security profile below 3 reconnects with the new password only once no CALL is in
+// flight, so the answer to that CALL is not lost with the old connection.
+class ProvisioningBasicAuthPasswordTest : public ProvisioningResetTest {
+protected:
+    std::promise<void> call_sent;
+
+    ProvisioningBasicAuthPasswordTest() {
+        const auto& security_profile = ControllerComponentVariables::SecurityProfile;
+        EXPECT_EQ(dm->set_value(security_profile.component, security_profile.variable.value(), AttributeEnum::Actual,
+                                "1", "test", true),
+                  SetVariableStatusEnum::Accepted);
+
+        send_callback = [this](json) {
+            this->call_sent.set_value();
+            return true;
+        };
+        message_queue->start();
+        message_queue->set_registration_status_accepted();
+        message_queue->resume(std::chrono::seconds(0));
+    }
+
+    ~ProvisioningBasicAuthPasswordTest() override {
+        message_queue->stop();
+    }
+
+    static SetVariableData make_basic_auth_password(const std::string& value) {
+        SetVariableData data;
+        data.component = ControllerComponentVariables::BasicAuthPassword.component;
+        data.variable = ControllerComponentVariables::BasicAuthPassword.variable.value();
+        data.attributeValue = value;
+        return data;
+    }
+};
+
+TEST_F(ProvisioningBasicAuthPasswordTest, PasswordAppliedAtOnceWhenNothingInFlight) {
+    std::promise<void> key_set;
+    auto key_set_future = key_set.get_future();
+    EXPECT_CALL(connectivity_manager, set_websocket_authorization_key("0123456789abcdef"))
+        .WillOnce(::testing::Invoke([&key_set](const std::string&) { key_set.set_value(); }));
+    provisioning->on_variable_changed(make_basic_auth_password("0123456789abcdef"));
+    EXPECT_EQ(key_set_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+}
+
+TEST_F(ProvisioningBasicAuthPasswordTest, PasswordAppliedAfterCallInFlightIsAnswered) {
+    std::promise<std::string> key_set;
+    auto key_set_future = key_set.get_future();
+    EXPECT_CALL(connectivity_manager, set_websocket_authorization_key(::testing::_))
+        .WillOnce(::testing::Invoke([&key_set](const std::string& key) { key_set.set_value(key); }));
+
+    message_queue->push_call(json{2, "in-flight", "Heartbeat", json::object()});
+    ASSERT_EQ(call_sent.get_future().wait_for(std::chrono::seconds(1)), std::future_status::ready);
+
+    provisioning->on_variable_changed(make_basic_auth_password("0123456789abcdef"));
+    EXPECT_EQ(key_set_future.wait_for(std::chrono::milliseconds(100)), std::future_status::timeout);
+
+    message_queue->receive(json{3, "in-flight", {{"currentTime", DateTime().to_rfc3339()}}}.dump());
+    ASSERT_EQ(key_set_future.wait_for(std::chrono::seconds(1)), std::future_status::ready);
+    EXPECT_EQ(key_set_future.get(), "0123456789abcdef");
 }
 
 } // namespace

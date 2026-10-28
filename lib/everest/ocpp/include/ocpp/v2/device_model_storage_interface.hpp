@@ -25,7 +25,7 @@ public:
 
     /// \brief Gets the device model from the device model interface
     /// \return std::map<Component, std::map<Variable, VariableMetaData>> that will contain a full representation of the
-    /// device model except for the VariableAttribute(s) of each Variable.
+    /// device model, including the VariableAttribute(s) of each Variable with their values.
     virtual DeviceModelMap get_device_model() = 0;
 
     /// \brief Gets a VariableAttribute from the storage if present
