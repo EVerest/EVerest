@@ -41,17 +41,17 @@ void evse_board_supportImpl::handle_pwm_on(double& value) {
 
 void evse_board_supportImpl::handle_cp_state_X1() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("cp_state_X1");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void evse_board_supportImpl::handle_cp_state_F() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("cp_state_F");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void evse_board_supportImpl::handle_cp_state_E() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("cp_state_E");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void evse_board_supportImpl::handle_allow_power_on(types::evse_board_support::PowerOnOff& value) {

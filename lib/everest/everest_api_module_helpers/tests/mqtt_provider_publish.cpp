@@ -17,6 +17,10 @@ using everest::lib::API::Mqtt::ValidatingMqttProxy;
 [[maybe_unused]] constexpr auto proxy_publishes_string_literals =
     static_cast<void (ValidatingMqttProxy::*)(const std::string&, const char*)>(&ValidatingMqttProxy::publish);
 
+// fails to compile if the overrides in ValidatingMqttProxy hide the overload without data
+[[maybe_unused]] constexpr auto proxy_publishes_without_data =
+    static_cast<void (ValidatingMqttProxy::*)(const std::string&)>(&ValidatingMqttProxy::publish);
+
 class RecordingMqttProvider : public MqttProviderInterface {
 public:
     using MqttProviderInterface::publish;
@@ -64,6 +68,18 @@ TEST(MqttProviderInterface, empty_string_literal_is_published_as_string) {
     EXPECT_EQ(provider.string_calls, 1);
     EXPECT_EQ(provider.bool_calls, 0);
     EXPECT_EQ(provider.last_string, "");
+}
+
+TEST(MqttProviderInterface, publish_without_data_sends_empty_object) {
+    RecordingMqttProvider provider;
+    MqttProviderInterface& mqtt = provider;
+
+    mqtt.publish("topic");
+
+    EXPECT_EQ(provider.string_calls, 1);
+    EXPECT_EQ(provider.bool_calls, 0);
+    EXPECT_EQ(provider.last_topic, "topic");
+    EXPECT_EQ(provider.last_string, "{}");
 }
 
 TEST(MqttProviderInterface, bool_is_published_as_bool) {

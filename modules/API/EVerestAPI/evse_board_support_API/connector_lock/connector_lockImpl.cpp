@@ -16,12 +16,12 @@ void connector_lockImpl::ready() {
 
 void connector_lockImpl::handle_lock() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("lock");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void connector_lockImpl::handle_unlock() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("unlock");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 } // namespace connector_lock

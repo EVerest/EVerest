@@ -22,6 +22,11 @@ public:
         publish(topic, std::string{data});
     }
 
+    // a message without data is an empty JSON object, never an empty payload
+    void publish(const std::string& topic) {
+        publish(topic, std::string{"{}"});
+    }
+
     virtual Everest::UnsubscribeToken subscribe(const std::string& topic,
                                                 std::function<void(std::string)> handler) const = 0;
 };
