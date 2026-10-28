@@ -449,7 +449,7 @@ components:
         id_token is placed will be withdrawn  If both parameters are given, the granted
         authorization for the given EVSE will be withdrawn, if the placed id_token matches
         the given id_token. If no parameter is given, all granted authorizations for all EVSEs
-        will be removed
+        will be removed. If a transaction is running on an affected EVSE, it is stopped.
       type: object
       additionalProperties: true
       properties:
@@ -476,7 +476,9 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

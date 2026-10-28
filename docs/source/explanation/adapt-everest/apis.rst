@@ -171,11 +171,19 @@ available and in good working conditions. For this reason, a
 bidirectional communication check is available.
 
 EVerest APIs sends *heartbeat* messages periodically
-(*cfg_heartbeat_interval_ms* - with negative values disabling heartbeat
+(*cfg_heartbeat_interval_ms* - with values of zero or less disabling heartbeat
 messages) and on the other hand requires the clients to send
 *communication_check* messages within the timeout interval specified
 (*cfg_communication_check_to_s* - with negative values disabling the
 requirement for these messages).
+
+If no *communication_check* arrives in time, the API module raises a
+*CommunicationFault*, which the next *true* clears. Sending *false* switches
+the check off until the module restarts.
+
+To clear an error raised through an API, send *clear_error* with the same type
+and sub type. Numbers in API payloads are 32-bit floats, so very large values
+lose precision.
 
 In situations where a request/reply pattern is implemented, the timeout
 for a response can be configured (*cfg_request_reply_to_s* - these timeouts

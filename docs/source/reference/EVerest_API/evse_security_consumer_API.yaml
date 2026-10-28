@@ -109,14 +109,14 @@ operations:
       $ref: '#/channels/receive_reply_get_leaf_certificate_info'
   send_request_get_verify_location:
     title: >-
-      Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash for
-      that directory
+      Command to get the path of the CA certificates for verification: the bundle file if the CA store is a file,
+      otherwise the directory (c_rehash is invoked on it)
     action: send
     channel:
       $ref: '#/channels/send_request_get_verify_location'
     description: >-
-      Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash for
-      that directory
+      Command to get the path of the CA certificates for verification: the bundle file if the CA store is a file,
+      otherwise the directory (c_rehash is invoked on it)
     reply:
       address:
         location: $message.header#/replyTo
@@ -226,11 +226,11 @@ components:
     send_request_get_verify_location:
       name: send_request_get_verify_location
       title: >-
-        Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash
-        for that directory
+        Command to get the path of the CA certificates for verification: the bundle file if the CA store is a file,
+        otherwise the directory (c_rehash is invoked on it)
       summary: >-
-        Command to get the file path of the CA root directory that can be used for verification. Will also invoke c_rehash
-        for that directory
+        Command to get the path of the CA certificates for verification: the bundle file if the CA store is a file,
+        otherwise the directory (c_rehash is invoked on it)
       contentType: application/json
       payload:
         type: object
@@ -256,10 +256,11 @@ components:
     receive_reply_get_verify_location:
       name: receive_reply_get_verify_location
       title: Reply to get verify location request
-      summary: Reply to get verify location
-      contentType: application/json
+      summary: >-
+        Reply to get verify location. The payload is the path as plain text, not a JSON string.
+      contentType: text/plain
       payload:
-        description: The path of the CA certificates directory
+        description: Path of the CA bundle file or CA directory, as plain text
         type: string
       examples:
       - summary: 'Return the CA root directory'
@@ -442,5 +443,5 @@ components:
     CommunicationCheck:
       type: boolean
       description: >-
-        Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop
-        communication check
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.

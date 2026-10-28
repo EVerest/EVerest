@@ -417,12 +417,10 @@ components:
     send_capabilities:
       name: send_capabilities
       title: 'Send hardware capabilities'
-      summary:  >-
-        Hardware capabilities/limits. Initially EvseManager will call get_hw_capabilities once to fetch the
-        limits and caches the limits internally. The BSP module does not have to publish this variable at all,
-        then the initially fetched capabilities will be used. The BSP may publish this variable to update
-        limits in case they change during runtime, e.g. if the maximum current changes because the hardware
-        gets too hot.
+      summary: >-
+        Hardware capabilities/limits. Publish them once after start, before the first charging session: EVerest
+        does not offer current before it has them. Publish them again whenever a limit changes, e.g. when the
+        maximum current drops because the hardware gets too hot.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/HardwareCapabilities'
@@ -786,6 +784,10 @@ components:
         - VendorError: 'Vendor specific error code. Will stop charging session.'
         - VendorWarning: 'Vendor specific error code. Charging may continue.'
 
+        The connector lock errors are raised on the connector_lock interface, Selftest, DC and AC on ac_rcd, all
+        others on evse_board_support. Only MREC3HighTemperature, MREC18CableOverTempDerate and VendorWarning let
+        charging continue.
+
       type: string
       enum:
         - DiodeFault
@@ -858,7 +860,9 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

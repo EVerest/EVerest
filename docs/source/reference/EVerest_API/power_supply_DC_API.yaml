@@ -155,6 +155,9 @@ components:
       name: receive_mode
       title: 'Receive mode'
       summary: 'Receive the requested mode for DC power supply and the current charging phase.'
+      description: >-
+        EVerest requests Export with charging_phase CableCheck, then PreCharge, then Charging, and Off after each
+        phase. Keep the last setpoint while Off.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ModeRequest'
@@ -162,6 +165,9 @@ components:
       name: receive_export_voltage_current
       title: 'Receive export voltage / current'
       summary: 'Receive the requested voltage and current when exporting energy to the car.'
+      description: >-
+        Arrives shortly before the mode request. During CableCheck and PreCharge the current is at least 2 A. If
+        the voltage does not reach the setpoint within 10 s, the cable check fails.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -177,6 +183,8 @@ components:
       name: send_voltage_current
       title: 'Send voltage / current'
       summary: 'Current value of voltage (V) and current (A).'
+      description: >-
+        Publish at least once per second (4 Hz recommended), also when the values did not change.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -189,6 +197,7 @@ components:
       name: send_mode
       title: 'Send mode'
       summary: 'Current mode of DC power supply.'
+      description: Informational; EVerest does not act on it.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Mode'
@@ -480,6 +489,7 @@ components:
         If they cannot be sent to the hardware, cache the last values received.
         Once the PSU is back on-line (e.g. after a CommunicationFault), set the last mode and voltage/current
         values and only after that clear the error.
+        clear_error must repeat the type and sub_type of the raise.
       type: object
       additionalProperties: true
       required:
@@ -508,7 +518,9 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.
 
     HeartBeatId:
       type: integer
