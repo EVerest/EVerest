@@ -948,9 +948,17 @@ void EvseManager::ready() {
                 Everest::scoped_lock_timeout lock(ev_info_mutex,
                                                   Everest::MutexDescription::EVSE_subscribe_dc_ev_maximum_limits);
 
-                ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
-                ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
-                ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                // Optional in CurrentDemandReq (ISO 15118-2 Table 55, DIN SPEC 70121): an omitted limit keeps the
+                // one negotiated in ChargeParameterDiscovery.
+                if (l.dc_ev_maximum_current_limit.has_value()) {
+                    ev_info.maximum_current_limit = l.dc_ev_maximum_current_limit;
+                }
+                if (l.dc_ev_maximum_power_limit.has_value()) {
+                    ev_info.maximum_power_limit = l.dc_ev_maximum_power_limit;
+                }
+                if (l.dc_ev_maximum_voltage_limit.has_value()) {
+                    ev_info.maximum_voltage_limit = l.dc_ev_maximum_voltage_limit;
+                }
                 p_evse->publish_ev_info(ev_info);
 
                 // Update limits for over voltage monitoring
