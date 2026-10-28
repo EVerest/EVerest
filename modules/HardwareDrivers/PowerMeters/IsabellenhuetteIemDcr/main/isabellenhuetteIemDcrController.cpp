@@ -2,6 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 
 #include "isabellenhuetteIemDcrController.hpp"
+#include <algorithm>
 #include <stdexcept>
 namespace module::main {
 
@@ -417,16 +418,19 @@ IsaIemDcrController::helper_get_string_from_OCMFIdentificationType(types::powerm
     return result;
 }
 
-std::chrono::minutes IsaIemDcrController::helper_convert_timezone(std::string& timezone) {
-    const char sign_char = timezone[0];
-    const int offset_hours = std::stoi(timezone.substr(1, 2));
-    const int offset_minutes = std::stoi(timezone.substr(3, 2));
-    const std::chrono::minutes time_offset = std::chrono::hours(offset_hours) + std::chrono::minutes(offset_minutes);
-    if (sign_char == '+') {
-        return time_offset;
-    } else {
-        return -time_offset;
+std::chrono::minutes IsaIemDcrController::helper_convert_timezone(const std::string& timezone) {
+    const auto is_digit = [](char c) { return c >= '0' and c <= '9'; };
+    if (timezone.size() != 5 or (timezone[0] != '+' and timezone[0] != '-') or
+        not std::all_of(timezone.begin() + 1, timezone.end(), is_digit)) {
+        throw std::invalid_argument("timezone must be +HHMM or -HHMM, e.g. +0100, but is \"" + timezone + "\"");
     }
+    const int offset_hours = (timezone[1] - '0') * 10 + (timezone[2] - '0');
+    const int offset_minutes = (timezone[3] - '0') * 10 + (timezone[4] - '0');
+    if (offset_hours > 23 or offset_minutes > 59) {
+        throw std::invalid_argument("timezone offset out of range: \"" + timezone + "\"");
+    }
+    const std::chrono::minutes time_offset = std::chrono::hours(offset_hours) + std::chrono::minutes(offset_minutes);
+    return timezone[0] == '+' ? time_offset : -time_offset;
 }
 
 bool IsaIemDcrController::helper_is_daylight_saving_time() {
