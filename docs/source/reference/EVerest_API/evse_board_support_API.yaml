@@ -499,9 +499,13 @@ components:
       contentType: application/json
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string

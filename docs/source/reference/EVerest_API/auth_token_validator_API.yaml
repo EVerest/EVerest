@@ -106,10 +106,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string

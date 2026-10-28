@@ -6,6 +6,7 @@
 
 #include <gtest/gtest.h>
 
+#include <optional>
 #include <string>
 
 namespace {
@@ -80,6 +81,30 @@ TEST(MqttProviderInterface, publish_without_data_sends_empty_object) {
     EXPECT_EQ(provider.bool_calls, 0);
     EXPECT_EQ(provider.last_topic, "topic");
     EXPECT_EQ(provider.last_string, "{}");
+}
+
+TEST(MqttProviderInterface, reply_is_published_on_reply_to) {
+    RecordingMqttProvider provider;
+    MqttProviderInterface& mqtt = provider;
+
+    mqtt.publish_reply(std::optional<std::string>{"reply/topic"}, "null");
+    mqtt.publish_reply(std::optional<std::string>{"reply/topic"}, true);
+
+    EXPECT_EQ(provider.string_calls, 1);
+    EXPECT_EQ(provider.bool_calls, 1);
+    EXPECT_EQ(provider.last_topic, "reply/topic");
+    EXPECT_EQ(provider.last_string, "null");
+}
+
+TEST(MqttProviderInterface, reply_without_reply_to_is_discarded) {
+    RecordingMqttProvider provider;
+    MqttProviderInterface& mqtt = provider;
+
+    mqtt.publish_reply(std::nullopt, "null");
+    mqtt.publish_reply(std::nullopt, true);
+
+    EXPECT_EQ(provider.string_calls, 0);
+    EXPECT_EQ(provider.bool_calls, 0);
 }
 
 TEST(MqttProviderInterface, bool_is_published_as_bool) {

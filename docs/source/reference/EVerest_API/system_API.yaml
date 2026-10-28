@@ -291,10 +291,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -320,10 +323,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -352,10 +358,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -381,10 +390,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -408,9 +420,13 @@ components:
       summary:  Call to get the boot reason
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -436,10 +452,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string

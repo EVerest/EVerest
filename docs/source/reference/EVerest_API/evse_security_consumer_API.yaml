@@ -158,9 +158,10 @@ components:
             properties:
               replyTo:
                 type: string
+                minLength: 1
                 description: >-
-                  Address to send the response to. If this information is missing, the command will still be accepted, but
-                  no response will be sent.
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
           payload:
             $ref: '#/components/schemas/CaCertificateType'
       examples:
@@ -195,9 +196,10 @@ components:
             properties:
               replyTo:
                 type: string
+                minLength: 1
                 description: >-
-                  Address to send the response to. If this information is missing, the command will still be accepted, but
-                  no response will be sent.
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
           payload:
             $ref: '#/components/schemas/GetLeafCertificateInfoRequest'
       examples:
@@ -242,9 +244,10 @@ components:
             properties:
               replyTo:
                 type: string
+                minLength: 1
                 description: >-
-                  Address to send the response to. If this information is missing, the command will still be accepted, but
-                  no response will be sent.
+                  Address to send the response to. Omit it to discard the response; if present, it must be a
+                  valid MQTT topic without wildcards.
           payload:
             $ref: '#/components/schemas/CaCertificateType'
       examples:

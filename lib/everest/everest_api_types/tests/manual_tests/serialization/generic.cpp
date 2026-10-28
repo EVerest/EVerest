@@ -5,6 +5,7 @@
 #include "everest_api_types/generic/codec.hpp"
 #include "everest_api_types/utilities/codec.hpp"
 #include "everest_api_types/utilities/constants.hpp"
+#include "everest_api_types/utilities/request_reply.hpp"
 #include "nlohmann/json.hpp"
 #include <gtest/gtest.h>
 #include <string_view>
@@ -134,4 +135,54 @@ TEST(RequestReplyDecoding, rejects_payload_nested_deeper_than_limit) {
     EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(max_json_nesting_depth), msg));
     // Deep enough to overflow the stack when serializing the decoded payload.
     EXPECT_FALSE(everest::lib::API::deserialize(request_with_nested_payload(100000), msg));
+}
+
+TEST(RequestReplyDecoding, missing_reply_to_is_no_reply) {
+    RequestReply msg;
+
+    EXPECT_TRUE(everest::lib::API::deserialize(R"({"payload":{}})", msg));
+    EXPECT_FALSE(msg.replyTo.has_value());
+    EXPECT_TRUE(everest::lib::API::deserialize(R"({"headers":{},"payload":{}})", msg));
+    EXPECT_FALSE(msg.replyTo.has_value());
+}
+
+TEST(RequestReplyDecoding, rejects_reply_to_that_is_not_a_publishable_topic) {
+    RequestReply msg;
+
+    for (const auto* request :
+         {R"({"headers":{"replyTo":""}})", R"({"headers":{"replyTo":"reply/+/topic"}})",
+          R"({"headers":{"replyTo":"reply/#"}})", R"({"headers":{"replyTo":42}})", R"({"headers":"reply/topic"})"}) {
+        EXPECT_FALSE(everest::lib::API::deserialize(request, msg)) << request;
+    }
+}
+
+TEST(RequestReplyEncoding, omits_headers_without_reply_to) {
+    RequestReply rr;
+    rr.payload = "{}";
+
+    auto j = nlohmann::json::parse(serialize(rr));
+
+    EXPECT_FALSE(j.contains("headers"));
+    EXPECT_FALSE(deserialize<RequestReply>(serialize(rr)).replyTo.has_value());
+}
+
+TEST(DeserializeRequest, reply_to_is_optional_but_must_be_publishable_when_present) {
+    using everest::lib::API::deserialize_request;
+    std::optional<std::string> reply_to;
+    int payload = 0;
+
+    EXPECT_TRUE(deserialize_request(R"({"headers":{"replyTo":"reply/topic"},"payload":7})", reply_to, payload));
+    EXPECT_EQ(reply_to, "reply/topic");
+    EXPECT_EQ(payload, 7);
+
+    EXPECT_TRUE(deserialize_request(R"({"payload":7})", reply_to, payload));
+    EXPECT_FALSE(reply_to.has_value());
+
+    EXPECT_TRUE(deserialize_request(R"({})", reply_to));
+    EXPECT_FALSE(reply_to.has_value());
+
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":""},"payload":7})", reply_to, payload));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":"reply/#"}})", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":{"replyTo":42}})", reply_to));
+    EXPECT_FALSE(deserialize_request(R"({"headers":[]})", reply_to));
 }
