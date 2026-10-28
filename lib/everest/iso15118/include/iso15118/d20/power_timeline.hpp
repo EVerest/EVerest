@@ -33,7 +33,8 @@ struct PowerTimeline {
         }
 
     private:
-        // [V2G20-1817]: a total without per phase values is spread evenly over the three phases.
+        // [V2G20-1817]: in a three phase session a total without per phase values is spread evenly over the
+        // three phases.
         template <typename Compare> bool beyond(const Entry& limit, Compare compare) const {
             if (not phase_power_w.has_value() and not limit.phase_power_w.has_value()) {
                 return compare(power_w, limit.power_w);
@@ -57,13 +58,15 @@ struct PowerTimeline {
     std::vector<Entry> entries{};
 
     // The message's TimeAnchor is in microseconds for an EVPowerProfile (Table 103) and milliseconds for a
-    // PowerSchedule (Table 112), so the caller converts it.
-    template <typename Entries> static PowerTimeline from(uint64_t time_anchor_s, const Entries& entries) {
+    // PowerSchedule (Table 112), so the caller converts it. Outside a three phase session only the base element
+    // counts, _L2 and _L3 are ignored [V2G20-1819].
+    template <typename Entries>
+    static PowerTimeline from(uint64_t time_anchor_s, const Entries& entries, bool three_phase) {
         PowerTimeline timeline;
         timeline.time_anchor_s = time_anchor_s;
         for (const auto& entry : entries) {
             const auto power_w = message_20::datatypes::from_RationalNumber(entry.power);
-            if (not entry.power_l2.has_value() and not entry.power_l3.has_value()) {
+            if (not three_phase or (not entry.power_l2.has_value() and not entry.power_l3.has_value())) {
                 timeline.entries.push_back({entry.duration, power_w, std::nullopt});
                 continue;
             }

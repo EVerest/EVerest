@@ -218,8 +218,10 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.session.offered_schedules.clear();
         if (const auto* scheduled = std::get_if<ScheduledResControlMode>(&res.control_mode)) {
-            const auto timeline = [](const dt::PowerSchedule& schedule) {
-                return PowerTimeline::from(schedule.time_anchor / MILLISECONDS_PER_SECOND, schedule.entries);
+            const auto three_phase = m_ctx.session.is_three_phase();
+            const auto timeline = [three_phase](const dt::PowerSchedule& schedule) {
+                return PowerTimeline::from(schedule.time_anchor / MILLISECONDS_PER_SECOND, schedule.entries,
+                                           three_phase);
             };
             for (const auto& tuple : scheduled->schedule_tuple) {
                 OfferedSchedule offered{timeline(tuple.charging_schedule.power_schedule), {}};

@@ -167,6 +167,11 @@ public:
         return selected_services.selected_energy_service == dt::ServiceCategory::AC_DER_SAE;
     }
 
+    [[nodiscard]] bool is_three_phase() const {
+        const auto* ac_connector = std::get_if<dt::AcConnector>(&selected_services.selected_connector);
+        return ac_connector != nullptr and *ac_connector == dt::AcConnector::ThreePhase;
+    }
+
     [[nodiscard]] bool is_dc_charger() const {
         return selected_services.selected_energy_service == dt::ServiceCategory::DC or
                selected_services.selected_energy_service == dt::ServiceCategory::DC_BPT or

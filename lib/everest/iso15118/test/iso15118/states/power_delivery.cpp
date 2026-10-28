@@ -164,6 +164,37 @@ SCENARIO("Power delivery state handling") {
             }
         }
 
+        // The profile follows the slots, shifted by a clock offset: its 11 kW entry overlaps the 0 W slot
+        // (late) or the time before the schedule (early) by that offset.
+        const auto shifted = [&req, &session](int64_t offset_s) {
+            req.power_profile->time_anchor = (ANCHOR_S + offset_s) * d20::MICROSECONDS_PER_SECOND;
+            return d20::state::handle_request(req, session, false, false).response_code;
+        };
+
+        WHEN("the profile's clock is 5 s late") {
+            THEN("the overlap is tolerated: OK") {
+                REQUIRE(shifted(5) == dt::ResponseCode::OK);
+            }
+        }
+
+        WHEN("the profile's clock is 5 s early") {
+            THEN("the overlap is tolerated: OK") {
+                REQUIRE(shifted(-5) == dt::ResponseCode::OK);
+            }
+        }
+
+        WHEN("the profile's clock is 6 s late") {
+            THEN("ResponseCode: FAILED_EVPowerProfileInvalid") {
+                REQUIRE(shifted(6) == dt::ResponseCode::FAILED_EVPowerProfileInvalid);
+            }
+        }
+
+        WHEN("the profile's clock is 6 s early") {
+            THEN("ResponseCode: FAILED_EVPowerProfileInvalid") {
+                REQUIRE(shifted(-6) == dt::ResponseCode::FAILED_EVPowerProfileInvalid);
+            }
+        }
+
         WHEN("the profile is anchored before the offered schedule") {
             req.power_profile->time_anchor = 0;
             req.power_profile->entries = {profile_entry(3600, {11, 3})};

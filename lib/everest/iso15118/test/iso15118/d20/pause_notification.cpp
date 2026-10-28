@@ -76,7 +76,7 @@ SCENARIO("The SECC's pause request in a charge loop") {
         d20::Session session(d20::SelectedServiceParameters(
             dt::ServiceCategory::AC, dt::AcConnector::ThreePhase, dt::ControlMode::Scheduled,
             dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing, 230));
-        session.ev_power_profile = d20::EvPowerProfile{0, {{std::numeric_limits<uint32_t>::max(), false}}};
+        session.ev_power_profile = d20::PowerTimeline{0, {{std::numeric_limits<uint32_t>::max(), 11000.0f}}};
 
         THEN("the pause request is held back [V2G20-1198]") {
             REQUIRE_FALSE(notification.update(true, false, session, feedback));
