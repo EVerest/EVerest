@@ -4,8 +4,10 @@
 
 #include "helper.hpp"
 
+#include <iso15118/d20/state/dc_charge_parameter_discovery.hpp>
 #include <iso15118/d20/state/schedule_exchange.hpp>
 
+#include <iso15118/message/dc_charge_parameter_discovery.hpp>
 #include <iso15118/message/schedule_exchange.hpp>
 
 using namespace iso15118;
@@ -72,6 +74,62 @@ SCENARIO("ISO15118-20 scheduled DC schedule exchange state transitions") {
             const auto& entry = charging_schedule.power_schedule.entries.front();
             REQUIRE(dt::from_RationalNumber(entry.power) == 22000);
             REQUIRE(entry.duration == dt::SCHEDULED_POWER_DURATION_S);
+        }
+    }
+}
+
+SCENARIO("ISO15118-20 DC schedule exchange offers the maximum of the charge parameter discovery") {
+
+    auto evse_setup = create_default_evse_setup();
+    evse_setup.powersupply_limits.charge_limits.power.max = {50, 3};
+    evse_setup.dc_limits.charge_limits.power.max = {50, 3};
+
+    std::optional<d20::PauseContext> pause_ctx{std::nullopt};
+    session::feedback::Callbacks callbacks{};
+
+    auto state_helper = FsmStateHelper(session::SessionConfig(evse_setup), pause_ctx, callbacks);
+    auto& ctx = state_helper.get_context();
+
+    GIVEN("the EVSE limits change between ChargeParameterDiscovery and ScheduleExchange") {
+        ctx.session = d20::Session(d20::SelectedServiceParameters(
+            dt::ServiceCategory::DC, dt::DcConnector::Extended, dt::ControlMode::Scheduled,
+            dt::MobilityNeedsMode::ProvidedByEvcc, dt::Pricing::NoPricing));
+
+        fsm::v2::FSM<d20::StateBase> fsm{ctx.create_state<d20::state::DC_ChargeParameterDiscovery>()};
+
+        message_20::DC_ChargeParameterDiscoveryRequest cpd_req;
+        cpd_req.header.session_id = ctx.session.get_id();
+        cpd_req.header.timestamp = 1691411798;
+        auto& mode = cpd_req.transfer_mode.emplace<message_20::datatypes::DC_CPDReqEnergyTransferMode>();
+        mode.max_charge_power = {50, 3};
+        mode.min_charge_power = {0, 0};
+        mode.max_charge_current = {125, 0};
+        mode.min_charge_current = {0, 0};
+        mode.max_voltage = {400, 0};
+        mode.min_voltage = {0, 0};
+        state_helper.handle_request(cpd_req);
+        REQUIRE(fsm.feed(d20::Event::V2GTP_MESSAGE).transitioned());
+        REQUIRE(fsm.get_current_state_id() == d20::StateID::ScheduleExchange);
+
+        ctx.session_config.powersupply_limits.charge_limits.power.max = {20, 3};
+        ctx.session_config.dc_limits.charge_limits.power.max = {20, 3};
+
+        message_20::ScheduleExchangeRequest se_req;
+        se_req.header.session_id = ctx.session.get_id();
+        se_req.header.timestamp = 1691411798;
+        se_req.max_supporting_points = 12;
+        se_req.control_mode.emplace<dt::Scheduled_SEReqControlMode>();
+        state_helper.handle_request(se_req);
+        fsm.feed(d20::Event::V2GTP_MESSAGE);
+
+        THEN("the offer repeats the ChargeParameterDiscoveryRes maximum, not the limits updated since") {
+            const auto response_message = ctx.get_response<message_20::ScheduleExchangeResponse>();
+            REQUIRE(response_message.has_value());
+            REQUIRE(response_message->response_code == dt::ResponseCode::OK);
+            const auto& schedules =
+                std::get<dt::Scheduled_SEResControlMode>(response_message->control_mode).schedule_tuple;
+            const auto& entry = schedules.front().charging_schedule.power_schedule.entries.front();
+            REQUIRE(dt::from_RationalNumber(entry.power) == 50000);
         }
     }
 }
