@@ -241,6 +241,7 @@ def test_render_description_escapes_and_formats():
     assert "<strong>now</strong>" in out
     assert "<ul><li>one</li><li>two &lt;script&gt;</li></ul>" in out
     assert "<script>" not in out
+    assert str(render_description("**a `b` c** `**d**`")) == "<p><strong>a <code>b</code> c</strong> <code>**d**</code></p>"
 
 
 def _experimental_specs():
