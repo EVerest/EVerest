@@ -9,6 +9,7 @@
 #include "utilities/json_codec_helpers.hpp"
 
 #include "text_message/json_codec.hpp"
+#include "utilities/date_time.hpp"
 #include <cstdint>
 #include <stdexcept>
 
@@ -271,10 +272,10 @@ void from_json(const json& j, DisplayMessage& k) {
         k.state.emplace(j.at("state"));
     }
     if (j.contains("timestamp_from")) {
-        k.timestamp_from.emplace(j.at("timestamp_from"));
+        k.timestamp_from.emplace(date_time_from_json(j.at("timestamp_from")));
     }
     if (j.contains("timestamp_to")) {
-        k.timestamp_to.emplace(j.at("timestamp_to"));
+        k.timestamp_to.emplace(date_time_from_json(j.at("timestamp_to")));
     }
     if (j.contains("identifier_id")) {
         k.identifier_id.emplace(j.at("identifier_id"));

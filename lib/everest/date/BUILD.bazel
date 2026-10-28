@@ -1,0 +1,23 @@
+load("@rules_cc//cc:defs.bzl", "cc_library", "cc_test")
+load("//third-party/bazel/toolchains:defs.bzl", "CROSS_TEST_INCOMPATIBLE")
+
+cc_library(
+    name = "date",
+    srcs = ["src/date.cpp"],
+    hdrs = ["include/everest/date/date.hpp"],
+    copts = ["-std=c++17"],
+    strip_include_prefix = "include",
+    visibility = ["//visibility:public"],
+    deps = ["@com_github_HowardHinnant_date//:date"],
+)
+
+cc_test(
+    name = "date_tests",
+    srcs = ["tests/date_tests.cpp"],
+    copts = ["-std=c++17"],
+    target_compatible_with = CROSS_TEST_INCOMPATIBLE,
+    deps = [
+        ":date",
+        "@googletest//:gtest_main",
+    ],
+)

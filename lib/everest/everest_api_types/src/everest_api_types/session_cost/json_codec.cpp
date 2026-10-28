@@ -11,6 +11,7 @@
 #include "text_message/json_codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/date_time.hpp"
 #include "utilities/json_codec_helpers.hpp"
 
 #include <cstdint>
@@ -148,7 +149,7 @@ void to_json(json& j, NextPeriodPrice const& k) noexcept {
     }
 }
 void from_json(const json& j, NextPeriodPrice& k) {
-    k.timestamp_from = j.at("timestamp_from");
+    k.timestamp_from = date_time_from_json(j.at("timestamp_from"));
     for (auto val : j.at("charging_price")) {
         k.charging_price.push_back(val);
     }
@@ -180,10 +181,10 @@ void to_json(json& j, SessionCostChunk const& k) noexcept {
 }
 void from_json(const json& j, SessionCostChunk& k) {
     if (j.contains("timestamp_from")) {
-        k.timestamp_from.emplace(j.at("timestamp_from"));
+        k.timestamp_from.emplace(date_time_from_json(j.at("timestamp_from")));
     }
     if (j.contains("timestamp_to")) {
-        k.timestamp_to.emplace(j.at("timestamp_to"));
+        k.timestamp_to.emplace(date_time_from_json(j.at("timestamp_to")));
     }
     if (j.contains("metervalue_from")) {
         k.metervalue_from.emplace(json_number<int32_t>(j.at("metervalue_from")));

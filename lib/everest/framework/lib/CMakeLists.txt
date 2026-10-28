@@ -92,6 +92,7 @@ target_link_libraries(framework
         ${EVEREST_FRAMEWORK_BOOST_SYSTEM_LINK_LIBRARY}
         Boost::thread
         Boost::program_options
+        everest::date
         everest::io
         ${ATOMIC_LIBS}
 )

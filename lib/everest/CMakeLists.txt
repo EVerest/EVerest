@@ -1,6 +1,7 @@
 set(BUILD_TESTING ${EVEREST_TEST_BASE})
 if(EVEREST_BUILD_BASE)
     add_subdirectory(log)
+    add_subdirectory(date)
     add_subdirectory(timer)
     add_subdirectory(util)
     add_subdirectory(sqlite)

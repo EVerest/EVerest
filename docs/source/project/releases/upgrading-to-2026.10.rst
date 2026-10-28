@@ -251,6 +251,14 @@ EVerest APIs
   (usually a 32-bit signed integer or a single-precision float) is rejected.
   Before, an integer such as ``4294967297`` wrapped (to ``1`` for a connector
   id) and a number beyond about 3.4e38 became infinity.
+- All EVerest API modules: a field declared as ``format: date-time`` has to be
+  an RFC 3339 date-time with a UTC offset, between
+  ``1677-09-21T00:12:43.146Z`` and ``2262-04-11T23:46:49.854Z``. Anything else,
+  such as a date-time without an offset or ``9999-12-31T23:59:59Z``, makes
+  EVerest discard the message with a warning; a request gets no reply. Before,
+  such values were forwarded unchecked and read as 1970, as the current time
+  or with their offset ignored. For an open end, such as ``timestamp_to`` in an
+  error history filter, use the latest accepted value ``2262-04-11T23:46:49.854Z``.
 
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
