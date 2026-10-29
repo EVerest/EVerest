@@ -360,6 +360,12 @@ bool is_monitor_valid(const VariableMetaData& meta_data, const MonitorEnum type,
     if (!characteristics.supportsMonitoring) {
         return false;
     }
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    // A monitor would report the value of a WriteOnly variable in NotifyEvent
+    if (actual != nullptr and actual->mutability == MutabilityEnum::WriteOnly) {
+        return false;
+    }
+
     // If the monitor is of type 'delta' (or periodic) and it is of a non-numeric type
     // the value is ignored since all values will be reported (excepting negative values)
     if (type == MonitorEnum::Delta) {
@@ -382,6 +388,23 @@ bool is_monitor_valid(const VariableMetaData& meta_data, const MonitorEnum type,
                       << " and variable: " << variable;
         return false;
     }
+}
+
+/// \brief Checks whether an existing monitor of \p type still fits the variable described by \p meta_data. The limits
+/// are not checked: limits registered at boot can be preliminary, and a threshold outside them stays meaningful.
+bool monitor_fits_variable(const VariableMetaData& meta_data, const MonitorEnum type) {
+    const auto& characteristics = meta_data.characteristics;
+    if (!characteristics.supportsMonitoring) {
+        return false;
+    }
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    if (actual != nullptr and actual->mutability == MutabilityEnum::WriteOnly) {
+        return false;
+    }
+    if (type == MonitorEnum::UpperThreshold or type == MonitorEnum::LowerThreshold) {
+        return characteristics.dataType == DataEnum::integer or characteristics.dataType == DataEnum::decimal;
+    }
+    return true;
 }
 
 bool include_in_summary_inventory(const ComponentVariable& cv, const VariableAttribute& attribute) {
@@ -842,7 +865,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
                 attributes.push_back(normalize_registered_attribute(attribute));
             }
             registration.variables[component][variable] =
-                this->build_registered_variable(owner, registered_variable, std::move(attributes));
+                this->build_registered_variable(owner, component, registered_variable, std::move(attributes));
         }
     }
 
@@ -882,14 +905,35 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
     return result;
 }
 
-VariableMetaData DeviceModel::build_registered_variable(const std::string& owner,
+VariableMetaData DeviceModel::build_registered_variable(const std::string& owner, const Component& component,
                                                         const RegisteredVariable& registered_variable,
                                                         std::vector<VariableAttribute> attributes) {
+    const auto& variable = registered_variable.variable;
     VariableMetaData meta_data;
     meta_data.characteristics = registered_variable.characteristics;
     meta_data.owner = owner;
     meta_data.attributes = std::move(attributes);
+
+    const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
+    const auto actual_value = (actual != nullptr and actual->value.has_value())
+                                  ? std::optional<std::string>{actual->value->get()}
+                                  : std::nullopt;
+    this->monitors.reconcile(
+        owner, component, registered_variable, actual_value,
+        [&](const MonitorEnum type, const float) { return monitor_fits_variable(meta_data, type); },
+        [&](const MonitorEnum type, const float value) {
+            return is_monitor_valid(meta_data, type, value, component, variable);
+        });
     return meta_data;
+}
+
+void DeviceModel::remove_monitors_of_absent_variables() {
+    std::lock_guard<std::recursive_mutex> lock(this->mutex);
+    this->monitors.remove_if(
+        [this](const StoredMonitor& stored) {
+            return this->find_variable(stored.component, stored.variable) == nullptr;
+        },
+        "the variable no longer exists");
 }
 
 void DeviceModel::unregister_components(const std::string& owner) {

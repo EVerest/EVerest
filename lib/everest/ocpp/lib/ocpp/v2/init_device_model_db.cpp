@@ -617,8 +617,7 @@ void InitDeviceModelDb::delete_variable(const DeviceModelVariable& variable) {
         return;
     }
 
-    delete_monitors("v.ID = @id", variable.db_id.value());
-
+    // The monitors are name-keyed and stay: they apply again when an owner registers the variable at runtime
     static const std::string delete_variable_statement = "DELETE FROM VARIABLE WHERE ID=@variable_id";
 
     std::unique_ptr<StatementInterface> delete_statement;

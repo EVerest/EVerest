@@ -286,7 +286,8 @@ private: // Functions
                          const std::uint64_t component_id);
 
     ///
-    /// \brief Delete a variable from the database.
+    /// \brief Delete a variable from the database. Its monitors are kept by name key, so they apply when an owner
+    /// registers the variable at runtime; its values are removed with it.
     /// \param variable The variable to delete.
     ///
     /// \throws InitDeviceModelDbError If variable could not be deleted

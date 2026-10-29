@@ -114,9 +114,11 @@ Any other invalid component config, for example a monitor on a variable without 
 initialization too. No file is skipped: the standardized config of the same component would replace a skipped custom
 config, and the variables only the custom config defines would be removed with their monitors.
 
-Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
-configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept
-with their monitors, see [Update component config](#update-component-config).
+Monitors are not linked to variable rows. Removing a variable from the component config keeps its monitors, custom
+monitors included, so they apply when an owner registers the variable at runtime; the values of the variable are not
+kept. See [Components registered at runtime](#components-registered-at-runtime) for when such monitors are removed.
+Components that are no longer configured are kept with their monitors, see
+[Update component config](#update-component-config).
 `DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
 returns all monitors.
 
@@ -171,6 +173,12 @@ write may be stored after the report and overwrite it. Each write carries a writ
 the last write it had applied with `notify_value_changed` resolves the race: libocpp ignores a report based on an older
 write than the last one it stored, and does not store a write over a report based on it or a newer one. An owner that
 passes no write id accepts the race.
+
+### Across restarts
+
+Monitors are kept by component and variable name, so they survive restarts and re-registrations. A registration
+applies them if they fit its characteristics and removes them otherwise. `ChargePoint::start` removes the monitors of
+variables that nobody defines (N04, remarks). This is why every owner must register before `start`.
 
 ## Required variables
 

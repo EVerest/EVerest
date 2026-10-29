@@ -249,6 +249,13 @@ public:
     /// \brief Check data integrity of the device model
     /// \param evse_connector_structure The EVSE connector structure
     virtual void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) = 0;
+
+    /// \brief Removes the monitors of variables that are not part of the device model. Every runtime owner must have
+    /// registered before.
+    /// \note N04, remarks: a monitor is persistent after a firmware update if the monitored variable still exists
+    /// and is still monitor-able, otherwise it is removed. Whether a monitor still fits its variable is checked when
+    /// the owner registers the variable.
+    virtual void remove_monitors_of_absent_variables() = 0;
 };
 
 } // namespace v2

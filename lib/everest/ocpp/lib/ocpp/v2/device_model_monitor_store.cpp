@@ -1,8 +1,10 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <vector>
 
+#include <everest/database/exceptions.hpp>
 #include <everest/logging.hpp>
 #include <ocpp/v2/device_model_monitor_store.hpp>
 
@@ -90,10 +92,116 @@ std::int32_t MonitorStore::clear_custom() {
     return deleted;
 }
 
+void MonitorStore::reconcile(const std::string& owner, const Component& component,
+                             const RegisteredVariable& registered_variable,
+                             const std::optional<std::string>& actual_value, const MonitorValidator& fits,
+                             const MonitorValidator& is_valid) {
+    const auto& variable = registered_variable.variable;
+    const auto ids = [this, &component, &variable]() {
+        const auto it = this->by_variable.find({component, variable});
+        return it == this->by_variable.end() ? std::set<std::int32_t>{} : it->second;
+    };
+
+    // N04: a monitor that no longer fits the variable is removed
+    for (const auto id : ids()) {
+        const auto& monitor = this->monitors.at(id).monitor.monitor;
+        if (fits(monitor.type, monitor.value)) {
+            continue;
+        }
+        EVLOG_warning << "Removing monitor " << id << " of " << component << "." << variable
+                      << ": it does not fit the variable as owner " << owner << " registers it";
+        this->remove(id);
+    }
+
+    // Hardwired and preconfigured monitors come with the registration: those it no longer lists are removed
+    for (const auto id : ids()) {
+        const auto& monitor = this->monitors.at(id).monitor;
+        const bool listed = std::any_of(registered_variable.monitors.begin(), registered_variable.monitors.end(),
+                                        [&monitor](const VariableMonitoringMeta& registered) {
+                                            return registered.monitor.type == monitor.monitor.type and
+                                                   registered.monitor.severity == monitor.monitor.severity;
+                                        });
+        if (monitor.type == VariableMonitorType::CustomMonitor or listed) {
+            continue;
+        }
+        EVLOG_warning << "Removing monitor " << id << " of " << component << "." << variable << ": owner " << owner
+                      << " no longer registers it";
+        this->remove(id);
+    }
+
+    for (const auto& registered_monitor : registered_variable.monitors) {
+        const auto& monitor = registered_monitor.monitor;
+        // N04.FR.10: the name key, type and severity identify a monitor
+        const auto existing = ids();
+        const bool matching = std::any_of(existing.begin(), existing.end(), [this, &monitor](const std::int32_t id) {
+            const auto& stored = this->monitors.at(id).monitor.monitor;
+            return stored.type == monitor.type and stored.severity == monitor.severity;
+        });
+        if (matching) {
+            continue;
+        }
+        if (registered_monitor.type == VariableMonitorType::CustomMonitor or !is_valid(monitor.type, monitor.value)) {
+            EVLOG_warning << "Owner " << owner << " registered an invalid monitor for " << component << "." << variable
+                          << ": the monitor is ignored";
+            continue;
+        }
+        SetMonitoringData request;
+        request.component = component;
+        request.variable = variable;
+        request.type = monitor.type;
+        request.value = monitor.value;
+        request.severity = monitor.severity;
+        request.transaction = monitor.transaction;
+        try {
+            auto stored = this->storage.set_monitoring_data(request, registered_monitor.type);
+            if (!stored.has_value()) {
+                EVLOG_warning << "Could not store a monitor that owner " << owner << " registered for " << component
+                              << "." << variable;
+                continue;
+            }
+            if (monitor.type == MonitorEnum::Delta) {
+                const auto reference = actual_value.value_or("");
+                if (this->storage.update_monitoring_reference(stored->monitor.id, reference)) {
+                    stored->reference_value = reference;
+                }
+            }
+            this->insert(StoredMonitor{component, variable, std::move(stored.value())});
+        } catch (const everest::db::Exception& e) {
+            EVLOG_error << "Could not store a monitor that owner " << owner << " registered: " << e.what();
+        }
+    }
+}
+
+void MonitorStore::remove_if(const std::function<bool(const StoredMonitor&)>& remove, const std::string& reason) {
+    std::vector<std::int32_t> removed;
+    for (const auto& [id, stored] : this->monitors) {
+        if (remove(stored)) {
+            removed.push_back(id);
+        }
+    }
+    for (const auto id : removed) {
+        const auto& stored = this->monitors.at(id);
+        EVLOG_warning << "Removing monitor " << id << " of " << stored.component << "." << stored.variable << ": "
+                      << reason;
+        this->remove(id);
+    }
+}
+
 void MonitorStore::insert(StoredMonitor monitor) {
     const auto id = monitor.monitor.monitor.id;
     this->by_variable[{monitor.component, monitor.variable}].insert(id);
     this->monitors.insert_or_assign(id, std::move(monitor));
+}
+
+void MonitorStore::remove(const std::int32_t monitor_id) {
+    this->forget(monitor_id);
+    try {
+        if (this->storage.clear_variable_monitor(monitor_id, true) != ClearMonitoringStatusEnum::Accepted) {
+            EVLOG_warning << "Could not remove monitor " << monitor_id << " from the storage";
+        }
+    } catch (const everest::db::Exception& e) {
+        EVLOG_error << "Could not remove monitor " << monitor_id << " from the storage: " << e.what();
+    }
 }
 
 void MonitorStore::forget(const std::int32_t monitor_id) {

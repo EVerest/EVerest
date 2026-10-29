@@ -90,8 +90,9 @@ private:
     /// \brief The runtime owner that registered the variable, if any
     std::optional<std::string> runtime_owner(const Component& component, const Variable& variable) const;
 
-    /// \brief Builds the variable that \p owner registers
-    VariableMetaData build_registered_variable(const std::string& owner, const RegisteredVariable& registered_variable,
+    /// \brief Builds the variable that \p owner registers, with its monitors
+    VariableMetaData build_registered_variable(const std::string& owner, const Component& component,
+                                               const RegisteredVariable& registered_variable,
                                                std::vector<VariableAttribute> attributes);
 
     /// \brief The attribute of a variable with its current value, read from the storage for a variable that its
@@ -295,6 +296,8 @@ public:
     }
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
+
+    void remove_monitors_of_absent_variables() override;
 
     // DeviceModelRegistryInterface
     ComponentRegistrationResult register_components(const std::string& owner,

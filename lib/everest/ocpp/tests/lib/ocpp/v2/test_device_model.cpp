@@ -1013,6 +1013,48 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_reference_kept_when_event_dro
     clear_all_monitors(*dm, interval.component, interval.variable.value());
 }
 
+/// A Delta reference that does not parse, e.g. empty or of a former data type, is replaced by the next value
+TEST_F(DeviceModelTest, test_numeric_delta_monitor_with_unparsable_reference_triggers) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "900", "test"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
+    const auto sent = [&sent_events]() { return *sent_events.handle(); };
+    MonitoringUpdater updater(
+        *dm,
+        [&sent_events](const std::vector<EventData>& events) {
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
+        []() { return false; });
+    updater.start_monitoring();
+
+    const auto results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::Delta, 50.0F, 3)});
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    const auto monitor_id = results[0].id.value();
+    ASSERT_TRUE(dm->update_monitor_reference(monitor_id, "abc"));
+
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "905", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    ASSERT_EQ(sent().size(), 1);
+    EXPECT_EQ(sent()[0].actualValue, "905");
+    EXPECT_EQ(dm->get_variable_meta_data(interval.component, interval.variable.value())
+                  ->monitors.at(monitor_id)
+                  .reference_value,
+              "905");
+
+    updater.stop_monitoring();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+}
+
 /// Variable changes evaluate monitors while concurrent processing runs deliver the events in the order they were
 /// generated
 TEST_F(DeviceModelTest, test_monitoring_updater_concurrent_changes_and_processing) {

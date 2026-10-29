@@ -72,8 +72,10 @@ class ChargePointInterface {
 public:
     virtual ~ChargePointInterface() = default;
 
-    /// \brief Starts the ChargePoint, initializes and connects to the Websocket endpoint
-    /// \param bootreason  Optional bootreason (default: PowerUp).
+    /// \brief Starts the ChargePoint, initializes and connects to the Websocket endpoint. Removes the monitors of
+    /// variables that are absent from the device model, so every runtime owner must have registered its components
+    /// before.
+    /// \param bootreason  Optional bootreason (default: PowerUp)
     /// \param start_connecting Optional, set to false to initialize but not start connecting. Otherwise will connect to
     /// the first network profile. (default: true)
     virtual void start(BootReasonEnum bootreason = BootReasonEnum::PowerUp, bool start_connecting = true) = 0;

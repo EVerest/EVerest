@@ -5,6 +5,7 @@
 
 #include <chrono>
 #include <everest/logging.hpp>
+#include <optional>
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model_helpers.hpp>
@@ -20,9 +21,19 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
         return (value_old != value_new);
     } else {
         if (monitor_meta.monitor.type == MonitorEnum::Delta) {
+            std::optional<decltype(to_specific_type_auto<T>(value_new))> raw_val_reference;
+            if (monitor_meta.reference_value.has_value() && !monitor_meta.reference_value->empty()) {
+                try {
+                    raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
+                } catch (const std::exception&) {
+                    EVLOG_warning << "Reference value \"" << monitor_meta.reference_value.value() << "\" of monitor "
+                                  << monitor_meta.monitor.id
+                                  << " does not fit the variable: the monitor triggers to take a new reference";
+                }
+            }
             // N07.FR.18: a monitor set while the variable had no value triggers on the first value, which becomes the
-            // reference
-            if (!monitor_meta.reference_value.has_value() || monitor_meta.reference_value->empty()) {
+            // reference. So does a monitor whose reference has a former data type of the variable.
+            if (!raw_val_reference.has_value()) {
                 if (value_new.empty()) {
                     return false;
                 }
@@ -30,8 +41,7 @@ bool triggers_monitor(const VariableMonitoringMeta& monitor_meta, const std::str
                 static_cast<void>(to_specific_type_auto<T>(value_new));
                 return true;
             }
-            auto raw_val_reference = to_specific_type_auto<T>(monitor_meta.reference_value.value());
-            auto delta = std::abs(raw_val_reference - to_specific_type_auto<T>(value_new));
+            auto delta = std::abs(raw_val_reference.value() - to_specific_type_auto<T>(value_new));
             return (delta > monitor_meta.monitor.value);
         }
 
