@@ -2,9 +2,11 @@
 // Copyright 2023 - 2023 Pionix GmbH and Contributors to EVerest
 #include "matching_handle_slac.hpp"
 
+#include <algorithm>
 #include <cstring>
 #include <iomanip>
 #include <sstream>
+#include <string>
 
 #include "../misc.hpp"
 
@@ -38,13 +40,15 @@ void session_log(Context& ctx, MatchingSession& session, const LogLevel level, c
 //
 static MatchingSession* find_session(std::vector<MatchingSession>& sessions, const uint8_t* ev_mac,
                                      const uint8_t* run_id) {
-    for (auto& session : sessions) {
-        if (session.is_identified_by(ev_mac, run_id)) {
-            return &session;
-        }
-    }
+    const auto it = std::find_if(sessions.begin(), sessions.end(),
+                                 [&](const auto& session) { return session.is_identified_by(ev_mac, run_id); });
+    return it != sessions.end() ? &*it : nullptr;
+}
 
-    return nullptr;
+static MatchingSession* find_failed_session(std::vector<MatchingSession>& sessions) {
+    const auto it = std::find_if(sessions.begin(), sessions.end(),
+                                 [](const auto& session) { return session.state == MatchingSubState::FAILED; });
+    return it != sessions.end() ? &*it : nullptr;
 }
 
 static auto create_cm_slac_parm_cnf(const MatchingSession& session) {
@@ -155,18 +159,30 @@ void MatchingState::handle_cm_slac_parm_req(const slac::messages::cm_slac_parm_r
         return;
     }
 
-    // set this flag to true, to disable the retry timeout
-    seen_slac_parm_req = true;
-
+    // Sessions are told apart by run id as well: EVs at neighbouring charging points can share a MAC.
     auto session = find_session(sessions, tmp_ev_mac, msg.run_id);
     if (session) {
         // the matching session existed already, according to [V2G3-A09-16] we should restart
         *session = MatchingSession(tmp_ev_mac, msg.run_id);
-    } else {
-        // the session didn't exist, lets create it
+    } else if (sessions.size() < MAX_MATCHING_SESSIONS) {
         sessions.emplace_back(MatchingSession{tmp_ev_mac, msg.run_id});
         session = &sessions.back();
+        session_limit_warned = false;
+    } else if ((session = find_failed_session(sessions))) {
+        *session = MatchingSession(tmp_ev_mac, msg.run_id);
+        session_limit_warned = false;
+    } else {
+        if (!session_limit_warned) {
+            ctx.log_warn("All " + std::to_string(MAX_MATCHING_SESSIONS) +
+                         " matching sessions are in progress, ignoring CM_SLAC_PARM.REQ from new EVs, first from " +
+                         format_mac_addr(tmp_ev_mac));
+            session_limit_warned = true;
+        }
+        return;
     }
+
+    // set this flag to true, to disable the retry timeout
+    seen_slac_parm_req = true;
 
     session_log(ctx, *session, LogLevel::INFO, "initialized, waiting for CM_START_ATTEN_CHAR_IND");
 

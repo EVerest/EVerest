@@ -4,6 +4,7 @@
 #define EVSE_SLAC_STATES_MATCHING_HPP
 
 #include <chrono>
+#include <cstddef>
 #include <memory>
 
 #include <slac/slac.hpp>
@@ -24,6 +25,12 @@ enum class MatchingSubState {
 };
 
 constexpr auto FINALIZE_SOUNDING_DELAY_MS = 45;
+
+// One EV per charging link; the extra slots tolerate crosstalk from neighbouring links, whose sessions
+// hold a slot for up to TT_EVSE_match_session. Bounds the sessions a flood of CM_SLAC_PARM.REQ with
+// distinct EV MACs and run ids can create. When all slots are taken, a new EV gets the slot of a failed
+// session or is ignored.
+constexpr std::size_t MAX_MATCHING_SESSIONS = 8;
 
 using MatchingTimepoint = std::chrono::time_point<std::chrono::steady_clock>;
 
@@ -86,6 +93,9 @@ struct MatchingState : public FSMSimpleState {
 
     std::unique_ptr<slac::messages::cm_slac_match_cnf> match_cnf_message;
     int failed_count{0};
+
+    // warn once each time the session limit is reached, a flood would otherwise flood the log as well
+    bool session_limit_warned{false};
 };
 
 } // namespace slac::fsm::evse

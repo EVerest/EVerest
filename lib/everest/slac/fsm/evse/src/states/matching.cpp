@@ -170,6 +170,7 @@ FSMSimpleState::HandleEventReturnType MatchingState::handle_event(AllocatorType&
 
             // Resetting all relevant MatchingState members
             sessions.clear();
+            session_limit_warned = false;
             // timeout for getting CM_SLAC_PARM_REQ
             timeout_slac_parm_req =
                 std::chrono::steady_clock::now() + std::chrono::milliseconds(ctx.slac_config.slac_init_timeout_ms);
