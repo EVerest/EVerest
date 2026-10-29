@@ -16,26 +16,41 @@
 
 namespace {
 
+std::string key_value(c4::yml::ConstNodeRef const& node) {
+    std::string value;
+    std::string key;
+    if (node.has_key()) {
+        key = std::string(node.key().str, node.key().len);
+    }
+    if (node.has_val()) {
+        value = std::string(node.val().str, node.val().len);
+    }
+    return key + "::" + value;
+}
+
 template <class T> void decode(c4::yml::ConstNodeRef const& node, T& rhs) {
     using namespace charge_bridge::utilities;
     try {
-        node >> rhs;
+        read_value(node, rhs);
+    } catch (yml_node_error const& e) {
+        if (not e.m_msg.empty()) {
+            throw;
+        }
+        throw yml_node_error(node, key_value(node));
+    } catch (std::exception const& e) {
+        throw yml_node_error(node, key_value(node) + "\n" + e.what());
     } catch (...) {
-        std::string value;
-        std::string key;
-        if (node.has_key()) {
-            key = std::string(node.key().str, node.key().len);
-        }
-        if (node.has_val()) {
-            value = std::string(node.val().str, node.val().len);
-        }
-        throw charge_bridge::utilities::yml_node_error(node, key + "::" + value);
+        throw yml_node_error(node, key_value(node));
     }
 }
 
 template <class T, class TmpT>
 T decode_t(c4::yml::ConstNodeRef parent, std::string const& node_id, std::function<T(TmpT)> const& transform,
            std::optional<T> const& def_value = std::nullopt) {
+    if (not parent.is_map()) {
+        auto key = parent.has_key() ? std::string(parent.key().str, parent.key().len) : std::string("config");
+        throw charge_bridge::utilities::yml_node_error(parent, key + " must be a block of settings");
+    }
     auto index = ryml::to_csubstr(node_id);
     auto local_node = parent.find_child(index);
     if (local_node.invalid()) {
@@ -134,7 +149,10 @@ bool decode_CbGpioMode(c4::yml::ConstNodeRef const& node, CbGpioMode& rhs) {
         return true;
     }
 
-    throw yml_node_error(node);
+    throw yml_node_error(
+        node, key_value(node) + " must be one of Input, Output, Pwm_Input, Pwm_Output, RS485_2_DE, "
+                                "Rcd_Selftest_Output, Rcd_Error_Input, Rcd_PWM_Input, MotorLock_1, MotorLock_2, "
+                                "MotorLock_Feedback, Fan_Tacho_Input, StatusLED_R, StatusLED_G, StatusLED_B, WS28_LED");
 
     return false;
 }
@@ -158,7 +176,7 @@ bool decode_CbGpioPulls(c4::yml::ConstNodeRef const& node, CbGpioPulls& rhs) {
         rhs = CBGP_PullDown;
         return true;
     }
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of NoPull, PullUp, PullDown");
 
     return false;
 }
@@ -234,7 +252,9 @@ bool decode_CbUartBaudrate(c4::yml::ConstNodeRef const& node, CbUartBaudrate& rh
         rhs = CBUBR_10000000;
         return true;
     }
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) +
+                                   " must be one of 9600, 19200, 38400, 57600, 115200, 230400, 250000, 460800, "
+                                   "500000, 1000000, 2000000, 3000000, 4000000, 6000000, 8000000, 10000000");
 
     return false;
 }
@@ -254,7 +274,7 @@ bool decode_CbUartStopbits(c4::yml::ConstNodeRef const& node, CbUartStopbits& rh
         rhs = CBUS_TwoStopBits;
         return true;
     }
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of OneStopBit, TwoStopBits");
 
     return false;
 }
@@ -278,7 +298,7 @@ bool decode_CbUartParity(c4::yml::ConstNodeRef const& node, CbUartParity& rhs) {
         rhs = CBUP_Even;
         return true;
     }
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of None, Odd, Even");
 
     return false;
 }
@@ -308,7 +328,7 @@ bool decode_CbCanBaudrate(c4::yml::ConstNodeRef const& node, CbCanBaudrate& rhs)
         return true;
     }
 
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of 125000, 250000, 500000, 1000000");
     return false;
 }
 
@@ -328,7 +348,7 @@ bool decode_CbRelayMode(c4::yml::ConstNodeRef const& node, CbRelayMode& rhs) {
         rhs = CBR_GPIO;
         return true;
     }
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of PowerRelay, GPIO");
 
     return false;
 }
@@ -353,7 +373,7 @@ bool decode_CbSafetyMode(c4::yml::ConstNodeRef const& node, CbSafetyMode& rhs) {
         return true;
     }
 
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of disabled, US, EU");
     return false;
 }
 
@@ -377,7 +397,7 @@ bool decode_CbAdcMode(c4::yml::ConstNodeRef const& node, CbAdcMode& rhs) {
         return true;
     }
 
-    throw yml_node_error(node);
+    throw yml_node_error(node, key_value(node) + " must be one of Generic, OverTemperature, OVM");
     return false;
 }
 
@@ -504,8 +524,9 @@ bool decode_Connector_type(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Conne
     quoted_value += "\"";
     quoted_value.append(value_view.data(), value_view.size());
     quoted_value += "\"";
-    return EXT_API::deserialize(quoted_value, rhs);
-
+    if (not EXT_API::deserialize(quoted_value, rhs)) {
+        throw yml_node_error(node, key_value(node) + " is not an evse_board_support Connector_type");
+    }
     return true;
 }
 

@@ -5,7 +5,9 @@
 #include <protocol/cb_config.h>
 #include <protocol/cb_management.h>
 #include <ryml.hpp>
+#include <stdexcept>
 #include <string>
+#include <type_traits>
 
 namespace charge_bridge::utilities {
 
@@ -56,5 +58,20 @@ c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbCan
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, CbAdcConfig& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::Connector_type& rhs);
 c4::yml::ConstNodeRef const& operator>>(c4::yml::ConstNodeRef const& node, EXT_API_BSP::HardwareCapabilities& rhs);
+
+// ryml's integer read accepts a leading '+' but wraps on overflow, and c4::fmt::overflow_checked
+// refuses the '+'. Read as ryml does, then check the range.
+template <class T> void read_value(c4::yml::ConstNodeRef const& node, T& rhs) {
+    node >> rhs;
+    if constexpr (std::is_integral_v<T> and not std::is_same_v<T, bool>) {
+        auto val = node.val();
+        if (val.begins_with('+')) {
+            val = val.sub(1);
+        }
+        if (c4::overflows<T>(val)) {
+            throw std::runtime_error("value out of range");
+        }
+    }
+}
 
 } // namespace charge_bridge::utilities
