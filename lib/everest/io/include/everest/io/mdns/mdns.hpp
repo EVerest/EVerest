@@ -28,6 +28,7 @@ struct mDNS_discovery {
     static const std::uint16_t txt_record_limit{1500};
 };
 
+/// Parse an mDNS response. Returns no value for nonresponses or malformed packet structure.
 std::optional<mDNS_discovery> parse_mdns_packet(std::vector<std::uint8_t> const& packet);
 std::vector<std::uint8_t> create_mdns_query(std::string const& name);
 
