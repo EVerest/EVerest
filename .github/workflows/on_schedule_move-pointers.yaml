@@ -41,9 +41,6 @@ on:
     - cron: '11 3 * * *'          # daily, before the Himalayas verifier at 06:23
   workflow_dispatch: {}
 
-permissions:
-  contents: write                 # to force-push the testing/* branches
-
 concurrency:
   group: move-pointers
   cancel-in-progress: false       # never race two moves
@@ -51,6 +48,8 @@ concurrency:
 jobs:
   move:
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write             # to force-push the testing/* branches
     strategy:
       max-parallel: 1
       matrix:
@@ -60,9 +59,10 @@ jobs:
           - pointer: testing/stable-2026.02
             tracks: stable/2026.02
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+          persist-credentials: false
 
       - name: Resolve the commit to advertise
         id: sha
@@ -111,9 +111,12 @@ jobs:
         env:
           POINTER: ${{ matrix.pointer }}
           SHA: ${{ steps.sha.outputs.sha }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          git push --force origin "$SHA:refs/heads/$POINTER"
+          # shellcheck disable=SC2016  # $GITHUB_TOKEN is expanded by git, not here
+          git -c credential.helper='!f() { test "$1" = get && printf "username=x-access-token\npassword=%s\n" "$GITHUB_TOKEN"; }; f' \
+            push --force origin "$SHA:refs/heads/$POINTER"
 
 
       - name: Generate App Token
@@ -124,6 +127,7 @@ jobs:
           private-key: ${{ secrets.HIMALAYAS_ACCESSOR_APP_PRIVATE_KEY }}
           owner: EVerest
           repositories: Himalayas
+          permission-contents: write  # repository_dispatch requires contents: write
 
       # The log lives in the OTHER repository, so this needs a credential with
       # dispatch access to it. Scope it to that repo only: a GitHub App

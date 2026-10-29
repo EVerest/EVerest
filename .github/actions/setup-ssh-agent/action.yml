@@ -1,0 +1,77 @@
+name: 'Setup SSH Agent'
+description: >-
+  Starts an ssh-agent at a fixed socket path and optionally loads a single
+  private key into it. Used to give build containers read access to private
+  dependencies.
+
+  The agent is started even when no key is supplied, because callers
+  bind-mount the socket into build containers and `docker run` fails when the
+  socket does not exist.
+
+inputs:
+  ssh_private_key:
+    description: >-
+      Private SSH key to load. May be empty, in which case the agent is
+      started but holds no identities and git falls back to public access.
+    required: false
+    default: ''
+  ssh_auth_sock:
+    description: 'Path of the agent socket to create.'
+    required: false
+    default: '/tmp/ssh_agent.sock'
+  known_hosts_host:
+    description: 'Host to add to known_hosts before loading the key.'
+    required: false
+    default: 'github.com'
+
+outputs:
+  ssh_auth_sock:
+    description: 'Path of the agent socket that was created.'
+    value: ${{ inputs.ssh_auth_sock }}
+
+runs:
+  using: 'composite'
+  steps:
+    - name: Start ssh-agent and load the key if one was provided
+      shell: bash
+      env:
+        SSH_PRIVATE_KEY: ${{ inputs.ssh_private_key }}
+        SSH_AUTH_SOCK_PATH: ${{ inputs.ssh_auth_sock }}
+        KNOWN_HOSTS_HOST: ${{ inputs.known_hosts_host }}
+      run: |
+        set -euo pipefail
+
+        # ssh-add exit codes: 0 = agent reachable with identities,
+        # 1 = agent reachable but empty, 2 = agent unreachable.
+        rc=2
+        if [ -S "$SSH_AUTH_SOCK_PATH" ]; then
+          set +e
+          SSH_AUTH_SOCK="$SSH_AUTH_SOCK_PATH" ssh-add -l >/dev/null 2>&1
+          rc=$?
+          set -e
+        fi
+
+        if [ "$rc" -eq 2 ]; then
+          rm -f "$SSH_AUTH_SOCK_PATH"
+          ssh-agent -a "$SSH_AUTH_SOCK_PATH" > /dev/null
+          echo "Started ssh-agent at $SSH_AUTH_SOCK_PATH"
+        else
+          echo "Reusing ssh-agent already listening at $SSH_AUTH_SOCK_PATH"
+        fi
+
+        if [ -z "$SSH_PRIVATE_KEY" ]; then
+          echo "No SSH key provided; relying on public access to dependencies."
+          exit 0
+        fi
+
+        mkdir -p ~/.ssh
+        chmod 700 ~/.ssh
+        if ! grep -q "^$KNOWN_HOSTS_HOST " ~/.ssh/known_hosts 2>/dev/null; then
+          ssh-keyscan "$KNOWN_HOSTS_HOST" >> ~/.ssh/known_hosts 2>/dev/null
+        fi
+
+        key_file="$HOME/.ssh/id_private_deps"
+        printf '%s\n' "$SSH_PRIVATE_KEY" > "$key_file"
+        chmod 600 "$key_file"
+        SSH_AUTH_SOCK="$SSH_AUTH_SOCK_PATH" ssh-add "$key_file"
+        echo "Loaded the private-dependency SSH key into the agent."

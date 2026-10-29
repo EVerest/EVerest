@@ -28,44 +28,57 @@ jobs:
   setup-env:
     name: write metadata
     runs-on: ${{ inputs.runner }}
+    permissions:
+      contents: read
     outputs:
       is_fork: ${{ steps.is_fork.outputs.is_fork }}
       closest_tag_everest_ci: ${{ steps.set_tag_everest_ci.outputs.closest_tag }}
     steps:
+      - name: Resolve everest-ci ref to a SHA
+        id: set_sha_everest_ci
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REF: ${{ inputs.ref_everest_ci }}
+        run: |
+          set -euo pipefail
+          SHA=$(gh api "repos/$OWNER/everest-ci/commits/$REF" --jq '.sha')
+          if [ -z "$SHA" ]; then
+            echo "::error::Could not resolve everest-ci ref '$REF' in $OWNER/everest-ci."
+            exit 1
+          fi
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "Resolved everest-ci ref '$REF' to $SHA"
       - name: Determine closest tag of everest-ci
         id: set_tag_everest_ci
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+          REF: ${{ inputs.ref_everest_ci }}
+          TARGET_SHA: ${{ steps.set_sha_everest_ci.outputs.sha }}
         run: |
-          TARGET_SHA="${{ steps.set_sha_everest_ci.outputs.sha }}"
-          OWNER="everest"
-          REPO="everest-ci"
-
-          COMMITS=$(gh api repos/$OWNER/$REPO/commits?sha=$TARGET_SHA\&per_page=100 --jq '.[].sha')
+          set -euo pipefail
+          TAG=""
+          COMMITS=$(gh api "repos/$OWNER/everest-ci/commits?sha=$TARGET_SHA&per_page=100" --jq '.[].sha')
           for COMMIT in $COMMITS; do
-            TAG=$(gh api repos/$OWNER/$REPO/tags --jq '.[] | select(.commit.sha == "'$COMMIT'") | .name')
+            TAG=$(gh api "repos/$OWNER/everest-ci/tags" --jq ".[] | select(.commit.sha == \"$COMMIT\") | .name")
             if [ -n "$TAG" ]; then
               break
             fi
           done
-
           if [ -z "$TAG" ]; then
-            echo "No tag found for commit $TARGET_SHA (only last 100 commits were checked)"
+            echo "::error::No tag found for ref '$REF' ($TARGET_SHA); only the last 100 commits were checked."
             exit 1
           fi
-
-          # if inputs.build_kit_base_image_tag is != "", use it as the tag
-          if [ -n "${{ inputs.build_kit_base_image_tag }}" ]; then
-            echo "Using inputs.build_kit_base_image_tag as tag"
-            TAG="${{ inputs.build_kit_base_image_tag }}"
-          fi
-
-          echo "closest_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "closest_tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "Closest everest-ci tag: $TAG"
       - name: Determine whether the PR comes from fork
         id: is_fork
+        env:
+          HEAD_REPO: ${{ github.event.pull_request.head.repo.full_name }}
         run: |
-          if [ "${{ github.event_name }}" == "pull_request" ]; then
-            if [ "${{ github.event.pull_request.head.repo.full_name }}" != "${{ github.repository }}" ]; then
+          if [ "$GITHUB_EVENT_NAME" == "pull_request" ]; then
+            if [ "$HEAD_REPO" != "$GITHUB_REPOSITORY" ]; then
               is_fork=true
             else
               is_fork=false
@@ -73,7 +86,7 @@ jobs:
           else
             is_fork=false
           fi
-          echo "is_fork=${is_fork}" >> $GITHUB_OUTPUT
+          echo "is_fork=${is_fork}" >> "$GITHUB_OUTPUT"
           if [ "${is_fork}" == "true" ]; then
             echo "This is a forked PR"
           else
