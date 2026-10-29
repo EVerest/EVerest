@@ -14,6 +14,14 @@ class EvCliError(Exception):
     """Base class for every expected failure."""
 
 
+class EverestDirNotFound(EvCliError):
+    """An everest directory to read definitions from is missing.
+
+    Raised before anything is looked up, so a mistyped ``--everest-dir`` is
+    reported as such rather than as every definition in it going missing.
+    """
+
+
 class DefinitionNotFound(EvCliError):
     """A definition file could not be found in any of the everest directories."""
 
