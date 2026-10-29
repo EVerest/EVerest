@@ -257,13 +257,14 @@ components:
       name: receive_reply_get_verify_location
       title: Reply to get verify location request
       summary: >-
-        Reply to get verify location. The payload is the path as plain text, not a JSON string.
+        Reply to get verify location. The payload is the path as plain text, not a JSON string. It is empty if
+        no CA certificate is found.
       contentType: text/plain
       payload:
         description: Path of the CA bundle file or CA directory, as plain text
         type: string
       examples:
-      - summary: 'Return the CA root directory'
+      - summary: 'Return the CA bundle file or directory'
         payload: /path/to/ca/certificates
     receive_heartbeat:
       name: receive_heartbeat
@@ -444,4 +445,5 @@ components:
       type: boolean
       description: >-
         Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
-        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.

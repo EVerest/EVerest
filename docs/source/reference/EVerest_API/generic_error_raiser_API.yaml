@@ -6,7 +6,8 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest API clients for raising and clearing generic errors.
-    The errors are only reported. No module acts on them, so they do not stop charging.
+    The errors are only reported, e.g. by OCPP and the error history. EvseManager does not act on them, so they
+    do not stop charging.
 
   license:
     name: Apache-2.0
@@ -177,7 +178,8 @@ components:
       type: boolean
       description: >-
         Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
-        EVerest raises a CommunicationFault until the next true. Send false to stop the check until the module restarts.
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

@@ -221,10 +221,6 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
-- All EVerest API modules: the initial ``CommunicationFault`` and EvseManager's
-  ``Inoperative`` are raised only if no ``communication_check`` arrives within
-  ``cfg_communication_check_to_s``, no longer right at start.
-
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
 
@@ -240,3 +236,7 @@ The deprecated topics keep working until 2027.04.0 at the earliest. See
 
 API modules publish compact JSON. Only clients that compare raw payload
 strings are affected.
+
+API modules raise the initial ``CommunicationFault``, and EvseManager its
+``Inoperative``, only if no ``communication_check`` arrives within
+``cfg_communication_check_to_s``, no longer right at start.
