@@ -29,10 +29,11 @@ info:
     Once an MREC5OverVoltage error was raised, it shall only be cleared when the reset_over_voltage_error command is called.
     All other errors shall be raised/cleared when they occur/are no longer active immediately.
 
-    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. It is not
-    used to compare it with the overvoltage threshold setting in EVerest, that has to be done in the OVM device itself.
-    It will only be used to validate that the OVM and the IMD see the same voltage to ensure they are correctly wired to the same
-    charging port. If it is not available in hardware, do not publish the voltage_measurement_V at all.
+    The voltage_measurement_V should be published in regular intervals, e.g. 1 second. The over voltage detection has to
+    be done in the OVM device itself; while charging, EVerest compares voltage_measurement_V with the limits only as a
+    slow backup. It is also used to validate that all voltage sources of the charging port see the same voltage to
+    ensure they are correctly wired to the same charging port. If it is not available in hardware, do not publish the
+    voltage_measurement_V at all.
 
   license:
     name: Apache-2.0
@@ -293,10 +294,9 @@ components:
     VoltageMeasurementV:
       description: >-
         The voltage measurement should be published in regular intervals,
-        e.g. 1 second. It is not  used to compare it with the overvoltage threshold
-        setting in EVerest, that has to be done in the OVM device itself.
-        It will only used to validate that the OVM and the IMD see the same voltage
-        to ensure they are correctly wired to the same charging port.
+        e.g. 1 second. The over voltage detection has to be done in the
+        OVM device itself; while charging, EVerest compares it with the limits only as a slow backup
+        and validates that all voltage sources of the charging port see the same voltage.
         If it is not available in hardware, do not publish the voltage_measurement_V at all.
       type: number
 
@@ -363,7 +363,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
     HeartBeatId:
       type: integer
       description: "64bit unsigned integer. The id of every heartbeat increases by 1 and overflows when the maximum representable value is reached"

@@ -209,14 +209,21 @@ components:
                 type: string
                 description: 'The topic to which to send the reply. If this information is missing, the command will still be accepted, but no response will be sent.'
           payload:
-            type: object
-            additionalProperties: true
-            required:
-              - transaction_id
-            properties:
-              transaction_id:
-                type: string
-                description: 'Transaction id received in start transaction request.'
+            type: string
+            description: >-
+              The transaction id from the start transaction request, as a plain JSON string. An empty string
+              stops all open transactions; EVerest sends it at start-up.
+      examples:
+        - summary: "Stop one transaction"
+          payload:
+            headers:
+              replyTo: "everest_api/1/powermeter/pm/m2e/reply/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+            payload: "55f31fea-548b-4d41-9887-bfb964141a5e"
+        - summary: "Stop every open transaction (start up)"
+          payload:
+            headers:
+              replyTo: "everest_api/1/powermeter/pm/m2e/reply/0f1e2d3c-4b5a-6978-8796-a5b4c3d2e1f0"
+            payload: ""
     send_reply_stop_transaction:
       name: stop_transaction_reply
       title: 'Stop transaction reply message'
@@ -943,7 +950,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer

@@ -155,6 +155,13 @@ components:
       name: receive_mode
       title: 'Receive mode'
       summary: 'Receive the requested mode for DC power supply and the current charging phase.'
+      description: >-
+        A session usually requests Export with charging_phase CableCheck, then PreCharge, then Charging, but do
+        not rely on a fixed sequence. Export can arrive while the output is already on, only to announce a new
+        charging_phase: keep the output on. Off can arrive between phases and ends the session. After Off,
+        bring the output voltage down: after CableCheck, EVerest waits at most 10 s for it to drop below 60 V.
+        Import replaces Export while energy flows from the car. After Off, a new setpoint arrives before the
+        next Export.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ModeRequest'
@@ -162,6 +169,12 @@ components:
       name: receive_export_voltage_current
       title: 'Receive export voltage / current'
       summary: 'Receive the requested voltage and current when exporting energy to the car.'
+      description: >-
+        When EVerest switches the output on, the setpoint arrives before the Export mode request. When the output
+        is already on and only the charging phase changes, the mode request arrives first. During CableCheck
+        EVerest requests 2 A, during PreCharge at least 2 A; a current below min_export_current_A is sent as 0 A.
+        If the measured voltage does not come within 10 V of the CableCheck setpoint within 10 s, the cable check
+        fails.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -177,6 +190,8 @@ components:
       name: send_voltage_current
       title: 'Send voltage / current'
       summary: 'Current value of voltage (V) and current (A).'
+      description: >-
+        Publish at least once per second (4 Hz recommended), also when the values did not change.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/VoltageCurrent'
@@ -189,6 +204,7 @@ components:
       name: send_mode
       title: 'Send mode'
       summary: 'Current mode of DC power supply.'
+      description: Informational; EVerest does not act on it.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/Mode'
@@ -480,6 +496,7 @@ components:
         If they cannot be sent to the hardware, cache the last values received.
         Once the PSU is back on-line (e.g. after a CommunicationFault), set the last mode and voltage/current
         values and only after that clear the error.
+        clear_error must repeat the type and sub_type of the raise.
       type: object
       additionalProperties: true
       required:
@@ -508,7 +525,10 @@ components:
 
     CommunicationCheck:
       type: boolean
-      description: "Send 'true' at least every 'cfg_communication_check_to_s' seconds to signal module is alive. Send 'false' to stop communication check'"
+      description: >-
+        Send true at least every cfg_communication_check_to_s seconds to signal that the client is alive, otherwise
+        EVerest raises a CommunicationFault, which the next message clears. Send false to stop the check until the
+        module restarts.
 
     HeartBeatId:
       type: integer
