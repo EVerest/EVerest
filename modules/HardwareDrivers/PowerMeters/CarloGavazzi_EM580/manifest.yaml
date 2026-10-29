@@ -41,7 +41,9 @@ provides:
         maximum: 60000
         default: 2000
       timezone_offset_minutes:
-        description: Timezone offset from UTC in minutes (e.g., 60 for UTC+1, -300 for UTC-5). Range -1440 to +1440 minutes. Default is 0 (UTC).
+        description: >-
+          Timezone offset from UTC in minutes (e.g., 60 for UTC+1, -300 for UTC-5). Range -1440 to +1440 minutes.
+          Default is 0 (UTC). Ignored when use_system_timezone is enabled.
         type: integer
         minimum: -1440
         maximum: 1440
@@ -75,6 +77,14 @@ provides:
           while a transaction is active. If the device reports READY (transaction closed on
           the meter side, e.g. after a brief power loss), raises powermeter/VendorError so
           the charging session can be stopped when fail_on_powermeter_errors is enabled in the EvseManager module.
+        type: boolean
+        default: false
+      use_system_timezone:
+        description: >-
+          When enabled, the timezone offset written to the device follows the time zone of the host
+          (TZ or /etc/localtime), including daylight saving time changes, and timezone_offset_minutes
+          is ignored. The offset is checked at device_state_read_interval_ms and a change is written
+          right away, also during a transaction: every OCMF reading carries its own offset.
         type: boolean
         default: false
   temperature_sensor:

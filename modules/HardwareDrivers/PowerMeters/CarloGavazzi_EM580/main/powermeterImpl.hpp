@@ -36,6 +36,7 @@ struct Conf {
     int device_state_read_interval_ms;
     std::string public_key_format;
     bool monitor_transaction_state;
+    bool use_system_timezone;
 };
 
 class powermeterImpl : public powermeterImplBase {
@@ -96,6 +97,14 @@ public:
                                                                            std::string& transaction_id) {
             return self.handle_stop_transaction(transaction_id);
         }
+
+        static void update_timezone_if_changed(powermeterImpl& self) {
+            self.write_timezone(true);
+        }
+
+        static void write_timezone_on_configure(powermeterImpl& self) {
+            self.write_timezone(false);
+        }
     };
     // ev@8ea32d28-373f-4c90-ae5e-b4fcc74e2a61:v1
 
@@ -134,6 +143,8 @@ private:
     std::atomic_bool m_transaction_active{false};
     std::atomic_bool m_pending_time_sync{false};
     std::atomic_bool m_pending_closed_transaction{false};
+    std::optional<int> m_timezone_offset_minutes;
+    std::string m_system_time_zone_name;
     std::mutex m_transaction_mutex;
 
     // Background threads (started in ready(), joined on destruction)
@@ -162,6 +173,9 @@ private:
     std::string read_ocmf_file();
     void synchronize_time();
     void set_timezone(int offset_minutes);
+    [[nodiscard]] std::optional<int> system_timezone_offset_minutes();
+    // Writes the timezone offset to the device; only_if_changed skips it when the device already has it.
+    void write_timezone(bool only_if_changed);
     void time_sync_thread();
     [[nodiscard]] bool is_transaction_active() const;
     void clear_transaction_states();
