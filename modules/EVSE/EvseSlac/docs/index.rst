@@ -86,8 +86,10 @@ the whole procedure takes well under a second on a good connection.
 
 The published ``state`` follows the matching process, not the arming: it
 stays ``UNMATCHED`` while the module listens and becomes ``MATCHING`` with the
-first ``CM_SLAC_PARM.REQ``. EvseManager relies on this to tell an EIM that
-completes before any SLAC from one during a running matching ([V2G3-M06-08]).
+first ``CM_SLAC_PARM.REQ``. A failed attempt that ``reset_instead_of_fail``
+turns into a retry keeps ``MATCHING``; only the terminal failure goes back to
+``UNMATCHED``. EvseManager relies on this to tell an EIM that completes before
+any SLAC from one during a running matching ([V2G3-M06-08]).
 
 When the car is unplugged, EvseManager calls ``leave_bcd``. From a matched or
 failed session the module leaves the logical network, generates a new key and

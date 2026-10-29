@@ -1805,6 +1805,11 @@ bool test_reset_instead_of_fail_waits_for_new_parm_request() {
         return assert_true(false, test_name,
                            "first matching failure did not reset and return to Matching without failing");
     }
+    // The EV retries: the matching process is still running for the consumer.
+    if (!assert_true(ctx.status.d3_state == D3State::Matching, test_name,
+                     "the matching reset dropped the published state to UNMATCHED before the EV's retry")) {
+        return false;
+    }
 
     machine.message(create_cm_slac_parm_req(ev_mac, run_id));
     if (!wait_for_parm_cnf_count(sent_messages, initial_parm_count + 2, machine, 200)) {

@@ -893,9 +893,10 @@ TEST(SlacRuntime, MatchingIsPublishedOnTheFirstParmReqNotOnEnterBcd) {
     EXPECT_EQ(h.sink.count_state(D3State::Matching), 1U);
 }
 
-// A failed matching process ends the published MATCHING: with reset_instead_of_fail the sessions are
-// dropped, UNMATCHED goes out while the EVSE keeps listening, and the EV's retry starts MATCHING again.
-TEST(SlacRuntime, AFailedMatchingPublishesUnmatchedAndTheRetryMatches) {
+// With reset_instead_of_fail a failed matching attempt drops the sessions, but the matching process goes on
+// for the EV, which retries with a new CM_SLAC_PARM.REQ. MATCHING is held through the gap: UNMATCHED would
+// make the consumer answer an EIM there with E/F ([V2G3-M06-08]) under the EV's retry.
+TEST(SlacRuntime, AFailedMatchingAttemptKeepsMatchingUntilTheRetryMatches) {
     Harness h;
     h.config.slac.reset_instead_of_fail = true;
     h.create();
@@ -909,8 +910,12 @@ TEST(SlacRuntime, AFailedMatchingPublishesUnmatchedAndTheRetryMatches) {
     }
     ASSERT_TRUE(h.reach_matching());
     // No CM_START_ATTEN_CHAR.IND: the session fails after TT_match_sequence and the sub-machine resets.
-    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.last_state() == D3State::Unmatched; }))
-        << "the failed matching did not publish UNMATCHED";
+    ASSERT_TRUE(h.sink.wait_for(WAIT, [&] { return h.sink.has_log(LogLevel::Info, "Matching attempt failed"); }))
+        << "the failed matching attempt did not reset the sessions";
+    {
+        std::lock_guard<std::mutex> guard(h.sink.mutex);
+        EXPECT_EQ(h.sink.last_state(), D3State::Matching) << "MATCHING dropped before the EV's retry";
+    }
     EvMac const ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
     RunId run_id{};
     for (std::size_t i = 0; i < run_id.size(); ++i) {
@@ -920,8 +925,7 @@ TEST(SlacRuntime, AFailedMatchingPublishesUnmatchedAndTheRetryMatches) {
     std::lock_guard<std::mutex> guard(h.sink.mutex);
     std::vector<D3State> const published(h.sink.states.begin() + static_cast<std::ptrdiff_t>(states_before),
                                          h.sink.states.end());
-    EXPECT_EQ(published,
-              (std::vector<D3State>{D3State::Matching, D3State::Unmatched, D3State::Matching, D3State::Matched}));
+    EXPECT_EQ(published, (std::vector<D3State>{D3State::Matching, D3State::Matched}));
 }
 
 } // namespace

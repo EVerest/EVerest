@@ -87,8 +87,10 @@ struct reset_matching_subfsm {
         fsm.sessions.clear();
         fsm.to.arm(fsm.ctx->current_time, fsm.ctx->slac_config.slac_init_timeout);
         fsm.failed_matching_reset_once = true;
-        // The sessions are gone: no matching process runs until the next CM_SLAC_PARM.REQ.
-        fsm.ctx->enter_state(everest::lib::slac::SlacState::Matching, everest::lib::slac::D3State::Unmatched, "");
+        // The published state stays MATCHING: for the EV the matching process goes on, it retries with a
+        // new CM_SLAC_PARM.REQ (C_EV_match_retry). UNMATCHED here would let an EIM in the gap take the
+        // "matching not started" path ([V2G3-M06-08]) and switch to E/F under the EV's retry.
+        fsm.ctx->log_info("Matching attempt failed, waiting for a new CM_SLAC_PARM.REQ");
         // A validation belongs to the sessions just dropped. Left armed, its expired window would
         // fail every new session the moment it reaches WaitSlacMatch.
         fsm.validate.reset();

@@ -4,7 +4,8 @@ types:
     description: >-
       SLAC state enum. UNMATCHED: no matching process is running, also while the EVSE is armed by
       enter_bcd and waits for a CM_SLAC_PARM.REQ. MATCHING: a matching process is running, the
-      first CM_SLAC_PARM.REQ was received. MATCHED: the data link is established.
+      first CM_SLAC_PARM.REQ was received; it is kept while the EV retries after a failed attempt.
+      MATCHED: the data link is established.
     type: string
     enum:
       - UNMATCHED
