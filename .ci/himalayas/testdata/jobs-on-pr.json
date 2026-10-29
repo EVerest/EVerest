@@ -1,0 +1,65 @@
+{
+  "total_count": 6,
+  "jobs": [
+    {
+      "name": "Bazel Cross (armv7-linux-gnueabihf) / build",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "Bazel Cross (aarch64-linux-musl) / build",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "Bazel Cross (armv7-linux-musleabihf) / build",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "Bazel Cross (aarch64-linux-gnu) / build",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "Bazel / build + test",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Build all",
+          "conclusion": "success"
+        }
+      ]
+    },
+    {
+      "name": "CMake GCC / build + unit tests",
+      "conclusion": "success",
+      "steps": [
+        {
+          "name": "Compile",
+          "conclusion": "success"
+        }
+      ]
+    }
+  ]
+}

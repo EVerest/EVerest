@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+SPDX-License-Identifier: Apache-2.0
+Copyright Pionix GmbH and Contributors to EVerest
+-->
+<testsuites name="pytest tests"><testsuite name="pytest" errors="1" failures="0" skipped="0" tests="2" time="14.507" timestamp="2026-10-28T16:02:11.083512+00:00" hostname="runner"><testcase classname="core_tests.startup_tests.TestStartup" name="test_startup[legacy]" time="3.249" /><testcase classname="ocpp_tests.test_sets.ocpp201.authorization" name="test_C01[multi]" time="11.258"><error message="failed on setup with &quot;TimeoutError: CSMS did not connect&quot;">tests/ocpp_tests/conftest.py:88: in charge_point
+    raise TimeoutError("CSMS did not connect")
+E   TimeoutError: CSMS did not connect</error></testcase></testsuite></testsuites>
