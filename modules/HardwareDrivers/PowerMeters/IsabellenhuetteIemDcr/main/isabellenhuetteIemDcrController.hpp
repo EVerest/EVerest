@@ -154,7 +154,7 @@ private:
     std::chrono::minutes zone_time_offset;
     std::atomic<std::chrono::time_point<std::chrono::steady_clock>> last_datetime_sync;
 
-    std::chrono::minutes helper_convert_timezone(std::string& timezone);
+    std::chrono::minutes helper_convert_timezone(const std::string& timezone);
     bool helper_is_daylight_saving_time();
     std::string helper_get_current_datetime();
     std::string helper_remove_first_and_last_char(const std::string& input);
