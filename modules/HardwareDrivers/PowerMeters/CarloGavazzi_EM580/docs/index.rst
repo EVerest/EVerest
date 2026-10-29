@@ -168,7 +168,7 @@ All parameters are defined in ``manifest.yaml``:
    * - ``timezone_offset_minutes``
      - integer
      - ``0``
-     - Timezone offset from UTC (minutes)
+     - Timezone offset from UTC (minutes). Ignored when ``use_system_timezone`` is enabled.
    * - ``live_measurement_interval_ms``
      - integer
      - ``1000``
@@ -185,6 +185,11 @@ All parameters are defined in ``manifest.yaml``:
      - boolean
      - ``false``
      - While a transaction is active, read OCMF state at ``device_state_read_interval_ms`` and raise ``powermeter/VendorError`` if the device reports READY (e.g. after a brief power loss). Useful when ``fail_on_powermeter_errors`` is enabled in EvseManager.
+   * - ``use_system_timezone``
+     - boolean
+     - ``false``
+     - Follow the time zone of the host (``TZ`` or ``/etc/localtime``) instead of ``timezone_offset_minutes``, see
+       below.
 
 Parameter tuning notes
 ----------------------
@@ -201,6 +206,19 @@ Parameter tuning notes
   - ``communication_retry_delay_ms`` has a **minimum of 10 ms** (see ``manifest.yaml``).
   - At startup the driver warns if retry settings can defer ``CommunicationFault`` for too long relative to a typical
     meter reboot (see implementation in ``powermeterImpl.cpp``).
+
+- **``timezone_offset_minutes`` / ``use_system_timezone``**:
+
+  - The device signs OCMF records with its local time, which is UTC plus the offset written by the driver.
+  - ``timezone_offset_minutes`` is a fixed offset; it does not follow daylight saving time.
+  - With ``use_system_timezone: true`` the offset is taken from the host's time zone, including a zone changed while
+    EVerest runs, and checked at ``device_state_read_interval_ms`` (meters with OCMF transactions only). A change,
+    e.g. the switch to or from daylight saving time, is written right away, also during a transaction. Every OCMF
+    reading carries the offset it was taken with (e.g. ``"TM":"2026-10-28T17:06:28,000+0200 S"``). In a session
+    that spans the switch, the local end time minus the local start time is one hour more or less than the duration;
+    the duration computed from the UTC times stays exact. The time zone name and offset of the host are logged when
+    they change.
+  - A host without ``TZ`` and ``/etc/localtime`` (e.g. a minimal container) is in UTC, so the offset is 0.
 
 - **``communication_error_pause_delay_s``**:
 

@@ -6,8 +6,11 @@
 #include "helper.hpp"
 #include "powermeterImpl.hpp"
 
+#include <cstdlib>
+#include <ctime>
 #include <deque>
 #include <map>
+#include <memory>
 #include <string_view>
 #include <tuple>
 
@@ -93,7 +96,50 @@ module::main::Conf make_test_conf() {
     conf.live_measurement_interval_ms = kDefaultIntervalMs;
     conf.device_state_read_interval_ms = kDefaultIntervalMs;
     conf.communication_error_pause_delay_s = 0;
+    conf.use_system_timezone = false;
     return conf;
+}
+
+// Sets the process time zone for the lifetime of the object, without depending on tzdata being installed.
+class ScopedTimeZone {
+public:
+    explicit ScopedTimeZone(const char* posix_tz) {
+        const char* previous = std::getenv("TZ");
+        if (previous != nullptr) {
+            previous_.emplace(previous);
+        }
+        set(posix_tz);
+    }
+    ScopedTimeZone(const ScopedTimeZone&) = delete;
+    ScopedTimeZone& operator=(const ScopedTimeZone&) = delete;
+    ScopedTimeZone(ScopedTimeZone&&) = delete;
+    ScopedTimeZone& operator=(ScopedTimeZone&&) = delete;
+    ~ScopedTimeZone() {
+        if (previous_.has_value()) {
+            setenv("TZ", previous_->c_str(), 1);
+        } else {
+            unsetenv("TZ");
+        }
+        tzset();
+    }
+
+    static void set(const char* posix_tz) {
+        setenv("TZ", posix_tz, 1);
+        tzset();
+    }
+
+private:
+    std::optional<std::string> previous_;
+};
+
+std::vector<WriteCall> timezone_writes(const FakeModbusTransport& transport) {
+    std::vector<WriteCall> out;
+    for (const auto& call : transport.write_calls()) {
+        if (call.address == em580::registers::MODBUS_TIMEZONE_OFFSET_ADDRESS) {
+            out.push_back(call);
+        }
+    }
+    return out;
 }
 
 } // namespace
@@ -284,4 +330,106 @@ TEST(EM580PowermeterImpl, MonitorTransactionStateDisabledWhileActiveIsIgnored) {
                                                                              em580::registers::MODBUS_OCMF_STATE_READY);
 
     EXPECT_FALSE(module::main::powermeterImpl::TestAccess::pending_closed_transaction(impl));
+}
+
+TEST(EM580TimezoneUtils, LocalTimeZoneFollowsDaylightSavingTime) {
+    const ScopedTimeZone time_zone("CET-1CEST,M3.5.0,M10.5.0/3");
+    constexpr std::time_t kWinter = 1768478400; // 2026-01-15T12:00:00Z
+    constexpr std::time_t kSummer = 1784116800; // 2026-07-15T12:00:00Z
+    const auto winter = timezone_utils::local_time_zone(kWinter);
+    const auto summer = timezone_utils::local_time_zone(kSummer);
+    ASSERT_TRUE(winter.has_value());
+    ASSERT_TRUE(summer.has_value());
+    EXPECT_EQ(winter->utc_offset_minutes, 60);
+    EXPECT_EQ(winter->name, "CET");
+    EXPECT_EQ(summer->utc_offset_minutes, 120);
+    EXPECT_EQ(summer->name, "CEST");
+}
+
+namespace {
+struct SystemTimezoneFixture {
+    explicit SystemTimezoneFixture(const char* posix_tz) : time_zone(posix_tz), conf(make_test_conf()) {
+        conf.use_system_timezone = true;
+        impl = std::make_unique<module::main::powermeterImpl>(nullptr, dummy_mod, conf);
+        auto fake = std::make_unique<FakeModbusTransport>();
+        transport = fake.get();
+        module::main::powermeterImpl::TestAccess::set_modbus_transport(*impl, std::move(fake));
+    }
+    std::vector<std::uint16_t> written_offsets() const {
+        std::vector<std::uint16_t> out;
+        for (const auto& call : timezone_writes(*transport)) {
+            out.push_back(call.data.at(0));
+        }
+        return out;
+    }
+
+    ScopedTimeZone time_zone;
+    Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    module::main::Conf conf;
+    std::unique_ptr<module::main::powermeterImpl> impl;
+    FakeModbusTransport* transport{nullptr};
+};
+} // namespace
+
+TEST(EM580PowermeterImpl, SystemTimezoneIsWrittenOnlyWhenTheOffsetChanges) {
+    SystemTimezoneFixture f("XXX-2");
+
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    EXPECT_EQ(f.written_offsets(), std::vector<std::uint16_t>{120});
+
+    ScopedTimeZone::set("XXX-1");
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    EXPECT_EQ(f.written_offsets(), (std::vector<std::uint16_t>{120, 60}));
+}
+
+TEST(EM580PowermeterImpl, NegativeHalfHourOffsetIsWrittenAsInt16) {
+    SystemTimezoneFixture f("XXX+3:30");
+
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    EXPECT_EQ(f.written_offsets(), std::vector<std::uint16_t>{static_cast<std::uint16_t>(std::int16_t{-210})});
+}
+
+// A time zone change of the running host (timedatectl set-timezone) must be picked up without a restart.
+TEST(EM580PowermeterImpl, HostTimeZoneChangeIsPickedUpWithoutRestart) {
+    SystemTimezoneFixture f("XXX-2");
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+
+    setenv("TZ", "XXX-1", 1); // without tzset(), as when the host changes its zone
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    EXPECT_EQ(f.written_offsets(), (std::vector<std::uint16_t>{120, 60}));
+}
+
+// Every OCMF reading carries the offset it was taken with, so a change is written during a transaction too.
+TEST(EM580PowermeterImpl, SystemTimezoneChangeIsWrittenDuringATransaction) {
+    SystemTimezoneFixture f("XXX-2");
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    module::main::powermeterImpl::TestAccess::set_transaction_id(*f.impl, "12345678-1234-5678-1234-567812345678");
+
+    ScopedTimeZone::set("XXX-1");
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+    EXPECT_EQ(f.written_offsets(), (std::vector<std::uint16_t>{120, 60}));
+}
+
+// The device may have lost its settings, e.g. after a power cycle, so a configuration writes the offset again.
+TEST(EM580PowermeterImpl, ConfigureWritesTheOffsetEvenIfUnchanged) {
+    SystemTimezoneFixture f("XXX-2");
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(*f.impl);
+
+    module::main::powermeterImpl::TestAccess::write_timezone_on_configure(*f.impl);
+    EXPECT_EQ(f.written_offsets(), (std::vector<std::uint16_t>{120, 120}));
+}
+
+TEST(EM580PowermeterImpl, FixedTimezoneOffsetIsNotUpdated) {
+    const ScopedTimeZone time_zone("XXX-2");
+    static Everest::PtrContainer<module::CarloGavazzi_EM580> dummy_mod;
+    auto conf = make_test_conf();
+    module::main::powermeterImpl impl(nullptr, dummy_mod, conf);
+
+    auto transport = std::make_unique<FakeModbusTransport>();
+    auto* transport_ptr = transport.get();
+    module::main::powermeterImpl::TestAccess::set_modbus_transport(impl, std::move(transport));
+
+    module::main::powermeterImpl::TestAccess::update_timezone_if_changed(impl);
+    EXPECT_TRUE(timezone_writes(*transport_ptr).empty());
 }
