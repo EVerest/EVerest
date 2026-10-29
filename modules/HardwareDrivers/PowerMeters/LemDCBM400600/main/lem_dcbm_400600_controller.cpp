@@ -292,7 +292,10 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
         std::optional<FallbackOCMF> fallback_ocmf = this->transaction_state.handle()->fallback_ocmf;
         if (fallback_ocmf.has_value() and fallback_ocmf->transaction_id == tid) {
             // the OCMF record itself is not logged, it carries personal data
-            EVLOG_warning << "LEM DCBM 400/600: Returning the last known OCMF value for transaction " << tid;
+            EVLOG_warning << "LEM DCBM 400/600: The device is unreachable, returning the intermediate OCMF record of "
+                             "transaction "
+                          << tid << " taken at " << fallback_ocmf->signed_meter_value.timestamp.value_or("unknown time")
+                          << " instead of its final record";
             return types::powermeter::TransactionStopResponse{
                 types::powermeter::TransactionRequestStatus::OK, {}, fallback_ocmf->signed_meter_value};
         }
