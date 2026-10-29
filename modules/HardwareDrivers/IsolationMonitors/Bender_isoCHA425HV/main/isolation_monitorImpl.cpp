@@ -82,9 +82,15 @@ void isolation_monitorImpl::configure_device() {
 
 bool isolation_monitorImpl::read_device_identity() {
     const auto device_name = read_device_name();
+    if (not device_name) {
+        return false;
+    }
     const auto firmware_version = read_firmware_version();
+    if (not firmware_version) {
+        return false;
+    }
     const auto faster_cable_check = check_for_faster_cablecheck();
-    if (not device_name or not firmware_version or not faster_cable_check) {
+    if (not faster_cable_check) {
         return false;
     }
     EVLOG_info << "IMD Device: " << *device_name << " (" << *firmware_version << ")";
