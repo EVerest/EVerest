@@ -6,8 +6,14 @@
 #include "dc_external_derate/codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <stdexcept>
+#include <string>
 
 namespace everest::lib::API::V1_0::types::dc_external_derate {
+
+using utilities::json_number;
 
 void to_json(json& j, ExternalDerating const& k) noexcept {
     j = json({});
@@ -26,17 +32,28 @@ void to_json(json& j, ExternalDerating const& k) noexcept {
 }
 
 void from_json(const json& j, ExternalDerating& k) {
+    // An object without limits means "no limit", so anything else must not be read as one.
+    if (not j.is_object()) {
+        throw std::invalid_argument("ExternalDerating: not a JSON object");
+    }
+    for (const auto& item : j.items()) {
+        const auto& key = item.key();
+        if (key != "max_export_current_A" and key != "max_import_current_A" and key != "max_export_power_W" and
+            key != "max_import_power_W") {
+            throw std::invalid_argument("ExternalDerating: unknown property " + key);
+        }
+    }
     if (j.contains("max_export_current_A")) {
-        k.max_export_current_A.emplace(j.at("max_export_current_A"));
+        k.max_export_current_A.emplace(json_number<float>(j.at("max_export_current_A")));
     }
     if (j.contains("max_import_current_A")) {
-        k.max_import_current_A.emplace(j.at("max_import_current_A"));
+        k.max_import_current_A.emplace(json_number<float>(j.at("max_import_current_A")));
     }
     if (j.contains("max_export_power_W")) {
-        k.max_export_power_W.emplace(j.at("max_export_power_W"));
+        k.max_export_power_W.emplace(json_number<float>(j.at("max_export_power_W")));
     }
     if (j.contains("max_import_power_W")) {
-        k.max_import_power_W.emplace(j.at("max_import_power_W"));
+        k.max_import_power_W.emplace(json_number<float>(j.at("max_import_power_W")));
     }
 }
 

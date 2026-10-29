@@ -300,6 +300,7 @@ int main(int argc, char** argv) {
     const std::string evse_base = "everest_api/1/evse_manager_consumer/" + opts.evse_api + "/";
     const std::string limits_base = "everest_api/1/external_energy_limits_consumer/" + opts.limits_api + "/";
     const std::string reply_base = "mcs_evse_control/" + std::to_string(getpid()) + "/reply/";
+    const std::string latched_base = reply_base + "latched/";
 
     // Latched vars requested once per connect, so the panel is filled before the next change.
     const std::vector<std::string> evse_vars{
@@ -316,11 +317,7 @@ int main(int argc, char** argv) {
         if (value.is_discarded()) {
             value = payload;
         }
-        auto take = [&](const std::string& base, const char* api) {
-            if (topic.rfind(base + "e2m/", 0) != 0) {
-                return false;
-            }
-            const auto var = topic.substr(base.size() + 4);
+        auto store = [&](const char* api, const std::string& var) {
             if (var == "heartbeat") {
                 state.heartbeat[api] = Clock::now();
             } else if (!value.is_null()) { // a get for a value never published answers "null"
@@ -332,9 +329,19 @@ int main(int argc, char** argv) {
                 }
                 state.vars[std::string{api} + "/" + var] = std::move(value);
             }
+        };
+        auto take = [&](const std::string& base, const char* api) {
+            if (topic.rfind(base + "e2m/", 0) != 0) {
+                return false;
+            }
+            store(api, topic.substr(base.size() + 4));
             return true;
         };
         if (take(evse_base, "evse") || take(limits_base, "limits")) {
+            return;
+        }
+        if (topic.rfind(latched_base, 0) == 0) {
+            store("evse", topic.substr(latched_base.size()));
             return;
         }
         if (topic.rfind(reply_base, 0) == 0) {
@@ -357,9 +364,10 @@ int main(int argc, char** argv) {
     std::thread comm_check([&] {
         while (running.load()) {
             if (mqtt.connected() && fetch_latched.exchange(false)) {
-                // Reply straight onto the var topic, so the answer takes the same path as a change.
+                // The answers arrive below latched_base and take the same path as a change. EVerest
+                // refuses a replyTo on its own e2m topics, so they cannot go to the var topic itself.
                 for (const auto& v : evse_vars) {
-                    const json req{{"headers", {{"replyTo", evse_base + "e2m/" + v}}}};
+                    const json req{{"headers", {{"replyTo", latched_base + v}}}};
                     mqtt.publish(evse_base + "m2e/" + v + "/get", req.dump());
                 }
                 const std::lock_guard<std::mutex> lock{state.mutex};

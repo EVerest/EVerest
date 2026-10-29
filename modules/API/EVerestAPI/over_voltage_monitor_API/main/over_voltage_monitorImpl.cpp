@@ -30,17 +30,17 @@ void over_voltage_monitorImpl::handle_set_limits(double& emergency_over_voltage_
 
 void over_voltage_monitorImpl::handle_start() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("start");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void over_voltage_monitorImpl::handle_stop() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("stop");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 void over_voltage_monitorImpl::handle_reset_over_voltage_error() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("reset_over_voltage_error");
-    mod->mqtt_v.publish(topic, "{}");
+    mod->mqtt_v.publish(topic);
 }
 
 } // namespace main

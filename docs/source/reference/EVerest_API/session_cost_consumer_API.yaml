@@ -220,17 +220,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -252,17 +251,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -284,17 +282,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:

@@ -36,7 +36,7 @@ auto ac_rcdImpl::generic_request_reply(T const& default_value, ReqT const& reque
 
 void ac_rcdImpl::handle_self_test() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("self_test");
-    mod->mqtt_v.publish(topic, "");
+    mod->mqtt_v.publish(topic);
 }
 
 bool ac_rcdImpl::handle_reset() {

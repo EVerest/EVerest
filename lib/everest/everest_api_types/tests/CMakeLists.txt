@@ -68,6 +68,7 @@ target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
   ACTUAL_TYPE_FILE_HASHES_CSV_PATH="${ACTUAL_TYPE_HASHES_CSV}"
   EXPECTED_IFC_FILE_HASHES_CSV_PATH="${EXPECTED_IFC_HASHES_CSV}"
   ACTUAL_IFC_FILE_HASHES_CSV_PATH="${ACTUAL_IFC_HASHES_CSV}"
+  EVEREST_API_SPEC_DIR="${PROJECT_SOURCE_DIR}/docs/source/reference/EVerest_API"
 )
 
 ####################### GTest and automatic (de-)serialization tests
@@ -84,10 +85,17 @@ target_include_directories(${TEST_TARGET_NAME} PUBLIC
 target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.hpp
   manual_tests/serialization/generic.cpp
+  manual_tests/serialization/auth.cpp
+  manual_tests/serialization/dc_external_derate.cpp
+  manual_tests/serialization/energy.cpp
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/serialization/evse_manager.cpp
+  manual_tests/serialization/evse_manager_enable_disable.cpp
+  manual_tests/serialization/powermeter.cpp
+  manual_tests/serialization/strict_inputs.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
+  manual_tests/spec_check/e2m_channel_depth.cpp
 )
 
 target_link_libraries(${TEST_TARGET_NAME} PRIVATE

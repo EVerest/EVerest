@@ -26,6 +26,12 @@ public:
     std::string extern_to_everest(const std::string& var) const;
     std::string reply_to_everest(const std::string& reply) const;
 
+    // not empty, within the MQTT length limit, no NUL, no wildcards and not reserved for the broker ($)
+    [[nodiscard]] static bool is_publishable(std::string_view topic);
+    // publishable, outside the framework and Node-RED namespaces, and within everest_api at least two levels
+    // below e2m, so a reply is taken neither for a command nor for one of EVerest's own publications
+    [[nodiscard]] static bool is_valid_reply_to(std::string_view topic);
+
     static const std::string api_base;
     static const std::string api_out;
     static const std::string api_in;

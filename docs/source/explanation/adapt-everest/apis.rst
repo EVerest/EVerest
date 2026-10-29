@@ -191,7 +191,8 @@ In situations where a request/reply pattern is implemented, the timeout
 for a response can be configured (*cfg_request_reply_to_s* - these timeouts
 cannot be disabled since internal EVerest timeouts apply) . In general it
 is advisable to respond as quickly as possible in to to prevent EVerest
-from blocking internally.
+from blocking internally. A reply that does not match its schema ends the
+request at once with the same default response as a timeout.
 
 AsyncAPI
 ========
@@ -252,6 +253,19 @@ carry multiple messages, but concerning EVerest API, there is a
 one-to-one mapping between a message and a channel. A message carries
 content in the form of payload and possibly headers.
 
+Commands without arguments carry an empty JSON object (``{}``) as payload,
+never an empty payload. Request/reply messages without arguments consist of
+the ``headers`` object only; the ``payload`` property is omitted. EVerest
+ignores a ``payload`` sent with such a request.
+
+A payload whose schema is a plain number or integer has to be a JSON number of that
+kind: booleans, strings and ``null`` are rejected with a log warning, and an integer
+channel rejects a fraction. The same holds for number and integer properties of
+an object. A number that does not fit the type EVerest stores it in is rejected
+as well instead of being wrapped or rounded to infinity. For most integers
+that type is a 32-bit signed integer, for most numbers a single-precision float
+(up to about 3.4e38).
+
 The content type for EVerest API is always JSON. The content is
 individual for each message and defined in *components:schemas* within
 the same file or sometimes in a referenced file.
@@ -275,13 +289,45 @@ reply channel and a dynamic reply address.
 If the client receives a request, it has to reply to the topic provided
 in the header's *replyTo* property within *cfg_communication_check_to_s*
 seconds. If it does not, a default response is given by the API to
-EVerest and an error is raised.
+EVerest and an error is raised. Requests sent by EVerest always carry
+*replyTo*.
 
-If the client sends a request, it has to specify the reply topic, where
-it expects the answer. This information is communicated via the
-*replyTo* property of the headers object. It is the client's
-responsibility to ensure that the topic is unique in order to relate
-replies to requests.
+If the client sends a request, it specifies the reply topic, where it
+expects the answer, in the *replyTo* property of the headers object. It
+is the client's responsibility to ensure that the topic is unique in
+order to relate replies to requests. A client that is not interested in
+the reply omits *replyTo*: EVerest executes the request and discards the
+reply.
+
+EVerest rejects a request without executing it if
+
+- the request is not a JSON object, or its *headers* is present but not
+  an object (``null`` included),
+- *replyTo* is present but not a string,
+- *replyTo* is not a topic a reply can be published to: empty, longer
+  than 65535 bytes, containing a NUL character or the wildcards ``+`` or
+  ``#``, or starting with ``$``, which is reserved for the broker,
+- *replyTo* lies in a namespace EVerest subscribes or publishes to, where a
+  reply could be taken for another request or for a message from EVerest:
+
+  - ``everest/...``, the framework's internal namespace,
+  - ``everest_external/nodered/...``, the Node-RED debug interface of
+    EvseManager, EvManager and the board support modules,
+  - any ``everest_api/...`` topic that does not have at least two levels
+    below an ``e2m`` level, or that has an ``m2e`` level. This covers the
+    ``m2e`` and ``e2m/<name>`` channels of the API modules,
+    ``everest_api/discover``, ``everest_api/query-modules/...`` and the
+    ``everest_api/<module>/cmd/...`` topics of the ``API``, ``Setup`` and
+    OCPP modules and the simulators.
+
+  A reply topic in ``everest_api`` therefore looks like
+  ``everest_api/1/<api_type>/<module_id>/e2m/<operation>/<unique id>``. The
+  ``e2m`` channels of the API specifications are one level deep
+  (``e2m/<name>``), so such a topic never collides with one of them.
+
+  The list covers EVerest's own topics. It cannot cover topics that a
+  module subscribes to from its configuration or that out-of-tree modules
+  use, nor a ``mqtt_everest_prefix`` other than the default ``everest``.
 
 Using the EVerest API
 ======================

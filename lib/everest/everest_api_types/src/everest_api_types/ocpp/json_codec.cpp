@@ -3,10 +3,16 @@
 
 #include "ocpp/json_codec.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
 #include "ocpp/API.hpp"
 #include "ocpp/codec.hpp"
+#include <cstdint>
+#include <stdexcept>
 
 namespace everest::lib::API::V1_0::types::ocpp {
+
+using utilities::json_number;
 
 using json = nlohmann::json;
 
@@ -247,8 +253,16 @@ void to_json(json& j, EVSE const& k) noexcept {
 }
 
 void from_json(const json& j, EVSE& k) {
-    set_obj(id);
-    set_obj_optional(connector_id);
+    k.id = json_number<int32_t>(j.at("id"));
+    if (j.contains("connector_id")) {
+        k.connector_id.emplace(json_number<int32_t>(j.at("connector_id")));
+    }
+    if (k.id < 1) {
+        throw std::invalid_argument("EVSE: id out of range");
+    }
+    if (k.connector_id.has_value() and (k.connector_id.value() < 1)) {
+        throw std::invalid_argument("EVSE: connector_id out of range");
+    }
 }
 
 void to_json(json& j, Component const& k) noexcept {
@@ -489,7 +503,7 @@ void to_json(json& j, BootNotificationResponse const& k) noexcept {
 void from_json(const json& j, BootNotificationResponse& k) {
     set_obj(status);
     set_obj(current_time);
-    set_obj(interval);
+    k.interval = json_number<int32_t>(j.at("interval"));
     set_obj_optional(status_info);
 }
 
@@ -578,17 +592,21 @@ void to_json(json& j, EventData const& k) noexcept {
 
 void from_json(const json& j, EventData& k) {
     set_obj(component_variable);
-    set_obj(event_id);
+    k.event_id = json_number<int32_t>(j.at("event_id"));
     set_obj(timestamp);
     set_obj(trigger);
     set_obj(actual_value);
     set_obj(event_notification_type);
-    set_obj_optional(cause);
+    if (j.contains("cause")) {
+        k.cause.emplace(json_number<int32_t>(j.at("cause")));
+    }
     set_obj_optional(tech_code);
     set_obj_optional(tech_info);
     set_obj_optional(cleared);
     set_obj_optional(transaction_id);
-    set_obj_optional(variable_monitoring_id);
+    if (j.contains("variable_monitoring_id")) {
+        k.variable_monitoring_id.emplace(json_number<int32_t>(j.at("variable_monitoring_id")));
+    }
 }
 
 void to_json(json& j, ChargingSchedules const& k) noexcept {
@@ -611,12 +629,19 @@ void to_json(json& j, ChargingSchedule const& k) noexcept {
 }
 
 void from_json(const json& j, ChargingSchedule& k) {
-    set_obj(evse);
+    k.evse = json_number<int32_t>(j.at("evse"));
     set_obj(charging_rate_unit);
     set_list(charging_schedule_period);
-    set_obj_optional(duration);
+    if (j.contains("duration")) {
+        k.duration.emplace(json_number<int32_t>(j.at("duration")));
+    }
     set_obj_optional(start_schedule);
-    set_obj_optional(min_charging_rate);
+    if (j.contains("min_charging_rate")) {
+        k.min_charging_rate.emplace(json_number<float>(j.at("min_charging_rate")));
+    }
+    if (k.evse < 0) {
+        throw std::invalid_argument("ChargingSchedule: evse out of range");
+    }
 }
 
 void to_json(json& j, ChargingSchedulePeriod const& k) noexcept {
@@ -647,25 +672,55 @@ void to_json(json& j, ChargingSchedulePeriod const& k) noexcept {
 }
 
 void from_json(const json& j, ChargingSchedulePeriod& k) {
-    set_obj(start_period);
-    set_obj(limit);
-    set_obj_optional(limit_L2);
-    set_obj_optional(limit_L3);
-    set_obj_optional(number_phases);
-    set_obj_optional(stack_level);
-    set_obj_optional(phase_to_use);
-    set_obj_optional(discharge_limit);
-    set_obj_optional(discharge_limit_L2);
-    set_obj_optional(discharge_limit_L3);
-    set_obj_optional(setpoint);
-    set_obj_optional(setpoint_L2);
-    set_obj_optional(setpoint_L3);
-    set_obj_optional(setpoint_reactive);
-    set_obj_optional(setpoint_reactive_L2);
-    set_obj_optional(setpoint_reactive_L3);
+    k.start_period = json_number<int32_t>(j.at("start_period"));
+    k.limit = json_number<float>(j.at("limit"));
+    if (j.contains("limit_L2")) {
+        k.limit_L2.emplace(json_number<float>(j.at("limit_L2")));
+    }
+    if (j.contains("limit_L3")) {
+        k.limit_L3.emplace(json_number<float>(j.at("limit_L3")));
+    }
+    if (j.contains("number_phases")) {
+        k.number_phases.emplace(json_number<int32_t>(j.at("number_phases")));
+    }
+    if (j.contains("stack_level")) {
+        k.stack_level.emplace(json_number<int32_t>(j.at("stack_level")));
+    }
+    if (j.contains("phase_to_use")) {
+        k.phase_to_use.emplace(json_number<int32_t>(j.at("phase_to_use")));
+    }
+    if (j.contains("discharge_limit")) {
+        k.discharge_limit.emplace(json_number<float>(j.at("discharge_limit")));
+    }
+    if (j.contains("discharge_limit_L2")) {
+        k.discharge_limit_L2.emplace(json_number<float>(j.at("discharge_limit_L2")));
+    }
+    if (j.contains("discharge_limit_L3")) {
+        k.discharge_limit_L3.emplace(json_number<float>(j.at("discharge_limit_L3")));
+    }
+    if (j.contains("setpoint")) {
+        k.setpoint.emplace(json_number<float>(j.at("setpoint")));
+    }
+    if (j.contains("setpoint_L2")) {
+        k.setpoint_L2.emplace(json_number<float>(j.at("setpoint_L2")));
+    }
+    if (j.contains("setpoint_L3")) {
+        k.setpoint_L3.emplace(json_number<float>(j.at("setpoint_L3")));
+    }
+    if (j.contains("setpoint_reactive")) {
+        k.setpoint_reactive.emplace(json_number<float>(j.at("setpoint_reactive")));
+    }
+    if (j.contains("setpoint_reactive_L2")) {
+        k.setpoint_reactive_L2.emplace(json_number<float>(j.at("setpoint_reactive_L2")));
+    }
+    if (j.contains("setpoint_reactive_L3")) {
+        k.setpoint_reactive_L3.emplace(json_number<float>(j.at("setpoint_reactive_L3")));
+    }
     set_obj_optional(preconditioning_request);
     set_obj_optional(evse_sleep);
-    set_obj_optional(v2x_baseline);
+    if (j.contains("v2x_baseline")) {
+        k.v2x_baseline.emplace(json_number<float>(j.at("v2x_baseline")));
+    }
     set_obj_optional(operation_mode);
     set_optional_list(v2x_freq_watt_curve);
     set_optional_list(v2x_signal_watt_curve);
@@ -708,8 +763,8 @@ void to_json(json& j, V2XSignalWattPointCurve const& k) noexcept {
 }
 
 void from_json(const json& j, V2XSignalWattPointCurve& k) {
-    set_obj(signal);
-    set_obj(power);
+    k.signal = json_number<int32_t>(j.at("signal"));
+    k.power = json_number<float>(j.at("power"));
 }
 
 void to_json(json& j, V2XFreqWattPointType const& k) noexcept {
@@ -720,8 +775,8 @@ void to_json(json& j, V2XFreqWattPointType const& k) noexcept {
 }
 
 void from_json(const json& j, V2XFreqWattPointType& k) {
-    set_obj(frequency);
-    set_obj(power);
+    k.frequency = json_number<float>(j.at("frequency"));
+    k.power = json_number<float>(j.at("power"));
 }
 
 void to_json(json& j, MessageDirection const& k) noexcept {
@@ -772,8 +827,12 @@ void from_json(const json& j, ConnectionStatus& k) {
     set_obj(connected);
     set_obj_optional(csms_url);
     set_obj_optional(identity);
-    set_obj_optional(security_profile);
-    set_obj_optional(configuration_slot);
+    if (j.contains("security_profile")) {
+        k.security_profile.emplace(json_number<int32_t>(j.at("security_profile")));
+    }
+    if (j.contains("configuration_slot")) {
+        k.configuration_slot.emplace(json_number<int32_t>(j.at("configuration_slot")));
+    }
     set_obj_optional(ocpp_interface);
     set_obj_optional(ocpp_transport);
     set_obj_optional(ocpp_version);

@@ -101,9 +101,13 @@ components:
       summary: Call to get the charger information
       payload:
         type: object
+        required:
+          - headers
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string

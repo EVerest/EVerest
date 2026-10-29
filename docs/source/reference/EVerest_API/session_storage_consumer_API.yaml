@@ -191,17 +191,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/GetSessionsRequest'
       examples:
@@ -243,7 +242,10 @@ components:
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/SessionIdentifier'
       examples:
@@ -272,17 +274,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
           payload:
             $ref: '#/components/schemas/ClearSessionsRequest'
       examples:

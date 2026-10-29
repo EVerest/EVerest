@@ -86,6 +86,15 @@ class AcrossFileGenerator:
         return type_string in helpers[namespace.__str__()].keys()
 
 
+# Integer fields whose schema bounds them; vector elements carry their index as a suffix.
+BOUNDED_INT_FIELDS = {"evse_ids": (1, 1000), "enable_priority": (0, 10000), "retries": (1, 1000), "decimals": (0, 10),
+                      "connector_id": (1, 128), "evse": (0, 128), "id": (1, 128)}
+
+
+def bounded_int_range(name):
+    return BOUNDED_INT_FIELDS.get(name.rstrip("0123456789"))
+
+
 def get_vector_type(type_string):
     return ValueGenerator.generics_extractor("std::vector", type_string)
 
@@ -168,6 +177,8 @@ class ValueGenerator:
                 return self.struct_printout(prefix, generation)
 
         match type_string_cleaned:
+            case "int32_t" if bounded_int_range(name_string):
+                value_string = str(random.randint(*bounded_int_range(name_string)))
             case "int32_t":
                 s = ((2 ** 32) - 1) / 2
                 base = random.randint(math.floor(-s), math.floor(s))

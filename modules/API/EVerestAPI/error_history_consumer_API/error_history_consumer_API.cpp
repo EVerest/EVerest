@@ -58,13 +58,13 @@ auto error_history_consumer_API::forward_and_cache_api_var(std::string const& va
 void error_history_consumer_API::generate_api_cmd_active_errors() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("active_errors", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         if (deserialize_request(data, reply_to)) {
             types::error_history::FilterArguments&& filter{};
             filter.state_filter = types::error_history::State::Active;
             auto active_errors = r_error_history->call_get_errors(std::move(filter));
             auto reply = to_external_api(active_errors);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -74,12 +74,12 @@ void error_history_consumer_API::generate_api_cmd_active_errors() {
 void error_history_consumer_API::generate_api_cmd_get_errors() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("get_errors", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         API_types_ext::FilterArguments_External payload;
         if (deserialize_request(data, reply_to, payload)) {
             auto errors = r_error_history->call_get_errors(to_internal_api(payload));
             auto reply = to_external_api(errors);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;

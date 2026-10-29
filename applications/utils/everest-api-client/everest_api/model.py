@@ -28,8 +28,17 @@ _CHANNEL_PARAM = re.compile(r"\{([A-Za-z_][A-Za-z0-9_]*)\}")
 
 def reply_topic(request_topic: str) -> str:
     """The topic a reply to a request on *request_topic* is published to: the
-    direction level m2e becomes e2m (the replyTo address the client generates)."""
-    return "/".join("e2m" if level == "m2e" else level for level in request_topic.split("/"))
+    direction level m2e becomes e2m (the replyTo address the client generates).
+    The entrypoint requests (everest_api/discover, everest_api/query-modules/...)
+    have no direction level; their replies go below everest_api/e2m/. EVerest
+    rejects a replyTo in everest_api that is not at least two levels below e2m,
+    which the per-request id level appended to this topic satisfies."""
+    levels = request_topic.split("/")
+    if "m2e" in levels:
+        return "/".join("e2m" if level == "m2e" else level for level in levels)
+    # a full topic or an address relative to everest_api/
+    below_base = 1 if levels[0] == "everest_api" else 0
+    return "/".join(levels[:below_base] + ["e2m"] + levels[below_base:])
 
 
 def _channel_params(address: Optional[str]) -> List[str]:

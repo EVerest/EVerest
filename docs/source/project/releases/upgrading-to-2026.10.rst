@@ -221,6 +221,32 @@ section for the service and the Mosquitto setup.
 EVerest APIs
 ============
 
+- ``evse_board_support_API`` and ``system_API``: commands without arguments
+  (``cp_state_X1``, ``cp_state_F``, ``cp_state_E``, ``lock``, ``unlock``,
+  ``self_test``, ``allow_firmware_installation``) carry an empty JSON object
+  ``{}`` as payload, like the other APIs, instead of an empty payload. Clients
+  that tested for an empty payload must accept ``{}``.
+- All EVerest API modules and the configuration and lifecycle APIs: a request
+  without ``headers.replyTo`` is executed and its reply discarded, as before,
+  but without a warning. A request is now rejected without being executed if it
+  is not a JSON object, if ``headers`` is not an object (``null`` included), or
+  if ``replyTo`` is not a string, not publishable (empty, ``+``, ``#``, NUL,
+  leading ``$``) or in a namespace EVerest subscribes or publishes to
+  (``everest/...``, ``everest_external/nodered/...``, and in ``everest_api``
+  everything but topics at least two levels below ``e2m``). Before, such
+  requests were executed and their reply was dropped, delivered as another
+  request or published as if it came from EVerest. A client that replies to
+  ``everest_api/.../e2m/<operation>`` without a unique level of its own below
+  it must add one, e.g. ``e2m/<operation>/<uuid>``. See :ref:`everest_apis`. In ``everest_api_types``,
+  ``generic::RequestReply::replyTo`` and the ``reply_to`` argument of
+  ``deserialize_request`` are ``std::optional<std::string>``; replies are sent
+  with ``MqttProviderInterface::publish_reply``, which publishes nothing when
+  there is no ``replyTo``.
+- All EVerest API modules: a number that does not fit the type it is stored in
+  (usually a 32-bit signed integer or a single-precision float) is rejected.
+  Before, an integer such as ``4294967297`` wrapped (to ``1`` for a connector
+  id) and a number beyond about 3.4e38 became infinity.
+
 The deprecated topics keep working until 2027.04.0 at the earliest. See
 :ref:`project-deprecation-index` for the full list, including:
 

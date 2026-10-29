@@ -25,8 +25,6 @@ public:
 
 private:
     Everest::MqttProvider& provider;
-
-    [[nodiscard]] static bool is_topic_valid(std::string_view topic);
 };
 
 } // namespace everest::lib::API::Mqtt
