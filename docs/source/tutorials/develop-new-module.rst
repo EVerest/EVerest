@@ -218,8 +218,9 @@ configuration::
 
 .. note::
 
-    ``ev-cli`` prints ``Could not detect EVerest path in --everest-dir`` at
-    this point, because the project has not been configured with CMake yet.
+    ``ev-cli`` prints ``Could not find EVerest among the everest
+    directories`` at this point, because the project has not been configured
+    with CMake yet.
     This message can be ignored, the files are generated nevertheless.
 
 After that, you should have the following file structure::

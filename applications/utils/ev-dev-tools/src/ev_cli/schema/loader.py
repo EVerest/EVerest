@@ -17,7 +17,7 @@ from typing import Any, Sequence
 
 import yaml
 
-from ..errors import DefinitionNotFound, SchemaError
+from ..errors import DefinitionNotFound, EverestDirNotFound, SchemaError
 from ..ir.common import SourceRef
 from .diagnostics import Category, Diagnostic, Severity, Sink
 from .validate import Validators
@@ -49,6 +49,27 @@ class SourceTree:
 
     def __init__(self, everest_dirs: Sequence[Path]) -> None:
         self.everest_dirs = tuple(Path(d) for d in everest_dirs)
+        self._reject_unusable_roots()
+
+    def _reject_unusable_roots(self) -> None:
+        """A root that is not there is an error, not an empty search path.
+
+        Skipping it would turn a mistyped ``--everest-dir`` into a run that
+        finds no definitions and reports success.
+        """
+        if not self.everest_dirs:
+            raise EverestDirNotFound(
+                'no everest directory given. Pass --everest-dir naming a '
+                'directory that holds "interfaces", "types" and "errors".'
+            )
+        missing = [d for d in self.everest_dirs if not d.is_dir()]
+        if missing:
+            raise EverestDirNotFound(
+                'not an everest directory: '
+                f'{", ".join(str(d) for d in missing)}. Every --everest-dir '
+                'entry must exist; out-of-tree definitions are not found '
+                'implicitly.'
+            )
 
     def resolve(self, relative: str | Path) -> Path:
         """Return the first root in which ``relative`` exists."""

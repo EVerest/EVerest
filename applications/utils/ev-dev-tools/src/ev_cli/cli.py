@@ -34,22 +34,6 @@ from .commands import modules as module_commands
 from .commands import types as type_commands
 from .errors import EvCliError
 
-#: The repository root, reached from this file's own install location.
-#:
-#: This is wrong once ev-cli is installed normally: six levels up from
-#: ``<venv>/lib/pythonX.Y/site-packages/ev_cli/cli.py`` is two directories
-#: above the virtualenv, so the default names a path that has nothing to do
-#: with any checkout, and the documentation promises ``.`` instead.  It only
-#: looks right in a src-layout editable install, where those six levels happen
-#: to land on the repository root.
-#:
-#: Reproduced exactly as the previous implementation had it, all the same.
-#: Changing it alters what an unchanged command line does for a human -- the
-#: one such change in this rewrite -- so it belongs in its own commit rather
-#: than riding along here.
-DEFAULT_EVEREST_DIR = Path(__file__).resolve().parents[5]
-DEFAULT_SCHEMAS_DIR = DEFAULT_EVEREST_DIR / 'lib' / 'everest' / 'framework' / 'schemas'
-
 
 def _common_options() -> argparse.ArgumentParser:
     """The options every command that reads the definitions accepts.
@@ -57,30 +41,30 @@ def _common_options() -> argparse.ArgumentParser:
     Only what is genuinely shared: anything a single target needs belongs in
     that backend's own group instead.
 
-    Built per call rather than kept as a module-level singleton: half of these
+    Built per call rather than kept as a module-level singleton: most of these
     defaults are derived from the working directory, which would otherwise be
     frozen at import time.
     """
     parser = argparse.ArgumentParser(add_help=False)
     group = parser.add_argument_group('definition sources')
     cwd = Path.cwd()
-    everest_dir_default = [str(DEFAULT_EVEREST_DIR), str(cwd.parent / 'EVerest')]
 
     group.add_argument(
         '--work-dir', '-wd', type=str, default=str(cwd),
         help='work directory containing the manifest definitions (default: .)')
     group.add_argument(
-        '--everest-dir', '-ed', nargs='*', default=everest_dir_default,
+        '--everest-dir', '-ed', nargs='*', default=[str(cwd)],
         help='everest directories containing the interface and type definitions '
-             f'(default: {everest_dir_default})')
+             '(default: .)')
     group.add_argument(
         '--everest-projects', '-ep', nargs='*', default=['EVerest'],
         help='everest project names, used to locate their directories via a '
              'configured build (default: EVerest)')
     group.add_argument(
-        '--schemas-dir', '-sd', type=str, default=str(DEFAULT_SCHEMAS_DIR),
-        help=f'framework directory containing the schema definitions '
-             f'(default: {DEFAULT_SCHEMAS_DIR})')
+        '--schemas-dir', '-sd', type=str,
+        default=str(cwd / 'lib' / 'everest' / 'framework' / 'schemas'),
+        help='framework directory containing the schema definitions '
+             '(default: ./lib/everest/framework/schemas)')
     group.add_argument(
         '--licenses', '-lc', type=str, default=str(cwd / '../licenses'),
         help='directory from which custom license texts are read '

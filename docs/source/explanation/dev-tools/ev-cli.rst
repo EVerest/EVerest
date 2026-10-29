@@ -79,11 +79,12 @@ common:
 
 - ``--everest-dir``:
   root directory of EVerest core or any directory containing interface
-  and module definitions (default: ``.``)
+  and module definitions (default: ``.``).  Several may be given, and each
+  one must exist.
 
 - ``--schemas-dir``:
   schemas directory of the EVerest framework, containing the schema
-  definitions (default: ``../everest-framework/schemas``)
+  definitions (default: ``./lib/everest/framework/schemas``)
 
 - ``--clang-format-file``:
   if C++ output should be formatted, set this to the path of the

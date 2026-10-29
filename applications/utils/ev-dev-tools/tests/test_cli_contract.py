@@ -363,6 +363,33 @@ def test_invalid_invocations_exit_nonzero(argv):
     assert run(*argv, check=False).returncode != 0
 
 
+def test_missing_everest_dir_fails(tmp_path):
+    """A root that is not there must stop the run, not empty the search path."""
+    proc = run(
+        'interface', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir', str(tmp_path / 'absent'),
+        '--output-dir', str(tmp_path / 'out'),
+        check=False,
+    )
+    assert proc.returncode != 0
+    assert 'absent' in proc.stderr
+    assert not (tmp_path / 'out').exists()
+
+
+def test_everest_dir_without_entries_fails(tmp_path):
+    proc = run(
+        'interface', 'generate-headers',
+        '--disable-clang-format',
+        '--schemas-dir', str(SCHEMAS_DIR),
+        '--everest-dir',
+        '--output-dir', str(tmp_path / 'out'),
+        check=False,
+    )
+    assert proc.returncode != 0
+
+
 @pytest.mark.parametrize('argv', [
     ('--help',),
     ('module', '--help'),
