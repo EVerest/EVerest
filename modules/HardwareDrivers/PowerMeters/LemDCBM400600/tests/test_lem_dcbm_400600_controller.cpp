@@ -963,6 +963,8 @@ TEST_F(LemDCBM400600ControllerTest, test_failed_stop_keeps_the_transaction) {
     EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
     ASSERT_TRUE(res.signed_meter_value.has_value());
     EXPECT_EQ(res.signed_meter_value.value().signed_meter_data, "mock_ocmf_string");
+    // the transaction is forgotten once its stop is confirmed
+    EXPECT_EQ(controller.stop_transaction("").error, "No dangling transaction open");
 }
 
 /// \brief Test a stop rejected by the device keeps the transaction as well
@@ -1060,6 +1062,191 @@ TEST_F(LemDCBM400600ControllerTest, test_start_transaction_follows_the_device_af
 
     EXPECT_EQ(transaction_request_status_to_string(controller.start_transaction(this->transaction_request).status),
               "OK");
+}
+
+/// \brief Test a start fails without being sent if the device status cannot be read
+TEST_F(LemDCBM400600ControllerTest, test_start_transaction_fails_if_device_status_cannot_be_read) {
+    EXPECT_CALL(*this->http_client, get("/v1/status")).Times(2).WillRepeatedly(testing::Return(HttpResponse{500, ""}));
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(0);
+    EXPECT_CALL(*this->http_client, post(testing::_, testing::_)).Times(0);
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    const auto res = controller.start_transaction(this->transaction_request);
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+    ASSERT_TRUE(res.error.has_value());
+    EXPECT_THAT(res.error.value(), testing::HasSubstr("/v1/status"));
+}
+
+/// \brief Test a connection error while stopping the transaction left running names that transaction
+TEST_F(LemDCBM400600ControllerTest, test_start_transaction_names_transaction_left_running_on_connection_error) {
+    EXPECT_CALL(*this->http_client, get("/v1/status"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, this->status_transaction_ongoing}));
+    EXPECT_CALL(*this->http_client, get("/v1/legal"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"transactionId": "dangling_transaction_id"})"}));
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=dangling_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .WillRepeatedly(testing::Throw(HttpClientError{"mock error"}));
+    EXPECT_CALL(*this->http_client, post(testing::_, testing::_)).Times(0);
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    const auto res = controller.start_transaction(this->transaction_request);
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+    ASSERT_TRUE(res.error.has_value());
+    EXPECT_THAT(res.error.value(),
+                testing::HasSubstr("dangling_transaction_id is still running on the device and could not be stopped"));
+}
+
+/// \brief Test a retry after a failed OCMF fetch does not send the stop to the device again
+TEST_F(LemDCBM400600ControllerTest, test_stop_is_sent_once_if_only_the_ocmf_fetch_fails) {
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(1)
+        .WillOnce(testing::Return(HttpResponse{200, this->put_legal_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(2)
+        .WillOnce(testing::Return(HttpResponse{500, ""}))
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    const auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
+    ASSERT_TRUE(res.signed_meter_value.has_value());
+    EXPECT_EQ(res.signed_meter_value.value().signed_meter_data, "mock_ocmf_string");
+}
+
+/// \brief Test a stop that fails while the device is unreachable returns the OCMF record last fetched for it
+TEST_F(LemDCBM400600ControllerTest, test_failed_stop_returns_the_last_ocmf_of_the_transaction) {
+    testing::Sequence seq;
+    this->expect_no_transaction_on_device(seq);
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "intermediate_ocmf_string"}));
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Throw(HttpClientError{"mock error"}));
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    ASSERT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+    poll_once(controller);
+    const auto res = controller.stop_transaction("mock_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "OK");
+    ASSERT_TRUE(res.signed_meter_value.has_value());
+    EXPECT_EQ(res.signed_meter_value.value().signed_meter_data, "intermediate_ocmf_string");
+}
+
+/// \brief Test a failed stop never returns the OCMF record of a previous transaction
+TEST_F(LemDCBM400600ControllerTest, test_failed_stop_does_not_return_the_ocmf_of_another_transaction) {
+    auto second_request = this->transaction_request;
+    second_request.transaction_id = "second_transaction_id";
+    testing::Sequence seq;
+    this->expect_no_transaction_on_device(seq);
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->time_sync_helper, sync_if_deadline_expired(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, get("/v1/livemeasure"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "first_ocmf_string"}));
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->put_legal_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "first_ocmf_string"}));
+    this->expect_no_transaction_on_device(seq);
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", testing::HasSubstr("second_transaction_id")))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=second_transaction_id", R"({"running": false})"))
+        .Times(2)
+        .InSequence(seq)
+        .WillRepeatedly(testing::Throw(HttpClientError{"mock error"}));
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+
+    ASSERT_EQ(controller.start_transaction(this->transaction_request).status,
+              types::powermeter::TransactionRequestStatus::OK);
+    poll_once(controller);
+    ASSERT_EQ(transaction_request_status_to_string(controller.stop_transaction("mock_transaction_id").status), "OK");
+    ASSERT_EQ(controller.start_transaction(second_request).status, types::powermeter::TransactionRequestStatus::OK);
+    const auto res = controller.stop_transaction("second_transaction_id");
+
+    EXPECT_EQ(transaction_request_status_to_string(res.status), "UNEXPECTED_ERROR");
+    EXPECT_FALSE(res.signed_meter_value.has_value());
+}
+
+/// \brief Test a status update does not overwrite a transaction started while it was reading the device
+TEST_F(LemDCBM400600ControllerTest, test_status_update_keeps_a_transaction_started_meanwhile) {
+    LemDCBM400600Controller* controller_ptr = nullptr;
+    testing::Sequence seq;
+    // the status update reads no transaction on the device, then a start completes before it applies that
+    EXPECT_CALL(*this->http_client, get("/v1/status"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Invoke([this, &controller_ptr](const std::string&) {
+            EXPECT_EQ(controller_ptr->start_transaction(this->transaction_request).status,
+                      types::powermeter::TransactionRequestStatus::OK);
+            return HttpResponse{200, this->status_no_transaction};
+        }));
+    this->expect_no_transaction_on_device(seq);
+    EXPECT_CALL(*this->time_sync_helper, sync(testing::_)).Times(1).InSequence(seq);
+    EXPECT_CALL(*this->http_client, post("/v1/legal", this->expected_start_transaction_request_body))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{201, R"({"running": true})"}));
+    EXPECT_CALL(*this->http_client, get("/v1/legal"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, R"({"transactionId": "previous_transaction_id"})"}));
+    // the started transaction is still known: a cleanup stop stops it on the device
+    EXPECT_CALL(*this->http_client, put("/v1/legal?transactionId=mock_transaction_id", R"({"running": false})"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, this->put_legal_response}));
+    EXPECT_CALL(*this->http_client, get("/v1/ocmf?transactionId=mock_transaction_id"))
+        .Times(1)
+        .InSequence(seq)
+        .WillOnce(testing::Return(HttpResponse{200, "mock_ocmf_string"}));
+    LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
+                                       this->controller_config);
+    controller_ptr = &controller;
+
+    controller.update_lem_status();
+
+    EXPECT_EQ(transaction_request_status_to_string(controller.stop_transaction("").status), "OK");
 }
 
 //****************************************************************

@@ -63,6 +63,7 @@ std::string LemDCBM400600Controller::get_current_transaction() {
 
 void LemDCBM400600Controller::update_lem_status() {
     // should call this after a communication error to figure out what has been happening
+    const auto generation = this->transaction_state_generation();
     auto status_response = this->http_client->get("/v1/status");
 
     if (status_response.status_code != 200) {
@@ -72,7 +73,7 @@ void LemDCBM400600Controller::update_lem_status() {
         json data = json::parse(status_response.body);
         const bool need_to_stop_transaction = data.at("status").at("bits").at("transactionIsOnGoing");
         const auto transaction_id = get_current_transaction();
-        this->set_transaction_state(need_to_stop_transaction, transaction_id);
+        this->apply_device_transaction_state(generation, need_to_stop_transaction, transaction_id);
         if (need_to_stop_transaction) {
             // we need to get the current transaction id or the last known transaction id since we might
             // receive a stop transaction with id 0 or with the last known transaction if
@@ -88,13 +89,31 @@ void LemDCBM400600Controller::update_lem_status() {
     }
 }
 
-void LemDCBM400600Controller::set_transaction_state(bool need_to_stop_transaction, const std::string& transaction_id) {
+std::uint64_t LemDCBM400600Controller::transaction_state_generation() {
+    return this->transaction_state.handle()->generation;
+}
+
+void LemDCBM400600Controller::apply_device_transaction_state(std::uint64_t generation, bool need_to_stop_transaction,
+                                                             const std::string& transaction_id) {
     auto state = this->transaction_state.handle();
+    if (state->generation != generation) {
+        EVLOG_debug << "LEM DCBM 400/600: Transaction state changed while reading the device status, keeping it";
+        return;
+    }
     state->need_to_stop_transaction = need_to_stop_transaction;
     state->current_transaction_id = transaction_id;
 }
 
+void LemDCBM400600Controller::record_started_transaction(const std::string& transaction_id) {
+    auto state = this->transaction_state.handle();
+    state->need_to_stop_transaction = true;
+    state->current_transaction_id = transaction_id;
+    state->fallback_ocmf.reset();
+    state->generation++;
+}
+
 void LemDCBM400600Controller::fetch_meter_id_from_device() {
+    const auto generation = this->transaction_state_generation();
     auto status_response = this->http_client->get("/v1/status");
 
     if (status_response.status_code != 200) {
@@ -110,7 +129,7 @@ void LemDCBM400600Controller::fetch_meter_id_from_device() {
         this->v2_capable =
             ((components.size() == 4) && (components[1] > "1")); // the major version must be newer than 1
         const auto transaction_id = get_current_transaction();
-        this->set_transaction_state(need_to_stop_transaction, transaction_id);
+        this->apply_device_transaction_state(generation, need_to_stop_transaction, transaction_id);
         if (need_to_stop_transaction) {
             // we need to get the current transaction id or the last known transaction id since we might
             // receive a stop transaction with id 0 or with the last known transaction if
@@ -133,7 +152,7 @@ LemDCBM400600Controller::start_transaction(const types::powermeter::TransactionR
         call_with_retry([this, &value]() { this->request_device_to_start_transaction(value); },
                         this->config.transaction_number_of_http_retries,
                         this->config.transaction_retry_wait_in_milliseconds);
-        this->set_transaction_state(true, value.transaction_id);
+        this->record_started_transaction(value.transaction_id);
         // make sure the fallback OCMF record for this transaction is fetched on the next poll
         this->ocmf_fetch_state.handle()->fetch_due = true;
     } catch (DCBMUnexpectedResponseException& error) {
@@ -182,8 +201,16 @@ void LemDCBM400600Controller::stop_dangling_transaction(const std::string& new_t
         throw DCBMUnexpectedResponseException(
             fmt::format("Transaction {} is still running on the device and could not be stopped: {}",
                         *dangling_transaction_id, error.what()));
+    } catch (HttpClientError& error) {
+        if (not dangling_transaction_id.has_value()) {
+            throw;
+        }
+        throw HttpClientError(fmt::format("Transaction {} is still running on the device and could not be stopped: {}",
+                                          *dangling_transaction_id, error.what()));
     }
-    this->transaction_state.handle()->need_to_stop_transaction = false;
+    auto state = this->transaction_state.handle();
+    state->need_to_stop_transaction = false;
+    state->generation++;
 }
 
 void LemDCBM400600Controller::request_device_to_start_transaction(const types::powermeter::TransactionReq& value) {
@@ -217,6 +244,7 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
             // transaction is not open but we need to provide OCMF information about it
             need_to_execute_device_stop_transaction = false;
             state->current_transaction_id = "";
+            state->generation++;
         }
         if (!(state->need_to_stop_transaction) && transaction_id.empty()) {
             // return an error because there is no transaction initially ongoing (at start up time)
@@ -232,14 +260,17 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
     // The transaction is only forgotten once the device confirmed its stop. If the stop fails, e.g. because the
     // device is unreachable, it keeps running on the device and the module keeps track of it.
     bool awaiting_stop_confirmation = false;
+    // a retry after a failed OCMF fetch must not stop the already stopped transaction once more
+    bool device_stopped = not need_to_execute_device_stop_transaction;
     try {
         return call_with_retry(
-            [this, need_to_execute_device_stop_transaction, tid, &awaiting_stop_confirmation]() {
+            [this, tid, &awaiting_stop_confirmation, &device_stopped]() {
                 // special case if we started and a transaction is ongoing - the upper layers might not know the
                 // transaction id
-                if (need_to_execute_device_stop_transaction) {
+                if (not device_stopped) {
                     this->stop_transaction_on_device(tid, awaiting_stop_confirmation);
                     this->mark_transaction_stopped(tid);
+                    device_stopped = true;
                 }
                 auto signed_meter_value = types::units_signed::SignedMeterValue{fetch_ocmf_result(tid), "", "OCMF"};
                 signed_meter_value.public_key.emplace(public_key_ocmf);
@@ -257,14 +288,14 @@ LemDCBM400600Controller::stop_transaction(const std::string& transaction_id) {
         std::string error_message =
             fmt::format("Failed to stop transaction {} - connection to device failed: {}", tid, error.what());
         EVLOG_error << error_message;
-        // if we have the last known OCMF value, we can return it
-        if (current_signed_meter_value.public_key.has_value()) {
+        // if we have the last known OCMF value of this transaction, we can return it
+        std::optional<FallbackOCMF> fallback_ocmf = this->transaction_state.handle()->fallback_ocmf;
+        if (fallback_ocmf.has_value() and fallback_ocmf->transaction_id == tid) {
             // the OCMF record itself is not logged, it carries personal data
             EVLOG_warning << "LEM DCBM 400/600: Returning the last known OCMF value for transaction " << tid;
             return types::powermeter::TransactionStopResponse{
-                types::powermeter::TransactionRequestStatus::OK, {}, current_signed_meter_value};
+                types::powermeter::TransactionRequestStatus::OK, {}, fallback_ocmf->signed_meter_value};
         }
-        current_signed_meter_value = types::units_signed::SignedMeterValue{};
         return types::powermeter::TransactionStopResponse{
             types::powermeter::TransactionRequestStatus::UNEXPECTED_ERROR, {}, {}, error_message};
     }
@@ -295,8 +326,9 @@ bool LemDCBM400600Controller::request_device_to_stop_transaction(const std::stri
                                                                    transaction_id, status));
         }
     } catch (json::exception& json_error) {
-        throw UnexpectedDCBMResponseBody(
-            endpoint, fmt::format("Json error '{}' for body {}", json_error.what(), legal_api_response.body));
+        // neither the body nor the parser message is included, both can contain the signed record
+        throw UnexpectedDCBMResponseBody(endpoint,
+                                         fmt::format("Invalid stop response, json error id {}", json_error.id));
     }
     return false;
 }
@@ -337,6 +369,7 @@ void LemDCBM400600Controller::mark_transaction_stopped(const std::string& transa
     if (state->current_transaction_id == transaction_id) {
         state->need_to_stop_transaction = false;
         state->current_transaction_id = "";
+        state->generation++;
     }
 }
 
@@ -403,10 +436,13 @@ void LemDCBM400600Controller::update_transaction_fallback_ocmf(const std::string
     // The signed meter value is only consumed if the device is unreachable when the transaction is
     // stopped, so this is a pure fallback and must never delay the publication of the live measurements.
     try {
-        current_signed_meter_value =
-            types::units_signed::SignedMeterValue{fetch_ocmf_result(transaction_id), "", "OCMF"};
-        current_signed_meter_value.public_key.emplace(public_key_ocmf);
-        current_signed_meter_value.timestamp.emplace(timestamp);
+        auto signed_meter_value = types::units_signed::SignedMeterValue{fetch_ocmf_result(transaction_id), "", "OCMF"};
+        signed_meter_value.public_key.emplace(public_key_ocmf);
+        signed_meter_value.timestamp.emplace(timestamp);
+        auto state = this->transaction_state.handle();
+        if (state->need_to_stop_transaction and state->current_transaction_id == transaction_id) {
+            state->fallback_ocmf = FallbackOCMF{transaction_id, std::move(signed_meter_value)};
+        }
     } catch (UnexpectedDCBMResponseCode& error) {
         EVLOG_error << "LEM DCBM 400/600: Could not get the OCMF value: " << error.what();
     } catch (UnexpectedDCBMResponseBody& error) {

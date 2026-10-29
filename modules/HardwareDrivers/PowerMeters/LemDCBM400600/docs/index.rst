@@ -67,7 +67,7 @@ Before the start, the driver asks the device through ``/v1/status`` whether a tr
 e.g. because its stop failed while the device was unreachable. If so, it stops that transaction first. If it cannot
 be stopped, the start fails with that reason instead of being sent to the device, which would reject it.
 
-A ``start_transaction`` command is directly forwarded via a ``POST``  to the ``/v1/legal`` endpoint with a copy of the transaction request
+A ``start_transaction`` command is forwarded via a ``POST``  to the ``/v1/legal`` endpoint with a copy of the transaction request
 as payload (up to renaming of attributes). It returns ``true``, if the device (possibly after a limited amount of retries) returns a success
 response with a valid payload that indicates a ``running`` transaction status, otherwised it returns ``false``.
 
