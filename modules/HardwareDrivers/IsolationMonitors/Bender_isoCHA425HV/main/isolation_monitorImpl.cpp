@@ -216,7 +216,7 @@ void isolation_monitorImpl::ready() {
                     // aka we are in a measuring cycle (start called)
                     if (not enable_publishing && config.disable_device_on_stop) {
                         if (not send_to_imd(3026, 0)) {
-                            EVLOG_error << "Can't disable the device: " << read_device_name().value_or("");
+                            EVLOG_error << "Can't disable the device at address " << config.imd_device_id;
                         } else {
                             EVLOG_info << "Device disabled after self test since we didn't start measuring cycle "
                                           "(timeout 10s)";
