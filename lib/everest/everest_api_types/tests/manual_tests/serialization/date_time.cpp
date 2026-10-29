@@ -32,6 +32,14 @@ TEST(date_time, date_times_are_read_as_rfc3339_in_utc) {
     EXPECT_FALSE(event.timestamp.has_value());
 }
 
+TEST(date_time, the_documented_limits_are_accepted) {
+    for (const auto* timestamp : {"1677-09-21T00:12:43.146Z", "2262-04-11T23:46:49.854Z"}) {
+        error_history::TimeperiodFilter filter;
+        ASSERT_TRUE(deserialize(timeperiod_filter(timestamp), filter)) << timestamp;
+        EXPECT_EQ(filter.timestamp_to, timestamp);
+    }
+}
+
 TEST(date_time, payloads_with_invalid_date_times_are_rejected) {
     for (const auto& timestamp :
          {nlohmann::json("2026-02-30T03:04:05Z"), nlohmann::json("9999-12-31T23:59:59Z"),

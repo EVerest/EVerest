@@ -252,7 +252,10 @@ type or an unknown enum value, or a field declared as
 ``format: date-time`` is no RFC 3339 date-time. It logs a warning, and a
 discarded request gets no reply. RFC 3339 requires a UTC offset, so a
 date-time in local time carries its offset, for example
-``2026-10-28T14:03:07.123+01:00``.
+``2026-10-28T14:03:07.123+01:00``. Date-times must lie between
+``1677-09-21T00:12:43.146Z`` and ``2262-04-11T23:46:49.854Z``. For an
+open end, such as ``timestamp_to`` in an error history filter, use
+``2262-04-11T23:46:49.854Z``; ``9999-12-31T23:59:59Z`` is discarded.
 
 AsyncAPI finally specifies operations on channels. The operations define
 the action on a specific channel (for EVerest API always from the
