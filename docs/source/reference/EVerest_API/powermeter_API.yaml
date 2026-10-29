@@ -470,7 +470,7 @@ components:
         - energy_Wh_import
       properties:
         timestamp:
-          description: Timestamp of measurement
+          description: Timestamp of measurement in RFC3339 format
           type: string
           format: date-time
         meter_id:
@@ -816,7 +816,7 @@ components:
               description: Public key (encoded in a string representation with eg. Base64)
               type: string
             timestamp:
-              description: Timestamp of measurement
+              description: Timestamp of measurement in RFC3339 format
               type: string
               format: date-time
         Current:

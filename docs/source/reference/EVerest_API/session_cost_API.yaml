@@ -646,7 +646,7 @@ components:
         - charging_price
       properties:
         timestamp_from:
-          description: Time when these prices become active.
+          description: Time when these prices become active, in RFC3339 format.
           type: string
           format: date-time
         charging_price:
@@ -758,12 +758,12 @@ components:
       properties:
         timestamp_from:
           description: >-
-            Absolute timestamp for the start of this chunk in RFC3339 UTC format
+            Absolute timestamp for the start of this chunk in RFC3339 format
           type: string
           format: date-time
         timestamp_to:
           description: >-
-            Absolute timestamp for the end of this chunk in RFC3339 UTC format
+            Absolute timestamp for the end of this chunk in RFC3339 format
           type: string
           format: date-time
         metervalue_from:

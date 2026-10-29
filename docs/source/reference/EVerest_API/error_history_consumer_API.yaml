@@ -395,6 +395,7 @@ components:
         origin:
           $ref: '#/components/schemas/ImplementationIdentifier'
         timestamp:
+          description: Time the error was raised in RFC3339 format
           type: string
           format: date-time
         uuid:
@@ -475,9 +476,11 @@ components:
         - timestamp_to
       properties:
         timestamp_from:
+          description: Start of the time period in RFC3339 format, inclusive
           type: string
           format: date-time
         timestamp_to:
+          description: End of the time period in RFC3339 format, inclusive
           type: string
           format: date-time
 

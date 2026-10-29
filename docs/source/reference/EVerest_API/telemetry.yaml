@@ -186,7 +186,7 @@ components:
         - type
       properties:
         timestamp:
-          description: UTC timestamp added by telemetry_publish.
+          description: Timestamp in RFC3339 format, added by telemetry_publish.
           type: string
           format: date-time
         connector_id:
