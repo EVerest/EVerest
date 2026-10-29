@@ -6,6 +6,8 @@
 #include <ocpp/common/constants.hpp>
 #include <ocpp/v2/ocpp_types.hpp>
 
+#include <cmath>
+
 using std::chrono::duration_cast;
 using std::chrono::seconds;
 
@@ -929,20 +931,26 @@ convert_intermediate_into_schedule(const IntermediateProfile& profile, ChargingR
 
 // Helper functions
 namespace {
+float smallest_magnitude(const float value1, const float value2) {
+    return std::abs(value2) < std::abs(value1) ? value2 : value1;
+}
+
 ///
 /// \brief Set the values of the phases so both `PeriodLimit`s have the same values for number of phases, which is used
 ///        later when combining the two.
 ///
 /// This is only done for OCPP version 2.1.
 ///
-/// If number of phases is two or three, and `limit` has a value and `limit_L2` or `limit_L3` do not have values:
-/// In case of `current_limit`: the `current_limit.limit` value is copied to `current_limit.limit_L2` and
-/// `current_limit.limit_L3`.
-/// In case of `power_limit`: The `power_limit.limit` value is divided by 3 and that value is
-/// copied to `power_limit.limit_L2` and `power_limit.limit_L3`.
+/// If number of phases is two or three and `limit` has a value, each of `limit_L2` and, with three phases, `limit_L3`
+/// without a value is given one; a value that is present is kept.
+/// In case of `current_limit`: the `current_limit.limit` value is copied.
+/// In case of `power_limit`: without `limit_L2` and `limit_L3`, `power_limit.limit` is the total over all phases and
+/// is divided by the number of phases into `limit`, `limit_L2` and `limit_L3`; otherwise `limit` is phase L1 and is
+/// copied.
 ///
-/// If number of phases is one, the minimum of `limit`, `limit_L2` and `limit_L3` is copied to `limit` and `limit_L2`
-/// and `limit_L3` are set to `no_limit_specified`.
+/// If number of phases is one, the value with the smallest magnitude of `limit`, `limit_L2` and `limit_L3` is copied to
+/// `limit` and `limit_L2` and `limit_L3` are set to `no_limit_specified`. Magnitude rather than value, so negative
+/// discharge limits and setpoints pick the most restrictive phase as well.
 ///
 /// \param current_limit        A PeriodLimit for `current` (possible containing limits for three phases).
 /// \param power_limit          A PeriodLimit for `power` (possible containing limits for three phases).
@@ -962,28 +970,18 @@ void set_setpoint_limit_phase_values(PeriodLimit& current_limit, PeriodLimit& po
     // later when combining the two.
     if (number_phases.has_value() && number_phases.value() == 1) {
         // When you have a single phase, but next to limit the limit_L2 and limit_L3 are also defined, then the limit
-        // will be the lowest of the three.
-        if (!is_equal(current_limit.limit, no_limit_specified)) {
-            if (!is_equal(current_limit.limit_L2, no_limit_specified)) {
-                current_limit.limit = std::min(current_limit.limit, current_limit.limit_L2);
-                current_limit.limit_L2 = no_limit_specified;
+        // will be the most restrictive of the three (K01.FR.147).
+        for (PeriodLimit* phase_limit : {&current_limit, &power_limit}) {
+            if (is_equal(phase_limit->limit, no_limit_specified)) {
+                continue;
             }
-
-            if (!is_equal(current_limit.limit_L3, no_limit_specified)) {
-                current_limit.limit = std::min(current_limit.limit, current_limit.limit_L3);
-                current_limit.limit_L3 = no_limit_specified;
+            if (!is_equal(phase_limit->limit_L2, no_limit_specified)) {
+                phase_limit->limit = smallest_magnitude(phase_limit->limit, phase_limit->limit_L2);
+                phase_limit->limit_L2 = no_limit_specified;
             }
-        }
-
-        if (!is_equal(power_limit.limit, no_limit_specified)) {
-            if (!is_equal(power_limit.limit_L2, no_limit_specified)) {
-                power_limit.limit = std::min(power_limit.limit, power_limit.limit_L2);
-                power_limit.limit_L2 = no_limit_specified;
-            }
-
-            if (!is_equal(power_limit.limit_L3, no_limit_specified)) {
-                power_limit.limit = std::min(power_limit.limit, power_limit.limit_L3);
-                power_limit.limit_L3 = no_limit_specified;
+            if (!is_equal(phase_limit->limit_L3, no_limit_specified)) {
+                phase_limit->limit = smallest_magnitude(phase_limit->limit, phase_limit->limit_L3);
+                phase_limit->limit_L3 = no_limit_specified;
             }
         }
         return;
@@ -993,19 +991,37 @@ void set_setpoint_limit_phase_values(PeriodLimit& current_limit, PeriodLimit& po
         return;
     }
 
-    // Three phases: One of this group has one phase specified and the other three, so let's specify the same number of
-    // phases for each.
-    if (!is_equal(current_limit.limit, no_limit_specified) && (is_equal(current_limit.limit_L2, no_limit_specified) ||
-                                                               is_equal(current_limit.limit_L3, no_limit_specified))) {
-        current_limit.limit_L2 = current_limit.limit;
-        current_limit.limit_L3 = current_limit.limit;
+    // Two or three phases: give every used phase a value, so the periods of the group combine per phase.
+    const bool has_L3 = number_phases.value() >= 3;
+    if (!is_equal(current_limit.limit, no_limit_specified)) {
+        if (is_equal(current_limit.limit_L2, no_limit_specified)) {
+            current_limit.limit_L2 = current_limit.limit;
+        }
+        if (has_L3 && is_equal(current_limit.limit_L3, no_limit_specified)) {
+            current_limit.limit_L3 = current_limit.limit;
+        }
     }
 
-    if (!is_equal(power_limit.limit, no_limit_specified) &&
-        (is_equal(power_limit.limit_L2, no_limit_specified) || is_equal(power_limit.limit_L3, no_limit_specified))) {
-        power_limit.limit_L2 = power_limit.limit / static_cast<float>(number_phases.value());
-        power_limit.limit_L3 = power_limit.limit / static_cast<float>(number_phases.value());
-        power_limit.limit = power_limit.limit / static_cast<float>(number_phases.value());
+    if (!is_equal(power_limit.limit, no_limit_specified)) {
+        const bool no_limit_L2 = is_equal(power_limit.limit_L2, no_limit_specified);
+        const bool no_limit_L3 = is_equal(power_limit.limit_L3, no_limit_specified);
+        if (no_limit_L2 && no_limit_L3) {
+            // the total over all phases
+            const float per_phase = power_limit.limit / static_cast<float>(number_phases.value());
+            power_limit.limit = per_phase;
+            power_limit.limit_L2 = per_phase;
+            if (has_L3) {
+                power_limit.limit_L3 = per_phase;
+            }
+        } else {
+            // phase L1
+            if (no_limit_L2) {
+                power_limit.limit_L2 = power_limit.limit;
+            }
+            if (has_L3 && no_limit_L3) {
+                power_limit.limit_L3 = power_limit.limit;
+            }
+        }
     }
 }
 
@@ -1216,7 +1232,8 @@ void convert_and_transform_limit_value(const float& input, const float& not_spec
 /// \brief If input_limit is specified, transform the value by `transform_value` (eventually multiplied by
 ///        `number_phases`) and get min or max of transformed value.
 ///
-/// Transform value is multiplied by number_phases if limit_L2 or limit_L3 is not set.
+/// Transform value is multiplied by number_phases if neither limit_L2 nor limit_L3 is set, as `limit` is then the total
+/// over all phases.
 ///
 /// \param[in] input_limit          Input value.
 /// \param[in] not_specified        If limits of `input_limit` has this value, it is not specified, output value 'value'
@@ -1238,7 +1255,7 @@ void convert_and_transform_limit_to_period_schedule(const PeriodLimit& input_lim
                                                     const bool use_divide) {
     float t = transform_value;
 
-    if (is_equal(input_limit.limit_L2, not_specified) || is_equal(input_limit.limit_L3, not_specified)) {
+    if (is_equal(input_limit.limit_L2, not_specified) && is_equal(input_limit.limit_L3, not_specified)) {
         t *= static_cast<float>(number_phases);
     }
 

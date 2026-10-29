@@ -399,7 +399,9 @@ Requires: evse_energy_sink (0-129)
 
 Typically fulfilled by :ref:`EnergyNode <everest_modules_EnergyNode>` modules. Used to apply power or ampere limits
 received from the CSMS via the SmartCharging feature (**set_external_limits**), one sink per EVSE plus one for EVSE
-id 0 (the whole charging station). See the energy management section below.
+id 0 (the whole charging station). Limits become import limits, OCPP 2.1 discharge limits export limits and setpoints
+are forwarded as setpoints. Per-phase values of an OCPP 2.1 period are summed up for W and collapse to the most
+restrictive phase for A. See the energy management section below.
 
 Requires: evse_manager (1-128)
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
