@@ -245,7 +245,7 @@ void isolation_monitorImpl::handle_stop() {
     enable_publishing = false;
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 0)) {
-            EVLOG_error << "Can't disable the device: " << read_device_name().value_or("");
+            EVLOG_error << "Can't disable the device at address " << config.imd_device_id;
         } else {
             EVLOG_info << "Device disabled after measurements";
         }
