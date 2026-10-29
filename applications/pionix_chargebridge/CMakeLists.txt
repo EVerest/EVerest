@@ -16,6 +16,25 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
+# The config parser on its own, so the tests can feed it configs without the bridges behind it.
+add_library(pionix_chargebridge_config STATIC
+  src/utilities/parse_config.cpp
+  src/utilities/string.cpp
+  src/utilities/type_converters.cpp
+)
+
+target_link_libraries(pionix_chargebridge_config
+  PUBLIC
+    everest::everest_api_types
+    everest::io
+    ryml::ryml
+)
+
+target_include_directories(pionix_chargebridge_config
+  PUBLIC include
+  PUBLIC shared
+)
+
 add_executable(pionix_chargebridge
   src/everest_api/api_connector.cpp
   src/everest_api/evse_bsp_api.cpp
@@ -26,13 +45,10 @@ add_executable(pionix_chargebridge
 
   src/utilities/filesystem.cpp
   src/utilities/logging.cpp
-  src/utilities/parse_config.cpp
   src/utilities/print_config.cpp
   src/utilities/print_status.cpp
-  src/utilities/string.cpp
   src/utilities/symlink.cpp
   src/utilities/sync_udp_client.cpp
-  src/utilities/type_converters.cpp
   src/status_ui.cpp
 
   src/io_bridge.cpp
@@ -48,6 +64,7 @@ add_executable(pionix_chargebridge
 )
 
 target_link_libraries(pionix_chargebridge
+  pionix_chargebridge_config
   everest::io
   everest::everest_api_types
   nlohmann_json::nlohmann_json
@@ -75,9 +92,7 @@ add_custom_command(
 
 
 if(BUILD_TESTING)
-    # The carrier decision and the uptime reboot detection are pure functions in headers, so this
-    # needs neither the application's objects nor any of its dependencies - only the include paths for
-    # the headers and the mirrored protocol definitions they read CbLinkTechnology from.
+    # Most tests cover pure functions in headers; parse_config_test links the config parser.
     add_executable(pionix_chargebridge_tests
       test/bsp_status_test.cpp
       test/carrier_policy_test.cpp
@@ -85,6 +100,7 @@ if(BUILD_TESTING)
       test/mcs_bsp_test.cpp
       test/heartbeat_reply_test.cpp
       test/mcu_uptime_test.cpp
+      test/parse_config_test.cpp
       test/plc_keepalive_test.cpp
     )
 
@@ -98,8 +114,14 @@ if(BUILD_TESTING)
     # switch non-exhaustive. Promoting that warning to an error here is what turns it into a gate.
     target_compile_options(pionix_chargebridge_tests PRIVATE -Werror=switch)
 
+    target_compile_definitions(pionix_chargebridge_tests
+      PRIVATE CB_CONFIG_DIR="${CMAKE_CURRENT_SOURCE_DIR}/config"
+    )
+
     target_link_libraries(pionix_chargebridge_tests
-      PRIVATE GTest::gtest_main
+      PRIVATE
+        pionix_chargebridge_config
+        GTest::gtest_main
     )
 
     include(GoogleTest)
