@@ -442,7 +442,8 @@ std::optional<json> ModuleAdapter::evse_manager_call_get_evse(const Requirement&
     connector.hlc_capable = false;
 
     types::evse_manager::Evse evse;
-    evse.id = req.index + 1;
+    const auto evse_id = m_evse_ids.find(req.index);
+    evse.id = evse_id != m_evse_ids.end() ? evse_id->second : static_cast<std::int32_t>(req.index + 1);
     evse.connectors = {connector};
 
     auto result = get_cmd_response(json(evse));
@@ -1175,6 +1176,10 @@ void ModuleAdapter::publish(const Requirement& req, const std::string& fn, json 
 void ModuleAdapter::add_cmd_result(const json& data) {
     std::lock_guard<std::mutex> lock(m_cmd_response_mutex);
     m_cmd_response_list.push_back(data);
+}
+
+void ModuleAdapter::set_evse_id(std::size_t index, std::int32_t evse_id) {
+    m_evse_ids[index] = evse_id;
 }
 
 void ModuleAdapter::subscribe_var(const std::string_view& interface, const std::string_view& variable, int instance,

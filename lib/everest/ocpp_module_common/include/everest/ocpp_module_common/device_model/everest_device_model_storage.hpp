@@ -200,6 +200,7 @@ private:
     std::shared_ptr<Everest::config::ConfigServiceClient> config_service_client;
     std::map<Everest::config::ModuleIdType, everest::config::ModuleConfigurationParameters> module_configs;
     std::map<std::string, ModuleTierMappings> mappings;
+    const std::map<int32_t, int32_t> ocpp_evse_id_by_everest_evse_id;
 
     void init_evse_components_and_variables(
         const std::map<int32_t, types::evse_board_support::HardwareCapabilities>& evse_hardware_capabilities_map,
