@@ -24,6 +24,9 @@
 constexpr auto MQTT_BUF_SIZE = 500 * std::size_t{1024};
 
 namespace Everest {
+/// \brief Maximum nesting depth of arrays and objects in a JSON payload.
+constexpr std::size_t MAX_JSON_NESTING_DEPTH = 128;
+
 /// \brief Contains a payload and the topic it was received on with additional QOS
 struct MessageWithQOS : Message {
     QOS qos;     ///< The Quality of Service level

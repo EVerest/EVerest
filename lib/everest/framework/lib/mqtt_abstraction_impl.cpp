@@ -22,6 +22,7 @@
 
 #include <everest/exceptions.hpp>
 #include <everest/logging.hpp>
+#include <everest/util/json/nesting_depth.hpp>
 
 #include <utils/mqtt_abstraction_impl.hpp>
 
@@ -416,9 +417,14 @@ void MQTTAbstractionImpl::on_mqtt_message(const Message& message) {
         if (topic.find(mqtt_everest_prefix) == 0) {
             EVLOG_verbose << fmt::format("topic {} starts with {}", topic, mqtt_everest_prefix);
             is_everest_topic = true;
+            if (everest::lib::util::exceeds_json_nesting_depth(payload, MAX_JSON_NESTING_DEPTH)) {
+                EVLOG_warning << fmt::format("Ignoring message on topic '{}' nested deeper than {} levels", topic,
+                                             MAX_JSON_NESTING_DEPTH);
+                return;
+            }
             try {
                 data = json::parse(payload);
-            } catch (nlohmann::detail::parse_error& e) {
+            } catch (const nlohmann::json::exception&) {
                 EVLOG_warning << fmt::format("Could not decode json for incoming topic '{}': {}", topic, payload);
                 return;
             }

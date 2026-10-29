@@ -701,6 +701,29 @@ TEST_CASE("MessageHandler processes ExternalMQTT messages", "[message_handler][e
     CHECK(events[0].sequence == 123);
 }
 
+TEST_CASE("MessageHandler delivers an ExternalMQTT payload that is not valid UTF-8",
+          "[message_handler][external_mqtt]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.is_string() ? 1 : 0); });
+    handler->register_handler("external/topic",
+                              std::make_shared<TypedHandler>(HandlerType::ExternalMQTT, handler_func));
+
+    ParsedMessage msg;
+    msg.topic = "external/topic";
+    msg.data = std::string("\xff\xfe");
+
+    CHECK_NOTHROW(handler->add(msg));
+
+    tracker.wait_for_count(1);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 1);
+}
+
 TEST_CASE("MessageHandler handles ExternalMQTT with wildcard topics", "[message_handler][external_mqtt]") {
     MessageHandlerFixture handler;
     ExecutionTracker tracker;
@@ -971,4 +994,130 @@ TEST_CASE("MessageHandler: Per-topic mutual exclusion (at most one in-flight per
     }
 
     handler->stop();
+}
+
+// ============================================================================
+// Test: Malformed messages are dropped without stopping message processing
+// ============================================================================
+
+TEST_CASE("MessageHandler drops messages with unknown msg_type", "[message_handler][malformed]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    handler->register_handler("test/topic", std::make_shared<TypedHandler>(HandlerType::Call, handler_func));
+
+    CHECK_NOTHROW(handler->add(create_message("test/topic", "NoSuchType", {{"sequence", 1}})));
+    ParsedMessage non_string_type;
+    non_string_type.topic = "test/topic";
+    non_string_type.data = {{"msg_type", 42}, {"data", {{"sequence", 2}}}};
+    CHECK_NOTHROW(handler->add(non_string_type));
+    handler->add(create_cmd_message("test/topic", 3));
+
+    tracker.wait_for_count(1);
+    std::this_thread::sleep_for(50ms);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 3);
+}
+
+TEST_CASE("MessageHandler drops Var messages without data", "[message_handler][malformed]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    handler->register_handler("module/impl/var_name",
+                              std::make_shared<TypedHandler>(HandlerType::SubscribeVar, handler_func));
+
+    ParsedMessage missing_data;
+    missing_data.topic = "module/impl/var_name";
+    missing_data.data = {{"msg_type", "Var"}};
+    handler->add(missing_data);
+    handler->add(create_message("module/impl/var_name", "Var", "not an object"));
+    handler->add(create_var_message("module/impl/var_name", 3));
+
+    tracker.wait_for_count(1);
+    std::this_thread::sleep_for(50ms);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 3);
+}
+
+TEST_CASE("MessageHandler drops CmdResult messages without id", "[message_handler][malformed]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    handler->register_handler(
+        "", std::make_shared<TypedHandler>("test-handler", "test-id-123", HandlerType::Result, handler_func));
+
+    for (const json& malformed : {json{{"msg_type", "CmdResult"}}, json{{"msg_type", "CmdResult"}, {"data", "x"}},
+                                  json{{"msg_type", "CmdResult"}, {"data", {{"data", "x"}}}},
+                                  json{{"msg_type", "CmdResult"}, {"data", {{"data", {{"id", 5}}}}}}}) {
+        ParsedMessage msg;
+        msg.topic = "test/result";
+        msg.data = malformed;
+        handler->add(msg);
+    }
+
+    ParsedMessage valid;
+    valid.topic = "test/result";
+    valid.data = {{"msg_type", "CmdResult"}, {"data", {{"data", {{"id", "test-id-123"}, {"sequence", 42}}}}}};
+    handler->add(valid);
+
+    tracker.wait_for_count(1);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 42);
+}
+
+TEST_CASE("MessageHandler drops GetConfigResponse messages without data", "[message_handler][malformed]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    handler->register_handler("test/config/response",
+                              std::make_shared<TypedHandler>(HandlerType::GetConfigResponse, handler_func));
+
+    ParsedMessage missing_data;
+    missing_data.topic = "test/config/response";
+    missing_data.data = {{"msg_type", "GetConfigResponse"}};
+    handler->add(missing_data);
+    handler->add(create_message("test/config/response", "GetConfigResponse", {{"sequence", 7}}));
+
+    tracker.wait_for_count(1);
+    std::this_thread::sleep_for(50ms);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 7);
+}
+
+TEST_CASE("MessageHandler drops GlobalReady messages without data", "[message_handler][malformed]") {
+    MessageHandlerFixture handler;
+    ExecutionTracker tracker;
+
+    auto handler_func = std::make_shared<Handler>(
+        [&](const std::string& topic, const json& data) { tracker.record(topic, data.value("sequence", 0)); });
+    handler->register_handler("global", std::make_shared<TypedHandler>(HandlerType::GlobalReady, handler_func));
+
+    ParsedMessage missing_data;
+    missing_data.topic = "global";
+    missing_data.data = {{"msg_type", "GlobalReady"}};
+    CHECK_NOTHROW(handler->add(missing_data));
+    handler->add(create_message("global", "GlobalReady", {{"sequence", 1}}));
+
+    tracker.wait_for_count(1);
+    std::this_thread::sleep_for(50ms);
+
+    auto events = tracker.get_events();
+    REQUIRE(events.size() == 1);
+    CHECK(events[0].sequence == 1);
 }
