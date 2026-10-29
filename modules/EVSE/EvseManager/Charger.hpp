@@ -207,6 +207,8 @@ public:
 
     void notify_currentdemand_started();
     void reset_dc_enforce_target_limits_timer();
+    // Emits signal_dc_enforce_target_limits on the next main loop iteration while charging in DC mode
+    void request_dc_enforce_target_limits();
 
     std::string evse_state_to_string(EvseState s);
 
@@ -657,7 +659,8 @@ private:
     // during DC charging. This re-applies EVSE limits to the power supply even when the EV does not send
     // new target values or ignores updated limits from energy management.
     // The timer is reset whenever apply_new_target_voltage_current() is called from any source
-    // (subscribe callback, energy manager, or this periodic signal).
+    // (subscribe callback, energy manager, or this periodic signal), and expired early by
+    // request_dc_enforce_target_limits() when the power supply limits change.
     static constexpr int DC_ENFORCE_TARGET_LIMITS_INTERVAL_MS = 5000;
 
     types::evse_manager::EnableDisableSource active_enable_disable_source{

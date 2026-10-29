@@ -145,8 +145,11 @@ public:
     void set_charge_loop_started() {
         session_params.charge_loop_started = true;
     }
+    // The first CurrentDemandReq of a charge loop is always forwarded, so the module sees a current demand
+    // target even when the EV repeats the setpoint from before a renegotiation.
     void clear_charge_loop_started() {
         session_params.charge_loop_started = false;
+        last_forwarded_dc_setpoint.reset();
     }
 
     // On change only. PowerDeliveryReq carries the completion flags without the remaining times, which

@@ -143,9 +143,35 @@ variable.
 In DC charge mode, the car side power meter may publish its ``capabilities``
 (minimum measurable currents, e.g. due to calibration law accuracy limits).
 These minimum currents are merged into the DC limits advertised to the EV over
-ISO 15118 (ChargeParameterDiscovery and mid-session limit updates), but they
-never affect internal power supply control such as cable check, precharge or
-setpoint clamping.
+ISO 15118 (ChargeParameterDiscovery and mid-session limit updates). They do not
+affect cable check or precharge.
+
+During current demand, an EV target current below the minimum current offered
+to the EV in ChargeParameterDiscovery (the nominal power supply minimum if
+reported, else the power supply minimum, raised to the power meter minimum) is
+set to 0 A on the power supply, as required by IEC 61851-23:2023 CC.5.5.7. The
+EV sees that minimum truncated to the resolution of the HLC encoding, so a
+target up to 0.1 A below it counts as the minimum and gets it. The
+EV target is compared before EVSE-side maximum limits are applied to it, and
+only from the first target the EV sends during current demand on: the precharge
+target is not compared. The HLC module marks each target with its origin
+(``current_demand`` in ``DcEvTargetValues``), so this does not depend on the
+order in which ``current_demand_started`` and the target are delivered. An
+energy management limit below the offered minimum gives 0 A as well, and the EV
+is sent 0 A and 0 W as EVSE maximum limits. The EVSE maximum power limit counts
+at the present voltage: when it allows less than the offered minimum there, 0 A
+is delivered. The ramp to 0 A before an ISO 15118-20 pause counts as such a
+limit. For
+an EV target at or above that minimum, the current ramp starts at the minimum
+and the current set on the power supply is never below the power supply
+minimum.
+Outside current demand, currents below the power supply minimum are raised to
+that minimum.
+
+Power supply capabilities, external derating and power meter capabilities
+published during current demand are sent to the EV as updated limits and
+applied to the power supply setpoint within the next charger state machine
+iteration, whether or not the EV lowers its request to the new limits.
 
 
 Charging State Machine
