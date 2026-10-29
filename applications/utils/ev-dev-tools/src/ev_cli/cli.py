@@ -57,10 +57,6 @@ def _common_options() -> argparse.ArgumentParser:
         help='everest directories containing the interface and type definitions '
              '(default: .)')
     group.add_argument(
-        '--everest-projects', '-ep', nargs='*', default=['EVerest'],
-        help='everest project names, used to locate their directories via a '
-             'configured build (default: EVerest)')
-    group.add_argument(
         '--schemas-dir', '-sd', type=str,
         default=str(cwd / 'lib' / 'everest' / 'framework' / 'schemas'),
         help='framework directory containing the schema definitions '

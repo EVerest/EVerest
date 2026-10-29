@@ -11,21 +11,19 @@ but never the ``.cpp`` sources, and carries the contents of every
 
 from __future__ import annotations
 
-from pathlib import Path
-
 from .. import blocks, license_headers
 from ..backends.base import registry
 from ..errors import EvCliError
 from ..backends.base import UpdatePolicy
 from ..files import Strategy
-from .context import Context, detect_everest_projects
+from .context import Context
 
 #: The order categories are reported in by ``--only which``.
 CATEGORY_ORDER = ('core', 'interfaces', 'docs')
 
 
 def write_module_files(args, *, updating: bool) -> int:
-    context = _context_for(args)
+    context = Context.from_args(args)
     module_dir = context.work_dir / 'modules' / args.module
 
     model = _model_for(context, args.module)
@@ -69,22 +67,6 @@ def write_module_files(args, *, updating: bool) -> int:
 # --------------------------------------------------------------------------
 # Inputs
 # --------------------------------------------------------------------------
-
-def _context_for(args) -> Context:
-    """A context that can see the project the module is written against.
-
-    A module being created outside everest-core needs that project's interface
-    definitions; if none of the ``--everest-dir`` entries looks like one of the
-    named projects, a configured build directory can say where it is.
-    """
-    everest_dirs = tuple(Path(d).resolve() for d in args.everest_dir)
-    detected = detect_everest_projects(
-        everest_dirs,
-        tuple(getattr(args, 'everest_projects', ()) or ()),
-        Path(args.build_dir),
-    )
-    return Context.from_args(args, extra_everest_dirs=detected)
-
 
 def _model_for(context: Context, module: str):
     """The module, the interfaces it implements, and the types those use."""
