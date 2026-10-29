@@ -11,7 +11,6 @@ from __future__ import annotations
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from ..errors import DefinitionNotFound, EvCliError
 from ..files import FileWriter, Strategy
@@ -33,7 +32,6 @@ class Context:
     schemas_dir: Path
     licenses_dir: Path
     build_dir: Path
-    everest_projects: tuple[str, ...] = ()
     #: Collects what the loader has to say, so a command can report on it.
     diagnostics: CollectingSink = field(default_factory=CollectingSink)
 
@@ -44,9 +42,8 @@ class Context:
     # -- construction -------------------------------------------------------
 
     @classmethod
-    def from_args(cls, args, *, extra_everest_dirs: Sequence[Path] = ()) -> Context:
+    def from_args(cls, args) -> Context:
         everest_dirs = tuple(Path(entry).resolve() for entry in args.everest_dir)
-        everest_dirs += tuple(Path(d).resolve() for d in extra_everest_dirs)
         schemas_dir = resolve_schemas_dir(
             Path(args.schemas_dir), Path(args.build_dir), everest_dirs
         )
@@ -56,7 +53,6 @@ class Context:
             schemas_dir=schemas_dir,
             licenses_dir=Path(args.licenses),
             build_dir=Path(args.build_dir),
-            everest_projects=tuple(getattr(args, 'everest_projects', ()) or ()),
         )
 
     # -- lazily built pieces ------------------------------------------------
@@ -238,32 +234,3 @@ def path_from_cmake_cache(variable_prefix: str, cmake_cache: Path) -> Path | Non
     except OSError:
         return None
     return None
-
-
-def detect_everest_projects(
-    everest_dirs: tuple[Path, ...], projects: tuple[str, ...], build_dir: Path
-) -> list[Path]:
-    """Additional everest directories found through a configured build.
-
-    ``module create`` and ``module update`` need the interface definitions of
-    whatever project a module is being written against; if none of the
-    ``--everest-dir`` entries looks like one of the named projects, a
-    configured build directory can say where it is.
-    """
-    if any(d.exists() and d.name in projects for d in everest_dirs):
-        return []
-
-    if projects:
-        print(
-            f'Could not find {", ".join(projects)} among the everest '
-            f'directories; looking in {build_dir / "CMakeCache.txt"}',
-            file=sys.stderr,
-        )
-
-    found = []
-    for project in projects:
-        directory = path_from_cmake_cache(project, build_dir / 'CMakeCache.txt')
-        if directory is not None:
-            print(f'Using {project} from {directory}', file=sys.stderr)
-            found.append(directory)
-    return found
