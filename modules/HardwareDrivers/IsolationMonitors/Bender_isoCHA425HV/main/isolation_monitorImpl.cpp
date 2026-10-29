@@ -5,7 +5,6 @@
 #include "everest/logging.hpp"
 #include <chrono>
 #include <fmt/format.h>
-#include <optional>
 #include <thread>
 #include <utils/date.hpp>
 
