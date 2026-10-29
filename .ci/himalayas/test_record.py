@@ -252,7 +252,8 @@ class BuildRecordTest(unittest.TestCase):
     def test_rejects_bad_targets(self):
         bad = [
             "x86_64-linux-gnu",
-            {"target": "x86_64-linux-gnu", "status": "passed"},
+            {"target": "x86_64-linux-gnu"},
+            {"status": "passed", "toolchain": "gcc 13"},
             {"target": "x86_64-linux-gnu", "status": "success", "toolchain": "gcc 13"},
             {"target": "x86_64-linux-gnu", "status": "passed", "toolchain": "gcc 13", "extra": 1},
         ]
@@ -295,6 +296,10 @@ class BuildRecordTest(unittest.TestCase):
         for module in bad:
             with self.subTest(module=module), self.assertRaises(ValueError):
                 make_record(modules=["EvseManager", module])
+
+    def test_target_without_toolchain(self):
+        target = {"target": "aarch64-linux-gnu", "status": "passed"}
+        self.assertEqual(make_record(targets=[target])["results"]["extra"]["build"]["targets"], [target])
 
     def test_skipped_target(self):
         target = {"target": "aarch64-linux-gnu", "status": "skipped", "toolchain": "gcc 13.2.0"}
