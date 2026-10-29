@@ -249,10 +249,10 @@ the same file or sometimes in a referenced file.
 EVerest discards a message from a client whose payload it cannot read,
 for example because a required field is missing, a field has the wrong
 type or an unknown enum value, or a field declared as
-``format: date-time`` is no date-time. It logs a warning, and a
-discarded request gets no reply. Such fields should be RFC 3339; EVerest
-also reads a missing UTC offset as UTC, offsets written as ``+HHMM`` or
-``+HH``, and a comma before the fraction.
+``format: date-time`` is no RFC 3339 date-time. It logs a warning, and a
+discarded request gets no reply. RFC 3339 requires a UTC offset, so a
+date-time in local time carries its offset, for example
+``2026-10-28T14:03:07.123+01:00``.
 
 AsyncAPI finally specifies operations on channels. The operations define
 the action on a specific channel (for EVerest API always from the

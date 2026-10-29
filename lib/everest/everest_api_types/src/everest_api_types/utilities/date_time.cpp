@@ -11,7 +11,7 @@ namespace everest::lib::API {
 
 std::string date_time_from_json(const nlohmann::json& j) {
     const auto value = j.get<std::string>();
-    const auto time_point = everest::lib::datetime::parse_rfc3339_lenient(value);
+    const auto time_point = everest::lib::datetime::parse_rfc3339(value);
     if (not time_point.has_value()) {
         throw std::invalid_argument("not a date-time: " + value);
     }
