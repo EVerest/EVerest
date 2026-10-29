@@ -58,7 +58,7 @@ bool is_evse_connector_available(EvseInterface& evse) {
 
 RemoteTransactionControl::RemoteTransactionControl(
     const FunctionalBlockContext& functional_block_context, TransactionInterface& transaction,
-    SmartChargingInterface& smart_charging, MeterValuesInterface& meter_values, AvailabilityInterface& availability,
+    SmartChargingInterface* smart_charging, MeterValuesInterface& meter_values, AvailabilityInterface& availability,
     FirmwareUpdateInterface& firmware_update, SecurityInterface& security, ReservationInterface* reservation,
     ProvisioningInterface& provisioning, UnlockConnectorCallback unlock_connector_callback,
     RemoteStartTransactionCallback remote_start_transaction_callback, StopTransactionCallback stop_transaction_callback,
@@ -160,6 +160,7 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
         // "InvalidProfile" or "InvalidSchedule".
 
         const bool is_smart_charging_enabled =
+            this->smart_charging != nullptr and
             this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::SmartChargingCtrlrEnabled)
                 .value_or(false);
 
@@ -170,7 +171,7 @@ void RemoteTransactionControl::handle_remote_start_transaction_request(Call<Requ
 
                 if (charging_profile.chargingProfilePurpose == ChargingProfilePurposeEnum::TxProfile) {
 
-                    const auto add_profile_response = this->smart_charging.conform_validate_and_add_profile(
+                    const auto add_profile_response = this->smart_charging->conform_validate_and_add_profile(
                         msg.chargingProfile.value(), evse_id, ChargingLimitSourceEnumStringType::CSO,
                         AddChargingProfileSource::RequestStartTransactionRequest);
                     if (add_profile_response.status == ChargingProfileStatusEnum::Accepted) {
