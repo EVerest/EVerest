@@ -383,7 +383,8 @@ std::optional<std::string> isolation_monitorImpl::read_firmware_version() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id, static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_FIRMWARE_VERSION),
         6);
-    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success or
+        not result.value.has_value() or result.value->size() < 6) {
         set_deviceFault("Can't read the firmware version");
         return std::nullopt;
     }
