@@ -30,15 +30,19 @@ struct VariableMonitoringPeriodic {
     std::vector<VariableMonitoringMeta> monitors;
 };
 
-/// \brief The owner of the variables whose values DeviceModel holds in memory, and of a variable without an owner. A
-/// variable of another owner is held by the storage of that owner, which changes its value without DeviceModel.
-inline constexpr auto VARIABLE_OWNER_OCPP = "OCPP";
+/// \brief The owner of the variables the component config defines, OCPPCommCtrlr.HeartbeatInterval or
+/// SecurityCtrlr.Identity for example. DeviceModel holds their values in memory and persists them itself. A variable of
+/// the component config that the storage reports with another owner, the EVerest device model of the OCPP modules for
+/// example, is held by the storage of that owner, which changes its value without DeviceModel.
+inline constexpr auto VARIABLE_OWNER_COMPONENT_CONFIG = "COMPONENT_CONFIG";
 
 /// \brief Helper struct that combines VariableCharacteristics, VariableMonitoring and the VariableAttribute(s)
 struct VariableMetaData {
     VariableCharacteristics characteristics;
     std::unordered_map<std::int64_t, VariableMonitoringMeta> monitors;
-    std::optional<std::string> owner;
+    /// \brief The owner of the variable: VARIABLE_OWNER_COMPONENT_CONFIG unless the storage or a registration names
+    /// another
+    std::string owner{VARIABLE_OWNER_COMPONENT_CONFIG};
     /// \brief The attributes of the variable with their current values
     std::vector<VariableAttribute> attributes;
 };
@@ -98,8 +102,15 @@ public:
     /// \param attribute_enum The attribute
     /// \param value The value to set (as string)
     /// \param source The source of the value (e.g., 'csms', 'default', 'internal')
-    /// \param allow_read_only If true, read-only variables can be changed
-    /// \return Result of the requested operation
+    /// \param allow_read_only If true, read-only variables of the component config can be changed. A variable that a
+    ///        runtime owner registered is then rejected whatever its mutability: it is changed by its owner or by the
+    ///        CSMS
+    /// \return Accepted when the value is applied. For a variable of the component config, any other result,
+    ///         RebootRequired included, notifies no listener and leaves the value DeviceModel holds unchanged; a
+    ///         RebootRequired value takes effect at the next start. A variable that the storage of another owner holds
+    ///         is always read from that storage, which decides what it reports until then. For a variable of a runtime
+    ///         owner with a provider, RebootRequired applies the value in memory like Accepted, see
+    ///         VariableValueProvider::set_value.
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,
                                             const std::string& source, bool allow_read_only = false) = 0;

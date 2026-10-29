@@ -38,7 +38,7 @@ public:
                 const AttributeEnum& attribute_enum = AttributeEnum::Actual) const {
         std::string value;
         const auto status =
-            request_value_internal(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
+            get_variable(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             EVLOG_critical << "Required value " << variable_id.name << " of component " << component_id.name
@@ -75,7 +75,7 @@ public:
                                         const AttributeEnum& attribute_enum = AttributeEnum::Actual) const {
         std::string value;
         const auto status =
-            request_value_internal(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
+            get_variable(component_id, variable_id, attribute_enum, value, true, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             return std::nullopt;
@@ -115,7 +115,7 @@ public:
                                                 const AttributeEnum& attribute_enum) const {
         std::string value;
         const auto status =
-            request_value_internal(component_id, variable_id, attribute_enum, value, false, UnsetValue::NotSupported);
+            get_variable(component_id, variable_id, attribute_enum, value, false, UnsetValue::NotSupported);
 
         if (status != GetVariableStatusEnum::Accepted) {
             return {status, std::nullopt};
@@ -129,9 +129,10 @@ public:
     }
 
 private:
-    virtual GetVariableStatusEnum request_value_internal(const Component& component_id, const Variable& variable_id,
-                                                         const AttributeEnum& attribute_enum, std::string& value,
-                                                         bool allow_write_only, UnsetValue unset_value) const = 0;
+    /// \brief Overridden together with DeviceModelInterface::get_variable, which has the same signature
+    virtual GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
+                                               const AttributeEnum& attribute_enum, std::string& value,
+                                               bool allow_write_only, UnsetValue unset_value) const = 0;
 };
 
 } // namespace v2

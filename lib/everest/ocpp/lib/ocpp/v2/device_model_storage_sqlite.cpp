@@ -7,7 +7,6 @@
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 #include <ocpp/v2/init_device_model_db.hpp>
 #include <ocpp/v2/network_configuration_default_schema.hpp>
-#include <ocpp/v2/utils.hpp>
 
 using namespace everest::db;
 using namespace everest::db::sqlite;
@@ -43,6 +42,20 @@ std::pair<Component, Variable> read_component_variable(StatementInterface& state
         variable.instance = statement.column_text(first_column + 5);
     }
     return {component, variable};
+}
+
+/// \brief The owner of the component config is stored as NULL: the schema migrations and InitDeviceModelDb tell its
+/// monitors and values from those of runtime owners by it
+void bind_owner(StatementInterface& statement, const char* parameter, const std::string& owner) {
+    if (owner == VARIABLE_OWNER_COMPONENT_CONFIG) {
+        statement.bind_null(parameter);
+    } else {
+        statement.bind_text(parameter, owner, SQLiteString::Transient);
+    }
+}
+
+std::string read_owner(StatementInterface& statement, int column) {
+    return statement.column_text_nullable(column).value_or(VARIABLE_OWNER_COMPONENT_CONFIG);
 }
 
 VariableMetaData* find_variable(DeviceModelMap& device_model, const Component& component, const Variable& variable) {
@@ -277,18 +290,6 @@ DeviceModelMap DeviceModelStorageSqlite::get_device_model() {
         meta_data->attributes.push_back(read_attribute(*attributes_stmt, 6));
     }
 
-    for (auto& stored_monitor : get_all_monitors()) {
-        auto* meta_data = find_variable(device_model, stored_monitor.component, stored_monitor.variable);
-        if (meta_data == nullptr) {
-            // The variable can belong to another storage or be registered at runtime
-            EVLOG_debug << "Monitor " << stored_monitor.monitor.monitor.id << " of component "
-                        << stored_monitor.component << " and variable " << stored_monitor.variable
-                        << " is not attached to a variable of this storage";
-            continue;
-        }
-        meta_data->monitors.insert({stored_monitor.monitor.monitor.id, std::move(stored_monitor.monitor)});
-    }
-
     EVLOG_info << "Successfully retrieved Device Model from DeviceModelStorage";
     return device_model;
 }
@@ -387,11 +388,7 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_stored_value(const StoredVar
     } else {
         upsert_stmt->bind_null("@value_source");
     }
-    if (value.owner.has_value()) {
-        upsert_stmt->bind_text("@owner", value.owner.value(), SQLiteString::Transient);
-    } else {
-        upsert_stmt->bind_null("@owner");
-    }
+    bind_owner(*upsert_stmt, "@owner", value.owner);
     if (upsert_stmt->step() != SQLITE_DONE) {
         EVLOG_error << this->db->get_error_message();
         return SetVariableStatusEnum::Rejected;
@@ -415,7 +412,7 @@ std::vector<StoredVariableValue> DeviceModelStorageSqlite::get_stored_values() {
         stored_value.attribute = static_cast<AttributeEnum>(select_stmt->column_int(6));
         stored_value.value = select_stmt->column_text_nullable(7).value_or("");
         stored_value.value_source = select_stmt->column_text_nullable(8);
-        stored_value.owner = select_stmt->column_text_nullable(9);
+        stored_value.owner = read_owner(*select_stmt, 9);
         values.push_back(std::move(stored_value));
     }
     return values;

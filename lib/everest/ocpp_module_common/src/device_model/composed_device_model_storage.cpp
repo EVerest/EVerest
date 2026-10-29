@@ -18,7 +18,7 @@ bool ComposedDeviceModelStorage::register_device_model_storage(
     // store the owner of each variable to route requests to its device model storage
     for (const auto& [component, variable_map] : device_model_map) {
         for (const auto& [variable, variable_meta] : variable_map) {
-            const auto owner = variable_meta.owner.value_or(VARIABLE_OWNER_OCPP);
+            const auto& owner = variable_meta.owner;
 
             // On overlap, the storage registered last takes precedence. The integrator is responsible for
             // avoiding overlaps.
@@ -184,7 +184,7 @@ bool ComposedDeviceModelStorage::create_network_configuration_slot_from_default_
 }
 
 ocpp::v2::DeviceModelStorageInterface* ComposedDeviceModelStorage::ocpp_storage() {
-    const auto it = this->device_model_storages.find(VARIABLE_OWNER_OCPP);
+    const auto it = this->device_model_storages.find(VARIABLE_OWNER_COMPONENT_CONFIG);
     if (it == this->device_model_storages.end()) {
         EVLOG_error << "No OCPP device model storage registered";
         return nullptr;
@@ -196,11 +196,11 @@ std::string
 ocpp_module_common::device_model::ComposedDeviceModelStorage::get_variable_owner(const ocpp::v2::Component& component,
                                                                                  const ocpp::v2::Variable& variable) {
     if (this->component_variable_owner_map.find(component) == this->component_variable_owner_map.end()) {
-        return VARIABLE_OWNER_OCPP;
+        return VARIABLE_OWNER_COMPONENT_CONFIG;
     }
     const auto& variable_map = this->component_variable_owner_map.at(component);
     if (variable_map.find(variable) == variable_map.end()) {
-        return VARIABLE_OWNER_OCPP;
+        return VARIABLE_OWNER_COMPONENT_CONFIG;
     }
     return variable_map.at(variable);
 }
@@ -214,7 +214,8 @@ make_composed_device_model_storage(std::shared_ptr<ocpp::v2::DeviceModelStorageI
 
     auto composed_device_model_storage = std::make_unique<ComposedDeviceModelStorage>();
     // note - registration snapshots get_device_model(), which causes a slight delay; scope for performance tuning
-    composed_device_model_storage->register_device_model_storage(VARIABLE_OWNER_OCPP, std::move(ocpp_storage));
+    composed_device_model_storage->register_device_model_storage(VARIABLE_OWNER_COMPONENT_CONFIG,
+                                                                 std::move(ocpp_storage));
     if (everest_storage != nullptr) {
         composed_device_model_storage->register_device_model_storage(VARIABLE_OWNER_EVEREST,
                                                                      std::move(everest_storage));

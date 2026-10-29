@@ -209,7 +209,7 @@ OCPP device model vs. EVerest device model
 
 The module composes two device model storages behind libocpp's ``DeviceModelStorageInterface``:
 
-* The **OCPP device model** (owner ``OCPP``): the integrator-facing configuration described above. It is defined
+* The **OCPP device model** (owner ``COMPONENT_CONFIG``): the integrator-facing configuration described above. It is defined
   by the component config JSON files and backed by libocpp's SQLite storage (``DeviceModelDatabasePath``). This is
   the storage integrators configure.
 * The **EVerest device model** (owner ``EVEREST``): runtime telemetry that is closely related to EVerest and
@@ -219,9 +219,10 @@ The module composes two device model storages behind libocpp's ``DeviceModelStor
   runtime, e.g. from power meter values and EV information reported by the connected EVSE managers.
 
 The ``ComposedDeviceModelStorage`` routes each variable access to its owning storage by the variable's ``owner``
-(``VariableMetaData::owner``), which defaults to ``OCPP``. The EVerest device model storage reports all of its
-variables with the owner ``EVEREST``. Monitors are always stored in the OCPP device model storage; a monitor on a
-variable owned by ``EVEREST`` is not active again after a restart.
+(``VariableMetaData::owner``), which defaults to ``COMPONENT_CONFIG``. The EVerest device model storage reports all of its
+variables with the owner ``EVEREST``. Monitors are always stored in the OCPP device model storage, by component and
+variable name, whichever storage owns the variable; libocpp loads all of them at start, so a monitor on a variable
+owned by ``EVEREST`` is active again after a restart.
 
 The composed storage backs **both** protocol paths: in OCPP 2.x it is the device model of the libocpp
 ``ChargePoint``, and in OCPP 1.6 it backs the device-model-based charge point configuration. Variables of both

@@ -39,7 +39,9 @@ Not every variable comes from the database: variables held by another storage, s
 described below. After loading, every read is answered from memory.
 
 A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
-rejects it, the request is rejected and memory keeps the old value.
+rejects it, the request is rejected and memory keeps the old value. A storage that answers `RebootRequired` holds the
+new value for the next start; memory keeps the old value until then, and no listener is notified. The SQLite storage of
+libocpp does not answer `RebootRequired`.
 
 Attributes that are not persistent are the exception. A write to such an attribute only changes the value in memory
 and is lost on restart. At the next start, the attribute gets the value stored in the database again. That is usually
@@ -52,10 +54,11 @@ made while it runs are not seen until the next start.
 
 ### Variables held by another storage
 
-Variables whose `VariableMetaData::owner` is something other than `OCPP` are not held in memory. They belong to the
-storage of that owner, which can change their values without going through `DeviceModel`. For these variables,
-`DeviceModel` reads every value from that storage and sends every write to it. Variables without an owner, or with the
-owner `OCPP`, belong to the OCPP storage and are held in memory as described above.
+Variables whose `VariableMetaData::owner` is something other than `COMPONENT_CONFIG` are not held in memory. They
+belong to the storage of that owner, which can change their values without going through `DeviceModel`. For these
+variables, `DeviceModel` reads every value from that storage and sends every write to it, so after a write that the
+storage answered with `RebootRequired`, the storage decides which value is reported until the next start. Variables
+with the owner `COMPONENT_CONFIG`, the default, belong to the OCPP storage and are held in memory as described above.
 
 In the OCPP modules:
 
@@ -114,14 +117,60 @@ config, and the variables only the custom config defines would be removed with t
 Monitors are not linked to variable rows. Removing a variable from the component config of a component that is still
 configured removes all of its monitors, custom monitors included. Components that are no longer configured are kept
 with their monitors, see [Update component config](#update-component-config).
-`DeviceModelStorageSqlite::get_device_model` attaches monitors to the variables of the component tables, and
-`get_all_monitors` returns all of them.
+`DeviceModelStorageSqlite::get_device_model` returns the component tables without monitors, and `get_all_monitors`
+returns all monitors.
 
 Migration 4 moves the monitors of schema 3 into the name-keyed table. Monitors keep their ids, and the id sequence is
 kept, so ids of monitors deleted before the migration are not handed out again. It also drops `VARIABLE.SOURCE`: the
 component tables hold only the component config, and the `source` key of a component config variable is not read. The
 down migration keeps only the monitors whose variable has a row in the component tables, drops the values in
 `VARIABLE_ATTRIBUTE_VALUE` and restores `VARIABLE.SOURCE` empty.
+
+## Components registered at runtime
+
+Besides the component config, the integrating firmware can register components and variables at runtime through
+`DeviceModelRegistryInterface::register_components`. A registration is held in memory only and has to be repeated at
+every start, before `ChargePoint::start`.
+
+### Ownership
+
+Every variable has exactly one definition: the component config or one runtime owner. Ownership is per variable, so
+the component config and runtime owners can contribute different variables to the same component. A variable that is
+already defined is rejected, and the result names the owner that defines it; so is a second definition of a variable in
+one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `register_components`,
+`unregister_components` and `notify_value_changed` reject it. An owner that registers again replaces its earlier
+registration.
+
+Registered variables follow the name key rules of the component config: a variable with an empty instance, or of a
+component with an empty instance or an EVSE or connector id of `0`, is rejected, because its monitors and stored values
+would be read back under the key without the instance or id.
+
+### Values and writes
+
+Every owner reports the values of its variables with `notify_value_changed`: the registration carries the initial
+values, and the owner reports every change after that. `DeviceModel` serves reads from memory, so a value that changes
+at the owner reaches the model only when the owner reports it.
+
+A write, a SetVariables.req for example, is checked against the characteristics and mutability of the variable first.
+What happens then depends on whether the owner registered a `VariableValueProvider`:
+
+- With a provider, the write is forwarded to the provider, which may reject it by its own rules and keeps persistent
+  values itself: libocpp does not store them in the database. The provider is called synchronously on the thread of
+  the write, a SetVariables.req for example, without a deadline, so a provider that forwards to another process
+  enforces its own timeout, well within the message timeout of the CSMS. Its answer is returned as it is. `Accepted`
+  and `RebootRequired` mean that the owner applied exactly the written value, and libocpp stores it in memory, so the
+  owner does not report it; an owner that would apply another value, a clamped one for example, rejects the write.
+- Without a provider, libocpp applies the write in memory, and the owner learns of writes through the variable
+  listeners. libocpp does not store the values: the owner registers them at every start.
+
+Writes from the local channel (`ChargePoint::set_variables`) reach the component config only: a registered variable is
+changed by its owner or by the CSMS.
+
+A change that the owner makes itself while a write to the same variable is in progress races with that write: the
+write may be stored after the report and overwrite it. Each write carries a write id. An owner that passes the id of
+the last write it had applied with `notify_value_changed` resolves the race: libocpp ignores a report based on an older
+write than the last one it stored, and does not store a write over a report based on it or a newer one. An owner that
+passes no write id accepts the race.
 
 ## Required variables
 
