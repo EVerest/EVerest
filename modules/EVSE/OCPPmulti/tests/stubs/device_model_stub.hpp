@@ -185,7 +185,7 @@ public:
     void check_integrity(const std::map<std::int32_t, std::int32_t>&) override {
     }
 
-    void remove_monitors_of_absent_variables() override {
+    void remove_monitors_and_values_of_absent_variables() override {
     }
 
     int set_read_only_calls() const {

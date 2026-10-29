@@ -134,7 +134,7 @@ public:
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
 
-    void remove_monitors_of_absent_variables() override {
+    void remove_monitors_and_values_of_absent_variables() override {
     }
 };
 
@@ -260,8 +260,8 @@ public:
         return storage.check_integrity(evse_connector_structure);
     }
 
-    void remove_monitors_of_absent_variables() override {
-        storage.remove_monitors_of_absent_variables();
+    void remove_monitors_and_values_of_absent_variables() override {
+        storage.remove_monitors_and_values_of_absent_variables();
     }
 };
 

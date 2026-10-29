@@ -120,7 +120,7 @@ void ChargePoint::start(BootReasonEnum bootreason, bool start_connecting) {
     }
 
     this->bootreason = bootreason;
-    this->device_model->remove_monitors_of_absent_variables();
+    this->device_model->remove_monitors_and_values_of_absent_variables();
     // Trigger all initial status notifications and callbacks related to component state
     // Should be done before sending the BootNotification.req so that the correct states can be reported
     this->component_state_manager->trigger_all_effective_availability_changed_callbacks();

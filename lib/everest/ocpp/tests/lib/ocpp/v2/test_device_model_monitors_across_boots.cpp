@@ -189,7 +189,7 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_is_removed_at_start_when_its_
     reboot();
     register_variables({make_registered_variable(other.name)});
     EXPECT_TRUE(stored_monitor(id).has_value());
-    dm->remove_monitors_of_absent_variables();
+    dm->remove_monitors_and_values_of_absent_variables();
     EXPECT_FALSE(stored_monitor(id).has_value());
 
     // Removed monitors do not come back
@@ -205,7 +205,7 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest, monitor_of_an_absent_variable_is_remo
 
     reboot();
     register_variables({make_registered_variable(other.name)}, OTHER_OWNER);
-    dm->remove_monitors_of_absent_variables();
+    dm->remove_monitors_and_values_of_absent_variables();
 
     EXPECT_FALSE(stored_monitor(absent).has_value());
     EXPECT_TRUE(stored_monitor(present).has_value());
@@ -341,7 +341,7 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest,
     // The new firmware leaves the variable out of the component config and no owner registers it
     boot_with_component_config(false);
     ASSERT_EQ(stored_monitors().size(), 3);
-    dm->remove_monitors_of_absent_variables();
+    dm->remove_monitors_and_values_of_absent_variables();
 
     EXPECT_FALSE(stored_monitor(custom_id).has_value());
     for (const auto& stored : stored_monitors()) {

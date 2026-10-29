@@ -691,7 +691,12 @@ SetVariableStatusEnum DeviceModel::persist(const ComposedVariable& composed, con
         return this->storage->set_variable_attribute_value(component, variable, attribute_enum, value, source);
     case ValueBacking::OwnerStorage:
         return this->storage->set_variable_attribute_value(component, variable, attribute_enum, value, source);
-    case ValueBacking::Memory:
+    case ValueBacking::StoredValue:
+        if (not is_persistent(attribute)) {
+            return SetVariableStatusEnum::Accepted;
+        }
+        return this->stored_values.store(
+            StoredVariableValue{component, variable, attribute_enum, value, source, composed.registration->owner});
     case ValueBacking::Provider:
         return SetVariableStatusEnum::Accepted;
     }
@@ -709,7 +714,8 @@ void DeviceModel::notify_variable_listeners(const ValueChange& change, const Com
 DeviceModel::DeviceModel(std::unique_ptr<DeviceModelStorageInterface> device_model_storage_interface) :
     storage{std::move(device_model_storage_interface)},
     component_config{this->storage->get_device_model()},
-    monitors{*this->storage} {
+    monitors{*this->storage},
+    stored_values{*this->storage} {
     this->monitors.load();
     this->recompose();
 }
@@ -864,8 +870,8 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
             for (const auto& attribute : registered_variable.attributes) {
                 attributes.push_back(normalize_registered_attribute(attribute));
             }
-            registration.variables[component][variable] =
-                this->build_registered_variable(owner, component, registered_variable, std::move(attributes));
+            registration.variables[component][variable] = this->build_registered_variable(
+                owner, component, registered_variable, std::move(attributes), provider != nullptr);
         }
     }
 
@@ -907,12 +913,20 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
 
 VariableMetaData DeviceModel::build_registered_variable(const std::string& owner, const Component& component,
                                                         const RegisteredVariable& registered_variable,
-                                                        std::vector<VariableAttribute> attributes) {
+                                                        std::vector<VariableAttribute> attributes,
+                                                        const bool with_provider) {
     const auto& variable = registered_variable.variable;
     VariableMetaData meta_data;
     meta_data.characteristics = registered_variable.characteristics;
     meta_data.owner = owner;
     meta_data.attributes = std::move(attributes);
+
+    // A provider keeps the values of its variables, a stored value only applies without one
+    if (!with_provider) {
+        this->stored_values.restore(owner, component, variable, meta_data, [&](const std::string& value) {
+            return fits_data_type(meta_data.characteristics, value);
+        });
+    }
 
     const auto* actual = find_attribute(meta_data, AttributeEnum::Actual);
     const auto actual_value = (actual != nullptr and actual->value.has_value())
@@ -927,13 +941,16 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& owner
     return meta_data;
 }
 
-void DeviceModel::remove_monitors_of_absent_variables() {
+void DeviceModel::remove_monitors_and_values_of_absent_variables() {
     std::lock_guard<std::recursive_mutex> lock(this->mutex);
     this->monitors.remove_if(
         [this](const StoredMonitor& stored) {
             return this->find_variable(stored.component, stored.variable) == nullptr;
         },
         "the variable no longer exists");
+    this->stored_values.remove_of_unregistered_variables([this](const Component& component, const Variable& variable) {
+        return this->runtime_owner(component, variable).has_value();
+    });
 }
 
 void DeviceModel::unregister_components(const std::string& owner) {

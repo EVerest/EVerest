@@ -50,6 +50,7 @@ private:
     /// \brief The model the CSMS sees, composed from component_config and registrations
     ComposedModel view;
     MonitorStore monitors;
+    StoredValues stored_values;
     ProviderCalls provider_calls;
     WriteId last_write_id{0};
 
@@ -90,10 +91,10 @@ private:
     /// \brief The runtime owner that registered the variable, if any
     std::optional<std::string> runtime_owner(const Component& component, const Variable& variable) const;
 
-    /// \brief Builds the variable that \p owner registers, with its monitors
+    /// \brief Builds the variable that \p owner registers, with its stored values and monitors
     VariableMetaData build_registered_variable(const std::string& owner, const Component& component,
                                                const RegisteredVariable& registered_variable,
-                                               std::vector<VariableAttribute> attributes);
+                                               std::vector<VariableAttribute> attributes, bool with_provider);
 
     /// \brief The attribute of a variable with its current value, read from the storage for a variable that its
     /// backing keeps there
@@ -174,9 +175,9 @@ private:
     AppliedWrite apply(const ComposedVariable& composed, const Component& component, const Variable& variable,
                        const AttributeEnum& attribute_enum, const std::string& value, const std::string& source);
 
-    /// \brief Writes \p value to where the backing of the variable keeps it beyond memory: the storage of the
-    /// component config or of its owner. Writes nothing and returns Accepted for a value held in memory only: a
-    /// non-persistent attribute, or a registered variable.
+    /// \brief Writes \p value to where the backing of the variable keeps it beyond memory: the storage, or the stored
+    /// values of a runtime owner. Writes nothing and returns Accepted for a value held in memory only: a
+    /// non-persistent attribute, or a variable backed by its provider.
     SetVariableStatusEnum persist(const ComposedVariable& composed, const Component& component,
                                   const Variable& variable, const AttributeEnum& attribute_enum,
                                   const std::string& value, const std::string& source,
@@ -297,7 +298,7 @@ public:
 
     void check_integrity(const std::map<std::int32_t, std::int32_t>& evse_connector_structure) override;
 
-    void remove_monitors_of_absent_variables() override;
+    void remove_monitors_and_values_of_absent_variables() override;
 
     // DeviceModelRegistryInterface
     ComponentRegistrationResult register_components(const std::string& owner,

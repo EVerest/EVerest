@@ -519,6 +519,26 @@ TEST_F(DeviceModelRegistryTest, local_channel_writes_the_component_config_only) 
     EXPECT_EQ(get(ControllerComponents::InternalCtrlr, make_variable("ChargePointModel")), "Model");
 }
 
+TEST_F(DeviceModelRegistryTest, persistent_attribute_without_provider_is_stored) {
+    const auto der = make_component("ACDERCtrlr", 1);
+    RegisteredComponent component;
+    component.component = der;
+    component.variables.push_back(
+        make_registered_variable("Enabled", "true", MutabilityEnum::ReadWrite, DataEnum::boolean, true));
+    ASSERT_TRUE(dm->register_components(OTHER_OWNER, {component}, nullptr).rejected.empty());
+
+    EXPECT_EQ(dm->set_value(der, make_variable("Enabled"), AttributeEnum::Actual, "false", "csms"),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(der, make_variable("Enabled")), "false");
+
+    DeviceModelStorageSqlite storage(DEVICE_MODEL_DB_IN_MEMORY_PATH);
+    const auto stored = storage.get_stored_values();
+    ASSERT_EQ(stored.size(), 1);
+    EXPECT_EQ(stored.at(0).component, der);
+    EXPECT_EQ(stored.at(0).value, "false");
+    EXPECT_EQ(stored.at(0).owner, OTHER_OWNER);
+}
+
 TEST_F(DeviceModelRegistryTest, delta_monitor_on_registered_variable_takes_reference_from_memory) {
     register_config_view();
     SetMonitoringData request;

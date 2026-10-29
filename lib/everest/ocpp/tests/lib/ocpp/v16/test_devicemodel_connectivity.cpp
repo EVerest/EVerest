@@ -183,8 +183,8 @@ public:
         return storage.check_integrity(evse_connector_structure);
     }
 
-    void remove_monitors_of_absent_variables() override {
-        storage.remove_monitors_of_absent_variables();
+    void remove_monitors_and_values_of_absent_variables() override {
+        storage.remove_monitors_and_values_of_absent_variables();
     }
 
 private:

@@ -47,8 +47,8 @@ struct RegisteredVariable {
     Variable variable;
     VariableCharacteristics characteristics;
     /// \brief The attributes with their initial values. An attribute without \c persistent is not persistent, one
-    /// without \c type is the Actual attribute. A persistent attribute is kept across restarts by the owner: it is
-    /// reported as persistent, but DeviceModel does not store its value.
+    /// without \c type is the Actual attribute. A persistent attribute of an owner with a provider is kept across
+    /// restarts by the owner: it is reported as persistent, but DeviceModel does not store its value.
     std::vector<VariableAttribute> attributes;
     /// \brief Hardwired and preconfigured monitors of the variable. A stored monitor of the same type and severity
     /// (N04.FR.10), a custom monitor the CSMS set included, is kept with its id and the changes the CSMS made to it;

@@ -162,8 +162,8 @@ What happens then depends on whether the owner registered a `VariableValueProvid
   enforces its own timeout, well within the message timeout of the CSMS. Its answer is returned as it is. `Accepted`
   and `RebootRequired` mean that the owner applied exactly the written value, and libocpp stores it in memory, so the
   owner does not report it; an owner that would apply another value, a clamped one for example, rejects the write.
-- Without a provider, libocpp applies the write in memory, and the owner learns of writes through the variable
-  listeners. libocpp does not store the values: the owner registers them at every start.
+- Without a provider, libocpp stores the values of persistent attributes itself, and the owner learns of writes through
+  the variable listeners.
 
 Writes from the local channel (`ChargePoint::set_variables`) reach the component config only: a registered variable is
 changed by its owner or by the CSMS.
@@ -176,9 +176,10 @@ passes no write id accepts the race.
 
 ### Across restarts
 
-Monitors are kept by component and variable name, so they survive restarts and re-registrations. A registration
-applies them if they fit its characteristics and removes them otherwise. `ChargePoint::start` removes the monitors of
-variables that nobody defines (N04, remarks). This is why every owner must register before `start`.
+Monitors and stored values are kept by component and variable name, so they survive restarts and re-registrations. A
+registration applies them if they fit its characteristics and removes them otherwise. `ChargePoint::start` removes the
+monitors of variables that nobody defines and the stored values of variables that nobody registers (N04, remarks). This is why
+every owner must register before `start`.
 
 ## Required variables
 

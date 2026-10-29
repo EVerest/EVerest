@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <functional>
 #include <map>
 #include <string>
 #include <tuple>
@@ -10,6 +11,7 @@
 #include <ocpp/v2/comparators.hpp>
 #include <ocpp/v2/device_model_interface.hpp>
 #include <ocpp/v2/device_model_registry_interface.hpp>
+#include <ocpp/v2/device_model_storage_interface.hpp>
 
 namespace ocpp {
 namespace v2 {
@@ -34,8 +36,9 @@ enum class ValueBacking {
     /// EVerest device model of the OCPP modules for example, which changes values without DeviceModel: every read and
     /// write goes there
     OwnerStorage,
-    /// \brief Memory only, for a registered variable without a provider: the owner registers its values at every start
-    Memory,
+    /// \brief The stored values of the storage, for the persistent attributes of a registered variable without a
+    /// provider
+    StoredValue,
     /// \brief The provider of the owner, which receives every write and keeps persistent values itself. The copy in
     /// memory changes when the provider accepts a write and when the owner reports a value
     Provider,
@@ -55,6 +58,32 @@ using ComposedModel = std::map<Component, std::map<Variable, ComposedVariable>>;
 /// variables. The result points into both arguments and is valid until one of them changes.
 ComposedModel compose_device_model(DeviceModelMap& component_config,
                                    std::map<std::string, OwnerRegistration>& registrations);
+
+/// \brief The stored values of persistent attributes of registered variables without a provider. They are kept by
+/// component and variable identity, because the variables have no row in the component tables.
+class StoredValues {
+public:
+    using ValueValidator = std::function<bool(const std::string& value)>;
+
+    explicit StoredValues(DeviceModelStorageInterface& storage);
+
+    /// \brief Applies the stored values to the persistent attributes of \p meta_data, which \p owner registers.
+    /// Values that \p is_valid rejects are removed. A stored value belongs to the variable: a value stored under
+    /// another owner applies as well and is recorded under \p owner.
+    void restore(const std::string& owner, const Component& component, const Variable& variable,
+                 VariableMetaData& meta_data, const ValueValidator& is_valid);
+
+    SetVariableStatusEnum store(StoredVariableValue value);
+
+    /// \brief Removes the values of the variables for which \p registered returns false
+    void remove_of_unregistered_variables(const std::function<bool(const Component&, const Variable&)>& registered);
+
+private:
+    using Key = std::tuple<Component, Variable, AttributeEnum>;
+
+    DeviceModelStorageInterface& storage;
+    std::map<Key, StoredVariableValue> values;
+};
 
 } // namespace v2
 } // namespace ocpp

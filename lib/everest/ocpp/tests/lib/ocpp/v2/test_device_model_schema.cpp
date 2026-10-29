@@ -750,5 +750,25 @@ TEST(ComponentConfigNameKeyTest, two_configs_of_the_same_component_are_rejected)
     std::filesystem::remove_all(override_directory);
 }
 
+TEST_F(InitDeviceModelDbMonitorTest, value_of_a_removed_variable_is_not_kept) {
+    const auto component = make_component("OCPPCommCtrlr");
+    const auto heartbeat = make_variable("HeartbeatInterval");
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    initialize(configs);
+    {
+        DeviceModelStorageSqlite storage(db_path);
+        ASSERT_EQ(storage.set_variable_attribute_value(component, heartbeat, AttributeEnum::Actual, "1234", "csms"),
+                  SetVariableStatusEnum::Accepted);
+    }
+
+    auto& variables = configs.at(heartbeat_component_key);
+    variables.erase(std::remove_if(variables.begin(), variables.end(),
+                                   [](const DeviceModelVariable& v) { return v.name == "HeartbeatInterval"; }),
+                    variables.end());
+    initialize(configs);
+    DeviceModelStorageSqlite storage(db_path);
+    EXPECT_TRUE(storage.get_stored_values().empty());
+}
+
 } // namespace v2
 } // namespace ocpp
