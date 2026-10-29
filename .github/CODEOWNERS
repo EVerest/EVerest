@@ -58,9 +58,6 @@
 /modules/Misc/ErrorHistory/ @corneliusclaussen @hikinggrass @pietfried @andistorm
 /modules/Misc/PacketSniffer/ @corneliusclaussen @SebaLukas @hikinggrass @a-w50
 /modules/Misc/Setup/ @hikinggrass @corneliusclaussen @pietfried @a-w50
-/modules/Simulation/ @SebaLukas @pietfried @hikinggrass @a-w50
-/modules/Simulation/SlacSimulator/ @SebaLukas @pietfried @corneliusclaussen @james-ctc @mlitre @a-w50
-/modules/Simulation/YetiSimulator/ @SebaLukas @pietfried @corneliusclaussen @james-ctc @mlitre @a-w50
 **/Cargo.toml @SirVer @dorezyuk @pietfried @hikinggrass @a-w50
 **/Cargo.lock @SirVer @dorezyuk @pietfried @hikinggrass @a-w50
 
