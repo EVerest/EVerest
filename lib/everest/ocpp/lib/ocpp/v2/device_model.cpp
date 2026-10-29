@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -80,6 +81,30 @@ bool has_storable_name_key(const Component& component, const Variable& variable)
 
 bool is_reserved_owner(const std::string& owner) {
     return owner == VARIABLE_OWNER_COMPONENT_CONFIG;
+}
+
+/// \brief The variables libocpp writes from its own state through set_read_only_value, which rejects a variable of a
+/// runtime owner
+bool is_reserved_variable(const Component& component, const Variable& variable) {
+    // B09: the network connection profiles of every slot, which SetNetworkProfile writes
+    if (component.name == "NetworkConfiguration") {
+        return true;
+    }
+    if (variable == EvseComponentVariables::AvailabilityState) {
+        return component == ControllerComponents::ChargingStation or component.name == "EVSE" or
+               component.name == "Connector";
+    }
+    static const std::vector<ComponentVariable> reserved{
+        ControllerComponentVariables::AuthCacheStorage,
+        ControllerComponentVariables::LocalAuthListCtrlrEntries,
+        ControllerComponentVariables::ActiveNetworkProfile,
+        ControllerComponentVariables::MessageTimeout,
+        ControllerComponentVariables::SecurityProfile,
+        {ControllerComponents::SecurityCtrlr, NetworkConfigurationComponentVariables::Identity},
+    };
+    return std::any_of(reserved.begin(), reserved.end(), [&component, &variable](const ComponentVariable& entry) {
+        return entry.component == component and entry.variable == variable;
+    });
 }
 
 bool allow_set_read_only_value(const Component& component, const Variable& variable,
@@ -754,16 +779,6 @@ bool DeviceModel::create_network_configuration_slot_from_default_schema(std::int
     if (this->storage == nullptr) {
         return false;
     }
-    for (const auto& [owner, registration] : this->registrations) {
-        for (const auto& [component, variables] : registration.variables) {
-            if (component.name == "NetworkConfiguration" and component.instance.has_value() and
-                component.instance->get() == std::to_string(new_slot)) {
-                EVLOG_error << "Not creating network configuration slot " << new_slot << ": owner " << owner
-                            << " registered variables of " << component;
-                return false;
-            }
-        }
-    }
     if (!this->storage->create_network_configuration_slot_from_default_schema(new_slot)) {
         return false;
     }
@@ -840,6 +855,12 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
                 EVLOG_warning << "Owner " << owner << " registered " << component << "." << variable
                               << " without attributes: the variable is ignored";
                 result.rejected.push_back({component, variable, RegistrationRejectionReason::NoAttributes});
+                continue;
+            }
+            if (is_reserved_variable(component, variable)) {
+                EVLOG_error << "Owner " << owner << " registered " << component << "." << variable
+                            << ", which libocpp writes itself: the variable is ignored";
+                result.rejected.push_back({component, variable, RegistrationRejectionReason::ReservedVariable});
                 continue;
             }
             if (const auto* in_config = this->find_in_component_config(component, variable); in_config != nullptr) {

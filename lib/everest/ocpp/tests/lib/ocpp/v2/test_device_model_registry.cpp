@@ -379,20 +379,6 @@ TEST_F(DeviceModelRegistryTest, variable_of_the_component_config_is_rejected) {
     EXPECT_TRUE(visible(evse, make_variable("AllowReset")));
 }
 
-TEST_F(DeviceModelRegistryTest, network_configuration_slot_of_a_registered_component_is_not_created) {
-    Component slot;
-    slot.name = "NetworkConfiguration";
-    slot.instance = "7";
-    RegisteredComponent component;
-    component.component = slot;
-    component.variables.push_back(make_registered_variable("VendorTimeout", "1"));
-    ASSERT_TRUE(dm->register_components(OWNER, {component}, &provider).rejected.empty());
-
-    EXPECT_FALSE(dm->create_network_configuration_slot_from_default_schema(7));
-    EXPECT_FALSE(visible(slot, NetworkConfigurationComponentVariables::OcppCsmsUrl));
-    EXPECT_EQ(get(slot, make_variable("VendorTimeout")), "1");
-}
-
 TEST_F(DeviceModelRegistryTest, registering_again_replaces_the_previous_registration) {
     register_config_view();
 
@@ -435,6 +421,35 @@ TEST_F(DeviceModelRegistryTest, reserved_owner_is_rejected) {
     ASSERT_EQ(result.rejected.size(), 1);
     EXPECT_EQ(result.rejected.at(0).reason, RegistrationRejectionReason::ReservedOwner);
     EXPECT_FALSE(visible(config_component, timeout));
+}
+
+TEST_F(DeviceModelRegistryTest, variables_that_libocpp_writes_are_rejected) {
+    Component slot;
+    slot.name = "NetworkConfiguration";
+    slot.instance = "7";
+    const std::vector<RegisteredComponent> components{
+        {ControllerComponents::LocalAuthListCtrlr, {make_registered_variable("Entries", "0")}},
+        {ControllerComponents::SecurityCtrlr,
+         {make_registered_variable("Identity", "cp001", MutabilityEnum::ReadWrite, DataEnum::string)}},
+        {make_component("EVSE", 3),
+         {make_registered_variable("AvailabilityState", "Available", MutabilityEnum::ReadOnly, DataEnum::OptionList),
+          make_registered_variable("Power", "0", MutabilityEnum::ReadOnly, DataEnum::decimal)}},
+        {make_component("Connector", 3, 1),
+         {make_registered_variable("AvailabilityState", "Available", MutabilityEnum::ReadOnly, DataEnum::OptionList)}},
+        {slot, {make_registered_variable("VendorTimeout", "1")}},
+    };
+
+    const auto result = dm->register_components(OWNER, components, nullptr);
+
+    ASSERT_EQ(result.rejected.size(), 5);
+    for (const auto& rejected : result.rejected) {
+        EXPECT_EQ(rejected.reason, RegistrationRejectionReason::ReservedVariable) << rejected.variable;
+    }
+    EXPECT_FALSE(visible(make_component("EVSE", 3), make_variable("AvailabilityState")));
+    EXPECT_FALSE(visible(make_component("Connector", 3, 1), make_variable("AvailabilityState")));
+    EXPECT_FALSE(visible(slot, make_variable("VendorTimeout")));
+    EXPECT_TRUE(dm->create_network_configuration_slot_from_default_schema(7));
+    EXPECT_TRUE(visible(make_component("EVSE", 3), make_variable("Power")));
 }
 
 TEST_F(DeviceModelRegistryTest, second_definition_of_a_variable_in_one_registration_is_rejected) {

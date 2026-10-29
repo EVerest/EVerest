@@ -143,6 +143,13 @@ one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `registe
 `unregister_components` and `notify_value_changed` reject it. An owner that registers again replaces its earlier
 registration.
 
+The variables that libocpp writes from its own state are defined by the component config only, and a registration of
+one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`, the `AvailabilityState` of the
+charging station, the EVSEs and the connectors, `OCPPCommCtrlr.ActiveNetworkProfile`, `OCPPCommCtrlr.MessageTimeout`,
+`SecurityCtrlr.SecurityProfile`, `SecurityCtrlr.Identity` and every variable of a `NetworkConfiguration` slot, which
+`SetNetworkProfile` writes. A component config that leaves out such a variable, for example by leaving out
+`LocalAuthListCtrlr`, leaves out what libocpp maintains in it.
+
 Registered variables follow the name key rules of the component config: a variable with an empty instance, or of a
 component with an empty instance or an EVSE or connector id of `0`, is rejected, because its monitors and stored values
 would be read back under the key without the instance or id.

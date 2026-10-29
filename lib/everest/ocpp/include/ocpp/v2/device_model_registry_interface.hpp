@@ -73,6 +73,9 @@ enum class RegistrationRejectionReason {
     /// Monitors and stored values key an absent instance as '' and an absent id as 0, so they could not tell them
     /// apart; the component config rejects them for the same reason.
     InvalidNameKey,
+    /// \brief libocpp writes the variable from its own state, AuthCacheCtrlr.Storage, the AvailabilityState of an EVSE
+    /// or any variable of a NetworkConfiguration slot for example, so only the component config defines it
+    ReservedVariable,
 };
 
 struct RejectedVariable {
@@ -98,7 +101,8 @@ public:
     /// one definition: a variable that the component config or another runtime owner defines already is rejected.
     /// A variable with an empty instance, or of a component with an empty instance or an EVSE or connector id of 0, is
     /// rejected as well, and so is a second definition of a variable in \p components.
-    /// The owner VARIABLE_OWNER_COMPONENT_CONFIG is reserved for libocpp and rejected.
+    /// The owner VARIABLE_OWNER_COMPONENT_CONFIG is reserved for libocpp and rejected, and so are the variables that
+    /// libocpp writes from its own state, see RegistrationRejectionReason::ReservedVariable.
     /// The variable listeners are notified of each Actual value that differs from the one \p owner registered before
     /// for the same variable.
     /// \param provider Receives the writes to the registered variables. Without a provider, writes are applied to the
