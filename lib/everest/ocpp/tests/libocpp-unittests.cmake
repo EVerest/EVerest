@@ -105,7 +105,8 @@ function(add_libocpp_unittest)
             MIGRATION_FILE_VERSION_V16=${MIGRATION_FILE_VERSION_V16}
             MIGRATION_FILE_VERSION_V2=${MIGRATION_FILE_VERSION_V2}
             MIGRATION_DEVICE_MODEL_FILE_VERSION_V2=${MIGRATION_DEVICE_MODEL_FILE_VERSION_V2})
-    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors)
+    # Some tests use "#define private public" to reach into the classes under test
+    target_compile_options(${arg_NAME} PRIVATE -pedantic-errors $<$<CXX_COMPILER_ID:Clang,AppleClang>:-Wno-keyword-macro>)
     target_compile_features(${arg_NAME} PUBLIC cxx_std_17)
     target_include_directories(${arg_NAME} PRIVATE
         ${CMAKE_CURRENT_SOURCE_DIR}

@@ -525,7 +525,7 @@ void Manager::publish_final_status_and_disconnect(MQTTAbstraction& mqtt_abstract
         // MQTTAbstractionImpl's pre-connect buffer or, if the MQTT main loop has not disconnected
         // yet, sent redundantly. The payload never changes, so publishing it once is enough.
         m_final_lifecycle_status_published = true;
-        Everest::api::lifecycle::LifecycleAPI::publish_shutdown_status(mqtt_abstraction);
+        ::Everest::api::lifecycle::LifecycleAPI::publish_shutdown_status(mqtt_abstraction);
     }
     mqtt_abstraction.disconnect();
 }
@@ -798,7 +798,7 @@ bool Manager::reload_and_update_context(RuntimeContext& ctx) {
 
 namespace {
 // Dump the validated module configurations and manifests as JSON files into dump_path.
-void dump_config_and_manifests(const Everest::ManagerConfig& config, const fs::path& dump_path) {
+void dump_config_and_manifests(const ::Everest::ManagerConfig& config, const fs::path& dump_path) {
     EVLOG_debug << fmt::format("Dumping validated config and manifests into '{}'", dump_path.string());
 
     const auto config_dump_path = dump_path / "config.json";
@@ -1066,8 +1066,8 @@ int Manager::run() {
         // Exits before that construction need no publish: nothing has claimed everest_running == true
         // yet, so the retained topic still holds whatever the previous run left there.
         LwtCfg lwt_cfg;
-        lwt_cfg.topic = Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
-        lwt_cfg.data = Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
+        lwt_cfg.topic = ::Everest::api::lifecycle::LifecycleAPI::Lwt::get_topic();
+        lwt_cfg.data = ::Everest::api::lifecycle::LifecycleAPI::Lwt::get_data();
         mqtt_abstraction = create_and_connect_mqtt(ms, std::optional<LwtCfg>{lwt_cfg});
     } else {
         mqtt_abstraction = create_and_connect_mqtt(ms, std::nullopt);
@@ -1078,7 +1078,7 @@ int Manager::run() {
 
     const bool retain_topics = (m_vm.count("retain-topics") != 0);
 
-    std::shared_ptr<const Everest::ManagerConfig> config;
+    std::shared_ptr<const ::Everest::ManagerConfig> config;
     std::vector<std::string> standalone_modules;
     std::vector<std::string> ignored_modules;
 
@@ -1103,15 +1103,15 @@ int Manager::run() {
                           const std::string& value) {
             const auto result = config_service->cmd_set_cfg_param(cfg_param_id, value);
             if (result) {
-                if (result->status == Everest::config::SetResponseStatus::Accepted) {
-                    return Everest::config::SetParameterResponse::ModuleReplied_Applied;
-                } else if (result->status == Everest::config::SetResponseStatus::RebootRequired) {
-                    return Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
+                if (result->status == ::Everest::config::SetResponseStatus::Accepted) {
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_Applied;
+                } else if (result->status == ::Everest::config::SetResponseStatus::RebootRequired) {
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_RequiresRestart;
                 } else {
-                    return Everest::config::SetParameterResponse::ModuleReplied_Rejected;
+                    return ::Everest::config::SetParameterResponse::ModuleReplied_Rejected;
                 }
             } else {
-                return Everest::config::SetParameterResponse::SetCallFailed;
+                return ::Everest::config::SetParameterResponse::SetCallFailed;
             }
         });
 
@@ -1158,14 +1158,14 @@ int Manager::run() {
         }
     });
 
-    std::unique_ptr<Everest::api::configuration::ConfigurationAPI> configuration_api;
+    std::unique_ptr<::Everest::api::configuration::ConfigurationAPI> configuration_api;
     if (cfg_api_active) {
         if (cfg_api_rw) {
             EVLOG_info << "Starting ConfigurationAPI in read-write mode";
         } else {
             EVLOG_info << "Starting ConfigurationAPI in read-only mode";
         }
-        configuration_api = std::make_unique<Everest::api::configuration::ConfigurationAPI>(
+        configuration_api = std::make_unique<::Everest::api::configuration::ConfigurationAPI>(
             *mqtt_abstraction, *m_config_service_core, not cfg_api_rw);
     }
 
@@ -1195,45 +1195,46 @@ int Manager::run() {
         }
     } lifecycle_wakeup_fd_guard{m_lifecycle_wakeup_fd};
 
-    std::unique_ptr<Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
+    std::unique_ptr<::Everest::api::lifecycle::LifecycleAPI> lifecycle_api;
     if (lfc_api_active) {
         if (lfc_api_rw) {
             EVLOG_info << "Starting LifecycleAPI in read-write mode";
         } else {
             EVLOG_info << "Starting LifecycleAPI in read-only mode";
         }
-        lifecycle_api = std::make_unique<Everest::api::lifecycle::LifecycleAPI>(
+        lifecycle_api = std::make_unique<::Everest::api::lifecycle::LifecycleAPI>(
             *mqtt_abstraction, *m_config_service_core,
-            configuration_api ? (cfg_api_rw ? Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
-                                            : Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
-                              : Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
+            configuration_api ? (cfg_api_rw ? ::Everest::api::lifecycle::ConfigurationApiStatus::AvailableRW
+                                            : ::Everest::api::lifecycle::ConfigurationApiStatus::AvailableRO)
+                              : ::Everest::api::lifecycle::ConfigurationApiStatus::NotAvailable,
             not lfc_api_rw,
             [this]() {
                 // Runs on the MQTT worker thread. Decide the reply from thread-safe state predicates here
                 // and record the intent; the main loop performs the actual shutdown in handle_lifecycle_api_request().
-                Everest::api::lifecycle::StopModulesResult ret = Everest::api::lifecycle::StopModulesResult::Rejected;
+                ::Everest::api::lifecycle::StopModulesResult ret =
+                    ::Everest::api::lifecycle::StopModulesResult::Rejected;
                 if (is_idle()) {
-                    ret = Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
+                    ret = ::Everest::api::lifecycle::StopModulesResult::NoModulesToStop;
                 } else if (are_modules_started()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Stop);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::StopModulesResult::Stopping;
+                    ret = ::Everest::api::lifecycle::StopModulesResult::Stopping;
                 }
                 return ret;
             },
             [this]() {
                 // Runs on the MQTT worker thread. Decide the reply and record the  intent;
                 // the main loop performs the actual restart in handle_lifecycle_api_request().
-                Everest::api::lifecycle::RestartModulesResult ret =
-                    Everest::api::lifecycle::RestartModulesResult::Rejected;
+                ::Everest::api::lifecycle::RestartModulesResult ret =
+                    ::Everest::api::lifecycle::RestartModulesResult::Rejected;
                 if (are_modules_started()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::RestartModulesResult::Restarting;
+                    ret = ::Everest::api::lifecycle::RestartModulesResult::Restarting;
                 } else if (is_idle()) {
                     m_lifecycle_api_request.store(LifecycleApiRequest::Restart);
                     poke_lifecycle_wakeup();
-                    ret = Everest::api::lifecycle::RestartModulesResult::Starting;
+                    ret = ::Everest::api::lifecycle::RestartModulesResult::Starting;
                 }
                 return ret;
             });

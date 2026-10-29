@@ -30,7 +30,7 @@ using std::chrono::seconds;
 auto FIXME_DEFAULT_LIMIT = 0;
 
 period_entry_t gen_pe(ocpp::DateTime start, ocpp::DateTime end, ChargingProfile profile, int period_at) {
-    period_entry_t period_entry;
+    period_entry_t period_entry{};
     period_entry.start = start;
     period_entry.end = end;
     period_entry.limit.limit =
@@ -269,7 +269,7 @@ TEST_P(CalculateProfileEntryType_Param_Test, CalculateProfileEntry_Positive) {
     std::vector<period_entry_t> period_entries =
         calculate_profile_entry(now, end, session_start, profile, period_index);
 
-    period_entry_t expected_entry;
+    period_entry_t expected_entry{};
     expected_entry.start = expected_start;
     expected_entry.end = expected_end;
     expected_entry.limit.limit =
@@ -308,11 +308,15 @@ TEST_P(CalculateProfileEntryType_Param_Test, CalculateProfileEntry_Positive) {
     } else {
         period_entry_t second_entry = period_entries.at(1);
 
-        period_entry_t expected_second_entry;
+        period_entry_t expected_second_entry{};
         expected_second_entry.start = expected_2nd_entry_start.value();
         expected_second_entry.end = expected_2nd_entry_end.value();
         expected_second_entry.limit.limit =
             profile.chargingSchedule.front().chargingSchedulePeriod[period_index].limit.value_or(FIXME_DEFAULT_LIMIT);
+        expected_second_entry.limit.limit_L2 =
+            profile.chargingSchedule.front().chargingSchedulePeriod[period_index].limit_L2.value_or(NO_LIMIT_SPECIFIED);
+        expected_second_entry.limit.limit_L3 =
+            profile.chargingSchedule.front().chargingSchedulePeriod[period_index].limit_L3.value_or(NO_LIMIT_SPECIFIED);
         expected_second_entry.stack_level = profile.stackLevel;
         expected_second_entry.charging_rate_unit = profile.chargingSchedule.front().chargingRateUnit;
         expected_second_entry.stack_level = profile.stackLevel;
