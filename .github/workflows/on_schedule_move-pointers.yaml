@@ -33,6 +33,11 @@
 # continuing, and the re-run is idempotent on both halves - the push is a no-op
 # if the pointer is already there, and record_pointer_move.py is a no-op if the
 # sha is already logged. Re-run it; do not hand-edit pointers.json.
+#
+# Each recorded move also uploads a moved-<job index> artifact naming its
+# pointer. on_pointer_moved.yaml fans out on those artifacts, one collection
+# of CI results per pointer, so a pointer that did not move, or whose move was
+# not recorded, uploads none and gets no collection.
 
 name: Move Himalayas pointers
 
@@ -151,3 +156,19 @@ jobs:
             -F "client_payload[tracks]=$TRACKS" \
             -F "client_payload[sha]=$SHA" \
             -F "client_payload[moved_at]=$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+
+      - name: Write the moved pointer
+        if: steps.sha.outputs.unchanged != '1'
+        env:
+          POINTER: ${{ matrix.pointer }}
+        run: |
+          set -euo pipefail
+          jq -n --arg pointer "$POINTER" '{pointer: $pointer}' > moved.json
+
+      - name: Upload the moved pointer
+        if: steps.sha.outputs.unchanged != '1'
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: moved-${{ strategy.job-index }}
+          path: moved.json
+          if-no-files-found: error

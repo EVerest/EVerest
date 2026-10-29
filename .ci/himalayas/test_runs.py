@@ -5,9 +5,10 @@ import json
 import os
 import subprocess
 import sys
+import tempfile
 import unittest
 
-from runs import build_outcome, cross_targets, native_targets, pick_run
+from runs import build_outcome, cross_targets, native_targets, pick_dispatched, pick_run
 
 HERE = os.path.dirname(os.path.abspath(__file__))
 TESTDATA = os.path.join(HERE, "testdata")
@@ -112,6 +113,41 @@ class PickRunTest(unittest.TestCase):
         self.assertEqual(pick_run(runs, SHA, "push")["id"], 2)
 
 
+def dispatched(run_id, sha, created_at, event="workflow_dispatch"):
+    return {"id": run_id, "head_sha": sha, "event": event, "status": "completed", "created_at": created_at}
+
+
+class PickDispatchedTest(unittest.TestCase):
+    AFTER = "2026-10-29T03:20:00Z"
+
+    def test_oldest_run_at_or_after_the_dispatch(self):
+        runs = {
+            "workflow_runs": [
+                dispatched(3, SHA, "2026-10-29T03:40:00Z"),
+                dispatched(2, SHA, "2026-10-29T03:20:00Z"),
+                dispatched(1, SHA, "2026-10-29T03:19:59Z"),
+            ]
+        }
+        self.assertEqual(pick_dispatched(runs, SHA, self.AFTER)["id"], 2)
+
+    def test_run_at_another_sha_refused(self):
+        runs = {"workflow_runs": [dispatched(1, "f" * 40, "2026-10-29T03:21:00Z")]}
+        self.assertIsNone(pick_dispatched(runs, SHA, self.AFTER))
+
+    def test_run_created_before_after_refused(self):
+        runs = {"workflow_runs": [dispatched(1, SHA, "2026-10-29T03:19:59Z")]}
+        self.assertIsNone(pick_dispatched(runs, SHA, self.AFTER))
+
+    def test_other_events_refused(self):
+        runs = {"workflow_runs": [dispatched(1, SHA, "2026-10-29T03:21:00Z", event="schedule")]}
+        self.assertIsNone(pick_dispatched(runs, SHA, self.AFTER))
+
+    def test_after_with_offset(self):
+        runs = {"workflow_runs": [dispatched(1, SHA, "2026-10-29T03:21:00Z")]}
+        self.assertEqual(pick_dispatched(runs, SHA, "2026-10-29T05:20:00+02:00")["id"], 1)
+        self.assertIsNone(pick_dispatched(runs, SHA, "2026-10-29T05:22:00+02:00"))
+
+
 class BuildOutcomeTest(unittest.TestCase):
     def test_compile_succeeded(self):
         self.assertEqual(build_outcome(load("jobs-main-push.json")), "passed")
@@ -167,6 +203,9 @@ class NativeTargetsTest(unittest.TestCase):
             [{"target": "x86_64-linux-gnu", "status": "passed", "toolchain": TOOLCHAIN}],
         )
 
+    def test_without_toolchain(self):
+        self.assertEqual(native_targets(load("jobs-main-push.json"), None), [{"target": "x86_64-linux-gnu", "status": "passed"}])
+
     def test_missing_cmake_job(self):
         self.assertEqual(native_targets(without_jobs(load("jobs-main-push.json"), "CMake GCC /"), TOOLCHAIN), [])
 
@@ -205,6 +244,11 @@ class CrossTargetsTest(unittest.TestCase):
             job = {"name": f"Bazel Cross ({platform}) / build", "conclusion": "success", "steps": []}
             with self.subTest(platform=platform), self.assertRaises(ValueError):
                 cross_targets(cross_jobs(job), TOOLCHAIN)
+
+    def test_without_toolchain(self):
+        self.assertEqual(
+            [set(target) for target in cross_targets(load("jobs-on-pr.json"), None)], [{"target", "status"}] * 4
+        )
 
     def test_no_cross_jobs(self):
         self.assertEqual(cross_targets(load("jobs-main-push.json"), TOOLCHAIN), [])
@@ -269,13 +313,33 @@ class CliTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0)
         self.assertEqual(
             json.loads(result.stdout),
-            native_targets(load("jobs-main-push.json"), TOOLCHAIN) + cross_targets(load("jobs-on-pr.json"), TOOLCHAIN),
+            native_targets(load("jobs-main-push.json"), TOOLCHAIN) + cross_targets(load("jobs-on-pr.json"), None),
         )
 
-    def test_targets_needs_toolchain(self):
+    def test_targets_without_toolchain(self):
         result = self.run_cli("targets", stdin_name="jobs-main-push.json")
-        self.assertEqual((result.returncode, result.stdout), (2, ""))
-        self.assertIn("--toolchain", result.stderr)
+        self.assertEqual(result.returncode, 0)
+        self.assertEqual(json.loads(result.stdout), [{"target": "x86_64-linux-gnu", "status": "passed"}])
+
+    def write_runs(self, runs):
+        path = os.path.join(self.enterContext(tempfile.TemporaryDirectory()), "runs.json")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(runs, f)
+        return path
+
+    def test_pick_dispatched_prints_id(self):
+        runs = {"workflow_runs": [dispatched(7, SHA, "2026-10-29T03:21:00Z")]}
+        result = self.run_cli(
+            "pick-dispatched", "--sha", SHA, "--after", "2026-10-29T03:20:00Z", stdin_name=self.write_runs(runs)
+        )
+        self.assertEqual((result.returncode, result.stdout), (0, "7\n"))
+
+    def test_pick_dispatched_exits_3_when_none(self):
+        runs = {"workflow_runs": [dispatched(7, "f" * 40, "2026-10-29T03:21:00Z")]}
+        result = self.run_cli(
+            "pick-dispatched", "--sha", SHA, "--after", "2026-10-29T03:20:00Z", stdin_name=self.write_runs(runs)
+        )
+        self.assertEqual((result.returncode, result.stdout), (3, ""))
 
     def test_unknown_command_is_a_usage_error(self):
         result = self.run_cli("frobnicate", stdin_name="jobs-main-push.json")

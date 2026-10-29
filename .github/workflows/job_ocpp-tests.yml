@@ -8,6 +8,16 @@ on:
         required: false
         default: 'ubuntu-24.04'
         type: string
+      ref:
+        description: 'The commit or branch to check out, the triggering one when empty'
+        required: false
+        default: ''
+        type: string
+      artifacts_run_id:
+        description: 'The workflow run to download the artifacts from, this run when empty'
+        required: false
+        default: ''
+        type: string
       dist_artifact_name:
         description: 'The name of the dist artifact to download'
         required: true
@@ -21,8 +31,9 @@ on:
         required: true
         type: string
       build_kit_image_tag:
-        description: 'The tag of the build-kit image to use for building the project'
-        required: true
+        description: 'The tag of the build-kit image to use for building the project, the loaded image when empty'
+        required: false
+        default: ''
         type: string
       build_kit_scripts_directory:
         description: 'Directory in the repository where the build kit scripts are located'
@@ -48,6 +59,8 @@ jobs:
         uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ inputs.dist_artifact_name }}
+          run-id: ${{ inputs.artifacts_run_id }}
+          github-token: ${{ inputs.artifacts_run_id != '' && github.token || '' }}
       - name: Extract dist.tar.gz
         run: |
           tar -xzf ${{ github.workspace }}/dist.tar.gz -C ${{ github.workspace }}
@@ -56,9 +69,12 @@ jobs:
         with:
           name: ${{ inputs.wheels_artifact_name }}
           path: wheels
+          run-id: ${{ inputs.artifacts_run_id }}
+          github-token: ${{ inputs.artifacts_run_id != '' && github.token || '' }}
       - name: Checkout repository
         uses: actions/checkout@v7.0.1
         with:
+          ref: ${{ inputs.ref }}
           path: source
       - name: Setup run scripts
         run: |
@@ -68,10 +84,24 @@ jobs:
         uses: actions/download-artifact@v8.0.1
         with:
           name: ${{ inputs.build_kit_artifact_name }}
+          run-id: ${{ inputs.artifacts_run_id }}
+          github-token: ${{ inputs.artifacts_run_id != '' && github.token || '' }}
       - name: Load build-kit image
+        env:
+          BUILD_KIT_IMAGE: ${{ inputs.build_kit_image_tag }}
         run: |
-          docker load -i build-kit.tar
-          docker image tag ${{ inputs.build_kit_image_tag }} build-kit
+          set -euo pipefail
+          loaded=$(docker load -i build-kit.tar)
+          echo "$loaded"
+          image="$BUILD_KIT_IMAGE"
+          if [ -z "$image" ]; then
+            image=$(printf '%s\n' "$loaded" | sed -n 's/^Loaded image: //p' | head -n 1)
+          fi
+          if [ -z "$image" ]; then
+            echo "::error::build_kit_image_tag is empty and docker load printed no 'Loaded image:' line"
+            exit 1
+          fi
+          docker image tag "$image" build-kit
       - name: Create integration-image
         run: |
           docker run \

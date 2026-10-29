@@ -12,6 +12,16 @@ on:
         description: 'Human-readable platform name for display'
         required: true
         type: string
+      ref:
+        description: 'The commit or branch to check out, the triggering one when empty'
+        required: false
+        default: ''
+        type: string
+      save_repo_cache:
+        description: 'Whether to save the bazel repo cache on main after a cache miss'
+        required: false
+        default: true
+        type: boolean
 jobs:
   bazel-cross-build:
     name: build
@@ -19,6 +29,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.ref }}
       - name: Authenticate GitHub downloads
         env:
           GITHUB_TOKEN: ${{ github.token }}
@@ -52,7 +64,7 @@ jobs:
           --platforms=//third-party/bazel/toolchains:${{ inputs.platform }}
           --@bazel_tools//tools/test:incompatible_use_default_test_toolchain=false
       - name: Save bazel repo cache
-        if: ${{ github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
+        if: ${{ inputs.save_repo_cache && github.ref == 'refs/heads/main' && steps.repo-cache.outputs.cache-hit != 'true' }}
         uses: actions/cache/save@v6
         with:
           path: "~/.cache/bazel-repo-cache"
