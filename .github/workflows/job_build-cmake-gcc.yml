@@ -34,6 +34,11 @@ on:
         required: false
         default: 'build/Testing/Temporary/LastTest.log'
         type: string
+      ctest_junit_path:
+        description: 'The path to the ctest JUnit report, relative to the github workspace'
+        required: false
+        default: 'build/Testing/ctest-junit.xml'
+        type: string
       coverage_report_path:
         description: 'The path to the coverage report, relative to the github workspace'
         required: false
@@ -64,6 +69,9 @@ on:
       ctest_report_artifact_name:
         description: 'The name of the ctest report artifact uploaded'
         value: ${{ jobs.build-cmake-gcc.outputs.ctest_report_artifact_name }}
+      ctest_junit_artifact_name:
+        description: 'The name of the ctest JUnit report artifact uploaded'
+        value: ${{ jobs.build-cmake-gcc.outputs.ctest_junit_artifact_name }}
       coverage_report_artifact_name:
         description: 'The name of the coverage report artifact uploaded'
         value: ${{ jobs.build-cmake-gcc.outputs.coverage_report_artifact_name }}
@@ -83,6 +91,7 @@ jobs:
     runs-on: ${{ inputs.runner }}
     env:
       CTEST_REPORT_ARTIFACT_NAME: ctest-report
+      CTEST_JUNIT_ARTIFACT_NAME: ctest-junit
       COVERAGE_REPORT_ARTIFACT_NAME: coverage-report
       COVERAGE_XML_ARTIFACT_NAME: coverage-xml
       DIST_ARTIFACT_NAME: dist
@@ -91,6 +100,7 @@ jobs:
       SSH_AUTH_SOCK: /tmp/ssh_agent.sock
     outputs:
       ctest_report_artifact_name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
+      ctest_junit_artifact_name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
       coverage_report_artifact_name: ${{ env.COVERAGE_REPORT_ARTIFACT_NAME }}
       coverage_xml_artifact_name: ${{ env.COVERAGE_XML_ARTIFACT_NAME }}
       dist_artifact_name: ${{ env.DIST_ARTIFACT_NAME }}
@@ -176,58 +186,6 @@ jobs:
         with:
           path: cache
           key: compile-${{ env.branch_name_for_cache }}-${{ github.sha }}
-      - name: Run unit tests
-        id: run_unit_tests
-        run: |
-          docker run \
-          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
-          --env SSH_AUTH_SOCK=/ssh-agent \
-          --volume "${{ github.workspace }}:/ext" \
-          --name unit-test-container \
-          build-kit run-script run_unit_tests
-      - name: Archive test results
-        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
-        uses: actions/upload-artifact@v7.0.1
-        with:
-          if-no-files-found: error
-          name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
-          path: ${{ inputs.ctest_report_path }}
-      # - name: Run coverage
-      #   id: run_coverage
-      #   run: |
-      #     docker run \
-      #     --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
-      #     --env SSH_AUTH_SOCK=/ssh-agent \
-      #     --volume "${{ github.workspace }}:/ext" \
-      #     --name coverage-container \
-      #     build-kit run-script run_coverage
-      # - name: Archive coverage report
-      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
-      #   uses: actions/upload-artifact@v7
-      #   with:
-      #     if-no-files-found: error
-      #     name: ${{ env.COVERAGE_REPORT_ARTIFACT_NAME }}
-      #     path: ${{ inputs.coverage_report_path }}
-      # - name: Archive coverage xml
-      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
-      #   uses: actions/upload-artifact@v7
-      #   with:
-      #     if-no-files-found: error
-      #     name: ${{ env.COVERAGE_XML_ARTIFACT_NAME }}
-      #     path: ${{ inputs.coverage_xml_path}}
-      # - name: Deploy html coverage report
-      #   id: deploy_coverage_report
-      #   if: ${{ always() && ( steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure' ) && inputs.is_fork == 'false' }}
-      #   uses: ./everest-ci/github-actions/deploy-ci-artifact
-      #   with:
-      #     target_repo: ${{ inputs.artifact_deploy_target_repo }}
-      #     github_token: ${{ secrets.coverage_deploy_token }}
-      #     artifact_name: coverage-report
-      #     artifact_directory: ${{ inputs.coverage_report_path }}
-      # - name: Write summary coverage
-      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
-      #   run: |
-      #     echo "Coverage report deployed to: [everest.github.io](https://everest.github.io/${{ steps.deploy_coverage_report.outputs.deployed_path }})" >> $GITHUB_STEP_SUMMARY
       - name: Create dist
         id: create_dist
         run: |
@@ -269,3 +227,62 @@ jobs:
           name: ${{ env.WHEELS_ARTIFACT_NAME }}
           # Wheels are zip archives already
           compression-level: 0
+      - name: Run unit tests
+        id: run_unit_tests
+        run: |
+          docker run \
+          --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+          --env SSH_AUTH_SOCK=/ssh-agent \
+          --volume "${{ github.workspace }}:/ext" \
+          --name unit-test-container \
+          build-kit run-script run_unit_tests
+      - name: Archive test results
+        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          if-no-files-found: error
+          name: ${{ env.CTEST_REPORT_ARTIFACT_NAME }}
+          path: ${{ inputs.ctest_report_path }}
+      - name: Archive test results as JUnit
+        if: ${{ always() && (steps.run_unit_tests.outcome == 'success' || steps.run_unit_tests.outcome == 'failure') }}
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          if-no-files-found: error
+          name: ${{ env.CTEST_JUNIT_ARTIFACT_NAME }}
+          path: ${{ inputs.ctest_junit_path }}
+      # - name: Run coverage
+      #   id: run_coverage
+      #   run: |
+      #     docker run \
+      #     --mount type=bind,source=$SSH_AUTH_SOCK,target=/ssh-agent \
+      #     --env SSH_AUTH_SOCK=/ssh-agent \
+      #     --volume "${{ github.workspace }}:/ext" \
+      #     --name coverage-container \
+      #     build-kit run-script run_coverage
+      # - name: Archive coverage report
+      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     if-no-files-found: error
+      #     name: ${{ env.COVERAGE_REPORT_ARTIFACT_NAME }}
+      #     path: ${{ inputs.coverage_report_path }}
+      # - name: Archive coverage xml
+      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
+      #   uses: actions/upload-artifact@v7
+      #   with:
+      #     if-no-files-found: error
+      #     name: ${{ env.COVERAGE_XML_ARTIFACT_NAME }}
+      #     path: ${{ inputs.coverage_xml_path}}
+      # - name: Deploy html coverage report
+      #   id: deploy_coverage_report
+      #   if: ${{ always() && ( steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure' ) && inputs.is_fork == 'false' }}
+      #   uses: ./everest-ci/github-actions/deploy-ci-artifact
+      #   with:
+      #     target_repo: ${{ inputs.artifact_deploy_target_repo }}
+      #     github_token: ${{ secrets.coverage_deploy_token }}
+      #     artifact_name: coverage-report
+      #     artifact_directory: ${{ inputs.coverage_report_path }}
+      # - name: Write summary coverage
+      #   if: ${{ always() && (steps.run_coverage.outcome == 'success' || steps.run_coverage.outcome == 'failure') }}
+      #   run: |
+      #     echo "Coverage report deployed to: [everest.github.io](https://everest.github.io/${{ steps.deploy_coverage_report.outputs.deployed_path }})" >> $GITHUB_STEP_SUMMARY
