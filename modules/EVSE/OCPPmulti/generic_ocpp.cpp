@@ -808,7 +808,8 @@ void GenericOcpp::ready_event_queue() {
         for (auto& [evse_id, evse_event_queue] : to_process) {
             while (!evse_event_queue.empty()) {
                 // dispatch via the visit_impl overload set
-                std::visit([this, evse_id](const auto& arg) { visit_impl(evse_id, arg); }, evse_event_queue.front());
+                std::visit([this, evse_id = evse_id](const auto& arg) { visit_impl(evse_id, arg); },
+                           evse_event_queue.front());
                 evse_event_queue.pop();
             }
         }

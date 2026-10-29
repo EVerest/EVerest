@@ -316,7 +316,7 @@ void RpcHandler::process_client_requests() {
 
                 // Process the request in a detached thread, because HandleRequest is blocking until the response is
                 // received
-                std::thread([this, transport_interface, client_id, request]() {
+                std::thread([this, transport_interface, client_id = client_id, request]() {
                     // Call the RPC server with the request
                     std::string res = m_rpc_server->HandleRequest(request.dump());
                     // Send the response back to the client
