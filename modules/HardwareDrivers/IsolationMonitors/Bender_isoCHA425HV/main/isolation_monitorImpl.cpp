@@ -257,7 +257,7 @@ void isolation_monitorImpl::handle_start_self_test(double& test_voltage_V) {
     // make sure that the device is on
     if (config.disable_device_on_stop) {
         if (not send_to_imd(3026, 1)) {
-            EVLOG_error << "Can't enable the device: " << read_device_name().value_or("");
+            EVLOG_error << "Can't enable the device at address " << config.imd_device_id;
         } else {
             EVLOG_info << "Device enabled for self test";
         }
