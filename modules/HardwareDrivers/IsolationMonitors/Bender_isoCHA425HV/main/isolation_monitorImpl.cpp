@@ -364,7 +364,8 @@ void isolation_monitorImpl::read_imd_values() {
 std::optional<std::string> isolation_monitorImpl::read_device_name() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id, static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_NAME), 10);
-    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success or
+        not result.value.has_value()) {
         set_deviceFault("Can't read device name");
         return std::nullopt;
     }
