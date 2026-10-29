@@ -186,6 +186,11 @@ void Evse::try_resume_transaction() {
 
         if (this->id_connector_map.count(transaction->connector_id) != 0) {
             this->transaction = std::move(transaction);
+            // whether the idToken was validated is not persisted, so the current AuthCtrlr.Enabled decides
+            this->transaction->id_token_unvalidated =
+                this->transaction->id_token_sent and
+                not this->device_model.get_optional_value<bool>(ControllerComponentVariables::AuthCtrlrEnabled)
+                        .value_or(true);
             this->start_metering_timers(this->transaction->start_time);
         } else {
             EVLOG_error << "Can't resume transaction on evse_id " << evse_id << " for non existent connector "

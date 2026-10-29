@@ -602,6 +602,20 @@ TEST_F(Configuration, SetAuthorizationCacheEnabledV2) {
     EXPECT_FALSE(kv.value().readonly);
 }
 
+TEST_F(Configuration, ChangeAuthorizationCacheEnabledV2) {
+    using ConfigurationStatus = ocpp::v16::ConfigurationStatus;
+    ASSERT_TRUE(device_model);
+    device_model->set("Core", "AuthorizationCacheEnabled", "true");
+
+    EXPECT_EQ(v2_config->set("AuthorizationCacheEnabled", "NotABool"), ConfigurationStatus::Rejected);
+    EXPECT_EQ(v2_config->getAuthorizationCacheEnabled(), true);
+    EXPECT_EQ(v2_config->set("AuthorizationCacheEnabled", "false"), ConfigurationStatus::Accepted);
+    EXPECT_EQ(v2_config->getAuthorizationCacheEnabled(), false);
+
+    device_model->clear("Core", "AuthorizationCacheEnabled");
+    EXPECT_EQ(v2_config->set("AuthorizationCacheEnabled", "true"), ConfigurationStatus::NotSupported);
+}
+
 TEST_F(Configuration, SetBlinkRepeatV2) {
     ASSERT_TRUE(device_model);
     // set an initial value

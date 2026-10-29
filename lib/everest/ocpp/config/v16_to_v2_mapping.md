@@ -71,6 +71,7 @@ cross-compiling without `CMAKE_CROSSCOMPILING_EMULATOR`.
 | `UseTPMSeccLeafCertificate` | VariableAttribute | `InternalCtrlr` | `UseTPMSeccLeafCertificate` | `Actual` |
 | `RetryBackoffRandomRange` | VariableAttribute | `OCPPCommCtrlr` | `RetryBackOffRandomRange` | `Actual` |
 | `RetryBackoffRepeatTimes` | VariableAttribute | `OCPPCommCtrlr` | `RetryBackOffRepeatTimes` | `Actual` |
+| `AuthEnabled` | VariableAttribute | `AuthCtrlr` | `Enabled` | `Actual` |
 | `AuthorizeConnectorZeroOnConnectorOne` | VariableAttribute | `InternalCtrlr` | `AuthorizeConnectorZeroOnConnectorOne` | `Actual` |
 | `LogMessages` | VariableAttribute | `InternalCtrlr` | `LogMessages` | `Actual` |
 | `LogMessagesRaw` | VariableAttribute | `InternalCtrlr` | `LogMessagesRaw` | `Actual` |

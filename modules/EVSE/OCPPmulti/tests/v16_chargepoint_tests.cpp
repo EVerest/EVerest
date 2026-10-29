@@ -279,6 +279,17 @@ TEST_F(ChargePointV16ConfigurationTest, centralSystemUriIsChangedThroughNetworkC
     EXPECT_EQ(get_variable("NetworkConfiguration", "OcppCsmsUrl", "2"), new_url);
 }
 
+TEST_F(ChargePointV16ConfigurationTest, authEnabledKeyIsBackedByAuthCtrlrEnabled) {
+    EXPECT_CALL(m_callbacks, cb_variable_set(testing::Truly([](const ocpp::v2::SetVariableData& data) {
+                    return data.component.name.get() == "AuthCtrlr" && data.variable.name.get() == "Enabled" &&
+                           data.attributeValue.get() == "false";
+                })));
+
+    const auto result = set_variable("", "AuthEnabled", "false");
+    ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get_variable("AuthCtrlr", "Enabled"), "false");
+}
+
 TEST_F(ChargePointV16ConfigurationTest, evConnectionTimeoutIsReadFromConnectionTimeOutKey) {
     const auto result = set_variable("TxCtrlr", "EVConnectionTimeOut", "45");
     ASSERT_EQ(result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);

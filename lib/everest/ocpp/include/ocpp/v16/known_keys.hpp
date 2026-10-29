@@ -79,6 +79,7 @@ namespace ocpp::v16::keys {
     mapping(UseTPMSeccLeafCertificate, UseTPMSeccLeafCertificate) \
     mapping(RetryBackoffRandomRange, RetryBackOffRandomRange) \
     mapping(RetryBackoffRepeatTimes, RetryBackOffRepeatTimes) \
+    mapping(AuthEnabled, AuthCtrlrEnabled) \
     mapping(AuthorizeConnectorZeroOnConnectorOne,AuthorizeConnectorZeroOnConnectorOne) \
     mapping(LogMessages, LogMessages) \
     mapping(LogMessagesRaw, LogMessagesRaw) \
@@ -251,6 +252,7 @@ namespace ocpp::v16::keys {
     key(CostAndPrice, WaitForSetUserPriceTimeout) \
     key(FirmwareManagement, SupportedFileTransferProtocols) \
     key(Internal, AllowChargingProfileWithoutStartSchedule) \
+    key(Internal, AuthEnabled) \
     key(Internal, AuthorizeConnectorZeroOnConnectorOne) \
     key(Internal, ChargeBoxSerialNumber) \
     key(Internal, ChargePointModel) \

@@ -357,6 +357,25 @@ TEST_F(AuthorizationTest, is_auth_cache_ctrlr_enabled) {
     EXPECT_FALSE(authorization->is_auth_cache_ctrlr_enabled());
 }
 
+TEST_F(AuthorizationTest, is_auth_ctrlr_enabled) {
+    set_auth_ctrlr_enabled(this->device_model, false);
+    EXPECT_FALSE(authorization->is_auth_ctrlr_enabled());
+
+    set_auth_ctrlr_enabled(this->device_model, true);
+    EXPECT_TRUE(authorization->is_auth_ctrlr_enabled());
+
+    // a missing value counts as enabled
+    EXPECT_TRUE(this->device_model_test_helper.remove_variable_from_db(
+        ControllerComponentVariables::AuthCtrlrEnabled.component.name, std::nullopt, std::nullopt, std::nullopt,
+        ControllerComponentVariables::AuthCtrlrEnabled.variable->name, std::nullopt));
+    this->device_model = this->device_model_test_helper.get_device_model();
+    FunctionalBlockContext context = {
+        this->mock_dispatcher,       *this->device_model, this->connectivity_manager,    this->evse_manager,
+        this->database_handler_mock, this->evse_security, this->component_state_manager, this->ocpp_version};
+    this->authorization = std::make_unique<Authorization>(context);
+    EXPECT_TRUE(authorization->is_auth_ctrlr_enabled());
+}
+
 TEST_F(AuthorizationTest, authorize_req_websocket_disconnected) {
     // Try to do an authorize request when the websocket is disconnected.
     ON_CALL(this->connectivity_manager, is_websocket_connected()).WillByDefault(Return(false));

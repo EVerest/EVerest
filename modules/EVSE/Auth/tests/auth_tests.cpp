@@ -19,6 +19,7 @@
 
 using ::testing::_;
 using ::testing::AllOf;
+using ::testing::AnyNumber;
 using ::testing::Eq;
 using ::testing::Field;
 using ::testing::Invoke;
@@ -213,6 +214,127 @@ TEST_F(AuthTest, test_two_referenced_connectors) {
     ASSERT_TRUE(result == TokenHandlingResult::USED_TO_START_TRANSACTION);
     ASSERT_TRUE(this->auth_receiver->get_authorization(1));
     ASSERT_FALSE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief Identical NoAuthorization tokens, which OCPP publishes for each session while authorisation is disabled, are
+/// told apart by their referenced EVSEs: one for another EVSE is processed while the first still waits for a plug-in
+TEST_F(AuthTest, test_identical_no_authorization_tokens_for_different_evses) {
+    ProvidedIdToken provided_token1;
+    provided_token1.id_token = {"", types::authorization::IdTokenType::NoAuthorization};
+    provided_token1.authorization_type = types::authorization::AuthorizationType::OCPP;
+    provided_token1.prevalidated = true;
+    provided_token1.connectors = std::vector<int32_t>{1, 2};
+    ProvidedIdToken provided_token2 = provided_token1;
+    provided_token2.connectors = std::vector<int32_t>{2};
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool processing_called = false;
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(AnyNumber());
+    EXPECT_CALL(
+        mock_publish_token_validation_status_callback,
+        Call(Field(&ProvidedIdToken::connectors, provided_token1.connectors), TokenValidationStatus::Processing))
+        .WillOnce(Invoke([&]() {
+            std::unique_lock<std::mutex> lock(mtx);
+            processing_called = true;
+            cv.notify_all();
+        }));
+
+    TokenHandlingResult result1;
+    std::thread t1([this, &result1, provided_token1] { result1 = this->auth_handler->on_token(provided_token1); });
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&]() { return processing_called; });
+    }
+
+    EXPECT_EQ(this->auth_handler->on_token(provided_token2), TokenHandlingResult::USED_TO_START_TRANSACTION);
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+    t1.join();
+
+    EXPECT_EQ(result1, TokenHandlingResult::USED_TO_START_TRANSACTION);
+    EXPECT_TRUE(this->auth_receiver->get_authorization(0));
+    EXPECT_TRUE(this->auth_receiver->get_authorization(1));
+}
+
+/// \brief The NoAuthorization token that OCPP publishes at AuthRequired while authorisation is disabled does not
+/// replace a token that authorised the EVSE at plug-in
+TEST_F(AuthTest, test_no_authorization_token_after_token_presented_before_plug_in) {
+    const ProvidedIdToken provided_token = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1}, true);
+    ProvidedIdToken no_authorization_token;
+    no_authorization_token.id_token = {"", types::authorization::IdTokenType::NoAuthorization};
+    no_authorization_token.authorization_type = types::authorization::AuthorizationType::OCPP;
+    no_authorization_token.prevalidated = true;
+    no_authorization_token.connectors = std::vector<int32_t>{1};
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool processing_called = false;
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(AnyNumber());
+    EXPECT_CALL(mock_publish_token_validation_status_callback,
+                Call(Field(&ProvidedIdToken::authorization_type, types::authorization::AuthorizationType::RFID),
+                     TokenValidationStatus::Processing))
+        .WillOnce(Invoke([&]() {
+            std::unique_lock<std::mutex> lock(mtx);
+            processing_called = true;
+            cv.notify_all();
+        }));
+
+    TokenHandlingResult result;
+    std::thread t1([this, &result, provided_token] { result = this->auth_handler->on_token(provided_token); });
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&]() { return processing_called; });
+    }
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+    t1.join();
+    ASSERT_EQ(result, TokenHandlingResult::USED_TO_START_TRANSACTION);
+    ASSERT_TRUE(this->auth_receiver->get_authorization(0));
+
+    EXPECT_EQ(this->auth_handler->on_token(no_authorization_token), TokenHandlingResult::NO_CONNECTOR_AVAILABLE);
+    EXPECT_TRUE(this->auth_receiver->get_authorization(0));
+}
+
+/// \brief A real token presented again for another EVSE while it is still processed is ignored
+TEST_F(AuthTest, test_same_rfid_token_for_different_evses_in_process) {
+    const ProvidedIdToken provided_token1 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{1, 2}, true);
+    const ProvidedIdToken provided_token2 = get_provided_token(VALID_TOKEN_1, std::vector<int32_t>{2}, true);
+
+    std::mutex mtx;
+    std::condition_variable cv;
+    bool processing_called = false;
+
+    EXPECT_CALL(mock_publish_token_validation_status_callback, Call(_, _)).Times(AnyNumber());
+    EXPECT_CALL(
+        mock_publish_token_validation_status_callback,
+        Call(Field(&ProvidedIdToken::connectors, provided_token1.connectors), TokenValidationStatus::Processing))
+        .WillOnce(Invoke([&]() {
+            std::unique_lock<std::mutex> lock(mtx);
+            processing_called = true;
+            cv.notify_all();
+        }));
+
+    TokenHandlingResult result1;
+    std::thread t1([this, &result1, provided_token1] { result1 = this->auth_handler->on_token(provided_token1); });
+    {
+        std::unique_lock<std::mutex> lock(mtx);
+        cv.wait(lock, [&]() { return processing_called; });
+    }
+
+    EXPECT_EQ(this->auth_handler->on_token(provided_token2), TokenHandlingResult::ALREADY_IN_PROCESS);
+
+    const SessionEvent session_event = get_session_started_event(types::evse_manager::StartSessionReason::EVConnected);
+    this->auth_handler->handle_session_event(1, session_event);
+    t1.join();
+
+    EXPECT_EQ(result1, TokenHandlingResult::USED_TO_START_TRANSACTION);
+    EXPECT_TRUE(this->auth_receiver->get_authorization(0));
+    EXPECT_FALSE(this->auth_receiver->get_authorization(1));
 }
 
 /// \brief Test if connector that triggered a SessionStarted event receives authorization when two connectors are

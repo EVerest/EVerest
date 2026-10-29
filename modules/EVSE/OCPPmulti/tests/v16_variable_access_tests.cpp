@@ -268,6 +268,19 @@ TEST_F(V16VariableAccess, canonicalSetRoutesKeyAndEchoesCv) {
     EXPECT_EQ(m_set_calls[0].second, "90");
 }
 
+// the 1.6 key path fires the configuration key changed callback, which forwards AuthEnabled to the authoriser
+TEST_F(V16VariableAccess, authCtrlrEnabledSetRoutesThroughAuthEnabledKey) {
+    m_keys["AuthEnabled"] = "true";
+    auto access = make_access();
+    const auto results = access.set({make_set("AuthCtrlr", "Enabled", "false")}, "csms");
+
+    ASSERT_EQ(results.size(), 1);
+    EXPECT_EQ(results[0].result.attributeStatus, ocpp::v2::SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(m_set_calls.size(), 1);
+    EXPECT_EQ(m_set_calls[0].first, "AuthEnabled");
+    EXPECT_EQ(m_set_calls[0].second, "false");
+}
+
 TEST_F(V16VariableAccess, nonActualAttributeOnKeyPathIsNotSupported) {
     auto access = make_access();
     auto get_request = make_get("OCPPCommCtrlr", "HeartbeatInterval");

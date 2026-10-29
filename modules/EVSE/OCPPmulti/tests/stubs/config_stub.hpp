@@ -8,6 +8,7 @@
 namespace stubs {
 
 struct ConfigStub : public ocpp_multi::ConfigInterface {
+    bool AuthEnabled{true};
     std::string ChargePointConfigPath{"config"};
     int CompositeScheduleIntervalS{500};
     std::string CoreDatabasePath{"core.db"};
@@ -31,6 +32,9 @@ struct ConfigStub : public ocpp_multi::ConfigInterface {
     int ResetStopDelay{0};
     std::string UserConfigPath{"user_config"};
 
+    [[nodiscard]] bool getAuthEnabled() const override {
+        return AuthEnabled;
+    }
     [[nodiscard]] std::string getChargePointConfigPath() const override {
         return ChargePointConfigPath;
     }

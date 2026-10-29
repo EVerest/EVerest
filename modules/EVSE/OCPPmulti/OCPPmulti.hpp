@@ -34,18 +34,24 @@
 // insert your custom include headers here
 #include "generic_chargepoint.hpp"
 #include "generic_ocpp.hpp"
+#include <mutex>
 namespace module {
 struct Conf;
+struct RwConf;
 
 /// \brief Access configuration
 class ConfigAccess : public ocpp_multi::ConfigInterface {
 private:
     const module::Conf& m_config;
+    module::RwConf& m_rw_config;
+    mutable std::mutex m_rw_config_mutex;
 
 public:
-    explicit ConfigAccess(const module::Conf& config) : m_config(config) {
+    ConfigAccess(const module::Conf& config, module::RwConf& rw_config) : m_config(config), m_rw_config(rw_config) {
     }
 
+    [[nodiscard]] bool getAuthEnabled() const override;
+    void setAuthEnabled(bool auth_enabled);
     [[nodiscard]] std::string getChargePointConfigPath() const override;
     [[nodiscard]] int getCompositeScheduleIntervalS() const override;
     [[nodiscard]] std::string getCoreDatabasePath() const override;
@@ -75,6 +81,33 @@ public:
 
 namespace module {
 
+struct RwConf {
+    bool AuthEnabled;
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class OCPPmulti adding the implementation to OCPPmulti.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_AuthEnabled_changed(const bool& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.AuthEnabled = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+    virtual ConfigChangeResult on_AuthEnabled_changed(const bool& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+};
+
 struct Conf {
     std::string ChargePointConfigPath;
     int CompositeScheduleIntervalS;
@@ -99,9 +132,14 @@ struct Conf {
     std::string RequestCompositeScheduleUnit;
     int ResetStopDelay;
     std::string UserConfigPath;
+
+    const bool& AuthEnabled;
+
+    Conf(const RwConf& rw) : AuthEnabled(rw.AuthEnabled) {
+    }
 };
 
-class OCPPmulti : public Everest::ModuleBase {
+class OCPPmulti : public Everest::ModuleBase, public RwConfUpdate {
 public:
     OCPPmulti() = delete;
     OCPPmulti(const ModuleInfo& info, Everest::MqttProvider& mqtt_provider,
@@ -117,7 +155,8 @@ public:
               std::vector<std::unique_ptr<iso15118_extensionsIntf>> r_extensions_15118,
               std::vector<std::unique_ptr<grid_supportIntf>> r_grid_support,
               std::vector<std::unique_ptr<reservationIntf>> r_reservation,
-              std::unique_ptr<evse_securityIntf> r_security, std::unique_ptr<systemIntf> r_system, Conf& config) :
+              std::unique_ptr<evse_securityIntf> r_security, std::unique_ptr<systemIntf> r_system, Conf& config,
+              RwConf& rw_config) :
         ModuleBase(info),
         mqtt(mqtt_provider),
         p_auth_validator(std::move(p_auth_validator)),
@@ -136,7 +175,8 @@ public:
         r_reservation(std::move(r_reservation)),
         r_security(std::move(r_security)),
         r_system(std::move(r_system)),
-        config(config){};
+        config(config),
+        rw_config(rw_config){};
 
     Everest::MqttProvider& mqtt;
     const std::unique_ptr<auth_token_validatorImplBase> p_auth_validator;
@@ -156,6 +196,7 @@ public:
     const std::unique_ptr<evse_securityIntf> r_security;
     const std::unique_ptr<systemIntf> r_system;
     const Conf& config;
+    RwConf& rw_config;
 
     // ev@1fce4c5e-0ab8-41bb-90f7-14277703d2ac:v1
     // insert your public definitions here
@@ -164,7 +205,9 @@ public:
     // (the callback source); tear down libocpp first so no callback fires into a dead GenericOcpp
     ~OCPPmulti();
 
-    ConfigAccess m_config{config};
+    ConfigChangeResult on_AuthEnabled_changed(const bool& value) override;
+
+    ConfigAccess m_config{config, rw_config};
     ocpp_multi::GenericChargePoint m_charge_point{*r_security};
     ocpp_multi::GenericOcpp m_ocpp{
         m_charge_point,
