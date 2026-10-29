@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -41,11 +43,11 @@ void to_json(json& j, const RequestStartTransactionRequest& k) {
 void from_json(const json& j, RequestStartTransactionRequest& k) {
     // the required parts of the message
     k.idToken = j.at("idToken");
-    k.remoteStartId = j.at("remoteStartId");
+    k.remoteStartId = ocpp::integer_from_json(j.at("remoteStartId"));
 
     // the optional parts of the message
     if (j.contains("evseId")) {
-        k.evseId.emplace(j.at("evseId"));
+        k.evseId.emplace(ocpp::integer_from_json(j.at("evseId")));
     }
     if (j.contains("groupIdToken")) {
         k.groupIdToken.emplace(j.at("groupIdToken"));

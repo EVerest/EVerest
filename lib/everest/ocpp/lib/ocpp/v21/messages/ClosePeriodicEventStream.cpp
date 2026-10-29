@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -30,7 +32,7 @@ void to_json(json& j, const ClosePeriodicEventStreamRequest& k) {
 
 void from_json(const json& j, ClosePeriodicEventStreamRequest& k) {
     // the required parts of the message
-    k.id = j.at("id");
+    k.id = ocpp::integer_from_json(j.at("id"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

@@ -30,6 +30,7 @@ target_sources(libocpp_unit_tests PRIVATE
         utils_tests.cpp
         test_configuration.cpp
         test_utils.cpp
+        test_message_from_json.cpp
 )
 
 # Copy the json files used for testing to the destination directory

@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -34,7 +36,7 @@ void from_json(const json& j, LogStatusNotificationRequest& k) {
 
     // the optional parts of the message
     if (j.contains("requestId")) {
-        k.requestId.emplace(j.at("requestId"));
+        k.requestId.emplace(ocpp::integer_from_json(j.at("requestId")));
     }
 }
 

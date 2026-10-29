@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -40,14 +42,14 @@ void from_json(const json& j, GetLogRequest& k) {
     // the required parts of the message
     k.log = j.at("log");
     k.logType = conversions::string_to_log_enum(j.at("logType"));
-    k.requestId = j.at("requestId");
+    k.requestId = ocpp::integer_from_json(j.at("requestId"));
 
     // the optional parts of the message
     if (j.contains("retries")) {
-        k.retries.emplace(j.at("retries"));
+        k.retries.emplace(ocpp::integer_from_json(j.at("retries")));
     }
     if (j.contains("retryInterval")) {
-        k.retryInterval.emplace(j.at("retryInterval"));
+        k.retryInterval.emplace(ocpp::integer_from_json(j.at("retryInterval")));
     }
     if (j.contains("customData")) {
         k.customData.emplace(j.at("customData"));
