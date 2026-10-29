@@ -21,7 +21,7 @@ struct Error {
 };
 
 struct RequestReply {
-    std::string replyTo;
+    std::optional<std::string> replyTo;
     std::string payload;
 };
 

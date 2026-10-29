@@ -4,8 +4,13 @@
 #include "energy/json_codec.hpp"
 #include "energy/API.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
 
 namespace everest::lib::API::V1_0::types::energy {
+
+using utilities::json_number;
 
 void to_json(json& j, NumberWithSource const& k) noexcept {
     j = json{
@@ -15,7 +20,7 @@ void to_json(json& j, NumberWithSource const& k) noexcept {
 }
 
 void from_json(const json& j, NumberWithSource& k) {
-    k.value = j.at("value");
+    k.value = json_number<float>(j.at("value"));
     k.source = j.at("source");
 }
 
@@ -27,7 +32,7 @@ void to_json(json& j, IntegerWithSource const& k) noexcept {
 }
 
 void from_json(const json& j, IntegerWithSource& k) {
-    k.value = j.at("value");
+    k.value = json_number<int32_t>(j.at("value"));
     k.source = j.at("source");
 }
 
@@ -39,8 +44,8 @@ void to_json(json& j, FrequencyWattPoint const& k) noexcept {
 }
 
 void from_json(const json& j, FrequencyWattPoint& k) {
-    k.frequency_Hz = j.at("frequency_Hz");
-    k.total_power_W = j.at("total_power_W");
+    k.frequency_Hz = json_number<float>(j.at("frequency_Hz"));
+    k.total_power_W = json_number<float>(j.at("total_power_W"));
 }
 
 void to_json(json& j, SetpointType const& k) noexcept {
@@ -63,14 +68,14 @@ void to_json(json& j, SetpointType const& k) noexcept {
 }
 
 void from_json(const json& j, SetpointType& k) {
-    k.priority = j.at("priority");
+    k.priority = json_number<int32_t>(j.at("priority"));
     k.source = j.at("source");
 
     if (j.contains("ac_current_A")) {
-        k.ac_current_A.emplace(j.at("ac_current_A"));
+        k.ac_current_A.emplace(json_number<float>(j.at("ac_current_A")));
     }
     if (j.contains("total_power_W")) {
-        k.total_power_W.emplace(j.at("total_power_W"));
+        k.total_power_W.emplace(json_number<float>(j.at("total_power_W")));
     }
     if (j.contains("frequency_table")) {
         json arr = j.at("frequency_table");
@@ -92,7 +97,7 @@ void to_json(json& j, PricePerkWh const& k) noexcept {
 
 void from_json(const json& j, PricePerkWh& k) {
     k.timestamp = j.at("timestamp");
-    k.value = j.at("value");
+    k.value = json_number<float>(j.at("value"));
     k.currency = j.at("currency");
 }
 
@@ -142,7 +147,7 @@ void from_json(const json& j, LimitsReq& k) {
         k.ac_supports_changing_phases_during_charging.emplace(j.at("ac_supports_changing_phases_during_charging"));
     }
     if (j.contains("ac_number_of_active_phases")) {
-        k.ac_number_of_active_phases.emplace(j.at("ac_number_of_active_phases"));
+        k.ac_number_of_active_phases.emplace(json_number<int32_t>(j.at("ac_number_of_active_phases")));
     }
 }
 
@@ -192,7 +197,7 @@ void from_json(const json& j, ScheduleReqEntry& k) {
     k.limits_to_leaves = j.at("limits_to_leaves");
 
     if (j.contains("conversion_efficiency")) {
-        k.conversion_efficiency.emplace(j.at("conversion_efficiency"));
+        k.conversion_efficiency.emplace(json_number<float>(j.at("conversion_efficiency")));
     }
     if (j.contains("price_per_kwh")) {
         k.price_per_kwh.emplace(j.at("price_per_kwh"));

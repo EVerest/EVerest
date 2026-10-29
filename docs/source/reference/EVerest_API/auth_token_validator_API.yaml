@@ -106,10 +106,13 @@ components:
       payload:
         type: object
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:  # Address for the request to reply to
                 type: string
@@ -143,17 +146,15 @@ components:
       examples:
         - summary: "ValidationResultUpdate"
           payload:
-            "connector_id": 1,
-            "validation_result": {
-                "authorization_status": "Accepted",
-                "certificate_status": "Accepted",
-                "tariff_messages": [],
-                "expiry_time": "2019-08-24T14:15:22Z",
-                "parent_id_token": {
-                    "value": "string",
-                    "type": "Central"
-                }
-            }
+            connector_id: 1
+            validation_result:
+              authorization_status: Accepted
+              certificate_status: Accepted
+              tariff_messages: []
+              expiry_time: "2019-08-24T14:15:22Z"
+              parent_id_token:
+                value: string
+                type: Central
 
     receive_heartbeat:
       name: receive_heartbeat

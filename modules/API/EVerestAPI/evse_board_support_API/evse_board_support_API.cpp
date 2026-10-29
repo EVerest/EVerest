@@ -20,6 +20,22 @@ namespace API_evse_manager = API_types::evse_manager;
 namespace API_generic = API_types::generic;
 using ev_API::deserialize;
 
+namespace {
+
+bool is_phase_count(int value) {
+    return value >= 1 and value <= 3;
+}
+
+// The schema limits every phase count to 1..3 and a minimum must not exceed its maximum
+bool phase_counts_valid(API_types_ext::HardwareCapabilities const& caps) {
+    return is_phase_count(caps.max_phase_count_import) and is_phase_count(caps.min_phase_count_import) and
+           is_phase_count(caps.max_phase_count_export) and is_phase_count(caps.min_phase_count_export) and
+           caps.min_phase_count_import <= caps.max_phase_count_import and
+           caps.min_phase_count_export <= caps.max_phase_count_export;
+}
+
+} // namespace
+
 void evse_board_support_API::init() {
     invoke_init(*p_main);
     invoke_init(*p_rcd);
@@ -68,6 +84,10 @@ void evse_board_support_API::generate_api_var_ac_nr_of_phases() {
     helper.subscribe_api_topic("ac_nr_of_phases", [=](std::string const& data) {
         int ac_nr_of_phases_available = 0;
         if (deserialize(data, ac_nr_of_phases_available)) {
+            if (not is_phase_count(ac_nr_of_phases_available)) {
+                EVLOG_warning << "Ignoring ac_nr_of_phases " << ac_nr_of_phases_available << ": must be 1 to 3";
+                return true;
+            }
             p_main->publish_ac_nr_of_phases_available(ac_nr_of_phases_available);
             return true;
         }
@@ -79,6 +99,13 @@ void evse_board_support_API::generate_api_var_capabilities() {
     helper.subscribe_api_topic("capabilities", [=](std::string const& data) {
         API_types_ext::HardwareCapabilities ext;
         if (deserialize(data, ext)) {
+            if (not phase_counts_valid(ext)) {
+                EVLOG_warning
+                    << "Ignoring capabilities: phase counts must be 1 to 3 with minimum <= maximum, got import "
+                    << ext.min_phase_count_import << ".." << ext.max_phase_count_import << ", export "
+                    << ext.min_phase_count_export << ".." << ext.max_phase_count_export;
+                return true;
+            }
             p_main->publish_capabilities(to_internal_api(ext));
             return true;
         }

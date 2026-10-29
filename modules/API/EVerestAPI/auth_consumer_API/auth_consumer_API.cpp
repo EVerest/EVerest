@@ -51,12 +51,12 @@ auto auth_consumer_API::forward_and_cache_api_var(std::string const& var) {
 
 void auth_consumer_API::generate_api_cmd_withdraw_authorization() {
     helper.subscribe_api_topic("withdraw_authorization", [this](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         API_types_ext::WithdrawAuthorizationRequest payload;
         if (deserialize_request(data, reply_to, payload)) {
             auto int_res = r_auth->call_withdraw_authorization(to_internal_api(payload));
             auto ext_res = API_types_ext::to_external_api(int_res);
-            mqtt_v.publish(reply_to, serialize(ext_res));
+            mqtt_v.publish_reply(reply_to, serialize(ext_res));
             return true;
         }
         return false;

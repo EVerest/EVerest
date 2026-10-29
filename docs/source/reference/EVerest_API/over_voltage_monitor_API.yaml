@@ -6,6 +6,7 @@ info:
   version: 1.1.0
   description: >-
     API for EVerest for over voltage monitoring.
+    Commands without arguments carry an empty JSON object ({}) as payload.
 
     This EVerest API defines a fast over voltage monitoring device according
     to IEC61851-23:2023 6.3.1.106.2 and 6.3.1.106.3 for DC charging.
@@ -192,12 +193,16 @@ components:
         Start monitoring. Called once at the beginning of power transfer.
         Use the last limits set by set_limits and make sure to update them when set_limits is called while monitoring is active.
         Trigger shutdowns and raise errors as needed.
+      contentType: application/json
+      payload: {}
     receive_stop:
       name: receive_stop
       title: Receive stop over voltage monitoring command
       summary: >-
           Stop monitoring. Called once at the end of power transfer.
           Do not raise any over voltage errors or trigger any shutdowns in this mode.
+      contentType: application/json
+      payload: {}
     receive_reset_over_voltage_error:
       name: receive_reset_over_voltage_error
       title: Receive reset command
@@ -205,6 +210,8 @@ components:
         Resets the detection logic to allow for new charging session after an over voltage error occured.
         This shall clear the over voltage error.
         If monitoring is still active, it shall be stopped.
+      contentType: application/json
+      payload: {}
 
     send_voltage_measurement_V:
       name: send_voltage_measurement_V

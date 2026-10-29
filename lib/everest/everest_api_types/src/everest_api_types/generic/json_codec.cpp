@@ -4,6 +4,7 @@
 #include "generic/json_codec.hpp"
 #include "generic/API.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/request_reply.hpp"
 #include <stdexcept>
 #include <string>
 
@@ -16,16 +17,14 @@ void to_json(json& j, RequestReply const& k) {
     } catch (...) {
         throw std::invalid_argument("payload is invalid json: " + k.payload);
     }
-    j["headers"]["replyTo"] = k.replyTo;
+    if (k.replyTo) {
+        j["headers"]["replyTo"] = *k.replyTo;
+    }
     j["payload"] = payload;
 }
 
 void from_json(json const& j, RequestReply& k) {
-    if (j.contains("headers") and j["headers"].contains("replyTo")) {
-        k.replyTo = j["headers"]["replyTo"];
-    } else {
-        k.replyTo = "";
-    }
+    k.replyTo = everest::lib::API::detail::request_reply_to(j);
 
     if (j.contains("payload")) {
         k.payload = j["payload"].dump();

@@ -5,10 +5,15 @@
 #include "nlohmann/json.hpp"
 #include "powermeter/API.hpp"
 #include "powermeter/codec.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <stdexcept>
+#include <string>
 
 namespace everest::lib::API::V1_0::types::powermeter {
 
 using json = nlohmann::json;
+using utilities::json_number;
 
 void from_json(const json& j, OCMFUserIdentificationStatus& k) {
     std::string s = j;
@@ -424,19 +429,19 @@ void to_json(json& j, const TransactionStatus& k) noexcept {
 
 void from_json(const json& j, Current& k) {
     if (j.contains("DC")) {
-        k.DC.emplace(j.at("DC"));
+        k.DC.emplace(json_number<float>(j.at("DC")));
     }
     if (j.contains("L1")) {
-        k.L1.emplace(j.at("L1"));
+        k.L1.emplace(json_number<float>(j.at("L1")));
     }
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
     if (j.contains("N")) {
-        k.N.emplace(j.at("N"));
+        k.N.emplace(json_number<float>(j.at("N")));
     }
 }
 void to_json(json& j, const Current& k) noexcept {
@@ -460,16 +465,16 @@ void to_json(json& j, const Current& k) noexcept {
 
 void from_json(const json& j, Voltage& k) {
     if (j.contains("DC")) {
-        k.DC.emplace(j.at("DC"));
+        k.DC.emplace(json_number<float>(j.at("DC")));
     }
     if (j.contains("L1")) {
-        k.L1.emplace(j.at("L1"));
+        k.L1.emplace(json_number<float>(j.at("L1")));
     }
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
 }
 void to_json(json& j, const Voltage& k) noexcept {
@@ -490,14 +495,14 @@ void to_json(json& j, const Voltage& k) noexcept {
 }
 
 void from_json(const json& j, Frequency& k) {
-    k.L1 = j.at("L1");
+    k.L1 = json_number<float>(j.at("L1"));
 
     // the optional parts of the type
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
 }
 void to_json(json& j, const Frequency& k) noexcept {
@@ -514,16 +519,16 @@ void to_json(json& j, const Frequency& k) noexcept {
 }
 
 void from_json(const json& j, Power& k) {
-    k.total = j.at("total");
+    k.total = json_number<float>(j.at("total"));
 
     if (j.contains("L1")) {
-        k.L1.emplace(j.at("L1"));
+        k.L1.emplace(json_number<float>(j.at("L1")));
     }
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
 }
 void to_json(json& j, const Power& k) noexcept {
@@ -542,16 +547,16 @@ void to_json(json& j, const Power& k) noexcept {
 }
 
 void from_json(const json& j, Energy& k) {
-    k.total = j.at("total");
+    k.total = json_number<float>(j.at("total"));
 
     if (j.contains("L1")) {
-        k.L1.emplace(j.at("L1"));
+        k.L1.emplace(json_number<float>(j.at("L1")));
     }
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
 }
 void to_json(json& j, const Energy& k) noexcept {
@@ -570,16 +575,16 @@ void to_json(json& j, const Energy& k) noexcept {
 }
 
 void from_json(const json& j, ReactivePower& k) {
-    k.total = j.at("total");
+    k.total = json_number<float>(j.at("total"));
 
     if (j.contains("L1")) {
-        k.L1.emplace(j.at("L1"));
+        k.L1.emplace(json_number<float>(j.at("L1")));
     }
     if (j.contains("L2")) {
-        k.L2.emplace(j.at("L2"));
+        k.L2.emplace(json_number<float>(j.at("L2")));
     }
     if (j.contains("L3")) {
-        k.L3.emplace(j.at("L3"));
+        k.L3.emplace(json_number<float>(j.at("L3")));
     }
 }
 void to_json(json& j, const ReactivePower& k) noexcept {
@@ -806,7 +811,7 @@ void to_json(json& j, const SignedReactivePower& k) noexcept {
 }
 
 void from_json(const json& j, Temperature& k) {
-    k.temperature = j.at("temperature");
+    k.temperature = json_number<float>(j.at("temperature"));
     if (j.contains("identification")) {
         k.identification.emplace(j.at("identification"));
     }
@@ -1052,11 +1057,16 @@ void to_json(json& j, const RequestStartTransaction& k) noexcept {
 }
 
 void from_json(const json& j, Capabilities& k) {
+    for (const auto& item : j.items()) {
+        if (item.key() != "min_export_current_A" and item.key() != "min_import_current_A") {
+            throw std::invalid_argument("Capabilities: unknown property " + item.key());
+        }
+    }
     if (j.contains("min_export_current_A")) {
-        k.min_export_current_A.emplace(j.at("min_export_current_A"));
+        k.min_export_current_A.emplace(json_number<float>(j.at("min_export_current_A")));
     }
     if (j.contains("min_import_current_A")) {
-        k.min_import_current_A.emplace(j.at("min_import_current_A"));
+        k.min_import_current_A.emplace(json_number<float>(j.at("min_import_current_A")));
     }
 }
 
