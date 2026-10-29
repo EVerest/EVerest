@@ -397,7 +397,8 @@ std::optional<bool> isolation_monitorImpl::check_for_faster_cablecheck() {
     auto result = mod->r_serial_comm_hub->call_modbus_read_holding_registers(
         config.imd_device_id,
         static_cast<std::underlying_type_t<ImdRegisters>>(ImdRegisters::DEVICE_FIRMWARE_VERSION) + 1, 1);
-    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success) {
+    if (result.status_code != types::serial_comm_hub_requests::StatusCodeEnum::Success or
+        not result.value.has_value() or result.value->empty()) {
         set_deviceFault("Could not check if the device supports fast cable check");
         return std::nullopt;
     }
