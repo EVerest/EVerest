@@ -202,11 +202,6 @@ public:
     /// provided \p interval is expected to be given in seconds.
     void change_meter_values_sample_intervals(std::int32_t interval);
 
-    // \brief Provides the IdTag that was associated with the transaction with the provided
-    /// \p stop_transaction_message_id
-    /// \returns the IdTag if it is available, std::nullopt otherwise
-    std::optional<CiString<20>> get_authorized_id_tag(const std::string& stop_transaction_message_id);
-
     /// \brief Indicates if there is an active transaction at the proveded \p connector
     /// \returns true if a transaction exists
     bool transaction_active(std::int32_t connector);
