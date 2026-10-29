@@ -1,0 +1,457 @@
+# Himalayas accepts a record only from a successful workflow_dispatch run on
+# main in EVerest/EVerest. The workflow_run fan-out carries no record.
+# Derive the SHA from the pointer branch and the move date and same-day index
+# from Himalayas' pointers.json, never from dispatch inputs. The artifact uses
+# record.artifact_name(pointer, sha) and holds one file at
+# record.record_path(pointer, moved_at, n).
+#
+# A run succeeds exactly when it uploads a record. The optional wake-up after
+# upload must not fail the run; Himalayas ignores its dispatch payload.
+#
+# testing/main reuses the Main push run's build, unit tests, dist, wheels and
+# build-kit. Integration, OCPP and Bazel cross builds run here. Stable pointers
+# dispatch their branch's on_pr.yaml. Unit tests require a ctest-junit artifact
+# from that line's CMake job.
+#
+# Untrusted values reach scripts through env:, never inline expressions.
+
+name: Collect pointer results
+
+on:
+  workflow_run:
+    workflows: [Move Himalayas pointers]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      pointer:
+        description: 'The pointer whose latest move to record, testing/main or testing/stable-YYYY.MM'
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: collect-${{ inputs.pointer || 'fanout' }}
+  cancel-in-progress: false
+
+env:
+  POINTER_PATTERN: '^testing/(main|stable-[0-9]{4}\.[0-9]{2})$'
+  POINTERS_URL: https://raw.githubusercontent.com/EVerest/Himalayas/main/pointers.json
+
+jobs:
+
+  fanout:
+    name: Fan out
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.conclusion != 'cancelled'
+    runs-on: ubuntu-24.04
+    permissions:
+      actions: write
+    steps:
+      - name: Dispatch a collection per moved pointer
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          MOVE_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          moved_count=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$MOVE_RUN_ID/artifacts?per_page=100" \
+            --jq '[.artifacts[] | select(.name | startswith("moved-"))] | length')
+          if [ "$moved_count" = 0 ]; then
+            echo "No pointer moved, nothing to collect"
+            exit 0
+          fi
+          gh run download "$MOVE_RUN_ID" --pattern 'moved-*' --dir moved
+          pointers=()
+          for file in moved/*/moved.json; do
+            pointer=$(jq -er '.pointer | strings' "$file")
+            if [[ ! "$pointer" =~ $POINTER_PATTERN ]]; then
+              echo "::error::$file does not name a testing/* pointer"
+              exit 1
+            fi
+            pointers+=("$pointer")
+          done
+          for pointer in "${pointers[@]}"; do
+            echo "Collecting $pointer"
+            gh workflow run on_pointer_moved.yaml --ref main -f pointer="$pointer"
+          done
+
+  move:
+    name: Pointer move
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+    outputs:
+      sha: ${{ steps.move.outputs.sha }}
+    steps:
+      - name: Validate the pointer
+        env:
+          POINTER: ${{ inputs.pointer }}
+        run: |
+          if [[ ! "$POINTER" =~ $POINTER_PATTERN ]]; then
+            echo "::error::the pointer input is not testing/main or testing/stable-YYYY.MM"
+            exit 1
+          fi
+      - name: Checkout the collector
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          sparse-checkout: .ci/himalayas
+      - name: Wait for the move in pointers.json
+        id: move
+        env:
+          POINTER: ${{ inputs.pointer }}
+        run: |
+          set -euo pipefail
+          sha=$(git ls-remote origin "refs/heads/$POINTER" | cut -f1)
+          if [[ ! "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::$POINTER has no branch head"
+            exit 1
+          fi
+          deadline=$(( $(date +%s) + 30 * 60 ))
+          until curl -fsSL --retry 3 -o pointers.json "$POINTERS_URL" &&
+            python3 -I -c '
+          import json, sys
+          sys.path.insert(0, ".ci/himalayas")
+          from record import find_move
+          with open("pointers.json", encoding="utf-8") as f:
+              print(find_move(json.load(f), sys.argv[1], sys.argv[2]))
+          ' "$POINTER" "$sha"; do
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::no move of $POINTER to $sha in pointers.json after 30 minutes"
+              exit 1
+            fi
+            sleep 60
+          done
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+
+  resolve:
+    name: Main run
+    needs: move
+    if: inputs.pointer == 'testing/main'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      run_id: ${{ steps.run.outputs.run_id }}
+      build_status: ${{ steps.run.outputs.build_status }}
+      start_ms: ${{ steps.run.outputs.start_ms }}
+    steps:
+      - name: Checkout the collector
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          sparse-checkout: .ci/himalayas
+          persist-credentials: false
+      - name: Wait for the Main push run
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ needs.move.outputs.sha }}
+        run: |
+          set -euo pipefail
+          deadline=$(( $(date +%s) + 60 * 60 ))
+          while :; do
+            run_id=
+            if gh api "repos/$GITHUB_REPOSITORY/actions/workflows/on_main.yaml/runs?head_sha=$SHA&event=push&per_page=100" \
+              > runs.json && run_id=$(python3 -I .ci/himalayas/runs.py pick-run --sha "$SHA" --event push < runs.json); then
+              status=$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' runs.json)
+              [ "$status" = completed ] && break
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              if [ -n "$run_id" ]; then
+                echo "::error::$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id did not complete within 60 minutes"
+              else
+                echo "::error::no Main push run of $SHA within 60 minutes"
+              fi
+              exit 1
+            fi
+            sleep 60
+          done
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" > jobs.json
+          build_status=$(python3 -I .ci/himalayas/runs.py build-outcome < jobs.json)
+          started_at=$(jq -er --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .run_started_at' runs.json)
+          {
+            echo "run_id=$run_id"
+            echo "build_status=$build_status"
+            echo "start_ms=$(( $(date -d "$started_at" +%s) * 1000 ))"
+          } >> "$GITHUB_OUTPUT"
+
+  stable-run:
+    name: Stable run
+    needs: move
+    if: startsWith(inputs.pointer, 'testing/stable-')
+    runs-on: ubuntu-24.04
+    timeout-minutes: 320
+    permissions:
+      contents: read
+      actions: write
+    outputs:
+      run_id: ${{ steps.run.outputs.run_id }}
+      build_status: ${{ steps.run.outputs.build_status }}
+      start_ms: ${{ steps.run.outputs.start_ms }}
+    steps:
+      - name: Checkout the collector
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          sparse-checkout: .ci/himalayas
+          persist-credentials: false
+      - name: Run PR on the pointer and wait for it
+        id: run
+        env:
+          GH_TOKEN: ${{ github.token }}
+          POINTER: ${{ inputs.pointer }}
+          SHA: ${{ needs.move.outputs.sha }}
+        run: |
+          set -euo pipefail
+          after=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+          gh workflow run on_pr.yaml --repo "$GITHUB_REPOSITORY" --ref "$POINTER"
+          deadline=$(( $(date +%s) + 5 * 60 * 60 ))
+          while :; do
+            sleep 120
+            run_id=
+            if gh api "repos/$GITHUB_REPOSITORY/actions/workflows/on_pr.yaml/runs?event=workflow_dispatch&branch=$POINTER&per_page=100" \
+              > runs.json; then
+              if run_id=$(python3 -I .ci/himalayas/runs.py pick-dispatched --sha "$SHA" --after "$after" < runs.json); then
+                status=$(jq -r --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .status' runs.json)
+                [ "$status" = completed ] && break
+              else
+                other_sha=$(jq -r --arg after "$after" \
+                  '[.workflow_runs[] | select(.event == "workflow_dispatch" and .created_at >= $after)]
+                   | sort_by(.created_at) | first | .head_sha // ""' runs.json)
+                if [[ "$other_sha" =~ ^[0-9a-f]{40}$ ]]; then
+                  echo "::error::the PR run dispatched on $POINTER is at $other_sha, not at the pointer's $SHA"
+                  exit 1
+                fi
+              fi
+            fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              if [ -n "$run_id" ]; then
+                echo "::error::$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$run_id did not complete within 5 hours"
+              else
+                echo "::error::no PR run of $SHA dispatched on $POINTER appeared within 5 hours"
+              fi
+              exit 1
+            fi
+          done
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$run_id/jobs?per_page=100" > jobs.json
+          build_status=$(python3 -I .ci/himalayas/runs.py build-outcome < jobs.json)
+          started_at=$(jq -er --argjson id "$run_id" '.workflow_runs[] | select(.id == $id) | .run_started_at' runs.json)
+          {
+            echo "run_id=$run_id"
+            echo "build_status=$build_status"
+            echo "start_ms=$(( $(date -d "$started_at" +%s) * 1000 ))"
+          } >> "$GITHUB_OUTPUT"
+
+  integration-tests:
+    name: Integration
+    needs: [move, resolve]
+    if: needs.resolve.outputs.build_status == 'passed'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/job_integrations-tests.yml
+    with:
+      runner: ubuntu-24.04
+      ref: ${{ needs.move.outputs.sha }}
+      artifacts_run_id: ${{ needs.resolve.outputs.run_id }}
+      build_kit_artifact_name: build-kit
+      build_kit_image_tag: ''
+      dist_artifact_name: dist
+      wheels_artifact_name: wheels
+
+  ocpp-tests:
+    name: OCPP
+    needs: [move, resolve]
+    if: needs.resolve.outputs.build_status == 'passed'
+    permissions:
+      contents: read
+      actions: read
+    uses: ./.github/workflows/job_ocpp-tests.yml
+    with:
+      runner: ubuntu-24.04
+      ref: ${{ needs.move.outputs.sha }}
+      artifacts_run_id: ${{ needs.resolve.outputs.run_id }}
+      build_kit_artifact_name: build-kit
+      build_kit_image_tag: ''
+      dist_artifact_name: dist
+      wheels_artifact_name: wheels
+
+  bazel-cross-build:
+    name: Bazel Cross (${{ matrix.platform }})
+    needs: [move, resolve]
+    if: needs.resolve.outputs.build_status == 'passed'
+    strategy:
+      fail-fast: false
+      matrix:
+        platform:
+          - aarch64-linux-gnu
+          - aarch64-linux-musl
+          - armv7-linux-gnueabihf
+          - armv7-linux-musleabihf
+    permissions:
+      contents: read
+    uses: ./.github/workflows/job_bazel-cross-build.yaml
+    with:
+      runner: ubuntu-24.04
+      platform: ${{ matrix.platform }}
+      ref: ${{ needs.move.outputs.sha }}
+      save_repo_cache: false
+
+  collect:
+    name: Collect
+    needs: [move, resolve, stable-run, integration-tests, ocpp-tests, bazel-cross-build]
+    if: always() && needs.move.result == 'success' && (needs.resolve.result == 'success' || needs.stable-run.result == 'success')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      actions: read
+    env:
+      POINTER: ${{ inputs.pointer }}
+      SHA: ${{ needs.move.outputs.sha }}
+      IS_MAIN: ${{ needs.resolve.result == 'success' }}
+      RUN_ID: ${{ needs.resolve.result == 'success' && needs.resolve.outputs.run_id || needs.stable-run.outputs.run_id }}
+      BUILD_STATUS: ${{ needs.resolve.result == 'success' && needs.resolve.outputs.build_status || needs.stable-run.outputs.build_status }}
+      START_MS: ${{ needs.resolve.result == 'success' && needs.resolve.outputs.start_ms || needs.stable-run.outputs.start_ms }}
+    steps:
+      - name: Checkout the collector
+        uses: actions/checkout@v7.0.1
+        with:
+          ref: main
+          sparse-checkout: .ci/himalayas
+          persist-credentials: false
+      - name: Check the build run
+        run: |
+          set -euo pipefail
+          if [[ ! "$RUN_ID" =~ ^[0-9]+$ || ! "$START_MS" =~ ^[0-9]+$ || ! "$BUILD_STATUS" =~ ^(passed|failed)$ ]]; then
+            echo "::error::the build run's id, start or status is malformed"
+            exit 1
+          fi
+      - name: Download unit test results
+        if: env.BUILD_STATUS == 'passed'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ctest-junit
+          path: results/unit
+          run-id: ${{ env.RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download dist
+        if: env.BUILD_STATUS == 'passed'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: dist
+          path: results/dist
+          run-id: ${{ env.RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download integration test results
+        if: env.BUILD_STATUS == 'passed'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: integration-tests-artifacts
+          path: results/integration
+          run-id: ${{ env.IS_MAIN == 'true' && github.run_id || env.RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download OCPP test results
+        if: env.BUILD_STATUS == 'passed'
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: ocpp-tests-artifacts
+          path: results/ocpp
+          run-id: ${{ env.IS_MAIN == 'true' && github.run_id || env.RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Download build-kit image
+        continue-on-error: true
+        uses: actions/download-artifact@v8.0.1
+        with:
+          name: build-kit
+          path: results/build-kit
+          run-id: ${{ env.RUN_ID }}
+          github-token: ${{ github.token }}
+      - name: Build targets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          toolchain=()
+          image=$(docker load -i results/build-kit/build-kit.tar 2>/dev/null | sed -n 's/^Loaded image: //p' | head -n 1) || true
+          if [ -n "$image" ] && version=$(docker run --rm --entrypoint gcc "$image" -dumpfullversion) &&
+            [[ "$version" =~ ^[0-9]+(\.[0-9]+){0,2}$ ]]; then
+            toolchain=(--toolchain "gcc $version")
+          else
+            echo "::warning::no gcc version from the build-kit image, the native target carries no toolchain"
+          fi
+          gh api "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" > build-jobs.json
+          cross_jobs=build-jobs.json
+          if [ "$IS_MAIN" = true ]; then
+            gh api "repos/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID/jobs?per_page=100" > cross-jobs.json
+            cross_jobs=cross-jobs.json
+          fi
+          python3 -I .ci/himalayas/runs.py targets "${toolchain[@]}" --cross-jobs "$cross_jobs" < build-jobs.json \
+            > targets.json
+          cat targets.json
+      - name: Write the record
+        id: record
+        run: |
+          set -euo pipefail
+          record_args=()
+          if [ "$BUILD_STATUS" = passed ]; then
+            for suite in unit integration ocpp; do
+              mapfile -t reports < <(find "results/$suite" -type f -name '*.xml' 2>/dev/null)
+              case ${#reports[@]} in
+                0) echo "::warning::no $suite JUnit report, its tests are left out" ;;
+                1) record_args+=(--junit "$suite=${reports[0]}") ;;
+                *) echo "::error::the $suite results hold ${#reports[@]} XML files, expected one"; exit 1 ;;
+              esac
+            done
+            mkdir -p dist
+            if [ -f results/dist/dist.tar.gz ]; then
+              tar -xzf results/dist/dist.tar.gz -C dist dist/libexec/everest/modules
+            fi
+            record_args+=(--dist dist/dist)
+          fi
+          curl -fsSL --retry 3 -o pointers.json "$POINTERS_URL"
+          python3 -I .ci/himalayas/collect.py \
+            --pointer "$POINTER" \
+            --pointers-json pointers.json \
+            --sha "$SHA" \
+            --build-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID" \
+            --build-status "$BUILD_STATUS" \
+            --targets targets.json \
+            "${record_args[@]}" \
+            --start-ms "$START_MS" \
+            --stop-ms "$(date +%s%3N)" \
+            --out out | tee collect.out
+          grep '^artifact=' collect.out >> "$GITHUB_OUTPUT"
+      - name: Upload the record
+        uses: actions/upload-artifact@v7.0.1
+        with:
+          name: ${{ steps.record.outputs.artifact }}
+          path: out/
+          if-no-files-found: error
+      - name: Generate App Token
+        id: app-token
+        continue-on-error: true
+        uses: actions/create-github-app-token@v3
+        with:
+          client-id: ${{ secrets.HIMALAYAS_ACCESSOR_CLIENT_ID }}
+          private-key: ${{ secrets.HIMALAYAS_ACCESSOR_APP_PRIVATE_KEY }}
+          owner: EVerest
+          repositories: Himalayas
+      - name: Wake up Himalayas
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: |
+          set -euo pipefail
+          gh api repos/EVerest/Himalayas/dispatches \
+            -f event_type=everest-ci-record \
+            -F "client_payload[run_id]=$GITHUB_RUN_ID"
