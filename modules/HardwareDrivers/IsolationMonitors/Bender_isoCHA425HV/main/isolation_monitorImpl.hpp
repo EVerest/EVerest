@@ -409,6 +409,8 @@ private:
     bool send_to_imd(const uint16_t& command, const uint16_t& value);
     void read_imd_values();
     bool read_device_identity();
+    bool device_should_be_enabled() const;
+    bool write_device_enable_state();
     std::optional<std::string> read_device_name();
     std::optional<std::string> read_firmware_version();
     std::optional<bool> check_for_faster_cablecheck();

@@ -62,10 +62,7 @@ void isolation_monitorImpl::configure_device() {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
         successful &= send_to_imd(3028, config.relay_k2_alarm_assignment);
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
-        // start up enable the device if the configuration option is not set
-        if (!config.disable_device_on_stop) {
-            successful &= send_to_imd(3026, 1);
-        }
+        successful &= write_device_enable_state();
         // Give device time to process startup command
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
 
@@ -78,6 +75,22 @@ void isolation_monitorImpl::configure_device() {
         }
     } while (not successful);
     clear_deviceFault();
+}
+
+bool isolation_monitorImpl::device_should_be_enabled() const {
+    return not config.disable_device_on_stop or enable_publishing or self_test_started;
+}
+
+bool isolation_monitorImpl::write_device_enable_state() {
+    // handle_start() and handle_stop() may change the wanted state on another thread during the write
+    bool enabled = false;
+    do {
+        enabled = device_should_be_enabled();
+        if (not send_to_imd(3026, enabled ? 1 : 0)) {
+            return false;
+        }
+    } while (enabled != device_should_be_enabled());
+    return true;
 }
 
 bool isolation_monitorImpl::read_device_identity() {
