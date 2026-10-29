@@ -63,6 +63,10 @@ cannot be read from the device. Take them from the device datasheet.
 Command start_transaction
 -------------------------
 
+Before the start, the driver asks the device through ``/v1/status`` whether a transaction is still running on it,
+e.g. because its stop failed while the device was unreachable. If so, it stops that transaction first. If it cannot
+be stopped, the start fails with that reason instead of being sent to the device, which would reject it.
+
 A ``start_transaction`` command is directly forwarded via a ``POST``  to the ``/v1/legal`` endpoint with a copy of the transaction request
 as payload (up to renaming of attributes). It returns ``true``, if the device (possibly after a limited amount of retries) returns a success
 response with a valid payload that indicates a ``running`` transaction status, otherwised it returns ``false``.
@@ -82,6 +86,10 @@ running).
 If both requests are successful (possibly after a limited amount of retries), the returned OCMF string is forward 1:1.
 
 In case of an error, an empty string is returned.
+
+The driver only forgets the transaction once the device confirmed the stop. If the stop fails, e.g. because the device
+is unreachable, the transaction keeps running on the device: a later stop without transaction id, or the next
+transaction start, still stops it.
 
 
 Module Configuration
