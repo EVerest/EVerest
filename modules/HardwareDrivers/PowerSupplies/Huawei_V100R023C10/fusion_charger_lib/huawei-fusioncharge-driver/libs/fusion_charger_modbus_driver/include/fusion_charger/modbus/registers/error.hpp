@@ -660,45 +660,44 @@ private:
         DataProviderHolding<std::uint32_t> power_distribution_module_5 = DataProviderHolding<std::uint32_t>(0);
     } power_distribution_module;
 
-#define ERROR_ALARM_CALLBACK(CATEGORY, SUBCATEGORY)                                                                    \
+#define ERROR_ALARM_CALLBACK(CATEGORY, MEMBER, SUBCATEGORY)                                                            \
     [callback](AlarmStatus register_value) {                                                                           \
         struct ErrorEvent event;                                                                                       \
         event.error_category = CATEGORY;                                                                               \
-        event.error_subcategory = SUBCATEGORY;                                                                         \
+        event.error_subcategory.MEMBER = SUBCATEGORY;                                                                  \
         event.payload.alarm = register_value;                                                                          \
         callback(event);                                                                                               \
     }
 
-#define ERROR_BITFLAGS_CALLBACK(CATEGORY, SUBCATEGORY)                                                                 \
+#define ERROR_BITFLAGS_CALLBACK(CATEGORY, MEMBER, SUBCATEGORY)                                                         \
     [callback](std::uint32_t register_value) {                                                                         \
         struct ErrorEvent event;                                                                                       \
         event.error_category = CATEGORY;                                                                               \
-        event.error_subcategory = SUBCATEGORY;                                                                         \
+        event.error_subcategory.MEMBER = SUBCATEGORY;                                                                  \
         event.payload.error_flags = register_value;                                                                    \
         callback(event);                                                                                               \
     }
 
-#define POWER_UNIT_ALARM_CALLBACK(SUBCATEGORY)                                                                         \
-    ERROR_ALARM_CALLBACK(ErrorCategory::PowerUnit, ErrorSubcategory{.power_unit = SUBCATEGORY})
+#define POWER_UNIT_ALARM_CALLBACK(SUBCATEGORY) ERROR_ALARM_CALLBACK(ErrorCategory::PowerUnit, power_unit, SUBCATEGORY)
 
 #define CHARGING_POWER_UNIT_ALARM_CALLBACK(SUBCATEGORY)                                                                \
-    ERROR_ALARM_CALLBACK(ErrorCategory::ChargingPowerUnit, ErrorSubcategory{.charging_power_unit = SUBCATEGORY})
+    ERROR_ALARM_CALLBACK(ErrorCategory::ChargingPowerUnit, charging_power_unit, SUBCATEGORY)
 
 #define AC_BRANCH_BITFLAGS_CALLBACK(SUBCATEGORY)                                                                       \
-    ERROR_BITFLAGS_CALLBACK(ErrorCategory::AcBranch, ErrorSubcategory{.ac_branch = SUBCATEGORY})
+    ERROR_BITFLAGS_CALLBACK(ErrorCategory::AcBranch, ac_branch, SUBCATEGORY)
 
 #define AC_DC_RECTIFIER_BITFLAGS_CALLBACK(SUBCATEGORY)                                                                 \
-    ERROR_BITFLAGS_CALLBACK(ErrorCategory::AcDcRectifier, ErrorSubcategory{.ac_dc_rectifier = SUBCATEGORY})
+    ERROR_BITFLAGS_CALLBACK(ErrorCategory::AcDcRectifier, ac_dc_rectifier, SUBCATEGORY)
 
 #define DC_DC_CHARGING_BITFLAGS_CALLBACK(SUBCATEGORY)                                                                  \
-    ERROR_BITFLAGS_CALLBACK(ErrorCategory::DcDcChargingModule, ErrorSubcategory{.dc_dc_charging_module = SUBCATEGORY})
+    ERROR_BITFLAGS_CALLBACK(ErrorCategory::DcDcChargingModule, dc_dc_charging_module, SUBCATEGORY)
 
 #define COOLING_SECTION_BITFLAGS_CALLBACK(SUBCATEGORY)                                                                 \
-    ERROR_BITFLAGS_CALLBACK(ErrorCategory::CoolingSection, ErrorSubcategory{.cooling_section = SUBCATEGORY})
+    ERROR_BITFLAGS_CALLBACK(ErrorCategory::CoolingSection, cooling_section, SUBCATEGORY)
 
 #define POWER_DISTRIBUTION_BITFLAGS_CALLBACK(SUBCATEGORY)                                                              \
-    ERROR_BITFLAGS_CALLBACK(ErrorCategory::ErrorSubcategoryPowerDistributionModule,                                    \
-                            ErrorSubcategory{.power_distribution_module = SUBCATEGORY})
+    ERROR_BITFLAGS_CALLBACK(ErrorCategory::ErrorSubcategoryPowerDistributionModule, power_distribution_module,         \
+                            SUBCATEGORY)
 
     void add_callback_to_alarm_power_unit_registers(std::function<void(ErrorEvent)> callback) {
         power_unit.high_voltage_door_status_sensor.add_write_callback(

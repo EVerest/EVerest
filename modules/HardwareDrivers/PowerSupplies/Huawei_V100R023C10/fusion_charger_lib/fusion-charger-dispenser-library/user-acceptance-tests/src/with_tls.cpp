@@ -471,17 +471,17 @@ TEST_F(DispenserWithTlsTest, String) {
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::ChargingPowerUnit;
-    e.error_subcategory = {.charging_power_unit = ErrorSubcategoryChargingPowerUnit::PhaseSequenceAbornmalAlarm};
+    e.error_subcategory.charging_power_unit = ErrorSubcategoryChargingPowerUnit::PhaseSequenceAbornmalAlarm;
     e.payload.alarm = AlarmStatus::NORMAL;
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::ChargingPowerUnit;
-    e.error_subcategory = {.charging_power_unit = ErrorSubcategoryChargingPowerUnit::ModbusTcpCertificate};
+    e.error_subcategory.charging_power_unit = ErrorSubcategoryChargingPowerUnit::ModbusTcpCertificate;
     e.payload.error_flags = 2;
     printf("%s\n", e.to_error_log_string().c_str());
 
     e.error_category = ErrorCategory::CoolingSection;
-    e.error_subcategory = {.cooling_section = ErrorSubcategoryCoolingSection::CoolingUnit1};
+    e.error_subcategory.cooling_section = ErrorSubcategoryCoolingSection::CoolingUnit1;
     e.payload.error_flags = 0x12345678;
     printf("%s\n", e.to_error_log_string().c_str());
 
