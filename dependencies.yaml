@@ -160,8 +160,7 @@ nlohmann_json_schema_validator:
       "JSON_VALIDATOR_INSTALL OFF",
       "JSON_VALIDATOR_BUILD_TESTS OFF",
       "JSON_VALIDATOR_BUILD_EXAMPLES OFF",
-      "JSON_VALIDATOR_BUILD_SHARED_LIBS ON",
-      "JSON_VALIDATOR_SHARED_LIBS ON",
+      "JSON_VALIDATOR_SHARED_LIBS OFF",
     ]
 date:
   git: https://github.com/HowardHinnant/date.git
