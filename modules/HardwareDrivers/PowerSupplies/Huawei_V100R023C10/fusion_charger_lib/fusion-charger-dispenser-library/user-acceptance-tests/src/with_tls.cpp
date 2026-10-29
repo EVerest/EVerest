@@ -275,11 +275,12 @@ TEST_F(DispenserWithTlsTest, CheckMaximumRatedChargeCurrentIsSet) {
 }
 
 TEST_F(DispenserWithTlsTest, ReadDispenserInformationAndConfiguration) {
-    auto expected_dispenser_information = DispenserInformation{.manufacturer = 0x0002,
-                                                               .model = 0x0080,
-                                                               .protocol_version = 1,
-                                                               .hardware_version = 3,
-                                                               .software_version = "v1.2.3+456"};
+    DispenserInformation expected_dispenser_information;
+    expected_dispenser_information.manufacturer = 0x0002;
+    expected_dispenser_information.model = 0x0080;
+    expected_dispenser_information.protocol_version = 1;
+    expected_dispenser_information.hardware_version = 3;
+    expected_dispenser_information.software_version = "v1.2.3+456";
 
     EXPECT_EQ(power_stack_mock->get_dispenser_information(), expected_dispenser_information);
 
