@@ -1,0 +1,44 @@
+description: Fixture module
+config:
+  read_only_setting:
+    description: A setting that cannot change at runtime
+    type: string
+    default: hello
+  changeable_number:
+    description: A setting that can change at runtime
+    type: integer
+    default: 3
+    mutability: ReadWrite
+  changeable_text:
+    description: A text setting that can change at runtime
+    type: string
+    default: text
+    mutability: ReadWrite
+provides:
+  main:
+    description: The sample source implementation
+    interface: sample_source
+    config:
+      impl_setting:
+        description: An implementation setting
+        type: boolean
+        default: true
+      impl_changeable:
+        description: An implementation setting that can change
+        type: number
+        default: 1.5
+        mutability: ReadWrite
+requires:
+  one_source:
+    interface: sample_source
+  many_sources:
+    interface: sample_source
+    min_connections: 0
+    max_connections: 8
+enable_external_mqtt: true
+enable_telemetry: true
+enable_global_errors: true
+metadata:
+  license: https://opensource.org/licenses/Apache-2.0
+  authors:
+    - ev-cli tests

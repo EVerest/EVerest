@@ -2,194 +2,155 @@
 EVerest development tools
 =========================
 
-This python project currently consists of the following packages
-
-- `ev_cli`: EVerest module auto generation
+This project provides ``ev-cli``, the code generator EVerest's build runs to
+turn ``types/*.yaml``, ``interfaces/*.yaml`` and module manifests into C++.
 
 Install
 -------
-To install `ev_cli`:
+
+::
 
     python3 -m pip install .
 
-ev_cli
-------
+How it is put together
+----------------------
 
-The `ev_cli` package comes with a command line tool, named ``ev-cli``.
-It has the following subcommands
+::
 
-- module:
-  auto generation and update of EVerest modules from its interface and
-  manifest definitions
+    CLI  ──▶  loader/validate  ──▶  IR  ──▶  backend  ──▶  files
+              schema/           ir/       backends/
+                  │
+                  ▼
+              diagnostics ──▶ types conformance-report
 
-- interface:
-  auto generation of c++ header files for defined interfaces
+The definitions are read and validated once, turned into an explicit
+intermediate representation, and handed to a backend.  The IR describes what a
+definition *means* in JSON Schema terms and knows nothing about C++: mapping
+``integer`` onto ``int32_t`` is the C++ backend's business, which is what makes
+another target -- Rust, OpenAPI, documentation -- an addition rather than a
+second parser.
 
-- helpers:
-  utility commands
+``--backend`` selects the target.  ``cpp`` is the default and generates the
+headers everest-core compiles against; ``ir-dump`` writes the IR out as JSON,
+which is useful for seeing what the loader made of a definition::
 
-There exist short forms, for all subcommands and options.  Simply call:
+    ev-cli types generate-headers --backend ir-dump -o /tmp/ir
 
-    ev-cli --help
+Commands
+--------
 
-for getting the list of short forms.
+Every command accepts ``--work-dir``/``-wd``, ``--everest-dir``/``-ed``,
+``--schemas-dir``/``-sd``, ``--licenses``/``-lc``, ``--build-dir``/``-bd``,
+``--clang-format-file`` and ``--disable-clang-format``.  Commands and actions
+have short aliases; ``ev-cli --help`` lists them.
 
-Both the `module` and `interface` command have the following options in
-common:
+``ev-cli types generate-headers``
+    One ``generated/types/<unit>.hpp`` per type file.
 
-- `--work-dir`:
-  work directory which also contains the manifest definitions (default: ``.``)
+``ev-cli interface generate-headers``
+    ``Implementation.hpp`` (the implementer's view), ``Interface.hpp`` (the
+    caller's view) and ``Types.hpp`` (the type headers it needs) per interface.
 
-- `--everest-dir`:
-  root directory of EVerest core or any directory containing interface
-  and module definitions (default: ``.``)
+``ev-cli module generate-loader <module>``
+    The ``ld-ev.hpp``/``ld-ev.cpp`` glue that hooks a module up to the
+    framework.  Run by the build; not something to edit.
 
-- `--schemas-dir`:
-  schemas directory of the EVerest framework, containing the schema
-  definitions (default: ``EVerest/lib/everest/framework/schemas``)
+``ev-cli module create <module>`` / ``ev-cli module update <module>``
+    Write and refresh a module's skeleton from its manifest: ``CMakeLists.txt``,
+    ``<Module>.hpp``/``.cpp``, one ``<Interface>Impl.hpp``/``.cpp`` per provided
+    interface, and a documentation placeholder.  See `Creating a module`_.
 
-- `--clang-format-file`:
-  if c++output should be formatted, set this to the path of the
-  .clang-format file
+``ev-cli types conformance-report``
+    Reports where the definitions rely on EVerest's own reading of JSON Schema.
+    See `The definition dialect`_.
 
-Generating c++ header files for defined interfaces
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+``ev-cli helpers ...``
+    ``generate-uuids``, ``yaml2json``, ``json2yaml``.
 
-Assuming that the interface definitions in json format are located at
-``./interfaces/*.json``, simply:
+``ev-cli {types,interface,module} get-templates``
+    Prints the template files a command renders, which the build uses as
+    dependencies so that editing a template regenerates its output.
 
-    ev-cli interfaces generate-headers
+Creating a module
+-----------------
 
-This will generate the c++ header files for all interfaces and output them
-to ``./generated/include/generated``.  To generate only a single interface, call:
+Given ``./modules/Example/manifest.yaml``::
 
-    ev-cli interfaces generate-headers InterfaceName.json
+    ev-cli module create Example
 
-For each interface an ``Implementation.hpp`` and ``Interface.hpp``
-header file will be generated.  The former represents the `implementers`
-view, and the latter the `users` view of the interface, when used in a
-module.
+writes the skeleton beside the manifest.  A subdirectory is created for each
+provided interface, named after the implementation id, holding the class that
+derives from the generated ``Implementation.hpp``.  What happens next is up to
+you: fill in the ``.cpp`` files.
 
-Creating and updating auto generated files for modules (c++ only)
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
-
-Assuming the modules are located at ``./modules`` and the initial
-skeleton for a module named `Example` with its manifest in
-``./modules/Example/manifest.json`` should be created, call:
-
-  ev-cli module create Example
-
-This will create the following files inside the ``./modules/Example``
-subdirectory
-
-- ``CMakeLists.txt``:
-  build instruction file for CMake
-
-- ``ld-ev.hpp``/``ld-ev.cpp``:
-  glue code files for this module to get hooked up by the EVerest
-  framework
-
-- ``Example.hpp``/``Example.cpp``:
-  header and source file for the module
-
-Furthermore, for each interface provided by the module a subdirectory
-with the name of the `interface id` will be created.  If, for example,
-the manifest looks like::
-
-    {
-        "description": "Example module",
-        "provides": {
-            "main": {
-                "description": "SampleInterface implementation",
-                "interface": "SampleInterface",
-                ...
-            }
-        }
-        ...
-    }
-
-a subdirectory named ``main`` will be created, including two files
-``SampleInterfaceImpl.hpp`` and ``SampleInterfaceImpl.cpp``.  The header
-file declares the implementation of `SampleInterface`, which derives
-from the auto generated interface header files from the previous
-subsection.
-
-Now it is up to the user to implement logic in the module and interface
-implementation `cpp` source files.
-
-If the modules' ``manifest.json`` or inferface definitions, used by the
-module, change, you can update the generated files by using:
+When the manifest or an interface it uses changes::
 
     ev-cli module update Example
 
-**Note**:
+The rules are worth knowing, because they are what protects your work:
 
-1.
-   ``cpp`` source files will never be changed or overwritten by the
-   `update` subcommand.  The `create` subcommand only resets / overrides
-   the files when using the ``--force`` option
+* ``.cpp`` files are **never** replaced by ``update``, and neither is the
+  documentation placeholder.  Recreating one is a deliberate
+  ``module create --force --only <name>``.
+* Headers and ``CMakeLists.txt`` are regenerated, but the regions between
+  ``ev@<uuid>`` marker comments are carried over from the file being replaced.
+  Anything you write inside them survives.
+* A file whose markers are malformed is refused rather than regenerated.
+* An existing license header is kept, even when the manifest names a different
+  license.
 
-2.
-   ``hpp`` header files and the ``CMakeLists.txt`` file will get
-   updated, if its interface dependencies definitions change and the
-   `update` subcommand is used.  You can force an update by using the
-   ``--force`` option.  During an update, the sections marked like::
-
-        // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
-        .....
-        // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
-
-   will be kept.  If you want to completely reset / override these
-   files, you need to recreate the using `create` subcommand with the
-   ``--force`` option.
-
-3.
-   Generated files will never be deleted.  So make sure, you do this if
-   you, for example, change the interface ids or remove interfaces from
-   the module
-
-These additional options might be useful for the `create` and `update`
-subcommands:
-
-1. ``--force``:
-   force creation or update
-
-2. ``--diff``:
-   don't touch anything, only show a `diff` of what would be changed
-
-3. ``--only``:
-   this option takes a comma separated list of files, that should be
-   touched only.  This is especially helpful, if you want to recreate
-   only a single interface implementation ``cpp`` file, because you
-   changed the corresponding interface a lot.  To get a list of possible files, you can simply call:
+Useful options: ``--force`` to overwrite, ``--diff`` (``--dry-run``) to show
+what would change without writing, and ``--only`` with a comma separated list
+of file names.  ``--only which`` lists the available names::
 
     ev-cli module create Example --only which
+    ev-cli module create Example --only cmakelists,main.cpp --force
 
-   this would output for the above mentioned example::
+The definition dialect
+----------------------
 
-        Available files for category "core"
-          cmakelists
-          ld-ev.hpp
-          ld-ev.cpp
-          module.hpp
-          module.cpp
-        Available files for category "interfaces"
-          main.hpp
-          main.cpp
+EVerest's type definitions are JSON Schema, but they lean on two things no
+standard tool does.  Cross-type references are written ``/units#/Power``, whose
+resolution -- a search across the ``--everest-dir`` roots, and a fragment
+addressing the contents of the ``types:`` key rather than the document -- is
+EVerest's own.  And nearly every reference carries sibling keywords such as
+``type``, which draft-07 ignores and JSON Schema 2020-12 (and so OpenAPI 3.1)
+applies.
 
-   So calling:
+``ev-cli`` accepts all of that and reports it::
 
-    ev-cli module create Example --only main.cpp,cmakelists --force
+    ev-cli types conformance-report --verbose
 
-   would recreate the ``CMakeLists.txt`` and the
-   ``main/SampleInterfaceImpl.cpp`` files, whereas:
+Each entry says what to write instead.  Two categories are worth attention
+rather than only counting: a sibling ``type`` that *contradicts* the referenced
+type, and ``additionalProperties: false`` beside a reference to an object.
+Both are inert today and would change meaning if the definitions were ever read
+with OpenAPI semantics.
 
-    ev-clie module update Example --only module.hpp
+The loader also accepts the conformant spelling already -- ``#/types/Power``
+within a file, ``units.yaml#/types/Power`` across files -- so the definitions
+can migrate one file at a time without any consumer noticing.  Nothing
+downstream can tell which spelling a file used.
 
-   would update only the module header file ``Example.hpp``
+Tests
+-----
 
+::
 
-Auto generating NodeJS modules
-~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    python3 -m pip install -e '.[test]'
+    python3 -m pytest
 
-**tbd**
+``tests/test_cli_contract.py`` drives the installed ``ev-cli`` as a black box
+and pins what EVerest's CMake and Bazel builds rely on: the shape of
+``--version``, the ``get-templates`` output, and the exact set of files each
+command produces.  It reads ``EV_CLI`` to choose which build to test, so it can
+be pointed at another one for comparison.
+
+``tests/test_conformance.py`` asserts the diagnostic counts over the real
+definitions.  They are a ratchet: lowering them is progress, raising them means
+the legacy dialect was reintroduced.
+
+``tests/test_cpp_backend.py`` compares generated output against the golden files
+in ``tests/fixtures/golden``.  Set ``EV_CLI_UPDATE_GOLDEN=1`` to rewrite them
+after an intentional change -- and then read the diff, because it is the
+generated API that every module compiles against.

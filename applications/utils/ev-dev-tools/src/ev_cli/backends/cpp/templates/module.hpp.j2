@@ -1,0 +1,173 @@
+{{ u.license_header }}
+#ifndef {{ u.guard }}
+#define {{ u.guard }}
+
+//
+// AUTO GENERATED - MARKED REGIONS WILL BE KEPT
+// template version {{ u.template_version }}
+//
+
+#include "{{ u.ld_ev_header }}"
+
+{% for impl in u.provides %}
+{% if loop.first %}
+// headers for provided interface implementations
+{% endif %}
+#include <{{ impl.base_class_header }}>
+{% endfor %}
+
+{% for requirement in u.requires %}
+{% if loop.first %}
+// headers for required interface implementations
+{% endif %}
+#include <{{ requirement.exports_header }}>
+{% endfor %}
+
+{{ u.block('add_headers') }}
+
+namespace module {
+
+{% if u.rwconfig %}
+struct RwConf {
+{% for item in u.rwconfig %}
+    {{ u.config_type(item) }} {{ item.name }};
+{% endfor %}
+};
+
+struct RwConfUpdate {
+    using ConfigChangeResult = Everest::config::ConfigChangeResult;
+
+    virtual ~RwConfUpdate() = default;
+
+    // override in class {{ u.class_name }} adding the implementation to {{ u.class_name }}.cpp
+    // or inline
+    //
+    // note: these handlers are invoked from a different thread than the one
+    // executing your module code, so guard rw_config with a mutex both here
+    // and wherever your module accesses config or rw_config
+    // e.g.
+    // ConfigChangeResult on_{{ u.rwconfig[0].name }}_changed(const {{ u.config_type(u.rwconfig[0]) }}& value) override {
+    //     std::scoped_lock lock(config_mutex);
+    //     rw_config.{{ u.rwconfig[0].name }} = value;
+    //     return ConfigChangeResult::Accepted();
+    // }
+
+{% for item in u.rwconfig %}
+    virtual ConfigChangeResult on_{{ item.name }}_changed(const {{ u.config_type(item) }}& /* value */) {
+        return ConfigChangeResult::Rejected("handler not implemented");
+    }
+{% endfor %}
+};
+{% endif %}
+
+struct Conf {
+{% for item in u.config %}
+    {{ u.config_type(item) }} {{ item.name }};
+{% endfor %}
+
+{% for item in u.rwconfig %}
+    const {{ u.config_type(item) }}& {{ item.name }};
+{% endfor %}
+
+{% if u.rwconfig %}
+    Conf(const RwConf& rw):
+{% for item in u.rwconfig %}
+        {{ item.name }}(rw.{{ item.name }}){{ ',' if not loop.last else ' {}' }}
+{% endfor %}
+{% endif %}
+};
+
+{% if u.rwconfig %}
+class {{ u.class_name }} : public Everest::ModuleBase, public RwConfUpdate {
+{% else %}
+class {{ u.class_name }} : public Everest::ModuleBase {
+{% endif %}
+public:
+    {{ u.class_name }}() = delete;
+    {{ u.class_name }}(
+        const ModuleInfo& info,
+{% if u.enable_external_mqtt %}
+        Everest::MqttProvider& mqtt_provider,
+{% endif %}
+{% if u.enable_telemetry %}
+        Everest::TelemetryProvider& telemetry,
+{% endif %}
+{% for impl in u.provides %}
+        std::unique_ptr<{{ impl.base_class }}> p_{{ impl.id }},
+{% endfor %}
+{% for requirement in u.requires %}
+{% if requirement.is_vector %}
+        std::vector<std::unique_ptr<{{ requirement.class_name }}>> r_{{ requirement.id }},
+{% else %}
+        std::unique_ptr<{{ requirement.class_name }}> r_{{ requirement.id }},
+{% endif %}
+{% endfor %}
+{% if u.rwconfig %}
+        Conf& config,
+        RwConf& rw_config
+{% else %}
+        Conf& config
+{% endif %}
+    ) :
+        ModuleBase(info),
+{% if u.enable_external_mqtt %}
+        mqtt(mqtt_provider),
+{% endif %}
+{% if u.enable_telemetry %}
+        telemetry(telemetry),
+{% endif %}
+{% for impl in u.provides %}
+        p_{{ impl.id }}(std::move(p_{{ impl.id }})),
+{% endfor %}
+{% for requirement in u.requires %}
+        r_{{ requirement.id }}(std::move(r_{{ requirement.id }})),
+{% endfor %}
+{% if u.rwconfig %}
+        config(config),
+        rw_config(rw_config)
+{% else %}
+        config(config)
+{% endif %}
+    {};
+
+{% if u.enable_external_mqtt %}
+    Everest::MqttProvider& mqtt;
+{% endif %}
+{% if u.enable_telemetry %}
+    Everest::TelemetryProvider& telemetry;
+{% endif %}
+{% for impl in u.provides %}
+    const std::unique_ptr<{{ impl.base_class }}> p_{{ impl.id }};
+{% endfor %}
+{% for requirement in u.requires %}
+{% if requirement.is_vector %}
+    const std::vector<std::unique_ptr<{{ requirement.class_name }}>> r_{{ requirement.id }};
+{% else %}
+    const std::unique_ptr<{{ requirement.class_name }}> r_{{ requirement.id }};
+{% endif %}
+{% endfor %}
+    const Conf& config;
+{% if u.rwconfig %}
+    RwConf& rw_config;
+{% endif %}
+
+    {{ u.block('public_defs', 4) }}
+
+protected:
+    {{ u.block('protected_defs', 4) }}
+
+private:
+    friend class LdEverest;
+    void init();
+    void ready();
+    void shutdown();
+
+    {{ u.block('private_defs', 4) }}
+
+};
+
+{{ u.block('after_class') }}
+
+} // namespace module
+
+#endif // {{ u.guard }}

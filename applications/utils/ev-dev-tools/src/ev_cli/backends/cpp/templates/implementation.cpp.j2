@@ -1,0 +1,30 @@
+{{ u.license_header }}
+
+#include "{{ u.class_name }}.hpp"
+
+namespace module {
+namespace {{ u.id }} {
+
+void {{ u.class_name }}::init() {
+
+}
+
+void {{ u.class_name }}::ready() {
+
+}
+
+void {{ u.class_name }}::shutdown() {
+
+}
+{% for cmd in u.cmds %}
+
+{{ u.result_type(cmd) }} {{ u.class_name }}::handle_{{ cmd.name }}({% for argument in cmd.arguments %}{{ u.argument_declaration(argument) }}{{ ', ' if not loop.last }}{% endfor %}) {
+    // your code for cmd {{ cmd.name }} goes here
+{% if cmd.result is not none %}
+    return {{ u.dummy_result(cmd) }};
+{% endif %}
+}
+{% endfor %}
+
+} // namespace {{ u.id }}
+} // namespace module

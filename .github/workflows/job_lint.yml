@@ -31,6 +31,6 @@ jobs:
       - name: Run clang-format
         uses: ./everest-ci/github-actions/run-clang-format
         with:
-          source-dir: source/
+          source-dir: source
           extensions: hpp,cpp
-          exclude: cache
+          exclude: applications/utils/ev-dev-tools/tests/fixtures/golden
