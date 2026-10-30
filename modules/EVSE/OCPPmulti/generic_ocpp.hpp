@@ -245,8 +245,12 @@ public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
 
     GenericOcpp(GenericChargePointInterface& charge_point, const ModuleInfo& info, ConfigInterface& config,
-                const provides_t& provides, const requires_t& requires) :
-        mv_charge_point(charge_point), mv_info(info), mv_config(config), mv_provides(provides), mv_requires(requires) {
+                const provides_t& provides, const requires_t& requirements) :
+        mv_charge_point(charge_point),
+        mv_info(info),
+        mv_config(config),
+        mv_provides(provides),
+        mv_requires(requirements) {
     }
 
     ~GenericOcpp() override;

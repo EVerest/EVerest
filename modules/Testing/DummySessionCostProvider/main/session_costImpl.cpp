@@ -19,6 +19,13 @@ std::string format_uint(uint32_t value) {
     ss << std::setw(4) << std::setfill('0') << value;
     return ss.str();
 }
+
+types::text_message::MessageContent make_message_content(const std::string& content, const std::string& language) {
+    types::text_message::MessageContent message;
+    message.content = content;
+    message.language = language;
+    return message;
+}
 } // namespace
 
 namespace module {
@@ -36,15 +43,14 @@ void session_costImpl::ready() {
     const std::string msg_content_en = "Tariff Message content no. ";
     const std::string msg_content_de = "Tariff Message Inhalt Nr. ";
 
-    session_cost.currency = types::money::Currency{.code = {types::money::CurrencyCode::EUR}, .decimals = 2};
+    session_cost.currency.code = types::money::CurrencyCode::EUR;
+    session_cost.currency.decimals = 2;
 
     while (true) {
         msg_count++;
 
-        tariff_message.messages.emplace_back(types::text_message::MessageContent{
-            .content = msg_content_en + format_uint(msg_count), .language = std::string{"EN"}});
-        tariff_message.messages.emplace_back(types::text_message::MessageContent{
-            .content = msg_content_de + format_uint(msg_count), .language = std::string{"DE"}});
+        tariff_message.messages.push_back(make_message_content(msg_content_en + format_uint(msg_count), "EN"));
+        tariff_message.messages.push_back(make_message_content(msg_content_de + format_uint(msg_count), "DE"));
 
         tariff_message.ocpp_transaction_id = everest::helpers::get_base64_uuid();
         tariff_message.identifier_id = everest::helpers::get_base64_id();
@@ -68,10 +74,12 @@ void session_costImpl::ready() {
         auto now_datetime = Everest::Date::to_rfc3339(now);
         auto past_datetime = Everest::Date::to_rfc3339(past);
 
-        session_cost.cost_chunks.emplace({types::session_cost::SessionCostChunk{.timestamp_from = past_datetime,
-                                                                                .timestamp_to = now_datetime,
-                                                                                .metervalue_from = {54321},
-                                                                                .metervalue_to = {71233}}});
+        types::session_cost::SessionCostChunk cost_chunk;
+        cost_chunk.timestamp_from = past_datetime;
+        cost_chunk.timestamp_to = now_datetime;
+        cost_chunk.metervalue_from = 54321;
+        cost_chunk.metervalue_to = 71233;
+        session_cost.cost_chunks.emplace({cost_chunk});
 
         EVLOG_info << "Publishing tariff message" << tariff_message;
         publish_tariff_message(tariff_message);

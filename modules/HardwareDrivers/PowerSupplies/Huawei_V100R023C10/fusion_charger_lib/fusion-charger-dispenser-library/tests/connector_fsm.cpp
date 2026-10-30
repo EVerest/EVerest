@@ -6,9 +6,9 @@
 
 struct ConnectorFSM_Fixture : public ::testing::Test {
     ConnectorFSM::Callbacks callbacks{
-        .state_transition = [this](States state) { state_transition_counter++; },
-        .mode_phase_transition = [this](ModePhase mode_phase) { mode_phase_transition_counter++; },
-        .any_transition = [this](States state, ModePhase mode_phase) { any_transition_counter++; },
+        [this](States state) { state_transition_counter++; },
+        [this](ModePhase mode_phase) { mode_phase_transition_counter++; },
+        [this](States state, ModePhase mode_phase) { any_transition_counter++; },
     };
     ConnectorFSM fsm{callbacks, logs::log_printf};
 

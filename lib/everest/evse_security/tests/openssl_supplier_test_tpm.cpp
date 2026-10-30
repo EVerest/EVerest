@@ -114,14 +114,12 @@ TEST_F(OpenSSLSupplierTpmTest, x509_verify_certificate_chain) {
 
 TEST_F(OpenSSLSupplierTpmTest, x509_generate_csr) {
     std::string csr;
-    CertificateSigningRequestInfo csr_info = {
-        0,
-        "UK",
-        "Pionix",
-        "0123456789",
-        .dns_name = std::nullopt,
-        .ip_address = std::nullopt,
-        {CryptoKeyType::EC_prime256v1, true, std::nullopt, "tpm_pki/csr_key.tkey", std::nullopt}};
+    CertificateSigningRequestInfo csr_info;
+    csr_info.n_version = 0;
+    csr_info.country = "UK";
+    csr_info.organization = "Pionix";
+    csr_info.commonName = "0123456789";
+    csr_info.key_info = {CryptoKeyType::EC_prime256v1, true, std::nullopt, "tpm_pki/csr_key.tkey", std::nullopt};
 
     // std::cout << "tpm2 pre: " << OSSL_PROVIDER_available(nullptr, "tpm2") << std::endl;
     // std::cout << "base pre: " << OSSL_PROVIDER_available(nullptr, "base") << std::endl;
@@ -135,14 +133,12 @@ TEST_F(OpenSSLSupplierTpmTest, x509_generate_csr) {
 
 TEST_F(OpenSSLSupplierTpmTest, x509_generate_csr2) {
     std::string csr;
-    CertificateSigningRequestInfo csr_info = {
-        0,
-        "UK",
-        "Pionix",
-        "0123456789",
-        .dns_name = std::nullopt,
-        .ip_address = std::nullopt,
-        {CryptoKeyType::RSA_TPM20, true, std::nullopt, "tpm_pki/csr_key.tkey", std::nullopt}};
+    CertificateSigningRequestInfo csr_info;
+    csr_info.n_version = 0;
+    csr_info.country = "UK";
+    csr_info.organization = "Pionix";
+    csr_info.commonName = "0123456789";
+    csr_info.key_info = {CryptoKeyType::RSA_TPM20, true, std::nullopt, "tpm_pki/csr_key.tkey", std::nullopt};
 
     auto res = OpenSSLSupplier::x509_generate_csr(csr_info, csr);
 

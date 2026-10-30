@@ -147,8 +147,8 @@ std::vector<std::string> replaced_builtin_entries(const CustomFileErrorMapping& 
 std::vector<Finding> validate_values(const CustomFileErrorMapping& mapping) {
     std::vector<Finding> findings;
     for (const auto& [key, entry] : mapping.entries()) {
-        const auto validate = [&](const std::optional<std::string>& text, std::initializer_list<const char*> path,
-                                  std::size_t max_length) {
+        const auto validate = [&, &entry = entry](const std::optional<std::string>& text,
+                                                  std::initializer_list<const char*> path, std::size_t max_length) {
             if (text.has_value()) {
                 validate_text(entry, text.value(), path, max_length, findings);
             }

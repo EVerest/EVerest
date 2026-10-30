@@ -592,8 +592,9 @@ TEST_F(LemDCBM400600ControllerTest, test_fallback_ocmf_fetch_is_immediate_then_t
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
 
-    const LemDCBM400600Controller::Conf throttled_controller_config{
-        make_controller_conf({.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max()})};
+    ControllerConfOverrides overrides;
+    overrides.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max();
+    const LemDCBM400600Controller::Conf throttled_controller_config{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        throttled_controller_config);
 
@@ -672,8 +673,9 @@ TEST_F(LemDCBM400600ControllerTest, test_failing_fallback_ocmf_fetch_is_still_th
             .WillOnce(testing::Return(HttpResponse{200, this->livemeasure_response}));
     }
 
-    const LemDCBM400600Controller::Conf throttled_controller_config{
-        make_controller_conf({.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max()})};
+    ControllerConfOverrides overrides;
+    overrides.transaction_ocmf_fetch_interval_s = std::numeric_limits<int>::max();
+    const LemDCBM400600Controller::Conf throttled_controller_config{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        throttled_controller_config);
 
@@ -915,8 +917,10 @@ TEST_F(LemDCBM400600ControllerTest, test_init_meter_id_retry_success) {
             200,
             this->livemeasure_response,
         }));
-    const LemDCBM400600Controller::Conf controller_config{
-        make_controller_conf({.init_number_of_http_retries = number_of_retries, .init_retry_wait_in_milliseconds = 1})};
+    ControllerConfOverrides overrides;
+    overrides.init_number_of_http_retries = number_of_retries;
+    overrides.init_retry_wait_in_milliseconds = 1;
+    const LemDCBM400600Controller::Conf controller_config{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        controller_config);
 
@@ -937,8 +941,10 @@ TEST_F(LemDCBM400600ControllerTest, test_init_meter_id_retry_fail_eventually) {
         .WillRepeatedly(testing::Throw(HttpClientError{"mock error"}));
     EXPECT_CALL(*this->time_sync_helper, restart_unsafe_period()).Times(0);
 
-    const LemDCBM400600Controller::Conf controller_config{
-        make_controller_conf({.init_number_of_http_retries = number_of_retries, .init_retry_wait_in_milliseconds = 1})};
+    ControllerConfOverrides overrides;
+    overrides.init_number_of_http_retries = number_of_retries;
+    overrides.init_retry_wait_in_milliseconds = 1;
+    const LemDCBM400600Controller::Conf controller_config{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper),
                                        controller_config);
 
@@ -998,7 +1004,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_sets_it_when_valid) {
 
     SETUP_SUCCESSFUL_INIT(seq);
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 5})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 5;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act - should not throw
@@ -1020,7 +1028,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_bad_status_code) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{500, "Internal Server Error"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 3;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -1042,7 +1052,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_rejected) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, R"({"result": 0})"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 3;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -1064,7 +1076,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_malformed_json) {
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, "not json"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 3;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -1086,7 +1100,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_set_it_fails_on_missing_result_key
         .InSequence(seq)
         .WillOnce(testing::Return(HttpResponse{200, R"({"status": "ok"})"}));
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 3})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 3;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act & Verify
@@ -1107,7 +1123,9 @@ TEST_F(LemDCBM400600ControllerTest, test_init_skips_set_it_when_already_configur
 
     SETUP_SUCCESSFUL_INIT(seq);
 
-    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf({.IT = 5})};
+    ControllerConfOverrides overrides;
+    overrides.IT = 5;
+    const LemDCBM400600Controller::Conf config_with_it{make_controller_conf(overrides)};
     LemDCBM400600Controller controller(std::move(this->http_client), std::move(this->time_sync_helper), config_with_it);
 
     // Act - should not throw
