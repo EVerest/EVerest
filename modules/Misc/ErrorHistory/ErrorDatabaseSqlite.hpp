@@ -7,6 +7,9 @@
 #include <utils/error/error_database.hpp>
 
 #include <filesystem>
+#include <optional>
+#include <string>
+#include <vector>
 
 namespace fs = std::filesystem;
 
@@ -25,12 +28,17 @@ public:
     std::list<Everest::error::ErrorPtr> remove_errors(const std::list<Everest::error::ErrorFilter>& filters) override;
 
 private:
+    struct SqlCondition {
+        std::string clause;
+        std::vector<std::string> values;
+    };
+
     void add_error_without_mutex(Everest::error::ErrorPtr error);
     std::list<Everest::error::ErrorPtr>
     remove_errors_without_mutex(const std::list<Everest::error::ErrorFilter>& filters);
-    std::list<Everest::error::ErrorPtr> get_errors(const std::optional<std::string>& condition) const;
-    static std::string filter_to_sql_condition(const Everest::error::ErrorFilter& filter);
-    static std::optional<std::string> filters_to_sql_condition(const std::list<Everest::error::ErrorFilter>& filters);
+    std::list<Everest::error::ErrorPtr> get_errors(const std::optional<SqlCondition>& condition) const;
+    static SqlCondition filter_to_sql_condition(const Everest::error::ErrorFilter& filter);
+    static std::optional<SqlCondition> filters_to_sql_condition(const std::list<Everest::error::ErrorFilter>& filters);
 
     void reset_database();
     void check_database();
