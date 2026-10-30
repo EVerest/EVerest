@@ -12,9 +12,8 @@ change meaning outright if they were ever honoured.
 Every generator in the tree already ignores those siblings, so dropping them
 here changes no output.  What it does change is that the IR handed to a backend
 is conformant: a reference is a reference plus a description, and nothing else.
-Each dropped keyword is reported so that the sources can be cleaned up later as
-their own change, and so that the two genuinely dangerous shapes are visible
-rather than latent.
+Each dropped keyword is reported, so that the sources can be cleaned up and so
+that the two genuinely dangerous shapes are visible rather than latent.
 """
 
 from __future__ import annotations

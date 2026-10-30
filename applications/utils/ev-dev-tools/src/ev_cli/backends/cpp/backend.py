@@ -130,9 +130,8 @@ class CppBackend:
             # followed by the unit, e.g. "types/energy.hpp".
             printable_name=(Path(output_dir.name) / f'{unit}.hpp').as_posix(),
             # Deliberately the unit's own modification time, not the newest
-            # among the units it references.  That is what the previous
-            # generator compared against and what EVerest's incremental builds
-            # are tuned for; widening it is a separate change.
+            # among the units it references: EVerest's incremental builds are
+            # tuned for that comparison.
             source_mtime=view.unit.source.file.stat().st_mtime,
             template_paths=self._template_paths('types'),
             category='types',

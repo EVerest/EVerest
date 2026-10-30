@@ -65,13 +65,10 @@ _SEQUENCE_KEYWORDS = frozenset({'enum'})
 class Constraints:
     """Validation keywords, carried through for the backends that want them.
 
-    The C++ backend ignores every one of these: generated structs hold plain
-    members and the framework validates payloads at runtime instead.  A
-    documentation or OpenAPI backend needs all of them, though, and the
-    previous generator dropped them while parsing -- which is why EVerest's RST
-    generation ended up re-parsing the YAML itself rather than reusing the
-    generator's view of it.  Keeping them here is what stops the next backend
-    from having to do the same.
+    The C++ backend ignores all of them: generated structs hold plain members
+    and the framework validates payloads at runtime.  A documentation or
+    OpenAPI backend needs them, so the IR carries them instead of dropping
+    them while parsing.
     """
 
     minimum: float | None = None

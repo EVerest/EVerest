@@ -36,8 +36,8 @@ from .mapping import PAYLOAD_SCALARS, CppMapping, Flavour
 #: way that should invalidate already-generated output.
 TEMPLATE_VERSION = '6'
 
-#: What the previous generator substituted for a property with no description,
-#: and therefore what appears in the headers modules read today.
+#: Substituted for a property with no description.  This exact text sits in
+#: the headers modules read today, so generated output keeps matching them.
 MISSING_DESCRIPTION = 'TODO: description'
 
 
@@ -301,13 +301,10 @@ class InterfaceView:
     def call_declaration(self, argument: ArgDef) -> str:
         """As a caller passes it: a const reference.
 
-        Except for a variant, which is passed by value.  There is no reason for
-        the difference -- the previous implementation's type-spelling macro
-        returned early for variants and never reached the code that added the
-        ``const`` and the ``&`` -- but ``call_store`` in the kvs interface has
-        that signature today, and quietly changing a generated signature is
-        exactly the kind of change that compiles everywhere and is noticed
-        nowhere.  Reconciling it is its own change.
+        Except for a variant, which is passed by value.  Nothing justifies the
+        difference, but ``call_store`` in the kvs interface has that signature,
+        and quietly changing a generated signature compiles everywhere and is
+        noticed nowhere.
         """
         spelling = self.spell(argument.type)
         if self.kind(argument.type) is PayloadKind.VARIANT:

@@ -34,13 +34,11 @@ from .naming import qualified_type
 class Flavour(Enum):
     """Which of the two historical mappings applies.
 
-    There are two, and they disagree: a struct member declared ``number``
-    becomes ``float`` while a command argument declared ``number`` becomes
-    ``double``, and ``integer`` is ``int32_t`` in one and ``int`` in the other.
-    Nothing justifies the difference -- it is an accident of the previous
-    implementation having grown two code paths -- but reconciling it changes
-    the layout and the precision of generated structs, so it is deliberately
-    left alone here and scheduled as its own change.
+    They disagree: a struct member declared ``number`` becomes ``float`` while
+    a command argument declared ``number`` becomes ``double``, and ``integer``
+    is ``int32_t`` in one and ``int`` in the other.  Nothing justifies the
+    difference, but reconciling it would change the layout and the precision
+    of generated structs, so both are kept.
     """
 
     #: Members of a generated struct, from ``types/*.yaml``.
@@ -71,10 +69,9 @@ PAYLOAD_SCALARS: Final[dict[JsonType, str]] = {
 #: ``format`` values that map to a dedicated C++ type.
 #:
 #: Deliberately empty.  Properties across the type files do carry
-#: ``format: date-time``, and every one of them is generated as a plain
-#: ``std::string``; the templates still carry a ``DateTime`` branch that
-#: nothing reaches.  Honouring the format would change those members' type,
-#: so it is its own change.
+#: ``format: date-time``, and every one is generated as a plain
+#: ``std::string``; the templates carry a ``DateTime`` branch that nothing
+#: reaches.  Honouring the format would change those members' type.
 FORMAT_TYPES: Final[dict[str, str]] = {}
 
 
