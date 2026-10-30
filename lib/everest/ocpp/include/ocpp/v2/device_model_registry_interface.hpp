@@ -107,12 +107,12 @@ public:
     /// for the same variable.
     /// \param provider Receives the writes to the registered variables. Without a provider, writes are applied to the
     /// model like writes to any other variable. A write that is in progress while \p owner registers again is not
-    /// stored, the registered value stays. The provider must stay valid until \p owner is unregistered or
-    /// registers with another provider, which wait for the calls to the provider in progress on other threads to
-    /// return.
+    /// stored, the registered value stays. DeviceModel shares the ownership of the provider until \p owner is
+    /// unregistered or registers with another provider, and until the calls to it in progress return; unregistering
+    /// and registering with another provider wait for the calls in progress on other threads.
     virtual ComponentRegistrationResult register_components(const std::string& owner,
                                                             const std::vector<RegisteredComponent>& components,
-                                                            VariableValueProvider* provider) = 0;
+                                                            std::shared_ptr<VariableValueProvider> provider) = 0;
 
     /// \brief Removes everything that \p owner registered. Returns once the calls to the provider of \p owner in
     /// progress on other threads returned; a provider may call it from its set_value. The reserved owner is ignored.

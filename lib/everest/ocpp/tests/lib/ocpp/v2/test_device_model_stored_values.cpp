@@ -98,12 +98,12 @@ protected:
     }
 
     ComponentRegistrationResult register_der(const std::vector<RegisteredVariable>& variables,
-                                             VariableValueProvider* provider = nullptr,
+                                             std::shared_ptr<VariableValueProvider> provider = nullptr,
                                              const std::string& owner = OWNER) {
         RegisteredComponent component;
         component.component = der;
         component.variables = variables;
-        return dm->register_components(owner, {component}, provider);
+        return dm->register_components(owner, {component}, std::move(provider));
     }
 
     std::string get(const Variable& variable) {
@@ -259,8 +259,7 @@ TEST_F(DeviceModelStoredValuesTest, stored_value_is_removed_when_the_variable_ge
     ASSERT_EQ(dm->set_value(der, enabled, AttributeEnum::Actual, "false", "csms"), SetVariableStatusEnum::Accepted);
 
     reboot();
-    NoOpProvider provider;
-    ASSERT_TRUE(register_der({make_enabled()}, &provider).rejected.empty());
+    ASSERT_TRUE(register_der({make_enabled()}, std::make_shared<NoOpProvider>()).rejected.empty());
     EXPECT_EQ(get(enabled), "true");
     EXPECT_TRUE(stored_values().empty());
 

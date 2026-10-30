@@ -62,7 +62,7 @@ private:
     /// \brief register_components without the check for the reserved owner
     ComponentRegistrationResult register_components_of(const std::string& owner,
                                                        const std::vector<RegisteredComponent>& components,
-                                                       VariableValueProvider* provider);
+                                                       std::shared_ptr<VariableValueProvider> provider);
 
     /// \brief Composes \c view again after component_config or registrations changed
     void recompose();
@@ -308,7 +308,7 @@ public:
     // DeviceModelRegistryInterface
     ComponentRegistrationResult register_components(const std::string& owner,
                                                     const std::vector<RegisteredComponent>& components,
-                                                    VariableValueProvider* provider) override;
+                                                    std::shared_ptr<VariableValueProvider> provider) override;
     void unregister_components(const std::string& owner) override;
     SetVariableStatusEnum notify_value_changed(const Component& component, const Variable& variable,
                                                AttributeEnum attribute, const std::string& value,

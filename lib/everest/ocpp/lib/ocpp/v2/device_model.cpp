@@ -640,7 +640,7 @@ SetVariableStatusEnum DeviceModel::forward_to_provider(Lock lock, const Composed
                                                        const Component& component, const Variable& variable,
                                                        const AttributeEnum& attribute_enum, const std::string& value,
                                                        const std::string& source) {
-    auto& provider = *composed.registration->provider;
+    const auto provider = composed.registration->provider;
     const auto owner = composed.registration->owner;
     const auto write_id = ++this->last_write_id;
     // Counted under the lock, so that unregister_components cannot return before the provider did
@@ -649,7 +649,7 @@ SetVariableStatusEnum DeviceModel::forward_to_provider(Lock lock, const Composed
 
     auto status = SetVariableStatusEnum::Rejected;
     try {
-        status = provider.set_value(component, variable, attribute_enum, value, source, write_id);
+        status = provider->set_value(component, variable, attribute_enum, value, source, write_id);
     } catch (const std::exception& e) {
         EVLOG_error << "Provider of " << component << "." << variable << " failed to set the value: " << e.what();
     }
@@ -818,9 +818,9 @@ std::optional<std::string> DeviceModel::runtime_owner(const Component& component
 
 ComponentRegistrationResult DeviceModel::register_components(const std::string& owner,
                                                              const std::vector<RegisteredComponent>& components,
-                                                             VariableValueProvider* provider) {
+                                                             std::shared_ptr<VariableValueProvider> provider) {
     if (!is_reserved_owner(owner)) {
-        return this->register_components_of(owner, components, provider);
+        return this->register_components_of(owner, components, std::move(provider));
     }
     EVLOG_error << "Owner " << owner << " is reserved for libocpp: its components are ignored";
     ComponentRegistrationResult result;
@@ -835,7 +835,7 @@ ComponentRegistrationResult DeviceModel::register_components(const std::string& 
 
 ComponentRegistrationResult DeviceModel::register_components_of(const std::string& owner,
                                                                 const std::vector<RegisteredComponent>& components,
-                                                                VariableValueProvider* provider) {
+                                                                std::shared_ptr<VariableValueProvider> provider) {
     std::unique_lock<std::recursive_mutex> lock(this->mutex);
     ComponentRegistrationResult result;
     const auto previous_it = this->registrations.find(owner);

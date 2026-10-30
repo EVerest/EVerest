@@ -5,6 +5,7 @@
 
 #include <functional>
 #include <map>
+#include <memory>
 #include <string>
 #include <tuple>
 
@@ -19,7 +20,7 @@ namespace v2 {
 /// \brief What a runtime owner registered, with the values of its variables
 struct OwnerRegistration {
     std::string owner;
-    VariableValueProvider* provider{nullptr};
+    std::shared_ptr<VariableValueProvider> provider;
     DeviceModelMap variables;
     /// \brief The last write issued before this registration: the writes up to it were forwarded to an earlier one
     WriteId registered_after_write{0};
