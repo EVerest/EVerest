@@ -3,8 +3,11 @@
 
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 
+#include <algorithm>
+
 #include <everest/logging.hpp>
 #include <nlohmann/json.hpp>
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/device_model_helpers.hpp>
 #include <ocpp/v2/ocpp_enums.hpp>
 #include <ocpp/v2/utils.hpp>
@@ -2145,6 +2148,99 @@ void clear_slot_in_device_model(DeviceModelVariablesInterface& dm, int32_t slot)
         dm.set_value(cv.component, cv.variable.value(), AttributeEnum::Actual, "", "internal", true);
     }
     EVLOG_debug << "Cleared NetworkConfiguration[" << slot << "] from device model";
+}
+
+std::optional<std::vector<int>> parse_priority(const std::string& value, const bool skip_invalid_tokens) {
+    std::vector<int> slots;
+    for (const auto& token : ocpp::split_string(value, ',')) {
+        try {
+            slots.push_back(std::stoi(token));
+        } catch (const std::exception& e) {
+            EVLOG_warning << (skip_invalid_tokens ? "Stored" : "New")
+                          << " NetworkConfigurationPriority contains non-integer token '" << token << "': " << e.what();
+            if (!skip_invalid_tokens) {
+                return std::nullopt;
+            }
+        }
+    }
+    return slots;
+}
+
+bool priority_only_removes_slots(const std::vector<int>& new_slots, const std::vector<int>& current_slots) {
+    if (new_slots.size() >= current_slots.size()) {
+        return false;
+    }
+    auto current = current_slots.begin();
+    for (const auto slot : new_slots) {
+        current = std::find(current, current_slots.end(), slot);
+        if (current == current_slots.end()) {
+            return false;
+        }
+        ++current;
+    }
+    return true;
+}
+
+std::optional<std::string> validate_profile_content(const int32_t slot, const NetworkConnectionProfile& profile) {
+    const std::string url = profile.ocppCsmsUrl.get();
+    const bool is_wss = url.find("wss://") == 0;
+    const bool is_ws = url.find("ws://") == 0;
+    if (is_wss && profile.securityProfile < 2) {
+        EVLOG_warning << "configurationSlot " << slot << ": wss:// URL requires securityProfile >= 2, got "
+                      << profile.securityProfile;
+        return "InvalidNetworkConf";
+    }
+    if (is_ws && profile.securityProfile >= 2) {
+        EVLOG_warning << "configurationSlot " << slot << ": ws:// URL is not allowed with securityProfile >= 2, got "
+                      << profile.securityProfile;
+        return "InvalidNetworkConf";
+    }
+    return std::nullopt;
+}
+
+std::optional<std::string> validate_priority_write(DeviceModelVariablesInterface& dm, const std::string& new_value,
+                                                   const bool accept_removal_only,
+                                                   const PrioritySlotCheck& check_readable_slot) {
+    const auto slots = parse_priority(new_value, false);
+    if (!slots.has_value()) {
+        return "InvalidNetworkConf";
+    }
+
+    std::vector<int> stored_slots;
+    const auto current_priority =
+        get_optional_value<std::string>(dm, ControllerComponentVariables::NetworkConfigurationPriority);
+    if (current_priority.has_value()) {
+        stored_slots = parse_priority(current_priority.value(), true).value();
+    }
+    if (accept_removal_only && priority_only_removes_slots(slots.value(), stored_slots)) {
+        return std::nullopt;
+    }
+    const std::set<int> current_slots(stored_slots.begin(), stored_slots.end());
+
+    for (const auto slot : slots.value()) {
+        const bool added = current_slots.count(slot) == 0;
+        const auto profile_opt = read_profile_from_device_model(dm, slot);
+
+        if (!profile_opt.has_value()) {
+            if (added) {
+                EVLOG_warning << "Could not find network profile for configurationSlot: " << slot;
+                return "InvalidNetworkConf";
+            }
+            continue;
+        }
+        // B09.FR.34 and errata 2.10: validate content only for slots being activated.
+        if (added) {
+            if (const auto result = validate_profile_content(slot, profile_opt.value()); result.has_value()) {
+                return result;
+            }
+        }
+        if (check_readable_slot) {
+            if (const auto result = check_readable_slot(slot, profile_opt.value()); result.has_value()) {
+                return result;
+            }
+        }
+    }
+    return std::nullopt;
 }
 } // namespace NetworkConfigurationComponentVariables
 

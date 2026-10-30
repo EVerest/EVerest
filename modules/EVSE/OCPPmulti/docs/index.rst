@@ -1061,16 +1061,22 @@ above prepares a spare slot first:
   ``NetworkConfigurationPriority``, are rejected with ``PriorityNetworkConf``.
   Keep at least one slot out of the priority list so there is always a slot you
   can rewrite.
+- Writes to a slot outside the priority list are stored as they are
+  (B09.FR.23), so a complete slot can be switched between ``ws://`` and
+  ``wss://`` in either order. The slot is checked when it is added to
+  ``NetworkConfigurationPriority``.
 - A ``NetworkConfigurationPriority`` write that adds a slot without a complete
   profile, or whose URL scheme does not match its security profile (``ws://``
   needs profile < 2, ``wss://`` needs >= 2), is rejected with
-  ``InvalidNetworkConf``. OCPP 1.6 also rejects a single-variable write that
-  would make a complete slot inconsistent, see below.
+  ``InvalidNetworkConf``. Slots that are already listed are not checked
+  again, so a write that only removes slots passes these checks.
 - In OCPP 2.x, a ``NetworkConfigurationPriority`` write is also rejected with
   ``InvalidNetworkConf`` if a listed slot has a security profile above the
   confirmed one and the certificates it needs are missing: a CSMS root
   certificate for profile 2 or 3, a ChargingStationCertificate for profile 3.
-  In OCPP 2.1, a write that only removes slots is always accepted (B09.FR.20).
+  OCPP 2.1 skips this check for a write that only removes slots (B09.FR.20);
+  OCPP 2.0.1 runs it for every listed slot. OCPP 1.6 skips it; a missing
+  certificate surfaces at connect time through slot failover.
 - Lowering a slot's ``SecurityProfile`` below the confirmed one is rejected
   with ``NoSecurityDowngrade``.
 
@@ -1114,11 +1120,6 @@ Where the protocol versions differ
   listed slot and simply skips incomplete ones. See
   :ref:`Network connection profiles (OCPP 1.6) <handwritten_ocppmulti_network-profiles-ocpp16>`
   for the details.
-- **Slot consistency.** OCPP 1.6 checks URL scheme against security profile on
-  every single-variable write to a complete slot, so the variables must be
-  written in an order that keeps the slot consistent. OCPP 2.x stores writes
-  to a slot outside the priority list as they are (B09.FR.23) and checks the
-  slot when it is added to ``NetworkConfigurationPriority``.
 - **Deprecated key-only writes.** Only in OCPP 1.6 mode, the legacy
   ``SecurityProfile`` and ``AuthorizationKey`` keys can still be written
   (empty component name); they act on the active slot and bypass the validation
