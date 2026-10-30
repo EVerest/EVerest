@@ -1,0 +1,57 @@
+name: Nightly builds
+
+# Ways of building EVerest that take too long to run on every PR. They run
+# nightly, on demand, and on PRs that change them.
+on:
+  schedule:
+    - cron: '43 2 * * *'
+  workflow_dispatch:
+    inputs:
+      runner:
+        description: Which runner to use
+        type: choice
+        default: 'ubuntu-24.04'
+        required: true
+        options:
+          - 'ubuntu-24.04'
+          - 'large-ubuntu-24.04-xxl'
+  pull_request:
+    paths:
+      - .github/workflows/on_schedule_nightly-builds.yaml
+      - .github/workflows/job_build-yocto-esdk.yaml
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+
+
+  setup-env:
+    name: Setup
+    uses: ./.github/workflows/job_setup-env.yml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      ref_everest_ci: v1.6.0
+
+
+  # The eSDK images are not public, so PRs from forks cannot pull them.
+  build-yocto-esdk:
+    name: Yocto eSDK (${{ matrix.release }})
+    needs:
+      - setup-env
+    if: ${{ needs.setup-env.outputs.is_fork != 'true' }}
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      matrix:
+        release: [kirkstone, scarthgap, wrynose]
+    uses: ./.github/workflows/job_build-yocto-esdk.yaml
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      esdk_image: ghcr.io/everest/everest-ci/yocto-esdk:${{ matrix.release }}-qemuarm64-20261020
