@@ -447,6 +447,8 @@ WebsocketConnectionOptions ChargePointImpl::get_ws_connection_options() {
                                                   this->configuration.getIFace(),
                                                   this->configuration.getEnableTLSKeylog(),
                                                   this->configuration.getTLSKeylogFile()};
+    connection_options.max_incoming_message_size =
+        static_cast<std::size_t>(this->configuration.getMaxIncomingMessageSize());
 
     // Read version file and add to connection_options
     fs::path version_file_path = this->share_path.parent_path().parent_path() / "version_information.txt";

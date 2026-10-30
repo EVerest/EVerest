@@ -152,6 +152,7 @@ public:
     bool getVerifyCsmsCommonName() override;
 
     int getMaxMessageSize() override;
+    int getMaxIncomingMessageSize() override;
 
     std::int32_t getMaxCompositeScheduleDuration() override;
     std::int32_t getOcspRequestInterval() override;
@@ -202,6 +203,7 @@ public:
     KeyValue getLogRotationMaximumFileSizeKeyValue() override;
     KeyValue getMaxCompositeScheduleDurationKeyValue() override;
     KeyValue getMaxMessageSizeKeyValue() override;
+    KeyValue getMaxIncomingMessageSizeKeyValue() override;
     KeyValue getOcspRequestIntervalKeyValue() override;
     KeyValue getRetryBackoffRandomRangeKeyValue() override;
     KeyValue getRetryBackoffRepeatTimesKeyValue() override;

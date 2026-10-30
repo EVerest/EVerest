@@ -3,8 +3,11 @@ target_sources(libocpp_unit_tests PRIVATE
     test_database_migration_files.cpp
     test_json_number.cpp
     test_message_queue.cpp
+    test_websocket_receive.cpp
     test_websocket_uri.cpp
 )
+
+target_link_libraries(libocpp_unit_tests PRIVATE OpenSSL::Crypto)
 
 
 set(TEST_UTILS_SOURCES ${LIBOCPP_LIB_PATH}/ocpp/common/utils.cpp)

@@ -792,6 +792,18 @@ KeyValue ChargePointConfiguration::getMaxMessageSizeKeyValue() {
     return kv;
 }
 
+int ChargePointConfiguration::getMaxIncomingMessageSize() {
+    return this->config["Internal"]["MaxIncomingMessageSize"];
+}
+
+KeyValue ChargePointConfiguration::getMaxIncomingMessageSizeKeyValue() {
+    KeyValue kv;
+    kv.key = "MaxIncomingMessageSize";
+    kv.readonly = true;
+    kv.value.emplace(std::to_string(this->getMaxIncomingMessageSize()));
+    return kv;
+}
+
 bool ChargePointConfiguration::getEnableTLSKeylog() {
     return this->config["Internal"]["EnableTLSKeylog"];
 }
@@ -3214,6 +3226,9 @@ std::optional<KeyValue> ChargePointConfiguration::get(const CiString<50>& key) {
     }
     if (key == "MaxMessageSize") {
         return this->getMaxMessageSizeKeyValue();
+    }
+    if (key == "MaxIncomingMessageSize") {
+        return this->getMaxIncomingMessageSizeKeyValue();
     }
     if (key == "QueueAllMessages") {
         return this->getQueueAllMessagesKeyValue();

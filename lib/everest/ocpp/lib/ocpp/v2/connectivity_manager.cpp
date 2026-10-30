@@ -372,6 +372,9 @@ ConnectivityManager::get_ws_connection_options(const std::int32_t configuration_
             this->device_model.get_optional_value<std::string>(ControllerComponentVariables::IFace),
             this->device_model.get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
             this->device_model.get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        connection_options.max_incoming_message_size = static_cast<std::size_t>(
+            this->device_model.get_optional_value<int>(ControllerComponentVariables::MaxIncomingMessageSize)
+                .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE)));
 
         // Read version file and add to connection_options
         fs::path version_file_path = this->share_path.parent_path().parent_path() / "version_information.txt";

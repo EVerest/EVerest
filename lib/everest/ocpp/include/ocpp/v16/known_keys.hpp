@@ -86,6 +86,7 @@ key(Internal, LogRotationDateSuffix) \
 key(Internal, LogRotationMaximumFileCount) \
 key(Internal, LogRotationMaximumFileSize) \
 key(Internal, MaxCompositeScheduleDuration) \
+key(Internal, MaxIncomingMessageSize) \
 key(Internal, MaxMessageSize) \
 key(Internal, MessageQueueSizeThreshold) \
 key(Internal, MessageTypesDiscardForQueueing) \
