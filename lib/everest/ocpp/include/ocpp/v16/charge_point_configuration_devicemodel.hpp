@@ -57,6 +57,7 @@ protected:
     SetResult setInternalWaitForStopTransactionsOnResetTimeout(const std::string& value);
 
     SetResult setInternalAllowOfflineTxForUnknownId(const std::string& value);
+    SetResult setInternalAuthEnabled(const std::string& value);
     SetResult setInternalAuthorizationCacheEnabled(const std::string& value);
     SetResult setInternalAuthorizeRemoteTxRequests(const std::string& value);
     SetResult setInternalBlinkRepeat(const std::string& value);
@@ -159,6 +160,7 @@ public:
     CiString<20> getChargePointModel() override;
     CiString<20> getChargePointVendor() override;
 
+    bool getAuthEnabled() override;
     bool getAuthorizeConnectorZeroOnConnectorOne() override;
     bool getEnableTLSKeylog() override;
     bool getLogMessages() override;

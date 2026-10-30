@@ -389,11 +389,11 @@ inline SetResult set_value_check(check_fn fn, DeviceModelInterface& storage, v16
         } else {
             EVLOG_warning << "set " << v16::keys::to_section_string_view(key) << '[' << v16::keys::convert(key)
                           << "]=" << value << " failed, value not valid";
+            result = SetResult::Rejected;
         }
     } else {
         EVLOG_warning << "set " << v16::keys::to_section_string_view(key) << '[' << v16::keys::convert(key)
                       << "]=" << value << " failed, key doesn't exist";
-        result = SetResult::Rejected;
     }
     return result;
 }
@@ -767,6 +767,11 @@ ChargePointConfigurationDeviceModel::setInternalWaitForStopTransactionsOnResetTi
 ChargePointConfigurationDeviceModel::SetResult
 ChargePointConfigurationDeviceModel::setInternalAllowOfflineTxForUnknownId(const std::string& value) {
     return set_value_check(isBool, *storage, keys::valid_keys::AllowOfflineTxForUnknownId, value);
+}
+
+ChargePointConfigurationDeviceModel::SetResult
+ChargePointConfigurationDeviceModel::setInternalAuthEnabled(const std::string& value) {
+    return set_value_check(isBool, *storage, keys::valid_keys::AuthEnabled, value);
 }
 
 ChargePointConfigurationDeviceModel::SetResult
@@ -1871,6 +1876,10 @@ CiString<20> ChargePointConfigurationDeviceModel::getChargePointModel() {
 
 CiString<20> ChargePointConfigurationDeviceModel::getChargePointVendor() {
     return get_value<std::string>(*storage, keys::valid_keys::ChargePointVendor);
+}
+
+bool ChargePointConfigurationDeviceModel::getAuthEnabled() {
+    return get_optional<bool>(*storage, keys::valid_keys::AuthEnabled).value_or(true);
 }
 
 bool ChargePointConfigurationDeviceModel::getAuthorizeConnectorZeroOnConnectorOne() {
@@ -3663,6 +3672,9 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
             break;
         case keys::valid_keys::WaitForStopTransactionsOnResetTimeout:
             result = convert(setInternalWaitForStopTransactionsOnResetTimeout(value_str));
+            break;
+        case keys::valid_keys::AuthEnabled:
+            result = convert(setInternalAuthEnabled(value_str));
             break;
         case keys::valid_keys::AuthorizationCacheEnabled:
             result = convert(setInternalAuthorizationCacheEnabled(value_str));

@@ -43,7 +43,9 @@
 
 #include <everest/ocpp_module_common/device_model/everest_device_model_storage.hpp>
 #include <everest/ocpp_module_common/error_handling.hpp>
+#include <everest/ocpp_module_common/no_authorization.hpp>
 #include <everest/ocpp_module_common/transaction_handler.hpp>
+#include <everest/util/async/thread_pool.hpp>
 
 #include <future>
 #include <map>
@@ -116,6 +118,7 @@ struct GenericOcppInterface {
 struct ConfigInterface {
     virtual ~ConfigInterface() = default;
 
+    [[nodiscard]] virtual bool getAuthEnabled() const = 0;
     [[nodiscard]] virtual std::string getChargePointConfigPath() const = 0;
     [[nodiscard]] virtual int getCompositeScheduleIntervalS() const = 0;
     [[nodiscard]] virtual std::string getCoreDatabasePath() const = 0;
@@ -173,6 +176,8 @@ private:
     std::atomic<GenericChargePointInterface::modes_t> mv_mode{GenericChargePointInterface::modes_t::prefer_ocpp_2};
     std::atomic<ocpp::OcppProtocolVersion> mv_ocpp_protocol_version{ocpp::OcppProtocolVersion::Unknown};
     std::atomic_bool mv_started{false};
+    // set while OCPP is stopped by the ocpp_generic stop command
+    std::atomic_bool mv_ocpp_stopped{false};
     std::atomic_bool mv_shutting_down{false};
 
     everest::lib::util::monitor<std::map<std::int32_t, std::string>> mv_evse_evcc_id;
@@ -194,6 +199,16 @@ private:
 
     // these need to be thread safe - used by libocpp and this object
     std::shared_ptr<module::device_model::EverestDeviceModelStorage> m_everest_device_model_storage;
+    ocpp_module_common::NoAuthorizationAuthorizer m_no_authorization_authorizer{
+        [this](std::int32_t evse_id) { publish_no_authorization_token(evse_id); }};
+
+    struct AuthEnabledMirror {
+        bool ready{false};
+        // AuthCtrlr.Enabled as last mirrored with the module parameter AuthEnabled; unset if AuthCtrlr.Enabled is not
+        // supported
+        std::optional<bool> value;
+    };
+    everest::lib::util::monitor<AuthEnabledMirror> m_auth_enabled_mirror;
 
     // needs to be thread safe - used by v2_chargepoint and this object
     std::unique_ptr<module::TransactionHandler> m_transaction_handler;
@@ -241,6 +256,18 @@ private:
     // Queue the event if OCPP hasn't started yet; returns true when it was queued.
     bool enqueue_if_not_started(std::int32_t evse_id, const Event& event);
 
+    // Writes the device model on its own thread: EverestDeviceModelStorage holds its lock while it waits for the
+    // config service, which meanwhile calls on_auth_enabled_config_changed() on the MQTT thread
+    everest::lib::util::monitor<std::unique_ptr<everest::lib::util::thread_pool>> m_device_model_writer{
+        std::make_unique<everest::lib::util::thread_pool>(1)};
+    /// \brief Writes the mirrored value to both AuthCtrlr.Enabled and the module parameter AuthEnabled
+    void sync_auth_enabled();
+    /// \returns whether the write of \p data was committed; logs the failure otherwise
+    bool write_device_model_variable(const ocpp::v2::SetVariableData& data);
+    /// \returns AuthCtrlr.Enabled, or std::nullopt if the device model does not provide it
+    std::optional<bool> read_auth_ctrlr_enabled();
+    void stop_device_model_writer();
+
 public:
     using ConfigServiceClient = std::shared_ptr<Everest::config::ConfigServiceClient>;
 
@@ -281,6 +308,9 @@ public:
 
     void init();
     void ready(const ConfigServiceClient& client);
+
+    /// \brief Applies a change of the module parameter AuthEnabled, which mirrors AuthCtrlr.Enabled
+    Everest::config::ConfigChangeResult on_auth_enabled_config_changed(bool auth_enabled);
 
     // Gate our own callers before GenericChargePoint::shutdown() so they avoid calling into the
     // charge point: command handlers return failure responses where applicable or become no-ops,
@@ -325,6 +355,8 @@ protected:
     [[nodiscard]] auto& grid_support_state() {
         return m_grid_support_state;
     }
+    /// \brief Returns once the device model writes queued so far are done
+    void wait_for_device_model_writes();
 
     EventInfo convert_error(const Everest::error::Error& error);
 
@@ -398,6 +430,7 @@ protected:
     void cb_powermeter_public_key_ocmf(std::int32_t evse_id, const std::string& public_key) override;
     void cb_provide_token(const IdToken& id_token) override;
     void cb_ready(std::int32_t evse_id, bool ready) override;
+    void publish_no_authorization_token(std::int32_t evse_id);
     void cb_reservation_update(types::reservation::ReservationUpdateStatus status) override;
     ocpp::v2::ReserveNowStatusEnum cb_reserve_now(const ocpp::v2::ReserveNowRequest& request) override;
     void cb_reset(const std::optional<const std::int32_t>& evse_id, ResetType type) override;
@@ -483,6 +516,8 @@ protected:
     /// controller has a persisted value. Read from the device model so a CSMS-written Enabled survives a
     /// reboot and a live capability re-report.
     std::optional<bool> read_persisted_der_enabled(std::int32_t evse_id);
+    // the Actual value of a boolean device model variable, if it is set
+    std::optional<bool> read_actual_bool(const ocpp::v2::Component& component, const ocpp::v2::Variable& variable);
 
     /// \brief Flip capabilities live and empty the pre-construction buffered DER capabilities into libocpp
     /// at ready(). Only meaningful when a grid_support consumer is connected.

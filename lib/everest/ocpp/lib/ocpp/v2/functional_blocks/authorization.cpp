@@ -146,6 +146,11 @@ bool ocpp::v2::Authorization::is_auth_cache_ctrlr_enabled() {
         .value_or(false);
 }
 
+bool ocpp::v2::Authorization::is_auth_ctrlr_enabled() {
+    return this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::AuthCtrlrEnabled)
+        .value_or(true);
+}
+
 void ocpp::v2::Authorization::authorization_cache_insert_entry(const std::string& id_token_hash,
                                                                const IdTokenInfo& id_token_info) {
     this->context.database_handler.authorization_cache_insert_entry(id_token_hash, id_token_info);
@@ -170,8 +175,7 @@ ocpp::v2::Authorization::validate_token(const IdToken id_token, const std::optio
 
     // C03.FR.01 && C05.FR.01: We SHALL NOT send an authorize reqeust for IdTokenType Central
     if (id_token.type == IdTokenEnumStringType::Central or id_token.type == IdTokenEnumStringType::NoAuthorization or
-        !this->context.device_model.get_optional_value<bool>(ControllerComponentVariables::AuthCtrlrEnabled)
-             .value_or(false)) {
+        not this->is_auth_ctrlr_enabled()) {
         response.idTokenInfo.status = AuthorizationStatusEnum::Accepted;
         return response;
     }

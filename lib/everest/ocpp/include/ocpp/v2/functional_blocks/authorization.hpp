@@ -27,6 +27,8 @@ public:
     ///
     virtual void update_authorization_cache_size() = 0;
     virtual bool is_auth_cache_ctrlr_enabled() = 0;
+    /// \brief AuthCtrlr.Enabled; a missing value counts as enabled
+    virtual bool is_auth_ctrlr_enabled() = 0;
     virtual void authorization_cache_insert_entry(const std::string& id_token_hash,
                                                   const IdTokenInfo& id_token_info) = 0;
     virtual std::optional<AuthorizationCacheEntry> authorization_cache_get_entry(const std::string& id_token_hash) = 0;
@@ -62,6 +64,7 @@ public:
     void trigger_authorization_cache_cleanup() override;
     void update_authorization_cache_size() override;
     bool is_auth_cache_ctrlr_enabled() override;
+    bool is_auth_ctrlr_enabled() override;
     void authorization_cache_insert_entry(const std::string& id_token_hash, const IdTokenInfo& id_token_info) override;
     std::optional<AuthorizationCacheEntry> authorization_cache_get_entry(const std::string& id_token_hash) override;
     void authorization_cache_delete_entry(const std::string& id_token_hash) override;

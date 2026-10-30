@@ -9,7 +9,10 @@
 #include <map>
 #include <memory>
 #include <mutex>
+#include <optional>
 #include <set>
+#include <tuple>
+#include <vector>
 
 #include <utils/types.hpp>
 
@@ -33,8 +36,15 @@ inline bool operator<(const IdToken& lhs, const IdToken& rhs) {
     return lhs.value < rhs.value;
 }
 
+/// \brief NoAuthorization tokens all share one value and are told apart by the EVSEs they reference
+inline const std::optional<std::vector<int32_t>>& no_authorization_connectors(const ProvidedIdToken& token) {
+    static const std::optional<std::vector<int32_t>> none;
+    return token.id_token.type == IdTokenType::NoAuthorization ? token.connectors : none;
+}
+
 inline bool operator<(const ProvidedIdToken& lhs, const ProvidedIdToken& rhs) {
-    return lhs.id_token < rhs.id_token;
+    return std::tie(lhs.id_token.value, no_authorization_connectors(lhs)) <
+           std::tie(rhs.id_token.value, no_authorization_connectors(rhs));
 }
 
 } // namespace authorization

@@ -279,6 +279,10 @@ std::optional<CiString<25>> ChargePointConfiguration::getMeterType() {
     }
     return meter_type;
 }
+bool ChargePointConfiguration::getAuthEnabled() {
+    return true;
+}
+
 bool ChargePointConfiguration::getAuthorizeConnectorZeroOnConnectorOne() {
     if (this->getNumberOfConnectors() == 1) {
         return this->config["Internal"]["AuthorizeConnectorZeroOnConnectorOne"];

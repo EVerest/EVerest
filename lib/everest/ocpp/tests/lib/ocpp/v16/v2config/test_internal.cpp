@@ -305,6 +305,29 @@ TEST_P(Configuration, ChargePointVendor) {
     EXPECT_TRUE(kv.readonly);
 }
 
+TEST_P(Configuration, AuthEnabled) {
+    using ConfigurationStatus = ocpp::v16::ConfigurationStatus;
+    ASSERT_NE(get(), nullptr);
+    EXPECT_TRUE(get()->getAuthEnabled());
+    if (GetParam() == "json") {
+        // only the device model backend stores AuthEnabled
+        return;
+    }
+
+    device_model->set("Internal", "AuthEnabled", "true");
+    auto kv = get()->get("AuthEnabled");
+    ASSERT_TRUE(kv);
+    EXPECT_EQ(kv.value().value, "true");
+    EXPECT_FALSE(kv.value().readonly);
+
+    EXPECT_EQ(get()->set("AuthEnabled", "false"), ConfigurationStatus::Accepted);
+    EXPECT_FALSE(get()->getAuthEnabled());
+    EXPECT_EQ(device_model->get("AuthCtrlr", "Enabled"), "false");
+
+    EXPECT_EQ(get()->set("AuthEnabled", "NotABool"), ConfigurationStatus::Rejected);
+    EXPECT_FALSE(get()->getAuthEnabled());
+}
+
 TEST_P(Configuration, AuthorizeConnectorZeroOnConnectorOne) {
     ASSERT_NE(get(), nullptr);
     // initial values are from the JSON unit test config files

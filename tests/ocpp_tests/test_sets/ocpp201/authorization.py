@@ -2,6 +2,7 @@
 # Copyright Pionix GmbH and Contributors to EVerest
 
 # fmt: off
+import asyncio
 import pytest
 from datetime import datetime
 import logging
@@ -13,7 +14,7 @@ from everest.testing.ocpp_utils.charge_point_utils import wait_for_and_validate,
 from everest.testing.ocpp_utils.fixtures import *
 
 from everest_test_utils import * # Needs to be before the datatypes below since it overrides the v201 Action enum with the v16 one
-from ocpp.v201.enums import (Action, IdTokenEnumType as IdTokenTypeEnum, SetVariableStatusEnumType, ClearCacheStatusEnumType, ConnectorStatusEnumType,GetVariableStatusEnumType)
+from ocpp.v201.enums import (Action, AttributeEnumType, IdTokenEnumType as IdTokenTypeEnum, SetVariableStatusEnumType, ClearCacheStatusEnumType, ConnectorStatusEnumType,GetVariableStatusEnumType)
 from ocpp.v201.datatypes import *
 from ocpp.v201 import call as call201
 from ocpp.v201 import call_result as call_result201
@@ -1096,4 +1097,185 @@ async def test_c15(
     test_controller.swipe(id_tokenC15.id_token)
 
     # unplug
+    test_controller.plug_out()
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+async def test_auth_ctrlr_disabled_authorizes_plug_in(
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    AuthCtrlr.Enabled (AuthEnabled) false: an EV plug-in is authorised without an AuthorizeRequest, the
+    TransactionEventRequest carries an empty idToken of type NoAuthorization
+    """
+    r: call_result201.SetVariables = await charge_point_v201.set_config_variables_req(
+        "AuthCtrlr", "Enabled", "false"
+    )
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_utility.forbidden_actions.append("Authorize")
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"idToken": "", "type": "NoAuthorization"}},
+    )
+
+    test_utility.messages.clear()
+    test_controller.plug_out()
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Ended"}
+    )
+    # the car simulator rejects the next plug-in until the unplug is done
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "StatusNotification", {"connectorStatus": "Available"}
+    )
+
+    r = await charge_point_v201.set_config_variables_req("AuthCtrlr", "Enabled", "true")
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_utility.messages.clear()
+    test_controller.plug_in()
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "StatusNotification", {"connectorStatus": "Occupied"}
+    )
+
+    assert not await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"type": "NoAuthorization"}},
+        timeout=5,
+    )
+    test_controller.plug_out()
+
+
+async def get_auth_enabled_parameter(charge_point_v201: ChargePoint201):
+    r: call_result201.GetVariables = await charge_point_v201.call(
+        call201.GetVariables(
+            [
+                GetVariableDataType(
+                    component=ComponentType(name="OCPPmulti", instance="ocpp"),
+                    variable=VariableType(name="AuthEnabled"),
+                )
+            ]
+        )
+    )
+    result = GetVariableResultType(**r.get_variable_result[0])
+    assert result.attribute_status == GetVariableStatusEnumType.accepted
+    return result.attribute_value
+
+
+async def wait_for_auth_enabled(charge_point_v201: ChargePoint201, component, value, timeout=5):
+    deadline = asyncio.get_running_loop().time() + timeout
+    while True:
+        if component == "AuthCtrlr":
+            r = await charge_point_v201.get_config_variables_req("AuthCtrlr", "Enabled")
+            current = GetVariableResultType(**r.get_variable_result[0]).attribute_value
+        else:
+            current = await get_auth_enabled_parameter(charge_point_v201)
+        if current == value or asyncio.get_running_loop().time() > deadline:
+            return current
+        await asyncio.sleep(0.2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+async def test_auth_enabled_parameter_mirrors_auth_ctrlr_enabled(
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    The module parameter AuthEnabled, which the CSMS sees as variable AuthEnabled of the component OCPPmulti,
+    mirrors AuthCtrlr.Enabled in both directions
+    """
+    r: call_result201.SetVariables = await charge_point_v201.call(
+        call201.SetVariables(
+            [
+                SetVariableDataType(
+                    attribute_value="false",
+                    attribute_type=AttributeEnumType.actual,
+                    component=ComponentType(name="OCPPmulti", instance="ocpp"),
+                    variable=VariableType(name="AuthEnabled"),
+                )
+            ]
+        )
+    )
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+    assert await wait_for_auth_enabled(charge_point_v201, "AuthCtrlr", "false") == "false"
+
+    test_utility.forbidden_actions.append("Authorize")
+    test_controller.plug_in()
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"idToken": "", "type": "NoAuthorization"}},
+    )
+    test_controller.plug_out()
+    assert await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Ended"}
+    )
+
+    r = await charge_point_v201.set_config_variables_req("AuthCtrlr", "Enabled", "true")
+    set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+    assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+    assert await wait_for_auth_enabled(charge_point_v201, "OCPPmulti", "true") == "true"
+
+
+@pytest.mark.asyncio
+@pytest.mark.ocpp_version("ocpp2.0.1")
+@pytest.mark.ocpp_multi_only
+async def test_auth_ctrlr_disabled_keeps_rejected_free_session(
+    central_system_v201: CentralSystem,
+    charge_point_v201: ChargePoint201,
+    test_controller: TestController,
+    test_utility: TestUtility,
+):
+    """
+    AuthCtrlr.Enabled false: a TransactionEventResponse that does not accept the NoAuthorization idToken neither stops
+    nor pauses the transaction, even with StopTxOnInvalidId
+    """
+
+    @on(Action.transaction_event)
+    def on_transaction_event(**kwargs):
+        msg = call201.TransactionEvent(**kwargs)
+        if msg.id_token is not None:
+            return call_result201.TransactionEvent(id_token_info={"status": "Invalid"})
+        return call_result201.TransactionEvent()
+
+    setattr(charge_point_v201, "on_transaction_event", on_transaction_event)
+    central_system_v201.chargepoint.route_map = create_route_map(central_system_v201.chargepoint)
+
+    for component, variable, value in [("TxCtrlr", "StopTxOnInvalidId", "true"), ("AuthCtrlr", "Enabled", "false")]:
+        r = await charge_point_v201.set_config_variables_req(component, variable, value)
+        set_variable_result = SetVariableResultType(**r.set_variable_result[0])
+        assert set_variable_result.attribute_status == SetVariableStatusEnumType.accepted
+
+    test_controller.plug_in()
+
+    assert await wait_for_and_validate(
+        test_utility,
+        charge_point_v201,
+        "TransactionEvent",
+        {"idToken": {"idToken": "", "type": "NoAuthorization"}},
+    )
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"triggerReason": "Deauthorized"}, timeout=5
+    )
+    assert not await wait_for_and_validate(
+        test_utility, charge_point_v201, "TransactionEvent", {"eventType": "Ended"}, timeout=1
+    )
+
     test_controller.plug_out()

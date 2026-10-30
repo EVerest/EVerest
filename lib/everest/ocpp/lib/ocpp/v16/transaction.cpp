@@ -137,6 +137,14 @@ bool Transaction::get_has_signed_meter_values() {
     return this->has_signed_meter_values;
 }
 
+void Transaction::set_id_tag_unvalidated() {
+    this->id_tag_unvalidated = true;
+}
+
+bool Transaction::is_id_tag_unvalidated() const {
+    return this->id_tag_unvalidated;
+}
+
 std::shared_ptr<StampedEnergyWh> Transaction::get_stop_energy_wh() {
     return this->stop_energy_wh;
 }

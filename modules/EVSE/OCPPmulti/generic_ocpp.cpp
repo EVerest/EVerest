@@ -25,6 +25,9 @@ namespace fs = std::filesystem;
 namespace {
 
 // OCPP 2.0.1 specific configuration variable names
+constexpr const auto AUTH_CTRLR_ENABLED_VAR_NAME = "Enabled";
+// module parameter that mirrors AuthCtrlr.Enabled
+constexpr const auto AUTH_ENABLED_PARAMETER_NAME = "AuthEnabled";
 constexpr const auto CENTRAL_CONTRACT_VALIDATION_ALLOWED_VAR_NAME = "CentralContractValidationAllowed";
 constexpr const auto CONTRACT_CERTIFICATE_INSTALLATION_ENABLED_VAR_NAME = "ContractCertificateInstallationEnabled";
 constexpr const auto EV_CONNECTION_TIMEOUT_VAR_NAME = "EVConnectionTimeOut";
@@ -36,6 +39,11 @@ constexpr const auto TX_STOP_POINT_VAR_NAME = "TxStopPoint";
 
 constexpr std::int32_t LOWEST_SETPOINT_PRIORITY = 1000;
 constexpr std::int32_t HIGHEST_SETPOINT_PRIORITY = 0;
+
+// like libocpp, an empty AuthCtrlr.Enabled counts as enabled
+bool auth_enabled_from_value(const std::string& value) {
+    return value.empty() or ocpp::conversions::string_to_bool(value);
+}
 
 std::optional<ocpp::v2::IdToken> get_authorised_id_token(const types::evse_manager::SessionEvent& session_event) {
     using namespace module::conversions;
@@ -241,6 +249,7 @@ bool GenericOcpp::handle_stop() {
         std::lock_guard lock(m_chargepoint_state_mutex);
         charging_schedules_timer_stop();
         mv_charge_point.stop();
+        mv_ocpp_stopped = true;
         result = true;
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle stop command";
@@ -254,9 +263,17 @@ bool GenericOcpp::handle_restart() {
 
     bool result{false};
     if (mv_started.load()) {
-        std::lock_guard lock(m_chargepoint_state_mutex);
-        charging_schedules_timer_start();
-        result = mv_charge_point.restart();
+        {
+            std::lock_guard lock(m_chargepoint_state_mutex);
+            charging_schedules_timer_start();
+            result = mv_charge_point.restart();
+            if (result) {
+                mv_ocpp_stopped = false;
+            }
+        }
+        if (result) {
+            m_no_authorization_authorizer.retry();
+        }
     } else {
         EVLOG_warning << "ChargePoint not initialized, cannot handle restart command";
     }
@@ -826,6 +843,24 @@ bool GenericOcpp::enqueue_if_not_started(std::int32_t evse_id, const Event& even
 }
 
 void GenericOcpp::ready_module_configuration() {
+    const auto auth_ctrlr_enabled = read_auth_ctrlr_enabled();
+    const bool auth_enabled_supported = auth_ctrlr_enabled.has_value();
+    // like libocpp, a missing value counts as enabled
+    const bool auth_enabled = auth_ctrlr_enabled.value_or(true);
+    m_no_authorization_authorizer.set_auth_enabled(auth_enabled);
+    {
+        auto mirror = m_auth_enabled_mirror.handle();
+        mirror->ready = true;
+        mirror->value = auth_ctrlr_enabled;
+    }
+    // the device model is the source of truth
+    if (auth_enabled_supported and mv_config.getAuthEnabled() != auth_enabled) {
+        sync_auth_enabled();
+    } else if (not auth_enabled_supported and not mv_config.getAuthEnabled()) {
+        EVLOG_warning << "AuthEnabled is false, but the device model does not provide AuthCtrlr.Enabled, so "
+                         "authorisation stays enabled";
+    }
+
     const auto ev_connection_timeout = mv_charge_point.get_ev_connection_timeout();
     if (ev_connection_timeout) {
         mv_requires.auth.call_set_connection_timeout(ev_connection_timeout.value());
@@ -1484,6 +1519,14 @@ void GenericOcpp::cb_ready(std::int32_t evse_id, bool ready) {
     }
 }
 
+void GenericOcpp::publish_no_authorization_token(std::int32_t evse_id) {
+    if (mv_ocpp_stopped or mv_shutting_down) {
+        return;
+    }
+    mv_provides.auth_provider.publish_provided_token(ocpp_module_common::make_no_authorization_token(
+        evse_id, ocpp_2_selected() ? "" : ocpp_module_common::NO_AUTHORIZATION_ID_TAG_V16));
+}
+
 void GenericOcpp::cb_provide_token(const IdToken& id_token) {
     using namespace module::conversions;
 
@@ -1643,6 +1686,7 @@ void GenericOcpp::cb_service_renegotiation_supported(std::int32_t extensions_id,
 }
 
 void GenericOcpp::cb_session_event(std::int32_t evse_id, types::evse_manager::SessionEvent session_event) {
+    m_no_authorization_authorizer.on_session_event(evse_id, session_event);
     if (session_event.event == types::evse_manager::SessionEventEnum::SessionResumed) {
         // collect resumed session ids so that start() can inform the charge point that these
         // transactions shall not be stopped; the event itself is still queued/processed since
@@ -1916,7 +1960,24 @@ void GenericOcpp::cb_variable_set(const ocpp::v2::SetVariableData& set_variable_
             }
         }
     } else if (component == ControllerComponents::AuthCtrlr) {
-        if (name == MASTER_PASS_GROUP_ID_VAR_NAME) {
+        if (name == AUTH_CTRLR_ENABLED_VAR_NAME) {
+            if (set_variable_data.attributeType.value_or(ocpp::v2::AttributeEnum::Actual) ==
+                ocpp::v2::AttributeEnum::Actual) {
+                const auto auth_enabled = auth_enabled_from_value(set_variable_data.attributeValue.get());
+                m_no_authorization_authorizer.set_auth_enabled(auth_enabled);
+                bool mirror_changed{false};
+                {
+                    auto mirror = m_auth_enabled_mirror.handle();
+                    if (mirror->value.has_value() and mirror->value.value() != auth_enabled) {
+                        mirror->value = auth_enabled;
+                        mirror_changed = true;
+                    }
+                }
+                if (mirror_changed) {
+                    sync_auth_enabled();
+                }
+            }
+        } else if (name == MASTER_PASS_GROUP_ID_VAR_NAME) {
             mv_requires.auth.call_set_master_pass_group_id(set_variable_data.attributeValue.get());
         }
     } else if (component == ControllerComponents::ISO15118Ctrlr) {
@@ -2055,12 +2116,128 @@ void GenericOcpp::shutdown() {
     // Unblock any ConnectivityManager thread waiting on a pending configure_network future.
     drain_pending_network_config_requests();
 
-    // the reset work uses the charge point, which the owner tears down after this
+    // the reset work and the device model writes use the charge point, which the owner tears down after this
+    stop_device_model_writer();
     join_reset_thread();
 }
 
 GenericOcpp::~GenericOcpp() {
+    stop_device_model_writer();
     join_reset_thread();
+}
+
+Everest::config::ConfigChangeResult GenericOcpp::on_auth_enabled_config_changed(bool auth_enabled) {
+    using Everest::config::ConfigChangeResult;
+    {
+        auto mirror = m_auth_enabled_mirror.handle();
+        if (not mirror->ready or mv_shutting_down) {
+            return ConfigChangeResult::Rejected("OCPP is not running");
+        }
+        if (not mirror->value.has_value()) {
+            return ConfigChangeResult::Rejected(
+                "AuthCtrlr.Enabled (AuthEnabled) is not supported by the configuration");
+        }
+        if (mirror->value.value() == auth_enabled) {
+            return ConfigChangeResult::Accepted();
+        }
+        mirror->value = auth_enabled;
+    }
+    // free charging switches in cb_variable_set() once AuthCtrlr.Enabled is written, so libocpp already treats a
+    // transaction that the free token starts as unvalidated
+    sync_auth_enabled();
+    return ConfigChangeResult::Accepted();
+}
+
+void GenericOcpp::sync_auth_enabled() {
+    auto writer = m_device_model_writer.handle();
+    if (not *writer) {
+        return;
+    }
+    (*writer)->run([this]() {
+        if (mv_shutting_down) {
+            return;
+        }
+        // the value at the time of the write, not of the request: with requests from both sides queued, writing the
+        // values they carried would make each write undo the other one and trigger the next
+        auto auth_enabled = m_auth_enabled_mirror.handle()->value;
+        if (not auth_enabled.has_value()) {
+            return;
+        }
+
+        ocpp::v2::SetVariableData auth_ctrlr_enabled;
+        auth_ctrlr_enabled.attributeValue = ocpp::conversions::bool_to_string(auth_enabled.value());
+        auth_ctrlr_enabled.attributeType = ocpp::v2::AttributeEnum::Actual;
+        auth_ctrlr_enabled.component = {ocpp::v2::ControllerComponents::AuthCtrlr};
+        auth_ctrlr_enabled.variable = {AUTH_CTRLR_ENABLED_VAR_NAME};
+        if (not write_device_model_variable(auth_ctrlr_enabled)) {
+            // AuthCtrlr.Enabled, the source of truth, keeps its value, so the parameter takes it back
+            auth_enabled = read_auth_ctrlr_enabled();
+            if (not auth_enabled.has_value()) {
+                return;
+            }
+            m_auth_enabled_mirror.handle()->value = auth_enabled;
+        }
+
+        // also refreshes the copy that EverestDeviceModelStorage reports to the CSMS, as the variable of the
+        // component named after the module
+        ocpp::v2::SetVariableData auth_enabled_parameter;
+        auth_enabled_parameter.attributeValue = ocpp::conversions::bool_to_string(auth_enabled.value());
+        auth_enabled_parameter.attributeType = ocpp::v2::AttributeEnum::Actual;
+        auth_enabled_parameter.component.name = mv_info.name;
+        auth_enabled_parameter.component.instance = mv_info.id;
+        auth_enabled_parameter.variable.name = AUTH_ENABLED_PARAMETER_NAME;
+        write_device_model_variable(auth_enabled_parameter);
+    });
+}
+
+bool GenericOcpp::write_device_model_variable(const ocpp::v2::SetVariableData& data) {
+    const auto name = data.component.name.get() + "." + data.variable.name.get();
+    try {
+        const auto outcomes = mv_charge_point.set_variables({data}, "internal");
+        const auto status =
+            outcomes.empty() ? ocpp::v2::SetVariableStatusEnum::Rejected : outcomes.front().result.attributeStatus;
+        if (status == ocpp::v2::SetVariableStatusEnum::Accepted or
+            status == ocpp::v2::SetVariableStatusEnum::RebootRequired) {
+            return true;
+        }
+        EVLOG_error << "Could not set " << name << ": "
+                    << ocpp::v2::conversions::set_variable_status_enum_to_string(status);
+    } catch (const std::exception& e) {
+        // the writer thread pool would discard the exception silently
+        EVLOG_error << "Could not set " << name << ": " << e.what();
+    }
+    return false;
+}
+
+std::optional<bool> GenericOcpp::read_auth_ctrlr_enabled() {
+    ocpp::v2::GetVariableData data;
+    data.component = {ocpp::v2::ControllerComponents::AuthCtrlr};
+    data.variable = {AUTH_CTRLR_ENABLED_VAR_NAME};
+    data.attributeType = ocpp::v2::AttributeEnum::Actual;
+    const auto results = mv_charge_point.get_variables({data});
+    if (results.empty() or results.front().attributeStatus != ocpp::v2::GetVariableStatusEnum::Accepted) {
+        return std::nullopt;
+    }
+    // like libocpp, a missing value counts as enabled
+    return not results.front().attributeValue.has_value() or
+           auth_enabled_from_value(results.front().attributeValue->get());
+}
+
+void GenericOcpp::stop_device_model_writer() {
+    // destroyed outside the lock: a running write may request another one through cb_variable_set()
+    const auto writer = std::move(*m_device_model_writer.handle());
+}
+
+void GenericOcpp::wait_for_device_model_writes() {
+    std::future<void> done;
+    {
+        auto writer = m_device_model_writer.handle();
+        if (not *writer) {
+            return;
+        }
+        done = (**writer)([] {});
+    }
+    done.wait();
 }
 
 void GenericOcpp::join_reset_thread() {
@@ -2209,15 +2386,23 @@ std::optional<bool> GenericOcpp::read_persisted_der_enabled(std::int32_t evse_id
          {ocpp::v2::DERComponentVariables::get_ac_component_variable(evse_id, ocpp::v2::DERComponentVariables::Enabled),
           ocpp::v2::DERComponentVariables::get_dc_component_variable(evse_id,
                                                                      ocpp::v2::DERComponentVariables::Enabled)}) {
-        ocpp::v2::GetVariableData data;
-        data.component = component_variable.component;
-        data.variable = component_variable.variable.value();
-        data.attributeType = ocpp::v2::AttributeEnum::Actual;
-        const auto results = mv_charge_point.get_variables({data});
-        if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
-            results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
-            return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
+        if (const auto enabled = read_actual_bool(component_variable.component, component_variable.variable.value())) {
+            return enabled;
         }
+    }
+    return std::nullopt;
+}
+
+std::optional<bool> GenericOcpp::read_actual_bool(const ocpp::v2::Component& component,
+                                                  const ocpp::v2::Variable& variable) {
+    ocpp::v2::GetVariableData data;
+    data.component = component;
+    data.variable = variable;
+    data.attributeType = ocpp::v2::AttributeEnum::Actual;
+    const auto results = mv_charge_point.get_variables({data});
+    if (not results.empty() and results.front().attributeStatus == ocpp::v2::GetVariableStatusEnum::Accepted and
+        results.front().attributeValue.has_value() and not results.front().attributeValue->get().empty()) {
+        return ocpp::conversions::string_to_bool(results.front().attributeValue.value().get());
     }
     return std::nullopt;
 }

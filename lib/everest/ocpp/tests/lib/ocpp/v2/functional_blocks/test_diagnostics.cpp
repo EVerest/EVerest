@@ -36,6 +36,7 @@ public:
     MOCK_METHOD(void, trigger_authorization_cache_cleanup, (), (override));
     MOCK_METHOD(void, update_authorization_cache_size, (), (override));
     MOCK_METHOD(bool, is_auth_cache_ctrlr_enabled, (), (override));
+    MOCK_METHOD(bool, is_auth_ctrlr_enabled, (), (override));
     MOCK_METHOD(void, authorization_cache_insert_entry,
                 (const std::string& id_token_hash, const IdTokenInfo& id_token_info), (override));
     MOCK_METHOD(std::optional<AuthorizationCacheEntry>, authorization_cache_get_entry,
