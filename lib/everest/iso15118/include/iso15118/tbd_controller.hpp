@@ -56,6 +56,9 @@ struct TbdConfig {
 // TbdController is single-threaded. Exactly one driver may run at a time: either loop() or start_session(), driven from
 // a single thread. They must never run concurrently - they share the poll manager and session state, which are not
 // thread-safe. Sequential reuse (one driver returns, then the other is called) is allowed.
+//
+// The network interface is not touched until set_interface_present(true): the owner supervises the device and
+// reports it, so it may be absent at construction and may come and go while the loop runs.
 class TbdController {
 public:
     // Creates the connection for sessions when the SDP server is disabled.
@@ -123,6 +126,12 @@ public:
 
     void set_dlink_ready(bool ready);
 
+    // Whether the configured interface exists, as seen by the owner's device supervision. Thread-safe; the loop
+    // applies it: on present it opens the SDP server on the device, on absent it closes the SDP server and the
+    // session (DLINK_TERMINATE, or DLINK_ERROR while the link was ready without a session). Every call counts as
+    // an edge, so a device replaced between two ticks is released and bound again.
+    void set_interface_present(bool present);
+
     void update_supported_der_functions(iec::DERControlName der_control, const iec::DERControlFunction& function);
     void update_unsupported_der_functions(iec::DERControlName der_control);
 
@@ -139,6 +148,7 @@ public:
 
 private:
     io::PollManager poll_manager;
+    // Loop thread only: opened by bind_interface(), closed by release_interface().
     std::unique_ptr<io::SdpServer> sdp_server;
 
     // Guards the session pointer. Only the controller loop thread creates, resets and closes the
@@ -159,6 +169,14 @@ private:
 
     // callbacks for sdp server
     void handle_sdp_server_input();
+
+    // Applies a pending set_interface_present() on the loop thread.
+    void apply_interface_state();
+    // Resolves the configured interface and opens the SDP server on it.
+    void bind_interface();
+    // Closes the SDP server and the session; the interface is gone or was replaced.
+    void release_interface();
+    void create_session_without_sdp();
 
     // The endpoint announced for the current session, so a repeated SDP request can be answered again
     // until the EV connects. The response is unicast: if the EV does not answer neighbour discovery in
@@ -185,7 +203,16 @@ private:
 
     everest::lib::util::monitor<session::EvseSetupConfig> evse_setup;
 
+    // Loop thread only. interface_name is the resolved name ("auto" replaced) while interface_bound.
     std::string interface_name;
+    bool interface_bound{false};
+    // Without an SDP server the listening endpoint is opened on every tick until it succeeds, e.g. while the
+    // link-local address is still tentative after the interface appeared; the failure is logged once per outage.
+    bool connection_retry_logged{false};
+    // Published by set_interface_present() from any thread, applied by the loop (see dlink_ready_generation).
+    std::atomic_bool interface_present_requested{false};
+    std::atomic<uint64_t> interface_generation{0};
+    uint64_t interface_generation_applied{0};
 
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     // ISO 15118-2 pause context, owned here so it outlives the per-session D2SeccEngine (mirrors pause_ctx).

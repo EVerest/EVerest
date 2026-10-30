@@ -562,6 +562,7 @@ SCENARIO("session_start guard check - session already started") {
 
     auto controller = make_controller(false, callbacks);
 
+    controller.set_interface_present(true);
     controller.tick();
 
     REQUIRE(controller.has_active_session());

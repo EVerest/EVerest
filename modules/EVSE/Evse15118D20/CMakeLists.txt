@@ -15,11 +15,13 @@ target_sources(${MODULE_NAME}
         charger/der_setup.cpp
         charger/evse_security_ssl_config.cpp
         charger/grid_event.cpp
+        charger/network_device_watcher.cpp
         charger/utils.cpp
 )
 
 target_link_libraries(${MODULE_NAME}
     PRIVATE
+        everest::io
         everest::iso15118
 )
 # ev@bcc62523-e22b-41d7-ba2f-825b493a3c97:v1

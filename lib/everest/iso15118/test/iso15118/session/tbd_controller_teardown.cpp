@@ -87,6 +87,7 @@ SCENARIO("Data-link loss tears down the active session") {
 
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
+    controller.set_interface_present(true);
 
     controller.tick();
     REQUIRE(factory.last != nullptr);
@@ -110,6 +111,7 @@ SCENARIO("Data-link loss tears down a session with a deferred response") {
 
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
+    controller.set_interface_present(true);
 
     controller.tick();
     REQUIRE(factory.calls == 1);
@@ -137,6 +139,7 @@ SCENARIO("Data-link loss reaps a never-connected session") {
 
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
+    controller.set_interface_present(true);
 
     controller.tick();
     REQUIRE(factory.last != nullptr);
@@ -164,6 +167,7 @@ SCENARIO("A terminate racing session creation wins over the fresh session") {
 
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
+    controller.set_interface_present(true);
 
     GIVEN("a session that exists when a data-link terminate is raised") {
         controller.tick();
@@ -204,6 +208,7 @@ SCENARIO("SAE DER setup updates from another thread race session teardown safely
 
     MockConnectionFactory factory;
     auto controller = make_controller(callbacks, factory);
+    controller.set_interface_present(true);
 
     controller.tick();
     REQUIRE(factory.calls == 1);
@@ -240,6 +245,7 @@ SCENARIO("The rotation seam exposes the rotated SSL config") {
     MockConnectionFactory factory;
     const auto initial = make_ssl_config("/tmp/iso15118-test/a");
     auto controller = make_controller(callbacks, factory, initial);
+    controller.set_interface_present(true);
 
     WHEN("set_ssl_config() rotates the config") {
         const auto rotated = make_ssl_config("/tmp/iso15118-test/b");

@@ -28,6 +28,7 @@
 #include "der_relay_sae.hpp"
 #include "der_setup.hpp"
 #include "grid_event.hpp"
+#include "network_device_watcher.hpp"
 #include "utils.hpp"
 
 #include <generated/types/evse_security.hpp>
@@ -115,6 +116,8 @@ private:
     std::atomic_bool iso15118_20_offerable{false};
 
     std::unique_ptr<iso15118::TbdController> controller;
+    // Feeds set_interface_present() from its own thread. Declared after the controller so it is stopped first.
+    std::unique_ptr<NetworkDeviceWatcher> device_watcher;
 
     iso15118::session::EvseSetupConfig setup_config;
     SetupStepsDone setup_steps_done;
