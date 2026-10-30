@@ -23,6 +23,9 @@ on:
       - .ci/build-kit/scripts/setup_sysroot.sh
       - .ci/build-kit/scripts/compile_non_edm.sh
       - applications/utils/scripts/setup_sysroot.py
+      - .github/workflows/job_build-out-of-tree-edm.yml
+      - .ci/build-kit/scripts/setup_out_of_tree_deps.sh
+      - .ci/build-kit/scripts/compile_out_of_tree_edm.sh
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
@@ -74,6 +77,18 @@ jobs:
   build-cmake-non-edm:
     name: CMake without EDM
     uses: ./.github/workflows/job_build-cmake-non-edm.yml
+    needs:
+      - setup-env
+      - build-build-kit
+    with:
+      runner: ${{ inputs.runner || 'ubuntu-24.04' }}
+      build_kit_artifact_name: ${{ needs.build-build-kit.outputs.build_kit_artifact_name }}
+      build_kit_image_tag: ${{ needs.build-build-kit.outputs.build_kit_image_tag }}
+
+
+  build-out-of-tree-edm:
+    name: Out-of-tree EDM
+    uses: ./.github/workflows/job_build-out-of-tree-edm.yml
     needs:
       - setup-env
       - build-build-kit
