@@ -5,8 +5,8 @@
 This is a contract, not a design.  EVerest's CMake and Bazel builds drive
 ev-cli as a black box -- they parse ``--version``, use ``get-templates`` output
 as build dependencies, and declare the generated files as genrule outputs -- so
-every option, alias and default below is reproduced deliberately, including the
-ones that look odd.  New options may be added; none may be taken away.
+every option, alias and default below is deliberate, including the ones that
+look odd.  New options may be added; none may be taken away.
 
 Options shared between subcommands are declared once and attached through
 argparse's ``parents=``, which is the only sharing argparse offers here: a
@@ -16,8 +16,7 @@ build does not do.
 
 Every command but ``helpers`` takes the same set -- see :func:`emitting` --
 including each backend's own options.  An option belonging to a backend that
-was not selected is simply inert, which has always been true of
-``--disable-clang-format``.
+was not selected is simply inert, as is true of ``--disable-clang-format``.
 """
 
 from __future__ import annotations
@@ -36,13 +35,13 @@ from .errors import EvCliError
 
 
 def _common_options() -> argparse.ArgumentParser:
-    """The options every command that reads the definitions accepts.
+    """Options shared by every command that reads definitions.
 
-    Only what is genuinely shared: anything a single target needs belongs in
-    that backend's own group instead.
+    Only what all of them need: an option one backend uses belongs in that
+    backend's own group.
 
-    Built per call rather than kept as a module-level singleton: most of these
-    defaults are derived from the working directory, which would otherwise be
+    Built per call rather than kept as a module-level singleton, because most
+    of the defaults derive from the working directory and would otherwise be
     frozen at import time.
     """
     parser = argparse.ArgumentParser(add_help=False)

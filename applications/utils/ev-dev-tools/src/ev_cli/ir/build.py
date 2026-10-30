@@ -195,10 +195,9 @@ class _UnitBuild:
             self._build_struct(capitalize_first(name), schema, source)
             return
 
-        # Only these two shapes occur across everest-core, and only these two
-        # have ever produced anything in a generated header.  Anything else was
-        # previously accepted and then silently dropped, leaving a header that
-        # referred to a type it did not declare; saying so is better.
+        # Only these two shapes produce anything in a generated header.  A
+        # third would be dropped silently, leaving a header that refers to a
+        # type it does not declare, so it is rejected here instead.
         raise UnsupportedDefinition(
             f'{source}: a declared type must be either an object with '
             f'properties or a string with an enum, but this one declares '

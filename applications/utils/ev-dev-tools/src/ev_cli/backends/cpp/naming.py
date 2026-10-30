@@ -11,11 +11,10 @@ from __future__ import annotations
 
 from ...errors import UnsupportedDefinition
 
-#: Reserved words that cannot be used as identifiers in generated C++.  The
-#: previous implementation checked Python's keyword list here, which rejected
-#: ``lambda`` and accepted ``int``; this is the check that actually applies to
-#: the language being generated.  Whether a name is a legal identifier at all
-#: is checked earlier, when the IR is built, because that applies to any target.
+#: Reserved words that cannot be used as identifiers in generated C++.
+#:
+#: Whether a name is a legal identifier at all is checked earlier, when the IR
+#: is built, since that applies to any target.
 CPP_KEYWORDS = frozenset({
     'alignas', 'alignof', 'and', 'and_eq', 'asm', 'auto', 'bitand', 'bitor',
     'bool', 'break', 'case', 'catch', 'char', 'char8_t', 'char16_t',
