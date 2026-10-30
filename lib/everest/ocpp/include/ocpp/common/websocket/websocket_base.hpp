@@ -10,6 +10,7 @@
 
 #include <everest/timer.hpp>
 
+#include <ocpp/common/constants.hpp>
 #include <ocpp/common/types.hpp>
 #include <ocpp/common/websocket/websocket_uri.hpp>
 
@@ -40,6 +41,7 @@ struct WebsocketConnectionOptions {
     bool enable_tls_keylog = false;   ///< If set to true enables logging of TLS secrets to the keylog_file
     std::optional<std::filesystem::path> keylog_file; ///< Optional path to a keylog file
     std::optional<std::string> everest_version;
+    std::size_t max_incoming_message_size = DEFAULT_MAX_INCOMING_MESSAGE_SIZE; ///< in bytes, across all fragments
 };
 
 /// \brief Decide whether another connection attempt should be made after a failure.

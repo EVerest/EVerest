@@ -37,6 +37,7 @@ const std::map<std::string, std::string> expected_key_value = {
     {"LogMessagesRaw", "false"},
     {"MaxCompositeScheduleDuration", "31536000"},
     {"MaxMessageSize", "65000"},
+    {"MaxIncomingMessageSize", "4194304"},
     {"OcspRequestInterval", "604800"},
     {"ReportSuspendedEVSEReasonChange", "false"},
     {"RetryBackoffRandomRange", "10"},

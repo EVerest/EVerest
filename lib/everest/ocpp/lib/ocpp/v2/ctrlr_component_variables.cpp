@@ -335,6 +335,12 @@ const ComponentVariable MaxMessageSize = {
         "MaxMessageSize",
     }),
 };
+const ComponentVariable MaxIncomingMessageSize = {
+    ControllerComponents::InternalCtrlr,
+    std::optional<Variable>({
+        "MaxIncomingMessageSize",
+    }),
+};
 const ComponentVariable ResumeTransactionsOnBoot = {
     ControllerComponents::InternalCtrlr,
     std::optional<Variable>({
