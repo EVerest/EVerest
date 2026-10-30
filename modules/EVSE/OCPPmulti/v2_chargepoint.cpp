@@ -605,7 +605,21 @@ ocpp::v2::EventData ChargePointV2::convert_error(const EventInfo& event) {
     auto event_data = ocpp_module_common::to_v2_event_data(error, event.event_cleared, event.event_id);
     // the configured mapping file only overrides single fields of the built-in result
     const auto custom = m_callbacks_ptr->custom_error_mapping();
-    return custom != nullptr ? custom->overlay(error, std::move(event_data)) : event_data;
+    if (custom != nullptr) {
+        event_data = custom->overlay(error, std::move(event_data));
+    }
+    // the component EVSE built from the error's mapping is the EVerest evse id
+    // event.evse_id is the OCPP evse id
+    if (event.evse_id > 0) {
+        if (not event_data.component.evse.has_value()) {
+            event_data.component.evse.emplace();
+        }
+        event_data.component.evse->id = event.evse_id;
+    } else {
+        // EVSEType requires id > 0, hence no EVSE for 0.
+        event_data.component.evse.reset();
+    }
+    return event_data;
 }
 void ChargePointV2::on_event_authorised(std::int32_t evse_id, std::int32_t connector_id,
                                         const types::evse_manager::SessionEvent& session_event) {
