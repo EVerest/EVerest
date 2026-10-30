@@ -446,6 +446,85 @@ TEST_F(DeviceModelTest, test_check_integrity_invalid_missing_required_variable_v
     EXPECT_THROW(dm->check_integrity(evse_connector_structure), DeviceModelError);
 }
 
+<<<<<<< HEAD
+=======
+TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_is_accepted_and_empty) {
+    const auto& organization_name = ControllerComponentVariables::OrganizationName;
+    ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
+                                                                           std::nullopt, "OrganizationName",
+                                                                           std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
+
+    std::string value = "stale";
+    EXPECT_EQ(dm->get_variable(organization_name.component, organization_name.variable.value(), AttributeEnum::Actual,
+                               value, false, UnsetValue::EmptyString),
+              GetVariableStatusEnum::Accepted);
+    EXPECT_EQ(value, "");
+
+    // internal reads keep treating a missing value as absent
+    EXPECT_EQ(dm->get_variable(organization_name.component, organization_name.variable.value(), AttributeEnum::Actual,
+                               value, false, UnsetValue::NotSupported),
+              GetVariableStatusEnum::NotSupportedAttributeType);
+    EXPECT_FALSE(dm->get_optional_value<std::string>(organization_name).has_value());
+}
+
+TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_unknown_attribute_type_is_not_supported) {
+    const auto& organization_name = ControllerComponentVariables::OrganizationName;
+    std::string value;
+    EXPECT_EQ(dm->get_variable(organization_name.component, organization_name.variable.value(), AttributeEnum::Target,
+                               value, false, UnsetValue::EmptyString),
+              GetVariableStatusEnum::NotSupportedAttributeType);
+}
+
+TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_write_only_without_value_is_rejected) {
+    const auto& basic_auth_password = ControllerComponentVariables::BasicAuthPassword;
+    ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
+                                                                           std::nullopt, "BasicAuthPassword",
+                                                                           std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
+
+    std::string value;
+    EXPECT_EQ(dm->get_variable(basic_auth_password.component, basic_auth_password.variable.value(),
+                               AttributeEnum::Actual, value, false, UnsetValue::EmptyString),
+              GetVariableStatusEnum::Rejected);
+}
+
+TEST_F(DeviceModelTest, test_custom_report_leaves_out_the_value_of_a_write_only_variable) {
+    const auto& basic_auth_password = ControllerComponentVariables::BasicAuthPassword;
+    ASSERT_EQ(dm->set_value(basic_auth_password.component, basic_auth_password.variable.value(), AttributeEnum::Actual,
+                            "0123456789abcdef0123", "csms"),
+              SetVariableStatusEnum::Accepted);
+
+    const auto report = dm->get_custom_report_data(std::vector<ComponentVariable>{basic_auth_password});
+    ASSERT_EQ(report.size(), 1);
+    ASSERT_FALSE(report.at(0).variableAttribute.empty());
+    for (const auto& attribute : report.at(0).variableAttribute) {
+        EXPECT_EQ(attribute.mutability, MutabilityEnum::WriteOnly);
+        EXPECT_FALSE(attribute.value.has_value());
+    }
+}
+
+TEST_F(DeviceModelTest, test_get_variable_write_only_without_value_is_rejected_before_unset_check) {
+    const auto& basic_auth_password = ControllerComponentVariables::BasicAuthPassword;
+    ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,
+                                                                           std::nullopt, "BasicAuthPassword",
+                                                                           std::nullopt, AttributeEnum::Actual));
+    dm = device_model_test_helper.get_device_model();
+
+    std::string value;
+    EXPECT_EQ(dm->get_variable(basic_auth_password.component, basic_auth_password.variable.value(),
+                               AttributeEnum::Actual, value, false, UnsetValue::NotSupported),
+              GetVariableStatusEnum::Rejected);
+    EXPECT_EQ(dm->request_value<std::string>(basic_auth_password.component, basic_auth_password.variable.value(),
+                                             AttributeEnum::Actual)
+                  .status,
+              GetVariableStatusEnum::Rejected);
+    EXPECT_EQ(dm->get_variable(basic_auth_password.component, basic_auth_password.variable.value(),
+                               AttributeEnum::Actual, value, true, UnsetValue::NotSupported),
+              GetVariableStatusEnum::NotSupportedAttributeType);
+}
+
+>>>>>>> a0d4b07 (fix(libocpp): leave out WriteOnly values in a custom report (#3331))
 TEST_F(DeviceModelTest, test_check_integrity_no_supported_versions_found) {
     // There are no known supported ocpp versions.
     dm->set_value(ControllerComponentVariables::SupportedOcppVersions.component,
