@@ -251,4 +251,7 @@ target_link_libraries(${ISO_SERVER_NAME}
 )
 
 add_test(${ISO_SERVER_NAME} ${ISO_SERVER_NAME})
+# message handlers loop over data coming from the EV,
+# a regression results in a hang instead of a fail, so cap this here
+set_tests_properties(${ISO_SERVER_NAME} PROPERTIES TIMEOUT 60)
 ev_register_test_target(${ISO_SERVER_NAME})
