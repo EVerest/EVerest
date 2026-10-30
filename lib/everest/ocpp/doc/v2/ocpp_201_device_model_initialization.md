@@ -35,8 +35,9 @@ changed a value, it will not be updated to the value from the component config f
 ## Values in memory
 
 When `DeviceModel` is created, it loads the device model from its storage, including the values of all attributes.
-Not every variable comes from the database: variables held by another storage, such as the EVerest storage, are
-described below. After loading, every read is answered from memory.
+The values of registered variables are held in memory too, see
+[Components registered at runtime](#components-registered-at-runtime). After loading, every read is answered from
+memory. The only exceptions are the variables of another storage, such as the EVerest storage, described below.
 
 A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
 rejects it, the request is rejected and memory keeps the old value. A storage that answers `RebootRequired` holds the
@@ -56,11 +57,14 @@ made while it runs are not seen until the next start.
 
 ### Variables held by another storage
 
-Variables whose `VariableMetaData::owner` is something other than `COMPONENT_CONFIG` are not held in memory. They
-belong to the storage of that owner, which can change their values without going through `DeviceModel`. For these
-variables, `DeviceModel` reads every value from that storage and sends every write to it, so after a write that the
-storage answered with `RebootRequired`, the storage decides which value is reported until the next start. Variables
-with the owner `COMPONENT_CONFIG`, the default, belong to the OCPP storage and are held in memory as described above.
+Besides the component config, a storage can deliver variables of its own with a `VariableMetaData::owner` other than
+`COMPONENT_CONFIG`, because it changes their values without going through `DeviceModel`. The EVerest storage of the OCPP
+modules is one: it builds its components at startup from the EVSEs and the module configurations. `DeviceModel` keeps
+no copy of their values: it reads every value from that storage and sends every write to it, so after a write that the
+storage answered with `RebootRequired`, the storage decides which value is reported until the next start. The
+`VariableMetaData::owner` of such a variable names its storage, not the owner of a registration: the values of
+registered variables are held in memory and kept current with `notify_value_changed`. Variables with the owner
+`COMPONENT_CONFIG`, the default, belong to the OCPP storage and are held in memory as described above.
 
 In the OCPP modules:
 
@@ -133,8 +137,9 @@ down migration keeps only the monitors whose variable has a row in the component
 ## Components registered at runtime
 
 Besides the component config, the integrating firmware can register components and variables at runtime through
-`DeviceModelRegistryInterface::register_components`. A registration is held in memory only and has to be repeated at
-every start, before `ChargePoint::start`.
+`DeviceModelRegistryInterface::register_components`. A registration is not persisted and has to be repeated after
+every start of the process, before the first `ChargePoint::start`. Like the component config, the values of registered
+variables are held in memory: the owner keeps them current with `notify_value_changed`.
 
 ### Across restarts
 
