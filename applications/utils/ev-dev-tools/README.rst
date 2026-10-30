@@ -40,8 +40,8 @@ Commands
 --------
 
 Every command accepts ``--work-dir``/``-wd``, ``--everest-dir``/``-ed``,
-``--schemas-dir``/``-sd``, ``--licenses``/``-lc``, ``--build-dir``/``-bd``,
-``--clang-format-file`` and ``--disable-clang-format``.  Commands and actions
+``--schemas-dir``/``-sd``, ``--licenses``/``-lc``, ``--clang-format-file``
+and ``--disable-clang-format``.  Commands and actions
 have short aliases; ``ev-cli --help`` lists them.
 
 ``ev-cli types generate-headers``

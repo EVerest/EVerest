@@ -195,7 +195,7 @@ Adding a config key to a manifest means regenerating, not editing the struct.
 
 ```bash
 . build/venv/bin/activate
-ev-cli mod update <Category>/<Name> --work-dir . --build-dir build --disable-clang-format -f
+ev-cli mod update <Category>/<Name> --work-dir . --disable-clang-format -f
 cmake -S . -B build     # codegen for build/generated/ runs at configure time
 ```
 
