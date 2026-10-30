@@ -102,10 +102,10 @@ public:
     /// \param attribute_enum The attribute
     /// \param value The value to set (as string)
     /// \param source The source of the value (e.g., 'csms', 'default', 'internal')
-    /// \param allow_read_only If true, ReadOnly variables can be changed. A ReadOnly mutability binds SetVariables
-    ///        from the CSMS only: libocpp passes true for its own writes and for CSMS messages whose purpose is to set
-    ///        a ReadOnly variable, such as SetMonitoringBase and SetMonitoringLevel; a write to a variable that a
-    ///        runtime owner registered reaches that owner.
+    /// \param allow_read_only_update If true, ReadOnly variables can be changed. A ReadOnly mutability binds
+    ///        SetVariables from the CSMS only: libocpp passes true for its own writes and for CSMS messages whose
+    ///        purpose is to set a ReadOnly variable, such as SetMonitoringBase and SetMonitoringLevel; a write to a
+    ///        variable that a runtime owner registered reaches that owner.
     /// \return Accepted when the value is applied, RebootRequired when it is set but takes effect at the next start.
     ///         Both store the value in memory and notify the variable listeners, whoever owns the variable, so a read
     ///         returns the value written. Any other result notifies no listener and leaves the value DeviceModel holds
@@ -113,9 +113,9 @@ public:
     ///         decides what it reports until the next start.
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,
-                                            const std::string& source, bool allow_read_only = false) = 0;
+                                            const std::string& source, bool allow_read_only_update = false) = 0;
 
-    /// \brief set_value with allow_read_only for the local channel, ChargePoint::set_variables, which writes the
+    /// \brief set_value with allow_read_only_update for the local channel, ChargePoint::set_variables, which writes the
     /// component config only: a variable that a runtime owner registered is Rejected
     virtual SetVariableStatusEnum set_local_value(const Component& component_id, const Variable& variable_id,
                                                   const AttributeEnum& attribute_enum, const std::string& value,

@@ -282,13 +282,13 @@ public:
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                     const AttributeEnum& attribute_enum, const std::string& value,
-                                    const std::string& source, bool allow_read_only) override {
+                                    const std::string& source, bool allow_read_only_update) override {
         if (is_valueless_cv(component_id, variable_id)) {
             storage.set(component_id.name.get(), variable_id.name.get(), value);
             return SetVariableStatusEnum::Accepted;
         }
         return stubs::MemoryStorageProxy::set_value(component_id, variable_id, attribute_enum, value, source,
-                                                    allow_read_only);
+                                                    allow_read_only_update);
     }
 
     std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,

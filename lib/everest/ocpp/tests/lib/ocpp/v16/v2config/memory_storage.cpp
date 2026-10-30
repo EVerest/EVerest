@@ -606,13 +606,13 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::set_value(const Component& c
                                                               const Variable& variable_id,
                                                               const AttributeEnum& attribute_enum,
                                                               const std::string& value, const std::string& source,
-                                                              bool allow_read_only) {
+                                                              bool allow_read_only_update) {
     const auto key_str = enhanced_convert(component_id, variable_id, attribute_enum);
     MemoryStorage::SetVariableStatusEnum result;
     if (!key_str.empty()) {
         // mirror DeviceModel::set_value(): Reject writes when the configured
         // mutability is ReadOnly
-        if (!allow_read_only && get_configured_mutability(key_str) == MutabilityEnum::ReadOnly) {
+        if (!allow_read_only_update && get_configured_mutability(key_str) == MutabilityEnum::ReadOnly) {
             return MemoryStorage::SetVariableStatusEnum::Rejected;
         }
         const auto key_opt = v16::keys::convert(key_str);
@@ -643,7 +643,7 @@ MemoryStorage::SetVariableStatusEnum MemoryStorage::clear_value(const Component&
                                                                 const AttributeEnum& attribute_enum,
                                                                 const std::string& source) {
     // Stub: clearing is equivalent to setting "" without validate_value gating; the in-memory
-    // storage doesn't enforce minLimit, so a plain set_value with allow_read_only=true matches.
+    // storage doesn't enforce minLimit, so a plain set_value with allow_read_only_update=true matches.
     return set_value(component_id, variable_id, attribute_enum, "", source, true);
 }
 

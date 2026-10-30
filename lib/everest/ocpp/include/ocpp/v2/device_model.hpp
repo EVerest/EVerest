@@ -131,17 +131,17 @@ private:
     /// \brief What a write may do
     struct WriteRules {
         /// \brief Whether a ReadOnly attribute may be written
-        bool allow_read_only{false};
+        bool allow_read_only_update{false};
         /// \brief Whether a variable that a runtime owner registered may be written: false for the local channel only
         bool allow_registered{false};
     };
 
-    static constexpr WriteRules CSMS_WRITE{/*allow_read_only=*/false, /*allow_registered=*/true};
+    static constexpr WriteRules CSMS_WRITE{/*allow_read_only_update=*/false, /*allow_registered=*/true};
     /// \brief libocpp, and the CSMS through messages that change a ReadOnly variable
-    static constexpr WriteRules READ_ONLY_WRITE{/*allow_read_only=*/true, /*allow_registered=*/true};
+    static constexpr WriteRules READ_ONLY_WRITE{/*allow_read_only_update=*/true, /*allow_registered=*/true};
     /// \brief The local channel writes the component config only: a registered variable is changed by its owner,
     /// through notify_value_changed or its provider, by the CSMS or by libocpp
-    static constexpr WriteRules LOCAL_WRITE{/*allow_read_only=*/true, /*allow_registered=*/false};
+    static constexpr WriteRules LOCAL_WRITE{/*allow_read_only_update=*/true, /*allow_registered=*/false};
 
     /// \brief Checks a write of \p value against the characteristics and the mutability of the variable and \p rules
     /// \return The variable to write to, or nullptr with the reason in \p status
@@ -248,7 +248,7 @@ public:
 
     SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                     const AttributeEnum& attribute_enum, const std::string& value,
-                                    const std::string& source, bool allow_read_only = false) override;
+                                    const std::string& source, bool allow_read_only_update = false) override;
 
     SetVariableStatusEnum set_local_value(const Component& component_id, const Variable& variable_id,
                                           const AttributeEnum& attribute_enum, const std::string& value,

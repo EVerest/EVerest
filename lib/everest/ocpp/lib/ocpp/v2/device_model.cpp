@@ -523,9 +523,9 @@ std::optional<MutabilityEnum> DeviceModel::get_mutability(const Component& compo
 
 SetVariableStatusEnum DeviceModel::set_value(const Component& component, const Variable& variable,
                                              const AttributeEnum& attribute_enum, const std::string& value,
-                                             const std::string& source, bool allow_read_only) {
+                                             const std::string& source, bool allow_read_only_update) {
     return this->check_and_write(Lock(this->mutex), component, variable, attribute_enum, value, source,
-                                 allow_read_only ? READ_ONLY_WRITE : CSMS_WRITE);
+                                 allow_read_only_update ? READ_ONLY_WRITE : CSMS_WRITE);
 }
 
 SetVariableStatusEnum DeviceModel::set_local_value(const Component& component, const Variable& variable,
@@ -597,7 +597,7 @@ const ComposedVariable* DeviceModel::check_write(const Component& component, con
     }
 
     if (!attribute->mutability.has_value() or
-        ((attribute->mutability.value() == MutabilityEnum::ReadOnly) and !rules.allow_read_only)) {
+        ((attribute->mutability.value() == MutabilityEnum::ReadOnly) and !rules.allow_read_only_update)) {
         status = SetVariableStatusEnum::Rejected;
         return nullptr;
     }
