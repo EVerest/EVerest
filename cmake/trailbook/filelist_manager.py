@@ -13,6 +13,8 @@ and later remove or move them.
 
 
 import argparse
+import filecmp
+import shutil
 from pathlib import Path
 import yaml
 
@@ -116,6 +118,58 @@ def move_filelist(args):
     exit(0)
 
 
+def sync_filelist(args):
+    """Mirror the source directory into the root directory. Only files whose
+    content differs are copied, keeping their modification time, so a file
+    that did not change keeps the time Sphinx last saw. Files of the previous
+    sync that vanished from the source are removed, as are their directories
+    once empty, then the list is written.
+    """
+    if not args.source_dir.is_dir():
+        raise ValueError("Source directory must be a directory")
+
+    previous_files = []
+    previous_directories = []
+    if args.data_file.exists():
+        with args.data_file.open('r') as f:
+            previous = yaml.safe_load(f) or {}
+        previous_files = previous.get('files', [])
+        previous_directories = previous.get('directories', [])
+
+    file_paths = []
+    directory_paths = []
+    for item in sorted(args.source_dir.rglob('*')):
+        relative_path = str(item.relative_to(args.source_dir))
+        target = args.root_dir / relative_path
+        if item.is_dir():
+            directory_paths.append(relative_path)
+            target.mkdir(parents=True, exist_ok=True)
+        elif item.is_file():
+            file_paths.append(relative_path)
+            if not target.is_file() or not filecmp.cmp(item, target, shallow=False):
+                target.parent.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(item, target)
+
+    for relative_path in previous_files:
+        stale = args.root_dir / relative_path
+        if relative_path not in file_paths and stale.is_file():
+            stale.unlink()
+    # deepest first, so a vanished tree is removed from the leaves up; a
+    # directory something else wrote into is not empty and stays
+    for relative_path in sorted(previous_directories, key=lambda p: p.count('/'), reverse=True):
+        stale = args.root_dir / relative_path
+        if relative_path not in directory_paths and stale.is_dir():
+            try:
+                stale.rmdir()
+            except OSError:
+                pass
+
+    args.data_file.parent.mkdir(parents=True, exist_ok=True)
+    with args.data_file.open('w') as f:
+        yaml.dump({'files': file_paths, 'directories': directory_paths}, f)
+    exit(0)
+
+
 def main():
     parser = argparse.ArgumentParser(description='This script provides command to manage a list of file paths')
     
@@ -202,6 +256,39 @@ def main():
     )
     move_parser.set_defaults(
         action_handler=move_filelist
+    )
+
+    sync_parser = subparsers.add_parser(
+        "sync",
+        description="Mirrors a source directory into the root directory, copying only changed files and removing files that vanished since the last sync",
+        add_help=True,
+    )
+    sync_parser.add_argument(
+        '--data-file',
+        type=Path,
+        dest='data_file',
+        action='store',
+        required=True,
+        help='File to read/write from/to filelist'
+    )
+    sync_parser.add_argument(
+        '--source-directory',
+        type=Path,
+        dest='source_dir',
+        action='store',
+        required=True,
+        help='Path to the directory to mirror'
+    )
+    sync_parser.add_argument(
+        '--root-directory',
+        type=Path,
+        dest='root_dir',
+        action='store',
+        required=True,
+        help='Path to the directory to mirror into'
+    )
+    sync_parser.set_defaults(
+        action_handler=sync_filelist
     )
     
     args = parser.parse_args()

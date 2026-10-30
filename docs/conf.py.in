@@ -67,6 +67,12 @@ html_title = f"EVerest Manual {release}"
 # so a file named "default.css" will overwrite the builtin "default.css".
 html_static_path = ['_static']
 
+# Generated files copied into the site as they are: the EVerest API reference
+# pages (reference/api/<name>/index.html and reference/api/_assets/), rendered
+# by the docs generator of the EVerest API client into the instance source
+# directory at build time.
+html_extra_path = ['_extra']
+
 html_js_files = [
     'version-switcher.js',
 ]

@@ -127,7 +127,7 @@ ev-dev-tools:
   name: "ev-cli"
   description: "EVerest module auto generation"
   license: "Apache-2.0"
-# dependencies of ev-cli
+# dependencies of ev-cli and everest-api-client
 jsonschema:
   description: "jsonschema is an implementation of the JSON Schema specification for Python"
   license: "MIT"
@@ -146,7 +146,7 @@ everest-management-api-cli:
   license: "Apache-2.0"
 everest-api-client:
   name: "EVerest API Client"
-  description: "Interactive command line client for the EVerest API modules; spies on API traffic and drives the APIs with commands created at startup from their AsyncAPI specs"
+  description: "Interactive command line client for the EVerest API modules; spies on API traffic and drives the APIs with commands created at startup from their AsyncAPI specs; also renders the HTML reference of the specs for the documentation"
   license: "Apache-2.0"
 # dependencies of everest-api-client
 cmd2:

@@ -153,6 +153,17 @@ function(_ev_add_project)
     if (EXISTS ${API_DIR})
         if (${EVEREST_SKIP_BUILD_API_DOC})
             message(WARNING "Skipping the generation of the EVerest API AsyncAPI html documentation")
+            if(EVEREST_BUILD_DOCS AND NOT args_SKIP_DOC_GENERATION)
+                find_package(
+                    trailbook-ext-everest
+                    0.1.0
+                    REQUIRED
+                    PATHS "${CMAKE_SOURCE_DIR}/cmake"
+                )
+                trailbook_ev_generate_api_doc_stub(
+                    TRAILBOOK_NAME "everest"
+                )
+            endif()
         else()
             message(STATUS "Adding API definitions from ${API_DIR}")
             file(GLOB API_FILES
