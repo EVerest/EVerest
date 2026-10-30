@@ -20,6 +20,7 @@ target_sources(libocpp_unit_tests PRIVATE
         test_message_queue.cpp
         test_composite_schedule.cpp
         test_profile.cpp
+        test_message_from_json.cpp
         )
 
 # Copy the json files used for testing to the destination directory

@@ -10,6 +10,10 @@
 {% if uses_optional %}
 #include <optional>
 {% endif %}
+{% if needs_json_number %}
+
+#include <ocpp/common/json_number.hpp>
+{% endif %}
 
 using json = nlohmann::json;
 
@@ -113,7 +117,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
 {%- if property.type.endswith('Enum>') %}
             k.{{property.name}}.push_back({{ conversions_namespace_prefix }}conversions::string_to_{{- property.type.replace('std::vector<','').replace('>','') | snake_case}}(val));
 {% else %}
-            k.{{property.name}}.push_back(val);
+            k.{{property.name}}.push_back({{ 'val' | number_from_json(property.type | element_type) }});
 {% endif %}
         }
 {% else %}
@@ -124,7 +128,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
         {%- if property.type == 'ocpp::DateTime' %}
  ocpp::DateTime(std::string(j.at("{{property.name}}")))
         {%- else %}
- j.at("{{property.name}}")
+ {{ ('j.at("' ~ property.name ~ '")') | number_from_json(property.type) }}
         {%- endif %}
     {%- endif %};
 {% endif %}
@@ -142,7 +146,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
                 {%- if property.type.endswith('Enum>') %}
                 vec.push_back({{ conversions_namespace_prefix }}conversions::string_to_{{- property.type.replace('std::vector<','').replace('>','') | snake_case}}(val));
                 {%- else %}
-                vec.push_back(val);
+                vec.push_back({{ 'val' | number_from_json(property.type | element_type) }});
                 {%- endif %}
             }
             k.{{property.name}}.emplace(vec);
@@ -153,7 +157,7 @@ j["{{property.name}}"] = k.{{property.name}}.value();
 {% if property.type == 'ocpp::DateTime' %}
             k.{{property.name}}.emplace(ocpp::DateTime(std::string(j.at("{{property.name}}"))));
 {% else %}
-            k.{{property.name}}.emplace(j.at("{{property.name}}"));
+            k.{{property.name}}.emplace({{ ('j.at("' ~ property.name ~ '")') | number_from_json(property.type) }});
 {% endif %}
 {% endif %}
 {% endif %}

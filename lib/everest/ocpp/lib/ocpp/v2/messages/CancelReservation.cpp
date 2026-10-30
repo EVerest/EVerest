@@ -8,6 +8,8 @@
 #include <ostream>
 #include <string>
 
+#include <ocpp/common/json_number.hpp>
+
 using json = nlohmann::json;
 
 namespace ocpp {
@@ -30,7 +32,7 @@ void to_json(json& j, const CancelReservationRequest& k) {
 
 void from_json(const json& j, CancelReservationRequest& k) {
     // the required parts of the message
-    k.reservationId = j.at("reservationId");
+    k.reservationId = ocpp::integer_from_json(j.at("reservationId"));
 
     // the optional parts of the message
     if (j.contains("customData")) {

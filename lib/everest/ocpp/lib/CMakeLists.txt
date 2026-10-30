@@ -21,6 +21,7 @@ target_sources(ocpp
     PRIVATE
         ocpp/common/call_types.cpp
         ocpp/common/charging_station_base.cpp
+        ocpp/common/json_number.cpp
         ocpp/common/ocpp_logging.cpp
         ocpp/common/schemas.cpp
         ocpp/common/types.cpp
