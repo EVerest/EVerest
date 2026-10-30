@@ -3,9 +3,13 @@
 
 #include <gtest/gtest.h>
 
+#include <device_model_storage_interface_mock.hpp>
 #include <device_model_test_helper.hpp>
 
+#include <everest/database/exceptions.hpp>
+
 #include <ocpp/v2/device_model.hpp>
+#include <ocpp/v2/device_model_composition.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 
 namespace ocpp::v2 {
@@ -291,6 +295,34 @@ TEST_F(DeviceModelStoredValuesTest, delta_monitor_is_kept_when_its_value_is_rest
     ASSERT_EQ(monitors.size(), 1);
     ASSERT_EQ(monitors.at(0).variableMonitoring.size(), 1);
     EXPECT_EQ(monitors.at(0).variableMonitoring.at(0).id, id);
+}
+
+class StoredValuesStorageMock : public DeviceModelStorageMock {
+public:
+    MOCK_METHOD(std::vector<StoredVariableValue>, get_stored_values, (), (override));
+    MOCK_METHOD(bool, remove_stored_value, (const Component&, const Variable&, const AttributeEnum&), (override));
+};
+
+TEST(StoredValuesTest, value_stays_when_the_storage_cannot_remove_it) {
+    StoredVariableValue stored;
+    stored.component = make_der_component(1);
+    stored.variable = make_variable("Enabled");
+    stored.attribute = AttributeEnum::Actual;
+    stored.value = "false";
+    stored.owner = OWNER;
+    StoredValuesStorageMock storage;
+    EXPECT_CALL(storage, get_stored_values()).WillOnce(::testing::Return(std::vector<StoredVariableValue>{stored}));
+    // Every call but the last finds the value still in memory
+    EXPECT_CALL(storage, remove_stored_value(stored.component, stored.variable, AttributeEnum::Actual))
+        .WillOnce(::testing::Return(false))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")))
+        .WillOnce(::testing::Return(true));
+    StoredValues values(storage);
+    const auto unregistered = [](const Component&, const Variable&) { return false; };
+
+    for (int i = 0; i < 4; ++i) {
+        values.remove_of_unregistered_variables(unregistered);
+    }
 }
 
 } // namespace ocpp::v2

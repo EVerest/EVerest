@@ -5,11 +5,15 @@
 
 #include <algorithm>
 
+#include <device_model_storage_interface_mock.hpp>
 #include <device_model_test_helper.hpp>
 #include <test_temp_paths.hpp>
 
+#include <everest/database/exceptions.hpp>
+
 #include <ocpp/v2/ctrlr_component_variables.hpp>
 #include <ocpp/v2/device_model.hpp>
+#include <ocpp/v2/device_model_monitor_store.hpp>
 #include <ocpp/v2/device_model_storage_sqlite.hpp>
 
 namespace ocpp::v2 {
@@ -376,6 +380,30 @@ TEST_F(DeviceModelMonitorsAcrossBootsTest,
     auto ids_after_boot = monitor_ids(component, level);
     std::sort(ids_after_boot.begin(), ids_after_boot.end());
     EXPECT_EQ(ids_after_boot, ids);
+}
+
+TEST(MonitorStoreTest, monitor_stays_when_the_storage_cannot_remove_it) {
+    StoredMonitor stored;
+    stored.component = make_component("ExtensionCtrlr");
+    stored.variable = make_variable("Level");
+    stored.monitor = make_preconfigured_monitor(MonitorEnum::UpperThreshold, 100, 3);
+    stored.monitor.monitor.id = 7;
+    DeviceModelStorageMock storage;
+    EXPECT_CALL(storage, get_all_monitors()).WillOnce(::testing::Return(std::vector<StoredMonitor>{stored}));
+    EXPECT_CALL(storage, clear_variable_monitor(7, true))
+        .WillOnce(::testing::Return(ClearMonitoringStatusEnum::Rejected))
+        .WillOnce(::testing::Throw(everest::db::Exception("database is locked")))
+        .WillOnce(::testing::Return(ClearMonitoringStatusEnum::Accepted));
+    MonitorStore store(storage);
+    store.load();
+    const auto remove_all = [](const StoredMonitor&) { return true; };
+
+    store.remove_if(remove_all, "test");
+    EXPECT_NE(store.find(7), nullptr);
+    store.remove_if(remove_all, "test");
+    EXPECT_NE(store.find(7), nullptr);
+    store.remove_if(remove_all, "test");
+    EXPECT_EQ(store.find(7), nullptr);
 }
 
 } // namespace ocpp::v2

@@ -122,7 +122,7 @@ public:
     }
 
     /// \brief Removes a value returned by get_stored_values
-    /// \return true if a value was removed
+    /// \return true if the storage holds no such value afterwards, also when it held none
     virtual bool remove_stored_value(const Component& /*component_id*/, const Variable& /*variable_id*/,
                                      const AttributeEnum& /*attribute_enum*/) {
         return false;

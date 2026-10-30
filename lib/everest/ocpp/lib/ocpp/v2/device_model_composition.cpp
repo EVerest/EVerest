@@ -1,6 +1,9 @@
 // SPDX-License-Identifier: Apache-2.0
 // Copyright Pionix GmbH and Contributors to EVerest
 
+#include <vector>
+
+#include <everest/database/exceptions.hpp>
 #include <everest/logging.hpp>
 #include <ocpp/v2/device_model_composition.hpp>
 
@@ -48,8 +51,7 @@ void StoredValues::restore(const std::string& owner, const Component& component,
         if (!attribute.persistent.value_or(true) or !is_valid(stored.value)) {
             EVLOG_warning << "Discarding the stored value '" << stored.value << "' of " << component << "." << variable
                           << ": it does not fit the variable as owner " << owner << " registers it";
-            this->storage.remove_stored_value(component, variable, attribute_enum);
-            this->values.erase(stored_it);
+            this->remove(stored_it->first);
             continue;
         }
 
@@ -75,17 +77,34 @@ SetVariableStatusEnum StoredValues::store(StoredVariableValue value) {
 
 void StoredValues::remove_of_unregistered_variables(
     const std::function<bool(const Component&, const Variable&)>& registered) {
-    for (auto it = this->values.begin(); it != this->values.end();) {
-        const auto& [component, variable, attribute] = it->first;
-        if (registered(component, variable)) {
-            ++it;
-            continue;
+    std::vector<Key> unregistered;
+    for (const auto& [key, value] : this->values) {
+        if (not registered(value.component, value.variable)) {
+            unregistered.push_back(key);
         }
+    }
+    for (const auto& key : unregistered) {
+        const auto& [component, variable, attribute] = key;
         EVLOG_warning << "Removing the stored value of " << component << "." << variable
                       << ": no owner registers the variable";
-        this->storage.remove_stored_value(component, variable, attribute);
-        it = this->values.erase(it);
+        this->remove(key);
     }
+}
+
+void StoredValues::remove(Key key) {
+    const auto& [component, variable, attribute] = key;
+    try {
+        if (not this->storage.remove_stored_value(component, variable, attribute)) {
+            EVLOG_warning << "Could not remove the stored value of " << component << "." << variable
+                          << " from the storage";
+            return;
+        }
+    } catch (const everest::db::Exception& e) {
+        EVLOG_error << "Could not remove the stored value of " << component << "." << variable
+                    << " from the storage: " << e.what();
+        return;
+    }
+    this->values.erase(key);
 }
 
 } // namespace v2

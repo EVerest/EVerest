@@ -60,6 +60,7 @@ public:
 
 private:
     void insert(StoredMonitor monitor);
+    /// \brief Removes the monitor from the storage, and from memory only if that succeeded
     void remove(std::int32_t monitor_id);
     void forget(std::int32_t monitor_id);
 

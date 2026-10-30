@@ -430,9 +430,8 @@ bool DeviceModelStorageSqlite::remove_stored_value(const Component& component_id
         return false;
     }
 
-    const auto changes = delete_stmt->changes();
     transaction->commit();
-    return changes == 1;
+    return true;
 }
 
 bool DeviceModelStorageSqlite::update_monitoring_reference(const std::int32_t monitor_id,

@@ -442,7 +442,7 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, value_of_a_variable_without_row_is_s
     EXPECT_FALSE(storage.get_variable_attribute(runtime_component, runtime_variable, AttributeEnum::Actual));
 
     EXPECT_TRUE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
-    EXPECT_FALSE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
+    EXPECT_TRUE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
     EXPECT_TRUE(storage.get_stored_values().empty());
 }
 

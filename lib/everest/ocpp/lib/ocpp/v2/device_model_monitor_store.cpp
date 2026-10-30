@@ -194,14 +194,17 @@ void MonitorStore::insert(StoredMonitor monitor) {
 }
 
 void MonitorStore::remove(const std::int32_t monitor_id) {
-    this->forget(monitor_id);
     try {
-        if (this->storage.clear_variable_monitor(monitor_id, true) != ClearMonitoringStatusEnum::Accepted) {
+        const auto status = this->storage.clear_variable_monitor(monitor_id, true);
+        if (status != ClearMonitoringStatusEnum::Accepted and status != ClearMonitoringStatusEnum::NotFound) {
             EVLOG_warning << "Could not remove monitor " << monitor_id << " from the storage";
+            return;
         }
     } catch (const everest::db::Exception& e) {
         EVLOG_error << "Could not remove monitor " << monitor_id << " from the storage: " << e.what();
+        return;
     }
+    this->forget(monitor_id);
 }
 
 void MonitorStore::forget(const std::int32_t monitor_id) {

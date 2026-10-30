@@ -81,6 +81,9 @@ public:
 private:
     using Key = std::tuple<Component, Variable, AttributeEnum>;
 
+    /// \brief Removes the value of \p key from the storage, and from memory only if that succeeded
+    void remove(Key key);
+
     DeviceModelStorageInterface& storage;
     std::map<Key, StoredVariableValue> values;
 };
