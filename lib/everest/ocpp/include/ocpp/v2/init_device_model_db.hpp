@@ -53,6 +53,9 @@ struct ComponentKey {
 
     ///
     /// \brief operator <, needed to add this class as key in a map.
+    ///
+    /// Orders by the name key of monitors and stored values: names and instances ignore case, an absent instance
+    /// equals an empty one and an absent EVSE or connector id equals 0.
     /// \param l ComponentKey to compare with another ComponentKey
     /// \param r Second componentKey to compare with the other ComponentKey
     /// \return True if 'l' is 'smaller' than r (should be placed before 'r').
@@ -198,7 +201,7 @@ public:
     /// \throws InitDeviceModelDbError  - When database could not be initialized or
     ///                                 - Foreign keys could not be turned on or
     ///                                 - Something could not be added to, retrieved or removed from the database
-    /// \throws ComponentConfigNameKeyError When two components, or two variables of one component, share a name key
+    /// \throws ComponentConfigNameKeyError When two variables of one component share a name key
     /// \throws MigrationException  If something went wrong during migration
     /// \throws ConnectionException If the database could not be opened
     ///
@@ -243,6 +246,15 @@ private: // Functions
     ///
     void insert_component(const ComponentKey& component_key,
                           const std::vector<DeviceModelVariable>& component_variables);
+
+    ///
+    /// \brief Write the spelling of the name and instance of a component to its database row.
+    /// \param component_key        The component as the component config spells it.
+    /// \param db_component_key     The component as the database holds it, including its database id.
+    ///
+    /// \throws InitDeviceModelDbError When the component could not be updated
+    ///
+    void update_component_spelling(const ComponentKey& component_key, const ComponentKey& db_component_key);
 
     ///
     /// \brief Insert variable characteristics
@@ -440,9 +452,9 @@ private: // Functions
     /// \param db_component_variables         The component that currently exists in the database and needs updating.
     /// \param component_variables            The component_variables of the component.
     ///
-    void
-    update_component_variables(const std::pair<ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
-                               const std::vector<DeviceModelVariable>& variables);
+    void update_component_variables(
+        const std::pair<const ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
+        const std::vector<DeviceModelVariable>& variables);
 
     ///
     /// \brief Get variable attributes belonging to a specific variable from the database.

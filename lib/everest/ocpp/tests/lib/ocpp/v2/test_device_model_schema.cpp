@@ -517,6 +517,42 @@ protected:
         init.initialize_database(configs, false);
     }
 
+    void set_heartbeat_monitor() {
+        DeviceModelStorageSqlite storage(db_path);
+        ASSERT_TRUE(storage
+                        .set_monitoring_data(make_monitor_request(make_component("OCPPCommCtrlr"),
+                                                                  make_variable("HeartbeatInterval"),
+                                                                  MonitorEnum::LowerThreshold, 10, 4),
+                                             VariableMonitorType::CustomMonitor)
+                        .has_value());
+    }
+
+    std::size_t monitor_count() {
+        DeviceModelStorageSqlite storage(db_path);
+        return storage.get_all_monitors().size();
+    }
+
+    /// \brief The spellings in the database of the rows that \p query selects, with \p name bound to its parameter
+    std::vector<std::string> spellings(const std::string& query, const std::string& name) {
+        everest::db::sqlite::Connection database(db_path);
+        EXPECT_TRUE(database.open_connection());
+        auto statement = database.new_statement(query);
+        statement->bind_text(1, name, everest::db::sqlite::SQLiteString::Transient);
+        std::vector<std::string> result;
+        while (statement->step() == SQLITE_ROW) {
+            result.push_back(statement->column_text(0));
+        }
+        return result;
+    }
+
+    static void rename_component(std::map<ComponentKey, std::vector<DeviceModelVariable>>& configs,
+                                 const std::string& name, const std::string& new_name) {
+        auto node = configs.extract(ComponentKey{std::nullopt, name, std::nullopt, std::nullopt, std::nullopt});
+        ASSERT_FALSE(node.empty());
+        node.key().name = new_name;
+        configs.insert(std::move(node));
+    }
+
     std::map<ComponentKey, std::vector<DeviceModelVariable>> configs_with_heartbeat_monitor() {
         auto configs = get_all_component_configs(CONFIG_PATH);
         auto& variables = configs.at(heartbeat_component_key);
@@ -647,16 +683,10 @@ TEST(ComponentConfigNameKeyTest, invalid_custom_config_is_not_skipped) {
     std::filesystem::remove_all(monitor_directory);
 }
 
-/// Monitors and stored values compare names and instances case-insensitively, so components or variables that differ
-/// only in case would share them
-TEST_F(InitDeviceModelDbMonitorTest, components_and_variables_that_differ_only_in_case_are_rejected) {
+/// Monitors and stored values compare names and instances case-insensitively, so variables that differ only in case
+/// would share them
+TEST_F(InitDeviceModelDbMonitorTest, variables_that_differ_only_in_case_are_rejected) {
     const auto configs = get_all_component_configs(CONFIG_PATH);
-
-    auto with_lower_case_component = configs;
-    auto lower_case_key = heartbeat_component_key;
-    lower_case_key.name = "ocppcommctrlr";
-    with_lower_case_component[lower_case_key] = configs.at(heartbeat_component_key);
-    EXPECT_THROW(initialize(with_lower_case_component), ComponentConfigNameKeyError);
 
     auto with_lower_case_variable = configs;
     auto& variables = with_lower_case_variable.at(heartbeat_component_key);
@@ -692,6 +722,61 @@ TEST_F(InitDeviceModelDbMonitorTest, removing_a_variable_removes_its_monitors_re
 
     DeviceModelStorageSqlite storage(db_path);
     EXPECT_TRUE(storage.get_all_monitors().empty());
+}
+
+TEST_F(InitDeviceModelDbMonitorTest, component_renamed_by_case_keeps_its_row_and_monitors) {
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    initialize(configs);
+    set_heartbeat_monitor();
+
+    rename_component(configs, "OCPPCommCtrlr", "OcppCommCtrlr");
+    initialize(configs);
+
+    EXPECT_EQ(spellings("SELECT NAME FROM COMPONENT WHERE NAME = ? COLLATE NOCASE", "ocppcommctrlr"),
+              std::vector<std::string>{"OcppCommCtrlr"});
+    EXPECT_EQ(monitor_count(), 1);
+}
+
+TEST_F(InitDeviceModelDbMonitorTest, variable_renamed_by_case_keeps_its_monitors) {
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    initialize(configs);
+    set_heartbeat_monitor();
+
+    auto& variables = configs.at(heartbeat_component_key);
+    std::find_if(variables.begin(), variables.end(), [](const DeviceModelVariable& v) {
+        return v.name == "HeartbeatInterval";
+    })->name = "heartbeatInterval";
+    initialize(configs);
+
+    EXPECT_EQ(spellings("SELECT v.NAME FROM VARIABLE v JOIN COMPONENT c ON c.ID = v.COMPONENT_ID "
+                        "WHERE c.NAME = 'OCPPCommCtrlr' AND v.NAME = ? COLLATE NOCASE",
+                        "heartbeatinterval"),
+              std::vector<std::string>{"heartbeatInterval"});
+    EXPECT_EQ(monitor_count(), 1);
+}
+
+TEST_F(InitDeviceModelDbMonitorTest, ocpp16_legacy_ctrlr_config_is_recognised_regardless_of_case) {
+    auto configs = get_all_component_configs(CONFIG_PATH);
+    rename_component(configs, "OCPP16LegacyCtrlr", "Ocpp16LegacyCtrlr");
+
+    EXPECT_NO_THROW(initialize(configs));
+    EXPECT_EQ(spellings("SELECT NAME FROM COMPONENT WHERE NAME = ? COLLATE NOCASE", "ocpp16legacyctrlr"),
+              std::vector<std::string>{"Ocpp16LegacyCtrlr"});
+}
+
+TEST(ComponentConfigNameKeyTest, custom_config_replaces_a_standardized_one_spelled_differently) {
+    auto custom_variable = name_key_component_config()["properties"]["Value"];
+    custom_variable["variable_name"] = "Custom";
+    const auto directory = write_configs_with_custom_variable(custom_variable);
+    auto custom = nlohmann::json::parse(std::ifstream(directory / "custom" / "NameKeyCtrlr.json"));
+    custom["name"] = "namekeyctrlr";
+    std::ofstream(directory / "custom" / "NameKeyCtrlr.json") << custom.dump();
+
+    const auto configs = get_all_component_configs(directory);
+    ASSERT_EQ(configs.size(), 1);
+    EXPECT_EQ(configs.begin()->first.name, "namekeyctrlr");
+    EXPECT_EQ(configs.begin()->second.size(), 2);
+    std::filesystem::remove_all(directory);
 }
 
 /// Two files of one directory that define the same component would silently replace each other

@@ -10,6 +10,7 @@
 #include <unordered_set>
 
 #include <everest/logging.hpp>
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v16/known_keys.hpp>
 #include <ocpp/v16/utils.hpp>
 #include <ocpp/v2/ctrlr_component_variables.hpp>
@@ -30,7 +31,7 @@ bool is_special_case_key(const std::string& key) {
 }
 
 bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    return ((v1.name == v2.name) && (v1.instance == v2.instance));
+    return ocpp::iequals(v1.name, v2.name) && ocpp::iequals(v1.instance.value_or(""), v2.instance.value_or(""));
 }
 
 // Convert a ChargingScheduleAllowedChargingRateUnit CSL from OCPP 1.6 notation ("Current", "Power")

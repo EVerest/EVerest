@@ -4,15 +4,15 @@
 #include <ocpp/v2/init_device_model_db.hpp>
 
 #include <algorithm>
-#include <cctype>
 #include <cstdint>
 #include <fstream>
 #include <map>
+#include <set>
 #include <sstream>
 #include <string>
-#include <tuple>
 
 #include <everest/logging.hpp>
+#include <ocpp/common/utils.hpp>
 #include <ocpp/v2/enums.hpp>
 #include <ocpp/v2/ocpp16_legacy_ctrlr_default_schema.hpp>
 
@@ -44,7 +44,6 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
 void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs);
 std::vector<std::string> check_integrity_value_type(const DeviceModelVariable& variable);
 bool value_is_of_type(const std::string& value, const DataEnum& type);
-bool is_same_component_key(const ComponentKey& component_key1, const ComponentKey& component_key2);
 bool is_same_attribute_type(const VariableAttribute attribute1, const VariableAttribute& attribute2);
 bool is_attribute_different(const VariableAttribute& attribute1, const VariableAttribute& attribute2);
 bool variable_has_same_attributes(const std::vector<DbVariableAttribute>& attributes1,
@@ -62,24 +61,10 @@ bool has_attribute_actual_value(const VariableAttribute& attribute,
 std::string get_string_value_from_json(const json& value);
 std::string get_component_name_for_logging(const ComponentKey& component);
 std::string get_variable_name_for_logging(const DeviceModelVariable& variable);
-///
-/// \brief Check if a specific component exists in the databsae.
-/// \param db_components    The current components in the database.
-/// \param component        The component to check against.
-/// \return The component from the database if it exists.
-///
-std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>>
-component_exists_in_db(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components,
-                       const ComponentKey& component);
 
-///
-/// \brief Check if a component exist in the component config.
-/// \param component_config The map of component / variables read from the json component config.
-/// \param component    The component to check.
-/// \return True when the component exists in the config.
-///
-bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
-                                const ComponentKey& component);
+bool is_ocpp16_legacy_ctrlr(const ComponentKey& component) {
+    return iequals(component.name, OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG);
+}
 
 ///
 /// \brief Get all component properties (variables) from the given (component) json.
@@ -141,10 +126,10 @@ void InitDeviceModelDb::initialize_database(
     // bridge working with a custom DeviceModelConfigPath that does not include the file.
     const bool config_files_contain_ocpp16_legacy_ctrlr =
         std::any_of(component_configs.begin(), component_configs.end(),
-                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
+                    [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
     const bool db_contains_ocpp16_legacy_ctrlr =
         std::any_of(existing_components.begin(), existing_components.end(),
-                    [](const auto& c) { return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG; });
+                    [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
 
     // Only allocate an augmented copy when the fallback component is actually missing from the config.
     std::optional<std::map<ComponentKey, std::vector<DeviceModelVariable>>> augmented;
@@ -181,9 +166,8 @@ void InitDeviceModelDb::initialize_database(
     // been injected by an older version of this function.
     if (!inject_ocpp16_legacy_ctrlr_fallback && !config_files_contain_ocpp16_legacy_ctrlr &&
         db_contains_ocpp16_legacy_ctrlr) {
-        const auto it = std::find_if(existing_components.begin(), existing_components.end(), [](const auto& c) {
-            return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
-        });
+        const auto it = std::find_if(existing_components.begin(), existing_components.end(),
+                                     [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
         if (it != existing_components.end()) {
             remove_component_from_db(it->first);
         }
@@ -223,17 +207,6 @@ void InitDeviceModelDb::execute_init_sql(const bool delete_db_if_exists) {
 
 namespace {
 
-std::string lower_case(std::string text) {
-    std::transform(text.begin(), text.end(), text.begin(), [](unsigned char c) { return std::tolower(c); });
-    return text;
-}
-
-/// \brief Name key of a component as monitors and stored values compare it: case-insensitive names and instances
-auto case_insensitive_name_key(const ComponentKey& component) {
-    return std::make_tuple(lower_case(component.name), lower_case(component.instance.value_or("")),
-                           component.evse_id.value_or(0), component.connector_id.value_or(0));
-}
-
 std::vector<std::filesystem::path> get_component_config_from_directory(const std::filesystem::path& directory) {
     std::vector<std::filesystem::path> component_config_files;
     for (const auto& p : std::filesystem::directory_iterator(directory)) {
@@ -269,7 +242,7 @@ void warn_about_source_keys(const std::filesystem::path& path, const json& data)
 std::map<ComponentKey, std::vector<DeviceModelVariable>>
 read_component_config(const std::vector<std::filesystem::path>& components_config_path) {
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
-    std::map<decltype(case_insensitive_name_key(ComponentKey{})), std::filesystem::path> component_paths;
+    std::map<ComponentKey, std::filesystem::path> component_paths;
     for (const auto& path : components_config_path) {
         std::ifstream config_file(path);
         std::pair<ComponentKey, std::vector<DeviceModelVariable>> parsed;
@@ -285,7 +258,7 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
         } catch (const InitDeviceModelDbError& e) {
             throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
-        const auto [path_it, inserted] = component_paths.emplace(case_insensitive_name_key(parsed.first), path);
+        const auto [path_it, inserted] = component_paths.emplace(parsed.first, path);
         if (!inserted) {
             throw ComponentConfigNameKeyError("Component configs " + path_it->second.string() + " and " +
                                               path.string() + " both define component " +
@@ -341,9 +314,8 @@ get_all_component_configs(const std::filesystem::path& directory) {
 }
 
 void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
-    const bool already_present = std::any_of(component_configs.begin(), component_configs.end(), [](const auto& c) {
-        return c.first.name == OCPP16_LEGACY_CTRLR_COMPONENT_CONFIG;
-    });
+    const bool already_present = std::any_of(component_configs.begin(), component_configs.end(),
+                                             [](const auto& c) { return is_ocpp16_legacy_ctrlr(c.first); });
     if (already_present) {
         return;
     }
@@ -359,17 +331,17 @@ void ensure_ocpp16_legacy_ctrlr(std::map<ComponentKey, std::vector<DeviceModelVa
 void InitDeviceModelDb::insert_components(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& components,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& existing_components) {
-    for (auto& component : components) {
-        // Check if component already exists in the database.
-        std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>> component_db;
-        if (this->database_exists &&
-            (component_db = component_exists_in_db(existing_components, component.first)).has_value()) {
-            // Component exists in the database, update component if necessary.
-            update_component_variables(component_db.value(), component.second);
-        } else {
-            // Database is new or component does not exist. Insert component.
-            insert_component(component.first, component.second);
+    for (const auto& [component_key, variables] : components) {
+        const auto db_component =
+            this->database_exists ? existing_components.find(component_key) : existing_components.end();
+        if (db_component == existing_components.end()) {
+            insert_component(component_key, variables);
+            continue;
         }
+        if (db_component->first.name != component_key.name || db_component->first.instance != component_key.instance) {
+            update_component_spelling(component_key, db_component->first);
+        }
+        update_component_variables(*db_component, variables);
     }
 }
 
@@ -419,6 +391,31 @@ void InitDeviceModelDb::insert_component(const ComponentKey& component_key,
 
         // Add variable
         insert_variable(variable, static_cast<std::uint64_t>(component_id));
+    }
+}
+
+void InitDeviceModelDb::update_component_spelling(const ComponentKey& component_key,
+                                                  const ComponentKey& db_component_key) {
+    static const std::string statement = "UPDATE COMPONENT SET NAME=@name, INSTANCE=@instance WHERE ID=@component_id";
+
+    std::unique_ptr<StatementInterface> update_statement;
+    try {
+        update_statement = this->database->new_statement(statement);
+    } catch (const QueryExecutionException&) {
+        throw InitDeviceModelDbError("Could not create statement " + statement);
+    }
+
+    update_statement->bind_text("@name", component_key.name, SQLiteString::Transient);
+    if (component_key.instance.has_value()) {
+        update_statement->bind_text("@instance", component_key.instance.value(), SQLiteString::Transient);
+    } else {
+        update_statement->bind_null("@instance");
+    }
+    update_statement->bind_int("@component_id", static_cast<int>(db_component_key.db_id.value()));
+
+    if (update_statement->step() != SQLITE_DONE) {
+        throw InitDeviceModelDbError("Could not update component " + component_key.name + ": " +
+                                     std::string(this->database->get_error_message()));
     }
 }
 
@@ -1003,6 +1000,8 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
     }
 
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
+    std::set<std::uint64_t> ignored_component_ids;
+    std::set<std::uint64_t> ignored_variable_ids;
 
     int status = SQLITE_ERROR;
     while ((status = select_statement->step()) == SQLITE_ROW) {
@@ -1028,6 +1027,14 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
         // Check if the variable is already added to the component. If it is, the attribute should be added to the
         // vector of attributes, otherwise the whole variable must be added to the variable vector of the component.
         const auto& it = components.find(component_key);
+        if (it != components.end() && it->first.db_id != component_key.db_id) {
+            if (ignored_component_ids.insert(component_key.db_id.value()).second) {
+                EVLOG_warning << "Component " << get_component_name_for_logging(component_key)
+                              << " differs only in case from component " << get_component_name_for_logging(it->first)
+                              << " in the device model database and is ignored";
+            }
+            continue;
+        }
         if (it != components.end()) {
             // Component found. Now search for variables.
             std::vector<DeviceModelVariable>& variables = it->second;
@@ -1038,6 +1045,15 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
                     variable_exists = true;
                 }
             }
+        }
+        if (variable_exists && variable->db_id != new_variable.db_id) {
+            if (ignored_variable_ids.insert(new_variable.db_id.value()).second) {
+                EVLOG_warning << "Variable " << get_variable_name_for_logging(new_variable) << " of component "
+                              << get_component_name_for_logging(component_key) << " differs only in case from variable "
+                              << get_variable_name_for_logging(*variable)
+                              << " in the device model database and is ignored";
+            }
+            continue;
         }
 
         if (!variable_exists) {
@@ -1108,36 +1124,11 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
     return components;
 }
 
-namespace {
-std::optional<std::pair<ComponentKey, std::vector<DeviceModelVariable>>>
-component_exists_in_db(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components,
-                       const ComponentKey& component) {
-    for (const auto& db_component : db_components) {
-        if (is_same_component_key(db_component.first, component)) {
-            return db_component;
-        }
-    }
-
-    return std::nullopt;
-}
-
-bool component_exists_in_config(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
-                                const ComponentKey& component) {
-    for (const auto& component_in_config : component_config) {
-        if (is_same_component_key(component, component_in_config.first)) {
-            return true;
-        }
-    }
-
-    return false;
-}
-} // namespace
-
 void InitDeviceModelDb::warn_about_components_missing_from_config(
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_config,
     const std::map<ComponentKey, std::vector<DeviceModelVariable>>& db_components) {
     for (const auto& component : db_components) {
-        if (!component_exists_in_config(component_config, component.first)) {
+        if (component_config.count(component.first) == 0) {
             std::ostringstream identifier;
             identifier << component.first.name;
             if (component.first.instance.has_value() && !component.first.instance.value().empty()) {
@@ -1183,7 +1174,7 @@ bool InitDeviceModelDb::remove_component_from_db(const ComponentKey& component) 
 }
 
 void InitDeviceModelDb::update_component_variables(
-    const std::pair<ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
+    const std::pair<const ComponentKey, std::vector<DeviceModelVariable>>& db_component_variables,
     const std::vector<DeviceModelVariable>& variables) {
     const std::vector<DeviceModelVariable>& db_variables = db_component_variables.second;
     const ComponentKey& db_component = db_component_variables.first;
@@ -1337,8 +1328,16 @@ void InitDeviceModelDb::init_sql() {
 }
 
 bool operator<(const ComponentKey& l, const ComponentKey& r) {
-    return std::tie(l.name, l.evse_id, l.connector_id, l.instance) <
-           std::tie(r.name, r.evse_id, r.connector_id, r.instance);
+    if (!iequals(l.name, r.name)) {
+        return iless(l.name, r.name);
+    }
+    if (l.evse_id.value_or(0) != r.evse_id.value_or(0)) {
+        return l.evse_id.value_or(0) < r.evse_id.value_or(0);
+    }
+    if (l.connector_id.value_or(0) != r.connector_id.value_or(0)) {
+        return l.connector_id.value_or(0) < r.connector_id.value_or(0);
+    }
+    return iless(l.instance.value_or(""), r.instance.value_or(""));
 }
 
 void from_json(const json& j, ComponentKey& c) {
@@ -1481,24 +1480,13 @@ void check_integrity(const std::map<ComponentKey, std::vector<DeviceModelVariabl
 /// \throws ComponentConfigNameKeyError for the first pair that shares a name key.
 ///
 void check_name_keys_are_unique(const std::map<ComponentKey, std::vector<DeviceModelVariable>>& component_configs) {
-    std::map<decltype(case_insensitive_name_key(ComponentKey{})), ComponentKey> components;
     for (const auto& [component_key, variables] : component_configs) {
-        const auto [component_it, inserted] =
-            components.emplace(case_insensitive_name_key(component_key), component_key);
-        if (!inserted) {
-            throw ComponentConfigNameKeyError("Components " + get_component_name_for_logging(component_it->second) +
-                                              " and " + get_component_name_for_logging(component_key) +
-                                              " share a name key");
-        }
-
-        std::map<std::pair<std::string, std::string>, std::string> variable_names;
-        for (const DeviceModelVariable& variable : variables) {
-            const auto [variable_it, variable_inserted] = variable_names.emplace(
-                std::make_pair(lower_case(variable.name), lower_case(variable.instance.value_or(""))),
-                get_variable_name_for_logging(variable));
-            if (!variable_inserted) {
-                throw ComponentConfigNameKeyError("Variables " + variable_it->second + " and " +
-                                                  get_variable_name_for_logging(variable) + " of component " +
+        for (auto variable = variables.begin(); variable != variables.end(); ++variable) {
+            const auto earlier = std::find_if(variables.begin(), variable,
+                                              [&variable](const auto& v) { return is_same_variable(v, *variable); });
+            if (earlier != variable) {
+                throw ComponentConfigNameKeyError("Variables " + get_variable_name_for_logging(*earlier) + " and " +
+                                                  get_variable_name_for_logging(*variable) + " of component " +
                                                   get_component_name_for_logging(component_key) + " share a name key");
             }
         }
@@ -1573,23 +1561,6 @@ bool value_is_of_type(const std::string& value, const DataEnum& type) {
  * is_..._different functions check if the objects properties are different (and as a result should be changed in
  * the database).
  */
-
-///
-/// \brief Check if the component keys are the same given their unique properties (name, evse id, connector id and
-///        instance)
-/// \param component_key1   Component key 1
-/// \param component_key2   Component key 2
-/// \return True if those are the same components.
-///
-bool is_same_component_key(const ComponentKey& component_key1, const ComponentKey& component_key2) {
-    if ((component_key1.name == component_key2.name) && (component_key1.evse_id == component_key2.evse_id) &&
-        (component_key1.connector_id == component_key2.connector_id) &&
-        (component_key1.instance == component_key2.instance)) {
-        return true;
-    }
-
-    return false;
-}
 
 ///
 /// \brief Check if the two given attributes are the same  given their unique properties (type)
@@ -1719,13 +1690,13 @@ bool is_characteristics_different(const VariableCharacteristics& c1, const Varia
 }
 
 ///
-/// \brief Check if the two variables are the same given their unique properties (name and instance).
+/// \brief Check if the two variables are the same given their unique properties (name and instance, ignoring case).
 /// \param v1   Variable 1
 /// \param v2   Variable 2
 /// \return True if they are the same variable.
 ///
 bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    return ((v1.name == v2.name) && (v1.instance == v2.instance));
+    return iequals(v1.name, v2.name) && iequals(v1.instance.value_or(""), v2.instance.value_or(""));
 }
 
 ///
@@ -1735,7 +1706,9 @@ bool is_same_variable(const DeviceModelVariable& v1, const DeviceModelVariable& 
 /// \return True if they are different.
 ///
 bool is_variable_different(const DeviceModelVariable& v1, const DeviceModelVariable& v2) {
-    if (is_same_variable(v1, v2) && !is_characteristics_different(v1.characteristics, v2.characteristics) &&
+    // A spelling change of the name or instance is written to the database as well
+    if (v1.name == v2.name && v1.instance == v2.instance &&
+        !is_characteristics_different(v1.characteristics, v2.characteristics) &&
         variable_has_same_monitors(v1.monitors, v2.monitors) &&
         variable_has_same_attributes(v1.attributes, v2.attributes)) {
         return false;
