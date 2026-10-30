@@ -256,6 +256,7 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
 
         triggered_meta.value_previous = value_previous;
         triggered_meta.value_current = value_current;
+        triggered_meta.delta_reference.clear();
     }
 
     bool monitor_triggered = false;
@@ -284,6 +285,10 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
         return;
     }
 
+    if (it != std::end(updater_monitors_meta)) {
+        it->second.delta_reference = value_current;
+    }
+
     EVLOG_debug << "Monitor: " << monitor_meta.monitor << " was triggered on var change: [" << monitor_triggered
                 << "] with previous value: [" << loggable_value(attribute, value_previous) << "] and current: ["
                 << loggable_value(attribute, value_current) << "]";
@@ -302,6 +307,7 @@ void MonitoringUpdater::evaluate_monitor(State& state, const VariableMonitoringM
             // Update new current values
             triggered_meta.value_previous = value_previous;
             triggered_meta.value_current = value_current;
+            triggered_meta.delta_reference = value_current;
 
             TriggerMetadata metadata;
             metadata.is_csms_sent = 0;
@@ -552,10 +558,11 @@ void MonitoringUpdater::process_monitor_meta_internal(State& state, UpdaterMonit
                 std::move(create_notify_event(state.unique_id++, reported_value, updater_meta_data.component,
                                               updater_meta_data.variable, updater_meta_data.monitor_meta));
 
-            // N07.FR.18, N07.FR.19 - the cleared attribute does not apply to deltas. The reported value is the
-            // reference, also when it is empty: the next value that can be evaluated triggers then
+            // N07.FR.18, N07.FR.19 - the cleared attribute does not apply to deltas. The reference is the value at the
+            // time of the event when it can be evaluated, otherwise none. A WriteOnly variable reports '' but keeps
+            // its value as the reference, since the reference must be the real value
             if (monitor.type == MonitorEnum::Delta) {
-                update_delta_reference(monitor.id, updater_meta_data.value_current);
+                update_delta_reference(monitor.id, updater_meta_data.delta_reference);
             } else {
                 // Mark if the event is cleared (returned to normal) if that is the case
                 notify_event.cleared = (updater_meta_data.meta_trigger.is_cleared == 1);

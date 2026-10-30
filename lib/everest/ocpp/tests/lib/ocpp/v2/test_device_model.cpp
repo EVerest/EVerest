@@ -3,7 +3,9 @@
 
 #include <gtest/gtest.h>
 
+#include <algorithm>
 #include <atomic>
+#include <functional>
 #include <thread>
 
 #include <device_model_test_helper.hpp>
@@ -717,6 +719,102 @@ SetMonitoringData make_monitor_request(const Component& component, const Variabl
     request.severity = severity;
     return request;
 }
+
+/// \brief Forwards to a DeviceModel and keeps the variable listeners, so a test can report a value that the
+/// DeviceModel would reject
+class VariableChangeInjector : public DeviceModelMonitoringInterface {
+public:
+    using VariableListener = std::function<void(
+        const std::unordered_map<std::int64_t, VariableMonitoringMeta>& monitors, const Component& component,
+        const Variable& variable, const VariableCharacteristics& characteristics, const VariableAttribute& attribute,
+        const std::string& value_previous, const std::string& value_current)>;
+
+    explicit VariableChangeInjector(DeviceModel& dm) : dm(dm) {
+    }
+
+    void report_actual_change(const Component& component, const Variable& variable, const std::string& value_previous,
+                              const std::string& value_current) {
+        const auto meta_data = dm.get_variable_meta_data(component, variable).value();
+        auto attribute = *std::find_if(meta_data.attributes.begin(), meta_data.attributes.end(),
+                                       [](const auto& a) { return a.type == AttributeEnum::Actual; });
+        attribute.value = value_current;
+        for (const auto& listener : listeners) {
+            listener(meta_data.monitors, component, variable, meta_data.characteristics, attribute, value_previous,
+                     value_current);
+        }
+    }
+
+    GetVariableStatusEnum get_variable(const Component& component_id, const Variable& variable_id,
+                                       const AttributeEnum& attribute_enum, std::string& value, bool allow_write_only,
+                                       UnsetValue unset_value) const override {
+        return dm.get_variable(component_id, variable_id, attribute_enum, value, allow_write_only, unset_value);
+    }
+    SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
+                                    const AttributeEnum& attribute_enum, const std::string& value,
+                                    const std::string& source, bool allow_read_only) override {
+        return dm.set_value(component_id, variable_id, attribute_enum, value, source, allow_read_only);
+    }
+    SetVariableStatusEnum set_read_only_value(const Component& component_id, const Variable& variable_id,
+                                              const AttributeEnum& attribute_enum, const std::string& value,
+                                              const std::string& source) override {
+        return dm.set_read_only_value(component_id, variable_id, attribute_enum, value, source);
+    }
+    SetVariableStatusEnum clear_value(const Component& component_id, const Variable& variable_id,
+                                      const AttributeEnum& attribute_enum, const std::string& source) override {
+        return dm.clear_value(component_id, variable_id, attribute_enum, source);
+    }
+    std::optional<MutabilityEnum> get_mutability(const Component& component_id, const Variable& variable_id,
+                                                 const AttributeEnum& attribute_enum) override {
+        return dm.get_mutability(component_id, variable_id, attribute_enum);
+    }
+    std::optional<VariableMetaData> get_variable_meta_data(const Component& component_id,
+                                                           const Variable& variable_id) override {
+        return dm.get_variable_meta_data(component_id, variable_id);
+    }
+    std::vector<ReportData> get_base_report_data(const ReportBaseEnum& report_base) override {
+        return dm.get_base_report_data(report_base);
+    }
+    std::vector<ReportData>
+    get_custom_report_data(const std::optional<std::vector<ComponentVariable>>& component_variables,
+                           const std::optional<std::vector<ComponentCriterionEnum>>& component_criteria) override {
+        return dm.get_custom_report_data(component_variables, component_criteria);
+    }
+    void register_variable_listener(VariableListener&& listener) override {
+        listeners.push_back(listener);
+        dm.register_variable_listener(std::move(listener));
+    }
+    std::vector<SetMonitoringResult> set_monitors(const std::vector<SetMonitoringData>& requests,
+                                                  const VariableMonitorType type) override {
+        return dm.set_monitors(requests, type);
+    }
+    bool update_monitor_reference(std::int32_t monitor_id, const std::string& reference_value) override {
+        return dm.update_monitor_reference(monitor_id, reference_value);
+    }
+    std::vector<VariableMonitoringPeriodic> get_periodic_monitors() override {
+        return dm.get_periodic_monitors();
+    }
+    std::vector<MonitoringData> get_monitors(const std::vector<MonitoringCriterionEnum>& criteria,
+                                             const std::vector<ComponentVariable>& component_variables) override {
+        return dm.get_monitors(criteria, component_variables);
+    }
+    std::vector<ClearMonitoringResult> clear_monitors(const std::vector<int>& request_ids,
+                                                      bool allow_protected) override {
+        return dm.clear_monitors(request_ids, allow_protected);
+    }
+    std::int32_t clear_custom_monitors() override {
+        return dm.clear_custom_monitors();
+    }
+    void register_monitor_listener(
+        std::function<void(const VariableMonitoringMeta& updated_monitor, const Component& component,
+                           const Variable& variable, const VariableCharacteristics& characteristics,
+                           const VariableAttribute& attribute, const std::string& current_value)>&& listener) override {
+        dm.register_monitor_listener(std::move(listener));
+    }
+
+private:
+    DeviceModel& dm;
+    std::vector<VariableListener> listeners;
+};
 } // namespace
 
 /// N04.FR.16: an id that belongs to a monitor on another variable is rejected, and that monitor stays where it is
@@ -937,6 +1035,67 @@ TEST_F(DeviceModelTest, test_numeric_delta_monitor_triggers_on_the_first_value_a
     EXPECT_EQ(reference(), "");
 
     // The CSMS was told of an empty value: 1000 is reported and becomes the reference
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1000", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    ASSERT_EQ(sent().size(), 2);
+    EXPECT_EQ(sent()[1].actualValue, "1000");
+    EXPECT_EQ(reference(), "1000");
+
+    // 1020 deviates only 20 from 1000: no trigger
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1020", "test"),
+              SetVariableStatusEnum::Accepted);
+    updater.process_triggered_monitors();
+    EXPECT_EQ(sent().size(), 2);
+
+    updater.stop_monitoring();
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+}
+
+/// N07.FR.18: a pending Delta event that reports a value that cannot be evaluated leaves the monitor without a
+/// reference, so the next value that can be evaluated is reported
+TEST_F(DeviceModelTest, test_numeric_delta_monitor_triggers_on_the_first_value_after_an_unparsable_value_was_reported) {
+    const auto& interval = ControllerComponentVariables::AlignedDataInterval;
+    const auto& enabled = ControllerComponentVariables::MonitoringCtrlrEnabled;
+    clear_all_monitors(*dm, interval.component, interval.variable.value());
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "900", "test"),
+              SetVariableStatusEnum::Accepted);
+    ASSERT_EQ(dm->set_value(enabled.component, enabled.variable.value(), AttributeEnum::Actual, "true", "test"),
+              SetVariableStatusEnum::Accepted);
+
+    VariableChangeInjector injector(*dm);
+    everest::lib::util::monitor<std::vector<EventData>> sent_events;
+    const auto sent = [&sent_events]() { return *sent_events.handle(); };
+    MonitoringUpdater updater(
+        injector,
+        [&sent_events](const std::vector<EventData>& events) {
+            auto handle = sent_events.handle();
+            handle->insert(handle->end(), events.begin(), events.end());
+        },
+        []() { return false; });
+    updater.start_monitoring();
+
+    const auto results = dm->set_monitors(
+        {make_monitor_request(interval.component, interval.variable.value(), MonitorEnum::Delta, 50.0F, 3)});
+    ASSERT_EQ(results.size(), 1);
+    ASSERT_EQ(results[0].status, SetMonitoringStatusEnum::Accepted);
+    const auto monitor_id = results[0].id.value();
+    const auto reference = [&]() {
+        return dm->get_variable_meta_data(interval.component, interval.variable.value())
+            ->monitors.at(monitor_id)
+            .reference_value;
+    };
+
+    // 960 triggers; the pending event reports N/A, which cannot be evaluated and so is no reference
+    ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "960", "test"),
+              SetVariableStatusEnum::Accepted);
+    injector.report_actual_change(interval.component, interval.variable.value(), "960", "N/A");
+    updater.process_triggered_monitors();
+    ASSERT_EQ(sent().size(), 1);
+    EXPECT_EQ(sent()[0].actualValue, "N/A");
+    EXPECT_EQ(reference(), "");
+
+    // 1000 is the first value that can be evaluated: it is reported and becomes the reference
     ASSERT_EQ(dm->set_value(interval.component, interval.variable.value(), AttributeEnum::Actual, "1000", "test"),
               SetVariableStatusEnum::Accepted);
     updater.process_triggered_monitors();
