@@ -395,9 +395,9 @@ bool assert_validate_cnf_count_stays_at(std::size_t expected, std::vector<SentMe
     return not wait_for(std::chrono::milliseconds(timeout_ms), machine, observed_count_increase);
 }
 
-bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_messages, slac_fsm& machine,
-                                 EvMac const& ev_mac, RunId const& run_id, SlacState expected_state, int timeout_ms) {
-    const char* test_name = "perform_full_match_sequence";
+// Drive one EV through CM_SLAC_PARM.REQ, sounding and CM_ATTEN_CHAR.RSP into WaitSlacMatch.
+bool reach_wait_slac_match(std::vector<SentMessage> const& sent_messages, slac_fsm& machine, EvMac const& ev_mac,
+                           RunId const& run_id, const char* test_name, int timeout_ms = 2000) {
     const auto initial_parm_count = count_slac_parm_cnf(sent_messages);
     const auto initial_atten_count = count_cm_atten_char_ind(sent_messages);
 
@@ -415,6 +415,15 @@ bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_me
     }
 
     machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
+    return true;
+}
+
+bool perform_full_match_sequence(Context& ctx, std::vector<SentMessage>& sent_messages, slac_fsm& machine,
+                                 EvMac const& ev_mac, RunId const& run_id, SlacState expected_state, int timeout_ms) {
+    const char* test_name = "perform_full_match_sequence";
+    if (!reach_wait_slac_match(sent_messages, machine, ev_mac, run_id, test_name, timeout_ms)) {
+        return false;
+    }
     EvMac evse_mac{};
     std::copy(std::begin(ctx.evse_mac), std::end(ctx.evse_mac), evse_mac.begin());
     machine.message(create_cm_slac_match_req(ev_mac, run_id, evse_mac));
@@ -1854,6 +1863,9 @@ bool test_cm_validate_bcb_toggle_detection() {
     }
 
     EvMac ev_mac = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x04};
+    if (!reach_wait_slac_match(sent_messages, machine, ev_mac, fill_run_id(0x90), test_name)) {
+        return false;
+    }
 
     // Some B/C transitions may already have happened before validation starts; the handler must count
     // only the toggles that occur between the two exchanges (relative to the first-exchange baseline).
@@ -2419,6 +2431,9 @@ bool test_next_wakeup_tracks_the_active_timers() {
 
     machine.leave_bcd();
     machine.enter_bcd();
+    if (!reach_wait_slac_match(sent_messages, machine, ev_mac, fill_run_id(0x81), test_name)) {
+        return false;
+    }
     machine.message(create_cm_validate_req(ev_mac));
     if (!waits(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS),
                "an armed CM_VALIDATE step 1 does not wait for its repetition")) {
@@ -2860,23 +2875,8 @@ struct MachineRig {
         EvMac evse_mac = {0x02, 0x00, 0x00, 0x00, 0x00, 0x01};
         std::copy(evse_mac.begin(), evse_mac.end(), std::begin(ctx.evse_mac));
     }
-    // Drive one EV through CM_SLAC_PARM.REQ, sounding and CM_ATTEN_CHAR.RSP into WaitSlacMatch.
     bool reach_wait_slac_match(EvMac const& ev_mac, RunId const& run_id, char const* test_name) {
-        auto const parm_before = count_slac_parm_cnf(sent);
-        auto const ind_before = count_cm_atten_char_ind(sent);
-        machine.message(create_cm_slac_parm_req(ev_mac, run_id));
-        if (!wait_for_parm_cnf_count(sent, parm_before + 1, machine, 200)) {
-            return assert_true(false, test_name, "no CM_SLAC_PARM.CNF");
-        }
-        machine.message(create_cm_start_atten_char_ind(ev_mac, run_id));
-        for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
-            machine.message(create_cm_atten_profile_ind(ev_mac, static_cast<uint8_t>(0xA0 + i)));
-        }
-        if (!wait_for_atten_char_ind_count(sent, ind_before + 1, machine, 2000)) {
-            return assert_true(false, test_name, "no CM_ATTEN_CHAR.IND");
-        }
-        machine.message(create_cm_atten_char_rsp(ev_mac, run_id));
-        return true;
+        return ::reach_wait_slac_match(sent, machine, ev_mac, run_id, test_name);
     }
     // CM_VALIDATE step 1 and step 2 (pilot timer 1 = 200 ms) for ev_mac, waited out to the SUCCESS CNF.
     bool validate(EvMac const& ev_mac, char const* test_name) {
@@ -2890,8 +2890,7 @@ struct MachineRig {
         if (!wait_for(600ms, machine, [&] { return count_cm_validate_cnf(sent) == expected; })) {
             return assert_true(false, test_name, "no step-2 CM_VALIDATE.CNF");
         }
-        return assert_true(ctx.validation_done, test_name, "validation_done not set after the SUCCESS CNF") and
-               assert_true(machine.next_wakeup() == just_after(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS)),
+        return assert_true(machine.next_wakeup() == just_after(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS)),
                            test_name, "the post-validation match window is not reported as the next deadline");
     }
     bool match(EvMac const& ev_mac, RunId const& run_id, char const* test_name) {
@@ -2931,7 +2930,6 @@ bool test_validation_window_is_dropped_by_the_matching_reset() {
     }
     bool ok = assert_true(rig.ctx.status.match_state == SlacState::Matching, test_name,
                           "the Matching reset did not keep the machine in Matching");
-    ok &= assert_true(not rig.ctx.validation_done, test_name, "the Matching reset kept the validation window armed");
     // The EV's retry, this time without CM_VALIDATE, must run to Matched.
     return ok and rig.reach_wait_slac_match(ev_mac, second_run, test_name) and rig.match(ev_mac, second_run, test_name);
 }
@@ -2967,6 +2965,42 @@ bool test_validation_window_binds_only_the_validated_ev() {
     bool ok = assert_true(rig.ctx.status.match_state == SlacState::Matching, test_name,
                           "the other EV's session was failed along with the validated one");
     return ok and rig.match(other_ev, other_run, test_name);
+}
+
+// A CM_VALIDATE exchange is only run for an EV whose session waits for its CM_SLAC_MATCH.REQ. Frames
+// carrying the MAC of an EV that is still sounding, or of no EV at all, get no CNF and arm nothing,
+// so they cannot hold that EV's session to the post-validation window.
+bool test_cm_validate_without_a_waiting_session_is_ignored() {
+    const char* test_name = "test_cm_validate_without_a_waiting_session_is_ignored";
+    MachineRig rig;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const victim = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x31};
+    EvMac const unknown = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x32};
+    RunId const run_id = fill_run_id(0x50);
+
+    rig.machine.message(create_cm_validate_req(unknown));
+    rig.machine.message(create_cm_validate_req(unknown, /*pilot_timer=*/1));
+    rig.machine.message(create_cm_slac_parm_req(victim, run_id));
+    rig.machine.message(create_cm_validate_req(victim));
+    rig.machine.message(create_cm_validate_req(victim, /*pilot_timer=*/1));
+    if (!assert_validate_cnf_count_stays_at(0, rig.sent, rig.machine, 300)) {
+        return assert_true(false, test_name, "a CM_VALIDATE.REQ without a waiting session was answered");
+    }
+
+    rig.machine.message(create_cm_start_atten_char_ind(victim, run_id));
+    for (std::size_t i = 0; i < defs::CM_SLAC_PARM_CNF_NUM_SOUNDS; ++i) {
+        rig.machine.message(create_cm_atten_profile_ind(victim, static_cast<uint8_t>(0xA0 + i)));
+    }
+    if (!wait_for_atten_char_ind_count(rig.sent, 1, rig.machine, 2000)) {
+        return assert_true(false, test_name, "no CM_ATTEN_CHAR.IND");
+    }
+    rig.machine.message(create_cm_atten_char_rsp(victim, run_id));
+    // Past TT_match_sequence: only the full match session timeout may bound the victim's session.
+    (void)wait_for(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS + 1), rig.machine, [] { return false; });
+    return rig.match(victim, run_id, test_name);
 }
 
 // With link detection on, a vendor the machine cannot query for its link status has no way out of
@@ -3123,7 +3157,7 @@ bool test_wait_for_link_timeout_is_reported_as_the_next_deadline() {
 }
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 47>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 48>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -3201,6 +3235,8 @@ int main() {
                        test_validation_window_is_dropped_by_the_matching_reset),
         std::make_pair("test_validation_window_binds_only_the_validated_ev",
                        test_validation_window_binds_only_the_validated_ev),
+        std::make_pair("test_cm_validate_without_a_waiting_session_is_ignored",
+                       test_cm_validate_without_a_waiting_session_is_ignored),
         std::make_pair("test_wait_for_link_fails_at_once_for_a_vendor_without_link_status",
                        test_wait_for_link_fails_at_once_for_a_vendor_without_link_status),
         std::make_pair("test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req",

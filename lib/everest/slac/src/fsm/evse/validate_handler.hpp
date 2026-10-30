@@ -3,6 +3,7 @@
 #pragma once
 
 #include <cstdint>
+#include <optional>
 
 #include <everest/slac/fsm/evse/context.hpp>
 #include <everest/slac/slac_messages.hpp>
@@ -27,8 +28,9 @@ namespace everest::lib::slac::fsm::evse {
 // while a validation is in progress is answered NOT_READY(0x00) (processing blocked, [V2G3-M09-13] /
 // CmValidate_009).
 //
-// Driven by the Matching sub-machine: handle_req() for every CM_VALIDATE.REQ, and tick() on the
-// update tick whenever needs_service() says the armed timer expired. reset() on entering Matching.
+// Driven by the Matching sub-machine: handle_req() for every CM_VALIDATE.REQ of an EV that has a
+// session waiting for its CM_SLAC_MATCH.REQ, and tick() on the update tick whenever needs_service()
+// says the armed timer expired. reset() on entering Matching.
 class ValidateHandler {
 public:
     // Forget any in-progress validation.
@@ -45,8 +47,8 @@ public:
     void deadlines(earliest_deadline& next) const;
 
     // Service the expired timer: either close the step-2 toggle window with a SUCCESS CNF, or
-    // repeat/expire the step-1 CNF.
-    void tick(Context& ctx);
+    // repeat/expire the step-1 CNF. Returns the EV whose validation the SUCCESS CNF completed.
+    std::optional<MacAddress> tick(Context& ctx);
 
     // Introspection (tests, diagnostics)
     bool armed() const {

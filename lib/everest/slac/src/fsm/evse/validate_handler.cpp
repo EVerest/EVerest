@@ -75,7 +75,7 @@ void ValidateHandler::deadlines(earliest_deadline& next) const {
     }
 }
 
-void ValidateHandler::tick(Context& ctx) {
+std::optional<MacAddress> ValidateHandler::tick(Context& ctx) {
     if (step2_pending_) {
         // EvseManager counts one B->C edge per BCB toggle, so the delta since the baseline IS
         // the number of toggles the EV performed during the observation window.
@@ -85,12 +85,9 @@ void ValidateHandler::tick(Context& ctx) {
         armed_ = false;
         step2_pending_ = false;
         ctx.log_info("CM_VALIDATE: detected " + std::to_string(toggles) + " BCB toggle(s) during the toggle window");
-        // Validation done: the CM_SLAC_MATCH.REQ must now arrive within TT_match_sequence
-        // (ISO 15118-5 CmSlacMatch_003/004 cmValidate variant), not the full match session.
-        ctx.validation_done = true;
-        ctx.validation_ev_mac = owner_mac_;
-        ctx.validation_match_window.arm(ctx.current_time, std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS));
-    } else if (armed_) {
+        return owner_mac_;
+    }
+    if (armed_) {
         if (step1_retries_ < defs::C_EV_MATCH_RETRY) {
             step1_retries_++;
             send_cnf(ctx, owner_mac_, defs::CM_VALIDATE_REQ_RESULT_READY, 0);
@@ -101,6 +98,7 @@ void ValidateHandler::tick(Context& ctx) {
             armed_ = false;
         }
     }
+    return std::nullopt;
 }
 
 void ValidateHandler::send_cnf(Context& ctx, MacAddress const& mac, std::uint8_t result,

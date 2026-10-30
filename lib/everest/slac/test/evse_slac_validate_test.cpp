@@ -126,7 +126,7 @@ bool test_step2_waits_out_window_then_reports_toggle_count() {
                         "window must have elapsed after 250 ms")) {
         return false;
     }
-    handler.tick(h.ctx);
+    auto const validated_ev = handler.tick(h.ctx);
 
     return assert_true(h.sent.size() == 2, test_name, "closing the window must send exactly one CNF") and
            assert_true(h.sent[1].destination == ev_a, test_name, "SUCCESS CNF must go to the owner") and
@@ -135,9 +135,7 @@ bool test_step2_waits_out_window_then_reports_toggle_count() {
            assert_true(h.sent[1].cnf.toggle_num == 3, test_name, "toggle_num must be the edges since step 1") and
            assert_true(not handler.armed() and not handler.step2_pending(), test_name,
                        "validation must be finished") and
-           assert_true(h.ctx.validation_done, test_name, "validation_done must be set for the match window") and
-           assert_true(not h.ctx.validation_match_window.expired(h.ctx.current_time), test_name,
-                       "the post-validation match window must have been (re)started");
+           assert_true(validated_ev == ev_a, test_name, "tick must report the validated EV for its match window");
 }
 
 bool test_foreign_ev_gets_not_ready_while_validation_in_progress() {

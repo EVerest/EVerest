@@ -75,6 +75,7 @@ struct link_status_req {
 // Flags
 struct SessionFailed {};
 struct SessionMatched {};
+struct SessionAwaitingSlacMatch {};
 
 // States
 struct CheckLink : public timeout_state {

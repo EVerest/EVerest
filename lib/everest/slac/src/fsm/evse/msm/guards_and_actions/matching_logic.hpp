@@ -13,6 +13,8 @@
 #include <everest/slac/slac_messages.hpp>
 #include <everest/slac/slac_types.hpp>
 
+#include <algorithm>
+
 namespace everest::lib::slac::msm::matching_sm {
 
 // Session bookkeeping shared by the guards below. A session flags SessionMatched in MatchComplete
@@ -58,6 +60,17 @@ struct pipe_event {
     }
 };
 
+// A session of this EV that finished sounding and waits for its CM_SLAC_MATCH.REQ. Only such an EV
+// may run a CM_VALIDATE: the EVSE handles the REQs "from the EV which started the matching process"
+// ([V2G3-A09-75], [V2G3-A09-85]), which validates after CM_ATTEN_CHAR.RSP ([V2G3-A09-38]).
+template <class Session> bool awaits_slac_match(Session& session, MacAddress const& ev_mac) {
+    return session.session_data.ev_mac == ev_mac and session.template is_flag_active<SessionAwaitingSlacMatch>();
+}
+template <class Fsm> bool has_session_awaiting_slac_match(Fsm& fsm, MacAddress const& ev_mac) {
+    return std::any_of(fsm.sessions.begin(), fsm.sessions.end(),
+                       [&ev_mac](auto& session) { return awaits_slac_match(session, ev_mac); });
+}
+
 // CM_VALIDATE (ISO 15118-3 9.4) BCB-toggle validation lives in fsm::evse::ValidateHandler
 // (src/fsm/evse/validate_handler.hpp); Matching only routes the REQ frames and the update tick to it.
 struct handle_validate_req {
@@ -66,13 +79,32 @@ struct handle_validate_req {
         if (not req.has_value()) {
             return;
         }
-        fsm.validate.handle_req(*req, e.payload.get_src_mac(), *fsm.ctx);
+        auto const* src_mac = e.payload.get_src_mac();
+        if (src_mac == nullptr) {
+            return;
+        }
+        auto const ev_mac = byte_array_from_wire<MacAddress>(src_mac);
+        if (not has_session_awaiting_slac_match(fsm, ev_mac)) {
+            fsm.ctx->log_debug("Ignoring CM_VALIDATE.REQ from " + format_mac_addr(ev_mac) +
+                               ": no session of this EV waits for CM_SLAC_MATCH.REQ");
+            return;
+        }
+        fsm.validate.handle_req(*req, src_mac, *fsm.ctx);
     }
 };
 // Serviced on every `update` tick while a validation is armed (guard validate_needs_service).
 struct validate_tick {
     template <class Fsm, class Evt, class SrcT, class TarT> void operator()(Evt const&, Fsm& fsm, SrcT&, TarT&) {
-        fsm.validate.tick(*fsm.ctx);
+        auto const validated_ev = fsm.validate.tick(*fsm.ctx);
+        if (not validated_ev.has_value()) {
+            return;
+        }
+        using WaitSlacMatch = typename Fsm::Session::WaitSlacMatch;
+        for (auto& session : fsm.sessions) {
+            if (awaits_slac_match(session, *validated_ev)) {
+                session.template get_state<WaitSlacMatch&>().arm_validation_window(fsm.ctx->current_time);
+            }
+        }
     }
 };
 struct validate_needs_service {
@@ -91,10 +123,8 @@ struct reset_matching_subfsm {
         // new CM_SLAC_PARM.REQ (C_EV_match_retry). UNMATCHED here would let an EIM in the gap take the
         // "matching not started" path ([V2G3-M06-08]) and switch to E/F under the EV's retry.
         fsm.ctx->log_info("Matching attempt failed, waiting for a new CM_SLAC_PARM.REQ");
-        // A validation belongs to the sessions just dropped. Left armed, its expired window would
-        // fail every new session the moment it reaches WaitSlacMatch.
+        // A validation in progress belongs to the sessions just dropped.
         fsm.validate.reset();
-        fsm.ctx->validation_done = false;
     }
 };
 
@@ -131,13 +161,10 @@ struct add_session {
         auto& session = *session_iter;
         session.session_data = data;
         session.ctx = fsm.ctx;
-        // A new CM_SLAC_PARM.REQ starts this EV's SLAC run over; a validation from its previous
-        // run, in progress or completed, does not carry into it.
+        // A new CM_SLAC_PARM.REQ starts this EV's SLAC run over; a validation in progress from its
+        // previous run does not carry into it.
         if (fsm.validate.owner_mac() == data.ev_mac) {
             fsm.validate.reset();
-        }
-        if (fsm.ctx->validation_done and fsm.ctx->validation_ev_mac == data.ev_mac) {
-            fsm.ctx->validation_done = false;
         }
         session.start();
         // send reply
