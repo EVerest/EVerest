@@ -683,6 +683,27 @@ TEST(ComponentConfigNameKeyTest, invalid_custom_config_is_not_skipped) {
     std::filesystem::remove_all(monitor_directory);
 }
 
+TEST(ComponentConfigNameKeyTest, malformed_config_names_its_file) {
+    auto missing_characteristics = name_key_component_config()["properties"]["Value"];
+    missing_characteristics["variable_name"] = "Custom";
+    missing_characteristics.erase("characteristics");
+    auto unknown_mutability = name_key_component_config()["properties"]["Value"];
+    unknown_mutability["variable_name"] = "Custom";
+    unknown_mutability["attributes"][0]["mutability"] = "Sometimes";
+
+    for (const auto& variable : {missing_characteristics, unknown_mutability}) {
+        const auto directory = write_configs_with_custom_variable(variable);
+        const auto custom_path = (directory / "custom" / "NameKeyCtrlr.json").string();
+        try {
+            get_all_component_configs(directory);
+            ADD_FAILURE() << "the malformed config was accepted: " << variable.dump();
+        } catch (const InitDeviceModelDbError& e) {
+            EXPECT_NE(std::string(e.what()).find(custom_path), std::string::npos) << e.what();
+        }
+        std::filesystem::remove_all(directory);
+    }
+}
+
 /// Monitors and stored values compare names and instances case-insensitively, so variables that differ only in case
 /// would share them
 TEST_F(InitDeviceModelDbMonitorTest, variables_that_differ_only_in_case_are_rejected) {

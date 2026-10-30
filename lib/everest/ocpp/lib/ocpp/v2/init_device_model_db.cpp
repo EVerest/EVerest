@@ -250,12 +250,9 @@ read_component_config(const std::vector<std::filesystem::path>& components_confi
             const auto data = json::parse(config_file);
             warn_about_source_keys(path, data);
             parsed = parse_component_config_from_json(data);
-        } catch (const json::parse_error& e) {
-            EVLOG_error << "Error while parsing config file: " << path;
-            throw;
         } catch (const ComponentConfigNameKeyError& e) {
             throw ComponentConfigNameKeyError("Invalid component config " + path.string() + ": " + e.what());
-        } catch (const InitDeviceModelDbError& e) {
+        } catch (const std::exception& e) {
             throw InitDeviceModelDbError("Invalid component config " + path.string() + ": " + e.what());
         }
         const auto [path_it, inserted] = component_paths.emplace(parsed.first, path);

@@ -138,7 +138,8 @@ public:
 /// \param directory    The parent directory containing the standardized and custom component config files.
 /// \return A map with the device model components, variables, characteristics and attributes.
 ///
-/// \throws InitDeviceModelDbError if a component config is invalid, with the path of the file. No file is skipped:
+/// \throws InitDeviceModelDbError if a component config is invalid, for example invalid JSON, a missing key, a wrong
+/// type or an unknown enum value, with the path of the file. No file is skipped:
 /// the standardized config of the same component would replace a skipped custom config, and the variables only the
 /// custom config defines would be removed with their monitors.
 /// \throws ComponentConfigNameKeyError if a component config uses a name key that monitors cannot represent
