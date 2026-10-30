@@ -48,6 +48,7 @@ using ocpp::v16::keys::valid_keys;
     key(VerifyCsmsAllowWildcards) \
     key(SupportedMeasurands) \
     key(MaxMessageSize) \
+    key(MaxIncomingMessageSize) \
     key(WebsocketPingPayload) \
     key(WebsocketPongTimeout) \
     key(QueueAllMessages) \

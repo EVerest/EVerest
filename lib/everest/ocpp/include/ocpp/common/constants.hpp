@@ -4,6 +4,7 @@
 #pragma once
 
 #include <chrono>
+#include <cstddef>
 #include <cstdint>
 #include <string>
 
@@ -29,6 +30,7 @@ constexpr std::int32_t EVSEID_NOT_SET = -1;
 constexpr std::chrono::seconds DEFAULT_WAIT_FOR_FUTURE_TIMEOUT = std::chrono::seconds(60);
 
 constexpr std::int32_t DEFAULT_WEBSOCKET_PONG_TIMEOUT_S = 5;
+constexpr std::size_t DEFAULT_MAX_INCOMING_MESSAGE_SIZE = std::size_t{4} * 1024 * 1024;
 
 const std::string VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL = "internal";
 const std::string VARIABLE_ATTRIBUTE_VALUE_SOURCE_CSMS = "csms";

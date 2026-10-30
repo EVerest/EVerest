@@ -1280,6 +1280,9 @@ std::optional<WebsocketConnectionOptions> DeviceModel::get_websocket_connection_
             get_optional_value<std::string>(ControllerComponentVariables::IFace),
             get_optional_value<bool>(ControllerComponentVariables::EnableTLSKeylog).value_or(false),
             get_optional_value<std::string>(ControllerComponentVariables::TLSKeylogFile)};
+        opts.max_incoming_message_size =
+            static_cast<std::size_t>(get_optional_value<int>(ControllerComponentVariables::MaxIncomingMessageSize)
+                                         .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE)));
         return opts;
     } catch (const std::invalid_argument& e) {
         EVLOG_error << "Could not configure the connection options for slot " << slot << ": " << e.what();

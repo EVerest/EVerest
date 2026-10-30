@@ -100,6 +100,7 @@ ChargePointConfigurationConnectivity::get_websocket_connection_options(int32_t /
                                         getIFace(),
                                         getEnableTLSKeylog(),
                                         getTLSKeylogFile()};
+        opts.max_incoming_message_size = static_cast<std::size_t>(getMaxIncomingMessageSize());
         return opts;
     } catch (const ocpp::v2::DeviceModelError& e) {
         EVLOG_error << "Could not configure v1.6 connection options, device model error: " << e.what();

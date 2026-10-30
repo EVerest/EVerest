@@ -64,6 +64,7 @@
         "MessageQueueSizeThreshold": 5000,
         "SupportedMeasurands": "Energy.Active.Import.Register,Energy.Active.Export.Register,Power.Active.Import,Voltage,Current.Import,Frequency,Current.Offered,Power.Offered,SoC",
         "MaxMessageSize": 65000,
+        "MaxIncomingMessageSize": 4194304,
         "TLSKeylogFile": "/tmp/ocpp_tls_keylog.txt",
         "EnableTLSKeylog": false
     },
