@@ -22,6 +22,8 @@ from ._configuration.everest_configuration_strategies.everest_configuration_stra
     EverestConfigAdjustmentStrategy
 from ._configuration.everest_configuration_strategies.probe_module_configuration_strategy import \
     ProbeModuleConfigurationStrategy
+from ._configuration.everest_configuration_strategies.pyevjosev_pki_path_configuration_strategy import \
+    PyEvJosevPkiPathConfigurationStrategy
 
 STARTUP_TIMEOUT = 30
 
@@ -203,6 +205,7 @@ class EverestCore:
             self.everest_settings_path = temp_dir / "everest_settings.yaml"
             self._status_fifo_path = temp_dir / "status.fifo"
             self._db_path = temp_dir / "everest.db"
+            self._ev_certs_path = temp_dir / "ev_certs"
         else:
             config_dir = tmp_path / "everest_config"
             config_dir.mkdir()
@@ -212,6 +215,7 @@ class EverestCore:
             self.everest_settings_path = config_dir / "everest_settings.yaml"
             self._status_fifo_path = tmp_path / "status.fifo"
             self._db_path = tmp_path / "everest.db"
+            self._ev_certs_path = tmp_path / "ev_certs"
 
         self.prefix_path = prefix_path
         self.etc_path = Path('/etc/everest') if prefix_path == '/usr' else prefix_path / 'etc/everest'
@@ -288,6 +292,9 @@ class EverestCore:
         everest_config.setdefault("active_modules", {})
         for strategy in everest_configuration_adjustment_strategies:
             everest_config = strategy.adjust_everest_configuration(everest_config)
+        everest_config = PyEvJosevPkiPathConfigurationStrategy(
+            source_certificates_directory=self.etc_path / 'certs',
+            target_certificates_directory=self._ev_certs_path).adjust_everest_configuration(everest_config)
         # The manager settings are passed in the settings file; the manager would ignore this block.
         everest_config.pop("settings", None)
         with self.everest_config_path.open("w") as f:
