@@ -195,6 +195,11 @@ void EvseManager::init() {
         EVLOG_warning << "DC mode without isolation monitoring configured, please check your national regulations.";
     }
 
+    imd_unmated_enabled = config.unmated_enable_imd and config.charge_mode == "DC" and not r_imd.empty();
+    if (config.unmated_enable_imd and not imd_unmated_enabled) {
+        EVLOG_warning << "unmated_enable_imd is set but has no effect without DC mode and a connected IMD.";
+    }
+
     pnc_enabled = config.payment_enable_contract;
     central_contract_validation_allowed = config.central_contract_validation_allowed;
     contract_certificate_installation_enabled = config.contract_certificate_installation_enabled;
@@ -1173,6 +1178,19 @@ void EvseManager::ready() {
         });
     }
 
+    if (imd_unmated_enabled) {
+        // IEC 61851-23 Table CC.9 t110: the connector is unmated once the CP is in state A. The first CP state
+        // the BSP reports after startup arrives here as well. The hold is set here; the IMD is started once the
+        // Charger is Idle, on the Charger thread, so the CP events behind this signal do not wait for the IMD.
+        bsp->signal_raw_cp_state_changed.connect([this](RawCPState state) {
+            if (state == RawCPState::A) {
+                imd_set_unmated(true);
+            }
+        });
+        charger->signal_state.connect(
+            [this](Charger::EvseState state) { imd_set_charger_idle(state == Charger::EvseState::Idle); });
+    }
+
     bsp->signal_event.connect([this](const CPEvent event) {
         // Forward events from BSP to SLAC module before we process the events in the charger
         if (slac_enabled) {
@@ -1220,6 +1238,12 @@ void EvseManager::ready() {
                 hlc_waiting_for_auth_pnc = false;
                 hlc_waiting_for_auth_eim = false;
             }
+        }
+
+        // IEC 61851-23 Table CC.8 t0: the IMD goes off at the CP change A->B. The stop runs here, so the CP
+        // events behind it wait for one IMD round trip.
+        if (imd_unmated_enabled and event == CPEvent::CarPluggedIn) {
+            imd_set_unmated(false);
         }
 
         if (not r_over_voltage_monitor.empty() and event == CPEvent::CarUnplugged) {
@@ -2752,13 +2776,43 @@ const std::vector<std::unique_ptr<powermeterIntf>>& EvseManager::r_powermeter_bi
 }
 
 void EvseManager::imd_stop() {
-    if (not r_imd.empty()) {
-        r_imd[0]->call_stop();
+    if (r_imd.empty()) {
+        return;
     }
+    auto gate = imd_unmated_gate.handle();
+    if (gate->unmated) {
+        return;
+    }
+    r_imd[0]->call_stop();
 }
 
 void EvseManager::imd_start() {
-    if (not r_imd.empty()) {
+    if (r_imd.empty()) {
+        return;
+    }
+    auto gate = imd_unmated_gate.handle();
+    r_imd[0]->call_start();
+}
+
+void EvseManager::imd_set_unmated(bool unmated) {
+    auto gate = imd_unmated_gate.handle();
+    gate->unmated = unmated;
+    if (not unmated) {
+        EVLOG_info << "Connector mated: IMD switched off until cable check";
+        r_imd[0]->call_stop();
+    } else if (gate->charger_idle) {
+        // Only when the Charger was Idle before the CP reported A (startup with a BSP that publishes after the
+        // Charger started); after an unplug the Charger reaches Idle later and starts the IMD then.
+        EVLOG_info << "Connector unmated: IMD switched on";
+        r_imd[0]->call_start();
+    }
+}
+
+void EvseManager::imd_set_charger_idle(bool idle) {
+    auto gate = imd_unmated_gate.handle();
+    gate->charger_idle = idle;
+    if (idle and gate->unmated) {
+        EVLOG_info << "Connector unmated: IMD switched on";
         r_imd[0]->call_start();
     }
 }

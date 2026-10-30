@@ -128,6 +128,39 @@ TEST(IECStateMachine, init_subscribe) {
 }
 #endif
 
+// A BSP that does not republish its CP state on enable: the state it reported while the state machine was
+// disabled is fed on enable, so the raw state (and a plug-in) is not lost until the next CP change.
+TEST(IECStateMachine, cp_state_reported_while_disabled_is_fed_on_enable) {
+    BspStub bsp;
+    std::unique_ptr<evse_board_supportIntf> bsp_if = std::make_unique<module::stub::evse_board_supportIntfStub>(bsp);
+    module::IECStateMachine state_machine(std::move(bsp_if), true, false, false, 0);
+
+    std::vector<module::RawCPState> raw_states;
+    std::vector<module::CPEvent> events;
+    state_machine.signal_raw_cp_state_changed.connect([&](module::RawCPState s) { raw_states.push_back(s); });
+    state_machine.signal_event.connect([&](module::CPEvent e) { events.push_back(e); });
+
+    bsp.raise_event(Event::A);
+    EXPECT_TRUE(raw_states.empty()) << "ignored while disabled";
+
+    state_machine.enable(true);
+    EXPECT_EQ(raw_states, (std::vector<module::RawCPState>{module::RawCPState::A}));
+
+    // Only the last state reported while disabled counts
+    state_machine.enable(false);
+    bsp.raise_event(Event::A);
+    bsp.raise_event(Event::B);
+    state_machine.enable(true);
+    EXPECT_EQ(raw_states, (std::vector<module::RawCPState>{module::RawCPState::A, module::RawCPState::B}));
+    EXPECT_EQ(events, (std::vector<module::CPEvent>{module::CPEvent::CarPluggedIn}));
+
+    // Nothing stored: enable feeds nothing
+    state_machine.enable(false);
+    state_machine.enable(true);
+    EXPECT_EQ(raw_states.size(), 2);
+    EXPECT_EQ(events.size(), 1);
+}
+
 struct BspStubDeadlock : public BspStub {
     std::vector<std::chrono::time_point<std::chrono::steady_clock>> call_cp_state_X1_times;
     std::vector<std::chrono::time_point<std::chrono::steady_clock>> call_allow_power_on_times;
