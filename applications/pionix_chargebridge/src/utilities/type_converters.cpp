@@ -442,6 +442,8 @@ bool decode_SafetyConfig(c4::yml::ConstNodeRef const& node, SafetyConfig& rhs) {
     rhs.inverted_emergency_input = decode<decltype(rhs.inverted_emergency_input)>(node, "inverted_emergency_input", 0);
     rhs.enable_stop_charging_input =
         decode<decltype(rhs.enable_stop_charging_input)>(node, "enable_stop_charging_input", 1);
+    rhs.emergency_input_non_latching =
+        decode<decltype(rhs.emergency_input_non_latching)>(node, "emergency_input_non_latching", 0);
 
     rhs.relays[0] = decode<RelayConfig>(node, "relay_1");
     rhs.relays[1] = decode<RelayConfig>(node, "relay_2");

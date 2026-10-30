@@ -21,8 +21,9 @@ CB_STATIC_ASSERT((sizeof(CbFirmwareEnd) == 4 + 1 + (128 + 1) && sizeof(CbFirmwar
 // 224 bytes of CbConfig v4, + 4 + 1 session_id/session_flags (cb-session-v1, protocol v5),
 // + 1 CbConfig.station_id, + 1 CbConfig.cb_type (charge_bridge.type) -> CB_CONFIG_VERSION 6,
 // + 2 + 2 host_can_port/host_plc_port (cb-host-ports-v1, same CbConfig version: the MCU accepts
-// the shorter legacy datagram with both ports 0).
-CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 + 4 + 1 + 1 + 1 + 2 + 2 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
+// the shorter legacy datagram with both ports 0), + 1 SafetyConfig.emergency_input_non_latching
+// -> CB_CONFIG_VERSION 7.
+CB_STATIC_ASSERT((sizeof(CbHeartbeatPacket) == 224 + 4 + 1 + 1 + 1 + 2 + 2 + 1 && sizeof(CbHeartbeatPacket) <= CB_MAX_CB_STRUCT_SIZE),
                  "Wrong CB type size!");
 CB_STATIC_ASSERT(sizeof(CbHeartbeatPacket) == sizeof(CbConfig) + 4 + 1 + 2 + 2,
                  "CbHeartbeatPacket is a CbConfig plus the session trailer plus the host ports!");
