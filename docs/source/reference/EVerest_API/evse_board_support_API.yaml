@@ -328,7 +328,8 @@ components:
       title: 'Receive PWM duty cycle'
       summary: Turns PWM on with duty cycle (in percent)
       description: >-
-        EVerest only requests duty cycles strictly between 0 and 100 (10 % for 6 A up to 97 % for 80 A).
+        EVerest only requests duty cycles strictly between 0 and 100 (5 % for high level communication,
+        10 % for 6 A up to 97 % for 80 A).
         State X1 (no current available, PWM off) is requested with cp_state_X1 and state F with cp_state_F,
         never as a duty cycle of 100 or 0 here.
       contentType: application/json
