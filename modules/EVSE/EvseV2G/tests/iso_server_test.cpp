@@ -16,6 +16,7 @@
 #include "v2g_ctx.hpp"
 
 #include <cstring>
+#include <initializer_list>
 #include <memory>
 #include <vector>
 
@@ -77,6 +78,19 @@ protected:
         entry.ChargingProfileEntryMaxPower.Value = max_power_w;
         entry.ChargingProfileEntryMaxPower.Multiplier = 0;
         entry.ChargingProfileEntryMaxPower.Unit = iso2_unitSymbolType_W;
+    }
+
+    void set_charging_profile_starts(std::initializer_list<uint32_t> starts) {
+        auto& req = exi_in->V2G_Message.Body.PowerDeliveryReq;
+        req.ChargingProfile_isUsed = 1u;
+        req.ChargingProfile.ProfileEntry.arrayLen = 0;
+        for (const auto start : starts) {
+            auto& entry = req.ChargingProfile.ProfileEntry.array[req.ChargingProfile.ProfileEntry.arrayLen++];
+            entry.ChargingProfileEntryStart = start;
+            entry.ChargingProfileEntryMaxPower.Value = 0;
+            entry.ChargingProfileEntryMaxPower.Multiplier = 0;
+            entry.ChargingProfileEntryMaxPower.Unit = iso2_unitSymbolType_W;
+        }
     }
 
     void set_offered_pmax(int16_t pmax_w) {
@@ -157,6 +171,70 @@ TEST_F(IsoServerPowerDeliveryTest, offered_tuple_id_with_charging_profile_above_
     EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
 
     EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED_ChargingProfileInvalid);
+}
+
+TEST_F(IsoServerPowerDeliveryTest, charging_profile_starting_after_schedule_end_is_tolerated) {
+    exi_in->V2G_Message.Body.PowerDeliveryReq.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    set_charging_profile_starts({1});
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+    EXPECT_EQ(ctx->state, static_cast<int>(iso_ac_state_id::WAIT_FOR_CHARGINGSTATUS));
+}
+
+TEST_F(IsoServerPowerDeliveryTest, charging_profile_after_schedule_end_before_session_setup_is_sequence_error) {
+    ctx->state = static_cast<int>(iso_ac_state_id::WAIT_FOR_SESSIONSETUP);
+    exi_in->V2G_Message.Body.PowerDeliveryReq.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    set_charging_profile_starts({1});
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED_SequenceError);
+}
+
+TEST_F(IsoServerPowerDeliveryTest,
+       renegotiate_with_charging_profile_after_schedule_end_before_session_setup_is_sequence_error) {
+    ctx->state = static_cast<int>(iso_ac_state_id::WAIT_FOR_SESSIONSETUP);
+    ctx->last_v2g_msg = V2G_UNKNOWN_MSG;
+    auto& req = exi_in->V2G_Message.Body.PowerDeliveryReq;
+    req.ChargeProgress = iso2_chargeProgressType_Renegotiate;
+    req.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    set_charging_profile_starts({1});
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_SEND_AND_TERMINATE);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_FAILED_SequenceError);
+}
+
+TEST_F(IsoServerPowerDeliveryTest, charging_profile_starting_after_schedule_duration_is_tolerated) {
+    constexpr uint32_t schedule_duration_s = 86400;
+    ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0]
+        .PMaxSchedule.PMaxScheduleEntry.array[0]
+        .RelativeTimeInterval.duration = schedule_duration_s;
+    exi_in->V2G_Message.Body.PowerDeliveryReq.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    set_charging_profile_starts({schedule_duration_s + 1});
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
+}
+
+TEST_F(IsoServerPowerDeliveryTest, charging_profile_entries_after_schedule_end_are_not_checked_against_shifted_window) {
+    auto& schedule = ctx->evse_v2g_data.evse_sa_schedule_list.SAScheduleTuple.array[0].PMaxSchedule;
+    set_offered_pmax(11000);
+    schedule.PMaxScheduleEntry.array[1] = schedule.PMaxScheduleEntry.array[0];
+    schedule.PMaxScheduleEntry.array[1].RelativeTimeInterval.start = 10;
+    schedule.PMaxScheduleEntry.array[1].RelativeTimeInterval.duration = 10;
+    schedule.PMaxScheduleEntry.arrayLen = 2;
+    exi_in->V2G_Message.Body.PowerDeliveryReq.SAScheduleTupleID = offered_sa_schedule_tuple_id;
+    set_charging_profile_starts({25, 5});
+    exi_in->V2G_Message.Body.PowerDeliveryReq.ChargingProfile.ProfileEntry.array[1].ChargingProfileEntryMaxPower.Value =
+        22000;
+
+    EXPECT_EQ(iso_handle_request(conn.get()), V2G_EVENT_NO_EVENT);
+
+    EXPECT_EQ(response().ResponseCode, iso2_responseCodeType_OK);
 }
 
 constexpr char test_emaid[] = "DEPNXC00000001";
