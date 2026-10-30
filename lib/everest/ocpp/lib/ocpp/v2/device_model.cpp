@@ -841,7 +841,7 @@ ComponentRegistrationResult DeviceModel::register_components_of(const std::strin
     const auto previous_it = this->registrations.find(owner);
     const bool provider_replaced = previous_it != this->registrations.end() and
                                    previous_it->second.provider != nullptr and previous_it->second.provider != provider;
-    const auto previous_values = previous_it != this->registrations.end()
+    const auto previous_values = previous_it != this->registrations.end() and !this->variable_listener.empty()
                                      ? actual_values(previous_it->second)
                                      : std::map<std::pair<Component, Variable>, std::string>{};
 
