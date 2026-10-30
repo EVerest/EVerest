@@ -47,7 +47,8 @@ public:
     void deadlines(earliest_deadline& next) const;
 
     // Service the expired timer: either close the step-2 toggle window with a SUCCESS CNF, or
-    // repeat/expire the step-1 CNF. Returns the EV whose validation the SUCCESS CNF completed.
+    // repeat/expire the step-1 CNF. Returns the EV whose validation the SUCCESS CNF completed with
+    // at least one toggle seen.
     std::optional<MacAddress> tick(Context& ctx);
 
     // Introspection (tests, diagnostics)

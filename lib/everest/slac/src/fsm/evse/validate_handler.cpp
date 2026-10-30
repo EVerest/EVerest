@@ -85,6 +85,13 @@ std::optional<MacAddress> ValidateHandler::tick(Context& ctx) {
         armed_ = false;
         step2_pending_ = false;
         ctx.log_info("CM_VALIDATE: detected " + std::to_string(toggles) + " BCB toggle(s) during the toggle window");
+        // [V2G3-A09-89] starts TT_match_sequence with every step-2 CNF. With no toggle seen, the EV
+        // gets a count that cannot match its own (C_EV_vald_nb_toggles >= 1) and moves on to the
+        // next EVSE ([V2G3-A09-73]), so no CM_SLAC_MATCH.REQ follows. Arming the window only once
+        // this CP saw the EV keeps frames that merely carry its MAC from shortening its session.
+        if (toggles == 0) {
+            return std::nullopt;
+        }
         return owner_mac_;
     }
     if (armed_) {

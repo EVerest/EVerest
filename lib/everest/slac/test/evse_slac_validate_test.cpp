@@ -138,6 +138,27 @@ bool test_step2_waits_out_window_then_reports_toggle_count() {
            assert_true(validated_ev == ev_a, test_name, "tick must report the validated EV for its match window");
 }
 
+// Without a toggle on this CP the EV is not shown to be plugged in here: the CNF still reports 0
+// toggles, but no EV is reported for the post-validation match window.
+bool test_step2_without_toggles_reports_no_validated_ev() {
+    const char* test_name = "test_step2_without_toggles_reports_no_validated_ev";
+    Harness h;
+    ValidateHandler handler;
+
+    handler.handle_req(make_req(0), ev_a.data(), h.ctx);
+    handler.handle_req(make_req(1), ev_a.data(), h.ctx);
+    h.advance_ms(201);
+    auto const validated_ev = handler.tick(h.ctx);
+
+    return assert_true(h.sent.size() == 2, test_name, "closing the window must send exactly one CNF") and
+           assert_true(h.sent[1].cnf.result == defs::CM_VALIDATE_REQ_RESULT_SUCCESS, test_name,
+                       "CNF result must be SUCCESS") and
+           assert_true(h.sent[1].cnf.toggle_num == 0, test_name, "toggle_num must be 0") and
+           assert_true(not handler.armed() and not handler.step2_pending(), test_name,
+                       "validation must be finished") and
+           assert_true(not validated_ev.has_value(), test_name, "no EV may be reported without a toggle");
+}
+
 bool test_foreign_ev_gets_not_ready_while_validation_in_progress() {
     const char* test_name = "test_foreign_ev_gets_not_ready_while_validation_in_progress";
     Harness h;
@@ -244,10 +265,12 @@ bool test_reset_forgets_in_progress_validation() {
 } // namespace
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 7>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 8>{
         std::make_pair("test_step1_answers_ready_and_arms", test_step1_answers_ready_and_arms),
         std::make_pair("test_step2_waits_out_window_then_reports_toggle_count",
                        test_step2_waits_out_window_then_reports_toggle_count),
+        std::make_pair("test_step2_without_toggles_reports_no_validated_ev",
+                       test_step2_without_toggles_reports_no_validated_ev),
         std::make_pair("test_foreign_ev_gets_not_ready_while_validation_in_progress",
                        test_foreign_ev_gets_not_ready_while_validation_in_progress),
         std::make_pair("test_step1_is_repeated_up_to_retry_limit_then_fails_silently",

@@ -2878,13 +2878,15 @@ struct MachineRig {
     bool reach_wait_slac_match(EvMac const& ev_mac, RunId const& run_id, char const* test_name) {
         return ::reach_wait_slac_match(sent, machine, ev_mac, run_id, test_name);
     }
-    // CM_VALIDATE step 1 and step 2 (pilot timer 1 = 200 ms) for ev_mac, waited out to the SUCCESS CNF.
+    // CM_VALIDATE step 1 and step 2 (pilot timer 1 = 200 ms) for ev_mac with one BCB toggle, waited
+    // out to the SUCCESS CNF.
     bool validate(EvMac const& ev_mac, char const* test_name) {
         auto expected = count_cm_validate_cnf(sent) + 1;
         machine.message(create_cm_validate_req(ev_mac));
         if (!wait_for(200ms, machine, [&] { return count_cm_validate_cnf(sent) == expected; })) {
             return assert_true(false, test_name, "no step-1 CM_VALIDATE.CNF");
         }
+        ctx.bc_transition_count.fetch_add(1);
         expected = count_cm_validate_cnf(sent) + 1;
         machine.message(create_cm_validate_req(ev_mac, /*pilot_timer=*/1));
         if (!wait_for(600ms, machine, [&] { return count_cm_validate_cnf(sent) == expected; })) {
@@ -2999,6 +3001,37 @@ bool test_cm_validate_without_a_waiting_session_is_ignored() {
     }
     rig.machine.message(create_cm_atten_char_rsp(victim, run_id));
     // Past TT_match_sequence: only the full match session timeout may bound the victim's session.
+    (void)wait_for(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS + 1), rig.machine, [] { return false; });
+    return rig.match(victim, run_id, test_name);
+}
+
+// Frames that carry a waiting EV's MAC can run a CM_VALIDATE exchange for it, but without a BCB
+// toggle on this CP they must not hold its session to the post-validation window: the EV, which
+// never asked to be validated, still completes after TT_match_sequence has passed.
+bool test_cm_validate_without_toggles_keeps_the_match_session_timeout() {
+    const char* test_name = "test_cm_validate_without_toggles_keeps_the_match_session_timeout";
+    MachineRig rig;
+    rig.machine.restart_fsm();
+    if (!enter_matching_state(rig.ctx, rig.machine)) {
+        return false;
+    }
+    EvMac const victim = {0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x41};
+    RunId const run_id = fill_run_id(0x60);
+    if (!rig.reach_wait_slac_match(victim, run_id, test_name)) {
+        return false;
+    }
+
+    rig.machine.message(create_cm_validate_req(victim));
+    rig.machine.message(create_cm_validate_req(victim, /*pilot_timer=*/1));
+    if (!wait_for(600ms, rig.machine, [&] { return count_cm_validate_cnf(rig.sent) == 2; })) {
+        return assert_true(false, test_name, "the exchange did not run to the step-2 CM_VALIDATE.CNF");
+    }
+    messages::cm_validate_cnf step2_cnf{};
+    if (!get_last_cm_validate_cnf(rig.sent, step2_cnf) or
+        !assert_true(step2_cnf.toggle_num == 0, test_name, "the step-2 CM_VALIDATE.CNF reports toggles")) {
+        return false;
+    }
+
     (void)wait_for(std::chrono::milliseconds(defs::TT_MATCH_SEQUENCE_MS + 1), rig.machine, [] { return false; });
     return rig.match(victim, run_id, test_name);
 }
@@ -3157,7 +3190,7 @@ bool test_wait_for_link_timeout_is_reported_as_the_next_deadline() {
 }
 
 int main() {
-    const auto tests = std::array<std::pair<const char*, bool (*)()>, 48>{
+    const auto tests = std::array<std::pair<const char*, bool (*)()>, 49>{
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_same_session",
                        test_duplicate_cm_slac_parm_req_restarts_same_session),
         std::make_pair("test_duplicate_cm_slac_parm_req_restarts_inflight_session",
@@ -3237,6 +3270,8 @@ int main() {
                        test_validation_window_binds_only_the_validated_ev),
         std::make_pair("test_cm_validate_without_a_waiting_session_is_ignored",
                        test_cm_validate_without_a_waiting_session_is_ignored),
+        std::make_pair("test_cm_validate_without_toggles_keeps_the_match_session_timeout",
+                       test_cm_validate_without_toggles_keeps_the_match_session_timeout),
         std::make_pair("test_wait_for_link_fails_at_once_for_a_vendor_without_link_status",
                        test_wait_for_link_fails_at_once_for_a_vendor_without_link_status),
         std::make_pair("test_throwing_dlink_ready_on_matched_entry_surfaces_from_the_match_req",
