@@ -186,9 +186,10 @@ passes no write id accepts the race.
 ### Across restarts
 
 Monitors and stored values are kept by component and variable name, so they survive restarts and re-registrations. A
-registration applies them if they fit its characteristics and removes them otherwise. `ChargePoint::start` removes the
-monitors of variables that nobody defines and the stored values of variables that nobody registers (N04, remarks). This is why
-every owner must register before `start`.
+registration applies them if they fit its characteristics and removes them otherwise. The first `ChargePoint::start`
+removes the monitors of variables that nobody defines and the stored values of variables that nobody registers (N04,
+remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
+station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
 
 ## Required variables
 

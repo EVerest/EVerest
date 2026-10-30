@@ -440,6 +440,9 @@ private:
     std::atomic<UploadLogStatusEnum> upload_log_status{UploadLogStatusEnum::Idle};
     std::atomic<std::int32_t> upload_log_status_id;
     BootReasonEnum bootreason{BootReasonEnum::PowerUp};
+    /// \brief The first start removes the monitors and stored values of absent variables. A later one, a restart,
+    /// does not: an owner may be between unregistering and registering again then.
+    bool absent_variables_removed{false};
     bool skip_invalid_csms_certificate_notifications{false};
 
     /// \brief Component responsible for maintaining and persisting the operational status of CS, EVSEs, and connectors.

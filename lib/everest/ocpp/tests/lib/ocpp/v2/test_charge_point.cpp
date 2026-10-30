@@ -1131,12 +1131,8 @@ TEST_F(ChargePointConstructorTestFixtureV2, StopKeepsConnectionCallbacksArmed) {
     ::testing::Mock::VerifyAndClearExpectations(connectivity_manager.get());
 }
 
-TEST_F(ChargePointConstructorTestFixtureV2, StartRemovesMonitorsOfAbsentVariables) {
-    configure_callbacks_with_mocks();
-    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
-    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
-
-    const std::string owner = "EXT:extension";
+namespace {
+RegisteredComponent make_extension_component() {
     RegisteredComponent registered;
     registered.component.name = "ExtensionCtrlr";
     RegisteredVariable level;
@@ -1148,22 +1144,39 @@ TEST_F(ChargePointConstructorTestFixtureV2, StartRemovesMonitorsOfAbsentVariable
     attribute.value = "10";
     level.attributes = {attribute};
     registered.variables = {level};
-    const auto monitor_count = [&]() {
-        std::size_t count = 0;
-        for (const auto& data : device_model->get_monitors({}, {{registered.component, level.variable}})) {
-            count += data.variableMonitoring.size();
-        }
-        return count;
-    };
+    return registered;
+}
 
-    ASSERT_TRUE(device_model->register_components(owner, {registered}, nullptr).rejected.empty());
+std::size_t monitor_count(DeviceModel& device_model, const RegisteredComponent& registered) {
+    std::size_t count = 0;
+    for (const auto& data :
+         device_model.get_monitors({}, {{registered.component, registered.variables.at(0).variable}})) {
+        count += data.variableMonitoring.size();
+    }
+    return count;
+}
+
+SetMonitoringData make_upper_threshold_monitor(const RegisteredComponent& registered) {
     SetMonitoringData request;
     request.component = registered.component;
-    request.variable = level.variable;
+    request.variable = registered.variables.at(0).variable;
     request.type = MonitorEnum::UpperThreshold;
     request.value = 50;
     request.severity = 3;
-    ASSERT_EQ(device_model->set_monitors({request}).at(0).status, SetMonitoringStatusEnum::Accepted);
+    return request;
+}
+} // namespace
+
+TEST_F(ChargePointConstructorTestFixtureV2, StartRemovesMonitorsOfAbsentVariables) {
+    configure_callbacks_with_mocks();
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    const std::string owner = "EXT:extension";
+    const auto registered = make_extension_component();
+    ASSERT_TRUE(device_model->register_components(owner, {registered}, nullptr).rejected.empty());
+    ASSERT_EQ(device_model->set_monitors({make_upper_threshold_monitor(registered)}).at(0).status,
+              SetMonitoringStatusEnum::Accepted);
     device_model->unregister_components(owner);
 
     ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
@@ -1171,7 +1184,29 @@ TEST_F(ChargePointConstructorTestFixtureV2, StartRemovesMonitorsOfAbsentVariable
     charge_point.start(BootReasonEnum::PowerUp);
     charge_point.stop();
     ASSERT_TRUE(device_model->register_components(owner, {registered}, nullptr).rejected.empty());
-    EXPECT_EQ(monitor_count(), 0);
+    EXPECT_EQ(monitor_count(*device_model, registered), 0);
+}
+
+TEST_F(ChargePointConstructorTestFixtureV2, RestartKeepsMonitorsOfUnregisteredVariables) {
+    configure_callbacks_with_mocks();
+    auto connectivity_manager = std::make_shared<::testing::NiceMock<ConnectivityManagerMock>>();
+    ON_CALL(*connectivity_manager, is_websocket_connected()).WillByDefault(::testing::Return(false));
+
+    const std::string owner = "EXT:extension";
+    const auto registered = make_extension_component();
+    ASSERT_TRUE(device_model->register_components(owner, {registered}, nullptr).rejected.empty());
+    ocpp::v2::ChargePoint charge_point(evse_connector_structure, device_model, database_handler, evse_security,
+                                       connectivity_manager, "/tmp", callbacks);
+    charge_point.start(BootReasonEnum::PowerUp);
+    ASSERT_EQ(device_model->set_monitors({make_upper_threshold_monitor(registered)}).at(0).status,
+              SetMonitoringStatusEnum::Accepted);
+    charge_point.stop();
+
+    device_model->unregister_components(owner);
+    charge_point.start(BootReasonEnum::ApplicationReset);
+    charge_point.stop();
+    ASSERT_TRUE(device_model->register_components(owner, {registered}, nullptr).rejected.empty());
+    EXPECT_EQ(monitor_count(*device_model, registered), 1);
 }
 
 // The use-after-free is at destruction: a deferred callback landing while members are destroyed. The
