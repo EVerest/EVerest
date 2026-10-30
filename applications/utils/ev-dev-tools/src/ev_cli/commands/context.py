@@ -31,7 +31,6 @@ class Context:
     everest_dirs: tuple[Path, ...]
     schemas_dir: Path
     licenses_dir: Path
-    build_dir: Path
     #: Collects what the loader has to say, so a command can report on it.
     diagnostics: CollectingSink = field(default_factory=CollectingSink)
 
@@ -44,15 +43,12 @@ class Context:
     @classmethod
     def from_args(cls, args) -> Context:
         everest_dirs = tuple(Path(entry).resolve() for entry in args.everest_dir)
-        schemas_dir = resolve_schemas_dir(
-            Path(args.schemas_dir), Path(args.build_dir), everest_dirs
-        )
+        schemas_dir = resolve_schemas_dir(Path(args.schemas_dir))
         return cls(
             work_dir=Path(args.work_dir).resolve(),
             everest_dirs=everest_dirs,
             schemas_dir=schemas_dir,
             licenses_dir=Path(args.licenses),
-            build_dir=Path(args.build_dir),
         )
 
     # -- lazily built pieces ------------------------------------------------
@@ -184,53 +180,12 @@ class Context:
         return [Path(str(v)).stem for v in values], False
 
 
-def resolve_schemas_dir(
-    schemas_dir: Path, build_dir: Path, everest_dirs: tuple[Path, ...]
-) -> Path:
-    """Find the framework's schema directory, falling back to a CMake cache.
-
-    The build always passes ``--schemas-dir`` explicitly; this is for humans
-    running the tool by hand in a source tree they have already configured.
-    """
-    if schemas_dir.exists():
-        return schemas_dir.resolve()
-
-    print(
-        f'The schemas directory "{schemas_dir}" does not exist; looking for '
-        f'everest-framework in {build_dir / "CMakeCache.txt"}',
-        file=sys.stderr,
-    )
-    found = path_from_cmake_cache('everest-framework', build_dir / 'CMakeCache.txt')
-    if found is not None:
-        candidate = found / 'schemas'
-        if candidate.exists():
-            print(f'Using schemas from {candidate}', file=sys.stderr)
-            return candidate.resolve()
-
-    raise EvCliError(
-        f'could not find the framework schemas. Pass --schemas-dir, or point '
-        f'--build-dir at a configured build directory (tried "{schemas_dir}" '
-        f'and {build_dir / "CMakeCache.txt"}).'
-    )
-
-
-def path_from_cmake_cache(variable_prefix: str, cmake_cache: Path) -> Path | None:
-    """Read ``<prefix>_SOURCE_DIR`` out of a CMake cache.
-
-    Unlike the previous implementation this never prompts.  A generator that
-    blocks on ``input()`` cannot be run from a build, and the answer here is
-    not a judgement call: either the cache names a directory that exists or it
-    does not.
-    """
-    if not cmake_cache.exists():
-        return None
-
-    needle = f'{variable_prefix}_SOURCE_DIR:STATIC='
-    try:
-        for line in cmake_cache.read_text().splitlines():
-            if line.startswith(needle):
-                candidate = Path(line[len(needle):].strip())
-                return candidate if candidate.exists() else None
-    except OSError:
-        return None
-    return None
+def resolve_schemas_dir(schemas_dir: Path) -> Path:
+    """The framework's schema directory, which the caller names."""
+    if not schemas_dir.exists():
+        raise EvCliError(
+            f'the framework schemas directory "{schemas_dir}" does not exist. '
+            f'Pass --schemas-dir naming the "schemas" directory of '
+            f'everest-framework.'
+        )
+    return schemas_dir.resolve()

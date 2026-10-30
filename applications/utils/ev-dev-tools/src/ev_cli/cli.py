@@ -65,10 +65,6 @@ def _common_options() -> argparse.ArgumentParser:
         '--licenses', '-lc', type=str, default=str(cwd / '../licenses'),
         help='directory from which custom license texts are read '
              '(default: ../licenses)')
-    group.add_argument(
-        '--build-dir', '-bd', type=str, default=str(cwd / 'build'),
-        help='build directory used to locate the framework when --schemas-dir '
-             'is not given (default: ./build)')
     return parser
 
 
