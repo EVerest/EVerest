@@ -128,14 +128,16 @@ TEST_F(DeviceModelInMemoryTest, failed_storage_write_leaves_memory_unchanged) {
     EXPECT_TRUE(changes.empty());
 }
 
-TEST_F(DeviceModelInMemoryTest, reboot_required_storage_write_leaves_memory_unchanged) {
+TEST_F(DeviceModelInMemoryTest, reboot_required_storage_write_is_read_back) {
     EXPECT_CALL(*storage, set_variable_attribute_value(component, persisted, AttributeEnum::Actual, "11", "csms"))
         .WillOnce(Return(SetVariableStatusEnum::RebootRequired));
 
     EXPECT_EQ(device_model->set_value(component, persisted, AttributeEnum::Actual, "11", "csms"),
               SetVariableStatusEnum::RebootRequired);
-    EXPECT_EQ(get(persisted), "10");
-    EXPECT_TRUE(changes.empty());
+    EXPECT_EQ(get(persisted), "11");
+    ASSERT_EQ(changes.size(), 1);
+    EXPECT_EQ(changes[0].value_previous, "10");
+    EXPECT_EQ(changes[0].value_current, "11");
 }
 
 TEST_F(DeviceModelInMemoryTest, non_persistent_value_is_not_written_to_storage) {

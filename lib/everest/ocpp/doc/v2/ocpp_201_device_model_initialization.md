@@ -40,8 +40,10 @@ described below. After loading, every read is answered from memory.
 
 A write goes to the database first. Memory is only updated once the database has accepted the write. If the database
 rejects it, the request is rejected and memory keeps the old value. A storage that answers `RebootRequired` holds the
-new value for the next start; memory keeps the old value until then, and no listener is notified. The SQLite storage of
-libocpp does not answer `RebootRequired`.
+new value for the next start; memory is updated and the listeners are notified like for `Accepted`, so a read returns
+the value written, as for a variable whose owner answers `RebootRequired`. The value takes effect only at the next
+start. OCPP 2.x leaves open what a read returns in the meantime. The SQLite storage of libocpp does not answer
+`RebootRequired`.
 
 Attributes that are not persistent are the exception. A write to such an attribute only changes the value in memory
 and is lost on restart. At the next start, the attribute gets the value stored in the database again. That is usually

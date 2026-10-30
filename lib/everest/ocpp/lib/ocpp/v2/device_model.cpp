@@ -690,7 +690,7 @@ DeviceModel::AppliedWrite DeviceModel::apply(const ComposedVariable& composed, c
         return applied;
     }
     applied.status = this->persist(composed, component, variable, attribute_enum, value, source, *attribute);
-    if (applied.status != SetVariableStatusEnum::Accepted) {
+    if (applied.status != SetVariableStatusEnum::Accepted and applied.status != SetVariableStatusEnum::RebootRequired) {
         return applied;
     }
 

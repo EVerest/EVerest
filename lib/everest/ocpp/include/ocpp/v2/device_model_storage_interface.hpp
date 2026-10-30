@@ -73,7 +73,7 @@ public:
     /// \param value
     /// \param source           The source of the value.
     /// \return Accepted if the value is set in the storage, RebootRequired if the storage holds it for the next
-    /// start, Rejected if it could not be set. DeviceModel updates its copy in memory only on Accepted.
+    /// start, Rejected if it could not be set. DeviceModel updates its copy in memory on Accepted and RebootRequired.
     virtual SetVariableStatusEnum set_variable_attribute_value(const Component& component_id,
                                                                const Variable& variable_id,
                                                                const AttributeEnum& attribute_enum,
