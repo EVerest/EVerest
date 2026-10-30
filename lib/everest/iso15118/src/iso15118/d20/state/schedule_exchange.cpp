@@ -25,9 +25,9 @@ using DynamicReqControlMode = message_20::datatypes::Dynamic_SEReqControlMode;
 using DynamicResControlMode = message_20::datatypes::Dynamic_SEResControlMode;
 
 namespace {
-constexpr uint64_t MICROSECONDS_PER_MILLISECOND = 1'000;
+constexpr uint64_t MICROSECONDS_PER_MILLISECOND = MICROSECONDS_PER_SECOND / MILLISECONDS_PER_SECOND;
 
-void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt::RationalNumber& max_power) {
+void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const MaxChargePower& max_power) {
     auto& schedule = mode.schedule_tuple.emplace_back();
     schedule.schedule_tuple_id = 1;
     // [V2G20-1016] TimeAnchor marks when the first PowerScheduleEntry becomes active, i.e. now.
@@ -39,7 +39,9 @@ void set_default_scheduled_control_mode(ScheduledResControlMode& mode, const dt:
     schedule.charging_schedule.power_schedule.time_anchor = now_in_secc_time() / MICROSECONDS_PER_MILLISECOND;
 
     dt::PowerScheduleEntry power_schedule;
-    power_schedule.power = max_power;
+    power_schedule.power = max_power.power;
+    power_schedule.power_l2 = max_power.power_L2;
+    power_schedule.power_l3 = max_power.power_L3;
     power_schedule.duration = dt::SCHEDULED_POWER_DURATION_S;
     schedule.charging_schedule.power_schedule.entries.push_back(power_schedule);
 }
@@ -66,7 +68,7 @@ void set_dynamic_parameters_in_res(DynamicResControlMode& res_mode, const Update
 namespace dt = message_20::datatypes;
 
 message_20::ScheduleExchangeResponse handle_request(const message_20::ScheduleExchangeRequest& req,
-                                                    const d20::Session& session, const dt::RationalNumber& max_power,
+                                                    const d20::Session& session, const MaxChargePower& max_power,
                                                     const UpdateDynamicModeParameters& dynamic_parameters,
                                                     bool timeout_reached) {
 
@@ -158,16 +160,20 @@ Result ScheduleExchange::feed(Event ev) {
             first_req_msg = false;
         }
 
-        dt::RationalNumber max_charge_power = {0, 0};
+        // The EV sizes its EVPowerProfile from the ChargeParameterDiscoveryRes, so the offer repeats that maximum
+        // rather than the limits updated since. Only a session that skipped the discovery uses the live ones.
+        MaxChargePower max_charge_power{{0, 0}, std::nullopt, std::nullopt};
+        if (m_ctx.session.cpd_max_charge_power.has_value()) {
+            max_charge_power = *m_ctx.session.cpd_max_charge_power;
+        } else if (m_ctx.session.is_dc_charger()) {
+            max_charge_power.power = m_ctx.session_config.dc_limits.charge_limits.power.max;
+        } else if (m_ctx.session.is_ac_charger() or m_ctx.session.is_ac_der_iec_charger() or
+                   m_ctx.session.is_ac_der_sae_charger()) {
+            max_charge_power = d20::max_charge_power(m_ctx.session_config.ac_limits);
+        }
 
         const auto& selected_services = m_ctx.session.get_selected_services();
         const auto selected_energy_service = selected_services.selected_energy_service;
-
-        if (m_ctx.session.is_dc_charger()) {
-            max_charge_power = m_ctx.session_config.dc_limits.charge_limits.power.max;
-        } else if (m_ctx.session.is_ac_charger()) {
-            max_charge_power = m_ctx.session_config.ac_limits.charge_power.max;
-        }
 
         std::optional<dt::AcConnector> ac_connector{};
         if (std::holds_alternative<dt::AcConnector>(selected_services.selected_connector)) {
@@ -212,8 +218,17 @@ Result ScheduleExchange::feed(Event ev) {
 
         m_ctx.session.offered_schedules.clear();
         if (const auto* scheduled = std::get_if<ScheduledResControlMode>(&res.control_mode)) {
+            const auto three_phase = m_ctx.session.is_three_phase();
+            const auto timeline = [three_phase](const dt::PowerSchedule& schedule) {
+                return PowerTimeline::from(schedule.time_anchor / MILLISECONDS_PER_SECOND, schedule.entries,
+                                           three_phase);
+            };
             for (const auto& tuple : scheduled->schedule_tuple) {
-                m_ctx.session.offered_schedules.insert(tuple.schedule_tuple_id);
+                OfferedSchedule offered{timeline(tuple.charging_schedule.power_schedule), {}};
+                if (tuple.discharging_schedule.has_value()) {
+                    offered.discharge = timeline(tuple.discharging_schedule->power_schedule);
+                }
+                m_ctx.session.offered_schedules.emplace(tuple.schedule_tuple_id, offered);
             }
         }
 

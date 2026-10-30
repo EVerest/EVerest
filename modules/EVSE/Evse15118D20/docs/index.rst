@@ -411,6 +411,13 @@ permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
 (CC.4.3).
 
+In scheduled control mode, a ``PowerDeliveryReq`` with ``Start`` whose EV power
+profile asks for more charge or discharge power than the selected schedule offers
+in any slot it overlaps is answered with ``FAILED_EVPowerProfileInvalid``
+([V2G20-478], [V2G20-1559]); time the schedule does not cover offers 0 W
+([V2G20-1811]). Each profile entry may overlap the neighbouring slots by 5 s, for
+an EV clock that is slightly off the SECC's.
+
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may
 only be sent while the applied entry of the EV's power profile, from its latest

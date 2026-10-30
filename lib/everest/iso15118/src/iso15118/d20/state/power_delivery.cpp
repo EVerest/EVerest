@@ -28,6 +28,11 @@ namespace dt = message_20::datatypes;
 
 namespace {
 
+// Not from the standard: the EV anchors its profile in SECC time synchronized from the second-resolution
+// EVSETimeStamp ([V2G20-1529], [V2G20-1536]), so its slot boundaries may be a few seconds off the offered ones.
+// Each entry may overlap the neighbouring slots by this much.
+constexpr uint64_t EV_POWER_PROFILE_CLOCK_TOLERANCE_S = 5;
+
 const dt::Scheduled_EVPPTControlMode* scheduled_profile(const message_20::PowerDeliveryRequest& req) {
     if (req.charge_progress != dt::Progress::Start or not req.power_profile.has_value()) {
         return nullptr;
@@ -44,9 +49,28 @@ std::optional<dt::ResponseCode> power_profile_error(const message_20::PowerDeliv
         return std::nullopt;
     }
 
-    if (session.offered_schedules.count(scheduled->selected_schedule) == 0) {
+    const auto offered = session.offered_schedules.find(scheduled->selected_schedule);
+    if (offered == session.offered_schedules.end()) {
         // [V2G20-479] names FAILED_TariffSelectionInvalid, which the -20 schema does not define.
         return dt::ResponseCode::FAILED_ScheduleSelectionInvalid;
+    }
+
+    // [V2G20-478], [V2G20-1559]: each entry against the offered charge and discharge power of every slot it
+    // overlaps. The EV's TimeAnchor is in microseconds (Table 103).
+    const auto profile = PowerTimeline::from(req.power_profile->time_anchor / MICROSECONDS_PER_SECOND,
+                                             req.power_profile->entries, session.is_three_phase());
+    const auto& [charge, discharge] = offered->second;
+    uint64_t entry_start_s = profile.time_anchor_s;
+    for (const auto& entry : profile.entries) {
+        const uint64_t entry_end_s = entry_start_s + entry.duration_s;
+        const uint64_t checked_start_s = entry_start_s + EV_POWER_PROFILE_CLOCK_TOLERANCE_S;
+        const uint64_t checked_end_s =
+            entry_end_s > EV_POWER_PROFILE_CLOCK_TOLERANCE_S ? entry_end_s - EV_POWER_PROFILE_CLOCK_TOLERANCE_S : 0;
+        if (charge.exceeded_by(checked_start_s, checked_end_s, entry) or
+            discharge.undercut_by(checked_start_s, checked_end_s, entry)) {
+            return dt::ResponseCode::FAILED_EVPowerProfileInvalid;
+        }
+        entry_start_s = entry_end_s;
     }
 
     return std::nullopt;
@@ -105,7 +129,7 @@ message_20::PowerDeliveryResponse handle_request(const message_20::PowerDelivery
         notification.notification_max_delay = 0;
     }
 
-    // TODO(sl): Check Req PowerProfile & ChannelSelection
+    // TODO(sl): Check Req ChannelSelection
 
     // Todo(sl): Add standby feature and define as everest module config
     if (req.charge_progress == dt::Progress::Standby) {
@@ -221,7 +245,8 @@ Result PowerDelivery::feed(Event ev) {
 
         if (req->power_profile.has_value()) {
             m_ctx.session.ev_power_profile =
-                EvPowerProfile::from(req->power_profile->time_anchor, req->power_profile->entries);
+                PowerTimeline::from(req->power_profile->time_anchor / MICROSECONDS_PER_SECOND,
+                                    req->power_profile->entries, m_ctx.session.is_three_phase());
         }
 
         if (not shutdown_requested) {
