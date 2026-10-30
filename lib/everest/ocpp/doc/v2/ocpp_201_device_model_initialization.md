@@ -145,6 +145,9 @@ one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `registe
 `unregister_components` and `notify_value_changed` reject it. An owner that registers again replaces its earlier
 registration.
 
+The integrator is responsible for owners not defining the same variable. Otherwise the owner that registers first gets
+it, with its monitors and stored values; owners start in no fixed order, so after a restart that can be another owner.
+
 The variables that libocpp sets from its own state through `set_read_only_value` are defined by the component config
 only, and a registration of one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`, the `AvailabilityState` of the
 charging station, the EVSEs and the connectors, `OCPPCommCtrlr.ActiveNetworkProfile`, `OCPPCommCtrlr.MessageTimeout`,
