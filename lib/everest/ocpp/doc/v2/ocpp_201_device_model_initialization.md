@@ -136,6 +136,14 @@ Besides the component config, the integrating firmware can register components a
 `DeviceModelRegistryInterface::register_components`. A registration is held in memory only and has to be repeated at
 every start, before `ChargePoint::start`.
 
+### Across restarts
+
+Monitors and stored values are kept by component and variable name, so they survive restarts and re-registrations. A
+registration applies them if they fit its characteristics and removes them otherwise. The first `ChargePoint::start`
+removes the monitors of variables that nobody defines and the stored values of variables that nobody registers (N04,
+remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
+station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
+
 ### Ownership
 
 Every variable has exactly one definition: the component config or one runtime owner. Ownership is per variable, so
@@ -188,14 +196,6 @@ write may be stored after the report and overwrite it. Each write carries a writ
 the last write it had applied with `notify_value_changed` resolves the race: libocpp ignores a report based on an older
 write than the last one it stored, and does not store a write over a report based on it or a newer one. An owner that
 passes no write id accepts the race.
-
-### Across restarts
-
-Monitors and stored values are kept by component and variable name, so they survive restarts and re-registrations. A
-registration applies them if they fit its characteristics and removes them otherwise. The first `ChargePoint::start`
-removes the monitors of variables that nobody defines and the stored values of variables that nobody registers (N04,
-remarks). This is why every owner must register before the first `start`. A later `start`, a restart of the charging
-station at runtime, removes nothing, so an owner may unregister and register again in the meantime.
 
 ## Required variables
 
