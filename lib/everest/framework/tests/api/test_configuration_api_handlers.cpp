@@ -509,12 +509,20 @@ TEST_CASE("ConfigurationAPI failure and no-replyTo paths", "[configuration_api]"
         CHECK(mock.published().empty());
     }
 
-    SECTION("no headers.replyTo -> command still runs, reply is discarded to the empty topic") {
+    SECTION("no headers.replyTo -> command still runs, no reply is published") {
         REQUIRE_NOTHROW(invoke_command(mock, "mark_active_slot", make_request_without_reply_to(json{{"slot_id", 1}})));
 
         CHECK(svc.mark_active_slot_calls == 1);
-        for (const auto& [topic, payload] : mock.published()) {
-            CHECK(topic.empty());
+        CHECK(mock.published().empty());
+    }
+
+    SECTION("a replyTo that is not a publishable topic -> command is rejected") {
+        for (const auto& reply_to :
+             {"", "test/+/reply", "test/#", "everest_api/1/configuration/m2e/mark_active_slot"}) {
+            REQUIRE_NOTHROW(invoke_command(mock, "mark_active_slot", make_request(json{{"slot_id", 1}}, reply_to)));
         }
+
+        CHECK(svc.mark_active_slot_calls == 0);
+        CHECK(mock.published().empty());
     }
 }

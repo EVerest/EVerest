@@ -3,13 +3,18 @@
 
 #include "system/json_codec.hpp"
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
 #include "system/API.hpp"
 #include "system/codec.hpp"
+#include <cstdint>
 #include <iostream>
 #include <stdexcept>
 #include <string>
 
 namespace everest::lib::API::V1_0::types::system {
+
+using utilities::json_number;
 
 void to_json(json& j, const FirmwareUpdateRequest& k) noexcept {
     j = json{
@@ -36,14 +41,14 @@ void to_json(json& j, const FirmwareUpdateRequest& k) noexcept {
     }
 }
 void from_json(const json& j, FirmwareUpdateRequest& k) {
-    k.request_id = j.at("request_id");
+    k.request_id = json_number<int32_t>(j.at("request_id"));
     k.location = j.at("location");
 
     if (j.contains("retries")) {
-        k.retries.emplace(j.at("retries"));
+        k.retries.emplace(json_number<int32_t>(j.at("retries")));
     }
     if (j.contains("retry_interval_s")) {
-        k.retry_interval_s.emplace(j.at("retry_interval_s"));
+        k.retry_interval_s.emplace(json_number<int32_t>(j.at("retry_interval_s")));
     }
     if (j.contains("retrieve_timestamp")) {
         k.retrieve_timestamp.emplace(j.at("retrieve_timestamp"));
@@ -56,6 +61,9 @@ void from_json(const json& j, FirmwareUpdateRequest& k) {
     }
     if (j.contains("signature")) {
         k.signature.emplace(j.at("signature"));
+    }
+    if (k.retries.has_value() and (k.retries.value() < 1)) {
+        throw std::invalid_argument("FirmwareUpdateRequest: retries out of range");
     }
 }
 
@@ -86,10 +94,10 @@ void from_json(const json& j, UploadLogsRequest& k) {
     k.location = j.at("location");
 
     if (j.contains("retries")) {
-        k.retries.emplace(j.at("retries"));
+        k.retries.emplace(json_number<int32_t>(j.at("retries")));
     }
     if (j.contains("retry_interval_s")) {
-        k.retry_interval_s.emplace(j.at("retry_interval_s"));
+        k.retry_interval_s.emplace(json_number<int32_t>(j.at("retry_interval_s")));
     }
     if (j.contains("oldest_timestamp")) {
         k.oldest_timestamp.emplace(j.at("oldest_timestamp"));
@@ -101,7 +109,10 @@ void from_json(const json& j, UploadLogsRequest& k) {
         k.type.emplace(j.at("type"));
     }
     if (j.contains("request_id")) {
-        k.request_id.emplace(j.at("request_id"));
+        k.request_id.emplace(json_number<int32_t>(j.at("request_id")));
+    }
+    if (k.retries.has_value() and (k.retries.value() < 1)) {
+        throw std::invalid_argument("UploadLogsRequest: retries out of range");
     }
 }
 
@@ -129,7 +140,7 @@ void to_json(json& j, const LogStatus& k) noexcept {
 }
 void from_json(const json& j, LogStatus& k) {
     k.log_status = j.at("log_status");
-    k.request_id = j.at("request_id");
+    k.request_id = json_number<int32_t>(j.at("request_id"));
 }
 
 void to_json(json& j, const FirmwareUpdateMetadata& k) noexcept {
@@ -156,7 +167,7 @@ void to_json(json& j, const FirmwareUpdateStatus& k) noexcept {
 }
 void from_json(const json& j, FirmwareUpdateStatus& k) {
     k.firmware_update_status = j.at("firmware_update_status");
-    k.request_id = j.at("request_id");
+    k.request_id = json_number<int32_t>(j.at("request_id"));
     if (j.contains("firmware_update_metadata")) {
         k.firmware_update_metadata = j.at("firmware_update_metadata");
     }
@@ -863,7 +874,7 @@ void to_json(json& j, const ConfigureNetworkRequest& k) noexcept {
     }
 }
 void from_json(const json& j, ConfigureNetworkRequest& k) {
-    k.request_id = j.at("request_id");
+    k.request_id = json_number<int32_t>(j.at("request_id"));
     k.interface = j.at("interface");
 
     if (j.contains("interface_name")) {
@@ -903,7 +914,7 @@ void to_json(json& j, const ConfigureNetworkStatus& k) noexcept {
     }
 }
 void from_json(const json& j, ConfigureNetworkStatus& k) {
-    k.request_id = j.at("request_id");
+    k.request_id = json_number<int32_t>(j.at("request_id"));
     k.status = j.at("status");
 
     if (j.contains("interface_address")) {

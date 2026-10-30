@@ -50,7 +50,7 @@ systemImpl::handle_update_firmware(types::system::FirmwareUpdateRequest& firmwar
 
 void systemImpl::handle_allow_firmware_installation() {
     static const auto topic = mod->helper.get_topics().everest_to_extern("allow_firmware_installation");
-    mod->mqtt_v.publish(topic, "");
+    mod->mqtt_v.publish(topic);
 }
 
 types::system::UploadLogsResponse

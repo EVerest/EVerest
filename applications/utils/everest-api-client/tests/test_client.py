@@ -20,7 +20,7 @@ import pytest
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from everest_api import commands, spy  # noqa: E402
-from everest_api.model import api_name_from_file  # noqa: E402
+from everest_api.model import api_name_from_file, reply_topic  # noqa: E402
 from everest_api.mqtt_client import ApiClient  # noqa: E402
 from everest_api.shell import EVerestAPICmd  # noqa: E402
 from everest_api.specs import SPEC_GLOB, find_spec_dir, load_models  # noqa: E402
@@ -144,7 +144,17 @@ def test_topics(models):
     ep = ApiClient(fake, entrypoint, "entrypoint")
     ep.start()
     assert ep.send_topic(op, {"api_type": "powermeter"}).endswith("/powermeter")
-    assert any(topic.endswith("/+") for topic in fake.subscribed)
+    assert "everest_api/e2m/discover/+" in fake.subscribed
+    assert "everest_api/e2m/query-modules/+/+" in fake.subscribed
+
+
+def test_reply_topics_stay_below_e2m():
+    # EVerest accepts a replyTo in everest_api only at least two levels below e2m; the client appends one
+    assert reply_topic("everest_api/1/lifecycle/m2e/get_everest_version") == \
+        "everest_api/1/lifecycle/e2m/get_everest_version"
+    assert reply_topic("everest_api/discover") == "everest_api/e2m/discover"
+    assert reply_topic("everest_api/query-modules/powermeter") == "everest_api/e2m/query-modules/powermeter"
+    assert reply_topic("discover") == "e2m/discover"
 
 
 def test_nothing_is_subscribed_before_start(models):

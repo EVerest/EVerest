@@ -6,8 +6,14 @@
 #include "money/codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
+#include <stdexcept>
 
 namespace everest::lib::API::V1_0::types::money {
+
+using utilities::json_number;
 
 using json = nlohmann::json;
 
@@ -1227,7 +1233,10 @@ void from_json(const json& j, Currency& k) {
         k.code.emplace(j.at("code"));
     }
     if (j.contains("decimals")) {
-        k.decimals.emplace(j.at("decimals"));
+        k.decimals.emplace(json_number<int32_t>(j.at("decimals")));
+    }
+    if (k.decimals.has_value() and (k.decimals.value() < 0)) {
+        throw std::invalid_argument("Currency: decimals out of range");
     }
 }
 
@@ -1237,7 +1246,7 @@ void to_json(json& j, MoneyAmount const& k) noexcept {
     };
 }
 void from_json(const json& j, MoneyAmount& k) {
-    k.value = j.at("value");
+    k.value = json_number<int32_t>(j.at("value"));
 }
 
 void to_json(json& j, Price const& k) noexcept {

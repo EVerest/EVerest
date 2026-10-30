@@ -167,10 +167,13 @@ components:
         type: object
         additionalProperties: true
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
@@ -200,10 +203,13 @@ components:
         type: object
         additionalProperties: true
         required:
+          - headers
           - payload
         properties:
           headers:
             type: object
+            required:
+              - replyTo
             properties:
               replyTo:
                 type: string
@@ -647,7 +653,7 @@ components:
           type: object
           $ref: '#/components/schemas/units_signed/types/SignedMeterValue'
         signed_meter_value:
-          description: The signed meter value report of the stopped transaction. Must be provided if status is OK.
+          description: The signed meter value report of the stopped transaction. Must be provided if status is OK and a specific transaction was stopped; it is absent when an empty transaction id cancelled all transactions. A meter that does not sign transactions replies NOT_SUPPORTED.
           type: object
           $ref: '#/components/schemas/units_signed/types/SignedMeterValue'
         error:

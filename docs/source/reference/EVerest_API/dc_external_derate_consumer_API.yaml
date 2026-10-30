@@ -129,7 +129,9 @@ components:
         Set external derating values. The provided values
         will be merged with the existing internal capabilities of the power supply:
         The minimum of the internal and external values will be used.
-        All values are optional, unset means no limit.
+        All values are optional, unset means no limit, so {} lifts every derating. A payload that is not
+        such an object, has unknown properties or carries a value that is not a JSON number is ignored
+        with a log warning and leaves the derating in force.
       contentType: application/json
       payload:
         $ref: '#/components/schemas/ExternalDerating'
@@ -152,17 +154,16 @@ components:
       contentType: application/json
       payload:
         type: object
-        required:
-          - headers
         properties:
           headers:
             type: object
-            required:
-              - replyTo
             properties:
               replyTo:
                 type: string
-                description: Address to send the response to.
+                minLength: 1
+                description: >-
+                  Address to send the response to. Omit it to discard the response. An invalid address, see
+                  the EVerest API explanation, rejects the request.
       examples:
         - summary: ""
           payload:
@@ -207,7 +208,7 @@ components:
     ExternalDerating:
       description: Derate DC power supply Capabilities from an external source.
       type: object
-      additionalProperties: true
+      additionalProperties: false
       properties:
         max_export_current_A:
           description: Maximum current that the power supply can output in Ampere

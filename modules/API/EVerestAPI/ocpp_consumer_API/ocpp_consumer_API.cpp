@@ -76,12 +76,12 @@ auto ocpp_consumer_API::forward_and_cache_api_var(std::string const& var) {
 void ocpp_consumer_API::generate_api_cmd_data_transfer() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("data_transfer_outgoing", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         DataTransferRequest request;
         if (deserialize_request(data, reply_to, request)) {
             auto int_reply = r_data_transfer->call_data_transfer(to_internal_api(request));
             auto reply = to_external_api(int_reply);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -91,12 +91,12 @@ void ocpp_consumer_API::generate_api_cmd_data_transfer() {
 void ocpp_consumer_API::generate_api_cmd_get_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("get_variables", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         GetVariableRequestList request;
         if (deserialize_request(data, reply_to, request)) {
             auto int_reply = r_ocpp->call_get_variables(to_internal_api(request));
             auto reply = to_external_api(int_reply);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -106,12 +106,12 @@ void ocpp_consumer_API::generate_api_cmd_get_variables() {
 void ocpp_consumer_API::generate_api_cmd_set_variables() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("set_variables", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         SetVariablesArgs request;
         if (deserialize_request(data, reply_to, request)) {
             auto int_reply = r_ocpp->call_set_variables(to_internal_api(request.variables), request.source);
             auto reply = to_external_api(int_reply);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;
@@ -139,7 +139,7 @@ void ocpp_consumer_API::generate_api_cmd_monitor_and_get_variables() {
             if (deserialize(msg.payload, request)) {
                 auto int_reply = r_ocpp->call_monitor_and_get_variables(to_internal_api(request));
                 auto reply = to_external_api(int_reply);
-                mqtt_v.publish(msg.replyTo, serialize(reply));
+                mqtt_v.publish_reply(msg.replyTo, serialize(reply));
                 return true;
             }
         }
@@ -150,12 +150,12 @@ void ocpp_consumer_API::generate_api_cmd_monitor_and_get_variables() {
 void ocpp_consumer_API::generate_api_cmd_change_availability() {
     using namespace API_types_ext;
     helper.subscribe_api_topic("change_availability", [=](std::string const& data) {
-        std::string reply_to;
+        std::optional<std::string> reply_to;
         ChangeAvailabilityRequest request;
         if (deserialize_request(data, reply_to, request)) {
             auto int_reply = r_ocpp->call_change_availability(to_internal_api(request));
             auto reply = to_external_api(int_reply);
-            mqtt_v.publish(reply_to, serialize(reply));
+            mqtt_v.publish_reply(reply_to, serialize(reply));
             return true;
         }
         return false;

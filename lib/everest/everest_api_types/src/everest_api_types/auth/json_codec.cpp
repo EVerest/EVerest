@@ -8,8 +8,14 @@
 #include "iso15118_charger/json_codec.hpp"
 #include "nlohmann/json.hpp"
 #include "text_message/json_codec.hpp"
+#include "utilities/json_codec_helpers.hpp"
+
+#include <cstdint>
+#include <stdexcept>
 
 namespace everest::lib::API::V1_0::types::auth {
+
+using utilities::json_number;
 
 void to_json(json& j, AuthorizationStatus const& k) noexcept {
     switch (k) {
@@ -636,12 +642,16 @@ void from_json(const json& j, ValidationResult& k) {
         json arr = j.at("evse_ids");
         std::vector<int32_t> vec;
         for (auto val : arr) {
-            vec.push_back(val);
+            const auto evse_id = json_number<int32_t>(val);
+            if (evse_id < 1) {
+                throw std::invalid_argument("ValidationResult: evse_ids must be at least 1");
+            }
+            vec.push_back(evse_id);
         }
         k.evse_ids.emplace(vec);
     }
     if (j.contains("reservation_id")) {
-        k.reservation_id.emplace(j.at("reservation_id"));
+        k.reservation_id.emplace(json_number<int32_t>(j.at("reservation_id")));
     }
     if (j.contains("allowed_energy_transfer_modes")) {
         std::vector<types::iso15118_charger::EnergyTransferMode> vec;
@@ -661,7 +671,7 @@ void to_json(json& j, ValidationResultUpdate const& k) noexcept {
 
 void from_json(const json& j, ValidationResultUpdate& k) {
     k.validation_result = j.at("validation_result");
-    k.connector_id = j.at("connector_id");
+    k.connector_id = json_number<int32_t>(j.at("connector_id"));
 }
 
 void to_json(json& j, WithdrawAuthorizationRequest const& k) noexcept {
@@ -675,8 +685,12 @@ void to_json(json& j, WithdrawAuthorizationRequest const& k) noexcept {
 }
 
 void from_json(json const& j, WithdrawAuthorizationRequest& k) {
+    // A request without properties withdraws every authorization, so a malformed one must not be read as such.
+    if (not j.is_object()) {
+        throw std::invalid_argument("WithdrawAuthorizationRequest: not a JSON object");
+    }
     if (j.contains("evse_id")) {
-        k.evse_id.emplace(j.at("evse_id"));
+        k.evse_id.emplace(json_number<int32_t>(j.at("evse_id")));
     }
     if (j.contains("id_token")) {
         k.id_token.emplace(j.at("id_token"));
