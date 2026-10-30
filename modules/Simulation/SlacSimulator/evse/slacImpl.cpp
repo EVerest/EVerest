@@ -19,8 +19,9 @@ void slacImpl::handle_reset(bool& enable) {
     set_state_to_unmatched();
 }
 
+// Like EvseSlac: enter_bcd only arms, MATCHING follows the EV's first CM_SLAC_PARM.REQ (see SlacSimulator::run)
 void slacImpl::handle_enter_bcd() {
-    set_state_to_matching();
+    armed = true;
 }
 
 void slacImpl::handle_leave_bcd() {
@@ -45,6 +46,7 @@ void slacImpl::handle_count_bc(int& count) {
 }
 
 void slacImpl::set_state_to_unmatched() {
+    armed = false;
     if (state != State::UNMATCHED) {
         state = State::UNMATCHED;
         publish_state(state);
@@ -62,7 +64,12 @@ State slacImpl::get_state() const {
     return state;
 }
 
+bool slacImpl::is_armed() const {
+    return armed;
+}
+
 void slacImpl::set_state_matched() {
+    armed = false;
     state = State::MATCHED;
     publish_state(state);
     publish_dlink_ready(true);
