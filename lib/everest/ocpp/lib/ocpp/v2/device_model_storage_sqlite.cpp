@@ -533,12 +533,16 @@ std::optional<VariableMonitoringMeta> DeviceModelStorageSqlite::set_monitoring_d
 
 std::optional<std::string> DeviceModelStorageSqlite::get_actual_value(const Component& component_id,
                                                                       const Variable& variable_id) {
-    if (this->get_variable_id(component_id, variable_id) != -1) {
-        const auto attribute = this->get_variable_attribute(component_id, variable_id, AttributeEnum::Actual);
-        if (!attribute.has_value() || !attribute->value.has_value()) {
+    const auto _variable_id = this->get_variable_id(component_id, variable_id);
+    if (_variable_id != -1) {
+        auto attribute_stmt = this->db->new_statement(
+            "SELECT VALUE FROM VARIABLE_ATTRIBUTE WHERE VARIABLE_ID = @variable_id AND TYPE_ID = @type_id");
+        attribute_stmt->bind_int("@variable_id", _variable_id);
+        attribute_stmt->bind_int("@type_id", static_cast<int>(AttributeEnum::Actual));
+        if (attribute_stmt->step() != SQLITE_ROW) {
             return std::nullopt;
         }
-        return attribute->value->get();
+        return attribute_stmt->column_text_nullable(0);
     }
 
     auto select_stmt = this->db->new_statement(std::string("SELECT VALUE FROM VARIABLE_ATTRIBUTE_VALUE WHERE ") +
