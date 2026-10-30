@@ -164,11 +164,12 @@ A write, a SetVariables.req for example, is checked against the characteristics 
 What happens then depends on whether the owner registered a `VariableValueProvider`:
 
 - With a provider, the write is forwarded to the provider, which may reject it by its own rules and keeps persistent
-  values itself: libocpp does not store them in the database. The provider is called synchronously on the thread of
-  the write, a SetVariables.req for example, without a deadline, so a provider that forwards to another process
-  enforces its own timeout, well within the message timeout of the CSMS. Its answer is returned as it is. `Accepted`
-  and `RebootRequired` mean that the owner applied exactly the written value, and libocpp stores it in memory, so the
-  owner does not report it; an owner that would apply another value, a clamped one for example, rejects the write.
+  values itself: libocpp does not store them in the database, and removes a value it stored while the owner registered
+  the variable without a provider. The provider is called synchronously on the thread of the write, a SetVariables.req
+  for example, without a deadline, so a provider that forwards to another process enforces its own timeout, well within
+  the message timeout of the CSMS. Its answer is returned as it is. `Accepted` and `RebootRequired` mean that the owner
+  applied exactly the written value, and libocpp stores it in memory, so the owner does not report it; an owner that
+  would apply another value, a clamped one for example, rejects the write.
 - Without a provider, libocpp stores the values of persistent attributes itself, and the owner learns of writes through
   the variable listeners.
 

@@ -948,8 +948,10 @@ VariableMetaData DeviceModel::build_registered_variable(const std::string& owner
     meta_data.owner = owner;
     meta_data.attributes = std::move(attributes);
 
-    // A provider keeps the values of its variables, a stored value only applies without one
-    if (!with_provider) {
+    // A provider keeps the values of its variables: a stored value would be stale once the owner registers without one
+    if (with_provider) {
+        this->stored_values.remove_of_provided_variable(owner, component, variable);
+    } else {
         this->stored_values.restore(owner, component, variable, meta_data, [&](const std::string& value) {
             return fits_data_type(meta_data.characteristics, value);
         });

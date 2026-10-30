@@ -75,6 +75,10 @@ public:
 
     SetVariableStatusEnum store(StoredVariableValue value);
 
+    /// \brief Removes the values of \p variable on \p component, which \p owner registers with a provider that keeps
+    /// its values
+    void remove_of_provided_variable(const std::string& owner, const Component& component, const Variable& variable);
+
     /// \brief Removes the values of the variables for which \p registered returns false
     void remove_of_unregistered_variables(const std::function<bool(const Component&, const Variable&)>& registered);
 

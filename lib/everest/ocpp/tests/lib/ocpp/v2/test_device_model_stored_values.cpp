@@ -242,10 +242,9 @@ TEST_F(DeviceModelStoredValuesTest, stored_value_is_kept_when_the_variable_belon
     ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
     ASSERT_EQ(dm->set_value(der, enabled, AttributeEnum::Actual, "false", "csms"), SetVariableStatusEnum::Accepted);
 
-    // Another owner with a provider takes the variable: the stored value is kept, still recorded under OWNER
+    // Another owner takes the variable: the stored value is kept for the variable
     reboot();
-    NoOpProvider provider;
-    ASSERT_TRUE(register_der({make_enabled()}, &provider, "EXT:other").rejected.empty());
+    ASSERT_TRUE(register_der({make_enabled()}, nullptr, "EXT:other").rejected.empty());
     ASSERT_EQ(register_der({make_enabled()}).rejected.size(), 1);
     dm->remove_monitors_and_values_of_absent_variables();
     EXPECT_EQ(stored_values().size(), 1);
@@ -255,20 +254,19 @@ TEST_F(DeviceModelStoredValuesTest, stored_value_is_kept_when_the_variable_belon
     EXPECT_EQ(get(enabled), "false");
 }
 
-TEST_F(DeviceModelStoredValuesTest, stored_value_is_not_applied_to_a_variable_with_a_provider) {
+TEST_F(DeviceModelStoredValuesTest, stored_value_is_removed_when_the_variable_gets_a_provider) {
     ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
     ASSERT_EQ(dm->set_value(der, enabled, AttributeEnum::Actual, "false", "csms"), SetVariableStatusEnum::Accepted);
 
-    // The provider keeps the value: the stored value is not applied, but kept
     reboot();
     NoOpProvider provider;
     ASSERT_TRUE(register_der({make_enabled()}, &provider).rejected.empty());
     EXPECT_EQ(get(enabled), "true");
-    EXPECT_EQ(stored_values().size(), 1);
+    EXPECT_TRUE(stored_values().empty());
 
     reboot();
     ASSERT_TRUE(register_der({make_enabled()}).rejected.empty());
-    EXPECT_EQ(get(enabled), "false");
+    EXPECT_EQ(get(enabled), "true");
 }
 
 TEST_F(DeviceModelStoredValuesTest, delta_monitor_is_kept_when_its_value_is_restored) {

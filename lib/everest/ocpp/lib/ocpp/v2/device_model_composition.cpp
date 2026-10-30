@@ -75,6 +75,20 @@ SetVariableStatusEnum StoredValues::store(StoredVariableValue value) {
     return result;
 }
 
+void StoredValues::remove_of_provided_variable(const std::string& owner, const Component& component,
+                                               const Variable& variable) {
+    for (const auto attribute :
+         {AttributeEnum::Actual, AttributeEnum::Target, AttributeEnum::MinSet, AttributeEnum::MaxSet}) {
+        auto key = std::make_tuple(component, variable, attribute);
+        if (this->values.count(key) == 0) {
+            continue;
+        }
+        EVLOG_info << "Removing the stored value of " << component << "." << variable << ": owner " << owner
+                   << " registers it with a provider, which keeps its values";
+        this->remove(std::move(key));
+    }
+}
+
 void StoredValues::remove_of_unregistered_variables(
     const std::function<bool(const Component&, const Variable&)>& registered) {
     std::vector<Key> unregistered;
