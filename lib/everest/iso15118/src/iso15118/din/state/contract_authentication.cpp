@@ -52,7 +52,7 @@ Result ContractAuthentication::on_event(Event ev) {
 }
 
 Result ContractAuthentication::on_request(const message_din::Variant& received) {
-    if (const auto req = received.get_if<message_din::ContractAuthenticationRequest>()) {
+    if (received.get_if<message_din::ContractAuthenticationRequest>() != nullptr) {
 
         // Signalled once, on the first ContractAuthenticationReq, and the Ongoing loop is bounded from that
         // same moment. DIN SPEC 70121 defines no timer for this (and EvseV2G left it unbounded), so the

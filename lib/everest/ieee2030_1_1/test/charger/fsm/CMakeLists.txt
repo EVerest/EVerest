@@ -15,7 +15,7 @@ target_link_libraries(test_fsm_state_b
 
 target_compile_options(test_fsm_state_b
     PRIVATE
-        "-Wno-error=maybe-uninitialized"
+        "$<$<CXX_COMPILER_ID:GNU>:-Wno-error=maybe-uninitialized>"
 )
 
 catch_discover_tests(test_fsm_state_b)

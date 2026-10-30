@@ -243,12 +243,12 @@ void append_uint32(std::vector<std::uint8_t>& packet, std::uint32_t value) {
     encoded.push_back(0);
 
     std::vector<std::uint8_t> packet = {0x00, 0x00, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-#if defined(__GNUC__) && (__GNUC__ < 12)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 12)
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wstringop-overread"
 #endif
     packet.insert(packet.end(), encoded.begin(), encoded.end());
-#if defined(__GNUC__) && (__GNUC__ < 12)
+#if defined(__GNUC__) && !defined(__clang__) && (__GNUC__ < 12)
 #pragma GCC diagnostic pop
 #endif
     packet.push_back(0x00);
