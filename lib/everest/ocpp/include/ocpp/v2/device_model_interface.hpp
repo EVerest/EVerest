@@ -102,9 +102,10 @@ public:
     /// \param attribute_enum The attribute
     /// \param value The value to set (as string)
     /// \param source The source of the value (e.g., 'csms', 'default', 'internal')
-    /// \param allow_read_only If true, read-only variables of the component config can be changed. A variable that a
-    ///        runtime owner registered is then rejected whatever its mutability: it is changed by its owner or by the
-    ///        CSMS
+    /// \param allow_read_only If true, ReadOnly variables can be changed. A ReadOnly mutability binds SetVariables
+    ///        from the CSMS only: libocpp passes true for its own writes and for CSMS messages whose purpose is to set
+    ///        a ReadOnly variable, such as SetMonitoringBase and SetMonitoringLevel; a write to a variable that a
+    ///        runtime owner registered reaches that owner.
     /// \return Accepted when the value is applied. For a variable of the component config, any other result,
     ///         RebootRequired included, notifies no listener and leaves the value DeviceModel holds unchanged; a
     ///         RebootRequired value takes effect at the next start. A variable that the storage of another owner holds
@@ -114,6 +115,14 @@ public:
     virtual SetVariableStatusEnum set_value(const Component& component_id, const Variable& variable_id,
                                             const AttributeEnum& attribute_enum, const std::string& value,
                                             const std::string& source, bool allow_read_only = false) = 0;
+
+    /// \brief set_value with allow_read_only for the local channel, ChargePoint::set_variables, which writes the
+    /// component config only: a variable that a runtime owner registered is Rejected
+    virtual SetVariableStatusEnum set_local_value(const Component& component_id, const Variable& variable_id,
+                                                  const AttributeEnum& attribute_enum, const std::string& value,
+                                                  const std::string& source) {
+        return this->set_value(component_id, variable_id, attribute_enum, value, source, true);
+    }
 
     /// \brief Sets a read-only variable attribute value (only works on certain allowed components)
     /// \param component_id The component

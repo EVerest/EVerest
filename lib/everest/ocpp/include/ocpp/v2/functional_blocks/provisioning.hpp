@@ -168,11 +168,12 @@ private:
     /// \brief Sets variables specified within \p set_variable_data_vector in the device model and returns the result.
     /// \param set_variable_data_vector contains data of the variables to set
     /// \param source   value source (who sets the value, for example 'csms' or 'libocpp')
-    /// \param allow_read_only if true, setting VariableAttribute values with mutability ReadOnly is allowed
+    /// \param from_local_channel if true, the local channel sets the values: ReadOnly attributes may be set, variables
+    /// that a runtime owner registered may not, see DeviceModelInterface::set_local_value
     /// \return Map containing the SetVariableData as a key and the  SetVariableResult as a value for each requested
     /// change
     std::map<SetVariableData, SetVariableResult>
     set_variables_internal(const std::vector<SetVariableData>& set_variable_data_vector, const std::string& source,
-                           const bool allow_read_only);
+                           const bool from_local_channel);
 };
 } // namespace ocpp::v2

@@ -892,7 +892,7 @@ std::optional<std::string> Provisioning::validate_set_variable(const SetVariable
 
 std::map<SetVariableData, SetVariableResult>
 Provisioning::set_variables_internal(const std::vector<SetVariableData>& set_variable_data_vector,
-                                     const std::string& source, const bool allow_read_only) {
+                                     const std::string& source, const bool from_local_channel) {
     std::map<SetVariableData, SetVariableResult> response;
 
     // iterate over the set_variable_data_vector
@@ -906,10 +906,14 @@ Provisioning::set_variables_internal(const std::vector<SetVariableData>& set_var
         const auto validation_result = this->validate_set_variable(set_variable_data);
         if (!validation_result.has_value()) {
             // attempt to set the value includes device model validation
+            const auto attribute = set_variable_data.attributeType.value_or(AttributeEnum::Actual);
+            const auto& value = set_variable_data.attributeValue.get();
             set_variable_result.attributeStatus =
-                this->context.device_model.set_value(set_variable_data.component, set_variable_data.variable,
-                                                     set_variable_data.attributeType.value_or(AttributeEnum::Actual),
-                                                     set_variable_data.attributeValue.get(), source, allow_read_only);
+                from_local_channel
+                    ? this->context.device_model.set_local_value(set_variable_data.component,
+                                                                 set_variable_data.variable, attribute, value, source)
+                    : this->context.device_model.set_value(set_variable_data.component, set_variable_data.variable,
+                                                           attribute, value, source);
         } else {
             set_variable_result.attributeStatus = SetVariableStatusEnum::Rejected;
             StatusInfo status_info;

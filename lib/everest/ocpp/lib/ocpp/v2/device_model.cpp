@@ -525,7 +525,13 @@ SetVariableStatusEnum DeviceModel::set_value(const Component& component, const V
                                              const AttributeEnum& attribute_enum, const std::string& value,
                                              const std::string& source, bool allow_read_only) {
     return this->check_and_write(Lock(this->mutex), component, variable, attribute_enum, value, source,
-                                 allow_read_only ? LOCAL_WRITE : CSMS_WRITE);
+                                 allow_read_only ? READ_ONLY_WRITE : CSMS_WRITE);
+}
+
+SetVariableStatusEnum DeviceModel::set_local_value(const Component& component, const Variable& variable,
+                                                   const AttributeEnum& attribute_enum, const std::string& value,
+                                                   const std::string& source) {
+    return this->check_and_write(Lock(this->mutex), component, variable, attribute_enum, value, source, LOCAL_WRITE);
 }
 
 SetVariableStatusEnum DeviceModel::set_read_only_value(const Component& component, const Variable& variable,

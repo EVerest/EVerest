@@ -143,8 +143,8 @@ one registration. The owner `COMPONENT_CONFIG` is reserved for libocpp: `registe
 `unregister_components` and `notify_value_changed` reject it. An owner that registers again replaces its earlier
 registration.
 
-The variables that libocpp writes from its own state are defined by the component config only, and a registration of
-one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`, the `AvailabilityState` of the
+The variables that libocpp sets from its own state through `set_read_only_value` are defined by the component config
+only, and a registration of one of them is rejected: `AuthCacheCtrlr.Storage`, `LocalAuthListCtrlr.Entries`, the `AvailabilityState` of the
 charging station, the EVSEs and the connectors, `OCPPCommCtrlr.ActiveNetworkProfile`, `OCPPCommCtrlr.MessageTimeout`,
 `SecurityCtrlr.SecurityProfile`, `SecurityCtrlr.Identity` and every variable of a `NetworkConfiguration` slot, which
 `SetNetworkProfile` writes. A component config that leaves out such a variable, for example by leaving out
@@ -173,7 +173,9 @@ What happens then depends on whether the owner registered a `VariableValueProvid
   the variable listeners.
 
 Writes from the local channel (`ChargePoint::set_variables`) reach the component config only: a registered variable is
-changed by its owner or by the CSMS.
+changed by its owner, by the CSMS or by libocpp. SetMonitoringBase and SetMonitoringLevel, which change a ReadOnly
+variable, an OCPP 1.6 ChangeConfiguration.req, which is rejected for a read-only key before anything is written, and
+the other writes of libocpp, to `NumberOfConnectors` for example, reach the owner like a SetVariables.req.
 
 A change that the owner makes itself while a write to the same variable is in progress races with that write: the
 write may be stored after the report and overwrite it. Each write carries a write id. An owner that passes the id of

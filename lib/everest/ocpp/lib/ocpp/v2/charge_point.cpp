@@ -486,9 +486,13 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     // make sure number of connectors is set correctly
     const auto number_of_connectors_cv = ControllerComponentVariables::NumberOfConnectors;
-    this->device_model->set_value(number_of_connectors_cv.component, number_of_connectors_cv.variable.value(),
-                                  AttributeEnum::Actual, std::to_string(evse_connector_structure.size()),
-                                  VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+    if (this->device_model->set_value(number_of_connectors_cv.component, number_of_connectors_cv.variable.value(),
+                                      AttributeEnum::Actual, std::to_string(evse_connector_structure.size()),
+                                      VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL,
+                                      true) != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set " << number_of_connectors_cv.component << "."
+                      << number_of_connectors_cv.variable.value();
+    }
     this->device_model->check_integrity(evse_connector_structure);
     // One-time migration: if NetworkConnectionProfiles blob is non-empty, write into DM components and clear blob
     NetworkConfigurationComponentVariables::migrate_from_blob_if_needed(*this->device_model);
@@ -726,9 +730,12 @@ void ChargePoint::initialize(const std::map<std::int32_t, std::int32_t>& evse_co
 
     Variable field_length = {"FieldLength"};
     field_length.instance = "Get15118EVCertificateResponse.exiResponse";
-    this->device_model->set_value(ControllerComponents::OCPPCommCtrlr, field_length, AttributeEnum::Actual,
-                                  std::to_string(ISO15118_GET_EV_CERTIFICATE_EXI_RESPONSE_SIZE),
-                                  VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL, true);
+    if (this->device_model->set_value(ControllerComponents::OCPPCommCtrlr, field_length, AttributeEnum::Actual,
+                                      std::to_string(ISO15118_GET_EV_CERTIFICATE_EXI_RESPONSE_SIZE),
+                                      VARIABLE_ATTRIBUTE_VALUE_SOURCE_INTERNAL,
+                                      true) != SetVariableStatusEnum::Accepted) {
+        EVLOG_warning << "Could not set " << ControllerComponents::OCPPCommCtrlr << "." << field_length;
+    }
 }
 
 void ChargePoint::build_der_control_if_enabled() {

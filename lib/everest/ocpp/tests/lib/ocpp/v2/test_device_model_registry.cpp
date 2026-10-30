@@ -513,13 +513,13 @@ TEST_F(DeviceModelRegistryTest, local_channel_writes_the_component_config_only) 
     register_config_view();
 
     // the registered variables are rejected whatever their mutability
-    EXPECT_EQ(dm->set_value(evse, EvseComponentVariables::Power, AttributeEnum::Actual, "100", "internal", true),
+    EXPECT_EQ(dm->set_local_value(evse, EvseComponentVariables::Power, AttributeEnum::Actual, "100", "internal"),
               SetVariableStatusEnum::Rejected);
     EXPECT_EQ(get(evse, EvseComponentVariables::Power), "0");
-    EXPECT_EQ(dm->set_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "internal", true),
+    EXPECT_EQ(dm->set_local_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "internal"),
               SetVariableStatusEnum::Rejected);
     EXPECT_EQ(get(evse, EvseComponentVariables::AllowReset), "false");
-    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "internal", true),
+    EXPECT_EQ(dm->set_local_value(config_component, timeout, AttributeEnum::Actual, "90", "internal"),
               SetVariableStatusEnum::Rejected);
     EXPECT_TRUE(provider.received().empty());
     EXPECT_EQ(get(config_component, timeout), "60");
@@ -528,10 +528,27 @@ TEST_F(DeviceModelRegistryTest, local_channel_writes_the_component_config_only) 
     EXPECT_EQ(dm->set_value(evse, EvseComponentVariables::AllowReset, AttributeEnum::Actual, "true", "csms"),
               SetVariableStatusEnum::Accepted);
     EXPECT_EQ(get(evse, EvseComponentVariables::AllowReset), "true");
-    EXPECT_EQ(dm->set_value(ControllerComponents::InternalCtrlr, make_variable("ChargePointModel"),
-                            AttributeEnum::Actual, "Model", "internal", true),
+    EXPECT_EQ(dm->set_local_value(ControllerComponents::InternalCtrlr, make_variable("ChargePointModel"),
+                                  AttributeEnum::Actual, "Model", "internal"),
               SetVariableStatusEnum::Accepted);
     EXPECT_EQ(get(ControllerComponents::InternalCtrlr, make_variable("ChargePointModel")), "Model");
+}
+
+TEST_F(DeviceModelRegistryTest, read_only_write_reaches_the_owner) {
+    const auto evse = make_component("EVSE", 3);
+    RegisteredComponent component;
+    component.component = evse;
+    component.variables.push_back(make_registered_variable("Power", "0", MutabilityEnum::ReadOnly, DataEnum::decimal));
+    ASSERT_TRUE(dm->register_components(OTHER_OWNER, {component}, nullptr).rejected.empty());
+    register_config_view();
+
+    EXPECT_EQ(dm->set_value(evse, EvseComponentVariables::Power, AttributeEnum::Actual, "100", "internal", true),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(get(evse, EvseComponentVariables::Power), "100");
+    EXPECT_EQ(dm->set_value(config_component, timeout, AttributeEnum::Actual, "90", "OCPP 1.6", true),
+              SetVariableStatusEnum::Accepted);
+    EXPECT_EQ(provider.received(), std::vector<std::string>{"90"});
+    EXPECT_EQ(get(config_component, timeout), "90");
 }
 
 TEST_F(DeviceModelRegistryTest, persistent_attribute_without_provider_is_stored) {

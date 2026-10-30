@@ -330,8 +330,8 @@ std::vector<SetVariableOutcome> V16VariableAccess::set(const std::vector<ocpp::v
         // (Provisioning::set_variables); this API is a trusted local channel, and mutability models the
         // CSMS-facing contract. ReadOnlyDerived CVs stay rejected above.
         const auto attribute = request.attributeType.value_or(ocpp::v2::AttributeEnum::Actual);
-        const auto status = m_device_model.set_value(request.component, request.variable, attribute,
-                                                     request.attributeValue.get(), source, true);
+        const auto status = m_device_model.set_local_value(request.component, request.variable, attribute,
+                                                           request.attributeValue.get(), source);
         // every committed write carries a monitor value (write-only values masked);
         // ConnectionConfig then forces RebootRequired semantics
         const bool committed = (status == ocpp::v2::SetVariableStatusEnum::Accepted) ||
