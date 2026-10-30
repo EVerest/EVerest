@@ -604,6 +604,21 @@ TEST_F(DeviceModelTest, test_get_variable_unset_as_empty_string_write_only_witho
               GetVariableStatusEnum::Rejected);
 }
 
+TEST_F(DeviceModelTest, test_custom_report_leaves_out_the_value_of_a_write_only_variable) {
+    const auto& basic_auth_password = ControllerComponentVariables::BasicAuthPassword;
+    ASSERT_EQ(dm->set_value(basic_auth_password.component, basic_auth_password.variable.value(), AttributeEnum::Actual,
+                            "0123456789abcdef0123", "csms"),
+              SetVariableStatusEnum::Accepted);
+
+    const auto report = dm->get_custom_report_data(std::vector<ComponentVariable>{basic_auth_password});
+    ASSERT_EQ(report.size(), 1);
+    ASSERT_FALSE(report.at(0).variableAttribute.empty());
+    for (const auto& attribute : report.at(0).variableAttribute) {
+        EXPECT_EQ(attribute.mutability, MutabilityEnum::WriteOnly);
+        EXPECT_FALSE(attribute.value.has_value());
+    }
+}
+
 TEST_F(DeviceModelTest, test_get_variable_write_only_without_value_is_rejected_before_unset_check) {
     const auto& basic_auth_password = ControllerComponentVariables::BasicAuthPassword;
     ASSERT_TRUE(device_model_test_helper.set_variable_attribute_value_null("SecurityCtrlr", std::nullopt, std::nullopt,

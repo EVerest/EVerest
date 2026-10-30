@@ -650,6 +650,9 @@ DeviceModel::get_custom_report_data(const std::optional<std::vector<ComponentVar
                     for (const auto& variable_attribute :
                          this->read_attributes(component, variable, variable_meta_data)) {
                         report_data.variableAttribute.push_back(variable_attribute);
+                        if (variable_attribute.mutability == MutabilityEnum::WriteOnly) {
+                            report_data.variableAttribute.back().value.reset();
+                        }
                         report_data.variableCharacteristics = variable_map.at(variable).characteristics;
                     }
 
