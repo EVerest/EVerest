@@ -32,6 +32,10 @@ endif()
 add_compile_definitions(BUILD_TESTING_EVSE_SECURITY)
 add_compile_definitions(DEBUG_MODE_EVSE_SECURITY)
 
+target_compile_definitions(${TEST_TARGET_NAME} PRIVATE
+    EVSE_SECURITY_TEST_PROFILES_DIR="${SECURITY_PROFILES_BUILD_DIR}/iso15118-2"
+)
+
 set(LIBEVSE_SECURITY_TEST_DIR "${CMAKE_BINARY_DIR}")
 if (BUILD_TESTING)
     set(LIBEVSE_SECURITY_TEST_DIR "${CMAKE_BINARY_DIR}/lib/everest/evse_security")
@@ -89,4 +93,10 @@ file(COPY
 file(COPY
     "${CMAKE_CURRENT_SOURCE_DIR}/openssl-pki.conf"
     DESTINATION "${LIBEVSE_SECURITY_TEST_DIR}/tests"
+)
+
+file(COPY
+    "${CMAKE_CURRENT_SOURCE_DIR}/eonti_addon_test_certs"
+    DESTINATION "${LIBEVSE_SECURITY_TEST_DIR}/tests"
+    FILES_MATCHING PATTERN "*"
 )
