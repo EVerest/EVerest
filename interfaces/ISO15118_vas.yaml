@@ -22,7 +22,9 @@ cmds:
   selected_services:
     description: >-
       Callback to notify the VAS provider which services and parameter sets were selected by the EV.
-      It is called upon receiving ServiceSelectionReq and called only once per Request.
+      It is called once the EV is authorized: on ServiceSelectionReq in ISO 15118-20, and with the
+      AuthorizationRes containing EVSEProcessing Finished in ISO 15118-2 [V2G2-774]. It is called
+      only once per selection.
     arguments:
       selected_services:
         description: List of selected services and their parameter set IDs
