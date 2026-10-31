@@ -9,6 +9,7 @@
 #include <everest/tls/openssl_util.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cstdint>
 #include <everest/util/misc/change_tracker.hpp>
 #include <fmt/format.h>
@@ -58,6 +59,15 @@ static iso2_responseCodeType iso_validate_state(int state, enum V2gMsgTypeId cur
             : iso_ac_states[state].allowed_requests; // dc_charging is determined in charge_parameter. dc
     return (allowed_requests & (1 << current_v2g_msg)) ? iso2_responseCodeType_OK
                                                        : iso2_responseCodeType_FAILED_SequenceError;
+}
+
+/* [V2G2-539] requires the SECC to terminate after every FAILED response. terminate_connection_on_failed_response
+ * may leave that to the EV's own stop sequence, except after a sequence error and in the identification phase,
+ * where a rejected identity must not be followed by further requests. The EVCC has to stop the session on
+ * these responses anyway ([V2G2-504]). */
+static bool failed_response_always_terminates(iso2_responseCodeType response_code, enum V2gMsgTypeId msg) {
+    return (response_code == iso2_responseCodeType_FAILED_SequenceError) || (msg == V2G_PAYMENT_DETAILS_MSG) ||
+           (msg == V2G_AUTHORIZATION_MSG);
 }
 
 /*!
@@ -119,11 +129,9 @@ static v2g_event iso_validate_response_code(iso2_responseCodeType* const v2g_res
 
     *v2g_response_code = (response_code_tmp >= iso2_responseCodeType_FAILED) ? response_code_tmp : *v2g_response_code;
 
-    /* [V2G2-539] SequenceError always terminates the connection regardless of configuration.
-     * For other FAILED codes, termination depends on the terminate_connection_on_failed_response setting. */
-    if (*v2g_response_code == iso2_responseCodeType_FAILED_SequenceError ||
-        ((conn->ctx->terminate_connection_on_failed_response == true) &&
-         (*v2g_response_code >= iso2_responseCodeType_FAILED))) {
+    if ((*v2g_response_code >= iso2_responseCodeType_FAILED) &&
+        ((conn->ctx->terminate_connection_on_failed_response == true) ||
+         failed_response_always_terminates(*v2g_response_code, conn->ctx->current_v2g_msg))) {
         next_event = V2G_EVENT_SEND_AND_TERMINATE; // [V2G2-539], [V2G2-034] Send response and terminate tcp-connection
     }
 
@@ -1169,6 +1177,11 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
     if (conn->ctx->session.iso_selected_payment_option == iso2_paymentOptionType_Contract) {
         // Free old stuff if it exists
         free_connection_crypto_data(conn);
+        conn->ctx->session.provided_id_token.reset();
+        conn->ctx->session.gen_challenge.reset();
+        if (conn->pubkey != nullptr) {
+            conn->pubkey->reset();
+        }
 
         // Parse contract leaf certificate
 
@@ -1206,12 +1219,10 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             goto error_out;
         }
 
-        if (conn->pubkey != nullptr) {
-            *conn->pubkey = certificate_public_key(contract_crt.get());
-        }
-        err = ((conn->pubkey == nullptr) || (*conn->pubkey == nullptr)) ? -1 : 0;
-
-        if (err != 0) {
+        // The key is handed to the connection only once the whole chain is accepted, so that
+        // AuthorizationReq can never be verified against a rejected certificate.
+        openssl::pkey_ptr contract_public_key = certificate_public_key(contract_crt.get());
+        if ((conn->pubkey == nullptr) || (contract_public_key == nullptr)) {
             memset(res, 0, sizeof(*res));
             res->ResponseCode = iso2_responseCodeType_FAILED_CertChainError;
             goto error_out;
@@ -1290,10 +1301,6 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
                 dlog(DLOG_LEVEL_ERROR, "Validation of the contract certificate failed!");
                 if (!forward_contract) {
                     dlog(DLOG_LEVEL_ERROR, "Central contract validation is not allowed.");
-                    // EVSETimeStamp and GenChallenge are mandatory, GenChallenge has fixed size
-                    res->EVSETimeStamp = time(NULL);
-                    memset(res->GenChallenge.bytes, 0, GEN_CHALLENGE_SIZE);
-                    res->GenChallenge.bytesLen = GEN_CHALLENGE_SIZE;
                     goto error_out;
                 } else {
                     dlog(DLOG_LEVEL_INFO, "Central contract validation is allowed: Forwarding contract");
@@ -1309,8 +1316,13 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
             }
         }
 
-        generate_random_data(&conn->ctx->session.gen_challenge, GEN_CHALLENGE_SIZE);
-        memcpy(res->GenChallenge.bytes, conn->ctx->session.gen_challenge, GEN_CHALLENGE_SIZE);
+        std::array<uint8_t, GEN_CHALLENGE_SIZE> gen_challenge{};
+        if (generate_random_data(gen_challenge.data(), gen_challenge.size()) != 0) {
+            dlog(DLOG_LEVEL_ERROR, "Failed to generate GenChallenge");
+            res->ResponseCode = iso2_responseCodeType_FAILED;
+            goto error_out;
+        }
+        memcpy(res->GenChallenge.bytes, gen_challenge.data(), GEN_CHALLENGE_SIZE);
         res->GenChallenge.bytesLen = GEN_CHALLENGE_SIZE;
 
         // Publish the provided signature certificate chain and eMAID from EVCC
@@ -1321,15 +1333,22 @@ static enum v2g_event handle_iso_payment_details(struct v2g_connection* conn) {
         ProvidedIdToken.iso15118CertificateHashData = iso15118_certificate_hash_data;
         ProvidedIdToken.certificate = contract_cert_chain_pem;
         conn->ctx->session.provided_id_token.emplace(ProvidedIdToken);
+        conn->ctx->session.gen_challenge = gen_challenge;
+        *conn->pubkey = std::move(contract_public_key);
 
     } else {
         res->ResponseCode = iso2_responseCodeType_FAILED;
         goto error_out;
     }
-    res->EVSETimeStamp = time(NULL);
     res->ResponseCode = iso2_responseCodeType_OK;
 
 error_out:
+    /* EVSETimeStamp and GenChallenge are mandatory in every PaymentDetailsRes, GenChallenge has a fixed size */
+    res->EVSETimeStamp = time(NULL);
+    if (res->GenChallenge.bytesLen == 0) {
+        memset(res->GenChallenge.bytes, 0, GEN_CHALLENGE_SIZE);
+        res->GenChallenge.bytesLen = GEN_CHALLENGE_SIZE;
+    }
 
     if (conn->ctx->telemetry_publisher) {
         conn->ctx->telemetry_publisher->update_payment_service([&](V2gPaymentServiceTracker& payment_service) {
@@ -1370,9 +1389,10 @@ static enum v2g_event handle_iso_authorization(struct v2g_connection* conn) {
 
     if (conn->ctx->last_v2g_msg != V2G_AUTHORIZATION_MSG &&
         (conn->ctx->session.iso_selected_payment_option == iso2_paymentOptionType_Contract)) { /* [V2G2-684] */
-        if (req->GenChallenge_isUsed == 0 ||
-            req->GenChallenge.bytesLen != 16 // [V2G2-697]  The GenChallenge field shall be exactly 128 bits long.
-            || memcmp(req->GenChallenge.bytes, conn->ctx->session.gen_challenge, 16) != 0) {
+        const auto& issued_challenge = conn->ctx->session.gen_challenge;
+        if (!issued_challenge.has_value() || req->GenChallenge_isUsed == 0 ||
+            req->GenChallenge.bytesLen != GEN_CHALLENGE_SIZE || // [V2G2-697] exactly 128 bits
+            memcmp(req->GenChallenge.bytes, issued_challenge->data(), GEN_CHALLENGE_SIZE) != 0) {
             dlog(DLOG_LEVEL_ERROR, "Challenge invalid or not present");
             res->ResponseCode = iso2_responseCodeType_FAILED_ChallengeInvalid; // [V2G2-475]
             goto error_out;
