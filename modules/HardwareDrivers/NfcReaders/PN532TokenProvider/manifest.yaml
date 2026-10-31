@@ -19,7 +19,16 @@ provides:
         type: integer
         minimum: 0
         maximum: 120
-        default: 5
+        default: 1
+      token_debounce_interval_ms:
+        description: >-
+          Time in ms a card must stay out of reach of the reader before its token is published again (debounce
+          interval). A card held on the reader is published only once. Must be greater than read_timeout to have
+          an effect. 0 disables debouncing.
+        type: integer
+        minimum: 0
+        maximum: 10000
+        default: 2000
       debug:
         description: Show debug output on command line.
         type: boolean
