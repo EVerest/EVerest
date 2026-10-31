@@ -132,6 +132,8 @@ public:
     KeyValue getSupportedMeasurandsKeyValue() override;
     int getMaxMessageSize() override;
     KeyValue getMaxMessageSizeKeyValue() override;
+    int getMaxIncomingMessageSize() override;
+    KeyValue getMaxIncomingMessageSizeKeyValue() override;
 
     bool getEnableTLSKeylog() override;
     KeyValue getEnableTLSKeylogKeyValue() override;

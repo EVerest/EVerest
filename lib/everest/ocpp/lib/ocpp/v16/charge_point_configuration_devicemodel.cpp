@@ -2,6 +2,7 @@
 // Copyright 2020 - 2026 Pionix GmbH and Contributors to EVerest
 
 #include "ocpp/v2/ocpp_enums.hpp"
+#include <ocpp/common/constants.hpp>
 #include <ocpp/common/utils.hpp>
 #include <ocpp/v16/charge_point_configuration_devicemodel.hpp>
 #include <ocpp/v16/known_keys.hpp>
@@ -1140,6 +1141,11 @@ int ChargePointConfigurationDeviceModel::getMaxMessageSize() {
     return get_value<int>(*storage, keys::valid_keys::MaxMessageSize);
 }
 
+int ChargePointConfigurationDeviceModel::getMaxIncomingMessageSize() {
+    return get_optional<int>(*storage, keys::valid_keys::MaxIncomingMessageSize)
+        .value_or(static_cast<int>(DEFAULT_MAX_INCOMING_MESSAGE_SIZE));
+}
+
 std::int32_t ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDuration() {
     return get_value<std::int32_t>(*storage, keys::valid_keys::MaxCompositeScheduleDuration);
 }
@@ -1359,6 +1365,10 @@ KeyValue ChargePointConfigurationDeviceModel::getMaxCompositeScheduleDurationKey
 
 KeyValue ChargePointConfigurationDeviceModel::getMaxMessageSizeKeyValue() {
     return get_key_value(*storage, keys::valid_keys::MaxMessageSize);
+}
+
+KeyValue ChargePointConfigurationDeviceModel::getMaxIncomingMessageSizeKeyValue() {
+    return get_key_value(*storage, keys::valid_keys::MaxIncomingMessageSize);
 }
 
 KeyValue ChargePointConfigurationDeviceModel::getOcspRequestIntervalKeyValue() {
@@ -2905,6 +2915,7 @@ std::optional<ConfigurationStatus> ChargePointConfigurationDeviceModel::set(cons
         case keys::valid_keys::LogMessagesRaw:
         case keys::valid_keys::MaxCompositeScheduleDuration:
         case keys::valid_keys::MaxMessageSize:
+        case keys::valid_keys::MaxIncomingMessageSize:
         case keys::valid_keys::MessageQueueSizeThreshold:
         case keys::valid_keys::MessageTypesDiscardForQueueing:
         case keys::valid_keys::MeterType:

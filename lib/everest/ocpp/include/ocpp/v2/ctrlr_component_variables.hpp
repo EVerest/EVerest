@@ -146,6 +146,7 @@ extern const ComponentVariable ClientCertificateExpireCheckInitialDelaySeconds;
 extern const ComponentVariable ClientCertificateExpireCheckIntervalSeconds;
 extern const ComponentVariable MessageQueueSizeThreshold;
 extern const ComponentVariable MaxMessageSize;
+extern const ComponentVariable MaxIncomingMessageSize;
 extern const ComponentVariable ResumeTransactionsOnBoot;
 extern const ComponentVariable AllowSecurityLevelZeroConnections;
 extern const RequiredComponentVariable SupportedOcppVersions;

@@ -74,6 +74,7 @@ public:
     virtual bool getVerifyCsmsCommonName() = 0;
 
     virtual int getMaxMessageSize() = 0;
+    virtual int getMaxIncomingMessageSize() = 0;
 
     virtual std::int32_t getMaxCompositeScheduleDuration() = 0;
     virtual std::int32_t getOcspRequestInterval() = 0;
@@ -124,6 +125,7 @@ public:
     virtual KeyValue getLogRotationMaximumFileSizeKeyValue() = 0;
     virtual KeyValue getMaxCompositeScheduleDurationKeyValue() = 0;
     virtual KeyValue getMaxMessageSizeKeyValue() = 0;
+    virtual KeyValue getMaxIncomingMessageSizeKeyValue() = 0;
     virtual KeyValue getOcspRequestIntervalKeyValue() = 0;
     virtual KeyValue getRetryBackoffRandomRangeKeyValue() = 0;
     virtual KeyValue getRetryBackoffRepeatTimesKeyValue() = 0;
