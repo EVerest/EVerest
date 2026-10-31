@@ -109,14 +109,14 @@ bool read_crypt_signed_header(const fs::path& path, CryptSignedHeader& hdr, std:
         return f.good() || (f.eof() && static_cast<std::size_t>(f.gcount()) == n);
     };
 
+    // 32-byte reserved header, not necessarily NUL-terminated
     char firmware_version_str[32];
-    std::memset(firmware_version_str, 0, sizeof(firmware_version_str)); // all zeros
-    // 32-byte reserved header
     if (!read_exact(firmware_version_str, sizeof(firmware_version_str))) {
         return false;
     }
 
-    hdr.firmware_version = std::string(firmware_version_str);
+    hdr.firmware_version =
+        std::string(firmware_version_str, strnlen(firmware_version_str, sizeof(firmware_version_str)));
 
     // 1-byte signature length
     if (!read_exact(&hdr.sig_len, 1)) {
