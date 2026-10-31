@@ -178,4 +178,81 @@ mappings:
     ASSERT_TRUE(mappings.find("MyCertificateEntries") != mappings.end());
 }
 
+TEST_F(Ocpp16KeyMappingsTest, override_of_ocpp16_legacy_ctrlr_key_is_accepted) {
+    const auto yaml_file = write_yaml_file("legacy_override.yaml", R"yaml(
+mappings:
+  - ocpp16_key: LightIntensity
+    component:
+      name: VendorStation
+    variable:
+      name: LightIntensity
+)yaml");
+
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
+    ASSERT_EQ(mappings.size(), 1);
+    const auto it = mappings.find("LightIntensity");
+    ASSERT_NE(it, mappings.end());
+    EXPECT_EQ(it->second.first.name.get(), "VendorStation");
+    EXPECT_EQ(it->second.second.name.get(), "LightIntensity");
+}
+
+TEST_F(Ocpp16KeyMappingsTest, override_of_standard_key_throws) {
+    const auto yaml_file = write_yaml_file("standard_override.yaml", R"yaml(
+mappings:
+  - ocpp16_key: HeartbeatInterval
+    component:
+      name: VendorStation
+    variable:
+      name: Heartbeat
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, override_of_derived_legacy_key_throws) {
+    for (const auto* key : {"NumberOfConnectors", "SupportedFeatureProfiles", "MeterPublicKeys", "DefaultPriceText"}) {
+        const auto yaml_file = write_yaml_file("derived_override.yaml", std::string{R"yaml(
+mappings:
+  - ocpp16_key: )yaml"} + key + R"yaml(
+    component:
+      name: VendorStation
+    variable:
+      name: Derived
+)yaml");
+
+        EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError) << key;
+    }
+}
+
+TEST_F(Ocpp16KeyMappingsTest, override_targeting_builtin_mapping_of_other_key_throws) {
+    const auto yaml_file = write_yaml_file("builtin_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: LightIntensity
+    component:
+      name: OCPPCommCtrlr
+    variable:
+      name: HeartbeatInterval
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, override_sharing_target_with_custom_key_throws) {
+    const auto yaml_file = write_yaml_file("shared_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: LightIntensity
+    component:
+      name: VendorStation
+    variable:
+      name: LightIntensity
+  - ocpp16_key: VendorLightIntensity
+    component:
+      name: VendorStation
+    variable:
+      name: LightIntensity
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
 } // namespace ocpp::v2
