@@ -22,14 +22,30 @@ ev_define_dependency(
     DEPENDENCY_NAME libocpp
     DEPENDENT_MODULES_LIST OCPP OCPP201 OCPPmulti)
 
+# the OCPP integration tests import the Josev Python package
+if(BUILD_TESTING AND NOT DEFINED EVEREST_DEPENDENCY_ENABLED_JOSEV
+        AND NOT "Josev" IN_LIST EVEREST_EXCLUDE_DEPENDENCIES)
+    set(EVEREST_DEPENDENCY_ENABLED_JOSEV ON)
+endif()
+
+# Josev's CMake generates the ISO 15118 development PKI that these modules load for TLS and PnC
 ev_define_dependency(
     DEPENDENCY_NAME Josev
-    DEPENDENT_MODULES_LIST PyEvJosev)
+    DEPENDENT_MODULES_LIST Ev15118 EvseV2G Evse15118D20)
 
 ev_define_dependency(
     DEPENDENCY_NAME libcbv2g
     OUTPUT_VARIABLE_SUFFIX LIBCBV2G
     DEPENDENT_MODULES_LIST EvseV2G)
+
+ev_define_dependency(
+    DEPENDENCY_NAME libiso15118_ev
+    OUTPUT_VARIABLE_SUFFIX ISO15118_EV_SIDE
+    DEPENDENT_MODULES_LIST Ev15118)
+
+if(NOT DEFINED ISO15118_BUILD_EV_SIDE)
+    set(ISO15118_BUILD_EV_SIDE ${EVEREST_DEPENDENCY_ENABLED_ISO15118_EV_SIDE})
+endif()
 
 ev_define_dependency(
     DEPENDENCY_NAME libevse-security

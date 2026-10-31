@@ -9,7 +9,7 @@
 #include <netinet/in.h>
 
 #include "ipv6_endpoint.hpp"
-#include "sdp.hpp"
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::io {
 

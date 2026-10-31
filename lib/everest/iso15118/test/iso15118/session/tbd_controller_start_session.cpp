@@ -27,20 +27,20 @@
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/limits.hpp>
 #include <iso15118/io/logging.hpp>
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/sdp_packet.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/service_discovery.hpp>
 #include <iso15118/message/session_setup.hpp>
 #include <iso15118/message/session_stop.hpp>
 #include <iso15118/message/supported_app_protocol.hpp>
 #include <iso15118/message/type.hpp>
-#include <iso15118/message/variant.hpp>
 #include <iso15118/session/feedback.hpp>
 #include <iso15118/session/iso.hpp>
 #include <iso15118/tbd_controller.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace {
 
@@ -81,7 +81,7 @@ constexpr uint8_t session_setup_req[] = {0x80, 0x8c, 0x04, 0x00, 0x00, 0x00, 0x0
 
 // Wraps an EXI payload in a V2GTP frame (8-byte header + payload), mirroring the framing in
 // MockConnection::queue_v2gtp_packet.
-std::vector<uint8_t> make_v2gtp_frame(iso15118::io::v2gtp::PayloadType payload_type, const uint8_t* payload,
+std::vector<uint8_t> make_v2gtp_frame(iso15118::v2gtp::PayloadType payload_type, const uint8_t* payload,
                                       std::size_t payload_len) {
     std::vector<uint8_t> frame(iso15118::io::SdpPacket::V2GTP_HEADER_SIZE + payload_len);
     frame[0] = iso15118::io::SDP_PROTOCOL_VERSION;
@@ -185,7 +185,7 @@ struct RoundTripResult {
 };
 
 RoundTripResult run_start_session_round_trip(iso15118::TbdController& controller, std::array<int, 2>& fds,
-                                             iso15118::io::v2gtp::PayloadType payload_type, const uint8_t* req,
+                                             iso15118::v2gtp::PayloadType payload_type, const uint8_t* req,
                                              std::size_t req_len, bool skip_app_protocol_negotiation) {
     RoundTripResult result;
     auto start_options = iso15118::StartSessionOptions{};
@@ -214,7 +214,7 @@ RoundTripResult run_start_session_round_trip(iso15118::TbdController& controller
 
 template <typename Response>
 Response require_response(const std::optional<std::vector<uint8_t>>& response,
-                          iso15118::io::v2gtp::PayloadType payload_type) {
+                          iso15118::v2gtp::PayloadType payload_type) {
     constexpr std::size_t header_size = iso15118::io::SdpPacket::V2GTP_HEADER_SIZE;
 
     REQUIRE(response.has_value());
@@ -230,7 +230,7 @@ Response require_response(const std::optional<std::vector<uint8_t>>& response,
     const std::size_t payload_len = response->size() - header_size;
 
     const iso15118::io::StreamInputView view{payload, payload_len};
-    const iso15118::message_20::Variant variant(payload_type, view);
+    const iso15118::message_20::ResponseVariant variant(payload_type, view);
     const auto exptected_type = iso15118::message_20::TypeTrait<Response>::type;
     REQUIRE(variant.get_type() == exptected_type);
 
@@ -242,7 +242,7 @@ template <typename Request> std::vector<std::uint8_t> make_request_frame(const R
     std::array<std::uint8_t, 1024> buffer{};
     const iso15118::io::StreamOutputView view{buffer.data(), buffer.size()};
     const auto payload_len = iso15118::message_20::serialize(request, view);
-    return make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, buffer.data(), payload_len);
+    return make_v2gtp_frame(iso15118::v2gtp::PayloadType::Part20Main, buffer.data(), payload_len);
 }
 
 // Decodes a received V2GTP frame, or returns nullopt when the frame is missing, undecodable or of
@@ -256,7 +256,7 @@ std::optional<Response> decode_response(const std::optional<std::vector<std::uin
     }
 
     const iso15118::io::StreamInputView view{frame->data() + header_size, frame->size() - header_size};
-    const iso15118::message_20::Variant variant(iso15118::io::v2gtp::PayloadType::Part20Main, view);
+    const iso15118::message_20::ResponseVariant variant(iso15118::v2gtp::PayloadType::Part20Main, view);
 
     if (const auto* message = variant.get_if<Response>()) {
         return *message;
@@ -296,7 +296,7 @@ ServiceDiscoveryRunResult run_service_discovery_round_trip(iso15118::TbdControll
     const auto now = [] { return static_cast<std::uint64_t>(std::time(nullptr)); };
 
     result.session_setup_res = decode_response<iso15118::message_20::SessionSetupResponse>(exchange(
-        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
+        make_v2gtp_frame(iso15118::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
 
     dt::SessionId session_id{};
     if (result.session_setup_res.has_value()) {
@@ -476,7 +476,7 @@ GracefulStopRun run_graceful_stop(EvCloseBehavior ev_close) {
     };
 
     const auto session_setup_res = decode_response<iso15118::message_20::SessionSetupResponse>(exchange(
-        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
+        make_v2gtp_frame(iso15118::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req))));
 
     if (session_setup_res.has_value()) {
         iso15118::message_20::SessionStopRequest request;
@@ -593,8 +593,8 @@ SCENARIO("session_start functionality") {
 
     WHEN("start_session") {
         // Drive one full round-trip: send a SupportedAppProtocolReq and read the response.
-        const auto result = run_start_session_round_trip(controller, fds, iso15118::io::v2gtp::PayloadType::SAP,
-                                                         sap_req, sizeof(sap_req), false);
+        const auto result = run_start_session_round_trip(controller, fds, iso15118::v2gtp::PayloadType::SAP, sap_req,
+                                                         sizeof(sap_req), false);
 
         THEN("the server answers with a valid SupportedAppProtocolRes and the session ends cleanly") {
             REQUIRE_FALSE(result.timed_out);
@@ -602,7 +602,7 @@ SCENARIO("session_start functionality") {
                     static_cast<ssize_t>(iso15118::io::SdpPacket::V2GTP_HEADER_SIZE + sizeof(sap_req)));
 
             const auto sap_res = require_response<iso15118::message_20::SupportedAppProtocolResponse>(
-                result.response, iso15118::io::v2gtp::PayloadType::SAP);
+                result.response, iso15118::v2gtp::PayloadType::SAP);
             REQUIRE(sap_res.response_code ==
                     iso15118::message_20::SupportedAppProtocolResponse::ResponseCode::OK_SuccessfulNegotiation);
             REQUIRE(sap_res.schema_id.has_value());
@@ -626,7 +626,7 @@ SCENARIO("session_start functionality - skip sap") {
     WHEN("start_session - skip sap") {
         // Drive one full round-trip with app-protocol negotiation skipped: send a SessionSetupReq
         // straight away and read the response.
-        const auto result = run_start_session_round_trip(controller, fds, iso15118::io::v2gtp::PayloadType::Part20Main,
+        const auto result = run_start_session_round_trip(controller, fds, iso15118::v2gtp::PayloadType::Part20Main,
                                                          session_setup_req, sizeof(session_setup_req), true);
 
         THEN("the server answers with a valid SessionSetupRes and the session ends cleanly") {
@@ -635,7 +635,7 @@ SCENARIO("session_start functionality - skip sap") {
                     static_cast<ssize_t>(iso15118::io::SdpPacket::V2GTP_HEADER_SIZE + sizeof(session_setup_req)));
 
             const auto session_setup_res = require_response<iso15118::message_20::SessionSetupResponse>(
-                result.response, iso15118::io::v2gtp::PayloadType::Part20Main);
+                result.response, iso15118::v2gtp::PayloadType::Part20Main);
             REQUIRE(session_setup_res.response_code ==
                     iso15118::message_20::datatypes::ResponseCode::OK_NewSessionEstablished);
 
@@ -768,7 +768,7 @@ SCENARIO("update_der_sae_limits logs the SAE grid code withdrawal only on the tr
 
     // Hold the session in SessionSetup so it stays live while the limits are updated.
     const auto request_frame =
-        make_v2gtp_frame(iso15118::io::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
+        make_v2gtp_frame(iso15118::v2gtp::PayloadType::Part20Main, session_setup_req, sizeof(session_setup_req));
     [[maybe_unused]] auto unused2 = ::write(fds.at(1), request_frame.data(), request_frame.size());
     const auto response = read_v2gtp_frame(fds.at(1), std::chrono::seconds(5));
     REQUIRE(response.has_value());

@@ -16,6 +16,7 @@ target_sources(iso15118
         misc/base64.cpp
 
         sae_modes.cpp
+        v2gtp/sdp.cpp
 
         io/connection_plain.cpp
         io/logging.cpp
@@ -55,6 +56,7 @@ target_sources(iso15118
         d20/context.cpp
         d20/context_helper.cpp
         d20/session.cpp
+        d20/pause_notification.cpp
         d20/crypto.cpp
         d20/timeout.cpp
 
@@ -105,6 +107,7 @@ target_sources(iso15118
         d20/state/session_stop.cpp
         
         message/variant.cpp
+        message/response_variant.cpp
         message/supported_app_protocol.cpp
         message/session_setup.cpp
         message/common_types.cpp
@@ -170,6 +173,11 @@ target_sources(iso15118
         tbd_controller.cpp
 )
 
+# The EV side is its own target, everest::iso15118_ev.
+if(ISO15118_BUILD_EV_SIDE)
+    add_subdirectory(ev)
+endif()
+
 target_link_libraries(iso15118
     PUBLIC
         # FIXME (aw): would be nice if we could make this private!
@@ -183,11 +191,13 @@ target_link_libraries(iso15118
 )
 
 target_link_libraries(iso15118
+    PUBLIC
+        # Installed detail headers include everest/tls headers.
+        everest::tls
     PRIVATE
         OpenSSL::SSL
         OpenSSL::Crypto
         everest::evse_security
-        everest::tls
 )
 target_sources(iso15118
     PRIVATE

@@ -9,26 +9,29 @@
 #include <vector>
 
 // FIXME (aw): we only need the payload types from sdp.hpp, this could be shared in a separate header file
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 #include "type.hpp"
 
 namespace iso15118::message_20 {
 
-class Variant {
+class RequestVariant {
 public:
     using CustomDeleter = std::function<void(void*)>;
-    Variant(io::v2gtp::PayloadType, const io::StreamInputView&);
+    RequestVariant(v2gtp::PayloadType, const io::StreamInputView&);
     template <typename MessageType>
-    explicit Variant(const MessageType& in_) :
+    explicit RequestVariant(const MessageType& in_) :
         data(new MessageType(in_), [](void* ptr) { delete static_cast<MessageType*>(ptr); }),
         type(message_20::TypeTrait<MessageType>::type) {
-        static_assert(TypeTrait<MessageType>::type != Type::None, "Unhandled type!");
+        static_assert(TypeTrait<MessageType>::is_request, "RequestVariant requires a request type");
     }
 
     [[nodiscard]] Type get_type() const;
     [[nodiscard]] const std::string& get_error() const;
+    [[nodiscard]] bool has_unhandled_message() const {
+        return unhandled_message;
+    }
 
     // True when the frame did not decode at all: empty payload, unsupported V2GTP payload type or an EXI
     // decoder failure. The engines drop such a frame without a response [V2G20-800].
@@ -70,6 +73,7 @@ private:
     Type type{Type::None};
     std::string error;
     bool undecodable{false};
+    bool unhandled_message{false};
     std::vector<uint8_t> exi_payload;
 };
 } // namespace iso15118::message_20

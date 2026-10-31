@@ -51,7 +51,8 @@ std::vector<uint8_t> serialize_signed(const message_2::AuthorizationRequest& req
 std::vector<uint8_t> serialize_signed(const message_2::MeteringReceiptRequest& req, const PrivateKey& key);
 std::vector<uint8_t> serialize_signed(const message_2::CertificateInstallationRequest& req, const PrivateKey& key);
 
-// The SAProvisioningCertificateChain leaf is validated up to the trusted V2G root at v2g_root_path.
+// Validate the SAProvisioningCertificateChain against v2g_root_path, all four referenced body
+// digests, and the CPS signature over SignedInfo.
 bool verify_certificate_installation_res(const std::vector<uint8_t>& res_exi, const std::string& v2g_root_path);
 
 // [section 7.9.2.4.3 / V2G2-814..822]. \p encrypted_with_iv is the 16-byte IV (MSBs) followed by the
@@ -60,12 +61,22 @@ std::vector<uint8_t> decrypt_contract_private_key(const std::vector<uint8_t>& en
                                                   const std::vector<uint8_t>& dh_public_key,
                                                   const PrivateKey& oem_priv_key);
 
+// Clear caller-owned key material after use. Vector deallocation does not wipe its storage.
+void wipe(std::vector<uint8_t>& buffer);
+
 std::string contract_scalar_to_pem(const std::vector<uint8_t>& scalar);
 
 // CommonName with '-' removed, so it matches the leaf CN the SECC cross-checks.
 std::string emaid_from_contract_der(const std::vector<uint8_t>& leaf_der);
 
-// The serial is truncated to int64 -- a known simplification, matching the ISO 15118-20 layer.
+// True when `key` is the private key of the certificate `leaf_der`.
+bool contract_key_matches(const std::vector<uint8_t>& leaf_der, const PrivateKey& key);
+
+// RFC 2253 issuer and big-endian serial magnitude. Returns an empty ID for an unusable serial.
 message_2::RootCertificateId root_cert_id_from_der(const std::vector<uint8_t>& root_der);
+
+std::string der_chain_to_pem(const std::vector<uint8_t>& leaf_der, const std::vector<std::vector<uint8_t>>& subs_der);
+
+std::vector<std::vector<uint8_t>> pem_chain_to_der(const std::string& pem);
 
 } // namespace iso15118::d2::crypto

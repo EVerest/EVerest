@@ -136,6 +136,9 @@ include(ev-packaging)
 
 if(EVEREST_BUILD_CORE OR EVEREST_BUILD_RUNTIME)
     include("module-dependencies.cmake")
+elseif(NOT DEFINED ISO15118_BUILD_EV_SIDE)
+    # not cached by option(), so adding core later still enables the EV side
+    set(ISO15118_BUILD_EV_SIDE OFF)
 endif()
 
 # this policy allows us to continue using the removed FindBoost module for now

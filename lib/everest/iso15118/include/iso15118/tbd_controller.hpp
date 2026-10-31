@@ -164,8 +164,8 @@ private:
     // until the EV connects. The response is unicast: if the EV does not answer neighbour discovery in
     // time, the kernel drops it and only a repeat reaches the EV.
     struct SdpOffer {
-        io::v2gtp::Security requested; // the EV's request after the TLS negotiation strategy
-        io::v2gtp::Security offered;   // what the response announces (differs on the plain-TCP fallback)
+        v2gtp::Security requested; // the EV's request after the TLS negotiation strategy
+        v2gtp::Security offered;   // what the response announces (differs on the plain-TCP fallback)
         io::Ipv6EndPoint endpoint;
     };
     std::optional<SdpOffer> sdp_offer;

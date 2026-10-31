@@ -144,12 +144,12 @@ V2GTPReadResult read_single_v2gtp_packet(io::IConnection& connection, io::SdpPac
     return V2GTPReadResult::complete;
 }
 
-static size_t setup_response_header(uint8_t* buffer, iso15118::io::v2gtp::PayloadType payload_type, size_t size) {
+static size_t setup_response_header(uint8_t* buffer, iso15118::v2gtp::PayloadType payload_type, size_t size) {
     buffer[0] = iso15118::io::SDP_PROTOCOL_VERSION;
     buffer[1] = iso15118::io::SDP_INVERSE_PROTOCOL_VERSION;
 
     const uint16_t response_payload_type =
-        htons(static_cast<std::underlying_type_t<iso15118::io::v2gtp::PayloadType>>(payload_type));
+        htons(static_cast<std::underlying_type_t<iso15118::v2gtp::PayloadType>>(payload_type));
 
     std::memcpy(buffer + 2, &response_payload_type, sizeof(response_payload_type));
 
@@ -383,7 +383,7 @@ TimePoint const& Session::poll() {
             logf_warning("Ignoring data received after the V2G session ended");
             packet.reset();
             state.new_data = false; // reset new_data flag
-        } else if (not io::v2gtp::is_known_payload_type(packet.get_payload_type())) {
+        } else if (not v2gtp::is_known_payload_type(packet.get_payload_type())) {
             // Dropped here, after the full frame was read, so the stream stays in sync.
             logf_warning("Ignoring V2GTP packet with unknown payload type");
             packet.reset();

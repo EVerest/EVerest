@@ -9,13 +9,13 @@
 
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/timeout.hpp>
-#include <iso15118/io/sdp.hpp>
 #include <iso15118/io/stream_view.hpp>
 #include <iso15118/message_din/common_types.hpp>
 #include <iso15118/message_din/payload_type.hpp>
 #include <iso15118/message_din/type.hpp>
 #include <iso15118/message_din/variant.hpp>
 #include <iso15118/session/feedback.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 #include "config.hpp"
 #include "evse_status.hpp"
@@ -49,7 +49,7 @@ public:
         }
     }
 
-    std::tuple<bool, size_t, io::v2gtp::PayloadType, message_din::Type> check_and_clear_response();
+    std::tuple<bool, size_t, v2gtp::PayloadType, message_din::Type> check_and_clear_response();
     message_din::Type peek_response_type() const {
         return response_type;
     }
@@ -63,7 +63,7 @@ private:
     const io::StreamOutputView response;
     size_t response_size{0};
     bool response_available{false};
-    io::v2gtp::PayloadType payload_type{io::v2gtp::PayloadType::SAP};
+    v2gtp::PayloadType payload_type{v2gtp::PayloadType::SAP};
     message_din::Type response_type{message_din::Type::None};
     std::any response_message;
 };
