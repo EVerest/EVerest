@@ -1126,10 +1126,9 @@ static enum v2g_event handle_iso_payment_service_selection(struct v2g_connection
         }
     }
 
+    conn->ctx->session.selected_vas_services_by_provider.clear();
     if (selected_services_found) {
-        for (const auto& [provider_index, services] : services_by_provider) {
-            conn->ctx->r_vas.at(provider_index)->call_selected_services(services);
-        }
+        conn->ctx->session.selected_vas_services_by_provider = std::move(services_by_provider);
     }
 
     res->ResponseCode = (selected_services_found == false) ? iso2_responseCodeType_FAILED_ServiceSelectionInvalid
@@ -1460,6 +1459,15 @@ error_out:
     conn->ctx->state = (res->EVSEProcessing == iso2_EVSEProcessingType_Finished)
                            ? (int)iso_dc_state_id::WAIT_FOR_CHARGEPARAMETERDISCOVERY
                            : (int)iso_dc_state_id::WAIT_FOR_AUTHORIZATION; // [V2G-573] (AC) , [V2G-687] (DC)
+
+    // [V2G2-774]: the VAS agreement is complete with AuthorizationRes OK and Finished.
+    if ((res->ResponseCode < iso2_responseCodeType_FAILED) &&
+        (res->EVSEProcessing == iso2_EVSEProcessingType_Finished)) {
+        for (const auto& [provider_index, services] : conn->ctx->session.selected_vas_services_by_provider) {
+            conn->ctx->r_vas.at(provider_index)->call_selected_services(services);
+        }
+        conn->ctx->session.selected_vas_services_by_provider.clear();
+    }
 
     return next_event;
 }

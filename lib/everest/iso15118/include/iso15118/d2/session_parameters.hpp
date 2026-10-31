@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <iso15118/message/service_selection.hpp>
 #include <iso15118/message_2/common_types.hpp>
 
 namespace iso15118::d2 {
@@ -24,6 +25,9 @@ struct SessionParameters {
     bool contract_selected{false};
     bool cert_install_selected{false};
     bool cert_update_selected{false};
+
+    // PaymentServiceSelection: reported to the VAS providers only once authorization finished [V2G2-774].
+    message_20::datatypes::VasSelectedServiceList selected_vas_services{};
 
     // Empty on an ExternalPayment (EIM) session, which has no contract.
     std::vector<uint8_t> contract_leaf_der{};
