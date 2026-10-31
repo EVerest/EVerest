@@ -51,7 +51,7 @@ install(
 install(
     DIRECTORY "certs"
     DESTINATION "${CMAKE_INSTALL_SYSCONFDIR}/everest"
-    FILES_MATCHING PATTERN "*.pem" PATTERN "*.key" PATTERN "*.der" PATTERN "*.txt" PATTERN "*.jks" PATTERN "*.p12"
+    FILES_MATCHING PATTERN "*.pem" PATTERN "*.key" PATTERN "*.der" PATTERN "*.txt" PATTERN "*.p12"
 )
 
 install(

@@ -1,0 +1,19 @@
+#!/bin/sh
+# SPDX-License-Identifier: Apache-2.0
+# Copyright Pionix GmbH and Contributors to EVerest
+#
+# openssl that fails its 4th call, signing the V2G root, and forwards every other call.
+# Calls are counted in the working directory, which iso15118-dev-pki.cmake recreates per run;
+# mkdir is atomic, so the two ends of a pipe never share a number.
+
+shim_dir=$(dirname "$0")
+n=1
+while ! mkdir ".openssl-call-$n" 2>/dev/null; do
+    n=$((n + 1))
+done
+if [ "$n" -eq 4 ]; then
+    echo "openssl shim: failing call $n" >&2
+    exit 1
+fi
+PATH=${PATH#"$shim_dir":}
+exec openssl "$@"
