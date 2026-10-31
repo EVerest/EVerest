@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 
 # --------------------------------------------------------------------------
 #
@@ -30,6 +30,18 @@ DHCP_PID_FILE="${PID_DIR}/vas_udhcpd.pid"
 RADVD_PID_FILE="${PID_DIR}/vas_radvd.pid"
 
 CONF_DIR="/tmp"
+FORWARDING_STATE_DIR="${PID_DIR}"
+
+# Resolvers announced to the EV; DNS to them is the only traffic besides PORTS that is forwarded
+DNS_SERVERS_V4="8.8.8.8 8.8.4.4"
+DNS_SERVERS_V6="2001:4860:4860::8888 2001:4860:4860::8844"
+
+# The EV never reaches non-public destinations. Add the backend networks (CSMS, management)
+# that are reachable via the WAN interface in /etc/default/vas-internet.
+BLOCKED_DESTINATIONS_V4="0.0.0.0/8 10.0.0.0/8 100.64.0.0/10 127.0.0.0/8 169.254.0.0/16 172.16.0.0/12 192.0.0.0/24 192.168.0.0/16 198.18.0.0/15 224.0.0.0/4 240.0.0.0/4"
+BLOCKED_DESTINATIONS_V6="::/128 ::1/128 ::ffff:0:0/96 64:ff9b::/96 100::/64 fc00::/7 fe80::/10 ff00::/8"
+EXTRA_BLOCKED_DESTINATIONS_V4=""
+EXTRA_BLOCKED_DESTINATIONS_V6=""
 DHCP_CONF_FILE="${CONF_DIR}/vas_udhcpd.conf"
 RADVD_CONF_FILE="${CONF_DIR}/vas_radvd.conf"
 
@@ -63,6 +75,78 @@ check_deps() {
     done
 }
 
+# Forwarding is enabled for every interface, so the previous value is restored on "down"
+save_and_set_sysctl() {
+  local key=$1
+  local state_file="${FORWARDING_STATE_DIR}/vas_${key//./_}.prev"
+  [ -f "$state_file" ] || sysctl -n "$key" > "$state_file"
+  sysctl -w "$key=1" >/dev/null
+}
+
+restore_sysctl() {
+  local key=$1
+  local state_file="${FORWARDING_STATE_DIR}/vas_${key//./_}.prev"
+  if [ -f "$state_file" ]; then
+    sysctl -w "$key=$(cat "$state_file")" >/dev/null
+    rm -f "$state_file"
+  fi
+}
+
+# VAS_FORWARD sees everything the EV sends through the charger, VAS_RETURN everything forwarded
+# towards the EV. Both end in DROP, so the FORWARD policy of the system does not matter.
+setup_filter() {
+  local tables=$1
+  local lan=$2
+  local wan=$3
+  local ports=$4
+  local ev_subnet=$5
+  local blocked=$6
+  local dns_servers=$7
+
+  local chain
+  for chain in VAS_FORWARD VAS_RETURN; do
+    $tables -N "$chain" 2>/dev/null || $tables -F "$chain"
+  done
+
+  $tables -A VAS_FORWARD ! -o "$wan" -j DROP
+  local destination
+  for destination in $blocked; do
+    $tables -A VAS_FORWARD -d "$destination" -j DROP
+  done
+  local server
+  for server in $dns_servers; do
+    $tables -A VAS_FORWARD -d "$server" -p udp --dport 53 -j ACCEPT
+    $tables -A VAS_FORWARD -d "$server" -p tcp --dport 53 -j ACCEPT
+  done
+  $tables -A VAS_FORWARD -p tcp -m multiport --dports "$ports" -j ACCEPT
+  $tables -A VAS_FORWARD -j DROP
+
+  $tables -A VAS_RETURN -i "$wan" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  $tables -A VAS_RETURN -j DROP
+
+  $tables -C FORWARD -i "$lan" -j VAS_FORWARD 2>/dev/null || $tables -I FORWARD 1 -i "$lan" -j VAS_FORWARD
+  $tables -C FORWARD -o "$lan" -j VAS_RETURN 2>/dev/null || $tables -I FORWARD 1 -o "$lan" -j VAS_RETURN
+
+  $tables -t nat -C POSTROUTING -s "$ev_subnet" -o "$wan" -j MASQUERADE 2>/dev/null || \
+    $tables -t nat -A POSTROUTING -s "$ev_subnet" -o "$wan" -j MASQUERADE
+}
+
+remove_filter() {
+  local tables=$1
+  local lan=$2
+  local wan=$3
+  local ev_subnet=$4
+
+  $tables -D FORWARD -i "$lan" -j VAS_FORWARD 2>/dev/null || true
+  $tables -D FORWARD -o "$lan" -j VAS_RETURN 2>/dev/null || true
+  local chain
+  for chain in VAS_FORWARD VAS_RETURN; do
+    $tables -F "$chain" 2>/dev/null || true
+    $tables -X "$chain" 2>/dev/null || true
+  done
+  $tables -t nat -D POSTROUTING -s "$ev_subnet" -o "$wan" -j MASQUERADE 2>/dev/null || true
+}
+
 # --- Core Logic Functions ---
 
 start_services() {
@@ -73,55 +157,22 @@ start_services() {
 
   echo "[+] Starting all internet VAS services for $LAN_IFACE -> $WAN_IFACE"
 
-  # 1. Enable IP Forwarding
+  # 1. Enable IP Forwarding, remembering the previous setting for "down"
   echo "  [1/4] Enabling IP forwarding"
   if [ "$USE_IPV4" = true ]; then
-    sysctl -w net.ipv4.ip_forward=1 >/dev/null
+    save_and_set_sysctl net.ipv4.ip_forward
   fi
-  sysctl -w net.ipv6.conf.all.forwarding=1 >/dev/null
+  save_and_set_sysctl net.ipv6.conf.all.forwarding
 
   # 2. Setup NAT and Forwarding Rules
   echo "  [2/4] Setting up NAT and FORWARD rules on $WAN_IFACE"
-
-  # Create custom chains
-  if [ "$USE_IPV4" = true ]; then
-    iptables -N VAS_FORWARD 2>/dev/null || iptables -F VAS_FORWARD
-  fi
-  ip6tables -N VAS_FORWARD 2>/dev/null || ip6tables -F VAS_FORWARD
-
-  # Jump to custom chain
-  if [ "$USE_IPV4" = true ]; then
-    iptables -C FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD 2>/dev/null || \
-      iptables -A FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD
-  fi
-  ip6tables -C FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD 2>/dev/null || \
-    ip6tables -A FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD
-
-  # MASQUERADE rule for outbound traffic on WAN interface
-  if [ "$USE_IPV4" = true ]; then
-    iptables -t nat -C POSTROUTING -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || \
-      iptables -t nat -A POSTROUTING -o "$WAN_IFACE" -j MASQUERADE
-  fi
-ip6tables -t nat -C POSTROUTING -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || \
-    ip6tables -t nat -A POSTROUTING -o "$WAN_IFACE" -j MASQUERADE
-
-  # Allow return traffic for established connections
-  if [ "$USE_IPV4" = true ]; then
-    iptables -C FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-      iptables -A FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT
-  fi
-ip6tables -C FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || \
-    ip6tables -A FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT
-
-  # Add specific forwarding rules for outbound traffic from LAN interface
   echo "    - Allowing outgoing traffic on TCP ports: $PORTS"
   if [ "$USE_IPV4" = true ]; then
-    # TCP
-    iptables -A VAS_FORWARD -p tcp -m multiport --dports "$PORTS" -j ACCEPT
+    setup_filter iptables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}" \
+      "$BLOCKED_DESTINATIONS_V4 $EXTRA_BLOCKED_DESTINATIONS_V4" "$DNS_SERVERS_V4"
   fi
-
-  # TCP (IPv6)
-  ip6tables -A VAS_FORWARD -p tcp -m multiport --dports "$PORTS" -j ACCEPT
+  setup_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$PORTS" "$RADVD_IPV6_PREFIX" \
+    "$BLOCKED_DESTINATIONS_V6 $EXTRA_BLOCKED_DESTINATIONS_V6" "$DNS_SERVERS_V6"
 
   # 3. Start DHCP server
   if [ "$USE_IPV4" = true ]; then
@@ -136,7 +187,7 @@ start       ${NETWORK_BASE}.2
 end         ${NETWORK_BASE}.200
 option      subnet  255.255.255.0
 option      router  ${DHCP_STATIC_IP}
-option      dns     8.8.8.8 8.8.4.4
+option      dns     ${DNS_SERVERS_V4}
 option      lease   864000
 pidfile     ${DHCP_PID_FILE}
 EOF
@@ -159,7 +210,7 @@ interface ${LAN_IFACE}
     AdvAutonomous on;
     AdvRouterAddr off;
   };
-  RDNSS 2001:4860:4860::8888 2001:4860:4860::8844
+  RDNSS ${DNS_SERVERS_V6}
   {
     AdvRDNSSLifetime 3600;
   };
@@ -200,26 +251,12 @@ stop_services() {
   # 2. Remove NAT and FORWARD rules
   echo "  [3/3] Removing NAT and FORWARD rules"
 
-  # Remove jump rule
   if [ "$USE_IPV4" = true ]; then
-    iptables -D FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD 2>/dev/null || true
+    remove_filter iptables "$LAN_IFACE" "$WAN_IFACE" "${DHCP_STATIC_IP%.*}.0/${SUBNET_MASK}"
+    restore_sysctl net.ipv4.ip_forward
   fi
-  ip6tables -D FORWARD -i "$LAN_IFACE" -o "$WAN_IFACE" -j VAS_FORWARD 2>/dev/null || true
-
-  # Flush and delete custom chain
-  if [ "$USE_IPV4" = true ]; then
-    iptables -F VAS_FORWARD 2>/dev/null || true
-    iptables -X VAS_FORWARD 2>/dev/null || true
-  fi
-  ip6tables -F VAS_FORWARD 2>/dev/null || true
-  ip6tables -X VAS_FORWARD 2>/dev/null || true
-
-  if [ "$USE_IPV4" = true ]; then
-    iptables -t nat -D POSTROUTING -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || true
-    iptables -D FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
-  fi
-  ip6tables -t nat -D POSTROUTING -o "$WAN_IFACE" -j MASQUERADE 2>/dev/null || true
-  ip6tables -D FORWARD -i "$WAN_IFACE" -o "$LAN_IFACE" -m state --state RELATED,ESTABLISHED -j ACCEPT 2>/dev/null || true
+  remove_filter ip6tables "$LAN_IFACE" "$WAN_IFACE" "$RADVD_IPV6_PREFIX"
+  restore_sysctl net.ipv6.conf.all.forwarding
 
   echo "[✓] All services stopped and rules removed."
 }
