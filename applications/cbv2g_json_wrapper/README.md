@@ -3,12 +3,12 @@
 A native C shared library that wraps [libcbv2g](https://github.com/EVerest/libcbv2g)
 with a JSON-based API for EXI encode/decode.
 
-The wrapper is designed to replace the Java-based EXIficient codec used by the
-EVerest EV-side simulation in [Josev](https://github.com/EVerest/ext-switchev-iso15118).
-The intended consumer is `iso15118.shared.cbv2g_exi_codec.Cbv2gEXICodec`, which
-loads `libcbv2g_json_wrapper.so` via `ctypes`.
-
-See RFC [EVerest/ext-switchev-iso15118#58](https://github.com/EVerest/ext-switchev-iso15118/issues/58).
+It lets Python and other non-C code encode and decode ISO 15118 and DIN 70121
+messages without binding libcbv2g's structs, by loading `libcbv2g_json_wrapper.so`
+through `ctypes` or another FFI. The OCPP Plug and Charge tests use it to build EXI
+payloads. It was first written as the EXI codec for
+[Josev](https://github.com/EVerest/ext-switchev-iso15118)
+([RFC #58](https://github.com/EVerest/ext-switchev-iso15118/issues/58)).
 
 ## Public API
 
@@ -46,13 +46,16 @@ ISO 15118-20 support is planned as a follow-up PR.
 
 ### ISO 15118-2
 
-The JSON follows the shape Josev exchanges with its Java codec. Elements and
-attributes keep their XSD names, enumerations their XSD literals, repeated
-elements are arrays, hexBinary values are hex strings (decoded in upper case)
-and base64Binary values padded base64. Simple content that carries an `Id`
-attribute is an object with `Id` and `value`, as in `SignatureValue`, `eMAID`,
-`DHpublickey` and `ContractSignatureEncryptedPrivateKey`. A substitution group
-appears as its concrete member, e.g. `AC_EVSEStatus` or `DC_EVChargeParameter`.
+The JSON mirrors the ISO 15118-2 XSD. Elements and attributes keep their XSD
+names, enumerations their XSD literals, repeated elements are arrays, hexBinary
+values are hex strings (decoded in upper case) and base64Binary values padded
+base64. Simple content that carries an `Id` attribute is an object with `Id`
+and `value`, as in `SignatureValue`, `eMAID`, `DHpublickey` and
+`ContractSignatureEncryptedPrivateKey`. A substitution group appears as its
+concrete member, e.g. `AC_EVSEStatus` or `DC_EVChargeParameter`.
+
+This is the shape Josev used with its Java codec, so JSON written for Josev
+still decodes.
 
 With the `MsgDef` namespace, a JSON object whose single key is `V2G_Message`
 is a complete message. Any other single key encodes that element as an

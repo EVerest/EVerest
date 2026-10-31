@@ -57,7 +57,7 @@ Use `apt` to get your needed libraries installed:
 
   sudo apt update
   sudo apt install -y python3-pip python3-venv git rsync wget cmake doxygen \
-    graphviz build-essential clang-tidy cppcheck openjdk-17-jdk npm docker.io \
+    graphviz build-essential clang-tidy cppcheck npm docker.io \
     docker-compose libboost-all-dev nodejs libssl-dev libsqlite3-dev \
     clang-format curl rfkill libpcap-dev libevent-dev pkg-config libcap-dev \
     libsystemd-dev
@@ -73,7 +73,7 @@ Use `zypper` to get your needed libraries installed:
   zypper install -y git rsync wget cmake doxygen graphviz clang-tools cppcheck \
    boost-devel libboost_filesystem-devel libboost_log-devel \
    libboost_program_options-devel libboost_system-devel libboost_thread-devel \
-   java-17-openjdk java-17-openjdk-devel nodejs nodejs-devel npm python3-devel \
+   nodejs nodejs-devel npm python3-devel \
    python3-pip gcc-c++ libopenssl-devel sqlite3-devel libpcap-devel \
    libevent-devel libcap-devel systemd-devel
 
@@ -86,8 +86,8 @@ Tested with Fedora 40, 41 and 42. Here is how to get your needed libraries with
 
   sudo dnf update
   sudo dnf install make automake gcc gcc-c++ kernel-devel python3-pip python3-devel \
-   git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck java-21-openjdk \
-   java-21-openjdk-devel boost-devel nodejs nodejs-devel npm openssl openssl-devel \
+   git rsync wget cmake doxygen graphviz clang-tools-extra cppcheck \
+   boost-devel nodejs nodejs-devel npm openssl openssl-devel \
    libsqlite3x-devel curl rfkill libpcap-devel libevent-devel libcap-devel
 
 .. _htg_getting_started_sw_download_install:
