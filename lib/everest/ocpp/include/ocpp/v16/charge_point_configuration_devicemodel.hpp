@@ -119,6 +119,11 @@ public:
         return *storage;
     }
 
+    /// \brief The key mapping in effect, without overrides whose target is missing from the device model.
+    const VariableResolver& get_variable_resolver() const {
+        return resolver;
+    }
+
     void check_integrity(int32_t expected_number_of_connectors) override;
 
     // UserConfig and Internal

@@ -147,9 +147,15 @@ TEST_F(LegacyKeyOverride, IntegrityCheckPassesWithExistingTarget) {
     EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
 }
 
-TEST_F(LegacyKeyOverride, IntegrityCheckFailsWhenTargetMissing) {
+TEST_F(LegacyKeyOverride, MissingTargetFallsBackToBuiltinMapping) {
     migrate(light_intensity_override("DoesNotExist"));
-    EXPECT_THROW(config->check_integrity(NUMBER_OF_CONNECTORS), std::runtime_error);
+    EXPECT_NO_THROW(config->check_integrity(NUMBER_OF_CONNECTORS));
+    EXPECT_FALSE(config->get_variable_resolver().is_overridden(ocpp::v16::keys::valid_keys::LightIntensity));
+
+    EXPECT_EQ(device_model_value("OCPP16LegacyCtrlr", "LightIntensity"), MIGRATED_LIGHT_INTENSITY);
+    const auto kv = config->get("LightIntensity");
+    ASSERT_TRUE(kv.has_value());
+    EXPECT_EQ(kv->value, MIGRATED_LIGHT_INTENSITY);
 }
 
 } // namespace
