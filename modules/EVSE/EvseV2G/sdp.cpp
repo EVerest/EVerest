@@ -341,6 +341,10 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
             v2g_ctx->sdp_dlink_ready_time = 0;
         }
 
+        if (v2g_ctx->sdp_dlink_ready) {
+            sdp_resume_tcp_listener(v2g_ctx);
+        }
+
         /* Check if V2G communication setup timeout has expired */
         if (dlink_ready_time != 0 && !v2g_ctx->connection_initiated) {
             long long int elapsed = getmonotonictime() - dlink_ready_time;
@@ -348,6 +352,7 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
                 dlog(DLOG_LEVEL_WARNING,
                      "V2G communication setup timeout (%dms) expired - signaling dlink_error to EvseManager [V2G2-723]",
                      V2G_COMMUNICATION_SETUP_TIMEOUT);
+                sdp_pause_tcp_listener(v2g_ctx);
                 v2g_ctx->p_charger->publish_dlink_error(nullptr);
                 v2g_ctx->sdp_dlink_ready = false;
                 v2g_ctx->sdp_dlink_ready_time = 0;
@@ -410,6 +415,7 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
                 continue;
             }
 
+            sdp_resume_tcp_listener(v2g_ctx);
             sdp_send_response(v2g_ctx->sdp_socket, &sdp_query);
         }
     }
@@ -426,6 +432,40 @@ int sdp_listen(struct v2g_context* v2g_ctx) {
         });
     }
 
+    return 0;
+}
+
+/* A connection completes its TCP handshake in the kernel even if it is never accepted, so refusing it
+ * requires the listener to leave the LISTEN state. shutdown() does this while keeping the explicitly
+ * bound port (tcp_port), and wakes a thread blocked in accept() with EINVAL. */
+int sdp_pause_tcp_listener(struct v2g_context* v2g_ctx) {
+    if (v2g_ctx->tcp_socket == -1 || v2g_ctx->tcp_listener_paused) {
+        return 0;
+    }
+
+    v2g_ctx->tcp_listener_paused = true;
+    if (shutdown(v2g_ctx->tcp_socket, SHUT_RD) == -1) {
+        dlog(DLOG_LEVEL_ERROR, "Pausing the TCP listener failed: %s", strerror(errno));
+        v2g_ctx->tcp_listener_paused = false;
+        return -1;
+    }
+
+    dlog(DLOG_LEVEL_INFO, "TCP listener paused: connections are refused until D-LINK is ready again [V2G2-723]");
+    return 0;
+}
+
+int sdp_resume_tcp_listener(struct v2g_context* v2g_ctx) {
+    if (v2g_ctx->tcp_socket == -1 || !v2g_ctx->tcp_listener_paused) {
+        return 0;
+    }
+
+    if (listen(v2g_ctx->tcp_socket, DEFAULT_SOCKET_BACKLOG) == -1) {
+        dlog(DLOG_LEVEL_ERROR, "Resuming the TCP listener failed: %s", strerror(errno));
+        return -1;
+    }
+
+    v2g_ctx->tcp_listener_paused = false;
+    dlog(DLOG_LEVEL_INFO, "TCP listener resumed");
     return 0;
 }
 

@@ -335,6 +335,7 @@ struct v2g_context* v2g_ctx_create(ISO15118_chargerImplBase* p_chargerImplBase,
     ctx->hlc_pause_active = false;
 
     ctx->connection_initiated = false;
+    ctx->tcp_listener_paused = false;
 
     return ctx;
 
