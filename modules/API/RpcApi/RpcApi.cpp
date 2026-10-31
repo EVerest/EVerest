@@ -218,6 +218,14 @@ void RpcApi::subscribe_evse_manager(const std::unique_ptr<evse_managerIntf>& evs
             display_parameters.present_soc = std::lround(ev_info.soc.value());
         }
 
+        if (ev_info.target_soc.has_value()) {
+            display_parameters.target_soc = std::lround(ev_info.target_soc.value());
+        }
+
+        if (ev_info.battery_full_soc.has_value()) {
+            display_parameters.maximum_soc = std::lround(ev_info.battery_full_soc.value());
+        }
+
         if (ev_info.battery_capacity.has_value()) {
             display_parameters.battery_energy_capacity = ev_info.battery_capacity;
         }

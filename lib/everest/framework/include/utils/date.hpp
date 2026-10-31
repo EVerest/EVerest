@@ -26,6 +26,10 @@ void preload_tzdb();
 /// The time point is truncated to milliseconds. A leap second is formatted as second 60.
 std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t);
 
+/// \brief Convert a relative time in seconds from now, as reported by ISO 15118 and DIN SPEC 70121, into an
+/// absolute RFC3339 UTC timestamp
+std::string seconds_from_now_to_rfc3339(double seconds);
+
 /// \brief Lenient parsing of a date-time (YYYY-MM-DDTHH:MM:SS[.frac]) with date::parse().
 ///
 /// Field ranges are validated, but the time offset and anything following the seconds are ignored, the result is

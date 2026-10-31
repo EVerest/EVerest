@@ -22,6 +22,11 @@ std::string to_rfc3339(const std::chrono::time_point<date::utc_clock>& t) {
     return date::format("%FT%TZ", std::chrono::time_point_cast<std::chrono::milliseconds>(t));
 }
 
+std::string seconds_from_now_to_rfc3339(double seconds) {
+    const auto offset = std::chrono::duration_cast<date::utc_clock::duration>(std::chrono::duration<double>(seconds));
+    return to_rfc3339(date::utc_clock::now() + offset);
+}
+
 std::chrono::time_point<date::utc_clock> from_rfc3339_slow(const std::string& t) {
     std::istringstream infile{t};
     std::chrono::time_point<date::utc_clock> tp;

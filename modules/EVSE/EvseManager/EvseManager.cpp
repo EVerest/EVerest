@@ -513,6 +513,34 @@ void EvseManager::ready() {
 
         auto sae_mode = types::iso15118::SaeJ2847BidiMode::None;
 
+        r_hlc[0]->subscribe_departure_time([this](const std::string& t) {
+            Everest::scoped_lock_timeout lock(ev_info_mutex, Everest::MutexDescription::EVSE_subscribe_departure_time);
+            ev_info.departure_time = t;
+            p_evse->publish_ev_info(ev_info);
+        });
+
+        r_hlc[0]->subscribe_display_parameters([this](types::iso15118::DisplayParameters const& p) {
+            Everest::scoped_lock_timeout lock(ev_info_mutex,
+                                              Everest::MutexDescription::EVSE_subscribe_display_parameters);
+            if (p.present_soc.has_value()) {
+                ev_info.soc = p.present_soc.value();
+            }
+            if (p.maximum_soc.has_value()) {
+                ev_info.battery_full_soc = p.maximum_soc.value();
+            }
+            if (p.target_soc.has_value()) {
+                ev_info.target_soc = p.target_soc.value();
+            }
+            if (p.remaining_time_to_maximum_soc.has_value()) {
+                ev_info.estimated_time_full =
+                    Everest::Date::seconds_from_now_to_rfc3339(p.remaining_time_to_maximum_soc.value());
+            }
+            if (p.battery_energy_capacity.has_value()) {
+                ev_info.battery_capacity = p.battery_energy_capacity.value();
+            }
+            p_evse->publish_ev_info(ev_info);
+        });
+
         if (config.charge_mode == "AC") {
             types::iso15118::SetupPhysicalValues setup_physical_values;
             setup_physical_values.ac_nominal_voltage = config.ac_nominal_voltage;
@@ -577,20 +605,19 @@ void EvseManager::ready() {
                 p_evse->publish_ev_info(ev_info);
             });
 
-            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode(
-                [this](types::iso15118::AcEvDynamicModeValues const& values) {
-                    Everest::scoped_lock_timeout lock(
-                        ev_info_mutex, Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
-                    ev_info.target_energy_request = values.target_energy_request;
-                    ev_info.max_energy_request = values.max_energy_request;
-                    ev_info.min_energy_request = values.min_energy_request;
-                    if (values.departure_time.has_value()) {
-                        // TODO(SL): Convert departure_time to rfc3339
-                        // ev_info.departure_time = values.departure_time.value();
-                    }
-                    // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
-                    p_evse->publish_ev_info(ev_info);
-                });
+            r_hlc[0]->subscribe_ac_ev_dynamic_control_mode([this](
+                                                               types::iso15118::AcEvDynamicModeValues const& values) {
+                Everest::scoped_lock_timeout lock(ev_info_mutex,
+                                                  Everest::MutexDescription::EVSE_subscribe_ac_ev_dynamic_control_mode);
+                ev_info.target_energy_request = values.target_energy_request;
+                ev_info.max_energy_request = values.max_energy_request;
+                ev_info.min_energy_request = values.min_energy_request;
+                if (values.departure_time.has_value()) {
+                    ev_info.departure_time = Everest::Date::seconds_from_now_to_rfc3339(values.departure_time.value());
+                }
+                // TODO(SL): Missing max_v2x_energy_request & min_v2x_energy_request
+                p_evse->publish_ev_info(ev_info);
+            });
 
         } else if (config.charge_mode == "DC") {
             // Create voltage plausibility monitor for DC charging
@@ -933,13 +960,6 @@ void EvseManager::ready() {
                     internal_over_voltage_monitor->set_limits(get_emergency_over_voltage_threshold(),
                                                               get_error_over_voltage_threshold());
                 }
-            });
-
-            r_hlc[0]->subscribe_departure_time([this](const std::string& t) {
-                Everest::scoped_lock_timeout lock(ev_info_mutex,
-                                                  Everest::MutexDescription::EVSE_subscribe_departure_time);
-                ev_info.departure_time = t;
-                p_evse->publish_ev_info(ev_info);
             });
 
             r_hlc[0]->subscribe_dc_ev_energy_capacity([this](double c) {
