@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <optional>
 #include <string>
+#include <vector>
 
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/message_2/common_types.hpp>
@@ -92,6 +93,8 @@ struct SessionConfig {
 struct PauseContext {
     dt::SessionId old_session_id{};
     dt::PaymentOption selected_payment_option{dt::PaymentOption::ExternalPayment};
+    // The authorized contract, which a resumed PnC session has to present again
+    std::vector<uint8_t> contract_leaf_der{};
 };
 
 } // namespace iso15118::d2

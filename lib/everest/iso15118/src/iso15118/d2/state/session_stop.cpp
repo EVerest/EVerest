@@ -33,7 +33,7 @@ Result process_session_stop(Context& m_ctx, const message_2::SessionStopRequest&
         m_ctx.session_paused = true;
         const auto selected_option =
             m_ctx.session().contract_selected ? dt::PaymentOption::Contract : dt::PaymentOption::ExternalPayment;
-        m_ctx.pause_ctx = PauseContext{m_ctx.get_session_id(), selected_option};
+        m_ctx.pause_ctx = PauseContext{m_ctx.get_session_id(), selected_option, m_ctx.session().contract_leaf_der};
     } else {
         m_ctx.session_stopped = true;
         m_ctx.pause_ctx.reset();

@@ -70,6 +70,16 @@ Result process_payment_details(Context& m_ctx, const message_2::PaymentDetailsRe
         }
     }
 
+    // The module keeps the authorization of a paused session, so only the paused contract may resume it.
+    if (m_ctx.session().session_resumed and m_ctx.pause_ctx.has_value() and
+        req.contract_certificate != m_ctx.pause_ctx->contract_leaf_der) {
+        logf_warning("PaymentDetails: a resumed session presented a different contract certificate");
+        res.response_code = dt::ResponseCode::FAILED;
+        m_ctx.respond(res);
+        m_ctx.session_stopped = true;
+        return {};
+    }
+
     m_ctx.set_contract_identity(req.contract_certificate, validation.emaid, validation.chain_pem);
 
     m_ctx.respond(res);

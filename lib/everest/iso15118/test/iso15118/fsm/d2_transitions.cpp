@@ -7,6 +7,8 @@
 #include <optional>
 #include <vector>
 
+#include "../captured_messages.hpp"
+#include "../test_pki.hpp"
 #include "secc_helper.hpp"
 
 #include <iso15118/detail/base64.hpp>
@@ -25,6 +27,7 @@
 #include <iso15118/message_2/service_discovery.hpp>
 #include <iso15118/message_2/session_setup.hpp>
 #include <iso15118/message_2/session_stop.hpp>
+#include <iso15118/message_2/variant.hpp>
 #include <iso15118/message_2/welding_detection.hpp>
 
 using namespace iso15118;
@@ -1887,8 +1890,9 @@ SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
 
     const dt::SessionId paused_session_id{0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08};
 
-    const auto resume = [&](Secc& secc) {
-        secc.fsm.context().pause_ctx = d2::PauseContext{paused_session_id, dt::PaymentOption::Contract};
+    const auto resume = [&](Secc& secc, const std::vector<uint8_t>& paused_contract) {
+        secc.fsm.context().pause_ctx =
+            d2::PauseContext{paused_session_id, dt::PaymentOption::Contract, paused_contract};
         message_2::SessionSetupRequest req;
         req.header.session_id = paused_session_id;
         req.evcc_id = {0x00, 0x11, 0x22, 0x33, 0x44, 0x55};
@@ -1899,7 +1903,7 @@ SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
 
     GIVEN("A PnC pause resumed over TLS") {
         Secc secc{config, {}};
-        resume(secc);
+        resume(secc, {});
 
         THEN("Only Contract is offered [V2G2-741]") {
             const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
@@ -1924,10 +1928,48 @@ SCENARIO("ISO 15118-2 SECC resumes a PnC-paused session") {
         }
     }
 
+    GIVEN("A PnC pause resumed with central contract validation") {
+        const auto& captured_exi = captured::ISO2_PAYMENT_DETAILS_REQ;
+        const message_2::Variant captured(io::StreamInputView{captured_exi.data(), captured_exi.size()});
+        auto details = captured.get<message_2::PaymentDetailsRequest>();
+        config.central_contract_validation_allowed = true;
+        Secc secc{config, {}};
+        resume(secc, details.contract_certificate);
+        message_2::PaymentServiceSelectionRequest selection;
+        selection.selected_payment_option = dt::PaymentOption::Contract;
+        selection.selected_service_list.push_back({CHARGE_SERVICE_ID, std::nullopt});
+        secc.drive(selection);
+
+        WHEN("The EV presents the paused contract") {
+            secc.drive(details);
+
+            THEN("PaymentDetails succeeds") {
+                const auto res = secc.fsm.response<message_2::PaymentDetailsResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::OK);
+                REQUIRE(secc.fsm.state() == StateID::Authorization);
+            }
+        }
+
+        WHEN("The EV presents a different contract for the same eMAID") {
+            const auto other = test_pki::make_pki("prime256v1", test_pki::CertSpec{details.emaid});
+            details.contract_certificate = other.leaf_der();
+            details.sub_certificates = other.subs_der();
+            secc.drive(details);
+
+            THEN("PaymentDetails fails and the session ends") {
+                const auto res = secc.fsm.response<message_2::PaymentDetailsResponse>();
+                REQUIRE(res.has_value());
+                REQUIRE(res->response_code == dt::ResponseCode::FAILED);
+                REQUIRE(secc.fsm.context().session_stopped);
+            }
+        }
+    }
+
     GIVEN("A PnC pause resumed over plain TCP") {
         config.tls_active = false;
         Secc secc{config, {}};
-        resume(secc);
+        resume(secc, {});
 
         THEN("Contract is not offered [V2G2-632]") {
             const auto res = secc.fsm.response<message_2::ServiceDiscoveryResponse>();
