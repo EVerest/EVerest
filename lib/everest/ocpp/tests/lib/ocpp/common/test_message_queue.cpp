@@ -4,6 +4,7 @@
 #include <gtest/gtest.h>
 #include <nlohmann/json.hpp>
 #include <ocpp/common/message_queue.hpp>
+#include <ocpp/common/ocpp_logging.hpp>
 
 namespace ocpp {
 
@@ -1292,6 +1293,26 @@ TEST_F(MessageQueueTest, test_destruction_without_stop_joins_worker) {
         destroyed.set_value();
     }).detach();
     EXPECT_EQ(destroyed_future.wait_for(std::chrono::seconds(5)), std::future_status::ready);
+}
+
+TEST_F(MessageQueueTest, test_receive_rejects_too_deeply_nested_message) {
+    // The CALLRESULT array is the first level, its payload adds the rest
+    const auto nested = [](std::size_t levels) {
+        return "[3,\"0\"," + std::string(levels - 1, '[') + std::string(levels - 1, ']') + "]";
+    };
+
+    EXPECT_NO_THROW(message_queue->receive(nested(MAX_JSON_NESTING_DEPTH)));
+    EXPECT_THROW(message_queue->receive(nested(MAX_JSON_NESTING_DEPTH + 1)), MalformedRpcMessage);
+    // Deep enough to overflow the stack when copied, small enough for the default message size limit
+    EXPECT_THROW(message_queue->receive(nested(100000)), MalformedRpcMessage);
+}
+
+TEST(MessageLoggingTest, test_logging_a_too_deeply_nested_message) {
+    MessageLogging logging(false, "", "", false, false, false, false, false, false, false, nullptr);
+    const std::size_t levels = 100000;
+    const auto message = "[3,\"0\"," + std::string(levels, '[') + std::string(levels, ']') + "]";
+    // The message is logged as is instead of being parsed and pretty-printed
+    logging.central_system("Unknown", message);
 }
 
 } // namespace ocpp
