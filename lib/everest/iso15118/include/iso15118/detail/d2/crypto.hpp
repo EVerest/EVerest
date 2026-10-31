@@ -26,7 +26,7 @@ struct PrivateKey {
 
 struct ContractValidationResult {
     // OK on success, otherwise the ISO 15118-2 FAILED_* code to return in PaymentDetailsRes.
-    dt::ResponseCode response_code{dt::ResponseCode::FAILED_CertChainError};
+    dt::ResponseCode response_code{dt::ResponseCode::FAILED};
     // eMAID (CommonName) read from the contract leaf certificate ('-' characters removed).
     std::string emaid;
     // Contract leaf + sub-CA certificates concatenated in PEM form (for the require_auth_pnc token).
