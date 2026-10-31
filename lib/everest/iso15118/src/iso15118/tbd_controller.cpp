@@ -6,6 +6,7 @@
 #include <chrono>
 #include <fcntl.h>
 #include <unistd.h>
+#include <variant>
 
 #include <iso15118/io/connection_plain.hpp>
 #include <iso15118/io/connection_ssl.hpp>
@@ -221,6 +222,21 @@ void TbdController::service_active_session() {
             session.reset();
         }
     }
+
+    // An unplug ends any resumable session ([V2G2-744], [V2G20-2623]). Applied after the poll so that a
+    // SessionStopReq(Pause) from the same tick is answered first.
+    if (unplugged_requested.exchange(false)) {
+        if (session and session->is_v2g_session_established()) {
+            session->mark_unplugged();
+        } else {
+            pause_ctx.reset();
+            d2_pause_ctx.reset();
+        }
+    }
+}
+
+bool TbdController::has_pause_context() const {
+    return pause_ctx.has_value() or d2_pause_ctx.has_value();
 }
 
 void TbdController::loop() {
@@ -378,6 +394,11 @@ void TbdController::shutdown() {
 }
 
 void TbdController::send_control_event(const d20::ControlEvent& event) {
+    if (const auto* cp = std::get_if<d20::CpStateChanged>(&event);
+        cp != nullptr and
+        (cp->state == d20::CpState::A or cp->state == d20::CpState::E or cp->state == d20::CpState::F)) {
+        unplugged_requested.store(true);
+    }
     std::lock_guard<std::mutex> lock(session_mutex);
     if (session) {
         session->push_control_event(event);

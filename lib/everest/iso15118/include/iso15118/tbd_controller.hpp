@@ -146,6 +146,9 @@ public:
     /// `set_ssl_config()` is picked up by the next connection.
     [[nodiscard]] config::SSLConfig connection_ssl_config() const;
 
+    /// Whether a paused ISO 15118-20 or -2 session can still be resumed.
+    [[nodiscard]] bool has_pause_context() const;
+
 private:
     io::PollManager poll_manager;
     // Loop thread only: opened by bind_interface(), closed by release_interface().
@@ -217,6 +220,7 @@ private:
     std::optional<d20::PauseContext> pause_ctx{std::nullopt};
     // ISO 15118-2 pause context, owned here so it outlives the per-session D2SeccEngine (mirrors pause_ctx).
     std::optional<d2::PauseContext> d2_pause_ctx{std::nullopt};
+    std::atomic_bool unplugged_requested{false};
 
     static constexpr uint32_t V2G_COMMUNICATION_SETUP_TIMEOUT_MS{18000};
     // Owned by the loop thread (tick). Module command threads request changes via set_dlink_ready(),
