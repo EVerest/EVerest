@@ -580,6 +580,16 @@ bool OpenSSLSupplier::x509_is_selfsigned(X509Handle* handle) {
     return (X509_self_signed(x509, 0) == 1);
 }
 
+bool OpenSSLSupplier::x509_is_ca(X509Handle* handle) {
+    X509* x509 = get(handle);
+
+    if (x509 == nullptr) {
+        return false;
+    }
+
+    return (X509_check_ca(x509) != 0);
+}
+
 bool OpenSSLSupplier::x509_is_equal(X509Handle* a, X509Handle* b) {
     return (X509_cmp(get(a), get(b)) == 0);
 }

@@ -100,6 +100,10 @@ bool X509Wrapper::is_selfsigned() const {
     return CryptoSupplier::x509_is_selfsigned(get());
 }
 
+bool X509Wrapper::is_ca() const {
+    return CryptoSupplier::x509_is_ca(get());
+}
+
 int64_t X509Wrapper::get_valid_in() const {
     return valid_in;
 }
