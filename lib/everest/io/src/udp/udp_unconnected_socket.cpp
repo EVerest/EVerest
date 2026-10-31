@@ -12,9 +12,10 @@
 
 namespace everest::lib::io::udp {
 
-bool udp_unconnected_socket::open(endpoint target, std::string iface) {
+bool udp_unconnected_socket::open(endpoint target, std::string iface,
+                                  std::optional<socket::SourcePortRange> source_ports) {
     try {
-        m_owned_udp_fd = socket::open_udp_unconnected_socket(target, iface);
+        m_owned_udp_fd = socket::open_udp_unconnected_socket(target, iface, source_ports);
         m_target = std::move(target);
         return socket::get_pending_error(m_owned_udp_fd) == 0;
     } catch (const std::exception&) {
