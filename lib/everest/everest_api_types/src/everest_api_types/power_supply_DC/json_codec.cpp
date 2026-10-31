@@ -193,8 +193,8 @@ void to_json(json& j, ChargingPhase const& k) noexcept {
     case ChargingPhase::Charging:
         j = "Charging";
         return;
-        j = "INVALID_VALUE__everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase";
     }
+    j = "INVALID_VALUE__everest::lib::API::V1_0::types::power_supply_DC::ChargingPhase";
 }
 
 void from_json(json const& j, ChargingPhase& k) {
