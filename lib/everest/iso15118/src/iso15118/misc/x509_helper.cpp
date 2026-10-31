@@ -3,6 +3,8 @@
 #include <iso15118/detail/x509_helper.hpp>
 
 #include <algorithm>
+#include <array>
+#include <string>
 
 #include <openssl/err.h>
 
@@ -27,6 +29,21 @@ std::string subject_common_name(X509* cert) {
 std::string strip_dashes(std::string in) {
     in.erase(std::remove(in.begin(), in.end(), '-'), in.end());
     return in;
+}
+
+bool subject_names_non_contract_profile(X509* cert) {
+    static constexpr std::array<const char*, 6> other_profiles{"CPO", "CSO", "CPS", "OEM", "EV", "V2G"};
+    X509_NAME* subject = X509_get_subject_name(cert);
+    for (int i = X509_NAME_get_index_by_NID(subject, NID_domainComponent, -1); i >= 0;
+         i = X509_NAME_get_index_by_NID(subject, NID_domainComponent, i)) {
+        const ASN1_STRING* value = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, i));
+        const std::string dc(reinterpret_cast<const char*>(ASN1_STRING_get0_data(value)),
+                             static_cast<std::size_t>(ASN1_STRING_length(value)));
+        if (std::find(other_profiles.begin(), other_profiles.end(), dc) != other_profiles.end()) {
+            return true;
+        }
+    }
+    return false;
 }
 
 PKEY_ptr load_private_key(const std::string& pem, const std::optional<std::string>& password) {
