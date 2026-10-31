@@ -60,8 +60,10 @@ public:
     }
 
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
-        return std::nullopt;
+        return vehicle_cert_hash;
     }
+
+    std::optional<io::sha512_hash_t> vehicle_cert_hash;
 
     // Inject a connection event through the stored callback.
     void fire(io::ConnectionEvent event) {

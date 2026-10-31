@@ -616,6 +616,7 @@ TEST_CASE("ISO 15118-2 pause and terminate responses after power delivery stops"
     namespace mdt = iso15118::message_2::datatypes;
     const bool enabled = GENERATE(false, true);
     const auto action = GENERATE(mdt::ChargingSession::Pause, mdt::ChargingSession::Terminate);
+    const bool unplugged = GENERATE(false, true);
     Pre20Session<Iso2Messages> fixture{enabled};
     fixture.start_authorization();
     fixture.session->push_control_event(iso15118::d20::AuthorizationResponse{true});
@@ -654,12 +655,17 @@ TEST_CASE("ISO 15118-2 pause and terminate responses after power delivery stops"
     REQUIRE(fixture.conn->half_closed);
     REQUIRE_FALSE(fixture.conn->closed);
     REQUIRE_FALSE(fixture.session->is_finished());
+    if (unplugged) {
+        fixture.session->mark_unplugged();
+    }
     now += 500ms;
     fixture.session->poll();
     REQUIRE(fixture.conn->closed);
     REQUIRE(fixture.session->is_finished());
     REQUIRE(fixture.signals.back() == (paused ? iso15118::session::feedback::Signal::DLINK_PAUSE
                                               : iso15118::session::feedback::Signal::DLINK_TERMINATE));
+    // Only a pause with the EV still plugged in can be resumed
+    REQUIRE(fixture.d2_pause_ctx.has_value() == (paused and not unplugged));
 }
 
 TEST_CASE("DIN terminates with an authorization response held") {
@@ -742,4 +748,16 @@ TEST_CASE_METHOD(SessionFixture, "SAP handover waits for its paced wire response
     session->poll();
     REQUIRE_FALSE(conn->written.empty());
     REQUIRE_FALSE(conn->closed);
+}
+
+TEST_CASE_METHOD(SessionFixture, "An ISO 15118-20 session that ends without pausing leaves nothing to resume") {
+    conn->vehicle_cert_hash.emplace().fill(0x42);
+    auto session = make_session(make_eim_session_config(), true);
+    start_session(*session, *conn);
+    REQUIRE(pause_ctx.has_value());
+
+    conn->fire(iso15118::io::ConnectionEvent::CLOSED);
+    session->poll();
+    REQUIRE(session->is_finished());
+    REQUIRE_FALSE(pause_ctx.has_value());
 }
