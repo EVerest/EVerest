@@ -13,10 +13,13 @@ namespace iso15118::din {
 // handed to a state through its constructor. Read-only to the states, so none can leave a stale or
 // invented value behind for the next one; the present values and the cable-check result are
 // reachable only through the named Context setters. DIN is DC-only, so unlike d2::EvseStatus there
-// is no AC contactor state and no RCD flag.
+// is no RCD flag.
 struct EvseStatus {
     float present_voltage{0.0f};
     float present_current{0.0f};
+
+    // The contactor state the module last reported; PowerDeliveryStop waits for the open.
+    bool contactor_closed{false};
 
     // Stamped into DC charge responses; EmergencyShutdown aborts the session (handled in the engine).
     d20::EvseErrorCode active_error{d20::EvseErrorCode::None};

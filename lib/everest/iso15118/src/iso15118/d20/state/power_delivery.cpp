@@ -254,6 +254,7 @@ Result PowerDelivery::feed(Event ev) {
             }
             if (m_ctx.session.is_dc_charger()) {
                 m_ctx.feedback.signal(session::feedback::Signal::DC_OPEN_CONTACTOR);
+                m_ctx.welding_detection.start(m_ctx.feedback);
                 return m_ctx.create_state<DC_WeldingDetection>();
             }
         }

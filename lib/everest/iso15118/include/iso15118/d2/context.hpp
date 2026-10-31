@@ -20,6 +20,7 @@
 #include <iso15118/d20/control_event.hpp>
 #include <iso15118/d20/timeout.hpp>
 #include <iso15118/session/feedback.hpp>
+#include <iso15118/session/welding_detection.hpp>
 
 #include "config.hpp"
 #include "evse_status.hpp"
@@ -165,6 +166,10 @@ public:
         evse_status.present_voltage = voltage;
         evse_status.present_current = current;
     }
+    void set_present_values(const d20::PresentVoltageCurrent& values) {
+        set_present_values(values.voltage, values.current);
+        welding_detection.observe(values);
+    }
     void set_meter_info(const dt::MeterInfo& info) {
         evse_status.latest_meter_info = info;
     }
@@ -192,7 +197,7 @@ public:
     }
     // PowerDelivery owns the open; the engine records the close from the ClosedContactor event.
     void set_contactor_closed(bool closed) {
-        evse_status.ac_contactor_closed = closed;
+        evse_status.contactor_closed = closed;
     }
     // Opening the contactor invalidates a completed cable check (ISO 15118-2 8.7.4.3 NOTE 1).
     void invalidate_cable_check() {
@@ -265,6 +270,13 @@ public:
     void clear_cp_state_timeout() {
         timeouts.reset_timeout(d20::TimeoutType::CPSTATE);
     }
+    void arm_welding_voltage_timeout() {
+        timeouts.reset_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+        timeouts.start_timeout(d20::TimeoutType::WELDING_VOLTAGE, d20::TIMEOUT_WELDING_VOLTAGE);
+    }
+    void clear_welding_voltage_timeout() {
+        timeouts.reset_timeout(d20::TimeoutType::WELDING_VOLTAGE);
+    }
     d20::TimeoutType const* get_active_timeout() {
         if (not current_timeout.has_value()) {
             return nullptr;
@@ -276,6 +288,7 @@ public:
     }
 
     const session::Feedback feedback;
+    session::WeldingDetectionPhase welding_detection;
     d2::SessionConfig session_config;
     std::optional<PauseContext>& pause_ctx;
 

@@ -58,6 +58,7 @@ struct PowerPath {
 
     bool charge_loop_running{false};
     bool ac_contactor_closed{false};
+    bool welding_detection_running{false};
 };
 
 // Owns the transport, the shared buffers and the timing rules, and delegates the protocol to the
@@ -110,6 +111,7 @@ private:
     void finish_session();
     session::feedback::Signal teardown_signal() const;
     void open_power_path();
+    void end_welding_detection();
 
     std::unique_ptr<io::IConnection> connection;
 
@@ -195,7 +197,10 @@ private:
     V2gMessageType last_response_type{message_20::Type::None};
     std::optional<TimePoint> last_response_tx_time; // timestamp of the last response message sent
     std::optional<TimePoint> last_request_rx_time;  // timestamp of the last request handed to the engine
-    std::optional<TimePoint> response_send_after;   // time point when the next response message can be sent
+    // The engine did not answer the last request on its own: a state holds the response until a control
+    // event or timeout (contactor, welding detection voltage), so its delay is deliberate.
+    bool response_held{false};
+    std::optional<TimePoint> response_send_after; // time point when the next response message can be sent
 };
 
 } // namespace iso15118

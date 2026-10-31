@@ -405,11 +405,32 @@ are omitted, since they end the session rather than move it to another state.
 On a DC ``PowerDeliveryReq`` with ``Stop``, or any ``PowerDeliveryReq`` while a
 shutdown is requested, ``current_demand_finished`` and ``dc_open_contactor`` are
 published before the response, and the response is held
-until ``ac_contactor_closed(false)`` reports the power path off, for at most 500 ms.
-The EV leaves state C as soon as it has the response, so this withdraws the power
+until ``contactor_closed(false)`` reports the power path off, for at most 1.4 s
+(1.5 s performance time), then it is sent anyway with a warning. Side B is disabled
+before the EV learns of it (IEC 61851-23:2023 Table CC.9, t103 before t104), and the
+EV leaves state C as soon as it has the response, so this withdraws the power
 permissive first (IEC 61851-23-3 Table CC.111, t103 before t105). An MCS board
 support treats a C exit under a standing permissive as an emergency shutdown
-(CC.4.3).
+(CC.4.3). The ISO 15118-2 and DIN 70121 engines hold their PowerDeliveryRes the same
+way, for at most 3 s and 1.4 s. An emergency shutdown reported meanwhile answers the
+held response FAILED at once.
+
+Welding detection
+-----------------
+
+The same DC stop publishes ``welding_detection`` ``Started``. ``Finished`` follows on the
+``SessionStopReq``, on a renegotiation (ISO 15118-2 ``ChargeParameterDiscoveryReq``
+after the stop), on a failed response or on session teardown, also when the EV sends
+no ``WeldingDetectionReq`` at all. In ISO 15118-20, ISO 15118-2 and DIN 70121 alike,
+every ``WeldingDetectionRes`` is held until ``update_dc_present_values`` delivered two
+values with ``welding_detection`` set after the request, for at most 1.4 s (1.5 s
+performance time), concurrently with the wait for CP state B. This makes sure the
+response reports the voltage source EvseManager selected for welding detection, measured
+after the request (IEC 61851-23:2023 CC.6.3, CC.7.6.17, Table CC.9 t105 to t106): the
+first value after the request can still be a measurement taken just before it, the
+second was taken after it. With one value at the deadline the response carries it
+(info), with none the last present voltage (warning). A request parked when the session
+ends gets no answer.
 
 A pause requested with ``pause_charging`` is sent as ``EVSENotification`` ``Pause``
 with ``NotificationMaxDelay`` 60 s ([V2G20-1850]). In scheduled control mode it may

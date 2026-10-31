@@ -288,7 +288,7 @@ static telemetry_types::ChargeProgress to_telemetry_charge_progress(iso2_chargeP
 /*!
  * \brief set_dc_shutdown_status_code This function marks the remaining DC phases as shut down after the EV requested
  * to stop the charging session, so that PowerDeliveryRes and WeldingDetectionRes report EVSE_Shutdown
- * [IEC 61851-23:2023 CC.7.5.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
+ * [IEC 61851-23:2023 CC.7.6.19]. More specific status codes like EVSE_UtilityInterruptEvent or EVSE_Malfunction are
  * preserved.
  * \param ctx points to the V2G context.
  */
@@ -1465,6 +1465,9 @@ static enum v2g_event handle_iso_charge_parameter_discovery(struct v2g_connectio
     }
     const bool first_req = conn->ctx->last_v2g_msg != V2G_CHARGE_PARAMETER_DISCOVERY_MSG;
 
+    /* The EV left the post-charge phase, so welding detection is over. */
+    v2g_ctx_finish_welding_detection(conn->ctx);
+
     /* At first, publish the received ev request message to the MQTT interface */
     publish_iso_charge_parameter_discovery_req(conn->ctx, req);
 
@@ -1825,6 +1828,9 @@ static enum v2g_event handle_iso_power_delivery(struct v2g_connection* conn) {
             set_dc_shutdown_status_code(conn->ctx);
             conn->ctx->p_charger->publish_current_demand_finished(nullptr);
             conn->ctx->p_charger->publish_dc_open_contactor(nullptr);
+            v2g_ctx_start_welding_detection(conn->ctx);
+            /* Side B is disabled before the EV learns of it [IEC 61851-23:2023 Table CC.9 t103 before t104]. */
+            v2g_ctx_wait_contactor_open(conn->ctx, V2G_CONTACTOR_OPEN_TIMEOUT);
         }
         break;
 
@@ -2415,6 +2421,9 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
     /* At first, publish the received EV request message to the MQTT interface */
     publish_iso_welding_detection_req(conn->ctx, req);
 
+    /* A voltage measured after the request [IEC 61851-23:2023 CC.6.3, Table CC.9 t105 to t106]. */
+    v2g_ctx_wait_for_welding_voltage(conn->ctx);
+
     // TODO: Wait for CP state B, before transmitting of the response, or signal intl_emergency_shutdown in conn->ctx
     // ([V2G2-920], [V2G2-921]).
 
@@ -2450,6 +2459,8 @@ static enum v2g_event handle_iso_welding_detection(struct v2g_connection* conn) 
 static enum v2g_event handle_iso_session_stop(struct v2g_connection* conn) {
     struct iso2_SessionStopReqType* req = &conn->exi_in.iso2EXIDocument->V2G_Message.Body.SessionStopReq;
     struct iso2_SessionStopResType* res = &conn->exi_out.iso2EXIDocument->V2G_Message.Body.SessionStopRes;
+
+    v2g_ctx_finish_welding_detection(conn->ctx);
 
     res->ResponseCode = iso2_responseCodeType_OK;
 
