@@ -3,12 +3,13 @@
 
 #include <ocpp/common/utils.hpp>
 
+#include <algorithm>
 #include <boost/algorithm/string/predicate.hpp>
 #include <cmath>
 #include <cstdlib>
-#include <mutex>
-#include <regex>
 #include <sstream>
+
+#include <everest/date/date.hpp>
 
 namespace ocpp {
 
@@ -76,17 +77,18 @@ bool is_decimal_number(const std::string& value) {
 }
 
 bool is_rfc3339_datetime(const std::string& value) {
-    static std::regex datetime_pattern{};
-    static std::once_flag datetime_regex_once;
-    std::call_once(datetime_regex_once, []() {
-        datetime_pattern = std::regex{
-            "\\d{4}-(?:0[1-9]|1[0-2])-(?:0[1-9]|[1-2]\\d|3[0-1])"
-            "T(?:[0-1]\\d|2[0-3]):[0-5]\\d:[0-5]\\d"
-            "(?:\\.\\d{1,3})?"          // Optional fractional seconds
-            "(?:Z|[+-]\\d{2}:?\\d{2})?" // Optional timezone
-        };
-    });
-    return std::regex_match(value, datetime_pattern);
+    if (!everest::lib::datetime::parse_rfc3339_lenient_clamped(value).has_value()) {
+        return false;
+    }
+    // OCPP 2.x limits fractional seconds to 3 digits; a fraction starts after YYYY-MM-DDTHH:MM:SS
+    constexpr std::size_t fraction_sign_pos = 19;
+    constexpr std::size_t max_fraction_digits = 3;
+    if (value.size() <= fraction_sign_pos || (value[fraction_sign_pos] != '.' && value[fraction_sign_pos] != ',')) {
+        return true;
+    }
+    const auto fraction_end = value.find_first_not_of("0123456789", fraction_sign_pos + 1);
+    const auto fraction_digits = std::min(fraction_end, value.size()) - (fraction_sign_pos + 1);
+    return fraction_digits <= max_fraction_digits;
 }
 
 std::vector<std::string> split_string(const std::string& string_to_split, const char c, const bool trim) {

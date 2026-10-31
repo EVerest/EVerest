@@ -11,6 +11,7 @@
 #include "session_cost/json_codec.hpp"
 
 #include "nlohmann/json.hpp"
+#include "utilities/date_time.hpp"
 
 namespace everest::lib::API::V1_0::types::session_storage {
 
@@ -186,7 +187,7 @@ void from_json(const json& j, SessionFilter& k) {
         k.evse_id.emplace(j.at("evse_id"));
     }
     if (j.contains("started_after")) {
-        k.started_after.emplace(j.at("started_after"));
+        k.started_after.emplace(date_time_from_json(j.at("started_after")));
     }
 }
 

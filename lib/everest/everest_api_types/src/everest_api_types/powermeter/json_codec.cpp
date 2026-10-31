@@ -5,6 +5,7 @@
 #include "nlohmann/json.hpp"
 #include "powermeter/API.hpp"
 #include "powermeter/codec.hpp"
+#include "utilities/date_time.hpp"
 
 namespace everest::lib::API::V1_0::types::powermeter {
 
@@ -607,7 +608,7 @@ void from_json(const json& j, SignedMeterValue& k) {
         k.public_key.emplace(j.at("public_key"));
     }
     if (j.contains("timestamp")) {
-        k.timestamp.emplace(j.at("timestamp"));
+        k.timestamp.emplace(date_time_from_json(j.at("timestamp")));
     }
 }
 void to_json(json& j, const SignedMeterValue& k) noexcept {
@@ -827,7 +828,7 @@ void to_json(json& j, const Temperature& k) noexcept {
 }
 
 void from_json(const json& j, PowermeterValues& k) {
-    k.timestamp = j.at("timestamp");
+    k.timestamp = date_time_from_json(j.at("timestamp"));
     k.energy_Wh_import = j.at("energy_Wh_import");
     if (j.contains("meter_id")) {
         k.meter_id.emplace(j.at("meter_id"));
@@ -954,10 +955,10 @@ void from_json(const json& j, ReplyStartTransaction& k) {
         k.error.emplace(j.at("error"));
     }
     if (j.contains("transaction_min_stop_time")) {
-        k.transaction_min_stop_time.emplace(j.at("transaction_min_stop_time"));
+        k.transaction_min_stop_time.emplace(date_time_from_json(j.at("transaction_min_stop_time")));
     }
     if (j.contains("transaction_max_stop_time")) {
-        k.transaction_max_stop_time.emplace(j.at("transaction_max_stop_time"));
+        k.transaction_max_stop_time.emplace(date_time_from_json(j.at("transaction_max_stop_time")));
     }
     if (j.contains("signed_meter_value")) {
         k.signed_meter_value.emplace(j.at("signed_meter_value"));

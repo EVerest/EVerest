@@ -86,6 +86,7 @@ target_sources(${TEST_TARGET_NAME} PRIVATE
   manual_tests/serialization/generic.cpp
   manual_tests/serialization/evse_board_support.cpp
   manual_tests/serialization/evse_manager.cpp
+  manual_tests/serialization/date_time.cpp
   manual_tests/serialization/telemetry.cpp
   manual_tests/source_file_hash_check/source_file_hash_check.cpp
 )
@@ -103,6 +104,7 @@ add_test(${TEST_TARGET_NAME} ${TEST_TARGET_NAME})
 file(GLOB API_FILES CONFIGURE_DEPENDS ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/include/everest_api_types/*/API.hpp)
 file(GLOB TEST_GENERATOR_PY_FILES ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/*.py)
 set (TEST_DISABLE_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/disable.csv)
+set (TEST_DATE_TIME_FIELDS_FILE ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/test_file_autogenerator/date_time_fields.csv)
 set (SERIALIZATION_TEST_HELPERS_HPP ${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/SerializationTestHelpers.hpp)
 
 set(GENERATED_TESTS_LOCATION ${CMAKE_BINARY_DIR}/generated/lib/everest/everest_api_types/tests/)
@@ -116,6 +118,7 @@ set(
      "${PROJECT_SOURCE_DIR}/lib/everest/everest_api_types/tests/"
      "${TEST_DISABLE_FILE}"
      "${GENERATED_TESTS_LOCATION}"
+     "${TEST_DATE_TIME_FIELDS_FILE}"
 )
 
 execute_process(
@@ -131,6 +134,7 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS
     ${API_FILES}
     ${TEST_GENERATOR_PY_FILES}
     ${TEST_DISABLE_FILE}
+    ${TEST_DATE_TIME_FIELDS_FILE}
     ${SERIALIZATION_TEST_HELPERS_HPP}
 )
 

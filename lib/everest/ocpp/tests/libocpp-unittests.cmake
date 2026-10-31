@@ -86,6 +86,7 @@ function(add_libocpp_unittest)
         nlohmann_json::nlohmann_json
         nlohmann_json_schema_validator::validator
         date::date-tz
+        everest::date
         everest::log
         everest::util
         everest::evse_security
