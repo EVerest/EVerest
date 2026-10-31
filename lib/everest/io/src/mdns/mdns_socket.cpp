@@ -50,9 +50,8 @@ bool mdns_socket::open(std::string const& interface, int family) {
     } catch (socket::socket_error const& e) {
         error = e.error();
     } catch (...) {
-        // An unusable interface fails the address lookup, which carries no errno.
-        // get_error() then falls through to probing an unassigned descriptor, which
-        // is nonzero, so the client still resets.
+        // A failure that carries no errno. get_error() then falls through to probing an
+        // unassigned descriptor, which is nonzero, so the client still resets.
     }
     record_connect_failure(error);
     return false;

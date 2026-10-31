@@ -299,6 +299,12 @@ public:
     [[nodiscard]] const Certificate* peer_certificate() const;
 
     /**
+     * \brief obtain the negotiated protocol version
+     * \returns e.g. TLS1_2_VERSION or TLS1_3_VERSION once the handshake completed
+     */
+    [[nodiscard]] int protocol_version() const;
+
+    /**
      * \brief obtain the underlying SSL context
      * \returns the underlying SSL context pointer
      */
@@ -528,7 +534,6 @@ private:
 
     ConfigItem m_tls_key_interface{nullptr};
     bool m_verify_client_on_tls13{false};
-    std::filesystem::path tls_key_log_file_path{};
     //! index into config_t::chains of the first chain that passed verification in
     //! init_certificates(); installed by init_ssl() as the SSL_CTX default so the
     //! no-match fallback and select_default() agree. 0 when no chain verified.
@@ -774,6 +779,9 @@ public:
         bool status_request{false};    //!< include a status request extension in the client hello
         bool status_request_v2{false}; //!< include a status request v2 extension in the client hello
         bool trusted_ca_keys{false};   //!< include a trusted ca keys extension in the client hello
+
+        bool tls_key_logging{false};      //!< tls key logging is active when true
+        std::string tls_key_logging_path; //!< tls key logging file path
     };
 
     using ConnectionPtr = std::unique_ptr<ClientConnection>;

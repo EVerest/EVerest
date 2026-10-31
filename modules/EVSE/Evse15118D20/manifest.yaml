@@ -96,7 +96,8 @@ config:
     default: false
   tls_key_logging_path:
     description:  >-
-      Output directory for the TLS key log file
+      Output directory for the TLS key log file. With enable_tls_key_logging, empty is a
+      configuration error, logged when TLS is set up; no key log file is written then.
     type: string
     default: /tmp
   enable_sdp_server:

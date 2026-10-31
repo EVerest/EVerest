@@ -18,7 +18,6 @@
 #include <cstdint>
 #include <cstring>
 #include <fcntl.h>
-#include <fstream>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -26,8 +25,11 @@
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <poll.h>
+#include <set>
 #include <string>
 #include <sys/socket.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 #include <openssl/asn1.h>
 #include <openssl/bio.h>
@@ -84,6 +86,60 @@ using evse_security::OpenSSLProvider;
  * \note exists so that poll() can be interrupted
  */
 void sig_int_handler(int sig) {
+}
+
+// True the first time @p file is seen in @p seen, process wide. Keeps a per-line or
+// per-reconnect message from flooding the log.
+bool first_for_file(std::set<std::string>& seen, std::filesystem::path const& file) {
+    static std::mutex mutex;
+    const std::lock_guard lock(mutex);
+    return seen.insert(file.string()).second;
+}
+
+void report_keylog_failure(std::filesystem::path const& path, std::string const& reason) {
+    static std::set<std::string> reported;
+    if (first_for_file(reported, path)) {
+        log_error("TLS key log " + path.string() + " not written: " + reason + "; further failures not logged");
+    }
+}
+
+// Appends one SSLKEYLOGFILE line. The file holds session secrets: owner-only, never through a
+// symlink, never into a file another user owns, never into anything but a regular file.
+// O_NONBLOCK keeps a FIFO without a reader from blocking the handshake.
+void append_keylog_line(std::filesystem::path const& path, const char* line) {
+    const int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_APPEND | O_NOFOLLOW | O_NONBLOCK | O_CLOEXEC, 0600);
+    if (fd < 0) {
+        report_keylog_failure(path, std::strerror(errno));
+        return;
+    }
+    struct stat st {};
+    if (::fstat(fd, &st) != 0) {
+        report_keylog_failure(path, std::strerror(errno));
+    } else if (!S_ISREG(st.st_mode)) {
+        report_keylog_failure(path, "not a regular file");
+    } else if (st.st_uid != ::geteuid()) {
+        report_keylog_failure(path, "owned by uid " + std::to_string(st.st_uid));
+    } else if (((st.st_mode & 0777) != 0600) && (::fchmod(fd, 0600) != 0)) {
+        // A file left by an older build may be readable by others.
+        report_keylog_failure(path, std::string("chmod 0600: ") + std::strerror(errno));
+    } else {
+        // A single write() keeps the line whole between concurrent appenders.
+        const std::string record = std::string(line) + '\n';
+        const auto written = ::write(fd, record.data(), record.size());
+        if (written < 0) {
+            report_keylog_failure(path, std::strerror(errno));
+        } else if (static_cast<std::size_t>(written) != record.size()) {
+            report_keylog_failure(path, "short write");
+        }
+    }
+    ::close(fd);
+}
+
+void warn_keylog_enabled(std::filesystem::path const& file) {
+    static std::set<std::string> warned;
+    if (first_for_file(warned, file)) {
+        log_warning("TLS key logging enabled: session secrets are written to " + file.string());
+    }
 }
 
 /// OpenSSL results mapped to an enum
@@ -825,6 +881,11 @@ const Certificate* Connection::peer_certificate() const {
     return SSL_get0_peer_certificate(m_context->ctx.get());
 }
 
+int Connection::protocol_version() const {
+    assert(m_context != nullptr);
+    return SSL_version(m_context->ctx.get());
+}
+
 SSL* Connection::ssl_context() const {
     return m_context->ctx.get();
 }
@@ -838,14 +899,52 @@ std::condition_variable ServerConnection::m_cv;
 
 namespace {
 
-int ssl_keylog_file_index{-1};
-int ssl_keylog_server_index{-1};
+void keylog_path_free(void*, void* ptr, CRYPTO_EX_DATA*, int, long, void*) {
+    delete static_cast<std::filesystem::path*>(ptr);
+}
+
+// Process wide, allocated on first use. The static makes the allocation thread safe.
+int keylog_path_index() {
+    static const int index = SSL_CTX_get_ex_new_index(0, nullptr, nullptr, nullptr, keylog_path_free);
+    return index;
+}
+
+// Hands @p path to @p ctx, which frees it with itself. An SSL keeps its SSL_CTX alive, so neither
+// a reload that replaces the SSL_CTX nor a Client or Server gone first changes the path under a
+// handshake. False when the path could not be stored.
+bool store_keylog_path(SSL_CTX* ctx, std::filesystem::path path) {
+    const auto index = keylog_path_index();
+    if (index == -1) {
+        return false;
+    }
+    auto owned = std::make_unique<std::filesystem::path>(std::move(path));
+    if (SSL_CTX_set_ex_data(ctx, index, owned.get()) != 1) {
+        return false;
+    }
+    warn_keylog_enabled(*owned.release());
+    return true;
+}
+
+// The path stored for @p ssl's SSL_CTX, nullptr when there is none.
+const std::filesystem::path* keylog_path(const SSL* ssl) {
+    const auto index = keylog_path_index();
+    if (index == -1) {
+        return nullptr;
+    }
+    return static_cast<const std::filesystem::path*>(SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), index));
+}
+
+// Process wide, allocated on first use: every Server shares it.
+int ssl_keylog_server_index() {
+    static const int index = SSL_get_ex_new_index(0, nullptr, nullptr, nullptr, nullptr);
+    return index;
+}
 
 void keylog_callback(const SSL* ssl, const char* line) {
 
     // Registered CTX-wide, so it also fires for connections that skipped the
     // per-connection key-log server and therefore carry no ex_data.
-    auto keylog_server = static_cast<TlsKeyLoggingServer*>(SSL_get_ex_data(ssl, ssl_keylog_server_index));
+    auto keylog_server = static_cast<TlsKeyLoggingServer*>(SSL_get_ex_data(ssl, ssl_keylog_server_index()));
 
     if (keylog_server != nullptr) {
         // ex_data is only set for a server that came up, so there is nothing to re-check here.
@@ -857,14 +956,9 @@ void keylog_callback(const SSL* ssl, const char* line) {
         }
     }
 
-    auto keylog_file_path =
-        static_cast<std::filesystem::path*>(SSL_CTX_get_ex_data(SSL_get_SSL_CTX(ssl), ssl_keylog_file_index));
-
-    if (not keylog_file_path->empty()) {
-        std::ofstream ofs;
-        ofs.open(keylog_file_path->string(), std::ofstream::out | std::ofstream::app);
-        ofs << line << std::endl;
-        ofs.close();
+    // Unset when tls_key_logging_path is empty: only the network sink is on.
+    if (const auto* keylog_file_path = keylog_path(ssl); keylog_file_path != nullptr) {
+        append_keylog_line(*keylog_file_path, line);
     }
 }
 
@@ -901,7 +995,7 @@ ServerConnection::ServerConnection(SslContext* ctx, int soc, const char* ip_in, 
                 auto keylog_server = std::make_unique<TlsKeyLoggingServer>(std::string(tls_key_interface), port);
                 if (keylog_server->is_valid()) {
                     m_keylog_server = std::move(keylog_server);
-                    SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index, m_keylog_server.get());
+                    SSL_set_ex_data(m_context->ctx.get(), ssl_keylog_server_index(), m_keylog_server.get());
                 } else {
                     log_warning("ServerConnection: key-log server setup failed; TLS key logging disabled for this "
                                 "connection");
@@ -1155,19 +1249,16 @@ bool Server::init_ssl(const config_t& cfg) {
         if (result) {
 
             if (cfg.tls_key_logging) {
-                tls_key_log_file_path = std::filesystem::path(cfg.tls_key_logging_path) /= "tls_session_keys.log";
-
-                ssl_keylog_file_index = SSL_CTX_get_ex_new_index(0, std::string("").data(), nullptr, nullptr, nullptr);
-                ssl_keylog_server_index = SSL_get_ex_new_index(0, std::string("").data(), nullptr, nullptr, nullptr);
-
-                if (ssl_keylog_file_index == -1 or ssl_keylog_server_index == -1) {
-                    auto error_msg = std::string("_get_ex_new_index failed: ssl_keylog_file_index: ");
-                    error_msg += std::to_string(ssl_keylog_file_index);
-                    error_msg += ", ssl_keylog_server_index: " + std::to_string(ssl_keylog_server_index);
-                    log_error(error_msg);
+                if (ssl_keylog_server_index() == -1) {
+                    log_error("SSL_get_ex_new_index failed: ssl_keylog_server_index");
                 } else {
-                    SSL_CTX_set_ex_data(ctx, ssl_keylog_file_index, &tls_key_log_file_path);
-
+                    // An empty directory would put the secrets in the working directory.
+                    if (cfg.tls_key_logging_path.empty()) {
+                        log_error("tls_key_logging_path is empty: no key log file, the network key-log sink stays on");
+                    } else if (not store_keylog_path(ctx, std::filesystem::path(cfg.tls_key_logging_path) /
+                                                              "tls_session_keys.log")) {
+                        log_error("Server key log file path not stored: no key log file");
+                    }
                     SSL_CTX_set_keylog_callback(ctx, keylog_callback);
                     m_tls_key_interface = cfg.host;
                 }
@@ -1572,6 +1663,18 @@ void Server::wait_stopped() {
 // ----------------------------------------------------------------------------
 // Client
 
+namespace {
+
+// SSLKEYLOGFILE format, one secret per line, appended. Mirrors the server's file sink;
+// the client has no key-log server, there is no accepted connection to attach one to.
+void client_keylog_callback(const SSL* ssl, const char* line) {
+    if (const auto* keylog_file_path = keylog_path(ssl); keylog_file_path != nullptr) {
+        append_keylog_line(*keylog_file_path, line);
+    }
+}
+
+} // namespace
+
 Client::Client() :
     m_context(std::make_unique<client_ctx>()), m_status_request_v2(std::make_unique<ClientStatusRequestV2>()) {
 }
@@ -1667,6 +1770,19 @@ bool Client::init(const config_t& cfg, const override_t& override) {
                                        override.trusted_ca_keys_free, &m_trusted_ca_keys, nullptr, nullptr) != 1) {
                 log_error("SSL_CTX_add_custom_ext trusted_ca_keys");
                 result = false;
+            }
+        }
+
+        if (cfg.tls_key_logging and cfg.tls_key_logging_path.empty()) {
+            // An empty directory would put the secrets in the working directory.
+            log_error("tls_key_logging_path is empty: TLS key logging not enabled");
+        } else if (cfg.tls_key_logging) {
+            // Distinct from the server file name, both ends default to the same directory.
+            if (store_keylog_path(ctx,
+                                  std::filesystem::path(cfg.tls_key_logging_path) / "tls_session_keys_client.log")) {
+                SSL_CTX_set_keylog_callback(ctx, client_keylog_callback);
+            } else {
+                log_error("Client key log file path not stored: TLS key logging not enabled");
             }
         }
     }

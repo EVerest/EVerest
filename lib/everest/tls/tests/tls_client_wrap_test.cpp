@@ -4,14 +4,140 @@
 #include "tls_connection_test.hpp"
 
 #include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <mutex>
 #include <poll.h>
+#include <set>
+#include <sstream>
+#include <string>
 #include <tuple>
 #include <unistd.h>
+#include <utility>
+#include <vector>
 
 // Empty derived fixture: gives these cases their own suite name so they stay
 // addressable via --gtest_filter.
 struct TlsClientWrapTest : TlsTest {};
+
+namespace {
+
+// A fresh directory, removed with everything in it.
+class KeyLogDir {
+public:
+    KeyLogDir() {
+        std::string tmpl = (std::filesystem::temp_directory_path() / "everest_tls_keylog_XXXXXX").string();
+        if (::mkdtemp(tmpl.data()) != nullptr) {
+            m_path = tmpl;
+        }
+    }
+    ~KeyLogDir() {
+        if (!m_path.empty()) {
+            std::error_code ec;
+            std::filesystem::remove_all(m_path, ec);
+        }
+    }
+    KeyLogDir(const KeyLogDir&) = delete;
+    KeyLogDir& operator=(const KeyLogDir&) = delete;
+
+    const std::filesystem::path& path() const {
+        return m_path;
+    }
+
+private:
+    std::filesystem::path m_path;
+};
+
+std::mutex keylog_logs_mutex;
+std::vector<std::pair<openssl::log_level_t, std::string>> keylog_logs;
+
+void capture_keylog_log(openssl::log_level_t level, const std::string& str) {
+    const std::lock_guard lock(keylog_logs_mutex);
+    keylog_logs.emplace_back(level, str);
+}
+
+// Captures library log output while alive, from any thread.
+class KeyLogCapture {
+public:
+    KeyLogCapture() : m_previous(openssl::set_log_handler(&capture_keylog_log)) {
+        const std::lock_guard lock(keylog_logs_mutex);
+        keylog_logs.clear();
+    }
+    ~KeyLogCapture() {
+        openssl::set_log_handler(m_previous);
+    }
+    KeyLogCapture(const KeyLogCapture&) = delete;
+    KeyLogCapture& operator=(const KeyLogCapture&) = delete;
+
+    static bool contains(openssl::log_level_t level, const std::string& needle) {
+        const std::lock_guard lock(keylog_logs_mutex);
+        return std::any_of(keylog_logs.begin(), keylog_logs.end(), [&](const auto& entry) {
+            return entry.first == level && entry.second.find(needle) != std::string::npos;
+        });
+    }
+
+private:
+    openssl::log_handler_t m_previous;
+};
+
+// One accepted and completed TLS handshake against @p target. Returns the client's result.
+tls::Connection::result_t handshake_once(tls::Server& target, int listen_fd, std::uint16_t port, ClientTest& client,
+                                         const tls::Client::config_t& client_config) {
+    using result_t = tls::Connection::result_t;
+    const int client_fd = connect_loopback_nonblocking(port);
+    if (client_fd < 0) {
+        return result_t::closed;
+    }
+    auto server_conn = accept_and_wrap(target, listen_fd);
+    if (!server_conn) {
+        std::ignore = ::close(client_fd);
+        return result_t::closed;
+    }
+    std::thread server_side([&]() {
+        std::ignore = server_conn->accept(1000);
+        std::ignore = server_conn->shutdown(1000);
+    });
+    client.init(client_config);
+    auto client_conn = client.wrap_connecting_fd(client_fd, "localhost");
+    auto result = result_t::closed;
+    if (client_conn) {
+        result = drive_client_handshake(*client_conn, client_fd).result;
+        std::ignore = client_conn->shutdown(1000);
+    } else {
+        std::ignore = ::close(client_fd);
+    }
+    server_side.join();
+    return result;
+}
+
+std::string read_text(const std::filesystem::path& path) {
+    std::ifstream in(path);
+    std::stringstream content;
+    content << in.rdbuf();
+    return content.str();
+}
+
+// Makes @p dir the working directory while alive, restoring the previous one on exit.
+class ScopedCwd {
+public:
+    explicit ScopedCwd(const std::filesystem::path& dir) : m_previous(std::filesystem::current_path()) {
+        std::filesystem::current_path(dir);
+    }
+    ~ScopedCwd() {
+        std::error_code ec;
+        std::filesystem::current_path(m_previous, ec);
+    }
+    ScopedCwd(const ScopedCwd&) = delete;
+    ScopedCwd& operator=(const ScopedCwd&) = delete;
+
+private:
+    std::filesystem::path m_previous;
+};
+
+} // namespace
 
 TEST_F(TlsClientWrapTest, WrapConnectingFdHandshake) {
     using state_t = tls::Server::state_t;
@@ -473,5 +599,152 @@ TEST_F(TlsClientWrapTest, WrapConnectingFdConnectDoesNotWaitForPeer) {
     EXPECT_TRUE(result == result_t::want_read || result == result_t::want_write);
 
     conn.reset();
+    std::ignore = ::close(listener.fd);
+}
+
+// An empty key-log path drops only the file sink: the network sink still gets the secrets.
+TEST_F(TlsClientWrapTest, KeyLoggingWithAnEmptyPathKeepsTheNetworkSink) {
+    const KeyLogDir cwd;
+    ASSERT_FALSE(cwd.path().empty());
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
+
+    KeyLogCapture logs;
+    server_config.socket = listener.fd;
+    server_config.host = "lo"; // the network sink's interface
+    server_config.tls_key_logging = true;
+    server_config.tls_key_logging_path = "";
+    const auto init_state = server.init(server_config, nullptr);
+    ASSERT_TRUE(init_state == tls::Server::state_t::init_complete || init_state == tls::Server::state_t::init_socket);
+    const auto server_root = std::filesystem::absolute("server_root_cert.pem").string();
+    client_config.verify_locations_file = server_root.c_str();
+
+    {
+        const ScopedCwd in_cwd(cwd.path());
+        EXPECT_EQ(handshake_once(server, listener.fd, listener.port, client, client_config),
+                  tls::Connection::result_t::success);
+    }
+
+    EXPECT_TRUE(KeyLogCapture::contains(openssl::log_level_t::error, "network key-log sink stays on"));
+    // Sent, or refused by the network where lo carries no IPv6 multicast: either way a send was made.
+    EXPECT_TRUE(KeyLogCapture::contains(openssl::log_level_t::info, "TLS handshake keys sent to port") ||
+                KeyLogCapture::contains(openssl::log_level_t::error, "key-log send to port"))
+        << "the network key-log sink never sent";
+    EXPECT_TRUE(std::filesystem::is_empty(cwd.path())) << "a key log was written to the working directory";
+    std::ignore = ::close(listener.fd);
+}
+
+// Two key-logging servers in one process each keep their own key-log file.
+TEST_F(TlsClientWrapTest, KeyLoggingWorksWithTwoServers) {
+    const KeyLogDir first_dir;
+    const KeyLogDir second_dir;
+    ASSERT_FALSE(first_dir.path().empty());
+    ASSERT_FALSE(second_dir.path().empty());
+    const auto first_listener = make_loopback_listener();
+    const auto second_listener = make_loopback_listener();
+    ASSERT_GE(first_listener.fd, 0);
+    ASSERT_GE(second_listener.fd, 0);
+
+    auto first_config = server_config;
+    first_config.socket = first_listener.fd;
+    first_config.tls_key_logging = true;
+    first_config.tls_key_logging_path = first_dir.path().string();
+    auto second_config = first_config;
+    second_config.socket = second_listener.fd;
+    second_config.tls_key_logging_path = second_dir.path().string();
+
+    tls::Server second_server;
+    ASSERT_NE(server.init(first_config, nullptr), tls::Server::state_t::init_needed);
+    ASSERT_NE(second_server.init(second_config, nullptr), tls::Server::state_t::init_needed);
+
+    EXPECT_EQ(handshake_once(server, first_listener.fd, first_listener.port, client, client_config),
+              tls::Connection::result_t::success);
+
+    EXPECT_NE(read_text(first_dir.path() / "tls_session_keys.log").find("CLIENT_RANDOM"), std::string::npos);
+    EXPECT_FALSE(std::filesystem::exists(second_dir.path() / "tls_session_keys.log"));
+
+    second_server.stop();
+    second_server.wait_stopped();
+    std::ignore = ::close(first_listener.fd);
+    std::ignore = ::close(second_listener.fd);
+}
+
+namespace {
+
+std::set<std::string> lines_of(const std::filesystem::path& path) {
+    std::ifstream in(path);
+    std::set<std::string> lines;
+    for (std::string line; std::getline(in, line);) {
+        lines.insert(line);
+    }
+    return lines;
+}
+
+} // namespace
+
+// A config reload replaces the SSL_CTX while handshakes made from the previous one still run.
+// Each SSL_CTX keeps the key-log path it was made with, so every secret lands in a file and
+// nothing crashes. A smoke test: the path the old shared member pointed to stayed valid too.
+TEST_F(TlsClientWrapTest, KeyLoggingSurvivesConfigReloadsDuringHandshakes) {
+    using result_t = tls::Connection::result_t;
+    const KeyLogDir first_dir;
+    const KeyLogDir client_dir;
+    ASSERT_FALSE(first_dir.path().empty());
+    ASSERT_FALSE(client_dir.path().empty());
+    // Longer than the first, so a path rewritten under a handshake would reallocate.
+    const auto second_dir = first_dir.path() / "reloaded-configuration-with-a-longer-key-log-directory";
+    ASSERT_TRUE(std::filesystem::create_directory(second_dir));
+    const auto listener = make_loopback_listener();
+    ASSERT_GE(listener.fd, 0);
+
+    server_config.socket = listener.fd;
+    server_config.tls_key_logging = true;
+    server_config.tls_key_logging_path = first_dir.path().string();
+    auto reloaded_config = server_config;
+    reloaded_config.tls_key_logging_path = second_dir.string();
+    ASSERT_NE(server.init(server_config, nullptr), tls::Server::state_t::init_needed);
+    client_config.tls_key_logging = true;
+    client_config.tls_key_logging_path = client_dir.path().string();
+
+    for (int round = 0; round < 20; ++round) {
+        const int client_fd = connect_loopback_nonblocking(listener.port);
+        ASSERT_GE(client_fd, 0);
+        auto server_conn = accept_and_wrap(server, listener.fd);
+        ASSERT_TRUE(server_conn);
+        auto server_result = result_t::timeout;
+        std::thread server_side([&]() {
+            server_result = server_conn->accept(1000);
+            std::ignore = server_conn->shutdown(1000);
+        });
+        // Reloads run on while the handshake does.
+        std::atomic_bool handshake_done{false};
+        std::thread reloader([&]() {
+            for (int reload = 0; not handshake_done; ++reload) {
+                std::ignore = server.update((reload % 2 == 0) ? reloaded_config : server_config);
+            }
+        });
+
+        client.init(client_config);
+        auto client_conn = client.wrap_connecting_fd(client_fd, "localhost");
+        if (client_conn) {
+            EXPECT_EQ(drive_client_handshake(*client_conn, client_fd).result, result_t::success);
+            std::ignore = client_conn->shutdown(1000);
+        } else {
+            ADD_FAILURE() << "round " << round << ": no client connection";
+            std::ignore = ::close(client_fd);
+        }
+        server_side.join();
+        handshake_done = true;
+        reloader.join();
+        EXPECT_EQ(server_result, result_t::success) << "round " << round;
+    }
+
+    const auto client_lines = lines_of(client_dir.path() / "tls_session_keys_client.log");
+    auto server_lines = lines_of(first_dir.path() / "tls_session_keys.log");
+    server_lines.merge(lines_of(second_dir / "tls_session_keys.log"));
+    EXPECT_EQ(client_lines.size(), 20u);
+    for (const auto& line : client_lines) {
+        EXPECT_EQ(server_lines.count(line), 1u) << "not in a server key log: " << line;
+    }
     std::ignore = ::close(listener.fd);
 }
