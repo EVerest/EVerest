@@ -3,6 +3,7 @@
 #include <iso15118/session/config.hpp>
 #include <iso15118/session/d20_secc_engine.hpp>
 
+#include <algorithm>
 #include <memory>
 #include <utility>
 
@@ -14,13 +15,35 @@
 
 namespace iso15118 {
 
+namespace {
+// An unsecured ISO 15118-20 session (a bring-up deviation from [V2G20-2356]) offers EIM only: the contract
+// certificate, eMAID and certificate installation must never cross the PLC link in plaintext.
+session::SessionConfig make_d20_config(session::SessionConfig config, bool tls_active) {
+    if (tls_active) {
+        return config;
+    }
+    auto& services = config.authorization_services;
+    const auto pnc_end = std::remove(services.begin(), services.end(), message_20::datatypes::Authorization::PnC);
+    const bool pnc_offered = pnc_end != services.end();
+    services.erase(pnc_end, services.end());
+    if (pnc_offered or config.cert_install_service) {
+        logf_warning("ISO 15118-20 session without TLS: offering EIM only, PnC and certificate installation are "
+                     "disabled for this session");
+    }
+    config.cert_install_service = false;
+    return config;
+}
+} // namespace
+
 D20SeccEngine::D20SeccEngine(io::StreamOutputView output_view, session::SessionConfig config,
                              std::optional<d20::PauseContext>& pause_ctx, session::feedback::Callbacks callbacks,
                              d20::Timeouts& timeouts, const d20::EVSupportedAppProtocols& offered_protocols,
                              const message_20::SupportedAppProtocol& selected_protocol,
-                             std::optional<io::sha512_hash_t> vehicle_cert_hash, bool skip_app_protocol_negotiation) :
+                             std::optional<io::sha512_hash_t> vehicle_cert_hash, bool tls_active,
+                             bool skip_app_protocol_negotiation) :
     message_exchange(output_view),
-    ctx(std::move(callbacks), std::move(config), pause_ctx, active_control_event, message_exchange, timeouts),
+    ctx(std::move(callbacks), make_d20_config(std::move(config), tls_active), pause_ctx, active_control_event,
+        message_exchange, timeouts),
     // With an external SAP the application already has that information.
     fsm(ctx.create_state<d20::state::SessionSetup>(skip_app_protocol_negotiation)) {
     // The negotiation ran in the driver before this engine existed, so hand its result to the context.

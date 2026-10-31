@@ -248,7 +248,7 @@ Session::Session(std::unique_ptr<io::IConnection> connection_, session::SessionC
         vehicle_cert_hash = connection->get_vehicle_cert_hash();
         engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
                                       d20::EVSupportedAppProtocols{}, message_20::SupportedAppProtocol{},
-                                      vehicle_cert_hash, skip_app_protocol_negotiation);
+                                      vehicle_cert_hash, connection->is_secure(), skip_app_protocol_negotiation);
     }
 }
 
@@ -572,8 +572,8 @@ bool Session::create_engine(const SapEngine::Negotiated& negotiated) {
         switch (negotiated.protocol_id) {
         case ProtocolId::ISO15118_20:
             engine.emplace<D20SeccEngine>(engine_output_view(), config, pause_ctx, callbacks, timeouts,
-                                          negotiated.offered_protocols, negotiated.selected_protocol,
-                                          vehicle_cert_hash);
+                                          negotiated.offered_protocols, negotiated.selected_protocol, vehicle_cert_hash,
+                                          connection->is_secure());
             return true;
         case ProtocolId::ISO15118_2:
             dlink_setup_timer_anchor = true;
