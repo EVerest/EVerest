@@ -4,6 +4,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <optional>
 #include <string>
 
 #include <netinet/in.h>
@@ -39,7 +40,9 @@ struct AcceptResult {
 // Never throws: the callers run inside poll callbacks, where an escaping exception tears down the
 // whole controller loop. Single definition site of the transient/fatal errno policy shared by the
 // plain-TCP and TLS accept paths -- keep them from diverging again.
-AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address);
+// A connection from another address than expected_peer is closed and reported as Transient, so the
+// listener keeps waiting for the EV that sent the SDP request.
+AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address, const std::optional<in6_addr>& expected_peer);
 
 // Only matters when the peer has stopped reading, where it bounds the stall of the shared
 // controller poll loop -- well below the seconds-scale V2G sequence timeouts.

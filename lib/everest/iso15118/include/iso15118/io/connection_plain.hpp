@@ -31,12 +31,17 @@ public:
         return vehicle_cert_hash;
     }
 
+    void accept_only_from(const in6_addr& peer) final {
+        expected_peer = peer;
+    }
+
     ~ConnectionPlain();
 
 private:
     ConnectionPlain(PollManager&, int connected_fd);
 
     PollManager& poll_manager;
+    std::optional<in6_addr> expected_peer;
 
     Ipv6EndPoint end_point;
 

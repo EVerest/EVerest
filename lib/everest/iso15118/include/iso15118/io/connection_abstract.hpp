@@ -6,6 +6,8 @@
 #include <functional>
 #include <optional>
 
+#include <netinet/in.h>
+
 #include "ipv6_endpoint.hpp"
 
 #include <iso15118/io/sha_hash.hpp>
@@ -50,6 +52,10 @@ struct IConnection {
     virtual bool is_secure() const = 0;
 
     virtual std::optional<sha512_hash_t> get_vehicle_cert_hash() const = 0;
+
+    /// \brief Accept only the EV that sent the SDP request; connections from other addresses are closed
+    /// and the listener keeps waiting.
+    virtual void accept_only_from(const in6_addr& peer) = 0;
 
     virtual ~IConnection() = default;
 };

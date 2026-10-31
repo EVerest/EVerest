@@ -167,7 +167,8 @@ bool set_tcp_keepalive(int fd) {
     return true;
 }
 
-AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
+AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address,
+                               const std::optional<in6_addr>& expected_peer) {
     socklen_t address_len = sizeof(peer_address);
 
     // The poll loop is shared (SDP server + connections), so nothing downstream may ever block here.
@@ -189,6 +190,12 @@ AcceptResult accept_connection(int listen_fd, sockaddr_in6& peer_address) {
         // means the link itself is gone and dlink-loss handling, not an accept retry, is the recovery.
         logf_error("accept4 failed with error code: %d", errno);
         return {AcceptResult::Status::Fatal, -1};
+    }
+
+    if (expected_peer.has_value() and not IN6_ARE_ADDR_EQUAL(&peer_address.sin6_addr, &expected_peer.value())) {
+        logf_warning("Rejecting a connection from an address that did not send the SDP request");
+        ::close(accept_fd);
+        return {AcceptResult::Status::Transient, -1};
     }
 
     // The read() paths rely on the keepalive's ETIMEDOUT to tear down a peer that vanished without FIN.

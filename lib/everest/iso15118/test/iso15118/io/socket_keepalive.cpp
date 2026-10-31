@@ -4,6 +4,7 @@
 
 #include <string>
 
+#include <arpa/inet.h>
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
@@ -104,7 +105,7 @@ SCENARIO("accept_connection hands out configured sockets and classifies accept e
 
         WHEN("no connection is pending") {
             sockaddr_in6 peer{};
-            const auto result = iso15118::io::accept_connection(listen_fd, peer);
+            const auto result = iso15118::io::accept_connection(listen_fd, peer, std::nullopt);
 
             THEN("the EAGAIN is classified as Transient (keep the listener, no teardown)") {
                 REQUIRE(result.status == AcceptResult::Status::Transient);
@@ -118,7 +119,7 @@ SCENARIO("accept_connection hands out configured sockets and classifies accept e
             REQUIRE(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
 
             sockaddr_in6 peer{};
-            const auto result = iso15118::io::accept_connection(listen_fd, peer);
+            const auto result = iso15118::io::accept_connection(listen_fd, peer, std::nullopt);
 
             THEN("the accepted socket is non-blocking, keepalive-configured, and the peer is filled in") {
                 REQUIRE(result.status == AcceptResult::Status::Accepted);
@@ -138,13 +139,49 @@ SCENARIO("accept_connection hands out configured sockets and classifies accept e
             ::close(client_fd);
         }
 
+        WHEN("a client connects that is not the EV which sent the SDP request") {
+            const int client_fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+            REQUIRE(client_fd >= 0);
+            REQUIRE(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+
+            in6_addr sdp_peer{};
+            REQUIRE(::inet_pton(AF_INET6, "fe80::1", &sdp_peer) == 1);
+            sockaddr_in6 peer{};
+            const auto result = iso15118::io::accept_connection(listen_fd, peer, sdp_peer);
+
+            THEN("it is closed and the listener keeps waiting") {
+                REQUIRE(result.status == AcceptResult::Status::Transient);
+                REQUIRE(result.fd == -1);
+                char byte{};
+                REQUIRE(::recv(client_fd, &byte, 1, 0) <= 0);
+            }
+
+            ::close(client_fd);
+        }
+
+        WHEN("the EV which sent the SDP request connects") {
+            const int client_fd = ::socket(AF_INET6, SOCK_STREAM, 0);
+            REQUIRE(client_fd >= 0);
+            REQUIRE(::connect(client_fd, reinterpret_cast<sockaddr*>(&addr), sizeof(addr)) == 0);
+
+            sockaddr_in6 peer{};
+            const auto result = iso15118::io::accept_connection(listen_fd, peer, in6addr_loopback);
+
+            THEN("it is accepted") {
+                REQUIRE(result.status == AcceptResult::Status::Accepted);
+                ::close(result.fd);
+            }
+
+            ::close(client_fd);
+        }
+
         ::close(listen_fd);
     }
 
     GIVEN("An invalid listener fd") {
         WHEN("accept_connection is called on it") {
             sockaddr_in6 peer{};
-            const auto result = iso15118::io::accept_connection(-1, peer);
+            const auto result = iso15118::io::accept_connection(-1, peer, std::nullopt);
 
             THEN("the hard failure is classified as Fatal (the caller must tear down), without throwing") {
                 REQUIRE(result.status == AcceptResult::Status::Fatal);

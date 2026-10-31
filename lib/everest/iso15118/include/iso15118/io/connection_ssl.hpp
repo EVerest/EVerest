@@ -48,6 +48,10 @@ public:
 
     std::optional<sha512_hash_t> get_vehicle_cert_hash() const final;
 
+    void accept_only_from(const in6_addr& peer) final {
+        expected_peer = peer;
+    }
+
     ~ConnectionSSL();
 
 private:
@@ -55,6 +59,7 @@ private:
     tls::Connection& tls_connection();
 
     PollManager& poll_manager;
+    std::optional<in6_addr> expected_peer;
     std::unique_ptr<SSLContext> ssl;
 
     Ipv6EndPoint end_point;

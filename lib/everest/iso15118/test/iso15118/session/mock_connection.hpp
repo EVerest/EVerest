@@ -59,6 +59,9 @@ public:
         return false;
     }
 
+    void accept_only_from(const in6_addr&) override {
+    }
+
     std::optional<io::sha512_hash_t> get_vehicle_cert_hash() const override {
         return std::nullopt;
     }

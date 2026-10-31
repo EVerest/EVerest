@@ -236,7 +236,7 @@ void ConnectionSSL::handle_connect() {
     sockaddr_in6 peer_addr{};
     // wrap_accepted_fd inherits the fd's flags and tls::Server only sets BIO_SOCK_NONBLOCK on its own
     // accept path, so a blocking fd would stall the poll loop for a whole handshake flight.
-    const auto accepted = accept_connection(ssl->listen_fd, peer_addr);
+    const auto accepted = accept_connection(ssl->listen_fd, peer_addr, expected_peer);
 
     if (accepted.status == AcceptResult::Status::Transient) {
         return;

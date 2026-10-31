@@ -603,6 +603,7 @@ void TbdController::handle_sdp_server_input() {
         return;
     }
 
+    connection->accept_only_from(request.address.sin6_addr);
     const auto ipv6_endpoint = connection->get_public_endpoint();
     sdp_offer = SdpOffer{requested_security, request.security, ipv6_endpoint};
 

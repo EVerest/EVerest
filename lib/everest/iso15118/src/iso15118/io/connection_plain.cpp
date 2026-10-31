@@ -123,7 +123,7 @@ ReadResult ConnectionPlain::read(uint8_t* buf, size_t len) {
 void ConnectionPlain::handle_connect() {
 
     sockaddr_in6 address{};
-    const auto accepted = accept_connection(fd, address);
+    const auto accepted = accept_connection(fd, address, expected_peer);
 
     if (accepted.status == AcceptResult::Status::Transient) {
         return;
