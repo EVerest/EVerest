@@ -104,7 +104,16 @@ public:
 
     void request_shutdown();
 
+    // CP state A, E or F was seen while this session ran: nothing of it is resumable once it ends
+    // ([V2G2-744] for the SECC, [V2G20-2623]). Loop thread only.
+    void mark_unplugged() {
+        unplugged = true;
+    }
+
 private:
+    // Only a session paused by SessionStopReq is resumable ([V2G2-741], [V2G20-1541]), and only while the EV
+    // stays plugged in. Called whenever the session ends.
+    void release_stale_pause_contexts();
     // The TCP connection may still be open while we wait for the EV to close it first.
     bool session_over() const;
     void finish_session();
@@ -149,6 +158,7 @@ private:
     bool driver_stopped{false};
     // The controller then drops the communication-setup timeout (is_v2g_session_established()).
     bool v2g_session_established{false};
+    bool unplugged{false};
     bool finished_reported{false};
     // Deadline for the EV-first TCP close, after which we close the connection ourselves.
     std::optional<TimePoint> connection_close_deadline{std::nullopt};
