@@ -75,7 +75,6 @@ struct Matching_def : public state_machine_def<Matching_def> {
         to.arm(ctx->current_time, ctx->slac_config.slac_init_timeout);
         failed_matching_reset_once = false;
         validate.reset();
-        ctx->validation_done = false;
         // Armed, no matching process yet: the published state stays UNMATCHED until the first CM_SLAC_PARM.REQ, so
         // the consumer can tell an EIM before any SLAC from one during a running matching ([V2G3-M06-08]).
         ctx->enter_state(SlacState::Matching, D3State::Unmatched,
@@ -107,9 +106,6 @@ struct Matching_def : public state_machine_def<Matching_def> {
     void deadlines(earliest_deadline& next) const {
         next.offer(to);
         validate.deadlines(next);
-        if (ctx->validation_done) {
-            next.offer(ctx->validation_match_window);
-        }
     }
 };
 static_assert(has_deadlines<Matching_def>::value);

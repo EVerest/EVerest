@@ -154,7 +154,10 @@ If a car wants extra certainty that it is paired with the right charger, it
 can start the optional CM_VALIDATE procedure from ISO 15118-3: the car
 briefly toggles its Control Pilot state (B → C → B) a number of times and
 asks the charger how many toggles it saw. EvseSlac implements the full
-two-step exchange, including the timed observation window. The toggle count
+two-step exchange, including the timed observation window. It answers only
+a car whose matching session has finished the attenuation measurement and
+waits for CM_SLAC_MATCH.REQ; validation requests from any other sender are
+ignored. The toggle count
 itself comes from EvseManager via the ``count_bc`` command of the slac
 interface, so this works out of the box in a standard EVerest setup.
 
