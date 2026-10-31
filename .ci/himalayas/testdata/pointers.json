@@ -1,0 +1,52 @@
+{
+  "log": [
+    {
+      "pointer": "testing/main",
+      "tracks": "main",
+      "sha": "f45ba0d0827f29d53d516fec98960f2528460802",
+      "moved_at": "2026-10-23T03:27:57Z"
+    },
+    {
+      "pointer": "testing/stable-2026.02",
+      "tracks": "stable/2026.02",
+      "sha": "a30b832d34fe73acf26f3e22b82ee7a43c7be8ad",
+      "moved_at": "2026-10-23T03:28:14Z"
+    },
+    {
+      "pointer": "testing/stable-2026.10",
+      "tracks": "stable/2026.10",
+      "sha": "f45ba0d0827f29d53d516fec98960f2528460802",
+      "moved_at": "2026-10-23T07:37:58Z"
+    },
+    {
+      "pointer": "testing/main",
+      "tracks": "main",
+      "sha": "dd696165d407d461a724232a4d77fe476a964ef1",
+      "moved_at": "2026-10-24T03:26:04Z"
+    },
+    {
+      "pointer": "testing/main",
+      "tracks": "main",
+      "sha": "488b5c0255221170396492847f8014c28cf3fb30",
+      "moved_at": "2026-10-27T03:29:22Z"
+    },
+    {
+      "pointer": "testing/stable-2026.02",
+      "tracks": "stable/2026.02",
+      "sha": "dda8b6a6acc22c70facae4f6c1009503077e1793",
+      "moved_at": "2026-10-27T03:29:35Z"
+    },
+    {
+      "pointer": "testing/main",
+      "tracks": "main",
+      "sha": "0fa14b932e1774f354b283c596d3c9687bc0cc3a",
+      "moved_at": "2026-10-28T03:21:15Z"
+    },
+    {
+      "pointer": "testing/main",
+      "tracks": "main",
+      "sha": "0bc286811e1279adc4711b6c5e6d9d141660277f",
+      "moved_at": "2026-10-28T13:05:41Z"
+    }
+  ]
+}
