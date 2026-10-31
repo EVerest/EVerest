@@ -9,15 +9,15 @@
 
 namespace everest::lib::slac::fsm::evse {
 
-void EvseSlacConfig::generate_nmk() {
-    generate_nmk(session_nmk);
+bool EvseSlacConfig::generate_nmk() {
+    return generate_nmk(session_nmk);
 }
 
-void EvseSlacConfig::generate_nmk(Nmk& target_nmk) {
-    generate_nmk(target_nmk.data());
+bool EvseSlacConfig::generate_nmk(Nmk& target_nmk) {
+    return generate_nmk(target_nmk.data());
 }
 
-void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
+bool EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
     if (target_nmk == nullptr) {
         throw std::invalid_argument("NMK target must not be null");
     }
@@ -47,10 +47,12 @@ void EvseSlacConfig::generate_nmk(std::uint8_t* target_nmk) {
     try {
         std::random_device random_device;
         fill(random_device);
+        return true;
     } catch (...) {
         std::mt19937 generator(
             static_cast<std::mt19937::result_type>(std::chrono::steady_clock::now().time_since_epoch().count()));
         fill(generator);
+        return false;
     }
 }
 

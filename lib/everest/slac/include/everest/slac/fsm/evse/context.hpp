@@ -179,6 +179,9 @@ struct Context {
 
     EvseSlacConfig slac_config{};
 
+    // Generates a key with slac_config and warns once per Context if it had to fall back to the clock.
+    void generate_nmk(Nmk& target_nmk);
+
     template <typename SlacMessageType> bool send_slac_message(MacAddress const& mac, SlacMessageType const& message) {
         messages::HomeplugMessage hp_message;
         hp_message.setup_payload(&message, sizeof(message), _context_detail::MMTYPE<SlacMessageType>::value,
@@ -233,6 +236,7 @@ struct Context {
     void telemetry(const std::string& block, const std::string& key, const std::string& value);
 
     defs::ModemVendor modem_vendor{defs::ModemVendor::Unknown};
+    bool clock_seeded_nmk_reported{false};
     MacAddress evse_mac{};
     MatchConfirmCache match_confirm_cache;
 
