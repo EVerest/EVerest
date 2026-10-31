@@ -64,6 +64,14 @@ void Context::cache_match_confirm_message(messages::cm_slac_match_cnf const& mat
     match_confirm_cache.run_id = run_id;
 }
 
+void Context::generate_nmk(Nmk& target_nmk) {
+    if (slac_config.generate_nmk(target_nmk) or clock_seeded_nmk_reported) {
+        return;
+    }
+    clock_seeded_nmk_reported = true;
+    log_warn("std::random_device is unavailable: session NMKs are seeded from the clock and can be guessed");
+}
+
 void Context::log_debug(const std::string& text) {
     invoke_callback(callbacks.log_debug, text);
 }
