@@ -3,6 +3,7 @@
 #include <catch2/catch_test_macros.hpp>
 
 #include <iso15118/message/certificate_installation.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "helper.hpp"
@@ -42,7 +43,7 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(req);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("Every field survives") {
             REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationReq);
@@ -75,7 +76,7 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(req);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("Sub certificates and prioritized emaids stay absent") {
             REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationReq);
@@ -104,7 +105,7 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(res);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("Every field survives") {
             REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationRes);
@@ -139,7 +140,7 @@ SCENARIO("Se/Deserialize certificate installation messages") {
 
         const auto encoded = serialize_large(res);
         const io::StreamInputView stream_view{encoded.data(), encoded.size()};
-        message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, stream_view);
+        message_20::ResponseVariant variant(v2gtp::PayloadType::Part20Main, stream_view);
 
         THEN("It encodes and decodes with empty chains") {
             REQUIRE(variant.get_type() == message_20::Type::CertificateInstallationRes);

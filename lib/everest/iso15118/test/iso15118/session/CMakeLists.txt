@@ -105,3 +105,16 @@ catch_discover_tests(test_variant_decode)
 add_executable(test_session session.cpp)
 target_link_libraries(test_session PRIVATE iso15118 Catch2::Catch2WithMain)
 catch_discover_tests(test_session)
+
+# Only the EV side names the protocol it switched to.
+if(ISO15118_BUILD_EV_SIDE)
+    add_executable(test_protocol protocol.cpp)
+
+    target_link_libraries(test_protocol
+        PRIVATE
+            iso15118
+            Catch2::Catch2WithMain
+    )
+
+    catch_discover_tests(test_protocol)
+endif()

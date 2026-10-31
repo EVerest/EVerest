@@ -6,6 +6,7 @@
 #include <string>
 #include <vector>
 
+#include <iso15118/message_2/charge_parameter_discovery.hpp>
 #include <iso15118/message_2/common_types.hpp>
 
 namespace iso15118::d2 {

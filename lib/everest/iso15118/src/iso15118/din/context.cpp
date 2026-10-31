@@ -26,7 +26,7 @@ std::unique_ptr<message_din::Variant> MessageExchange::pull_request() {
     return std::move(request);
 }
 
-std::tuple<bool, size_t, io::v2gtp::PayloadType, message_din::Type> MessageExchange::check_and_clear_response() {
+std::tuple<bool, size_t, v2gtp::PayloadType, message_din::Type> MessageExchange::check_and_clear_response() {
     auto retval = std::make_tuple(response_available, response_size, payload_type, response_type);
 
     response_available = false;

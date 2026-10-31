@@ -10,6 +10,7 @@
 #include <iso15118/message/authorization.hpp>
 #include <iso15118/message/authorization_setup.hpp>
 #include <iso15118/message/certificate_installation.hpp>
+#include <iso15118/message/response_variant.hpp>
 #include <iso15118/message/variant.hpp>
 
 #include "../captured_messages.hpp"
@@ -38,7 +39,7 @@ SCENARIO("ISO 15118-20 AuthorizationReq signature verification") {
 
         THEN("The decoded header carries ecdsa-sha512 with a 132 byte r||s") {
             const io::StreamInputView view{signed_req.data(), signed_req.size()};
-            message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, view);
+            message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, view);
             const auto& msg = variant.get<message_20::AuthorizationRequest>();
             REQUIRE(msg.header.signature.has_value());
             REQUIRE(msg.header.signature->signed_info.signature_method ==
@@ -111,7 +112,7 @@ SCENARIO("ISO 15118-20 AuthorizationReq signature verification") {
 
         THEN("The Ed448 signature with a SHAKE256 digest verifies") {
             const io::StreamInputView view{signed_req.data(), signed_req.size()};
-            message_20::Variant variant(io::v2gtp::PayloadType::Part20Main, view);
+            message_20::RequestVariant variant(v2gtp::PayloadType::Part20Main, view);
             const auto& msg = variant.get<message_20::AuthorizationRequest>();
             REQUIRE(msg.header.signature->signed_info.signature_method ==
                     "urn:iso:std:iso:15118:-20:Security:xmldsig#Ed448");
@@ -343,7 +344,7 @@ SCENARIO("ISO 15118-20 PnC AuthorizationReq captured from an EV conformance test
     GIVEN("The captured AuthorizationReq and the AuthorizationSetupRes it answers") {
         const auto& req_exi = captured::ISO20_PNC_AUTHORIZATION_REQ;
         const io::StreamInputView req_view{req_exi.data(), req_exi.size()};
-        const message_20::Variant req_variant(io::v2gtp::PayloadType::Part20Main, req_view);
+        const message_20::RequestVariant req_variant(v2gtp::PayloadType::Part20Main, req_view);
         REQUIRE(req_variant.get_type() == message_20::Type::AuthorizationReq);
         const auto& req = req_variant.get<message_20::AuthorizationRequest>();
         const auto* pnc = std::get_if<dt::PnC_ASReqAuthorizationMode>(&req.authorization_mode);
@@ -358,7 +359,7 @@ SCENARIO("ISO 15118-20 PnC AuthorizationReq captured from an EV conformance test
         THEN("The GenChallenge is the one the SECC sent") {
             const auto& res_exi = captured::ISO20_AUTHORIZATION_SETUP_RES;
             const io::StreamInputView res_view{res_exi.data(), res_exi.size()};
-            const message_20::Variant res_variant(io::v2gtp::PayloadType::Part20Main, res_view);
+            const message_20::ResponseVariant res_variant(v2gtp::PayloadType::Part20Main, res_view);
             REQUIRE(res_variant.get_type() == message_20::Type::AuthorizationSetupRes);
             const auto& res = res_variant.get<message_20::AuthorizationSetupResponse>();
             const auto* offered = std::get_if<dt::PnC_ASResAuthorizationMode>(&res.authorization_mode);
@@ -366,7 +367,7 @@ SCENARIO("ISO 15118-20 PnC AuthorizationReq captured from an EV conformance test
             REQUIRE(pnc->gen_challenge == offered->gen_challenge);
         }
 
-        THEN("The Variant keeps the wire payload for the verification") {
+        THEN("The RequestVariant keeps the wire payload for the verification") {
             REQUIRE(req_variant.get_exi_payload() == req_exi);
         }
 

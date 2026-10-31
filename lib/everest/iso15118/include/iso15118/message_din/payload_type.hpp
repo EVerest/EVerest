@@ -2,7 +2,7 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #pragma once
 
-#include <iso15118/io/sdp.hpp>
+#include <iso15118/v2gtp/sdp.hpp>
 
 namespace iso15118::message_din {
 
@@ -13,7 +13,7 @@ template <typename T> struct PayloadTypeTrait;
 #define CREATE_TYPE_TRAIT(struct_name)                                                                                 \
     struct struct_name;                                                                                                \
     template <> struct PayloadTypeTrait<struct_name> {                                                                 \
-        static const io::v2gtp::PayloadType type = io::v2gtp::PayloadType::SAP;                                        \
+        static const v2gtp::PayloadType type = v2gtp::PayloadType::SAP;                                                \
     }
 
 CREATE_TYPE_TRAIT(SessionSetupRequest);

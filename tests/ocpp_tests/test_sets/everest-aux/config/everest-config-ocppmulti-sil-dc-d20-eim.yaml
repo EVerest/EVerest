@@ -20,13 +20,12 @@ active_modules:
       module:
         evse: 1
   iso15118_car:
-    module: PyEvJosev
+    module: Ev15118
     config_module:
+      supported_protocols: ISO15118_20
       device: auto
-      supported_DIN70121: false
-      supported_ISO15118_2: false
-      supported_ISO15118_20_DC: true
-      tls_active: true
+      tls: prefer
+      tls_version: "1.3"
   evse_manager:
     module: EvseManager
     mapping:

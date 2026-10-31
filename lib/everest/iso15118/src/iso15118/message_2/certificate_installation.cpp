@@ -2,6 +2,8 @@
 // Copyright Pionix GmbH and Contributors to EVerest
 #include <iso15118/message_2/certificate_installation.hpp>
 
+#include <stdexcept>
+
 #include <iso15118/detail/cb_sub_certificates.hpp>
 #include <iso15118/detail/message_2/variant_access.hpp>
 
@@ -10,6 +12,27 @@
 #include <cbv2g/iso_2/iso2_msgDefEncoder.h>
 
 namespace iso15118::message_2 {
+
+namespace {
+
+void convert_root_certificate_ids(const std::vector<RootCertificateId>& in, iso2_ListOfRootCertificateIDsType& out) {
+    auto& list = out.RootCertificateID;
+    CPP2CB_ARRAY_SIZE_CHECK(in.size(), list.array);
+    uint16_t index = 0;
+    for (const auto& rid : in) {
+        if (rid.serial_number.size() > MAX_SERIAL_NUMBER_BYTES) {
+            throw std::runtime_error("RootCertificateID serial number too wide for the EXI converter");
+        }
+        auto& entry = list.array[index++];
+        CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
+        entry.X509SerialNumber.is_negative = 0;
+        exi_basetypes_convert_bytes_to_unsigned(&entry.X509SerialNumber.data, rid.serial_number.data(),
+                                                rid.serial_number.size());
+    }
+    list.arrayLen = in.size();
+}
+
+} // namespace
 
 template <> void convert(const struct iso2_CertificateChainType& in, CertificateChain& out) {
     if (in.Id_isUsed) {
@@ -73,15 +96,7 @@ template <> void convert(const CertificateInstallationRequest& in, struct iso2_C
 
     CPP2CB_BYTES(in.oem_provisioning_cert, out.OEMProvisioningCert);
 
-    auto& list = out.ListOfRootCertificateIDs.RootCertificateID;
-    CPP2CB_ARRAY_SIZE_CHECK(in.root_certificate_ids.size(), list.array);
-    uint16_t index = 0;
-    for (const auto& rid : in.root_certificate_ids) {
-        auto& entry = list.array[index++];
-        CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
-        exi_basetypes_convert_64_to_signed(&entry.X509SerialNumber, rid.serial_number);
-    }
-    list.arrayLen = in.root_certificate_ids.size();
+    convert_root_certificate_ids(in.root_certificate_ids, out.ListOfRootCertificateIDs);
 }
 
 template <> int serialize_to_exi(const CertificateInstallationRequest& in, exi_bitstream_t& out) {
@@ -149,15 +164,7 @@ template <> void convert(const CertificateUpdateRequest& in, struct iso2_Certifi
     CPP2CB_STRING(in.id, out.Id);
     convert(in.contract_chain, out.ContractSignatureCertChain);
     CPP2CB_STRING(in.emaid, out.eMAID);
-    auto& list = out.ListOfRootCertificateIDs.RootCertificateID;
-    CPP2CB_ARRAY_SIZE_CHECK(in.root_certificate_ids.size(), list.array);
-    uint16_t index = 0;
-    for (const auto& rid : in.root_certificate_ids) {
-        auto& entry = list.array[index++];
-        CPP2CB_STRING(rid.issuer_name, entry.X509IssuerName);
-        exi_basetypes_convert_64_to_signed(&entry.X509SerialNumber, rid.serial_number);
-    }
-    list.arrayLen = in.root_certificate_ids.size();
+    convert_root_certificate_ids(in.root_certificate_ids, out.ListOfRootCertificateIDs);
 }
 
 template <> int serialize_to_exi(const CertificateUpdateRequest& in, exi_bitstream_t& out) {

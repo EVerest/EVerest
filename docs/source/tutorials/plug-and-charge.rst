@@ -22,39 +22,28 @@ implemented in EVerest, please refer to the
 :doc:`Plug&Charge explanations </explanation/pnc-process>`
 and the :doc:`Plug&Charge Configuration Howto </how-to-guides/configure-pnc>`
 
-Packages for ISO 15118 communication
-------------------------------------
+Certificates for ISO 15118 communication
+----------------------------------------
 
-To be able to build EVerest with ISO 15118 capability, you will have to
-install the requirements for Josev:
+The ISO 15118-2 development PKI is generated when Josev is fetched, which a
+build does when it includes one of the ISO 15118 modules ``Ev15118``,
+``EvseV2G`` or ``Evse15118D20``, as a build with default options does. Keep
+``ISO15118_2_GENERATE_AND_INSTALL_CERTIFICATES`` enabled and do not set
+``-DEVEREST_DEPENDENCY_ENABLED_JOSEV=OFF``.
+The EVerest install then ships this test PKI under ``etc/everest/certs`` of the install
+prefix (sources in ``config/certs``): CA certificates in ``certs/ca`` and client
+certificates, private keys and password files in ``certs/client``. The EV
+simulation (``Ev15118``) and the charger (``Evse15118D20``) both use it, so no extra
+setup is needed for Plug&Charge in the software in the loop.
 
-.. code-block:: bash
-
-   cd {EVerest Workspace Directory}/Josev
-   python3 -m pip install -r requirements.txt
-
-For ISO 15118 communication including Plug&Charge, install Josev and some CA
-certificates:
-
-.. code-block:: bash
-
-   cd {EVerest Workspace Directory}/Josev/iso15118/shared/pki
-   ./create_certs.sh -v iso-2 -i {EVerest Workspace Directory}/EVerest
-
-This will enable ISO 15118 communication including Plug&Charge and install the
-required CA certificates inside ``config/certs/ca`` and the client certificates,
-private keys and password files inside ``config/certs/client``.
+To check that an install holds every file the TLS and Plug&Charge configurations
+load, run ``tests/dev_pki/test_installed_dev_pki.sh <prefix>`` after
+``cmake --install``. It is a manual check and not part of any test suite.
 
 .. attention::
 
-  This will generate an example PKI setup that can only be used for testing
-  and simulation. It will not work and is not recommended for production.
-
-  As the shell script uses the Java ``keytool``, it is required for this
-  procedure to have Java installed.
-
-The script for setting up PKI can also be used with the Evse15118D20 module
-(and the deprecated EvseV2G module).
+  This PKI can only be used for testing and simulation. It will not work and
+  is not recommended for production.
 
 .. _plug_and_charge_process:
 
@@ -81,7 +70,7 @@ Let's get started step by step
 ------------------------------
 
 1. Prerequisites must be fullfilled: EVerest must be installed on your system.
-   By default, this includes a complete and automatic installation of a test PKI.
+   Enable the test PKI as described above when configuring the build.
    The certificates and keys are located under ``dist/etc/everest/certs``.
 
 2. Let's prepare the central system that we are going to use. Follow the
@@ -119,7 +108,7 @@ If you observe logging messages indicating a timeout of the SDP request like
 
 .. code-block:: text
 
-    2025-10-17 17:21:47.039511 [WARN] iso15118_car    pybind11_init_everestpy(pybind11::module_&)::<lambda(const std::string&)> :: A TimeoutError occurred. Waited for Timeouts.SDP_REQ s after sending an SDPRequest
+    [WARN] iso15118_car    EV Controller: SDP discovery / connect did not complete in time
 
 you may need to adjust your firewall settings to allow communication between
 the EVCC and SECC modules.

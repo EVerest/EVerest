@@ -11,7 +11,7 @@
 #include <arpa/inet.h>
 #include <net/if.h>
 
-#include <cbv2g/exi_v2gtp.h>
+#include <iso15118/v2gtp/sdp.hpp>
 
 #include <iso15118/detail/helper.hpp>
 
@@ -116,10 +116,6 @@ void SdpServer::close() {
     }
 }
 
-// The SDP request payload is a fixed 2 bytes, and the V2GTP header must declare exactly that.
-static constexpr uint32_t SDP_REQUEST_PAYLOAD_LEN = 2;
-static constexpr ssize_t SDP_REQUEST_DATAGRAM_LEN = 8 + SDP_REQUEST_PAYLOAD_LEN;
-
 PeerRequestContext SdpServer::get_peer_request() {
     decltype(PeerRequestContext::address) peer_address;
     socklen_t peer_addr_len = sizeof(peer_address);
@@ -145,60 +141,30 @@ PeerRequestContext SdpServer::get_peer_request() {
         return PeerRequestContext{false};
     }
 
-    // Otherwise V2GTP20_ReadHeader and the payload bytes below would be read from stale buffer content
-    // left over from a previous datagram.
-    if (read_result < SDP_REQUEST_DATAGRAM_LEN) {
-        logf_warning("Sdp server received a truncated request (%zd bytes), ignoring", read_result);
-        return PeerRequestContext{false};
-    }
-
-    uint32_t sdp_payload_len;
-    const auto parse_sdp_result = V2GTP20_ReadHeader(udp_buffer, &sdp_payload_len, V2GTP20_SDP_REQUEST_PAYLOAD_ID);
-
-    if (parse_sdp_result != V2GTP_ERROR__NO_ERROR) {
-        // FIXME (aw): we should not die here immediately
-        logf_warning("Sdp server received an unexpected payload");
-        return PeerRequestContext{false};
-    }
-
-    // V2GTP20_ReadHeader checks the version and payload-type ID, not the length field. A request with
-    // an invalid payloadLength is ignored so no response is sent -- the EVCC then detects an SDP message
-    // timeout (TC_SECC_CMN_VTB_V2GTPSDP_002).
-    if (sdp_payload_len != SDP_REQUEST_PAYLOAD_LEN) {
-        logf_warning("Sdp server received a request with an invalid payload length (%u), ignoring", sdp_payload_len);
+    const auto request = iso15118::v2gtp::decode_sdp_request(udp_buffer, static_cast<size_t>(read_result));
+    if (not request) {
+        logf_warning("Sdp server received an invalid request (%zd bytes), ignoring", read_result);
         return PeerRequestContext{false};
     }
 
     PeerRequestContext peer_request{true};
-
-    // NOTE (aw): this could be moved into a constructor
-    const uint8_t sdp_request_byte1 = udp_buffer[8];
-    const uint8_t sdp_request_byte2 = udp_buffer[9];
-    peer_request.security = static_cast<v2gtp::Security>(sdp_request_byte1);
-    peer_request.transport_protocol = static_cast<v2gtp::TransportProtocol>(sdp_request_byte2);
+    peer_request.security = request->security;
+    peer_request.transport_protocol = request->transport;
     memcpy(&peer_request.address, &peer_address, sizeof(peer_address));
 
     return peer_request;
 }
 
 void SdpServer::send_response(const PeerRequestContext& request, const Ipv6EndPoint& ipv6_endpoint) {
-    // that worked, now response
-    uint8_t v2g_packet[28];
-    uint8_t* sdp_response = v2g_packet + 8;
-    memcpy(sdp_response, ipv6_endpoint.address, sizeof(ipv6_endpoint.address));
+    iso15118::v2gtp::SdpResponse response{};
+    memcpy(response.address.data(), ipv6_endpoint.address, response.address.size());
+    response.port = ipv6_endpoint.port;
+    response.security = request.security;
+    response.transport = request.transport_protocol;
+    const auto packet = iso15118::v2gtp::encode_sdp_response(response);
 
-    uint16_t port = htons(ipv6_endpoint.port);
-    memcpy(sdp_response + 16, &port, sizeof(port));
-
-    // FIXME (aw): which values to take here?
-    sdp_response[18] = static_cast<std::underlying_type_t<v2gtp::Security>>(request.security);
-    sdp_response[19] = static_cast<std::underlying_type_t<v2gtp::TransportProtocol>>(request.transport_protocol);
-
-    V2GTP20_WriteHeader(v2g_packet, 20, V2GTP20_SDP_RESPONSE_PAYLOAD_ID);
-
-    const auto peer_addr_len = sizeof(request.address);
-
-    sendto(fd, v2g_packet, sizeof(v2g_packet), 0, reinterpret_cast<const sockaddr*>(&request.address), peer_addr_len);
+    sendto(fd, packet.data(), packet.size(), 0, reinterpret_cast<const sockaddr*>(&request.address),
+           sizeof(request.address));
 }
 TlsKeyLoggingServer::TlsKeyLoggingServer(const std::string& interface_name, uint16_t port_) : port(port_) {
     static constexpr auto LINK_LOCAL_MULTICAST = "ff02::1";
@@ -265,46 +231,6 @@ ssize_t TlsKeyLoggingServer::send(const char* line) {
                   sizeof(destination_address));
 }
 
-#if 0
-
-void parse_sdp_request(uint8_t* packet) {
-    // check sdp header
-    uint32_t sdp_payload_len;
-    const auto parse_sdp_result = V2GTP20_ReadHeader(packet, &sdp_payload_len, V2GTP20_SDP_REQUEST_PAYLOAD_ID);
-
-    if (parse_sdp_result != V2GTP_ERROR__NO_ERROR) {
-        log_and_throw("Failed to parse sdp header");
-    }
-
-    logf_info("Got sdp payload of %d bytes", sdp_payload_len);
-    const uint8_t sdp_request_byte1 = packet[8];
-
-    switch (static_cast<v2gtp::Security>(sdp_request_byte1)) {
-    case v2gtp::Security::TLS:
-        logf_info(" -> TLS requested");
-        break;
-    case v2gtp::Security::NO_TRANSPORT_SECURITY:
-        logf_info(" -> no security");
-        break;
-    default:
-        logf_info(" -> EXCEPTION: reserved value");
-        break;
-    }
-
-    const uint8_t sdp_request_byte2 = packet[9];
-    switch (static_cast<v2gtp::TransportProtocol>(sdp_request_byte2)) {
-    case v2gtp::TransportProtocol::TCP:
-        logf_info(" -> TCP requested");
-        break;
-    case v2gtp::TransportProtocol::RESERVED_FOR_UDP:
-        logf_info(" -> reserved for UDP");
-        break;
-    default:
-        logf_info(" -> EXCEPTION: reserved value");
-        break;
-    }
-}
-#endif
 } // namespace io
 
 } // namespace iso15118

@@ -28,11 +28,61 @@ public:
         timepoint_last_update(std::chrono::steady_clock::now()){};
     ~CarSimulation() = default;
 
+    // Reset an idle vehicle's commands and battery while preserving its presence, its measured
+    // pilot and a live V2G session (see has_live_v2g_session()). An active vehicle keeps its
+    // session and applied state until a stop or unplug.
     void reset() {
+        if (not is_idle_on_the_wire()) {
+            return;
+        }
+        // A cp_c_pulse cut short by the reset would leave the readiness claim (CP C) standing on
+        // the wire; nothing above PLUGGED_IN ever runs a pulse, so this is never a C-exit out of
+        // an energized session.
+        release_cp_c_pulse();
+        const auto previous = sim_data;
         sim_data = SimulationData();
+        sim_data.actual_bsp_event = previous.actual_bsp_event;
+        sim_data.last_logged_wait_event = previous.actual_bsp_event;
         sim_data.battery_capacity_wh = config.dc_energy_capacity;
         double soc = config.soc;
         sim_data.battery_charge_wh = config.dc_energy_capacity * (soc / 100.0);
+        if (previous.state != SimState::UNPLUGGED) {
+            sim_data.state = SimState::PLUGGED_IN;
+            sim_data.last_state = SimState::PLUGGED_IN;
+        }
+        if (previous.v2g_session_active) {
+            sim_data.keep_v2g_session(previous);
+        }
+    }
+
+    // Re-apply an idle plugged-in vehicle's CP B: a board disable drops the pilot to A without the
+    // simulation leaving PLUGGED_IN.
+    void reapply_plugged_in() {
+        if (sim_data.state == SimState::PLUGGED_IN) {
+            sim_data.last_state = SimState::UNDEFINED;
+            state_machine();
+        }
+    }
+
+    // The vehicle lost its pilot (plug-out, or the EVSE signalling E/F): forget the session AND
+    // the presence. Leaves UNPLUGGED pending so the caller's next state_machine() tick runs the
+    // unplug branch (CP A, power off, matching stopped, charging stopped).
+    void unplug_vehicle() {
+        begin_unplug();
+        reset();
+    }
+
+    // True while the vehicle is at most presenting itself (A or B on the pilot): no readiness
+    // claim, no power, no toggle in flight. The states a new command list may safely replace.
+    bool is_idle_on_the_wire() const {
+        return sim_data.state == SimState::UNPLUGGED or sim_data.state == SimState::PLUGGED_IN;
+    }
+
+    // True from an accepted iso_start_v2g_session until the provider reports the session finished
+    // or the vehicle unplugs. The provider still runs it, so reset() keeps it and a new command
+    // list must not start another.
+    bool has_live_v2g_session() const {
+        return sim_data.v2g_session_active;
     }
 
     void set_soc(double soc) {
@@ -44,6 +94,13 @@ public:
 
     const SimState& get_state() const {
         return sim_data.state;
+    }
+
+    // Called whenever a new command list replaces the queue. No aborted command's countdown or
+    // pulse outlives it (see SimulationData::clear_command_ticks()).
+    void abort_command_in_flight() {
+        release_cp_c_pulse();
+        sim_data.clear_command_ticks();
     }
 
     std::optional<std::string>& get_modify_charging_session_cmds() {
@@ -58,9 +115,13 @@ public:
         sim_data.state = state;
     }
 
-    void set_bsp_event(types::board_support_common::Event event) {
-        sim_data.actual_bsp_event = event;
+    types::board_support_common::Event get_bsp_event() const {
+        return sim_data.actual_bsp_event;
     }
+
+    /// Take an event from the vehicle BSP and relay it to ev_manager subscribers. Returns whether
+    /// it ended the charging session, which the caller then cancels.
+    [[nodiscard]] bool handle_bsp_event(const types::board_support_common::BspEvent& bsp_event);
 
     void set_pp(types::board_support_common::Ampacity pp) {
         sim_data.pp = pp;
@@ -78,6 +139,18 @@ public:
         sim_data.slac_state = slac_state;
     }
 
+    types::slac::State get_slac_state() const {
+        return sim_data.slac_state;
+    }
+
+    /// Stop a running matching process and leave the stack unmatched
+    /// ([V2G3-A09-123]/[V2G3-A09-126]).
+    void stop_matching();
+
+    /// Whether the measured control pilot is in Bx/Cx/Dx, the only states in
+    /// which a matching process may run ([V2G3-M06-13]/[V2G3-A09-123]).
+    bool cp_state_allows_matching() const;
+
     void set_iso_pwr_ready(bool iso_pwr_ready) {
         sim_data.iso_pwr_ready = iso_pwr_ready;
     }
@@ -90,6 +163,10 @@ public:
         sim_data.iso_stopped = iso_stopped;
     }
 
+    void set_power_delivery_stopped(bool power_delivery_stopped) {
+        sim_data.power_delivery_stopped = power_delivery_stopped;
+    }
+
     void set_iso_charger_paused(bool iso_charger_paused) {
         sim_data.iso_charger_paused = iso_charger_paused;
     }
@@ -98,14 +175,33 @@ public:
         sim_data.v2g_session_active = v2g_session_active;
     }
 
+    // V2G ended with the contactor closed: open it and fall back to State B ([V2G2-913]).
+    void end_charging_session() {
+        switch (sim_data.state) {
+        case SimState::CHARGING_REGULATED:
+        case SimState::CHARGING_FIXED:
+        case SimState::ISO_POWER_READY:
+        case SimState::ISO_CHARGING_REGULATED:
+            EVLOG_info << "V2G session ended - opening the contactor and returning the control pilot to state B";
+            sim_data.dc_power_on = false;
+            sim_data.state = SimState::PLUGGED_IN;
+            break;
+        default:
+            // UNPLUGGED / PLUGGED_IN need nothing; ERROR_E, DIODE_FAIL and BCB_TOGGLE are
+            // deliberate pilot states the session end must not override.
+            break;
+        }
+    }
+
     void set_dc_power_on(bool dc_power_on) {
         sim_data.dc_power_on = dc_power_on;
     }
 
     void state_machine();
     bool sleep(const CmdArguments&, size_t);
+    bool cp_c_pulse(const CmdArguments&, size_t);
     bool iec_wait_pwr_ready(const CmdArguments&);
-    bool iso_wait_pwm_is_running(const CmdArguments&);
+    bool iso_wait_pwm_is_running(const CmdArguments&, size_t loop_interval_ms);
     bool draw_power_regulated(const CmdArguments&);
     bool draw_power_fixed(const CmdArguments&);
     bool pause(const CmdArguments&);
@@ -133,6 +229,10 @@ private:
     double charge_current_a{0};
 
     double latest_soc{0};
+    // Last values pushed through ISO15118_ev::update_present_values, so a tick that changes
+    // nothing does not re-send. Unset until the first tick that has something to report.
+    std::optional<double> latest_present_voltage;
+    std::optional<double> latest_present_active_power;
 
     enum class ChargeMode {
         None,
@@ -147,6 +247,28 @@ private:
     const std::unique_ptr<ev_managerImplBase>& p_ev_manager;
 
     void simulate_soc();
+    // Push the applied CP state to the HLC stack, which has no board support connection.
+    void forward_cp_state_to_hlc(types::board_support_common::Event event);
+    // Tear the V2G session down at once, without a SessionStop exchange ([V2G2-025], [V2G2-728]).
+    void abort_v2g_session();
     void arm_resume_after_charger_pause();
     void arm_restart_after_charger_stop();
+    std::string power_up_commands() const;
+    // Enter UNPLUGGED, ending a live V2G session: the unplug branch of state_machine() stops the
+    // provider's, so it is forced even when the vehicle already sat in UNPLUGGED.
+    void begin_unplug() {
+        sim_data.state = SimState::UNPLUGGED;
+        if (sim_data.v2g_session_active) {
+            sim_data.v2g_session_active = false;
+            sim_data.last_state = SimState::UNDEFINED;
+        }
+    }
+    // A cp_c_pulse drives the pilot with no state for state_machine() to restore: release one in
+    // flight to A when unplugged, else B.
+    void release_cp_c_pulse() {
+        if (sim_data.cp_c_pulse_ticks_left.has_value()) {
+            using types::ev_board_support::EvCpState;
+            r_ev_board_support->call_set_cp_state(sim_data.state == SimState::UNPLUGGED ? EvCpState::A : EvCpState::B);
+        }
+    }
 };

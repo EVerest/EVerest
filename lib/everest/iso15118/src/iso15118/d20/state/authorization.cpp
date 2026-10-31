@@ -13,6 +13,7 @@
 #include <iso15118/detail/d20/state/session_stop.hpp>
 
 #include <iso15118/detail/helper.hpp>
+#include <iso15118/message/response_variant.hpp>
 
 namespace iso15118::d20::state {
 
@@ -214,7 +215,7 @@ Result Authorization::finish_authorized(dt::Authorization via, bool allow_instal
 }
 
 Result Authorization::handle_authorization_request(const message_20::AuthorizationRequest& req,
-                                                   const message_20::Variant& variant) {
+                                                   const message_20::RequestVariant& variant) {
     const bool offered = find_auth_service_in_offered_services(req.selected_authorization_service, m_ctx.session);
     const bool eim = req.selected_authorization_service == dt::Authorization::EIM;
 
@@ -368,7 +369,7 @@ void Authorization::respond_certificate_installation(const message_20::Certifica
 }
 
 Result Authorization::handle_certificate_installation_request(const message_20::CertificateInstallationRequest& req,
-                                                              const message_20::Variant& variant) {
+                                                              const message_20::RequestVariant& variant) {
     if (pnc_attempt or eim_timer_started or not m_ctx.session.offered_services.cert_install_service or
         (cert_install_remaining.has_value() and *cert_install_remaining == 0)) {
         // Not offered, or the last chain was delivered: only AuthorizationReq is allowed ([V2G20-1975]).
@@ -388,7 +389,7 @@ Result Authorization::handle_certificate_installation_request(const message_20::
         // The backend's signed CertificateInstallationRes goes out verbatim ([V2G20-1973/1975]).
         const auto& raw = *cert_install_raw_response;
         const io::StreamInputView view{raw.data(), raw.size()};
-        message_20::Variant response(io::v2gtp::PayloadType::Part20Main, view);
+        message_20::ResponseVariant response(v2gtp::PayloadType::Part20Main, view);
         const auto* res = response.get_if<message_20::CertificateInstallationResponse>();
         if (res and res->header.session_id == m_ctx.session.get_id() and
             res->evse_processing == dt::Processing::Finished and

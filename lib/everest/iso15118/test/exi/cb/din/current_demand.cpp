@@ -40,6 +40,15 @@ SCENARIO("Se/Deserialize DIN current demand messages") {
             REQUIRE(msg.ev_maximum_voltage_limit.value() == 500.0);
             REQUIRE(msg.charging_complete == false);
         }
+
+        THEN("The wire carries the right units, which the domain type does not keep") {
+            const auto& raw = decode_helper(bytes).V2G_Message.Body.CurrentDemandReq;
+
+            REQUIRE(raw.EVTargetCurrent.Unit == din_unitSymbolType_A);
+            REQUIRE(raw.EVTargetVoltage.Unit == din_unitSymbolType_V);
+            REQUIRE(raw.EVMaximumVoltageLimit_isUsed);
+            REQUIRE(raw.EVMaximumVoltageLimit.Unit == din_unitSymbolType_V);
+        }
     }
 
     GIVEN("Serialize and deserialize current_demand_res") {

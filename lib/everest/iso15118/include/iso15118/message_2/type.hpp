@@ -56,48 +56,38 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 
 template <typename MessageType> size_t serialize(const MessageType&, const io::StreamOutputView&);
 
-#define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
-    struct struct_name;                                                                                                \
-    template <> struct TypeTrait<struct_name> {                                                                        \
-        static const Type type = Type::enum_name;                                                                      \
-    }
+// A request and its response per message.
+#define CREATE_TYPE_TRAITS(name)                                                                                       \
+    struct name##Request;                                                                                              \
+    struct name##Response;                                                                                             \
+    template <> struct TypeTrait<name##Request> {                                                                      \
+        static const Type type = Type::name##Req;                                                                      \
+    };                                                                                                                 \
+    template <> struct TypeTrait<name##Response> {                                                                     \
+        static const Type type = Type::name##Res;                                                                      \
+    };                                                                                                                 \
+    static_assert(static_cast<int>(Type::name##Res) == static_cast<int>(Type::name##Req) + 1,                          \
+                  "a response must follow its request in Type")
 
-CREATE_TYPE_TRAIT(SessionSetupRequest, SessionSetupReq);
-CREATE_TYPE_TRAIT(SessionSetupResponse, SessionSetupRes);
-CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
-CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
-CREATE_TYPE_TRAIT(ServiceDetailRequest, ServiceDetailReq);
-CREATE_TYPE_TRAIT(ServiceDetailResponse, ServiceDetailRes);
-CREATE_TYPE_TRAIT(PaymentServiceSelectionRequest, PaymentServiceSelectionReq);
-CREATE_TYPE_TRAIT(PaymentServiceSelectionResponse, PaymentServiceSelectionRes);
-CREATE_TYPE_TRAIT(PaymentDetailsRequest, PaymentDetailsReq);
-CREATE_TYPE_TRAIT(PaymentDetailsResponse, PaymentDetailsRes);
-CREATE_TYPE_TRAIT(AuthorizationRequest, AuthorizationReq);
-CREATE_TYPE_TRAIT(AuthorizationResponse, AuthorizationRes);
-CREATE_TYPE_TRAIT(ChargeParameterDiscoveryRequest, ChargeParameterDiscoveryReq);
-CREATE_TYPE_TRAIT(ChargeParameterDiscoveryResponse, ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(PowerDeliveryRequest, PowerDeliveryReq);
-CREATE_TYPE_TRAIT(PowerDeliveryResponse, PowerDeliveryRes);
-CREATE_TYPE_TRAIT(ChargingStatusRequest, ChargingStatusReq);
-CREATE_TYPE_TRAIT(ChargingStatusResponse, ChargingStatusRes);
-CREATE_TYPE_TRAIT(CableCheckRequest, CableCheckReq);
-CREATE_TYPE_TRAIT(CableCheckResponse, CableCheckRes);
-CREATE_TYPE_TRAIT(PreChargeRequest, PreChargeReq);
-CREATE_TYPE_TRAIT(PreChargeResponse, PreChargeRes);
-CREATE_TYPE_TRAIT(CurrentDemandRequest, CurrentDemandReq);
-CREATE_TYPE_TRAIT(CurrentDemandResponse, CurrentDemandRes);
-CREATE_TYPE_TRAIT(WeldingDetectionRequest, WeldingDetectionReq);
-CREATE_TYPE_TRAIT(WeldingDetectionResponse, WeldingDetectionRes);
-CREATE_TYPE_TRAIT(SessionStopRequest, SessionStopReq);
-CREATE_TYPE_TRAIT(SessionStopResponse, SessionStopRes);
-CREATE_TYPE_TRAIT(MeteringReceiptRequest, MeteringReceiptReq);
-CREATE_TYPE_TRAIT(MeteringReceiptResponse, MeteringReceiptRes);
-CREATE_TYPE_TRAIT(CertificateInstallationRequest, CertificateInstallationReq);
-CREATE_TYPE_TRAIT(CertificateInstallationResponse, CertificateInstallationRes);
-CREATE_TYPE_TRAIT(CertificateUpdateRequest, CertificateUpdateReq);
-CREATE_TYPE_TRAIT(CertificateUpdateResponse, CertificateUpdateRes);
+CREATE_TYPE_TRAITS(SessionSetup);
+CREATE_TYPE_TRAITS(ServiceDiscovery);
+CREATE_TYPE_TRAITS(ServiceDetail);
+CREATE_TYPE_TRAITS(PaymentServiceSelection);
+CREATE_TYPE_TRAITS(PaymentDetails);
+CREATE_TYPE_TRAITS(Authorization);
+CREATE_TYPE_TRAITS(ChargeParameterDiscovery);
+CREATE_TYPE_TRAITS(PowerDelivery);
+CREATE_TYPE_TRAITS(ChargingStatus);
+CREATE_TYPE_TRAITS(CableCheck);
+CREATE_TYPE_TRAITS(PreCharge);
+CREATE_TYPE_TRAITS(CurrentDemand);
+CREATE_TYPE_TRAITS(WeldingDetection);
+CREATE_TYPE_TRAITS(SessionStop);
+CREATE_TYPE_TRAITS(MeteringReceipt);
+CREATE_TYPE_TRAITS(CertificateInstallation);
+CREATE_TYPE_TRAITS(CertificateUpdate);
 
 // header-local macro: drop it so the type-trait headers of the other protocols can redefine it
-#undef CREATE_TYPE_TRAIT
+#undef CREATE_TYPE_TRAITS
 
 } // namespace iso15118::message_2

@@ -56,6 +56,8 @@ enum class Type {
 
 template <typename T> struct TypeTrait {
     static const Type type = Type::None;
+    static constexpr bool is_request = false;
+    static constexpr bool is_response = false;
 };
 
 template <typename InType, typename OutType> void convert(const InType&, OutType&);
@@ -63,60 +65,48 @@ template <typename InType, typename OutType> void convert(const InType&, OutType
 template <typename MessageType> size_t serialize(const MessageType&, const io::StreamOutputView&);
 
 //
-// definitions of type traits
+// definitions of type traits, a request and its response per message
 //
-#define CREATE_TYPE_TRAIT(struct_name, enum_name)                                                                      \
-    struct struct_name;                                                                                                \
-    template <> struct TypeTrait<struct_name> {                                                                        \
-        static const Type type = Type::enum_name;                                                                      \
-    }
+#define CREATE_TYPE_TRAITS(name)                                                                                       \
+    struct name##Request;                                                                                              \
+    struct name##Response;                                                                                             \
+    template <> struct TypeTrait<name##Request> {                                                                      \
+        static const Type type = Type::name##Req;                                                                      \
+        static constexpr bool is_request = true;                                                                       \
+        static constexpr bool is_response = false;                                                                     \
+    };                                                                                                                 \
+    template <> struct TypeTrait<name##Response> {                                                                     \
+        static const Type type = Type::name##Res;                                                                      \
+        static constexpr bool is_request = false;                                                                      \
+        static constexpr bool is_response = true;                                                                      \
+    };                                                                                                                 \
+    static_assert(static_cast<int>(Type::name##Res) == static_cast<int>(Type::name##Req) + 1,                          \
+                  "a response must follow its request in Type")
 
-CREATE_TYPE_TRAIT(SupportedAppProtocolRequest, SupportedAppProtocolReq);
-CREATE_TYPE_TRAIT(SupportedAppProtocolResponse, SupportedAppProtocolRes);
-CREATE_TYPE_TRAIT(SessionSetupRequest, SessionSetupReq);
-CREATE_TYPE_TRAIT(SessionSetupResponse, SessionSetupRes);
-CREATE_TYPE_TRAIT(AuthorizationSetupRequest, AuthorizationSetupReq);
-CREATE_TYPE_TRAIT(AuthorizationSetupResponse, AuthorizationSetupRes);
-CREATE_TYPE_TRAIT(AuthorizationRequest, AuthorizationReq);
-CREATE_TYPE_TRAIT(AuthorizationResponse, AuthorizationRes);
-CREATE_TYPE_TRAIT(CertificateInstallationRequest, CertificateInstallationReq);
-CREATE_TYPE_TRAIT(CertificateInstallationResponse, CertificateInstallationRes);
-CREATE_TYPE_TRAIT(ServiceDiscoveryRequest, ServiceDiscoveryReq);
-CREATE_TYPE_TRAIT(ServiceDiscoveryResponse, ServiceDiscoveryRes);
-CREATE_TYPE_TRAIT(ServiceDetailRequest, ServiceDetailReq);
-CREATE_TYPE_TRAIT(ServiceDetailResponse, ServiceDetailRes);
-CREATE_TYPE_TRAIT(ServiceSelectionRequest, ServiceSelectionReq);
-CREATE_TYPE_TRAIT(ServiceSelectionResponse, ServiceSelectionRes);
-CREATE_TYPE_TRAIT(DC_ChargeParameterDiscoveryRequest, DC_ChargeParameterDiscoveryReq);
-CREATE_TYPE_TRAIT(DC_ChargeParameterDiscoveryResponse, DC_ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(ScheduleExchangeRequest, ScheduleExchangeReq);
-CREATE_TYPE_TRAIT(ScheduleExchangeResponse, ScheduleExchangeRes);
-CREATE_TYPE_TRAIT(DC_CableCheckRequest, DC_CableCheckReq);
-CREATE_TYPE_TRAIT(DC_CableCheckResponse, DC_CableCheckRes);
-CREATE_TYPE_TRAIT(DC_PreChargeRequest, DC_PreChargeReq);
-CREATE_TYPE_TRAIT(DC_PreChargeResponse, DC_PreChargeRes);
-CREATE_TYPE_TRAIT(PowerDeliveryRequest, PowerDeliveryReq);
-CREATE_TYPE_TRAIT(PowerDeliveryResponse, PowerDeliveryRes);
-CREATE_TYPE_TRAIT(DC_ChargeLoopRequest, DC_ChargeLoopReq);
-CREATE_TYPE_TRAIT(DC_ChargeLoopResponse, DC_ChargeLoopRes);
-CREATE_TYPE_TRAIT(DC_WeldingDetectionRequest, DC_WeldingDetectionReq);
-CREATE_TYPE_TRAIT(DC_WeldingDetectionResponse, DC_WeldingDetectionRes);
-CREATE_TYPE_TRAIT(SessionStopRequest, SessionStopReq);
-CREATE_TYPE_TRAIT(SessionStopResponse, SessionStopRes);
-CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryRequest, AC_ChargeParameterDiscoveryReq);
-CREATE_TYPE_TRAIT(AC_ChargeParameterDiscoveryResponse, AC_ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(AC_ChargeLoopRequest, AC_ChargeLoopReq);
-CREATE_TYPE_TRAIT(AC_ChargeLoopResponse, AC_ChargeLoopRes);
-CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryRequest, DER_AC_ChargeParameterDiscoveryReq); // TODO(SL): Add IEC
-CREATE_TYPE_TRAIT(DER_AC_ChargeParameterDiscoveryResponse, DER_AC_ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(DER_AC_ChargeLoopRequest, DER_AC_ChargeLoopReq);
-CREATE_TYPE_TRAIT(DER_AC_ChargeLoopResponse, DER_AC_ChargeLoopRes);
-CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryRequest, DER_SAE_AC_ChargeParameterDiscoveryReq);
-CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeParameterDiscoveryResponse, DER_SAE_AC_ChargeParameterDiscoveryRes);
-CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopRequest, DER_SAE_AC_ChargeLoopReq);
-CREATE_TYPE_TRAIT(DER_SAE_AC_ChargeLoopResponse, DER_SAE_AC_ChargeLoopRes);
+CREATE_TYPE_TRAITS(SupportedAppProtocol);
+CREATE_TYPE_TRAITS(SessionSetup);
+CREATE_TYPE_TRAITS(AuthorizationSetup);
+CREATE_TYPE_TRAITS(Authorization);
+CREATE_TYPE_TRAITS(CertificateInstallation);
+CREATE_TYPE_TRAITS(ServiceDiscovery);
+CREATE_TYPE_TRAITS(ServiceDetail);
+CREATE_TYPE_TRAITS(ServiceSelection);
+CREATE_TYPE_TRAITS(DC_ChargeParameterDiscovery);
+CREATE_TYPE_TRAITS(ScheduleExchange);
+CREATE_TYPE_TRAITS(DC_CableCheck);
+CREATE_TYPE_TRAITS(DC_PreCharge);
+CREATE_TYPE_TRAITS(PowerDelivery);
+CREATE_TYPE_TRAITS(DC_ChargeLoop);
+CREATE_TYPE_TRAITS(DC_WeldingDetection);
+CREATE_TYPE_TRAITS(SessionStop);
+CREATE_TYPE_TRAITS(AC_ChargeParameterDiscovery);
+CREATE_TYPE_TRAITS(AC_ChargeLoop);
+CREATE_TYPE_TRAITS(DER_AC_ChargeParameterDiscovery); // TODO(SL): Add IEC
+CREATE_TYPE_TRAITS(DER_AC_ChargeLoop);
+CREATE_TYPE_TRAITS(DER_SAE_AC_ChargeParameterDiscovery);
+CREATE_TYPE_TRAITS(DER_SAE_AC_ChargeLoop);
 
-// header-local macro: drop it so the type-trait headers of the other protocols can redefine it
-#undef CREATE_TYPE_TRAIT
+// header-local macro
+#undef CREATE_TYPE_TRAITS
 
 } // namespace iso15118::message_20

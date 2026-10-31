@@ -545,10 +545,10 @@ void TbdController::handle_sdp_server_input() {
         // nothing to change
         break;
     case config::TlsNegotiationStrategy::ENFORCE_TLS:
-        request.security = io::v2gtp::Security::TLS;
+        request.security = v2gtp::Security::TLS;
         break;
     case config::TlsNegotiationStrategy::ENFORCE_NO_TLS:
-        request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+        request.security = v2gtp::Security::NO_TRANSPORT_SECURITY;
         break;
     }
 
@@ -585,16 +585,16 @@ void TbdController::handle_sdp_server_input() {
         }
     };
 
-    auto connection = make_connection(request.security == io::v2gtp::Security::TLS);
+    auto connection = make_connection(request.security == v2gtp::Security::TLS);
 
-    if (not connection and request.security == io::v2gtp::Security::TLS and
+    if (not connection and request.security == v2gtp::Security::TLS and
         config.tls_negotiation_strategy == config::TlsNegotiationStrategy::ACCEPT_CLIENT_OFFER) {
         // The TLS endpoint cannot be set up (e.g. the SECC leaf certificate was deleted via OCPP). Under
         // ACCEPT_CLIENT_OFFER, answer with an unsecured endpoint rather than stay silent, so the EV can run
         // an EIM session over plain TCP -- or abort -- instead of exhausting its SDP retries against a mute
         // SECC. The session sees a plain connection, so Contract payment is not offered on this fallback.
         logf_warning("TLS endpoint could not be set up; offering the EV a plain TCP endpoint instead");
-        request.security = io::v2gtp::Security::NO_TRANSPORT_SECURITY;
+        request.security = v2gtp::Security::NO_TRANSPORT_SECURITY;
         connection = make_connection(false);
     }
 
