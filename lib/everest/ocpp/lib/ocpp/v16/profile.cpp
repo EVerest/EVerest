@@ -178,9 +178,11 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
         break;
     case ChargingProfileKindType::Recurring:
         if (in_profile.recurrencyKind && in_profile.chargingSchedule.startSchedule) {
-            const auto start_schedule = floor_seconds(in_profile.chargingSchedule.startSchedule.value());
+            // recurrence follows the UTC calendar, so the arithmetic must not count leap seconds
+            const auto start_schedule = date::utc_clock::to_sys(
+                floor_seconds(in_profile.chargingSchedule.startSchedule.value()).to_time_point());
             const auto end = floor_seconds(in_end);
-            const auto now_tp = start.to_time_point();
+            const auto now_tp = date::utc_clock::to_sys(start.to_time_point());
             long seconds_to_go_back{0};
             long seconds_to_go_forward{0};
 
@@ -205,7 +207,7 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
             switch (in_profile.recurrencyKind.value()) {
             case RecurrencyKindType::Daily:
                 seconds_to_go_back =
-                    duration_cast<seconds>(now_tp - start_schedule.to_time_point()).count() %
+                    duration_cast<seconds>(now_tp - start_schedule).count() %
                     // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): well below int::max()
                     (HOURS_PER_DAY * SECONDS_PER_HOUR);
                 if (seconds_to_go_back < 0) {
@@ -217,7 +219,7 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
                 break;
             case RecurrencyKindType::Weekly:
                 seconds_to_go_back =
-                    duration_cast<seconds>(now_tp - start_schedule.to_time_point()).count() %
+                    duration_cast<seconds>(now_tp - start_schedule).count() %
                     // NOLINTNEXTLINE(bugprone-implicit-widening-of-multiplication-result): well below int::max()
                     (SECONDS_PER_DAY * DAYS_PER_WEEK);
                 if (seconds_to_go_back < 0) {
@@ -229,11 +231,13 @@ std::vector<DateTime> calculate_start(const DateTime& in_now, const DateTime& in
                 break;
             }
 
-            start = DateTime(now_tp - seconds(seconds_to_go_back));
+            auto start_tp = now_tp - seconds(seconds_to_go_back);
+            start = DateTime(date::utc_clock::from_sys(start_tp));
 
             while (start <= end) {
                 start_times.push_back(start);
-                start = DateTime(start.to_time_point() + seconds(seconds_to_go_forward));
+                start_tp += seconds(seconds_to_go_forward);
+                start = DateTime(date::utc_clock::from_sys(start_tp));
             }
         }
         break;
