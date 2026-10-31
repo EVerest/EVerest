@@ -377,4 +377,45 @@ TEST(ParseConfigFile, DirectoryNamesTheReason) {
     EXPECT_NE(errors.find("Is a directory"), std::string::npos) << errors;
 }
 
+// Every per-bridge identifier in the multi-bridge example must expand "##", otherwise two bridges
+// share an EVerest module, its MQTT topics or a tap address.
+TEST(ParseConfigFile, MultiBridgeExampleGivesEachBridgeItsOwnIdentifiers) {
+    std::ifstream shipped(std::string(CB_CONFIG_DIR) + "/config-multi-bridge.yaml");
+    std::stringstream content;
+    content << shipped.rdbuf();
+    auto config = content.str();
+    for (std::string const section : {"plc", "evse_bsp"}) {
+        auto const disabled = section + ":\n  enable: false";
+        ASSERT_EQ(count(config, disabled), 1u) << disabled;
+        config.replace(config.find(disabled), disabled.size(), section + ":\n  enable: true");
+    }
+
+    auto pattern = (std::filesystem::path(testing::TempDir()) / "parse_config_XXXXXX").string();
+    ASSERT_NE(mkdtemp(pattern.data()), nullptr);
+    auto path = std::filesystem::path(pattern) / "config.yaml";
+    {
+        std::ofstream file(path);
+        file << config;
+        ASSERT_TRUE(file.good()) << path;
+    }
+    auto configs = charge_bridge::utilities::parse_config_multi(path.string());
+    std::filesystem::remove_all(pattern);
+
+    ASSERT_EQ(configs.size(), 2u);
+    for (auto const& c : configs) {
+        ASSERT_TRUE(c.plc.has_value());
+        ASSERT_TRUE(c.bsp.has_value());
+    }
+    auto const& a = configs[0];
+    auto const& b = configs[1];
+    EXPECT_EQ(a.plc->plc_tap, "cb_1_tap0");
+    EXPECT_EQ(b.plc->plc_tap, "cb_2_tap0");
+    EXPECT_EQ(a.plc->plc_ip, "172.25.1.1");
+    EXPECT_EQ(b.plc->plc_ip, "172.25.2.1");
+    EXPECT_EQ(a.bsp->api.evse.module_id, "bsp_1");
+    EXPECT_EQ(b.bsp->api.evse.module_id, "bsp_2");
+    EXPECT_EQ(a.bsp->api.ovm.module_id, "ovm_1");
+    EXPECT_EQ(b.bsp->api.ovm.module_id, "ovm_2");
+}
+
 } // namespace
