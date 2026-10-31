@@ -166,16 +166,16 @@ TEST_F(Ocpp16KeyMappingsTest, non_connection_security_ctrlr_target_is_allowed) {
     // the ban covers the connection fallback CVs, not the whole SecurityCtrlr component
     const auto yaml_file = write_yaml_file("security_other.yaml", R"yaml(
 mappings:
-  - ocpp16_key: MyCertificateEntries
+  - ocpp16_key: MyVendorSecuritySetting
     component:
       name: SecurityCtrlr
     variable:
-      name: CertificateEntries
+      name: VendorSecuritySetting
 )yaml");
 
     const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
     ASSERT_EQ(mappings.size(), 1);
-    ASSERT_TRUE(mappings.find("MyCertificateEntries") != mappings.end());
+    ASSERT_TRUE(mappings.find("MyVendorSecuritySetting") != mappings.end());
 }
 
 TEST_F(Ocpp16KeyMappingsTest, override_of_ocpp16_legacy_ctrlr_key_is_accepted) {
@@ -253,6 +253,60 @@ mappings:
 )yaml");
 
     EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_keys_sharing_target_throw) {
+    const auto yaml_file = write_yaml_file("custom_shared_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorFoo
+    component:
+      name: VendorCtrlr
+    variable:
+      name: FooSetting
+  - ocpp16_key: VendorFooAlias
+    component:
+      name: VendorCtrlr
+    variable:
+      name: FooSetting
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_key_targeting_builtin_mapping_throws) {
+    const auto yaml_file = write_yaml_file("custom_builtin_target.yaml", R"yaml(
+mappings:
+  - ocpp16_key: MyHeartbeat
+    component:
+      name: OCPPCommCtrlr
+    variable:
+      name: HeartbeatInterval
+)yaml");
+
+    EXPECT_THROW((void)load_ocpp16_key_mappings_from_yaml(yaml_file), Ocpp16KeyMappingsError);
+}
+
+TEST_F(Ocpp16KeyMappingsTest, custom_keys_with_targets_differing_by_evse_are_accepted) {
+    const auto yaml_file = write_yaml_file("custom_evse_targets.yaml", R"yaml(
+mappings:
+  - ocpp16_key: VendorEvse1
+    component:
+      name: VendorCtrlr
+      evse:
+        id: 1
+    variable:
+      name: PerEvseSetting
+  - ocpp16_key: VendorEvse2
+    component:
+      name: VendorCtrlr
+      evse:
+        id: 2
+    variable:
+      name: PerEvseSetting
+)yaml");
+
+    const auto mappings = load_ocpp16_key_mappings_from_yaml(yaml_file);
+    EXPECT_EQ(mappings.size(), 2);
 }
 
 } // namespace ocpp::v2
