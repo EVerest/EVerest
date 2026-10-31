@@ -15,6 +15,7 @@
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 // insert your custom include headers here
 #include <fmt/format.h>
+#include <optional>
 // ev@75ac1216-19eb-4182-a85c-820f1fc2c091:v1
 
 namespace module {
@@ -407,9 +408,12 @@ private:
     void start_self_test();
     bool send_to_imd(const uint16_t& command, const uint16_t& value);
     void read_imd_values();
-    std::string read_device_name();
-    std::string read_firmware_version();
-    bool check_for_faster_cablecheck();
+    bool read_device_identity();
+    bool device_should_be_enabled() const;
+    bool write_device_enable_state();
+    std::optional<std::string> read_device_name();
+    std::optional<std::string> read_firmware_version();
+    std::optional<bool> check_for_faster_cablecheck();
     bool enable_faster_cable_check_mode();
     bool disable_faster_cable_check_mode();
     bool faster_cable_check_supported{false};
