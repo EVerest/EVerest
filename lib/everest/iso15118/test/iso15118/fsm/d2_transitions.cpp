@@ -1482,15 +1482,42 @@ SCENARIO("ISO 15118-2 SECC external VAS providers") {
                 selection.selected_service_list.push_back({42, 7});
                 secc.drive(selection);
 
-                THEN("OK, the provider is told about the selection and the machine moves on") {
+                THEN("OK, and the provider is not told before authorization [V2G2-774]") {
                     const auto res = secc.fsm.response<message_2::PaymentServiceSelectionResponse>();
                     REQUIRE(res.has_value());
                     REQUIRE(res->response_code == dt::ResponseCode::OK);
-                    REQUIRE(selected.has_value());
-                    REQUIRE(selected->size() == 1);
-                    REQUIRE(selected->front().service_id == 42);
-                    REQUIRE(selected->front().parameter_set_id == 7);
+                    REQUIRE_FALSE(selected.has_value());
                     REQUIRE(secc.fsm.state() == StateID::Authorization);
+                }
+
+                AND_WHEN("Authorization is still ongoing") {
+                    secc.drive(message_2::AuthorizationRequest{});
+
+                    THEN("The provider is still not told") {
+                        REQUIRE_FALSE(selected.has_value());
+                    }
+
+                    AND_WHEN("Authorization finishes") {
+                        secc.fsm.control(d20::AuthorizationResponse{true});
+                        secc.drive(message_2::AuthorizationRequest{});
+
+                        THEN("The provider is told about the selection") {
+                            REQUIRE(secc.fsm.state() == StateID::ChargeParameterDiscovery);
+                            REQUIRE(selected.has_value());
+                            REQUIRE(selected->size() == 1);
+                            REQUIRE(selected->front().service_id == 42);
+                            REQUIRE(selected->front().parameter_set_id == 7);
+                        }
+                    }
+
+                    AND_WHEN("Authorization is rejected") {
+                        secc.fsm.control(d20::AuthorizationResponse{false});
+                        secc.drive(message_2::AuthorizationRequest{});
+
+                        THEN("The provider is never told") {
+                            REQUIRE_FALSE(selected.has_value());
+                        }
+                    }
                 }
             }
         }

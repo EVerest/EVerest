@@ -139,6 +139,10 @@ Result Authorization::on_request(const message_2::Variant& received) {
 
     if (res.evse_processing == dt::EVSEProcessing::Finished) {
         m_ctx.stop_timeout(d20::TimeoutType::ONGOING);
+        // [V2G2-774]: the VAS agreement is complete with AuthorizationRes OK and Finished.
+        if (not m_ctx.session().selected_vas_services.empty()) {
+            m_ctx.feedback.selected_vas_services(m_ctx.session().selected_vas_services);
+        }
         return m_ctx.create_state<ChargeParameterDiscovery>();
     }
 

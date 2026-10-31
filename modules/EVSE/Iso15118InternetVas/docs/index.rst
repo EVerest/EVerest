@@ -23,7 +23,8 @@ How it works
     Internet Access service (Service ID 3) to the EV, offering HTTP and/or HTTPS
     access based on the module's configuration.
 2.  **Service Selection**: If the EV selects this service, the module initiates
-    the network setup.
+    the network setup once the EV is authorized, as the ISO 15118 stack only
+    reports the selection then ([V2G2-774] for ISO 15118-2).
 3.  **Network Setup**: The module executes a helper script,
     ``vas-internet-setup.sh``, to configure all necessary networking components.
     The script's behavior depends on the configuration and the services selected
