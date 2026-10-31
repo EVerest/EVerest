@@ -358,6 +358,38 @@ const ConfigCase cases[] = {
 INSTANTIATE_TEST_SUITE_P(Cases, ParseConfig, testing::ValuesIn(cases),
                          [](auto const& info) { return info.param.name; });
 
+// The shipped config with "emergency_input_non_latching: 0" replaced by `line` ("" drops the key).
+std::vector<charge_bridge::charge_bridge_config> load_with_emergency_input(std::string const& line) {
+    auto config = shipped_config();
+    std::string const key = "  emergency_input_non_latching: 0\n";
+    EXPECT_EQ(count(config, key), 1u);
+    config.replace(config.find(key), key.size(), line);
+
+    auto dir = (std::filesystem::path(testing::TempDir()) / "parse_config_XXXXXX").string();
+    EXPECT_NE(mkdtemp(dir.data()), nullptr);
+    auto path = std::filesystem::path(dir) / "config.yaml";
+    std::ofstream(path) << config;
+    auto configs = charge_bridge::utilities::parse_config_multi(path.string());
+    std::filesystem::remove_all(dir);
+    return configs;
+}
+
+TEST(ParseConfigSafety, EmergencyInputLatchesByDefault) {
+    for (auto const& line : {std::string(), std::string("  emergency_input_non_latching: 0\n")}) {
+        auto configs = load_with_emergency_input(line);
+        ASSERT_EQ(configs.size(), 1u) << line;
+        ASSERT_TRUE(configs.front().heartbeat.has_value());
+        EXPECT_EQ(configs.front().heartbeat->cb_config.safety.emergency_input_non_latching, 0) << line;
+    }
+}
+
+TEST(ParseConfigSafety, EmergencyInputNonLatchingIsPassedOn) {
+    auto configs = load_with_emergency_input("  emergency_input_non_latching: 1\n");
+    ASSERT_EQ(configs.size(), 1u);
+    ASSERT_TRUE(configs.front().heartbeat.has_value());
+    EXPECT_EQ(configs.front().heartbeat->cb_config.safety.emergency_input_non_latching, 1);
+}
+
 TEST(ParseConfigFile, MissingFileNamesTheReason) {
     testing::internal::CaptureStderr();
     auto configs = charge_bridge::utilities::parse_config_multi("/nonexistent/config.yaml");

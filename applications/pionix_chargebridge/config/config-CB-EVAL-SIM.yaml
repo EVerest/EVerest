@@ -26,6 +26,10 @@ safety:
   cp_avg_ms: 10
   inverted_emergency_input: 0
   enable_stop_charging_input: 1
+  # 0: an active emergency input latches the relays off until CP State A (default).
+  # 1: it clears as soon as the input is inactive again. Only for setups whose external safety
+  # controller latches real faults itself; the ChargeBridge then no longer does.
+  emergency_input_non_latching: 0
   relay_1:
     relay_mode: "PowerRelay"
     feedback_enabled: false

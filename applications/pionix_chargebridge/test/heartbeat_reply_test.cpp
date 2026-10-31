@@ -115,18 +115,19 @@ TEST(heartbeat_reply, the_wire_layout_is_frozen) {
 
 TEST(heartbeat_reply, the_config_layout_is_frozen) {
     // The config grows by station_id and cb_type as its last fields, which is what the version bump
-    // announces (together with the cb-session-v1 heartbeat trailer, see below).
-    EXPECT_EQ(CB_CONFIG_VERSION, 6);
-    EXPECT_EQ(sizeof(CbConfig), 226u);
-    EXPECT_EQ(offsetof(CbConfig, station_id), 224u);
-    EXPECT_EQ(offsetof(CbConfig, cb_type), 225u);
+    // announces (together with the cb-session-v1 heartbeat trailer, see below). v7 appended
+    // SafetyConfig.emergency_input_non_latching, which moved everything after the safety block up by one.
+    EXPECT_EQ(CB_CONFIG_VERSION, 7);
+    EXPECT_EQ(sizeof(CbConfig), 227u);
+    EXPECT_EQ(offsetof(CbConfig, station_id), 225u);
+    EXPECT_EQ(offsetof(CbConfig, cb_type), 226u);
     // The heartbeat is the config plus session_id (4), session_flags (1) and the host ports (2 + 2).
-    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_id), 226u);
-    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_flags), 230u);
-    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_can_port), 231u);
-    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_plc_port), 233u);
-    EXPECT_EQ(sizeof(CbHeartbeatPacket), 235u);
-    EXPECT_EQ(CB_HEARTBEAT_PACKET_LEGACY_SIZE, 231u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_id), 227u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, session_flags), 231u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_can_port), 232u);
+    EXPECT_EQ(offsetof(CbHeartbeatPacket, host_plc_port), 234u);
+    EXPECT_EQ(sizeof(CbHeartbeatPacket), 236u);
+    EXPECT_EQ(CB_HEARTBEAT_PACKET_LEGACY_SIZE, 232u);
 }
 
 TEST(heartbeat_reply, the_message_ids_are_frozen) {

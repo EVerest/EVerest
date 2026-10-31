@@ -108,6 +108,8 @@ typedef struct CB_COMPILER_ATTR_PACK _safety_config {
 	uint8_t inverted_emergency_input; // 0: normal operation, 1: emergency input is inverted
 	uint8_t temperature_limit_C; // Over-temperature limit in degC for any ADC channel in CBA_OverTemp mode. Relays latch off if a temperature channel exceeds this for 10ms. Setting this to 0 disables the feature.
 	uint8_t enable_stop_charging_input; // 0: stop_charging input disabled (no action), 1: enabled (default)
+	uint8_t emergency_input_non_latching; // 0: emergency input latches until CP State A (default), 1: it follows the
+										  // (debounced) input. Fault latching is then up to the external safety controller.
 } SafetyConfig;
 
 typedef struct CB_COMPILER_ATTR_PACK _CbGpioConfig {
@@ -153,7 +155,7 @@ typedef struct CB_COMPILER_ATTR_PACK _CbAdcConfig {
 
 // Final complete config struct
 
-#define CB_CONFIG_VERSION 6
+#define CB_CONFIG_VERSION 7
 typedef struct CB_COMPILER_ATTR_PACK _cb_config {
 	uint32_t config_version;
 	SafetyConfig safety;
