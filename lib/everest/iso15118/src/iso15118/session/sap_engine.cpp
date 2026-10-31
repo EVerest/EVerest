@@ -88,13 +88,13 @@ bool SapEngine::on_packet(io::v2gtp::PayloadType payload_type, const io::StreamI
         return true;
     }
 
-    // ISO 15118-20 mandates TLS ([V2G20-2677]), so there is no conformant plaintext -20 session. Unlike
+    // ISO 15118-20 mandates TLS 1.3 ([V2G20-2356]), so there is no conformant plaintext -20 session. Unlike
     // DIN SPEC 70121, which secc_sap excludes on TLS outright, the negotiation is deliberately NOT
     // refused: unsecured -20 stays usable for bring-up, and ENFORCE_NO_TLS deployments that leave -20 in
     // the offer keep working instead of failing every session. The deviation is logged so it is noticed.
     if (protocol_id.value() == ProtocolId::ISO15118_20 and not custom_selected and not tls_active) {
         logf_warning("Negotiated ISO 15118-20 (%s) on an unsecured connection. ISO 15118-20 mandates TLS "
-                     "[V2G20-2677], so this session is not standard-conformant",
+                     "[V2G20-2356], so this session is not standard-conformant",
                      selected_namespace.c_str());
     }
 

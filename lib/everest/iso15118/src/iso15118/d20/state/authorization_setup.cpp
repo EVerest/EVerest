@@ -31,7 +31,7 @@ message_20::AuthorizationSetupResponse handle_request(const message_20::Authoriz
     session.offered_services.cert_install_service = cert_install_service;
 
     if (authorization_services.empty()) {
-        logf_warning("authorization_services was not set. Setting EIM as auth_mode");
+        logf_warning("No authorization service left to offer, offering EIM");
         res.authorization_services = {dt::Authorization::EIM};
     } else {
         res.authorization_services = everest::lib::util::fixed_vector<dt::Authorization, 2>(authorization_services);
