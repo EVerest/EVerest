@@ -178,24 +178,6 @@ bool is_emaid(const std::string& stripped) {
     return true;
 }
 
-// Annex F fixes the DomainComponent of every leaf profile but the contract certificate: "CPO" for the SECC
-// (Table F.2), "CPS" for the provisioning service (Table F.3), "OEM" for the provisioning certificate
-// (Table F.5) and "V2G" for the root (Table F.1). A certificate carrying one of them is not a contract.
-bool names_another_profile(X509* cert) {
-    static constexpr std::array<const char*, 4> other_profiles{"CPO", "CPS", "OEM", "V2G"};
-    X509_NAME* subject = X509_get_subject_name(cert);
-    for (int i = X509_NAME_get_index_by_NID(subject, NID_domainComponent, -1); i >= 0;
-         i = X509_NAME_get_index_by_NID(subject, NID_domainComponent, i)) {
-        const ASN1_STRING* value = X509_NAME_ENTRY_get_data(X509_NAME_get_entry(subject, i));
-        const std::string dc(reinterpret_cast<const char*>(ASN1_STRING_get0_data(value)),
-                             static_cast<std::size_t>(ASN1_STRING_length(value)));
-        if (std::find(other_profiles.begin(), other_profiles.end(), dc) != other_profiles.end()) {
-            return true;
-        }
-    }
-    return false;
-}
-
 } // namespace
 
 ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& leaf_der,
@@ -226,7 +208,7 @@ ContractValidationResult validate_contract_chain(const std::vector<uint8_t>& lea
         result.response_code = dt::ResponseCode::FAILED;
         return result;
     }
-    if (names_another_profile(leaf.get())) {
+    if (x509::subject_names_non_contract_profile(leaf.get())) {
         logf_error("PnC: the certificate DomainComponent names another Annex F profile, not a contract certificate");
         result.response_code = dt::ResponseCode::FAILED;
         return result;
