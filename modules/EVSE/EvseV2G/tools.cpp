@@ -5,6 +5,7 @@
 #include "log.hpp"
 #include <algorithm>
 #include <arpa/inet.h>
+#include <cstdint>
 #include <dirent.h>
 #include <errno.h>
 #include <fcntl.h>
@@ -45,7 +46,7 @@ int generate_random_data(void* dest, size_t dest_len) {
         return -1;
 
     while (len < dest_len) {
-        ssize_t rv = safe_read(fd, dest, dest_len);
+        ssize_t rv = safe_read(fd, static_cast<std::uint8_t*>(dest) + len, dest_len - len);
 
         if (rv < 0) {
             close(fd);
