@@ -15,6 +15,7 @@
 #include "v2g.hpp"
 #include "v2g_ctx.hpp"
 
+#include <array>
 #include <cstring>
 #include <initializer_list>
 #include <memory>
@@ -267,6 +268,8 @@ std::vector<std::uint8_t> self_signed_contract_certificate_der(const char* commo
     return result;
 }
 
+using gen_challenge_t = std::array<std::uint8_t, GEN_CHALLENGE_SIZE>;
+
 class IsoServerPaymentTest : public testing::Test {
 protected:
     std::unique_ptr<v2g_context> ctx;
@@ -313,7 +316,7 @@ protected:
         conn->pubkey = nullptr;
     }
 
-    void select_contract(const std::vector<iso2_paymentOptionType>& offered) {
+    v2g_event select_contract(const std::vector<iso2_paymentOptionType>& offered) {
         ctx->evse_v2g_data.payment_option_list = offered;
         ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_SVCDETAIL_PAYMENTSVCSEL);
 
@@ -324,18 +327,23 @@ protected:
         req.SelectedServiceList.SelectedService.array[0].ServiceID = V2G_SERVICE_ID_CHARGING;
         req.SelectedServiceList.SelectedService.arrayLen = 1;
 
-        iso_handle_request(conn.get());
+        return iso_handle_request(conn.get());
     }
 
-    void send_payment_details(const std::vector<std::uint8_t>& certificate) {
+    v2g_event send_payment_details(const std::vector<std::uint8_t>& certificate) {
         ctx->session.iso_selected_payment_option = iso2_paymentOptionType_Contract;
         ctx->session.verify_contract_cert_chain = false;
         ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_PAYMENTDETAILS_CERTINST_CERTUPD);
 
-        request_payment_details(certificate);
+        return request_payment_details(certificate);
     }
 
     v2g_event request_payment_details(const std::vector<std::uint8_t>& certificate) {
+        return request_payment_details(certificate, {});
+    }
+
+    v2g_event request_payment_details(const std::vector<std::uint8_t>& certificate,
+                                      const std::vector<std::uint8_t>& sub_certificate) {
         init_iso2_BodyType(&exi_in->V2G_Message.Body);
         exi_in->V2G_Message.Body.PaymentDetailsReq_isUsed = 1;
         auto& req = exi_in->V2G_Message.Body.PaymentDetailsReq;
@@ -344,32 +352,65 @@ protected:
         req.eMAID.charactersLen = sizeof(test_emaid) - 1;
         std::memcpy(req.ContractSignatureCertChain.Certificate.bytes, certificate.data(), certificate.size());
         req.ContractSignatureCertChain.Certificate.bytesLen = certificate.size();
+        if (not sub_certificate.empty()) {
+            auto& sub_certificates = req.ContractSignatureCertChain.SubCertificates;
+            req.ContractSignatureCertChain.SubCertificates_isUsed = 1;
+            std::memcpy(sub_certificates.Certificate.array[0].bytes, sub_certificate.data(), sub_certificate.size());
+            sub_certificates.Certificate.array[0].bytesLen = sub_certificate.size();
+            sub_certificates.Certificate.arrayLen = 1;
+        }
 
         return iso_handle_request(conn.get());
     }
 
-    void send_signed_authorization() {
+    // Stands in for an accepted PaymentDetailsReq
+    gen_challenge_t issue_challenge() {
+        gen_challenge_t challenge{};
+        challenge.fill(0x5A);
+        ctx->session.gen_challenge = challenge;
+        return challenge;
+    }
+
+    v2g_event send_signed_authorization(const gen_challenge_t& challenge) {
         ctx->session.iso_selected_payment_option = iso2_paymentOptionType_Contract;
         ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_AUTHORIZATION);
         ctx->last_v2g_msg = V2G_PAYMENT_DETAILS_MSG;
 
+        init_iso2_BodyType(&exi_in->V2G_Message.Body);
         exi_in->V2G_Message.Header.Signature_isUsed = 1;
         exi_in->V2G_Message.Body.AuthorizationReq_isUsed = 1;
         auto& req = exi_in->V2G_Message.Body.AuthorizationReq;
         init_iso2_AuthorizationReqType(&req);
         req.GenChallenge_isUsed = 1;
-        req.GenChallenge.bytesLen = sizeof(ctx->session.gen_challenge);
-        std::memcpy(req.GenChallenge.bytes, ctx->session.gen_challenge, sizeof(ctx->session.gen_challenge));
+        req.GenChallenge.bytesLen = GEN_CHALLENGE_SIZE;
+        std::memcpy(req.GenChallenge.bytes, challenge.data(), GEN_CHALLENGE_SIZE);
 
-        iso_handle_request(conn.get());
+        return iso_handle_request(conn.get());
+    }
+
+    v2g_event send_eim_authorization() {
+        ctx->session.iso_selected_payment_option = iso2_paymentOptionType_ExternalPayment;
+        ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_AUTHORIZATION);
+        ctx->last_v2g_msg = V2G_PAYMENT_SERVICE_SELECTION_MSG;
+
+        init_iso2_BodyType(&exi_in->V2G_Message.Body);
+        exi_in->V2G_Message.Header.Signature_isUsed = 0;
+        exi_in->V2G_Message.Body.AuthorizationReq_isUsed = 1;
+        init_iso2_AuthorizationReqType(&exi_in->V2G_Message.Body.AuthorizationReq);
+
+        return iso_handle_request(conn.get());
     }
 
     iso2_responseCodeType payment_service_selection_response() const {
         return exi_out->V2G_Message.Body.PaymentServiceSelectionRes.ResponseCode;
     }
 
+    const iso2_PaymentDetailsResType& payment_details_res() const {
+        return exi_out->V2G_Message.Body.PaymentDetailsRes;
+    }
+
     iso2_responseCodeType payment_details_response() const {
-        return exi_out->V2G_Message.Body.PaymentDetailsRes.ResponseCode;
+        return payment_details_res().ResponseCode;
     }
 
     iso2_responseCodeType authorization_response() const {
@@ -395,6 +436,14 @@ TEST_F(IsoServerPaymentTest, contract_rejected_when_not_offered) {
     EXPECT_NE(ctx->state, static_cast<int>(iso_dc_state_id::WAIT_FOR_PAYMENTDETAILS_CERTINST_CERTUPD));
 }
 
+TEST_F(IsoServerPaymentTest, failed_payment_service_selection_leaves_termination_to_the_ev) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tcp_connection();
+
+    EXPECT_EQ(select_contract({iso2_paymentOptionType_ExternalPayment}), V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(payment_service_selection_response(), iso2_responseCodeType_FAILED_PaymentSelectionInvalid);
+}
+
 TEST_F(IsoServerPaymentTest, payment_details_accepts_parsable_certificate) {
     use_tls_connection();
     const auto certificate = self_signed_contract_certificate_der(test_emaid);
@@ -404,6 +453,12 @@ TEST_F(IsoServerPaymentTest, payment_details_accepts_parsable_certificate) {
 
     EXPECT_EQ(payment_details_response(), iso2_responseCodeType_OK);
     EXPECT_NE(contract_public_key, nullptr);
+    ASSERT_TRUE(ctx->session.gen_challenge.has_value());
+    EXPECT_EQ(payment_details_res().GenChallenge.bytesLen, GEN_CHALLENGE_SIZE);
+    EXPECT_EQ(
+        std::memcmp(payment_details_res().GenChallenge.bytes, ctx->session.gen_challenge->data(), GEN_CHALLENGE_SIZE),
+        0);
+    EXPECT_NE(payment_details_res().EVSETimeStamp, 0);
 }
 
 TEST_F(IsoServerPaymentTest, payment_details_rejects_unparsable_certificate) {
@@ -414,6 +469,10 @@ TEST_F(IsoServerPaymentTest, payment_details_rejects_unparsable_certificate) {
 
     EXPECT_EQ(payment_details_response(), iso2_responseCodeType_FAILED_CertChainError);
     EXPECT_EQ(contract_public_key, nullptr);
+    EXPECT_FALSE(ctx->session.gen_challenge.has_value());
+    // mandatory response fields are filled on the error path as well
+    EXPECT_EQ(payment_details_res().GenChallenge.bytesLen, GEN_CHALLENGE_SIZE);
+    EXPECT_NE(payment_details_res().EVSETimeStamp, 0);
 }
 
 TEST_F(IsoServerPaymentTest, unparsable_certificate_after_rejected_contract_selection) {
@@ -440,18 +499,127 @@ TEST_F(IsoServerPaymentTest, payment_details_without_public_key_slot) {
 
 TEST_F(IsoServerPaymentTest, authorization_without_public_key_slot) {
     use_tcp_connection();
+    const auto challenge = issue_challenge();
 
-    send_signed_authorization();
+    send_signed_authorization(challenge);
 
     EXPECT_EQ(authorization_response(), iso2_responseCodeType_FAILED_SignatureError);
 }
 
+TEST_F(IsoServerPaymentTest, failed_payment_details_ends_the_session) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tls_connection();
+    const auto certificate = self_signed_contract_certificate_der(test_emaid);
+    ASSERT_FALSE(certificate.empty());
+    ctx->session.iso_selected_payment_option = iso2_paymentOptionType_Contract;
+    ctx->session.verify_contract_cert_chain = false;
+    ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_PAYMENTDETAILS_CERTINST_CERTUPD);
+
+    const auto next_event = request_payment_details(certificate, std::vector<std::uint8_t>(64, 0xA5));
+
+    EXPECT_EQ(payment_details_response(), iso2_responseCodeType_FAILED_CertChainError);
+    EXPECT_EQ(next_event, V2G_EVENT_SEND_AND_TERMINATE);
+    EXPECT_EQ(contract_public_key, nullptr);
+    EXPECT_FALSE(ctx->session.provided_id_token.has_value());
+    EXPECT_FALSE(ctx->session.gen_challenge.has_value());
+    EXPECT_EQ(payment_details_res().GenChallenge.bytesLen, GEN_CHALLENGE_SIZE);
+    EXPECT_NE(payment_details_res().EVSETimeStamp, 0);
+}
+
+TEST_F(IsoServerPaymentTest, new_session_does_not_inherit_contract_identity) {
+    use_tls_connection();
+    const auto certificate = self_signed_contract_certificate_der(test_emaid);
+    ASSERT_FALSE(certificate.empty());
+    send_payment_details(certificate);
+    ASSERT_EQ(payment_details_response(), iso2_responseCodeType_OK);
+    ASSERT_TRUE(ctx->session.provided_id_token.has_value());
+    ASSERT_TRUE(ctx->session.gen_challenge.has_value());
+
+    v2g_ctx_init_charging_session(ctx.get(), false);
+
+    EXPECT_FALSE(ctx->session.provided_id_token.has_value());
+    EXPECT_FALSE(ctx->session.gen_challenge.has_value());
+}
+
+TEST_F(IsoServerPaymentTest, rejected_contract_cannot_authorize_with_the_earlier_identity) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tls_connection();
+    const auto earlier_certificate = self_signed_contract_certificate_der(test_emaid);
+    ASSERT_FALSE(earlier_certificate.empty());
+    send_payment_details(earlier_certificate);
+    ASSERT_EQ(payment_details_response(), iso2_responseCodeType_OK);
+    ASSERT_NE(contract_public_key, nullptr);
+    ASSERT_TRUE(ctx->session.gen_challenge.has_value());
+    const auto earlier_challenge = ctx->session.gen_challenge.value();
+
+    // A second PaymentDetailsReq in the same session is rejected because of its chain
+    const auto own_certificate = self_signed_contract_certificate_der(test_emaid);
+    ASSERT_FALSE(own_certificate.empty());
+    ctx->state = static_cast<int>(iso_dc_state_id::WAIT_FOR_PAYMENTDETAILS_CERTINST_CERTUPD);
+    request_payment_details(own_certificate, std::vector<std::uint8_t>(64, 0xA5));
+    ASSERT_EQ(payment_details_response(), iso2_responseCodeType_FAILED_CertChainError);
+
+    // Replaying the earlier challenge must not reach signature verification with the earlier key
+    const auto next_event = send_signed_authorization(earlier_challenge);
+
+    EXPECT_EQ(authorization_response(), iso2_responseCodeType_FAILED_ChallengeInvalid);
+    EXPECT_EQ(next_event, V2G_EVENT_SEND_AND_TERMINATE);
+    EXPECT_FALSE(ctx->session.provided_id_token.has_value());
+    EXPECT_EQ(contract_public_key, nullptr);
+}
+
+TEST_F(IsoServerPaymentTest, authorization_without_issued_challenge_is_rejected) {
+    use_tls_connection();
+    ASSERT_FALSE(ctx->session.gen_challenge.has_value());
+
+    send_signed_authorization(gen_challenge_t{});
+
+    EXPECT_EQ(authorization_response(), iso2_responseCodeType_FAILED_ChallengeInvalid);
+}
+
 TEST_F(IsoServerPaymentTest, authorization_without_public_key) {
     use_tls_connection();
+    const auto challenge = issue_challenge();
 
-    send_signed_authorization();
+    send_signed_authorization(challenge);
 
     EXPECT_EQ(authorization_response(), iso2_responseCodeType_FAILED_SignatureError);
+}
+
+TEST_F(IsoServerPaymentTest, failed_contract_authorization_ends_the_session) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tls_connection();
+    const auto challenge = issue_challenge();
+
+    const auto next_event = send_signed_authorization(challenge);
+
+    ASSERT_EQ(authorization_response(), iso2_responseCodeType_FAILED_SignatureError);
+    EXPECT_EQ(next_event, V2G_EVENT_SEND_AND_TERMINATE);
+}
+
+TEST_F(IsoServerPaymentTest, failed_eim_authorization_ends_the_session) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tcp_connection();
+    ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = iso2_EVSEProcessingType_Finished;
+    ctx->session.authorization_rejected = true;
+
+    const auto next_event = send_eim_authorization();
+
+    ASSERT_EQ(authorization_response(), iso2_responseCodeType_FAILED);
+    EXPECT_EQ(next_event, V2G_EVENT_SEND_AND_TERMINATE);
+}
+
+TEST_F(IsoServerPaymentTest, eim_authorization_ongoing_keeps_the_session) {
+    ctx->terminate_connection_on_failed_response = false;
+    use_tcp_connection();
+    ctx->evse_v2g_data.evse_processing[PHASE_AUTH] = iso2_EVSEProcessingType_Ongoing_WaitingForCustomerInteraction;
+    ctx->session.auth_timeout_eim = 0;
+
+    const auto next_event = send_eim_authorization();
+
+    ASSERT_EQ(authorization_response(), iso2_responseCodeType_OK);
+    EXPECT_EQ(next_event, V2G_EVENT_NO_EVENT);
+    EXPECT_EQ(ctx->state, static_cast<int>(iso_dc_state_id::WAIT_FOR_AUTHORIZATION));
 }
 
 } // namespace
