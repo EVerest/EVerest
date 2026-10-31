@@ -56,8 +56,10 @@ class PyEVJosevModule():
 
         self._setup = m.say_hello()
 
-        etc_certs_path = m.info.paths.etc / EVEREST_CERTS_SUB_DIR
-        set_PKI_PATH(str(etc_certs_path.resolve()))
+        pki_path = self._setup.configs.module['pki_path']
+        if not pki_path:
+            pki_path = m.info.paths.etc / EVEREST_CERTS_SUB_DIR
+        set_PKI_PATH(str(Path(pki_path).resolve()))
 
         if self._setup.configs.module['enable_tls_1_3']:
             enable_tls_1_3()
