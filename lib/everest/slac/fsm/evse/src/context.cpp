@@ -11,12 +11,13 @@ namespace slac::fsm::evse {
 void EvseSlacConfig::generate_nmk() {
     const std::string CHARACTERS = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZ";
 
+    // Every character comes from std::random_device: a PRNG seeded once would cap the key at the seed's
+    // 32 bits, small enough to search for the NMK matching the NID broadcast in beacons.
     std::random_device random_device;
-    std::mt19937 generator(random_device());
     std::uniform_int_distribution<> distribution(0, CHARACTERS.size() - 1);
 
     for (std::size_t i = 0; i < slac::defs::NMK_LEN; ++i) {
-        session_nmk[i] = (uint8_t)CHARACTERS[distribution(generator)];
+        session_nmk[i] = (uint8_t)CHARACTERS[distribution(random_device)];
     }
 }
 
