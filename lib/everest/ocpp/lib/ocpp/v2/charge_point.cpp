@@ -1092,6 +1092,17 @@ void ChargePoint::message_callback(const std::string& message) {
                                                         CiString<255>(message, StringTooLarge::Truncate), true,
                                                         utils::is_critical(security_event));
         return;
+    } catch (const std::exception& e) {
+        // Anything escaping this callback ends the websocket thread and with it the module
+        this->logging->central_system("Unknown", message);
+        EVLOG_error << "Exception during reception of message: " << e.what();
+        this->message_dispatcher->dispatch_call_error(
+            CallError(MessageId("-1"), "InternalError", "Internal error while receiving the message", json({})));
+        const auto& security_event = ocpp::security_events::INVALIDMESSAGES;
+        this->security->security_event_notification_req(CiString<50>(security_event, StringTooLarge::Truncate),
+                                                        CiString<255>(message, StringTooLarge::Truncate), true,
+                                                        utils::is_critical(security_event));
+        return;
     }
 
     if (enhanced_message.messageTypeId == MessageTypeId::UNKNOWN) {
@@ -1220,6 +1231,17 @@ void ChargePoint::message_callback(const std::string& message) {
             auto call_error = CallError(enhanced_message.uniqueId, "FormationViolation", e.what(), json({}));
             this->message_dispatcher->dispatch_call_error(call_error);
         }
+    } catch (const std::exception& e) {
+        // Anything escaping this callback ends the websocket thread and with it the module, e.g. a database
+        // error for a request with more ids than SQLite takes as parameters. The description stays generic,
+        // the exception text is internal.
+        EVLOG_error << "Exception during handling of message: " << e.what();
+        if (enhanced_message.messageTypeId != MessageTypeId::CALL) {
+            return; // CALLERROR shall only follow on a CALL message
+        }
+        auto call_error = CallError(enhanced_message.uniqueId, "InternalError",
+                                    "Internal error while handling the message", json({}));
+        this->message_dispatcher->dispatch_call_error(call_error);
     }
 }
 
