@@ -293,11 +293,20 @@ session::feedback::Signal Session::teardown_signal() const {
     return Signal::DLINK_ERROR;
 }
 
+void Session::release_stale_pause_contexts() {
+    const bool paused = visit_engine([](const auto& e) { return e.is_paused(); });
+    if (unplugged or (v2g_session_established and not paused)) {
+        pause_ctx.reset();
+        d2_pause_ctx.reset();
+    }
+}
+
 void Session::finish_session() {
     if (finished_reported) {
         return;
     }
     finished_reported = true;
+    release_stale_pause_contexts();
 
     connection->close(); // idempotent; no-op if the EV already closed and the EOF path cleaned up
     open_power_path();
@@ -674,6 +683,7 @@ void Session::close() {
         return; // already closed and signaled
     }
     finished_reported = true;
+    release_stale_pause_contexts();
     connection->close();
     open_power_path();
     feedback.signal(session::feedback::Signal::DLINK_TERMINATE);
