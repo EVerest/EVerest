@@ -41,14 +41,21 @@ How it works
       ``ev_interface`` to enable the EV to configure an IPv6 address using SLAAC.
       This also includes advertising Recursive DNS Servers (RDNSS) for IPv6.
     - The module determines which ports to open based on the parameter sets
-      (HTTP, HTTPS) selected by the EV. The forwarding is then restricted to
-      allow only TCP traffic on the selected ports (80 for HTTP, 443 for HTTPS).
+      (HTTP, HTTPS) selected by the EV. The EV may only reach public addresses
+      via the ``modem_interface``, with TCP on the selected ports (80 for HTTP,
+      443 for HTTPS) and DNS to the announced resolvers; everything else it
+      sends through the charger is dropped. Private, link-local and multicast
+      ranges are always blocked; backend networks reachable via the
+      ``modem_interface`` with public addresses are added with
+      ``EXTRA_BLOCKED_DESTINATIONS_V4`` and ``EXTRA_BLOCKED_DESTINATIONS_V6`` in
+      ``/etc/default/vas-internet``.
     - The example script uses public DNS servers (Google's 8.8.8.8 for IPv4
-      and 2001:4860:4860::8888 for IPv6). This can be changed in the script.
+      and 2001:4860:4860::8888 for IPv6). They are set with ``DNS_SERVERS_V4``
+      and ``DNS_SERVERS_V6`` in ``/etc/default/vas-internet``.
 4.  **Session Teardown**: When the charging session ends (signaled by the
     ``evse_manager``), the module calls the same script to automatically tear
-    down the network configuration, stopping the services and removing all
-    forwarding and NAT rules.
+    down the network configuration, stopping the services, removing all
+    forwarding and NAT rules and restoring the previous forwarding setting.
 
 Requirements
 ============
