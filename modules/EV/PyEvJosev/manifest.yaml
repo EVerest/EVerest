@@ -59,6 +59,12 @@ config:
       and is the most likely to be selected. The services should be separated only with commas.
     type: string
     default: "DC,DC_BPT"
+  pki_path:
+    description: >-
+      Directory holding the EV certificates and keys. A contract certificate installed via the EVSE is
+      stored here as well. Empty selects the certs directory of the EVerest etc path.
+    type: string
+    default: ""
 provides:
   ev:
     interface: ISO15118_ev
