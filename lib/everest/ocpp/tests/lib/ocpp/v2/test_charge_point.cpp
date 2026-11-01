@@ -803,6 +803,7 @@ class TestChargePoint : public ChargePoint {
 public:
     using ChargePoint::get_certificate_status_from_csms;
     using ChargePoint::handle_message;
+    using ChargePoint::message_callback;
 
     TestChargePoint(const std::map<std::int32_t, std::int32_t>& evse_connector_structure,
                     std::shared_ptr<DeviceModel> device_model, std::shared_ptr<DatabaseHandler> database_handler,
@@ -1407,6 +1408,32 @@ TEST_P(ChargePointCsmsReplyTestFixtureV2, MalformedGetCertificateStatusResponse_
     } catch (const std::exception& e) {
         ADD_FAILURE() << "get_certificate_status_from_csms threw: " << e.what();
     }
+}
+
+/// \brief A registered charging station whose DataTransfer handler throws
+class ChargePointThrowingHandlerTestFixtureV2 : public ChargePointCsmsReplyTestFixtureV2 {
+public:
+    void SetUp() override {
+        callbacks.data_transfer_callback = [](const DataTransferRequest&) -> DataTransferResponse {
+            throw std::runtime_error("simulated handler failure");
+        };
+        ChargePointCsmsReplyTestFixtureV2::SetUp();
+    }
+};
+
+TEST_F(ChargePointThrowingHandlerTestFixtureV2, ExceptionWhileHandlingACall_IsAnsweredWithInternalError) {
+    const json request = json::array({2, "throws", "DataTransfer", {{"vendorId", "test"}}});
+
+    EXPECT_NO_THROW(charge_point->message_callback(request.dump()));
+
+    while (const auto sent = csms.next_sent_message(std::chrono::seconds(5))) {
+        if (sent->at(MESSAGE_TYPE_ID) == 4 and sent->at(MESSAGE_ID) == "throws") {
+            EXPECT_EQ(sent->at(2), "InternalError");
+            EXPECT_EQ(sent->at(3).get<std::string>().find("simulated"), std::string::npos);
+            return;
+        }
+    }
+    FAIL() << "the request was not answered with a CALLERROR";
 }
 
 INSTANTIATE_TEST_SUITE_P(MalformedPayloads, ChargePointCsmsReplyTestFixtureV2,
