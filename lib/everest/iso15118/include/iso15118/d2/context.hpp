@@ -211,6 +211,9 @@ public:
     void set_contract_selected() {
         session_params.contract_selected = true;
     }
+    void set_selected_vas_services(const message_20::datatypes::VasSelectedServiceList& services) {
+        session_params.selected_vas_services = services;
+    }
     void set_certificate_services(bool install, bool update) {
         session_params.cert_install_selected = install;
         session_params.cert_update_selected = update;
