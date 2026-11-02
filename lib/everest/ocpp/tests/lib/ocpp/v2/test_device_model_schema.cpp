@@ -503,6 +503,8 @@ TEST_F(DeviceModelStorageSqliteNameKeyTest, stored_value_name_key_is_case_insens
     const auto values = storage.get_stored_values();
     ASSERT_EQ(values.size(), 1);
     EXPECT_EQ(values.at(0).value, "2");
+    EXPECT_EQ(values.at(0).component.name.get(), "evse");
+    EXPECT_EQ(values.at(0).variable.name.get(), "power");
     EXPECT_TRUE(storage.remove_stored_value(runtime_component, runtime_variable, AttributeEnum::Actual));
 }
 

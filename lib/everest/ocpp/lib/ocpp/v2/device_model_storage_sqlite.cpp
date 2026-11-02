@@ -374,8 +374,10 @@ SetVariableStatusEnum DeviceModelStorageSqlite::set_stored_value(const StoredVar
         "VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID, VALUE, VALUE_SOURCE, OWNER) VALUES (@component_name, "
         "@component_instance, @evse_id, @connector_id, @variable_name, @variable_instance, @type_id, @value, "
         "@value_source, @owner) ON CONFLICT (COMPONENT_NAME, COMPONENT_INSTANCE, EVSE_ID, CONNECTOR_ID, "
-        "VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID) DO UPDATE SET VALUE = excluded.VALUE, VALUE_SOURCE = "
-        "excluded.VALUE_SOURCE, OWNER = excluded.OWNER";
+        "VARIABLE_NAME, VARIABLE_INSTANCE, TYPE_ID) DO UPDATE SET COMPONENT_NAME = excluded.COMPONENT_NAME, "
+        "COMPONENT_INSTANCE = excluded.COMPONENT_INSTANCE, VARIABLE_NAME = excluded.VARIABLE_NAME, VARIABLE_INSTANCE "
+        "= excluded.VARIABLE_INSTANCE, VALUE = excluded.VALUE, VALUE_SOURCE = excluded.VALUE_SOURCE, OWNER = "
+        "excluded.OWNER";
 
     auto transaction = this->db->begin_transaction();
     auto upsert_stmt = this->db->new_statement(upsert_query);
