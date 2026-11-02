@@ -491,10 +491,10 @@ private:
     PowerSupplyMeasurementWaiter::Result
     wait_powersupply_DC_measurement(const PowerSupplyMeasurementWaiter::Condition& condition, const std::string& goal);
 
-    /// \brief Renders why a wait_powersupply_DC_measurement() call gave up, distinguishing a silent
-    /// measurement stream from a voltage that did not move.
-    static std::string describe_powersupply_wait_failure(const PowerSupplyMeasurementWaiter::Result& result,
-                                                         const std::string& goal);
+    /// \brief Renders why a wait_powersupply_DC_measurement() call gave up; see
+    /// PowerSupplyMeasurementWaiter::describe_failure().
+    std::string describe_powersupply_wait_failure(const PowerSupplyMeasurementWaiter::Result& result,
+                                                  const std::string& goal);
 
     PowerSupplyMeasurementWaiter::Result wait_powersupply_DC_voltage_reached(double target_voltage);
     PowerSupplyMeasurementWaiter::Result wait_powersupply_DC_below_voltage(double target_voltage);

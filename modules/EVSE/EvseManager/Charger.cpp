@@ -211,14 +211,22 @@ void Charger::run_state_machine() {
         // [V2G-DC-968] V2G_SECC_CPOscillator_Retain_Time expired: switch the oscillator off now,
         // whatever state we are in. The timer is anchored at the SessionStopRes send, not at the
         // EV's TCP close. One-shot: always disarm, even if the PWM is already off (e.g. dlink_*
-        // arrived first on the ISO-2 TLS path).
+        // arrived first on the ISO-2 TLS path). Held while an EV restart is pending: the HLC stack
+        // has accepted the new session, and ChargingPausedEV disarms the timer when it takes it.
         if (internal_context.session_stop_pwm_off_deadline.has_value() and
+            not internal_context.hlc_session_restarted_by_ev and
             std::chrono::steady_clock::now() >= internal_context.session_stop_pwm_off_deadline.value()) {
             internal_context.session_stop_pwm_off_deadline.reset();
             if (shared_context.pwm_running) {
                 session_log.evse(false, "CP oscillator retain time expired -> X1 [V2G-DC-968]");
                 cp_state_X1();
             }
+        }
+
+        // A restart is only taken by ChargingPausedEV: one that a stop or error overtook is dropped, which also
+        // releases the retain timer.
+        if (shared_context.current_state != EvseState::ChargingPausedEV) {
+            internal_context.hlc_session_restarted_by_ev = false;
         }
 
         switch (shared_context.current_state) {
@@ -2551,13 +2559,17 @@ types::iso15118::DcEvseMinimumLimits Charger::get_evse_min_hlc_limits() {
 }
 
 // HLC stack signalled a pause request for the lower layers.
-void Charger::dlink_pause() {
+Charger::DlinkOutcome Charger::dlink_pause() {
     Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_pause);
     if (shared_context.current_state == EvseState::Idle) {
         // Late teardown signal of an already-unplugged session (the D-LINK events trail the TCP
         // close): Idle has reset all session state -- do not re-arm hlc_charging_terminate_pause
         // into the next plug-in (it would park the fresh session in ChargingPausedEV without PWM).
-        return;
+        return DlinkOutcome::Applied;
+    }
+    if (internal_context.hlc_session_restarted_by_ev) {
+        // The old session's teardown trailing the EV's new session: none of it applies to the new one.
+        return DlinkOutcome::Ignored;
     }
     shared_context.hlc_allow_close_contactor = false;
     if (not internal_context.session_stop_pwm_off_deadline.has_value()) {
@@ -2570,16 +2582,21 @@ void Charger::dlink_pause() {
         cp_state_X1();
     }
     shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Pause;
+    return DlinkOutcome::Applied;
 }
 
 // HLC requested end of charging session, so we can stop the 5% PWM
-bool Charger::dlink_terminate() {
+Charger::DlinkOutcome Charger::dlink_terminate() {
     {
         Everest::scoped_lock_timeout lock(state_machine_mutex, Everest::MutexDescription::Charger_dlink_terminate);
+        if (internal_context.hlc_session_restarted_by_ev) {
+            // See dlink_pause(). The link carries the new session, so it is still established.
+            return DlinkOutcome::Ignored;
+        }
         shared_context.dlink_established = false;
         if (shared_context.current_state == EvseState::Idle) {
             // Late teardown signal of an already-unplugged session: see dlink_pause().
-            return false;
+            return DlinkOutcome::Applied;
         }
 
         // The HLC stack answers every data link loss with a terminate, taking it for a plug-out. On MCS the link
@@ -2604,7 +2621,7 @@ bool Charger::dlink_terminate() {
             internal_context.t_step_EF_return_pwm = 0.;
             internal_context.t_step_EF_return_ampere = 0.;
             shared_context.current_state = EvseState::T_step_EF;
-            return false;
+            return DlinkOutcome::Applied;
         }
         if (not link_lost_during_setup) {
             shared_context.hlc_allow_close_contactor = false;
@@ -2613,13 +2630,13 @@ bool Charger::dlink_terminate() {
                 cp_state_X1();
             }
             shared_context.hlc_charging_terminate_pause = HlcTerminatePause::Terminate;
-            return false;
+            return DlinkOutcome::Applied;
         }
         session_log.evse(false, "D-LINK_TERMINATE during session setup without SessionStop: data link lost, "
                                 "restarting as for D-LINK_ERROR");
     }
     dlink_error();
-    return true;
+    return DlinkOutcome::LinkLost;
 }
 
 // A positive SessionStopRes was sent: start the CP oscillator retain timer [V2G-DC-968]. The PWM
@@ -2682,9 +2699,10 @@ void Charger::dlink_error() {
             return;
         }
 
-        // The error path owns the CP sequence from here (t_step_X1/t_step_EF); a pending oscillator
-        // retain X1 must not interleave with it.
+        // The error path owns the CP sequence from here (t_step_X1/t_step_EF); neither a pending oscillator
+        // retain X1 nor a pending EV restart may interleave with it.
         internal_context.session_stop_pwm_off_deadline.reset();
+        internal_context.hlc_session_restarted_by_ev = false;
 
         shared_context.hlc_allow_close_contactor = false;
         hlc_failed = true;
