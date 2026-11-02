@@ -1070,25 +1070,8 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
 
         variable->attributes.push_back(attribute);
 
-        // Query all monitors
-        if (variable->db_id.has_value()) {
-            auto monitors = get_variable_monitors_from_db(variable->db_id.value());
-
-            for (auto& monitor_meta : monitors) {
-                // If monitor is not already contained in the list
-                const bool contained =
-                    std::find_if(std::begin(variable->monitors), std::end(variable->monitors),
-                                 [&monitor_meta](const auto& contained_monitor) {
-                                     return (contained_monitor.monitor.id == monitor_meta.monitor.id);
-                                 }) != std::end(variable->monitors);
-
-                if (!contained) {
-                    variable->monitors.push_back(std::move(monitor_meta));
-                }
-            }
-        }
-
         if (!variable_exists) {
+            variable->monitors = get_variable_monitors_from_db(variable->db_id.value());
             components[component_key].push_back(*variable);
         }
     }
