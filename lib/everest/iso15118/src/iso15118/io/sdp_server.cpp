@@ -20,20 +20,19 @@ namespace iso15118 {
 /* link-local multicast address ff02::1 aka ip6-allnodes */
 static constexpr auto LINK_LOCAL_MULTICAST = "ff02::1";
 
-static void log_peer_hostname(const struct sockaddr_in6& address) {
-    char hostname[128];
-    socklen_t hostname_len = sizeof(hostname);
+static void log_peer_address(const struct sockaddr_in6& address) {
+    char address_name[INET6_ADDRSTRLEN];
 
     // Only the numeric address is needed: inet_ntop() is enough and more widely available than getnameinfo()
-    const auto get_if_name_result = inet_ntop(AF_INET6, &address.sin6_addr, hostname, hostname_len);
+    const auto get_if_name_result = inet_ntop(AF_INET6, &address.sin6_addr, address_name, sizeof(address_name));
 
     if (nullptr != get_if_name_result) {
         // Append the scope like getnameinfo() does, e.g. fe80::1%eth1
         char scope_name[IF_NAMESIZE];
         if (address.sin6_scope_id != 0 && if_indextoname(address.sin6_scope_id, scope_name) != nullptr) {
-            logf_info("Got SDP request from %s%%%s", hostname, scope_name);
+            logf_info("Got SDP request from %s%%%s", address_name, scope_name);
         } else {
-            logf_info("Got SDP request from %s", hostname);
+            logf_info("Got SDP request from %s", address_name);
         }
     } else {
         logf_warning("Got SDP request, but failed to get the address");
@@ -148,7 +147,7 @@ PeerRequestContext SdpServer::get_peer_request() {
         return PeerRequestContext{false};
     }
 
-    log_peer_hostname(peer_address);
+    log_peer_address(peer_address);
 
     if (read_result == sizeof(udp_buffer)) {
         logf_warning("Read on sdp server socket succeeded, but message is to big for the buffer");
