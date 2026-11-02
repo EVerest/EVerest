@@ -109,7 +109,10 @@ only in case would share monitors and stored values, so they stop the initializa
 directory that define the same component, whatever their case. Component and variable names and instances are also
 matched case-insensitively against the database and between the custom and standardized directories: a custom config
 replaces the standardized config of a component it spells differently, and a spelling change updates the rows in the
-database and keeps their monitors and values.
+database and keeps their monitors and values. The migration to schema version 4 stores an EVSE or connector id of `0`
+as absent and removes component and variable rows that share a name key with a row of a lower id, since lookups that
+ignore case used the row with the lowest id. Variables that only a removed component had are created again from the
+component config with their default value.
 Any other invalid component config, for example a monitor on a variable without `supportsMonitoring`, stops the
 initialization too. No file is skipped: the standardized config of the same component would replace a skipped custom
 config, and the variables only the custom config defines would be removed with their monitors.

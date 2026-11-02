@@ -46,6 +46,29 @@ SELECT 'VARIABLE_MONITORING', seq FROM sqlite_sequence WHERE name = 'VARIABLE_MO
 
 DROP TABLE VARIABLE_MONITORING_V3;
 
+-- EVSE and connector ids start at 1, so an id of 0 is stored as absent, which is what lookups without an EVSE or
+-- connector match.
+UPDATE COMPONENT SET EVSE_ID = NULL WHERE EVSE_ID = 0;
+UPDATE COMPONENT SET CONNECTOR_ID = NULL WHERE CONNECTOR_ID = 0;
+
+-- Components and variables that share a name key with a row of a lower id are removed. Names and instances are
+-- case-insensitive. Lookups that ignore case returned the row with the lowest id, so that row holds the values in use.
+-- The monitors of the removed rows are keyed by name and belong to the kept row. Variables that only a removed
+-- component had are created again from the component config with their default value.
+DELETE FROM VARIABLE WHERE COMPONENT_ID NOT IN (
+  SELECT MIN(ID) FROM COMPONENT
+  GROUP BY NAME COLLATE NOCASE, IFNULL(INSTANCE, '') COLLATE NOCASE, IFNULL(EVSE_ID, 0), IFNULL(CONNECTOR_ID, 0)
+);
+DELETE FROM COMPONENT WHERE ID NOT IN (
+  SELECT MIN(ID) FROM COMPONENT
+  GROUP BY NAME COLLATE NOCASE, IFNULL(INSTANCE, '') COLLATE NOCASE, IFNULL(EVSE_ID, 0), IFNULL(CONNECTOR_ID, 0)
+);
+DELETE FROM VARIABLE WHERE ID NOT IN (
+  SELECT MIN(ID) FROM VARIABLE GROUP BY COMPONENT_ID, NAME COLLATE NOCASE, IFNULL(INSTANCE, '') COLLATE NOCASE
+);
+DELETE FROM VARIABLE_CHARACTERISTICS WHERE VARIABLE_ID NOT IN (SELECT ID FROM VARIABLE);
+DELETE FROM VARIABLE_ATTRIBUTE WHERE VARIABLE_ID NOT IN (SELECT ID FROM VARIABLE);
+
 CREATE TABLE VARIABLE_ATTRIBUTE_VALUE (
   COMPONENT_NAME TEXT NOT NULL COLLATE NOCASE,
   COMPONENT_INSTANCE TEXT NOT NULL DEFAULT '' COLLATE NOCASE,

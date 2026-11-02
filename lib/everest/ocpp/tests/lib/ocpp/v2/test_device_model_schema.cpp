@@ -314,16 +314,73 @@ TEST_F(DeviceModelSchemaMigrationTest, down_migration_restores_foreign_key_monit
     EXPECT_EQ(monitor_sequence(), 5);
 }
 
-/// A database can hold component and variable rows that differ only in case; a monitor matches both
-TEST_F(DeviceModelSchemaMigrationTest, down_migration_with_rows_that_differ_only_in_case) {
+/// Lookups that ignore case used the row with the lowest id, so rows that share a name key with it are removed, while
+/// the monitors of the removed rows stay with their name key. An EVSE or connector id of 0 is stored as absent, so the
+/// kept row is found without an EVSE.
+TEST_F(DeviceModelSchemaMigrationTest, rows_that_share_a_name_key_are_removed) {
     create_schema_3_database(OCPP_DATABASE_SCHEMA_3);
     ASSERT_TRUE(database->execute_statement(R"(
-INSERT INTO COMPONENT (ID, NAME, INSTANCE, EVSE_ID, CONNECTOR_ID) VALUES (5, 'ocppcommctrlr', NULL, NULL, NULL);
+INSERT INTO COMPONENT (ID, NAME, INSTANCE, EVSE_ID, CONNECTOR_ID) VALUES (5, 'ocppcommctrlr', NULL, NULL, NULL),
+  (6, 'networkconfiguration', '1', NULL, NULL), (7, 'evse', NULL, 2, NULL), (8, 'OCPPCommCtrlr', NULL, 0, 0),
+  (9, 'TestCtrlr', NULL, 0, 0), (10, 'testctrlr', NULL, NULL, NULL);
 INSERT INTO VARIABLE (ID, NAME, INSTANCE, COMPONENT_ID, SOURCE) VALUES (5, 'heartbeatinterval', NULL, 5, NULL),
-  (6, 'HEARTBEATINTERVAL', NULL, 1, NULL);
+  (6, 'HEARTBEATINTERVAL', NULL, 1, NULL), (7, 'Power', NULL, 7, NULL), (8, 'HeartbeatInterval', NULL, 8, NULL),
+  (9, 'Enabled', NULL, 9, NULL), (10, 'enabled', NULL, 10, NULL);
+INSERT INTO VARIABLE_CHARACTERISTICS (DATATYPE_ID, VARIABLE_ID, SUPPORTS_MONITORING) VALUES (2, 5, 1), (2, 6, 1),
+  (1, 7, 1), (2, 8, 1), (4, 9, 0), (4, 10, 0);
+INSERT INTO VARIABLE_ATTRIBUTE (VARIABLE_ID, MUTABILITY_ID, PERSISTENT, CONSTANT, TYPE_ID, VALUE_SOURCE, VALUE) VALUES
+  (5, 2, 1, 0, 0, 'default', '60'), (6, 2, 1, 0, 0, 'default', '60'), (7, 0, 1, 0, 0, 'default', '0'),
+  (8, 2, 1, 0, 0, 'default', '60'), (9, 2, 1, 0, 0, 'default', 'true'), (10, 2, 1, 0, 0, 'default', 'false');
+INSERT INTO VARIABLE_MONITORING (ID, VARIABLE_ID, SEVERITY, "TRANSACTION", TYPE_ID, CONFIG_TYPE_ID, VALUE)
+  VALUES (5, 6, 3, 0, 1, 2, 5);
+)"));
+
+    migrate_to(SCHEMA_WITH_NAME_KEYED_MONITORS);
+
+    const auto ids = [this](const std::string& query) {
+        auto statement = database->new_statement(query);
+        std::vector<int> result;
+        while (statement->step() == SQLITE_ROW) {
+            result.push_back(statement->column_int(0));
+        }
+        return result;
+    };
+    EXPECT_EQ(ids("SELECT ID FROM COMPONENT ORDER BY ID"), (std::vector<int>{1, 2, 3, 4, 7, 9}));
+    EXPECT_EQ(ids("SELECT ID FROM VARIABLE ORDER BY ID"), (std::vector<int>{1, 2, 3, 4, 7, 9}));
+    EXPECT_EQ(ids("SELECT VARIABLE_ID FROM VARIABLE_CHARACTERISTICS ORDER BY VARIABLE_ID"),
+              (std::vector<int>{1, 2, 3, 4, 7, 9}));
+    EXPECT_EQ(ids("SELECT VARIABLE_ID FROM VARIABLE_ATTRIBUTE ORDER BY VARIABLE_ID"),
+              (std::vector<int>{1, 2, 3, 4, 7, 9}));
+    EXPECT_EQ(ids("SELECT ID FROM COMPONENT WHERE EVSE_ID IS NULL AND CONNECTOR_ID IS NULL AND ID = 9"),
+              (std::vector<int>{9}));
+
+    DeviceModelStorageSqlite storage(db_path);
+    EXPECT_EQ(storage
+                  .get_variable_attribute(make_component("OCPPCOMMCTRLR"), make_variable("heartbeatinterval"),
+                                          AttributeEnum::Actual)
+                  ->value,
+              "300");
+    EXPECT_EQ(
+        storage.get_variable_attribute(make_component("testctrlr"), make_variable("ENABLED"), AttributeEnum::Actual)
+            ->value,
+        "true");
+    const auto model = storage.get_device_model();
+    const auto& heartbeat = model.at(make_component("OCPPCommCtrlr")).at(make_variable("HeartbeatInterval"));
+    EXPECT_EQ(heartbeat.attributes.size(), 1);
+    EXPECT_EQ(heartbeat.monitors.size(), 2);
+    EXPECT_EQ(heartbeat.monitors.count(5), 1);
+}
+
+/// Component and variable rows that differ only in case match the same monitor, which goes to the oldest of them
+TEST_F(DeviceModelSchemaMigrationTest, down_migration_with_rows_that_differ_only_in_case) {
+    create_schema_3_database(OCPP_DATABASE_SCHEMA_3);
+    migrate_to(SCHEMA_WITH_NAME_KEYED_MONITORS);
+    ASSERT_TRUE(database->execute_statement(R"(
+INSERT INTO COMPONENT (ID, NAME, INSTANCE, EVSE_ID, CONNECTOR_ID) VALUES (5, 'ocppcommctrlr', NULL, NULL, NULL);
+INSERT INTO VARIABLE (ID, NAME, INSTANCE, COMPONENT_ID) VALUES (5, 'heartbeatinterval', NULL, 5),
+  (6, 'HEARTBEATINTERVAL', NULL, 1);
 INSERT INTO VARIABLE_CHARACTERISTICS (DATATYPE_ID, VARIABLE_ID, SUPPORTS_MONITORING) VALUES (2, 5, 1), (2, 6, 1);
 )"));
-    migrate_to(SCHEMA_WITH_NAME_KEYED_MONITORS);
 
     migrate_to(SCHEMA_WITH_FOREIGN_KEY_MONITORS);
 

@@ -7,7 +7,6 @@
 #include <cstdint>
 #include <fstream>
 #include <map>
-#include <set>
 #include <sstream>
 #include <string>
 
@@ -997,8 +996,6 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
     }
 
     std::map<ComponentKey, std::vector<DeviceModelVariable>> components;
-    std::set<std::uint64_t> ignored_component_ids;
-    std::set<std::uint64_t> ignored_variable_ids;
 
     int status = SQLITE_ERROR;
     while ((status = select_statement->step()) == SQLITE_ROW) {
@@ -1024,14 +1021,6 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
         // Check if the variable is already added to the component. If it is, the attribute should be added to the
         // vector of attributes, otherwise the whole variable must be added to the variable vector of the component.
         const auto& it = components.find(component_key);
-        if (it != components.end() && it->first.db_id != component_key.db_id) {
-            if (ignored_component_ids.insert(component_key.db_id.value()).second) {
-                EVLOG_warning << "Component " << get_component_name_for_logging(component_key)
-                              << " differs only in case from component " << get_component_name_for_logging(it->first)
-                              << " in the device model database and is ignored";
-            }
-            continue;
-        }
         if (it != components.end()) {
             // Component found. Now search for variables.
             std::vector<DeviceModelVariable>& variables = it->second;
@@ -1042,15 +1031,6 @@ std::map<ComponentKey, std::vector<DeviceModelVariable>> InitDeviceModelDb::get_
                     variable_exists = true;
                 }
             }
-        }
-        if (variable_exists && variable->db_id != new_variable.db_id) {
-            if (ignored_variable_ids.insert(new_variable.db_id.value()).second) {
-                EVLOG_warning << "Variable " << get_variable_name_for_logging(new_variable) << " of component "
-                              << get_component_name_for_logging(component_key) << " differs only in case from variable "
-                              << get_variable_name_for_logging(*variable)
-                              << " in the device model database and is ignored";
-            }
-            continue;
         }
 
         if (!variable_exists) {
